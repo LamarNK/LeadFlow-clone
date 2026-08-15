@@ -76,11 +76,11 @@ public sealed class CrmDailyDistributionTests
     }
 
     [Fact]
-    public void BusinessDate_UsesMoscowDayBoundary()
+    public void BusinessDate_UsesYekaterinburgDayBoundary()
     {
         Assert.Equal(
             new DateOnly(2026, 8, 14),
-            CrmDailyDistribution.BusinessDate(new DateTime(2026, 8, 13, 21, 0, 0, DateTimeKind.Utc)));
+            CrmDailyDistribution.BusinessDate(new DateTime(2026, 8, 13, 19, 0, 0, DateTimeKind.Utc)));
     }
 
     private static Guid DeterministicGuid(int value)

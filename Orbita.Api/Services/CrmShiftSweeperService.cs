@@ -7,7 +7,7 @@ public sealed class CrmShiftSweeperService(
     IServiceProvider services,
     ILogger<CrmShiftSweeperService> logger) : BackgroundService
 {
-    private static readonly TimeSpan Interval = TimeSpan.FromMinutes(5);
+    private static readonly TimeSpan Interval = TimeSpan.FromMinutes(1);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {

@@ -53,7 +53,8 @@ public sealed class CrmWorkspaceServiceTests
     {
         await using var harness = await Harness.CreateAsync();
         SeedOffice(harness.Db, crmEnabled: true);
-        var manager = await harness.CreateManagerAsync("mgr@test.local", capacity: 5, onShift: true);
+        var manager = await harness.CreateManagerAsync("mgr@test.local", capacity: 5, onShift: false);
+        Assert.True(await harness.Sut.StartShiftAsync(OfficeId, manager.Id));
         var response = await SeedResponseAsync(harness.Db);
 
         await harness.Sut.CreateCardForResponseAsync(response);
@@ -95,6 +96,54 @@ public sealed class CrmWorkspaceServiceTests
         var profile = await harness.Db.PanelUserProfiles.SingleAsync(x => x.UserId == lead.Id);
         Assert.True(profile.CrmShiftActive);
         Assert.Single(await harness.Db.CrmManagerShifts.Where(x => x.ManagerUserId == lead.Id).ToListAsync());
+    }
+
+    [Fact]
+    public async Task ActiveFlagWithoutTodayStartEvent_DoesNotCreateDistributionSession()
+    {
+        await using var harness = await Harness.CreateAsync();
+        SeedOffice(harness.Db, crmEnabled: true);
+        var manager = await harness.CreateManagerAsync("stale-flag@test.local", capacity: 5, onShift: true);
+        var profile = await harness.Db.PanelUserProfiles.SingleAsync(x => x.UserId == manager.Id);
+        profile.CrmShiftStartedAtUtc = harness.Clock.GetUtcNow().AddDays(-1).UtcDateTime;
+        var response = await SeedResponseAsync(harness.Db, "stale-flag-card");
+        harness.Db.CrmCandidateCards.Add(NewCard(response.Id, manager.Id));
+        await harness.Db.SaveChangesAsync();
+
+        harness.Clock.Advance(TimeSpan.FromMinutes(6));
+        await harness.Sut.ProcessDueDailyDistributionsAsync();
+
+        Assert.Empty(harness.Db.CrmDailyDistributionSessions);
+    }
+
+    [Fact]
+    public async Task TodayDistribution_ExcludesManagerWhoseShiftStartedOnPreviousBusinessDay()
+    {
+        await using var harness = await Harness.CreateAsync();
+        SeedOffice(harness.Db, crmEnabled: true);
+        var stale = await harness.CreateManagerAsync("stale-recipient@test.local", capacity: 300, onShift: true);
+        var current = await harness.CreateManagerAsync("current-recipient@test.local", capacity: 300, onShift: false);
+        var staleProfile = await harness.Db.PanelUserProfiles.SingleAsync(x => x.UserId == stale.Id);
+        staleProfile.CrmShiftStartedAtUtc = harness.Clock.GetUtcNow().AddDays(-1).UtcDateTime;
+
+        for (var index = 0; index < 4; index++)
+        {
+            var response = await SeedResponseAsync(harness.Db, $"stale-recipient-{index}");
+            var card = NewCard(response.Id);
+            card.Stage = index < 2 ? CrmStages.Lead : CrmStages.Ndz73;
+            card.ManagerUserId = null;
+            card.IsInActiveLoad = false;
+            harness.Db.CrmCandidateCards.Add(card);
+        }
+
+        await harness.Db.SaveChangesAsync();
+        Assert.True(await harness.Sut.StartShiftAsync(OfficeId, current.Id));
+
+        harness.Clock.Advance(TimeSpan.FromMinutes(6));
+        await harness.Sut.ProcessDueDailyDistributionsAsync();
+
+        Assert.Equal(0, await harness.Db.CrmCandidateCards.CountAsync(x => x.ManagerUserId == stale.Id));
+        Assert.Equal(4, await harness.Db.CrmCandidateCards.CountAsync(x => x.ManagerUserId == current.Id));
     }
 
     [Fact]
@@ -141,12 +190,14 @@ public sealed class CrmWorkspaceServiceTests
     {
         await using var harness = await Harness.CreateAsync();
         SeedOffice(harness.Db, crmEnabled: true);
-        var first = await harness.CreateManagerAsync("pool-1@test.local", capacity: 1, onShift: true);
+        var first = await harness.CreateManagerAsync("pool-1@test.local", capacity: 1, onShift: false);
         var second = await harness.CreateDeskUserAsync(
             "pool-2@test.local",
             capacity: 1,
-            onShift: true,
+            onShift: false,
             PanelRoles.SeniorManager);
+        Assert.True(await harness.Sut.StartShiftAsync(OfficeId, first.Id));
+        Assert.True(await harness.Sut.StartShiftAsync(OfficeId, second.Id));
 
         for (var index = 0; index < 7; index++)
         {
@@ -155,6 +206,10 @@ public sealed class CrmWorkspaceServiceTests
             card.Stage = index < 4
                 ? CrmStages.Lead
                 : index % 2 == 0 ? CrmStages.Ndz73 : CrmStages.Ndz26;
+            if (CrmDailyDistribution.IsNdz(card.Stage))
+            {
+                card.IsInActiveLoad = false;
+            }
             harness.Db.CrmCandidateCards.Add(card);
         }
 
@@ -169,6 +224,9 @@ public sealed class CrmWorkspaceServiceTests
         Assert.DoesNotContain(
             await harness.Db.CrmCandidateCards.ToListAsync(),
             card => card.Stage == CrmStages.Ndz26);
+        Assert.All(
+            await harness.Db.CrmCandidateCards.Where(x => x.Stage == CrmStages.Ndz73).ToListAsync(),
+            card => Assert.True(card.IsInActiveLoad));
 
         var leadCounters = await harness.Db.CrmDailyDistributionCounters
             .Where(x => x.Pool == CrmDailyDistribution.LeadPool)
@@ -189,8 +247,10 @@ public sealed class CrmWorkspaceServiceTests
     {
         await using var harness = await Harness.CreateAsync();
         SeedOffice(harness.Db, crmEnabled: true);
-        var first = await harness.CreateManagerAsync("later-1@test.local", capacity: 1, onShift: true);
-        var second = await harness.CreateManagerAsync("later-2@test.local", capacity: 1, onShift: true);
+        var first = await harness.CreateManagerAsync("later-1@test.local", capacity: 1, onShift: false);
+        var second = await harness.CreateManagerAsync("later-2@test.local", capacity: 1, onShift: false);
+        Assert.True(await harness.Sut.StartShiftAsync(OfficeId, first.Id));
+        Assert.True(await harness.Sut.StartShiftAsync(OfficeId, second.Id));
 
         for (var index = 0; index < 4; index++)
         {
@@ -248,14 +308,14 @@ public sealed class CrmWorkspaceServiceTests
     }
 
     [Fact]
-    public async Task ExpireStaleShifts_StopsShiftOlderThanMaxDuration()
+    public async Task ExpireStaleShifts_StopsPreviousBusinessDayShift()
     {
         await using var harness = await Harness.CreateAsync();
         SeedOffice(harness.Db, crmEnabled: true);
         var manager = await harness.CreateManagerAsync("stale@test.local", capacity: 2, onShift: false);
         Assert.True(await harness.Sut.StartShiftAsync(OfficeId, manager.Id));
         var profile = await harness.Db.PanelUserProfiles.SingleAsync(x => x.UserId == manager.Id);
-        var started = DateTime.UtcNow - CrmShiftRules.MaxDuration - TimeSpan.FromMinutes(1);
+        var started = DateTime.UtcNow.AddDays(-1);
         profile.CrmShiftStartedAtUtc = started;
         var open = await harness.Db.CrmManagerShifts.SingleAsync(x => x.ManagerUserId == manager.Id && x.EndedAtUtc == null);
         open.StartedAtUtc = started;
@@ -270,7 +330,7 @@ public sealed class CrmWorkspaceServiceTests
 
         await harness.Db.Entry(open).ReloadAsync();
         Assert.NotNull(open.EndedAtUtc);
-        Assert.Equal(CrmShiftEndReasons.AutoMaxDuration, open.EndReason);
+        Assert.Equal(CrmShiftEndReasons.AutoDailyCutoff, open.EndReason);
         Assert.Null(open.EndedByUserId);
     }
 
@@ -344,7 +404,7 @@ public sealed class CrmWorkspaceServiceTests
         SeedOffice(harness.Db, crmEnabled: true);
         var manager = await harness.CreateManagerAsync("stale-assign@test.local", capacity: 5, onShift: true);
         var profile = await harness.Db.PanelUserProfiles.SingleAsync(x => x.UserId == manager.Id);
-        profile.CrmShiftStartedAtUtc = DateTime.UtcNow - CrmShiftRules.MaxDuration - TimeSpan.FromHours(1);
+        profile.CrmShiftStartedAtUtc = DateTime.UtcNow.AddDays(-1);
         await harness.Db.SaveChangesAsync();
         var response = await SeedResponseAsync(harness.Db);
 

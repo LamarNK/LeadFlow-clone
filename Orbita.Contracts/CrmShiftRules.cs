@@ -11,6 +11,9 @@ public static class CrmShiftEndReasons
     /// <summary>Автозакрытие: смена дольше <see cref="CrmShiftRules.MaxDuration"/>.</summary>
     public const string AutoMaxDuration = "auto_max_duration";
 
+    /// <summary>Safety stop at the end of the Yekaterinburg business day.</summary>
+    public const string AutoDailyCutoff = "auto_daily_cutoff";
+
     /// <summary>Автозакрытие legacy-флага без времени старта.</summary>
     public const string LegacyCleanup = "legacy_cleanup";
 
@@ -34,11 +37,23 @@ public static class CrmShiftRules
     /// </summary>
     public static readonly TimeSpan MaxDuration = TimeSpan.FromHours(14);
 
+    /// <summary>All CRM offices currently use Yekaterinburg time (UTC+5).</summary>
+    public static readonly TimeSpan BusinessUtcOffset = TimeSpan.FromHours(5);
+
+    /// <summary>Forgotten shifts are stopped at 23:00 Yekaterinburg time.</summary>
+    public static readonly TimeSpan DailyCutoffLocalTime = TimeSpan.FromHours(23);
+
     /// <summary>
     /// Причина автозакрытия: нет старта → legacy, иначе превышена длительность.
     /// </summary>
     public static string ResolveAutoEndReason(DateTime? startedAtUtc) =>
-        startedAtUtc is null ? CrmShiftEndReasons.LegacyCleanup : CrmShiftEndReasons.AutoMaxDuration;
+        startedAtUtc is null ? CrmShiftEndReasons.LegacyCleanup : CrmShiftEndReasons.AutoDailyCutoff;
+
+    public static DateOnly BusinessDate(DateTime utcValue)
+    {
+        var utc = NormalizeUtc(utcValue);
+        return DateOnly.FromDateTime(utc.Add(BusinessUtcOffset));
+    }
 
     /// <summary>
     /// Смена считается активной для выдачи лидов и UI.
@@ -63,7 +78,9 @@ public static class CrmShiftRules
             return false;
         }
 
-        return now - started < MaxDuration;
+        var localNow = now.Add(BusinessUtcOffset);
+        return BusinessDate(started) == BusinessDate(now)
+               && localNow.TimeOfDay < DailyCutoffLocalTime;
     }
 
     /// <summary>

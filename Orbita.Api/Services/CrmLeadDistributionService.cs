@@ -59,15 +59,19 @@ public sealed class CrmLeadDistributionService(
                     "Нет менеджеров или старших менеджеров на смене");
             }
 
-            var firstShiftStartedAtUtc = managers
-                .Select(x => x.CrmShiftStartedAtUtc)
-                .Where(x => x.HasValue)
-                .Min() ?? now;
-            var session = await EnsureSessionNoLockAsync(
-                card.OfficeId,
-                firstShiftStartedAtUtc,
-                now,
-                ct);
+            var localDate = CrmDailyDistribution.BusinessDate(now);
+            var session = db.CrmDailyDistributionSessions.Local.FirstOrDefault(
+                              x => x.OfficeId == card.OfficeId && x.LocalDate == localDate)
+                          ?? await db.CrmDailyDistributionSessions.FirstOrDefaultAsync(
+                              x => x.OfficeId == card.OfficeId && x.LocalDate == localDate,
+                              ct);
+
+            if (session is null)
+            {
+                return new CrmLeadDistribution.AutoAssignDecision(
+                    null,
+                    "Ожидание первого старта смены");
+            }
 
             if (session.DistributedAtUtc is null || now < session.DistributeAfterUtc)
             {
@@ -134,7 +138,14 @@ public sealed class CrmLeadDistributionService(
         await gate.WaitAsync(ct);
         try
         {
-            await EnsureSessionNoLockAsync(officeId, shiftStartedAtUtc, UtcNow(), ct);
+            var now = UtcNow();
+            if (CrmDailyDistribution.BusinessDate(shiftStartedAtUtc)
+                != CrmDailyDistribution.BusinessDate(now))
+            {
+                return;
+            }
+
+            await EnsureSessionNoLockAsync(officeId, shiftStartedAtUtc, now, ct);
         }
         finally
         {
@@ -143,15 +154,18 @@ public sealed class CrmLeadDistributionService(
     }
 
     /// <summary>
-    /// Recreates missing sessions after an API restart and executes all due
-    /// morning distributions. Returned office ids need a board refresh.
+    /// Executes due sessions created by an actual Manager/SeniorManager shift
+    /// start. Active profile flags alone never create a new daily session.
+    /// Returned office ids need a board refresh.
     /// </summary>
     public async Task<IReadOnlySet<Guid>> ProcessDueDailyDistributionsAsync(CancellationToken ct = default)
     {
         var now = UtcNow();
-        await EnsureSessionsForActiveShiftsAsync(now, ct);
+        var localDate = CrmDailyDistribution.BusinessDate(now);
         var dueOfficeIds = await db.CrmDailyDistributionSessions.AsNoTracking()
-            .Where(x => x.DistributedAtUtc == null && x.DistributeAfterUtc <= now)
+            .Where(x => x.LocalDate == localDate
+                        && x.DistributedAtUtc == null
+                        && x.DistributeAfterUtc <= now)
             .Select(x => x.OfficeId)
             .Distinct()
             .ToListAsync(ct);
@@ -232,49 +246,14 @@ public sealed class CrmLeadDistributionService(
             .ToDictionary(g => g.Key, g => g.Count(), StringComparer.Ordinal);
     }
 
-    private async Task EnsureSessionsForActiveShiftsAsync(DateTime now, CancellationToken ct)
-    {
-        var recipientIds = await LoadDistributionRecipientIdsAsync();
-        if (recipientIds.Count == 0)
-        {
-            return;
-        }
-
-        var active = await db.PanelUserProfiles
-            .Where(x => x.OfficeId != null
-                        && recipientIds.Contains(x.UserId)
-                        && x.CrmShiftActive
-                        && x.CrmShiftStartedAtUtc != null)
-            .ToListAsync(ct);
-        var created = false;
-        foreach (var officeGroup in active
-                     .Where(x => CrmShiftRules.IsEffectivelyOnShift(
-                         x.CrmShiftActive,
-                         x.CrmShiftStartedAtUtc,
-                         now))
-                     .GroupBy(x => x.OfficeId!.Value))
-        {
-            var firstStart = officeGroup.Min(x => x.CrmShiftStartedAtUtc) ?? now;
-            var before = db.ChangeTracker.Entries<CrmDailyDistributionSessionEntity>()
-                .Count(x => x.State == EntityState.Added);
-            await EnsureSessionNoLockAsync(officeGroup.Key, firstStart, now, ct);
-            created |= db.ChangeTracker.Entries<CrmDailyDistributionSessionEntity>()
-                .Count(x => x.State == EntityState.Added) > before;
-        }
-
-        if (created)
-        {
-            await db.SaveChangesAsync(ct);
-        }
-    }
-
     private async Task<CrmDailyDistributionSessionEntity> EnsureSessionNoLockAsync(
         Guid officeId,
         DateTime firstShiftStartedAtUtc,
         DateTime now,
         CancellationToken ct)
     {
-        var localDate = CrmDailyDistribution.BusinessDate(now);
+        var normalizedStart = NormalizeUtc(firstShiftStartedAtUtc);
+        var localDate = CrmDailyDistribution.BusinessDate(normalizedStart);
         var tracked = db.CrmDailyDistributionSessions.Local.FirstOrDefault(
             x => x.OfficeId == officeId && x.LocalDate == localDate);
         if (tracked is not null)
@@ -290,7 +269,6 @@ public sealed class CrmLeadDistributionService(
             return existing;
         }
 
-        var normalizedStart = NormalizeUtc(firstShiftStartedAtUtc);
         var session = new CrmDailyDistributionSessionEntity
         {
             Id = Guid.NewGuid(),
@@ -313,8 +291,10 @@ public sealed class CrmLeadDistributionService(
         await using var transaction = db.Database.IsRelational()
             ? await db.Database.BeginTransactionAsync(ct)
             : null;
+        var localDate = CrmDailyDistribution.BusinessDate(now);
         var session = await db.CrmDailyDistributionSessions
             .Where(x => x.OfficeId == officeId
+                        && x.LocalDate == localDate
                         && x.DistributedAtUtc == null
                         && x.DistributeAfterUtc <= now)
             .OrderBy(x => x.LocalDate)
@@ -341,7 +321,6 @@ public sealed class CrmLeadDistributionService(
         var cards = await db.CrmCandidateCards
             .Where(x => x.OfficeId == officeId
                         && !x.IsClosed
-                        && x.IsInActiveLoad
                         && (x.Stage == CrmStages.Lead
                             || x.Stage == CrmStages.Ndz73
                             || x.Stage == CrmStages.Ndz26))

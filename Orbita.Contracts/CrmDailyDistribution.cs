@@ -13,23 +13,10 @@ public static class CrmDailyDistribution
     public const string NdzPool = "ndz";
     public static readonly TimeSpan ShiftCollectionDelay = TimeSpan.FromMinutes(5);
 
-    // The legacy morning distribution and all current offices use Moscow as
-    // the business-day boundary. Keep the calculation platform-independent.
-    private static readonly TimeSpan BusinessOffset = TimeSpan.FromHours(3);
-
     public sealed record Counter(string ManagerUserId, int AssignedCount);
     public sealed record Assignment(Guid CardId, string ManagerUserId);
 
-    public static DateOnly BusinessDate(DateTime utcNow)
-    {
-        var utc = utcNow.Kind switch
-        {
-            DateTimeKind.Utc => utcNow,
-            DateTimeKind.Local => utcNow.ToUniversalTime(),
-            _ => DateTime.SpecifyKind(utcNow, DateTimeKind.Utc)
-        };
-        return DateOnly.FromDateTime(utc.Add(BusinessOffset));
-    }
+    public static DateOnly BusinessDate(DateTime utcNow) => CrmShiftRules.BusinessDate(utcNow);
 
     public static bool IsNdz(string? stage) =>
         string.Equals(stage, CrmStages.Ndz73, StringComparison.Ordinal)
