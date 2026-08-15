@@ -910,6 +910,13 @@ public sealed class CrmWorkspaceService(
             return false;
         }
 
+        // Reassigning a card to its current manager is not a real change and must not
+        // create a duplicate "Assigned" event in the activity feed.
+        if (string.Equals(card.ManagerUserId, managerUserId, StringComparison.Ordinal))
+        {
+            return true;
+        }
+
         await using var tx = await db.Database.BeginTransactionAsync(ct);
         var actorName = await ResolveDisplayNameAsync(actorUserId, ct);
         var managerName = await ResolveDisplayNameAsync(managerUserId, ct);

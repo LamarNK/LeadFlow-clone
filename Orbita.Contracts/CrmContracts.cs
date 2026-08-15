@@ -199,6 +199,7 @@ public static class CrmCloseReasons
     public const string AlreadyAtSvo = "Уже был на СВО";
     public const string NotRelevant = "Неактуально";
     public const string Disappeared = "Исчез, слился";
+    public const string Officer = "Офицер";
     public const string Success = "Успех";
 
     public static readonly IReadOnlyList<string> All =
@@ -212,6 +213,7 @@ public static class CrmCloseReasons
         AlreadyAtSvo,
         NotRelevant,
         Disappeared,
+        Officer,
         Success
     ];
 

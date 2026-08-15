@@ -435,6 +435,7 @@
 .crm-tile:has(.crm-tile__select) .crm-tile__body { padding-left: 41px; }
 .crm-tile.is-bulk-selected { border-color: #5b7cf2 !important; box-shadow: inset 0 0 0 1px #5b7cf2, 0 6px 16px rgba(49,92,222,.14) !important; transform: translateY(-1px); }
 .crm-bulk-modal { position: fixed; z-index: 1300; inset: 0; display: grid; place-items: center; padding: 20px; }
+.crm-bulk-modal[hidden], .crm-bulk-modal__form > label[hidden] { display: none !important; }
 .crm-bulk-modal__backdrop { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; background: rgba(15, 23, 42, .52); backdrop-filter: blur(2px); cursor: default; }
 .crm-bulk-modal__dialog { position: relative; z-index: 1; width: min(540px, 100%); overflow: hidden; border: 1px solid #dfe5ee; border-radius: 16px; background: #fff; box-shadow: 0 24px 70px rgba(15,23,42,.28); }
 .crm-bulk-modal__header { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 20px 22px 16px; border-bottom: 1px solid #edf0f5; }

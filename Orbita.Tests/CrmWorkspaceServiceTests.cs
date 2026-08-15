@@ -1013,6 +1013,24 @@ public sealed class CrmWorkspaceServiceTests
     }
 
     [Fact]
+    public async Task Assign_ToCurrentManager_DoesNotCreateDuplicateHistoryEntry()
+    {
+        await using var harness = await Harness.CreateAsync();
+        SeedOffice(harness.Db, crmEnabled: true);
+        var owner = await harness.CreateManagerAsync("same-owner@test.local", capacity: 5, onShift: true);
+        var response = await SeedResponseAsync(harness.Db, "same-owner-card");
+        var card = NewCard(response.Id, owner.Id);
+        var updatedAt = card.UpdatedAtUtc;
+        harness.Db.CrmCandidateCards.Add(card);
+        await harness.Db.SaveChangesAsync();
+
+        Assert.True(await harness.Sut.AssignAsync(card.Id, owner.Id, owner.Id, isAdmin: true));
+
+        Assert.Empty(await harness.Db.CrmCandidateHistory.Where(x => x.CardId == card.Id).ToListAsync());
+        Assert.Equal(updatedAt, card.UpdatedAtUtc);
+    }
+
+    [Fact]
     public async Task GetCardAvatar_OwnerReceivesStoredAvatar_ForeignDenied()
     {
         await using var harness = await Harness.CreateAsync();

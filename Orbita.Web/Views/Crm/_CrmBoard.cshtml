@@ -53,7 +53,7 @@
                     <span data-crm-bulk-card-fields></span>
                     <label>
                         <span>Новый ответственный</span>
-                        <select name="managerUserId" required>
+                        <select name="managerUserId" required data-crm-bulk-assignee>
                             <option value="" selected disabled>Выберите сотрудника</option>
                             @foreach (var manager in Model.Managers.OrderBy(x => x.DisplayName, StringComparer.CurrentCultureIgnoreCase))
                             {
@@ -159,6 +159,7 @@
                         var hasOverdueTask = !card.IsClosed && card.HasOverdueTask;
                         var hasActiveTask = !card.IsClosed && card.OpenTaskCount > 0 && !hasOverdueTask;
                         <article class="crm-tile @(card.IsClosed ? "is-closed" : "") @(hasOverdueTask ? "is-overdue" : "") @(hasActiveTask ? "has-active-task" : "")"
+                                 data-card-manager-user-id="@card.ManagerUserId"
                                  @if (Model.CanEdit && !card.IsClosed) { <text>draggable="true" data-card-id="@card.Id" data-card-stage="@card.Stage"</text> }>
                             @if (canUseBulkActions && !card.IsClosed)
                             {

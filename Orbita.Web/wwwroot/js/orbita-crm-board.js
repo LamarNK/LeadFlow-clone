@@ -727,6 +727,7 @@
         const closeField = modal.querySelector('[data-crm-bulk-close-field]');
         const closeSelect = modal.querySelector('[data-crm-bulk-close-select]');
         const stageTrigger = toolbar.querySelector('[data-crm-bulk-stage-trigger]');
+        const assigneeSelect = toolbar.querySelector('[data-crm-bulk-assignee]');
         const modalTitle = modal.querySelector('[data-crm-bulk-modal-title]');
         const commentLabel = modal.querySelector('[data-crm-bulk-comment-label]');
         const comment = modal.querySelector('[data-crm-bulk-comment]');
@@ -761,6 +762,25 @@
             checkboxes.forEach((checkbox) => {
                 checkbox.closest('.crm-tile')?.classList.toggle('is-bulk-selected', checkbox.checked);
             });
+
+            if (assigneeSelect) {
+                const selectedAssignees = checkboxes
+                    .filter((checkbox) => checkbox.checked)
+                    .map((checkbox) => checkbox.closest('.crm-tile')?.dataset.cardManagerUserId || '');
+                const commonAssignee = selectedAssignees.length > 0
+                    && selectedAssignees[0]
+                    && selectedAssignees.every((userId) => userId === selectedAssignees[0])
+                    ? selectedAssignees[0]
+                    : '';
+
+                Array.from(assigneeSelect.options).forEach((option) => {
+                    if (!option.value) return;
+                    const isCurrentCommonAssignee = option.value === commonAssignee;
+                    option.hidden = isCurrentCommonAssignee;
+                    option.disabled = isCurrentCommonAssignee;
+                });
+                if (assigneeSelect.value === commonAssignee) assigneeSelect.value = '';
+            }
             return ids;
         };
 
