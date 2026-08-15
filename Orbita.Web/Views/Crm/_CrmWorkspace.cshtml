@@ -43,6 +43,10 @@
 {
     <div class="crm-notice crm-notice--error"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i>@error</div>
 }
+@if (TempData["CrmOk"] is string ok)
+{
+    <div class="crm-notice crm-notice--ok"><i class="fa-solid fa-circle-check" aria-hidden="true"></i>@ok</div>
+}
 @if (!Model.IsEnabled)
 {
     <div class="crm-notice"><i class="fa-solid fa-flask" aria-hidden="true"></i>Офис не принимает отклики в CRM — операторы не могут отправлять сюда карточки.@if (Model.IsAdmin) { <text> Включите в </text><a asp-action="Team">Команда CRM</a><text> или в настройках офиса.</text> }</div>

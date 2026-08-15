@@ -2435,6 +2435,74 @@ public sealed class OrbitaApiClient(
         return response is null ? (false, InvalidApiSessionError) : response.IsSuccessStatusCode ? (true, null) : (false, await ReadApiErrorAsync(response, ct));
     }
 
+    public async Task<(CrmBulkActionResult? Result, string? Error)> BulkAssignCrmCardsAsync(
+        CrmBulkAssignRequest body,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            var updated = 0;
+            var errors = new List<string>();
+            foreach (var cardId in body.CardIds.Where(id => id != Guid.Empty).Distinct().Take(500))
+            {
+                var (success, error) = DesignPreviewData.AssignCrmCard(cardId, body.ManagerUserId);
+                if (success) updated++;
+                else errors.Add(error ?? "Не удалось изменить ответственного у одной из карточек.");
+            }
+
+            var requested = body.CardIds.Where(id => id != Guid.Empty).Distinct().Take(500).Count();
+            return (new CrmBulkActionResult(
+                requested,
+                updated,
+                requested - updated,
+                errors.Distinct(StringComparer.Ordinal).Take(3).ToArray()), null);
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "api/v1/crm/cards/bulk/assign")
+        {
+            Content = JsonContent.Create(body)
+        };
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null) return (null, InvalidApiSessionError);
+        if (!response.IsSuccessStatusCode) return (null, await ReadApiErrorAsync(response, ct));
+        return (await response.Content.ReadFromJsonAsync<CrmBulkActionResult>(ApiJsonOptions, ct), null);
+    }
+
+    public async Task<(CrmBulkActionResult? Result, string? Error)> BulkTransitionCrmCardsAsync(
+        CrmBulkTransitionRequest body,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            var updated = 0;
+            var errors = new List<string>();
+            var cardIds = body.CardIds.Where(id => id != Guid.Empty).Distinct().Take(500).ToArray();
+            foreach (var cardId in cardIds)
+            {
+                var result = body.Operation == CrmBulkTransitionOperations.Close
+                    ? DesignPreviewData.CloseCrmCard(cardId, body.CloseReason ?? string.Empty, body.Comment)
+                    : DesignPreviewData.MoveCrmCard(cardId, body.Stage ?? string.Empty, body.Comment);
+                if (result.Success) updated++;
+                else errors.Add(result.Error ?? "Не удалось изменить одну из карточек.");
+            }
+
+            return (new CrmBulkActionResult(
+                cardIds.Length,
+                updated,
+                cardIds.Length - updated,
+                errors.Distinct(StringComparer.Ordinal).Take(3).ToArray()), null);
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "api/v1/crm/cards/bulk/transition")
+        {
+            Content = JsonContent.Create(body)
+        };
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null) return (null, InvalidApiSessionError);
+        if (!response.IsSuccessStatusCode) return (null, await ReadApiErrorAsync(response, ct));
+        return (await response.Content.ReadFromJsonAsync<CrmBulkActionResult>(ApiJsonOptions, ct), null);
+    }
+
     public async Task<(bool Success, string? Error)> UpdateCrmCardAsync(Guid cardId, CrmCardUpdateRequest body, CancellationToken ct = default)
     {
         if (_preview.Enabled)

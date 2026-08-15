@@ -260,6 +260,32 @@ public sealed class CrmControllerPreviewTests
         Assert.Equal(nameof(CrmController.Card), redirect.ActionName);
     }
 
+    [Fact]
+    public async Task BulkActions_ManagerIsForbidden()
+    {
+        var principal = CreateOfficePrincipal(
+            "preview-manager-elena",
+            PanelRoles.Manager,
+            DesignPreviewData.PreviewOfficeId);
+        var (controller, _) = CreateController(previewEnabled: true, principal);
+        var cardIds = new[] { Guid.Parse("90000000-0000-0000-0000-000000000001") };
+
+        var assignResult = await controller.BulkAssign(
+            cardIds,
+            managerUserId: "preview-manager-igor",
+            returnUrl: null);
+        var transitionResult = await controller.BulkTransition(
+            cardIds,
+            operation: CrmBulkTransitionOperations.Move,
+            stage: CrmStages.Negotiations,
+            closeReason: null,
+            comment: "РџСЂРёС‡РёРЅР° СЃРјРµРЅС‹ СЌС‚Р°РїР°",
+            returnUrl: null);
+
+        Assert.IsType<ForbidResult>(assignResult);
+        Assert.IsType<ForbidResult>(transitionResult);
+    }
+
     private static (CrmController Controller, HttpClient Http) CreateController(
         bool previewEnabled,
         ClaimsPrincipal? principal = null)

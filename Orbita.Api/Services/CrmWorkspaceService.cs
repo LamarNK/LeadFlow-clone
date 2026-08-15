@@ -920,6 +920,89 @@ public sealed class CrmWorkspaceService(
         return true;
     }
 
+    public async Task<CrmBulkActionResult> BulkAssignAsync(
+        CrmBulkAssignRequest request,
+        string actorUserId,
+        CancellationToken ct = default)
+    {
+        var cardIds = request.CardIds
+            .Where(id => id != Guid.Empty)
+            .Distinct()
+            .Take(500)
+            .ToArray();
+        var updated = 0;
+        var errors = new List<string>();
+
+        foreach (var cardId in cardIds)
+        {
+            if (await AssignAsync(cardId, request.ManagerUserId, actorUserId, isAdmin: true, ct))
+            {
+                updated++;
+            }
+            else
+            {
+                errors.Add("Не удалось изменить ответственного у одной из карточек.");
+            }
+        }
+
+        return new CrmBulkActionResult(
+            cardIds.Length,
+            updated,
+            cardIds.Length - updated,
+            errors.Distinct(StringComparer.Ordinal).Take(3).ToArray());
+    }
+
+    public async Task<CrmBulkActionResult> BulkTransitionAsync(
+        CrmBulkTransitionRequest request,
+        string actorUserId,
+        CancellationToken ct = default)
+    {
+        var cardIds = request.CardIds
+            .Where(id => id != Guid.Empty)
+            .Distinct()
+            .Take(500)
+            .ToArray();
+        var updated = 0;
+        var errors = new List<string>();
+
+        foreach (var cardId in cardIds)
+        {
+            (bool Ok, string? Error) result = request.Operation switch
+            {
+                CrmBulkTransitionOperations.Move => await MoveAsync(
+                    cardId,
+                    request.Stage ?? string.Empty,
+                    request.Comment,
+                    actorUserId,
+                    isAdmin: true,
+                    ct),
+                CrmBulkTransitionOperations.Close => await CloseAsync(
+                    cardId,
+                    request.CloseReason ?? string.Empty,
+                    request.Comment,
+                    actorUserId,
+                    isAdmin: true,
+                    ct),
+                _ => (false, "Неизвестная массовая операция.")
+            };
+
+            if (result.Ok)
+            {
+                updated++;
+            }
+            else
+            {
+                errors.Add(result.Error ?? "Не удалось изменить одну из карточек.");
+            }
+        }
+
+        return new CrmBulkActionResult(
+            cardIds.Length,
+            updated,
+            cardIds.Length - updated,
+            errors.Distinct(StringComparer.Ordinal).Take(3).ToArray());
+    }
+
     public async Task<bool> SetActiveLoadAsync(Guid cardId, bool isInActiveLoad, string actorUserId, bool isAdmin, CancellationToken ct = default)
     {
         var card = await FindAccessibleCardAsync(cardId, actorUserId, isAdmin, ct);

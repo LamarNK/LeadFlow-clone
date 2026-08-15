@@ -3,8 +3,12 @@
 @{
     var boardReturnUrl = $"{Context.Request.Path}{Context.Request.QueryString}";
     var currentUserId = ViewData["CurrentCrmUserId"] as string;
+    var canUseBulkActions = Model.IsAdmin;
+    var bulkReasonRequired = User.IsInRole(PanelRoles.SeniorManager)
+                             && !User.IsInRole(PanelRoles.OfficeLead)
+                             && !User.IsInRole(PanelRoles.Admin);
 }
-<section class="crm-board-card card" aria-label="Воронка кандидатов" data-crm-board-carousel data-crm-require-stage-comment="true">
+<section class="crm-board-card card" aria-label="Воронка кандидатов" data-crm-board-carousel data-crm-require-stage-comment="true" data-crm-bulk-board="@(canUseBulkActions ? "true" : "false")" data-crm-bulk-reason-required="@(bulkReasonRequired ? "true" : "false")">
     <div class="crm-board-toolbar">
         <div class="crm-board-toolbar__meta">
             <strong>Этапы воронки</strong>
@@ -35,6 +39,103 @@
             </button>
         </div>
     </div>
+    @if (canUseBulkActions)
+    {
+        <div class="crm-bulk-actions" data-crm-bulk-actions hidden>
+            <div class="crm-bulk-actions__selection">
+                <span class="crm-bulk-actions__icon"><i class="fa-solid fa-check-double" aria-hidden="true"></i></span>
+                <span><strong data-crm-bulk-count>0</strong> выбрано</span>
+                <button type="button" class="crm-bulk-actions__clear" data-crm-bulk-clear>Снять выбор</button>
+            </div>
+            <div class="crm-bulk-actions__controls">
+                <form asp-action="BulkAssign" method="post" class="crm-bulk-actions__assign" data-crm-bulk-form>
+                    <input type="hidden" name="returnUrl" value="@boardReturnUrl" />
+                    <span data-crm-bulk-card-fields></span>
+                    <label>
+                        <span>Новый ответственный</span>
+                        <select name="managerUserId" required>
+                            <option value="" selected disabled>Выберите сотрудника</option>
+                            @foreach (var manager in Model.Managers.OrderBy(x => x.DisplayName, StringComparer.CurrentCultureIgnoreCase))
+                            {
+                                <option value="@manager.UserId">@manager.DisplayName</option>
+                            }
+                        </select>
+                    </label>
+                    <button type="submit" class="settings-primary-btn"><i class="fa-solid fa-user-check" aria-hidden="true"></i>Назначить</button>
+                </form>
+                <label class="crm-bulk-actions__stage">
+                    <span>Новая стадия</span>
+                    <select data-crm-bulk-stage-trigger aria-label="Выберите новую стадию для отмеченных карточек">
+                        <option value="" selected>Выберите стадию</option>
+                        @foreach (var stage in Model.Stages)
+                        {
+                            <option value="@stage.Name">@stage.Name</option>
+                        }
+                    </select>
+                </label>
+            </div>
+            <div class="crm-bulk-actions__transitions">
+                <button type="button" class="crm-bulk-actions__close" data-crm-bulk-transition-open="close"><i class="fa-solid fa-box-archive" aria-hidden="true"></i>Закрыть карточки</button>
+            </div>
+        </div>
+
+        <div class="crm-bulk-modal" data-crm-bulk-modal hidden>
+            <button type="button" class="crm-bulk-modal__backdrop" data-crm-bulk-modal-close tabindex="-1" aria-label="Закрыть окно"></button>
+            <section class="crm-bulk-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="crm-bulk-modal-title" tabindex="-1">
+                <header class="crm-bulk-modal__header">
+                    <div>
+                        <h2 id="crm-bulk-modal-title" data-crm-bulk-modal-title>Массовое изменение</h2>
+                        <p><strong data-crm-bulk-modal-count>0</strong> карточек будет изменено одновременно.</p>
+                    </div>
+                    <button type="button" class="crm-bulk-modal__x" data-crm-bulk-modal-close aria-label="Закрыть"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+                </header>
+                <form asp-action="BulkTransition" method="post" class="crm-bulk-modal__form" data-crm-bulk-form data-crm-bulk-transition-form>
+                    <input type="hidden" name="returnUrl" value="@boardReturnUrl" />
+                    <input type="hidden" name="operation" value="move" data-crm-bulk-operation />
+                    <span data-crm-bulk-card-fields></span>
+                    <label data-crm-bulk-stage-field>
+                        <span>Новый этап</span>
+                        <select name="stage" data-crm-bulk-stage-select>
+                            <option value="" selected disabled>Выберите этап</option>
+                            @foreach (var stage in Model.Stages)
+                            {
+                                <option value="@stage.Name">@stage.Name</option>
+                            }
+                        </select>
+                    </label>
+                    <label data-crm-bulk-close-field hidden>
+                        <span>Тип закрытия</span>
+                        <select name="closeReason" data-crm-bulk-close-select>
+                            <option value="" selected disabled>Выберите тип закрытия</option>
+                            @foreach (var reason in CrmCloseReasons.All)
+                            {
+                                <option value="@reason">@reason</option>
+                            }
+                        </select>
+                    </label>
+                    <label class="crm-bulk-modal__comment">
+                        <span data-crm-bulk-comment-label>Причина смены этапа@(bulkReasonRequired ? " *" : "")</span>
+                        <textarea name="comment"
+                                  rows="4"
+                                  maxlength="2000"
+                                  placeholder="@(bulkReasonRequired ? "Обязательно укажите причину" : "Можно оставить пустым")"
+                                  @(bulkReasonRequired ? "required" : null)
+                                  data-crm-bulk-comment></textarea>
+                    </label>
+                    <p class="crm-bulk-modal__hint">
+                        <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+                        @(bulkReasonRequired
+                            ? "Для старшего менеджера причина обязательна и сохранится в истории каждой карточки."
+                            : "Комментарий необязателен. Действие всё равно сохранится в истории каждой карточки.")
+                    </p>
+                    <footer class="crm-bulk-modal__footer">
+                        <button type="button" class="settings-secondary-btn" data-crm-bulk-modal-close>Отмена</button>
+                        <button type="submit" class="settings-primary-btn" data-crm-bulk-submit><i class="fa-solid fa-check" aria-hidden="true"></i>Применить</button>
+                    </footer>
+                </form>
+            </section>
+        </div>
+    }
     <div class="crm-board-viewport" data-crm-board-viewport>
         <div class="crm-board-wrap" data-crm-board-scroll tabindex="0" aria-label="Горизонтальная прокрутка воронки. Колёсико с Shift или перетаскивание мышью. Карточку можно перетащить на другой этап.">
             <div class="crm-board" data-crm-board style="--crm-stage-count: @Model.Stages.Count">
@@ -59,6 +160,13 @@
                         var hasActiveTask = !card.IsClosed && card.OpenTaskCount > 0 && !hasOverdueTask;
                         <article class="crm-tile @(card.IsClosed ? "is-closed" : "") @(hasOverdueTask ? "is-overdue" : "") @(hasActiveTask ? "has-active-task" : "")"
                                  @if (Model.CanEdit && !card.IsClosed) { <text>draggable="true" data-card-id="@card.Id" data-card-stage="@card.Stage"</text> }>
+                            @if (canUseBulkActions && !card.IsClosed)
+                            {
+                                <label class="crm-tile__select" title="Выбрать карточку">
+                                    <input type="checkbox" value="@card.Id" data-crm-card-select aria-label="Выбрать карточку @card.FullName" />
+                                    <span><i class="fa-solid fa-check" aria-hidden="true"></i></span>
+                                </label>
+                            }
                             <a asp-action="Card" asp-route-id="@card.Id" asp-route-stage="@stage.Name" class="crm-tile__body" data-crm-open-card data-crm-stage="@stage.Name">
                             <div class="crm-tile__top">
                                 <strong>@card.FullName</strong>

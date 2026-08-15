@@ -584,6 +584,93 @@ public sealed class CrmController(
     [HttpPost]
     [Authorize(Policy = PanelPermissions.CrmBoard)]
     [ValidateAntiForgeryToken]
+    public async Task<IActionResult> BulkAssign(
+        Guid[]? cardIds,
+        string managerUserId,
+        string? returnUrl,
+        CancellationToken ct = default)
+    {
+        if (!PanelRoles.HasElevatedOfficeAccess(User)) return Forbid();
+
+        var selectedIds = NormalizeBulkCardIds(cardIds);
+        if (selectedIds.Length == 0 || string.IsNullOrWhiteSpace(managerUserId))
+        {
+            TempData["CrmError"] = "Выберите карточки и нового ответственного.";
+            return RedirectAfterCardMutation(returnUrl, nameof(Index), new { });
+        }
+
+        var (result, error) = await api.BulkAssignCrmCardsAsync(
+            new CrmBulkAssignRequest(selectedIds, managerUserId.Trim()),
+            ct);
+        SetBulkActionMessage(result, error, "Ответственный изменён");
+        return RedirectAfterCardMutation(returnUrl, nameof(Index), new { });
+    }
+
+    [HttpPost]
+    [Authorize(Policy = PanelPermissions.CrmBoard)]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> BulkTransition(
+        Guid[]? cardIds,
+        string operation,
+        string? stage,
+        string? closeReason,
+        string? comment,
+        string? returnUrl,
+        CancellationToken ct = default)
+    {
+        if (!PanelRoles.HasElevatedOfficeAccess(User)) return Forbid();
+
+        var selectedIds = NormalizeBulkCardIds(cardIds);
+        if (selectedIds.Length == 0 || !CrmBulkTransitionOperations.IsValid(operation))
+        {
+            TempData["CrmError"] = "Выберите карточки и действие.";
+            return RedirectAfterCardMutation(returnUrl, nameof(Index), new { });
+        }
+
+        var reasonRequired = User.IsInRole(PanelRoles.SeniorManager)
+                             && !User.IsInRole(PanelRoles.OfficeLead)
+                             && !User.IsInRole(PanelRoles.Admin);
+        if (reasonRequired && string.IsNullOrWhiteSpace(comment))
+        {
+            TempData["CrmError"] = "Старшему менеджеру необходимо указать причину массового изменения.";
+            return RedirectAfterCardMutation(returnUrl, nameof(Index), new { });
+        }
+
+        if (operation == CrmBulkTransitionOperations.Move && string.IsNullOrWhiteSpace(stage))
+        {
+            TempData["CrmError"] = "Выберите новый этап.";
+            return RedirectAfterCardMutation(returnUrl, nameof(Index), new { });
+        }
+
+        if (operation == CrmBulkTransitionOperations.Close && !CrmCloseReasons.IsValid(closeReason))
+        {
+            TempData["CrmError"] = "Выберите тип закрытия.";
+            return RedirectAfterCardMutation(returnUrl, nameof(Index), new { });
+        }
+
+        var auditComment = string.IsNullOrWhiteSpace(comment)
+            ? operation == CrmBulkTransitionOperations.Close
+                ? "Массовое закрытие карточек."
+                : "Массовая смена этапа."
+            : comment.Trim();
+        var (result, error) = await api.BulkTransitionCrmCardsAsync(
+            new CrmBulkTransitionRequest(
+                selectedIds,
+                operation,
+                stage?.Trim(),
+                closeReason,
+                auditComment),
+            ct);
+        SetBulkActionMessage(
+            result,
+            error,
+            operation == CrmBulkTransitionOperations.Close ? "Карточки закрыты" : "Этап изменён");
+        return RedirectAfterCardMutation(returnUrl, nameof(Index), new { });
+    }
+
+    [HttpPost]
+    [Authorize(Policy = PanelPermissions.CrmBoard)]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> UpdateCard(
         Guid id,
         string fullName,
@@ -1053,6 +1140,37 @@ public sealed class CrmController(
         }
 
         return RedirectToAction(fallbackAction, fallbackRouteValues)!;
+    }
+
+    private static Guid[] NormalizeBulkCardIds(IEnumerable<Guid>? cardIds) =>
+        (cardIds ?? [])
+        .Where(id => id != Guid.Empty)
+        .Distinct()
+        .Take(500)
+        .ToArray();
+
+    private void SetBulkActionMessage(CrmBulkActionResult? result, string? error, string successPrefix)
+    {
+        if (error is not null || result is null)
+        {
+            TempData["CrmError"] = error ?? "Не удалось выполнить массовое действие.";
+            return;
+        }
+
+        if (result.Updated == 0)
+        {
+            TempData["CrmError"] = result.Errors.FirstOrDefault() ?? "Ни одна карточка не была изменена.";
+            return;
+        }
+
+        if (result.Failed > 0)
+        {
+            var details = result.Errors.Count > 0 ? $" {string.Join(" ", result.Errors)}" : string.Empty;
+            TempData["CrmError"] = $"Изменено: {result.Updated}; не изменено: {result.Failed}.{details}";
+            return;
+        }
+
+        TempData["CrmOk"] = $"{successPrefix} для {result.Updated} карточек.";
     }
 
     [HttpPost]

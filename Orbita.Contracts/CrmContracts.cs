@@ -600,6 +600,31 @@ public static class CrmActivityDetails
 
 public sealed record CrmAssignRequest(string ManagerUserId);
 public sealed record CrmMoveRequest(string Stage, string? Comment = null);
+
+public static class CrmBulkTransitionOperations
+{
+    public const string Move = "move";
+    public const string Close = "close";
+
+    public static bool IsValid(string? operation) => operation is Move or Close;
+}
+
+public sealed record CrmBulkAssignRequest(
+    IReadOnlyList<Guid> CardIds,
+    string ManagerUserId);
+
+public sealed record CrmBulkTransitionRequest(
+    IReadOnlyList<Guid> CardIds,
+    string Operation,
+    string? Stage = null,
+    string? CloseReason = null,
+    string? Comment = null);
+
+public sealed record CrmBulkActionResult(
+    int Requested,
+    int Updated,
+    int Failed,
+    IReadOnlyList<string> Errors);
 public sealed record CrmNoteCreateRequest(string Text);
 public sealed record CrmNoteUpdateRequest(string Text);
 public sealed record CrmNotePinRequest(bool IsPinned);
