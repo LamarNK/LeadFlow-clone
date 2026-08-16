@@ -1734,11 +1734,18 @@ public sealed partial class AdsPowerAvitoAutomationService(
             existingPages.Select(static page => page.Url).ToArray(),
             preferredUrl);
         var worker = existingWorkerPageIndex >= 0 ? existingPages[existingWorkerPageIndex] : null;
-        worker ??= await browser.NewPageAsync().ConfigureAwait(false);
-        var pagesToClose = existingPages
-            .Where(page => !ReferenceEquals(page, worker))
-            .ToArray();
-        var closed = await CloseBrowserPagesAsync(pagesToClose, callerMemberName).ConfigureAwait(false);
+        // Новая about:blank через NewPageAsync в AdsPower часто мёртвая. Берём уже открытую вкладку.
+        worker ??= existingPages.Count > 0
+            ? existingPages[0]
+            : await browser.NewPageAsync().ConfigureAwait(false);
+        var closed = 0;
+        if (ShouldCloseNonWorkerPages(worker.Url))
+        {
+            var pagesToClose = existingPages
+                .Where(page => !ReferenceEquals(page, worker))
+                .ToArray();
+            closed = await CloseBrowserPagesAsync(pagesToClose, callerMemberName).ConfigureAwait(false);
+        }
 
         try
         {
@@ -1803,11 +1810,10 @@ public sealed partial class AdsPowerAvitoAutomationService(
     internal enum AdsPowerStartupNavigationStep
     {
         None = 0,
-        CreateTarget = 1,
-        PageNavigate = 2,
-        LocationAssign = 3,
-        Done = 4,
-        Failed = 5
+        PageNavigate = 1,
+        LocationAssign = 2,
+        Done = 3,
+        Failed = 4
     }
 
     internal static AdsPowerStartupNavigationStep NextStartupNavigationStep(
@@ -1821,8 +1827,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
 
         return lastAttempt switch
         {
-            AdsPowerStartupNavigationStep.None => AdsPowerStartupNavigationStep.CreateTarget,
-            AdsPowerStartupNavigationStep.CreateTarget => AdsPowerStartupNavigationStep.PageNavigate,
+            AdsPowerStartupNavigationStep.None => AdsPowerStartupNavigationStep.PageNavigate,
             AdsPowerStartupNavigationStep.PageNavigate => AdsPowerStartupNavigationStep.LocationAssign,
             _ => AdsPowerStartupNavigationStep.Failed
         };
@@ -1843,6 +1848,12 @@ public sealed partial class AdsPowerAvitoAutomationService(
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            var avito = await FindUsableAvitoPageAsync(current.Browser).ConfigureAwait(false);
+            if (avito is not null)
+            {
+                return avito;
+            }
+
             var currentUrl = await ReadPageUrlAsync(current).ConfigureAwait(false);
             var next = NextStartupNavigationStep(currentUrl, lastAttempt);
             if (next == AdsPowerStartupNavigationStep.Done)
@@ -1881,92 +1892,17 @@ public sealed partial class AdsPowerAvitoAutomationService(
     {
         switch (step)
         {
-            case AdsPowerStartupNavigationStep.CreateTarget:
-                return await TryCreateTargetWithUrlAsync(page, targetUrl, cancellationToken)
-                    .ConfigureAwait(false);
-
             case AdsPowerStartupNavigationStep.PageNavigate:
                 await TryCdpPageNavigateAsync(page, targetUrl, cancellationToken).ConfigureAwait(false);
-                await PollUntilLeftPlaceholderAsync(page, cancellationToken).ConfigureAwait(false);
-                return page;
+                return await PollUntilLeftPlaceholderAsync(page, cancellationToken).ConfigureAwait(false);
 
             case AdsPowerStartupNavigationStep.LocationAssign:
                 await TryAssignLocationAsync(page, targetUrl, cancellationToken).ConfigureAwait(false);
-                await PollUntilLeftPlaceholderAsync(page, cancellationToken).ConfigureAwait(false);
-                return page;
+                return await PollUntilLeftPlaceholderAsync(page, cancellationToken).ConfigureAwait(false);
 
             default:
                 return page;
         }
-    }
-
-    private static async Task<IPage> TryCreateTargetWithUrlAsync(
-        IPage page,
-        string targetUrl,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            var client = await page.Browser.CreateCDPSessionAsync().ConfigureAwait(false);
-            try
-            {
-                await client.SendAsync(
-                        "Target.createTarget",
-                        new Dictionary<string, object> { ["url"] = targetUrl })
-                    .ConfigureAwait(false);
-            }
-            finally
-            {
-                try
-                {
-                    await client.DetachAsync().ConfigureAwait(false);
-                }
-                catch
-                {
-                    // сессия CDP могла уже закрыться
-                }
-            }
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException || !cancellationToken.IsCancellationRequested)
-        {
-            if (cancellationToken.IsCancellationRequested)
-            {
-                throw;
-            }
-
-            return page;
-        }
-
-        var timeout = TimeSpan.FromMilliseconds(MonitoringTiming.AdsPowerForcedNavigationMaxWaitMs);
-        var poll = TimeSpan.FromMilliseconds(MonitoringTiming.AdsPowerStartupNavigationPollMs);
-        var elapsed = TimeSpan.Zero;
-        while (elapsed < timeout)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            var pages = await page.Browser.PagesAsync().ConfigureAwait(false);
-            var avito = pages.FirstOrDefault(candidate => IsUsableAvitoPageUrl(candidate.Url));
-            if (avito is not null)
-            {
-                if (!ReferenceEquals(avito, page))
-                {
-                    try
-                    {
-                        await page.CloseAsync().ConfigureAwait(false);
-                    }
-                    catch
-                    {
-                        // стартовый about:blank мог уже закрыться
-                    }
-                }
-
-                return avito;
-            }
-
-            await Task.Delay(poll, cancellationToken).ConfigureAwait(false);
-            elapsed += poll;
-        }
-
-        return page;
     }
 
     private static async Task TryCdpPageNavigateAsync(
@@ -2024,7 +1960,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
         }
     }
 
-    private static async Task PollUntilLeftPlaceholderAsync(
+    private static async Task<IPage> PollUntilLeftPlaceholderAsync(
         IPage page,
         CancellationToken cancellationToken)
     {
@@ -2034,14 +1970,71 @@ public sealed partial class AdsPowerAvitoAutomationService(
         while (elapsed < timeout)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            var avito = await FindUsableAvitoPageAsync(page.Browser).ConfigureAwait(false);
+            if (avito is not null)
+            {
+                return avito;
+            }
+
             if (IsUsableWorkerPageUrl(await ReadPageUrlAsync(page).ConfigureAwait(false)))
             {
-                return;
+                return page;
             }
 
             await Task.Delay(poll, cancellationToken).ConfigureAwait(false);
             elapsed += poll;
         }
+
+        return await FindUsableAvitoPageAsync(page.Browser).ConfigureAwait(false) ?? page;
+    }
+
+    private static async Task<IPage> PollUntilAvitoPageAsync(
+        IPage page,
+        CancellationToken cancellationToken)
+    {
+        var timeout = TimeSpan.FromMilliseconds(MonitoringTiming.AdsPowerForcedNavigationMaxWaitMs);
+        var poll = TimeSpan.FromMilliseconds(MonitoringTiming.AdsPowerStartupNavigationPollMs);
+        var elapsed = TimeSpan.Zero;
+        while (elapsed < timeout)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var avito = await FindUsableAvitoPageAsync(page.Browser).ConfigureAwait(false);
+            if (avito is not null)
+            {
+                return avito;
+            }
+
+            if (IsUsableAvitoPageUrl(await ReadPageUrlAsync(page).ConfigureAwait(false)))
+            {
+                return page;
+            }
+
+            await Task.Delay(poll, cancellationToken).ConfigureAwait(false);
+            elapsed += poll;
+        }
+
+        return await FindUsableAvitoPageAsync(page.Browser).ConfigureAwait(false) ?? page;
+    }
+
+    private static async Task<IPage?> FindUsableAvitoPageAsync(IBrowser browser)
+    {
+        foreach (var candidate in await browser.PagesAsync().ConfigureAwait(false))
+        {
+            if (IsUsableAvitoPageUrl(candidate.Url))
+            {
+                return candidate;
+            }
+
+            if (IsReusableStartupPlaceholderUrl(candidate.Url) || !IsUsableWorkerPageUrl(candidate.Url))
+            {
+                if (IsUsableAvitoPageUrl(await ReadPageUrlAsync(candidate).ConfigureAwait(false)))
+                {
+                    return candidate;
+                }
+            }
+        }
+
+        return null;
     }
 
     private static async Task<string> ReadPageUrlAsync(IPage page)
@@ -2113,8 +2106,26 @@ public sealed partial class AdsPowerAvitoAutomationService(
             }
         }
 
-        return -1;
+        for (var index = 0; index < pageUrls.Count; index++)
+        {
+            if (IsChromeNewTabUrl(pageUrls[index]))
+            {
+                return index;
+            }
+        }
+
+        // Любая уже открытая вкладка лучше новой CDP-about:blank.
+        return pageUrls.Count > 0 ? 0 : -1;
     }
+
+    internal static bool ShouldCloseNonWorkerPages(string? workerUrl) =>
+        IsUsableWorkerPageUrl(workerUrl);
+
+    internal static bool IsRetryableAdsPowerStartupFailure(Exception ex) =>
+        ex is not OperationCanceledException
+        and not AdsPowerDailyOpenLimitExceededException
+        and not AdsPowerProfileInUseException
+        and not AdsPowerRateLimitExceededException;
 
     internal static bool IsReusableStartupPlaceholderUrl(string? url)
     {
@@ -2126,6 +2137,19 @@ public sealed partial class AdsPowerAvitoAutomationService(
         var t = url.Trim();
         return t.Length <= 1
                || string.Equals(t, "about:blank", StringComparison.OrdinalIgnoreCase);
+    }
+
+    internal static bool IsChromeNewTabUrl(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            return false;
+        }
+
+        var t = url.Trim();
+        return string.Equals(t, "chrome://new-tab-page", StringComparison.OrdinalIgnoreCase)
+               || string.Equals(t, "chrome://newtab", StringComparison.OrdinalIgnoreCase)
+               || string.Equals(t, "chrome://new-tab-page-third-party", StringComparison.OrdinalIgnoreCase);
     }
 
     private static async Task<int> CloseBrowserPagesAsync(

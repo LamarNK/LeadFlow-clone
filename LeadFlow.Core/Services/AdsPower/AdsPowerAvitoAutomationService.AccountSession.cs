@@ -16,26 +16,63 @@ public sealed partial class AdsPowerAvitoAutomationService
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(adsPowerUserId);
 
-        var start = await adsPowerApiClient
-            .StartBrowserAsync(options, adsPowerUserId, ProfileItemsPageUrl, cancellationToken)
-            .ConfigureAwait(false);
-
-        if (string.IsNullOrWhiteSpace(start.WebSocketDebuggerUrl))
+        Exception? lastError = null;
+        for (var attempt = 1; attempt <= 2; attempt++)
         {
-            throw new InvalidOperationException(
-                "AdsPower не вернул ws.puppeteer endpoint. Проверьте Local API и версию клиента AdsPower.");
+            try
+            {
+                return await OpenAccountSessionOnceAsync(options, adsPowerUserId, attempt, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex) when (IsRetryableAdsPowerStartupFailure(ex) && attempt < 2)
+            {
+                lastError = ex;
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"AdsPower account session: попытка {attempt} не открыла Avito ({ex.Message}), перезапускаем браузер.",
+                    DeskLinkAuditLogLevel.Warning,
+                    memberName: nameof(OpenAccountSessionAsync),
+                    properties: new Dictionary<string, object?>
+                    {
+                        ["step"] = "session_retry",
+                        ["attempt"] = attempt,
+                        ["adsPower.userId"] = adsPowerUserId,
+                        ["error.type"] = ex.GetType().FullName
+                    });
+                await Task.Delay(1500, cancellationToken).ConfigureAwait(false);
+            }
         }
 
-        var browser = await Puppeteer.ConnectAsync(new ConnectOptions
-        {
-            BrowserWSEndpoint = start.WebSocketDebuggerUrl,
-            DefaultViewport = null
-        }).ConfigureAwait(false);
+        throw lastError ?? new InvalidOperationException("AdsPower: не удалось открыть сессию аккаунта.");
+    }
 
-        IPage page;
+    private async Task<IAdsPowerAccountSession> OpenAccountSessionOnceAsync(
+        AdsPowerConnectionOptions options,
+        string adsPowerUserId,
+        int attempt,
+        CancellationToken cancellationToken)
+    {
+        var started = false;
+        IBrowser? browser = null;
         try
         {
-            page = await AcquireAutomationPageAsync(
+            var start = await adsPowerApiClient
+                .StartBrowserAsync(options, adsPowerUserId, ProfileItemsPageUrl, cancellationToken)
+                .ConfigureAwait(false);
+            started = true;
+
+            if (string.IsNullOrWhiteSpace(start.WebSocketDebuggerUrl))
+            {
+                throw new InvalidOperationException(
+                    "AdsPower не вернул ws.puppeteer endpoint. Проверьте Local API и версию клиента AdsPower.");
+            }
+
+            browser = await Puppeteer.ConnectAsync(new ConnectOptions
+            {
+                BrowserWSEndpoint = start.WebSocketDebuggerUrl,
+                DefaultViewport = null
+            }).ConfigureAwait(false);
+
+            var page = await AcquireAutomationPageAsync(
                     browser,
                     ProfileItemsPageUrl,
                     nameof(OpenAccountSessionAsync),
@@ -44,33 +81,50 @@ public sealed partial class AdsPowerAvitoAutomationService
                 .ConfigureAwait(false);
 
             page = await WarmUpSessionPageAsync(page, adsPowerUserId, cancellationToken).ConfigureAwait(false);
+
+            _ = GlobalLogger.Instance.LogAsync(
+                $"AdsPower account session opened for user {adsPowerUserId}.",
+                DeskLinkAuditLogLevel.Info,
+                memberName: nameof(OpenAccountSessionAsync),
+                properties: new Dictionary<string, object?>
+                {
+                    ["step"] = "session_opened",
+                    ["attempt"] = attempt,
+                    ["adsPower.userId"] = adsPowerUserId,
+                    ["page.url"] = page.Url
+                });
+
+            return new AccountSession(this, browser, page, options, adsPowerUserId);
         }
         catch
         {
-            try
+            if (browser is not null)
             {
-                browser.Disconnect();
+                try
+                {
+                    browser.Disconnect();
+                }
+                catch
+                {
+                    // ignore cleanup errors
+                }
             }
-            catch
+
+            if (started)
             {
-                // ignore cleanup errors
+                try
+                {
+                    await adsPowerApiClient.StopBrowserAsync(options, adsPowerUserId, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+                catch
+                {
+                    // окно могли уже закрыть вручную
+                }
             }
 
             throw;
         }
-
-        _ = GlobalLogger.Instance.LogAsync(
-            $"AdsPower account session opened for user {adsPowerUserId}.",
-            DeskLinkAuditLogLevel.Info,
-            memberName: nameof(OpenAccountSessionAsync),
-            properties: new Dictionary<string, object?>
-            {
-                ["step"] = "session_opened",
-                ["adsPower.userId"] = adsPowerUserId,
-                ["page.url"] = page.Url
-            });
-
-        return new AccountSession(this, browser, page, options, adsPowerUserId);
     }
 
     private async Task<IPage> WarmUpSessionPageAsync(
@@ -87,7 +141,8 @@ public sealed partial class AdsPowerAvitoAutomationService
             // не критично
         }
 
-        if (IsReusableStartupPlaceholderUrl(page.Url) || !IsUsableWorkerPageUrl(page.Url))
+        var currentUrl = await ReadPageUrlAsync(page).ConfigureAwait(false);
+        if (IsReusableStartupPlaceholderUrl(currentUrl) || !IsUsableWorkerPageUrl(currentUrl))
         {
             page = await NavigateOffStartupPlaceholderAsync(
                     page,
@@ -95,33 +150,20 @@ public sealed partial class AdsPowerAvitoAutomationService
                     nameof(WarmUpSessionPageAsync),
                     cancellationToken)
                 .ConfigureAwait(false);
+            currentUrl = await ReadPageUrlAsync(page).ConfigureAwait(false);
         }
 
-        if (!IsAvitoProfileAutomationTab(page.Url))
+        if (!IsAvitoProfileAutomationTab(currentUrl))
         {
-            try
-            {
-                await page.GoToAsync(ProfileItemsPageUrl, new NavigationOptions
-                {
-                    Timeout = 90_000,
-                    WaitUntil = [WaitUntilNavigation.DOMContentLoaded]
-                }).ConfigureAwait(false);
-            }
-            catch (Exception ex) when (IsRecoverableNavigationError(ex))
-            {
-                await Task.Delay(2000, cancellationToken).ConfigureAwait(false);
-                await page.GoToAsync(ProfileItemsPageUrl, new NavigationOptions
-                {
-                    Timeout = 90_000,
-                    WaitUntil = [WaitUntilNavigation.DOMContentLoaded]
-                }).ConfigureAwait(false);
-            }
+            await TryCdpPageNavigateAsync(page, ProfileItemsPageUrl, cancellationToken).ConfigureAwait(false);
+            page = await PollUntilAvitoPageAsync(page, cancellationToken).ConfigureAwait(false);
+            currentUrl = await ReadPageUrlAsync(page).ConfigureAwait(false);
         }
 
-        if (IsReusableStartupPlaceholderUrl(page.Url) || !IsUsableWorkerPageUrl(page.Url))
+        if (IsReusableStartupPlaceholderUrl(currentUrl) || !IsUsableWorkerPageUrl(currentUrl))
         {
             throw new InvalidOperationException(
-                $"AdsPower: после прогрева вкладка осталась на «{page.Url}», Avito не открылся.");
+                $"AdsPower: после прогрева вкладка осталась на «{currentUrl}», Avito не открылся.");
         }
 
         // Вход должен происходить прямо после старта AdsPower. Раньше recovery

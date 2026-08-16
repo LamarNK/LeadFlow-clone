@@ -39,16 +39,16 @@ public static class MonitoringTiming
     public const int ParallelAccountLaunchStaggerMs = 2000;
 
     /// <summary>
-    /// После CDP-подключения коротко ждём, пока AdsPower сам откроет open_urls.
-    /// Дольше сидеть на about:blank не нужно — сами откроем вкладку через CDP.
+    /// После CDP-подключения ждём, пока AdsPower сам применит open_urls.
+    /// Новую вкладку не создаём — навигируем уже открытую через Page.navigate.
     /// </summary>
-    public const int AdsPowerStartupNavigationMaxWaitMs = 2_500;
+    public const int AdsPowerStartupNavigationMaxWaitMs = 5_000;
 
     /// <summary>Интервал опроса URL стартовой вкладки AdsPower (мс).</summary>
     public const int AdsPowerStartupNavigationPollMs = 250;
 
-    /// <summary>Сколько ждать смену URL после Target.createTarget / Page.navigate (мс).</summary>
-    public const int AdsPowerForcedNavigationMaxWaitMs = 10_000;
+    /// <summary>Сколько ждать смену URL после Page.navigate / location.assign (мс).</summary>
+    public const int AdsPowerForcedNavigationMaxWaitMs = 8_000;
 
     /// <summary>
     /// После стольких полных циклов мониторинга (с browser/start…browser/stop)

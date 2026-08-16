@@ -61,21 +61,50 @@ public sealed class AdsPowerApiClientTests
     }
 
     [Fact]
-    public void SelectExistingAutomationPageIndex_WhenOnlyChromeInternalPage_DoesNotReuseIt()
+    public void SelectExistingAutomationPageIndex_WhenOnlyChromeNewTab_ReusesItInsteadOfOpeningNewTab()
     {
         var pageIndex = AdsPowerAvitoAutomationService.SelectExistingAutomationPageIndex(
             ["chrome://new-tab-page"],
             "https://www.avito.ru/profile/pro/items");
 
-        Assert.Equal(-1, pageIndex);
+        Assert.Equal(0, pageIndex);
+    }
+
+    [Fact]
+    public void SelectExistingAutomationPageIndex_WhenOnlyUnknownPage_ReusesItInsteadOfOpeningNewTab()
+    {
+        var pageIndex = AdsPowerAvitoAutomationService.SelectExistingAutomationPageIndex(
+            ["chrome://settings"],
+            "https://www.avito.ru/profile/pro/items");
+
+        Assert.Equal(0, pageIndex);
+    }
+
+    [Fact]
+    public void ShouldCloseNonWorkerPages_OnlyAfterWorkerLeftPlaceholder()
+    {
+        Assert.False(AdsPowerAvitoAutomationService.ShouldCloseNonWorkerPages("about:blank"));
+        Assert.False(AdsPowerAvitoAutomationService.ShouldCloseNonWorkerPages("chrome://new-tab-page"));
+        Assert.True(AdsPowerAvitoAutomationService.ShouldCloseNonWorkerPages(
+            "https://www.avito.ru/profile/pro/items"));
+    }
+
+    [Fact]
+    public void IsRetryableAdsPowerStartupFailure_RetriesBlankTabButNotLimits()
+    {
+        Assert.True(AdsPowerAvitoAutomationService.IsRetryableAdsPowerStartupFailure(
+            new InvalidOperationException("AdsPower: вкладка осталась на «about:blank», страница Avito не открылась.")));
+        Assert.False(AdsPowerAvitoAutomationService.IsRetryableAdsPowerStartupFailure(
+            new AdsPowerProfileInUseException(-1, "in use")));
+        Assert.False(AdsPowerAvitoAutomationService.IsRetryableAdsPowerStartupFailure(
+            new OperationCanceledException()));
     }
 
     [Theory]
     [InlineData(null, 0, 1)]
     [InlineData("about:blank", 1, 2)]
-    [InlineData(":", 2, 3)]
-    [InlineData("about:blank", 3, 5)]
-    public void NextStartupNavigationStep_WhenStillOnPlaceholder_AdvancesStrategy(
+    [InlineData(":", 2, 4)]
+    public void NextStartupNavigationStep_WhenStillOnPlaceholder_NavigatesExistingTabInsteadOfCreatingOne(
         string? url,
         int lastAttempt,
         int expected)
