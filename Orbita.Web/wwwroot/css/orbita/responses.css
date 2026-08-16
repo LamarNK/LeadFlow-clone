@@ -1314,6 +1314,62 @@ a.responses-bitrix-chip--duplicate:hover {
 [data-theme="dark"] .data-table--responses tbody tr.responses-row--highlighted { background: color-mix(in srgb, var(--bg-card) 88%, #6b4b13); box-shadow: inset 3px 0 0 #f2b84b; } [data-theme="dark"] .data-table--responses tbody tr.responses-row--highlighted:hover { background: color-mix(in srgb, var(--bg-card) 82%, #6b4b13); box-shadow: inset 3px 0 0 #f8c75d; } [data-theme="dark"] .responses-candidate__highlight { border-color: rgba(242, 184, 75, .42); background: rgba(245, 158, 11, .16); color: #fbd38d; }
 [data-theme="dark"] .data-table--responses thead { background: color-mix(in srgb, var(--bg-card) 88%, #000); } [data-theme="dark"] .data-table--responses thead th { background: transparent; } [data-theme="dark"] .data-table--responses thead .data-table-sort-link:hover, [data-theme="dark"] .data-table--responses thead .data-table-sort.is-active .data-table-sort-link { background: rgba(88, 127, 232, .16); color: #b8c8ff; }
 
+/* Each response-highlight rule receives a stable color from the CRM funnel palette. */
+.responses-row--highlighted {
+    --response-highlight-accent: #2b9fda;
+    --response-highlight-surface: #f0f9fd;
+    --response-highlight-surface-hover: #e7f6fc;
+    --response-highlight-border: #b5e1f4;
+    --response-highlight-text: #176b94;
+}
+
+.data-table--responses tbody tr.responses-row--highlighted {
+    background: var(--response-highlight-surface);
+    box-shadow: inset 3px 0 0 var(--response-highlight-accent);
+}
+
+.data-table--responses tbody tr.responses-row--highlighted:hover {
+    background: var(--response-highlight-surface-hover);
+    box-shadow: inset 3px 0 0 var(--response-highlight-accent);
+}
+
+.responses-row--highlighted--stage-1,
+.responses-candidate__highlight--stage-1 { --response-highlight-accent: #2b9fda; --response-highlight-surface: #f0f9fd; --response-highlight-surface-hover: #e7f6fc; --response-highlight-border: #b5e1f4; --response-highlight-text: #176b94; }
+.responses-row--highlighted--stage-2,
+.responses-candidate__highlight--stage-2 { --response-highlight-accent: #b75074; --response-highlight-surface: #fbf2f5; --response-highlight-surface-hover: #f8e9ef; --response-highlight-border: #e9c6d2; --response-highlight-text: #873957; }
+.responses-row--highlighted--stage-3,
+.responses-candidate__highlight--stage-3 { --response-highlight-accent: #d95151; --response-highlight-surface: #fdf1f1; --response-highlight-surface-hover: #fbe7e7; --response-highlight-border: #efc0c0; --response-highlight-text: #a53a3a; }
+.responses-row--highlighted--stage-4,
+.responses-candidate__highlight--stage-4 { --response-highlight-accent: #d48b53; --response-highlight-surface: #fdf5ef; --response-highlight-surface-hover: #faede2; --response-highlight-border: #efd0b7; --response-highlight-text: #9a5929; }
+.responses-row--highlighted--stage-5,
+.responses-candidate__highlight--stage-5 { --response-highlight-accent: #c5b74d; --response-highlight-surface: #fbfaed; --response-highlight-surface-hover: #f7f4df; --response-highlight-border: #e5dda0; --response-highlight-text: #766b1a; }
+.responses-row--highlighted--stage-6,
+.responses-candidate__highlight--stage-6 { --response-highlight-accent: #55ad91; --response-highlight-surface: #eff9f5; --response-highlight-surface-hover: #e4f5ee; --response-highlight-border: #bce3d4; --response-highlight-text: #28745d; }
+.responses-row--highlighted--stage-7,
+.responses-candidate__highlight--stage-7 { --response-highlight-accent: #6b9ec9; --response-highlight-surface: #f0f6fb; --response-highlight-surface-hover: #e6f0f8; --response-highlight-border: #c2d9ea; --response-highlight-text: #3d6f98; }
+
+.responses-candidate__highlight {
+    border-color: var(--response-highlight-border, #f6ddb1);
+    background: var(--response-highlight-surface, #fff7e8);
+    color: var(--response-highlight-text, #b45309);
+}
+
+[data-theme="dark"] .data-table--responses tbody tr.responses-row--highlighted {
+    background: color-mix(in srgb, var(--bg-card) 88%, var(--response-highlight-accent));
+    box-shadow: inset 3px 0 0 var(--response-highlight-accent);
+}
+
+[data-theme="dark"] .data-table--responses tbody tr.responses-row--highlighted:hover {
+    background: color-mix(in srgb, var(--bg-card) 82%, var(--response-highlight-accent));
+    box-shadow: inset 3px 0 0 var(--response-highlight-accent);
+}
+
+[data-theme="dark"] .responses-candidate__highlight {
+    border-color: color-mix(in srgb, var(--response-highlight-accent, #f2b84b) 52%, transparent);
+    background: color-mix(in srgb, var(--response-highlight-accent, #f2b84b) 18%, transparent);
+    color: color-mix(in srgb, var(--response-highlight-accent, #f2b84b) 56%, #fff);
+}
+
 /* Response detail: a candidate card, facts, and activity in one focused workspace. */
 .orbita-detail-modal.orbita-detail-modal--response { padding: 24px; }
 .orbita-detail-modal.orbita-detail-modal--response .orbita-detail-modal__dialog { width: min(1120px, calc(100vw - 48px)); max-height: calc(100vh - 48px); border-radius: 20px; }

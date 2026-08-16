@@ -57,6 +57,21 @@
             .filter(function (label, index, all) { return all.indexOf(label) === index; });
     }
 
+    // Kept in sync with ResponseHighlightRules.GetHighlightTone on the server.
+    function getHighlightTone(label) {
+        var tones = {
+            'Возраст: 18-24': 'stage-1',
+            'Возраст: 25-34': 'stage-2',
+            'Возраст: 35-44': 'stage-3',
+            'Возраст: 45+': 'stage-4',
+            'Возраст: 63+': 'stage-5',
+            'Профиль Avito': 'stage-6',
+            'Субпрофиль Avito': 'stage-7'
+        };
+
+        return tones[String(label || '').trim()] || 'default';
+    }
+
     /** Matches CandidateGenders.FormatLabel on the server. */
     function formatGenderLabel(gender) {
         if (!gender) return '—';
@@ -1539,9 +1554,10 @@
             var highlightLabels = readHighlightLabels(row);
             var isHighlighted = readRowBool(row, 'isHighlighted') || highlightLabels.length > 0;
             var highlightLabel = highlightLabels[0] || '';
+            var primaryHighlightTone = getHighlightTone(highlightLabel);
             var highlightsHtml = highlightLabels.length
                 ? '<div class="responses-candidate__highlights" aria-label="Причины выделения">' + highlightLabels.map(function (label) {
-                    return '<span class="responses-candidate__highlight">' + shared.escapeHtml(label) + '</span>';
+                    return '<span class="responses-candidate__highlight responses-candidate__highlight--' + getHighlightTone(label) + '">' + shared.escapeHtml(label) + '</span>';
                 }).join('') + '</div>'
                 : '';
             var genderDisplay = formatGenderLabel(readRowValue(row, 'gender'));
@@ -1572,7 +1588,7 @@
             var lastResponseHtml = renderResponseTimingCell(respondedAtUtc, collectedAtUtc, shared);
 
             var cardCopy = readRowValue(row, 'cardCopy') || '';
-            return '<tr class="responses-row' + (isHighlighted ? ' responses-row--highlighted' : '') + '" data-response-id="' + shared.escapeHtml(rowId) + '" data-phone="' + shared.escapeHtml(phoneDisplay) + '" data-can-send="' + (canSend ? 'true' : 'false') + '" data-phone-hidden="' + (phoneHidden ? 'true' : 'false') + '" data-highlighted="' + (isHighlighted ? 'true' : 'false') + '" data-highlight-label="' + shared.escapeAttr(highlightLabel) + '" data-response-card="' + shared.escapeAttr(cardCopy) + '" data-detail-json-url="' + shared.escapeHtml(detailJsonUrl(rowId)) + '">' +
+            return '<tr class="responses-row' + (isHighlighted ? ' responses-row--highlighted responses-row--highlighted--' + primaryHighlightTone : '') + '" data-response-id="' + shared.escapeHtml(rowId) + '" data-phone="' + shared.escapeHtml(phoneDisplay) + '" data-can-send="' + (canSend ? 'true' : 'false') + '" data-phone-hidden="' + (phoneHidden ? 'true' : 'false') + '" data-highlighted="' + (isHighlighted ? 'true' : 'false') + '" data-highlight-label="' + shared.escapeAttr(highlightLabel) + '" data-response-card="' + shared.escapeAttr(cardCopy) + '" data-detail-json-url="' + shared.escapeHtml(detailJsonUrl(rowId)) + '">' +
                 renderSelectCell(row) +
                 '<td class="responses-candidate" data-label="Кандидат">' + candidateHtml + '</td>' +
                 '<td class="responses-phone" data-label="Телефон">' + phoneCell + '</td>' +

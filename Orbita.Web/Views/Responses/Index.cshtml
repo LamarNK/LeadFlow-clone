@@ -182,12 +182,14 @@
                     var highlightLabels = row.HighlightLabels.Count > 0
                         ? row.HighlightLabels.Where(label => !string.IsNullOrWhiteSpace(label)).Distinct(StringComparer.Ordinal).ToArray()
                         : string.IsNullOrWhiteSpace(row.HighlightLabel) ? [] : [row.HighlightLabel];
-                    <tr class="responses-row @(row.IsHighlighted ? "responses-row--highlighted" : null)"
+                    var isHighlighted = row.IsHighlighted || highlightLabels.Length > 0;
+                    var primaryHighlightTone = ResponseHighlightRules.GetHighlightTone(highlightLabels.FirstOrDefault());
+                    <tr class="responses-row @(isHighlighted ? $"responses-row--highlighted responses-row--highlighted--{primaryHighlightTone}" : null)"
                         data-response-id="@row.Id"
                         data-phone="@phoneDisplay"
                         data-can-send="@(row.CanSend ? "true" : "false")"
                         data-phone-hidden="@(row.IsPhoneHidden ? "true" : "false")"
-                        data-highlighted="@(row.IsHighlighted ? "true" : "false")"
+                        data-highlighted="@(isHighlighted ? "true" : "false")"
                         data-highlight-label="@row.HighlightLabel"
                         data-response-card="@ResponseDisplay.HtmlAttributeValue(row.CardCopy)"
                         data-detail-json-url="@Url.Action("DetailJson", "Responses", new { id = row.Id })">
@@ -215,7 +217,7 @@
                                         <div class="responses-candidate__highlights" aria-label="Причины выделения">
                                             @foreach (var label in highlightLabels)
                                             {
-                                                <span class="responses-candidate__highlight">@label</span>
+                                                <span class="responses-candidate__highlight responses-candidate__highlight--@ResponseHighlightRules.GetHighlightTone(label)">@label</span>
                                             }
                                         </div>
                                     }

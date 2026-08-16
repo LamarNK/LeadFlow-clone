@@ -200,6 +200,22 @@ public static class ResponseHighlightRules
         return labels.Distinct(StringComparer.Ordinal).ToArray();
     }
 
+    /// <summary>
+    /// Возвращает ключ автоматически назначаемого цвета для метки отклика.
+    /// Палитра совпадает с последовательностью цветов этапов воронки CRM.
+    /// </summary>
+    public static string GetHighlightTone(string? label) => label switch
+    {
+        "Возраст: 18-24" => "stage-1",
+        "Возраст: 25-34" => "stage-2",
+        "Возраст: 35-44" => "stage-3",
+        "Возраст: 45+" => "stage-4",
+        "Возраст: 63+" => "stage-5",
+        "Профиль Avito" => "stage-6",
+        "Субпрофиль Avito" => "stage-7",
+        _ => "default"
+    };
+
     private static string? SerializeTargets(IReadOnlyList<ResponseHighlightTarget> targets) =>
         targets.Count == 0 ? null : JsonSerializer.Serialize(targets, JsonOptions);
 

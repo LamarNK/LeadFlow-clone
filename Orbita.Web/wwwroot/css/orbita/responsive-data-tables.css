@@ -1448,8 +1448,8 @@
     }
 
     [data-theme="dark"] .data-table--responses tbody tr.responses-row--highlighted {
-        background: color-mix(in srgb, var(--bg-card) 88%, #6b4b13);
-        box-shadow: inset 3px 0 0 #f2b84b;
+        background: color-mix(in srgb, var(--bg-card) 88%, var(--response-highlight-accent, #f2b84b));
+        box-shadow: inset 3px 0 0 var(--response-highlight-accent, #f2b84b);
     }
 }
 

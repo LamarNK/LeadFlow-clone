@@ -71,4 +71,18 @@ public sealed class ResponseHighlightRulesTests
 
         Assert.Equal(["Возраст: 63+", "Профиль Avito", "Субпрофиль Avito"], labels);
     }
+
+    [Theory]
+    [InlineData("Возраст: 18-24", "stage-1")]
+    [InlineData("Возраст: 25-34", "stage-2")]
+    [InlineData("Возраст: 35-44", "stage-3")]
+    [InlineData("Возраст: 45+", "stage-4")]
+    [InlineData("Возраст: 63+", "stage-5")]
+    [InlineData("Профиль Avito", "stage-6")]
+    [InlineData("Субпрофиль Avito", "stage-7")]
+    [InlineData("Новая причина", "default")]
+    public void GetHighlightTone_AssignsCrmStagePalette(string label, string expectedTone)
+    {
+        Assert.Equal(expectedTone, ResponseHighlightRules.GetHighlightTone(label));
+    }
 }

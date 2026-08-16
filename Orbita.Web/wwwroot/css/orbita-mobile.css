@@ -459,14 +459,14 @@
     }
 
     .data-table--responses.data-table--cards tbody tr.responses-row--highlighted {
-        border-color: #f4d48c;
-        background: #fffdf8;
-        box-shadow: inset 3px 0 0 #f2b84b, 0 3px 12px rgba(16, 24, 40, 0.05);
+        border-color: var(--response-highlight-border, #f4d48c);
+        background: var(--response-highlight-surface, #fffdf8);
+        box-shadow: inset 3px 0 0 var(--response-highlight-accent, #f2b84b), 0 3px 12px rgba(16, 24, 40, 0.05);
     }
 
     .data-table--responses.data-table--cards tbody tr.responses-row--highlighted:hover {
-        background: #fffaf0;
-        box-shadow: inset 3px 0 0 #e9a91f, 0 4px 14px rgba(16, 24, 40, 0.07);
+        background: var(--response-highlight-surface-hover, #fffaf0);
+        box-shadow: inset 3px 0 0 var(--response-highlight-accent, #e9a91f), 0 4px 14px rgba(16, 24, 40, 0.07);
     }
 
     .data-table--responses.data-table--cards tbody tr::before,
