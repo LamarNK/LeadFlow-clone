@@ -850,6 +850,52 @@ public sealed class CrmCandidateHistoryEntity
     public DateTime CreatedAtUtc { get; set; }
 }
 
+/// <summary>Provider callback configuration for an office telephony integration.</summary>
+public sealed class CrmTelephonyWebhookEntity
+{
+    public Guid Id { get; set; }
+    public Guid OfficeId { get; set; }
+    public string Provider { get; set; } = string.Empty;
+    public Guid PublicId { get; set; }
+    public string SecretHash { get; set; } = string.Empty;
+    public bool IsEnabled { get; set; } = true;
+    public DateTime CreatedAtUtc { get; set; }
+    public DateTime UpdatedAtUtc { get; set; }
+}
+
+/// <summary>Maps a provider-side SIP identity (for example extension 201) to an Orbita user.</summary>
+public sealed class CrmTelephonyUserBindingEntity
+{
+    public Guid Id { get; set; }
+    public Guid OfficeId { get; set; }
+    public string Provider { get; set; } = string.Empty;
+    public string ProviderUserKey { get; set; } = string.Empty;
+    public string UserId { get; set; } = string.Empty;
+    public DateTime CreatedAtUtc { get; set; }
+    public DateTime UpdatedAtUtc { get; set; }
+}
+
+/// <summary>A completed provider call attached to a CRM card by normalized client phone.</summary>
+public sealed class CrmCallEntity
+{
+    public Guid Id { get; set; }
+    public Guid OfficeId { get; set; }
+    public Guid? CardId { get; set; }
+    public string Provider { get; set; } = string.Empty;
+    public string ExternalCallId { get; set; } = string.Empty;
+    public string Direction { get; set; } = string.Empty;
+    public string CallerPhone { get; set; } = string.Empty;
+    public string CalledPhone { get; set; } = string.Empty;
+    public string ClientPhoneNormalized { get; set; } = string.Empty;
+    public string? ProviderUserKey { get; set; }
+    public string? ManagerUserId { get; set; }
+    public DateTime StartedAtUtc { get; set; }
+    public int DurationSeconds { get; set; }
+    public string? RecordingUrl { get; set; }
+    public DateTime ReceivedAtUtc { get; set; }
+    public DateTime UpdatedAtUtc { get; set; }
+}
+
 /// <summary>Additional active contact phones for a candidate person (beyond primary on response).</summary>
 public sealed class CandidateContactPhoneEntity
 {

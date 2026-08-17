@@ -709,10 +709,14 @@ public sealed class CrmWorkspaceService(
             .Where(x => x.CardId == cardId)
             .OrderByDescending(x => x.CreatedAtUtc)
             .ToListAsync(ct);
+        var calls = await db.CrmCalls.AsNoTracking()
+            .Where(x => x.CardId == cardId)
+            .OrderByDescending(x => x.StartedAtUtc)
+            .ToListAsync(ct);
         var openCount = tasks.Count(x => x.Status == CrmTaskStatuses.Open);
         var hasOverdue = tasks.Any(x => x.Status == CrmTaskStatuses.Open && x.DueAtUtc is DateTime due && due < now);
 
-        var activity = BuildActivity(notes, tasks, taskComments, history, names, userId, isAdmin, canEdit);
+        var activity = BuildActivity(notes, tasks, taskComments, history, calls, names, userId, isAdmin, canEdit);
         var avitoChat = ParseChatMessages(card.Response.ChatMessagesJson);
         var outboundChat = await LoadOutboundChatAsync(cardId, userId, isAdmin, ct);
         var chat = CrmChatThreadMerger.Merge(avitoChat, outboundChat);
@@ -3094,6 +3098,7 @@ public sealed class CrmWorkspaceService(
         IReadOnlyList<CrmTaskEntity> tasks,
         IReadOnlyList<CrmTaskCommentEntity> taskComments,
         IReadOnlyList<CrmCandidateHistoryEntity> history,
+        IReadOnlyList<CrmCallEntity> calls,
         IReadOnlyDictionary<string, string> names,
         string userId,
         bool isAdmin,
@@ -3157,6 +3162,29 @@ public sealed class CrmWorkspaceService(
                     h.CreatedAtUtc,
                     ActionComment: activityDetails.Comment);
             }));
+        items.AddRange(calls.Select(call =>
+        {
+            var title = call.Direction switch
+            {
+                CrmCallDirections.Incoming => "Входящий звонок",
+                CrmCallDirections.Outgoing => "Исходящий звонок",
+                _ => "Телефонный звонок"
+            };
+            var actorName = string.IsNullOrWhiteSpace(call.ManagerUserId)
+                ? "SIPOUT"
+                : names.GetValueOrDefault(call.ManagerUserId, call.ManagerUserId);
+            return new CrmActivityItemDto(
+                "call",
+                title,
+                null,
+                actorName,
+                call.StartedAtUtc,
+                CallId: call.Id,
+                CallDirection: call.Direction,
+                CallDurationSeconds: call.DurationSeconds,
+                CallRecordingUrl: call.RecordingUrl,
+                CallClientPhone: call.ClientPhoneNormalized);
+        }));
         return items
             .OrderByDescending(x => x.IsPinned)
             .ThenByDescending(x => x.AtUtc)

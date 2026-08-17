@@ -274,6 +274,7 @@ public static class OrbitaApiStartupExtensions
         });
         builder.Services.AddScoped<CrmLeadDistributionService>();
         builder.Services.AddScoped<CrmWorkspaceService>();
+        builder.Services.AddScoped<CrmTelephonyService>();
         builder.Services.AddScoped<CrmDeadlineNotificationService>();
         builder.Services.AddSingleton<ICrmNotificationRealtimeNotifier, CrmNotificationRealtimeNotifier>();
         builder.Services.AddScoped<CrmAnalyticsQueryService>();

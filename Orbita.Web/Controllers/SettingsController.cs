@@ -405,6 +405,101 @@ public sealed class SettingsController(
         RedirectToAction(nameof(Index), new { tab, officeId, instanceId = id });
 
     [HttpGet]
+    public async Task<IActionResult> Telephony(
+        Guid officeId,
+        [FromServices] OrbitaApiClient api,
+        CancellationToken ct = default)
+    {
+        var settings = await api.GetCrmTelephonySettingsAsync(officeId, ct);
+        var offices = await api.GetOfficesAsync(ct) ?? [];
+        var office = offices.FirstOrDefault(x => x.Id == officeId);
+        if (settings is null || office is null)
+        {
+            return NotFound();
+        }
+
+        var users = (await api.GetPanelUsersAsync(ct) ?? [])
+            .Where(x => x.OfficeId == officeId)
+            .OrderBy(x => string.IsNullOrWhiteSpace(x.FullName) ? x.Email : x.FullName)
+            .ToList();
+        return View(new CrmTelephonyPageViewModel
+        {
+            OfficeId = officeId,
+            OfficeName = office.Name,
+            Settings = settings,
+            OfficeUsers = users,
+            SipoutWebRequestUrl = TempData["SipoutWebRequestUrl"] as string,
+            StatusMessage = TempData["SettingsStatus"] as string,
+            ErrorMessage = TempData["SettingsError"] as string
+        });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> RotateTelephonyReceiver(
+        Guid officeId,
+        [FromServices] OrbitaApiClient api,
+        CancellationToken ct = default)
+    {
+        var (receiver, error) = await api.RotateCrmTelephonyReceiverAsync(officeId, ct);
+        if (receiver is null)
+        {
+            TempData["SettingsError"] = error;
+        }
+        else
+        {
+            TempData["SettingsStatus"] = "Новый защищённый адрес SIPOUT создан. Скопируйте его сейчас: секрет повторно не показывается.";
+            TempData["SipoutWebRequestUrl"] = receiver.SipoutWebRequestUrl;
+        }
+        return RedirectToAction(nameof(Telephony), new { officeId });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> SetTelephonyEnabled(
+        Guid officeId,
+        bool enabled,
+        [FromServices] OrbitaApiClient api,
+        CancellationToken ct = default)
+    {
+        var (success, error) = await api.SetCrmTelephonyEnabledAsync(officeId, enabled, ct);
+        TempData[success ? "SettingsStatus" : "SettingsError"] = success
+            ? enabled ? "Приём звонков SIPOUT включён." : "Приём звонков SIPOUT приостановлен."
+            : error;
+        return RedirectToAction(nameof(Telephony), new { officeId });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> SaveTelephonyBinding(
+        SaveCrmTelephonyBindingFormModel model,
+        [FromServices] OrbitaApiClient api,
+        CancellationToken ct = default)
+    {
+        var (binding, error) = await api.SetCrmTelephonyBindingAsync(
+            model.OfficeId, model.UserId, model.ProviderUserKey, ct);
+        TempData[binding is null ? "SettingsError" : "SettingsStatus"] = binding is null
+            ? error
+            : $"SIPOUT {binding.ProviderUserKey} привязан к сотруднику {binding.UserName}.";
+        return RedirectToAction(nameof(Telephony), new { officeId = model.OfficeId });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> DeleteTelephonyBinding(
+        Guid officeId,
+        string userId,
+        [FromServices] OrbitaApiClient api,
+        CancellationToken ct = default)
+    {
+        var (success, error) = await api.RemoveCrmTelephonyBindingAsync(officeId, userId, ct);
+        TempData[success ? "SettingsStatus" : "SettingsError"] = success
+            ? "Привязка SIPOUT удалена."
+            : error;
+        return RedirectToAction(nameof(Telephony), new { officeId });
+    }
+
+    [HttpGet]
     public async Task<IActionResult> BitrixCrmImport(
         Guid officeId,
         Guid instanceId,

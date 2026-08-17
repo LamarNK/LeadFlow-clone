@@ -1,0 +1,165 @@
+@model CrmTelephonyPageViewModel
+@{
+    ViewData["Title"] = "Телефония SIPOUT";
+}
+<partial name="_PageHeader" model="@(new PageHeaderViewModel
+{
+    Title = "Телефония SIPOUT",
+    Subtitle = $"Автоматическая запись звонков в CRM · {Model.OfficeName}",
+    ShowRefresh = false
+})" />
+
+<div class="orbita-main settings-page telephony-settings-page">
+    <div class="telephony-settings-nav">
+        <a class="settings-link-btn" href="@Url.Action("Index", "Settings", new { tab = "offices", officeId = Model.OfficeId })">
+            <i class="fa-solid fa-arrow-left" aria-hidden="true"></i> К офису
+        </a>
+    </div>
+
+    @if (!string.IsNullOrWhiteSpace(Model.StatusMessage))
+    {
+        <div class="settings-alert settings-alert--success" role="status">@Model.StatusMessage</div>
+    }
+    @if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
+    {
+        <div class="settings-alert settings-alert--error" role="alert">@Model.ErrorMessage</div>
+    }
+
+    @if (!string.IsNullOrWhiteSpace(Model.SipoutWebRequestUrl))
+    {
+        <section class="card telephony-secret-card">
+            <div class="card-header settings-card-header">
+                <div>
+                    <h2 class="settings-card-title">Адрес WebRequest для SIPOUT</h2>
+                    <p class="settings-card-subtitle">Показывается один раз. Не отправляйте ссылку в общие чаты.</p>
+                </div>
+            </div>
+            <div class="card-body">
+                <div class="telephony-copy-row">
+                    <code id="sipoutWebRequestUrl">@Model.SipoutWebRequestUrl</code>
+                    <button type="button" class="settings-primary-btn settings-primary-btn--compact" data-copy-sipout-url>Копировать</button>
+                </div>
+                <ol class="telephony-steps">
+                    <li>В виртуальной АТС SIPOUT откройте сценарий звонка.</li>
+                    <li>В системном обработчике завершения <strong>h</strong> добавьте действие <strong>WebRequest</strong>.</li>
+                    <li>Вставьте адрес целиком и включите запись разговоров.</li>
+                </ol>
+            </div>
+        </section>
+    }
+
+    <div class="telephony-settings-grid">
+        <section class="card">
+            <div class="card-header settings-card-header">
+                <div>
+                    <h2 class="settings-card-title">Приём звонков</h2>
+                    <p class="settings-card-subtitle">SIPOUT отправляет событие после завершения разговора</p>
+                </div>
+                <span class="settings-status-pill @(Model.Settings.IsEnabled ? "settings-status-pill--online" : "settings-status-pill--disabled")">
+                    @(Model.Settings.IsEnabled ? "Включён" : Model.Settings.IsConfigured ? "Приостановлен" : "Не настроен")
+                </span>
+            </div>
+            <div class="card-body telephony-receiver-body">
+                <p>
+                    Орбита сопоставляет номер клиента с основной или дополнительной телефонией карточки,
+                    сохраняет направление и длительность звонка и показывает запись в ленте.
+                </p>
+                <div class="telephony-actions">
+                    <form asp-action="RotateTelephonyReceiver" method="post">
+                        @Html.AntiForgeryToken()
+                        <input type="hidden" name="officeId" value="@Model.OfficeId" />
+                        <button type="submit" class="settings-primary-btn">
+                            @(Model.Settings.IsConfigured ? "Перевыпустить адрес" : "Создать адрес SIPOUT")
+                        </button>
+                    </form>
+                    @if (Model.Settings.IsConfigured)
+                    {
+                        <form asp-action="SetTelephonyEnabled" method="post">
+                            @Html.AntiForgeryToken()
+                            <input type="hidden" name="officeId" value="@Model.OfficeId" />
+                            <input type="hidden" name="enabled" value="@(!Model.Settings.IsEnabled)" />
+                            <button type="submit" class="settings-secondary-btn">
+                                @(Model.Settings.IsEnabled ? "Приостановить" : "Включить")
+                            </button>
+                        </form>
+                    }
+                </div>
+                @if (Model.Settings.IsConfigured)
+                {
+                    <p class="telephony-configured-note">
+                        Идентификатор приёмника: <code>@Model.Settings.PublicId</code>. Секрет хранится в БД только в виде хеша.
+                    </p>
+                }
+            </div>
+        </section>
+
+        <section class="card">
+            <div class="card-header settings-card-header">
+                <div>
+                    <h2 class="settings-card-title">Привязка сотрудников</h2>
+                    <p class="settings-card-subtitle">Внутренний номер SIPOUT определяет автора звонка в ленте</p>
+                </div>
+                <span class="settings-office-count">@Model.Settings.UserBindings.Count</span>
+            </div>
+            <div class="card-body">
+                <form asp-action="SaveTelephonyBinding" method="post" class="telephony-binding-form">
+                    @Html.AntiForgeryToken()
+                    <input type="hidden" name="OfficeId" value="@Model.OfficeId" />
+                    <label class="settings-field">
+                        <span class="settings-field-label">Сотрудник</span>
+                        <select name="UserId" required>
+                            <option value="">Выберите сотрудника</option>
+                            @foreach (var user in Model.OfficeUsers)
+                            {
+                                <option value="@user.Id">@(string.IsNullOrWhiteSpace(user.FullName) ? user.Email : user.FullName)</option>
+                            }
+                        </select>
+                    </label>
+                    <label class="settings-field">
+                        <span class="settings-field-label">Внутренний номер / логин SIPOUT</span>
+                        <input type="text" name="ProviderUserKey" required maxlength="128" placeholder="Например, 201" />
+                    </label>
+                    <button type="submit" class="settings-primary-btn">Сохранить привязку</button>
+                </form>
+
+                <div class="telephony-binding-list">
+                    @if (Model.Settings.UserBindings.Count == 0)
+                    {
+                        <p class="settings-empty-cell">Привязок пока нет.</p>
+                    }
+                    else
+                    {
+                        @foreach (var binding in Model.Settings.UserBindings)
+                        {
+                            <div class="telephony-binding-row">
+                                <div>
+                                    <strong>@binding.UserName</strong>
+                                    <span>SIPOUT @binding.ProviderUserKey</span>
+                                </div>
+                                <form asp-action="DeleteTelephonyBinding" method="post">
+                                    @Html.AntiForgeryToken()
+                                    <input type="hidden" name="officeId" value="@Model.OfficeId" />
+                                    <input type="hidden" name="userId" value="@binding.UserId" />
+                                    <button type="submit" class="settings-danger-link">Удалить</button>
+                                </form>
+                            </div>
+                        }
+                    }
+                </div>
+            </div>
+        </section>
+    </div>
+</div>
+
+@section Scripts {
+    <script>
+        document.querySelector('[data-copy-sipout-url]')?.addEventListener('click', async event => {
+            const value = document.getElementById('sipoutWebRequestUrl')?.textContent?.trim();
+            if (!value) return;
+            await navigator.clipboard.writeText(value);
+            const button = event.currentTarget;
+            button.textContent = 'Скопировано';
+            window.setTimeout(() => button.textContent = 'Копировать', 1500);
+        });
+    </script>
+}

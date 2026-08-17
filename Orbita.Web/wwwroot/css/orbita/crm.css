@@ -644,6 +644,14 @@
 .crm-feed-item--note .crm-feed-item__icon { background: #dfe8ff; color: #3d5feb; }
 .crm-feed-item--note.is-pinned { border-color: #d8cef9; background: #faf8ff; box-shadow: inset 3px 0 0 #8065d8; }
 .crm-feed-item--note.is-pinned .crm-feed-item__icon { background: #e9e1ff; color: #6546bd; }
+.crm-feed-item--call { border-color: #b9e2d3; background: #f5fcf9; box-shadow: inset 3px 0 0 #2f9d72; }
+.crm-feed-item--call .crm-feed-item__icon { background: #dff5ec; color: #187452; }
+.crm-feed-item__call-details { display: flex; flex-wrap: wrap; gap: 8px 22px; margin-top: 8px; color: #344054; font-size: 12px; }
+.crm-feed-item__call-details span { display: inline-flex; align-items: baseline; gap: 6px; }
+.crm-feed-item__call-details small { color: #98a2b3; font-size: 9px; font-weight: 750; letter-spacing: .025em; text-transform: uppercase; }
+.crm-feed-item__call-player { display: block; width: min(100%, 520px); height: 36px; margin-top: 9px; }
+.crm-feed-item__call-link { display: inline-flex; align-items: center; gap: 6px; margin-top: 7px; color: #187452; font-size: 11px; font-weight: 700; text-decoration: none; }
+.crm-feed-item__call-pending { color: #7d899c !important; font-size: 11px !important; }
 .crm-feed-item--completed { grid-template-columns: minmax(0, 1fr); padding: 10px 16px; border: 0; border-bottom: 1px solid #edf0f4; border-radius: 0; background: transparent; opacity: .78; box-shadow: none; }
 .crm-feed-item--completed strong, .crm-feed-item--system strong { color: #667085; font-size: 12px; font-weight: 650; }
 .crm-feed-item--completed p, .crm-feed-item--system p { color: #7d899c; font-size: 12px; }
@@ -887,6 +895,9 @@
 [data-theme="dark"] .crm-feed-item--task-overdue { border-color: #71363b; background: color-mix(in srgb, #8d252d 18%, var(--bg-card)); box-shadow: inset 3px 0 0 #e05d65; }
 [data-theme="dark"] .crm-feed-item--note { border-color: #364a78; background: color-mix(in srgb, #315be8 12%, var(--bg-card)); box-shadow: inset 3px 0 0 #6f8dff; }
 [data-theme="dark"] .crm-feed-item--note.is-pinned { border-color: #594779; background: color-mix(in srgb, #6846bd 13%, var(--bg-card)); box-shadow: inset 3px 0 0 #9d82ee; }
+[data-theme="dark"] .crm-feed-item--call { border-color: #2f6655; background: color-mix(in srgb, #187452 15%, var(--bg-card)); box-shadow: inset 3px 0 0 #49b98e; }
+[data-theme="dark"] .crm-feed-item--call .crm-feed-item__icon { background: #214f40; color: #70d7af; }
+[data-theme="dark"] .crm-feed-item__call-link { color: #70d7af; }
 [data-theme="dark"] .crm-note-inline-editor textarea { border-color: #52699e; background: color-mix(in srgb, var(--bg-card) 82%, #16264d); color: var(--text-primary); }
 [data-theme="dark"] .crm-feed-item--completed, [data-theme="dark"] .crm-feed-item--system { background: transparent; }
 [data-theme="dark"] .crm-card-persistent-feed { border-color: var(--border); }

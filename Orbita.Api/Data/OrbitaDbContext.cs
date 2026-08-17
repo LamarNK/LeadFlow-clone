@@ -30,6 +30,9 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
     public DbSet<CrmTaskCommentEntity> CrmTaskComments => Set<CrmTaskCommentEntity>();
     public DbSet<CrmTaskAttachmentEntity> CrmTaskAttachments => Set<CrmTaskAttachmentEntity>();
     public DbSet<CrmCandidateHistoryEntity> CrmCandidateHistory => Set<CrmCandidateHistoryEntity>();
+    public DbSet<CrmTelephonyWebhookEntity> CrmTelephonyWebhooks => Set<CrmTelephonyWebhookEntity>();
+    public DbSet<CrmTelephonyUserBindingEntity> CrmTelephonyUserBindings => Set<CrmTelephonyUserBindingEntity>();
+    public DbSet<CrmCallEntity> CrmCalls => Set<CrmCallEntity>();
     public DbSet<CrmCardChatReadEntity> CrmCardChatReads => Set<CrmCardChatReadEntity>();
     public DbSet<CrmOutboundChatMessageEntity> CrmOutboundChatMessages => Set<CrmOutboundChatMessageEntity>();
     public DbSet<CrmDeskAlertEntity> CrmDeskAlerts => Set<CrmDeskAlertEntity>();
@@ -333,6 +336,58 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
             entity.Property(x => x.Details).HasMaxLength(2000);
             entity.Property(x => x.ActorUserId).HasMaxLength(128);
             entity.Property(x => x.ActorName).HasMaxLength(256);
+        });
+
+        modelBuilder.Entity<CrmTelephonyWebhookEntity>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => x.PublicId).IsUnique();
+            entity.HasIndex(x => new { x.OfficeId, x.Provider }).IsUnique();
+            entity.Property(x => x.Provider).HasMaxLength(32);
+            entity.Property(x => x.SecretHash).HasMaxLength(128);
+            entity.HasOne<OfficeEntity>()
+                .WithMany()
+                .HasForeignKey(x => x.OfficeId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<CrmTelephonyUserBindingEntity>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => new { x.OfficeId, x.Provider, x.ProviderUserKey }).IsUnique();
+            entity.HasIndex(x => new { x.OfficeId, x.Provider, x.UserId }).IsUnique();
+            entity.Property(x => x.Provider).HasMaxLength(32);
+            entity.Property(x => x.ProviderUserKey).HasMaxLength(128);
+            entity.Property(x => x.UserId).HasMaxLength(128);
+            entity.HasOne<OfficeEntity>()
+                .WithMany()
+                .HasForeignKey(x => x.OfficeId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<CrmCallEntity>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => new { x.OfficeId, x.Provider, x.ExternalCallId }).IsUnique();
+            entity.HasIndex(x => new { x.CardId, x.StartedAtUtc });
+            entity.HasIndex(x => new { x.OfficeId, x.ClientPhoneNormalized, x.StartedAtUtc });
+            entity.Property(x => x.Provider).HasMaxLength(32);
+            entity.Property(x => x.ExternalCallId).HasMaxLength(128);
+            entity.Property(x => x.Direction).HasMaxLength(32);
+            entity.Property(x => x.CallerPhone).HasMaxLength(64);
+            entity.Property(x => x.CalledPhone).HasMaxLength(64);
+            entity.Property(x => x.ClientPhoneNormalized).HasMaxLength(32);
+            entity.Property(x => x.ProviderUserKey).HasMaxLength(128);
+            entity.Property(x => x.ManagerUserId).HasMaxLength(128);
+            entity.Property(x => x.RecordingUrl).HasMaxLength(2048);
+            entity.HasOne<OfficeEntity>()
+                .WithMany()
+                .HasForeignKey(x => x.OfficeId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne<CrmCandidateCardEntity>()
+                .WithMany()
+                .HasForeignKey(x => x.CardId)
+                .OnDelete(DeleteBehavior.SetNull);
         });
 
         modelBuilder.Entity<CrmCardChatReadEntity>(entity =>

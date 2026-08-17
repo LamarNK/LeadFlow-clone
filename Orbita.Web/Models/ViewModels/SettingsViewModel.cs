@@ -22,6 +22,24 @@ public sealed record SettingsIndexViewModel
     public string? ErrorMessage { get; init; }
 }
 
+public sealed class CrmTelephonyPageViewModel
+{
+    public Guid OfficeId { get; init; }
+    public string OfficeName { get; init; } = string.Empty;
+    public required CrmTelephonySettingsDto Settings { get; init; }
+    public IReadOnlyList<PanelUserDto> OfficeUsers { get; init; } = [];
+    public string? SipoutWebRequestUrl { get; init; }
+    public string? StatusMessage { get; init; }
+    public string? ErrorMessage { get; init; }
+}
+
+public sealed class SaveCrmTelephonyBindingFormModel
+{
+    public Guid OfficeId { get; set; }
+    public string UserId { get; set; } = string.Empty;
+    public string ProviderUserKey { get; set; } = string.Empty;
+}
+
 public sealed class SettingsTabViewModel
 {
     public required string Id { get; init; }
