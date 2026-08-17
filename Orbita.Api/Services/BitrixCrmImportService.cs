@@ -762,11 +762,27 @@ public sealed class BitrixCrmImportService(
     {
         var leftParts = left.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToHashSet(StringComparer.Ordinal);
         var rightParts = right.Split(' ', StringSplitOptions.RemoveEmptyEntries).ToHashSet(StringComparer.Ordinal);
+        if (leftParts.Count == 0 || rightParts.Count == 0)
+        {
+            return false;
+        }
+
+        // A short Bitrix name such as "Екатерина" may match a full Orbita name only
+        // when the caller finds exactly one such employee in the office.
+        if (leftParts.Count == 1)
+        {
+            return rightParts.Contains(leftParts.Single());
+        }
+
+        if (rightParts.Count == 1)
+        {
+            return leftParts.Contains(rightParts.Single());
+        }
+
         var shorter = leftParts.Count <= rightParts.Count ? leftParts : rightParts;
         var longer = ReferenceEquals(shorter, leftParts) ? rightParts : leftParts;
 
-        // One-word names remain strict: matching "Dmitry" to any longer name is unsafe.
-        return shorter.Count >= 2 && shorter.IsSubsetOf(longer);
+        return shorter.IsSubsetOf(longer);
     }
 
     private sealed record ImportContext(

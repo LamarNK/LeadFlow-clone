@@ -2,11 +2,12 @@ namespace Orbita.Contracts;
 
 public static class BitrixCrmImportStages
 {
+    public const string MissedCall = "НДЗ";
     public const string Questionnaire = "Анкета";
     public const string Negotiations = "Переговоры";
 
     public static readonly IReadOnlyList<string> Default =
-        [Questionnaire, Negotiations];
+        [MissedCall, Questionnaire, Negotiations];
 }
 
 public static class BitrixCrmImportActions
