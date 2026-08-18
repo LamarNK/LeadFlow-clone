@@ -92,12 +92,28 @@ public static class AuthenticationEndpoints
                 config,
                 officeId,
                 rememberMe: true);
+            await panelUsers.RecordActivityAsync(user.Id, ct);
             await audit.LogAsync(user.Id, user.Email, PanelAuditActions.LoginSucceeded, "user", user.Id, null, ip, ct);
             await GlobalLogger.Instance.LogAsync(
                 $"Login succeeded ({request.Email}).",
                 DeskLinkAuditLogLevel.Info);
             return Results.Ok(new LoginResponse(token, user.Email ?? request.Email));
         });
+
+        app.MapPost("/api/v1/auth/activity", async (
+            ClaimsPrincipal principal,
+            PanelUserService panelUsers,
+            CancellationToken ct) =>
+        {
+            var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrWhiteSpace(userId))
+            {
+                return Results.Unauthorized();
+            }
+
+            await panelUsers.RecordActivityAsync(userId, ct);
+            return Results.NoContent();
+        }).RequireAuthorization();
     }
 }
 

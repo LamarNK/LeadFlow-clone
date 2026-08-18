@@ -322,6 +322,20 @@
                                                         <span class="settings-user-person__content">
                                                             <strong class="settings-user-person__name">@displayName</strong>
                                                             <span class="settings-user-email">@user.Email</span>
+                                                            @if (user.IsOnline)
+                                                            {
+                                                                <span class="settings-user-presence settings-user-presence--online">Онлайн</span>
+                                                            }
+                                                            else if (user.LastSeenAtUtc is not null)
+                                                            {
+                                                                <span class="settings-user-presence settings-user-presence--offline">
+                                                                    Был(а) онлайн <partial name="_UtcTime" model="@(new UtcTimeDisplayModel(user.LastSeenAtUtc, "activity"))" />
+                                                                </span>
+                                                            }
+                                                            else
+                                                            {
+                                                                <span class="settings-user-presence settings-user-presence--unknown">Не входил(а)</span>
+                                                            }
                                                             <span class="settings-user-person__badges">
                                                                 @if (user.IsCurrentUser)
                                                                 {

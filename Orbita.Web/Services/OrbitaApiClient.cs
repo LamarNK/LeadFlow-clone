@@ -223,6 +223,12 @@ public sealed class OrbitaApiClient(
     public Task<IReadOnlyList<PanelUserDto>?> GetPanelUsersAsync(CancellationToken ct = default) =>
         GetAsync<IReadOnlyList<PanelUserDto>>("api/v1/admin/users", ct);
 
+    public async Task RecordActivityAsync(CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "api/v1/auth/activity");
+        using var response = await SendAuthenticatedAsync(request, ct);
+    }
+
     public Task<IReadOnlyList<PanelUserDto>?> GetOfficeStaffUsersAsync(
         Guid? officeId = null,
         CancellationToken ct = default)

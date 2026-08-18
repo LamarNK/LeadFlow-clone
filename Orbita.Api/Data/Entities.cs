@@ -46,6 +46,8 @@ public sealed class PanelUserProfileEntity
     public string UserId { get; set; } = string.Empty;
     public string? FullName { get; set; }
     public Guid? OfficeId { get; set; }
+    /// <summary>UTC-момент последней активности пользователя в веб-панели.</summary>
+    public DateTime? LastSeenAtUtc { get; set; }
     public int CrmCapacity { get; set; } = 300;
     public bool CrmShiftActive { get; set; }
 

@@ -2777,11 +2777,16 @@ internal static class DesignPreviewData
 
     public static IReadOnlyList<PanelUserDto> PanelUsers =>
     [
-        new("preview-admin", "admin@orbita.local", true, PanelRoles.Admin, false, FullName: "Администратор Орбита"),
-        new("preview-office-lead", "lead@orbita.local", true, PanelRoles.OfficeLead, false, PreviewOfficeId, "Основной", "Марина Ковалёва"),
-        new(PreviewManagerElena, "elena@orbita.local", true, PanelRoles.Manager, false, PreviewOfficeId, "Основной", "Елена Воронцова"),
-        new(PreviewManagerIgor, "igor@orbita.local", true, PanelRoles.SeniorManager, false, PreviewOfficeId, "Основной", "Игорь Савельев"),
-        new("preview-operator", "operator@orbita.local", true, PanelRoles.Operator, true, PreviewOfficeId, "Основной", "Алексей Селезнёв")
+        new("preview-admin", "admin@orbita.local", true, PanelRoles.Admin, false,
+            FullName: "Администратор Орбита", LastSeenAtUtc: Now.AddMinutes(-1), IsOnline: true),
+        new("preview-office-lead", "lead@orbita.local", true, PanelRoles.OfficeLead, false,
+            PreviewOfficeId, "Основной", "Марина Ковалёва", LastSeenAtUtc: Now.AddMinutes(-14)),
+        new(PreviewManagerElena, "elena@orbita.local", true, PanelRoles.Manager, false,
+            PreviewOfficeId, "Основной", "Елена Воронцова", LastSeenAtUtc: Now.AddMinutes(-2), IsOnline: true),
+        new(PreviewManagerIgor, "igor@orbita.local", true, PanelRoles.SeniorManager, false,
+            PreviewOfficeId, "Основной", "Игорь Савельев", LastSeenAtUtc: Now.AddHours(-3)),
+        new("preview-operator", "operator@orbita.local", true, PanelRoles.Operator, true,
+            PreviewOfficeId, "Основной", "Алексей Селезнёв", LastSeenAtUtc: Now.AddDays(-1))
     ];
 
     private static readonly object OfficeStaffSync = new();

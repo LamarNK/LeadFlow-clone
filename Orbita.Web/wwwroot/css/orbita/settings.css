@@ -425,6 +425,37 @@
     overflow-wrap: anywhere;
 }
 
+.settings-user-presence {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    color: #667085;
+    font-size: 11px;
+    font-weight: 600;
+    line-height: 1.25;
+}
+
+.settings-user-presence::before {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #98a2b3;
+    content: "";
+}
+
+.settings-user-presence--online {
+    color: #067647;
+}
+
+.settings-user-presence--online::before {
+    background: #12b76a;
+    box-shadow: 0 0 0 3px rgba(18, 183, 106, .14);
+}
+
+[data-theme="dark"] .settings-user-presence--online {
+    color: #6ce9a6;
+}
+
 .settings-user-access {
     min-width: 135px;
 }

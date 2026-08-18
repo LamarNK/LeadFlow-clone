@@ -5,6 +5,7 @@
 @inject Orbita.Web.Services.ThemeService Theme
 @inject Orbita.Web.Services.IOfficeContext OfficeContext
 @inject IOptions<DesignPreviewOptions> PreviewOptions
+@inject Microsoft.AspNetCore.Antiforgery.IAntiforgery Antiforgery
 @{
     // A fragment is requested only by the in-app navigation script. Query parameters must
     // still render a complete document when they are opened directly in a browser.
@@ -31,6 +32,10 @@ else
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    @if (!PreviewOptions.Value.Enabled && User.Identity?.IsAuthenticated == true)
+    {
+        <meta name="orbita-antiforgery-token" content="@Antiforgery.GetAndStoreTokens(Context).RequestToken" />
+    }
     <title>@ViewData["Title"] — Орбита</title>
     <link rel="icon" type="image/png" sizes="48x48" href="~/images/favicon-48x48.png" asp-append-version="true" />
     <link rel="icon" type="image/png" sizes="96x96" href="~/images/favicon-96x96.png" asp-append-version="true" />
@@ -229,6 +234,7 @@ else
     </div>
 </div>
 <script src="~/js/orbita-time.js" asp-append-version="true"></script>
+<script src="~/js/orbita-presence.js" asp-append-version="true"></script>
 <script src="~/js/orbita-crm-deadlines.js" asp-append-version="true"></script>
 <script src="~/js/orbita-live-shared.js" asp-append-version="true"></script>
 <script src="~/js/orbita/layout.js" asp-append-version="true"></script>
