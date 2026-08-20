@@ -956,7 +956,12 @@
         </div>
     }
     <dialog class="settings-dialog settings-dialog--user" id="editUserDialog">
-        <form asp-action="UpdateUser" method="post" class="settings-dialog-form settings-user-dialog" id="editUserForm">
+        <form asp-action="UpdateUser"
+              method="post"
+              class="settings-dialog-form settings-user-dialog"
+              id="editUserForm"
+              data-update-user-action="@Url.Action("UpdateUser", "Settings")"
+              data-orbita-full-submit>
             @Html.AntiForgeryToken()
             <input type="hidden" name="UserId" id="editUserId" />
             <input type="hidden" name="OriginalFullName" id="editUserOriginalFullName" />

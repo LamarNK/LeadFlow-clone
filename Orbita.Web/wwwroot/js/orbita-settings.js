@@ -201,6 +201,19 @@
         const editUserDialog = document.getElementById('editUserDialog');
         if (editUserDialog) {
             const form = document.getElementById('editUserForm');
+            const enforceUpdateUserPost = () => {
+                if (!form) return;
+
+                const action = form.getAttribute('data-update-user-action');
+                if (action) {
+                    form.setAttribute('action', action);
+                }
+
+                // The password form must never fall back to the browser's default GET.
+                // This is repeated when the dialog opens because its markup can be swapped
+                // by the fast-navigation shell after the initial page load.
+                form.setAttribute('method', 'post');
+            };
             const userIdInput = document.getElementById('editUserId');
             const userEmailLabel = document.getElementById('editUserEmail');
             const userInitials = document.getElementById('editUserInitials');
@@ -247,6 +260,8 @@
                         || !roleInput || !originalRoleInput || !officeInput || !originalOfficeInput
                         || !passwordInput || !accessFields || !passwordField || !useProfilePermissionsInput) return;
 
+                    enforceUpdateUserPost();
+
                     const isCurrentUser = button.getAttribute('data-user-is-current') === 'true';
                     const fullName = button.getAttribute('data-user-full-name') || '';
                     const email = button.getAttribute('data-user-email') || '';
@@ -288,6 +303,8 @@
                     }
                 });
             });
+
+            form?.addEventListener('submit', enforceUpdateUserPost);
 
             if (!editUserDialog.__orbitaDialogBound) {
                 editUserDialog.__orbitaDialogBound = true;

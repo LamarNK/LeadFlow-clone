@@ -494,7 +494,7 @@
         // Intercept GET forms (search + filters) → fast nav + spinner instead of full reload
         document.addEventListener('submit', function (e) {
             var form = e.target.closest('form');
-            if (!form || !form.closest('.orbita-content')) return;
+            if (!form || !form.closest('.orbita-content') || form.hasAttribute('data-orbita-full-submit')) return;
 
             var method = (form.getAttribute('method') || 'get').toLowerCase();
             if (method !== 'get') return;
