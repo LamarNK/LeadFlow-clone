@@ -49,15 +49,7 @@ public sealed class SettingsUserUpdateFormTests : IClassFixture<WebApplicationFa
         Assert.True(updateFormTag.Success, "The user update form was not rendered.");
         Assert.Contains("action=\"/Settings/UpdateUser\"", updateFormTag.Value);
         Assert.Contains("method=\"post\"", updateFormTag.Value);
-
-        var resetFormTag = Regex.Match(usersHtml, "<form\\b[^>]*id=\"resetPasswordForm\"[^>]*>");
-        Assert.True(resetFormTag.Success, "The password reset form was not rendered.");
-        Assert.Contains("action=\"/Settings/ResetPassword\"", resetFormTag.Value);
-        Assert.Contains("method=\"post\"", resetFormTag.Value);
-        var resetSubmitTag = Regex.Match(usersHtml, "<button\\b[^>]*id=\"resetPasswordSubmit\"[^>]*>");
-        Assert.True(resetSubmitTag.Success, "The password reset submit button was not rendered.");
-        Assert.Contains("formmethod=\"post\"", resetSubmitTag.Value);
-        Assert.Contains("formaction=\"/Settings/ResetPassword\"", resetSubmitTag.Value);
+        Assert.DoesNotMatch("id=\"resetPasswordForm\"", usersHtml);
 
         var updateToken = Regex.Match(
             usersHtml,
@@ -69,7 +61,7 @@ public sealed class SettingsUserUpdateFormTests : IClassFixture<WebApplicationFa
             new KeyValuePair<string, string>("FullName", string.Empty)
         ]);
 
-        var update = await client.PostAsync("/Settings/ResetPassword", updateForm);
+        var update = await client.PostAsync("/Settings/UpdateUser", updateForm);
 
         Assert.Equal(HttpStatusCode.Redirect, update.StatusCode);
         Assert.Equal("/Settings?tab=users", update.Headers.Location?.OriginalString);

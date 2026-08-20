@@ -226,6 +226,7 @@
             const originalUseProfilePermissionsInput = document.getElementById('editUserOriginalUseProfilePermissions');
             const originalPermissionKeysInput = document.getElementById('editUserOriginalPermissionKeys');
             const passwordInput = document.getElementById('editUserPassword');
+            const submitError = document.getElementById('editUserSubmitError');
             const accessFields = document.getElementById('editUserAccessFields');
             const officeField = document.getElementById('editUserOfficeField');
             const passwordField = document.getElementById('editUserPasswordField');
@@ -289,6 +290,10 @@
                     originalUseProfilePermissionsInput.value = String(!hasPermissionOverride);
                     originalPermissionKeysInput.value = Array.from(permissions).join(',');
                     passwordInput.value = '';
+                    if (submitError) {
+                        submitError.hidden = true;
+                        submitError.textContent = '';
+                    }
                     useProfilePermissionsInput.checked = !hasPermissionOverride;
                     permissionInputs.forEach((input) => {
                         input.checked = permissions.has(input.value);
@@ -304,7 +309,52 @@
                 });
             });
 
-            form?.addEventListener('submit', enforceUpdateUserPost);
+            form?.addEventListener('submit', async (event) => {
+                enforceUpdateUserPost();
+                if (typeof window.fetch !== 'function') return;
+
+                event.preventDefault();
+                if (form.dataset.updateUserPending === 'true') return;
+
+                const action = form.getAttribute('action');
+                if (!action) return;
+
+                let formData;
+                try {
+                    formData = new FormData(form, event.submitter || undefined);
+                } catch {
+                    formData = new FormData(form);
+                }
+
+                const submitButton = form.querySelector('button[type="submit"]');
+                form.dataset.updateUserPending = 'true';
+                submitButton?.setAttribute('disabled', 'disabled');
+                if (submitError) {
+                    submitError.hidden = true;
+                    submitError.textContent = '';
+                }
+
+                try {
+                    const response = await fetch(action, {
+                        method: 'POST',
+                        credentials: 'same-origin',
+                        body: formData
+                    });
+                    if (!response.ok) {
+                        throw new Error('Update user failed: ' + response.status);
+                    }
+
+                    window.location.assign(response.url || '/Settings?tab=users');
+                } catch (error) {
+                    form.removeAttribute('data-update-user-pending');
+                    submitButton?.removeAttribute('disabled');
+                    if (submitError) {
+                        submitError.textContent = 'Не удалось сохранить изменения. Обновите страницу и повторите попытку.';
+                        submitError.hidden = false;
+                    }
+                    console.error('User update failed', error);
+                }
+            });
 
             if (!editUserDialog.__orbitaDialogBound) {
                 editUserDialog.__orbitaDialogBound = true;
@@ -318,39 +368,6 @@
                 editUserDialog.addEventListener('click', (event) => {
                     if (event.target === editUserDialog) {
                         editUserDialog.close();
-                    }
-                });
-            }
-        }
-
-        const resetPasswordDialog = document.getElementById('resetPasswordDialog');
-        if (resetPasswordDialog) {
-            const resetPasswordUserId = document.getElementById('resetPasswordUserId');
-            const resetPasswordUserEmail = document.getElementById('resetPasswordUserEmail');
-
-            document.querySelectorAll('[data-settings-reset-password]').forEach((button) => {
-                if (button.__orbitaResetPasswordBound) return;
-                button.__orbitaResetPasswordBound = true;
-
-                button.addEventListener('click', () => {
-                    if (!resetPasswordUserId || !resetPasswordUserEmail) return;
-
-                    resetPasswordUserId.value = button.getAttribute('data-user-id') || '';
-                    resetPasswordUserEmail.textContent = button.getAttribute('data-user-email') || '';
-                    if (typeof resetPasswordDialog.showModal === 'function') {
-                        resetPasswordDialog.showModal();
-                    }
-                });
-            });
-
-            if (!resetPasswordDialog.__orbitaResetPasswordDialogBound) {
-                resetPasswordDialog.__orbitaResetPasswordDialogBound = true;
-                resetPasswordDialog.querySelectorAll('[data-settings-reset-password-close]').forEach((button) => {
-                    button.addEventListener('click', () => resetPasswordDialog.close());
-                });
-                resetPasswordDialog.addEventListener('click', (event) => {
-                    if (event.target === resetPasswordDialog) {
-                        resetPasswordDialog.close();
                     }
                 });
             }
