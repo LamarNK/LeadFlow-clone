@@ -323,6 +323,39 @@
             }
         }
 
+        const resetPasswordDialog = document.getElementById('resetPasswordDialog');
+        if (resetPasswordDialog) {
+            const resetPasswordUserId = document.getElementById('resetPasswordUserId');
+            const resetPasswordUserEmail = document.getElementById('resetPasswordUserEmail');
+
+            document.querySelectorAll('[data-settings-reset-password]').forEach((button) => {
+                if (button.__orbitaResetPasswordBound) return;
+                button.__orbitaResetPasswordBound = true;
+
+                button.addEventListener('click', () => {
+                    if (!resetPasswordUserId || !resetPasswordUserEmail) return;
+
+                    resetPasswordUserId.value = button.getAttribute('data-user-id') || '';
+                    resetPasswordUserEmail.textContent = button.getAttribute('data-user-email') || '';
+                    if (typeof resetPasswordDialog.showModal === 'function') {
+                        resetPasswordDialog.showModal();
+                    }
+                });
+            });
+
+            if (!resetPasswordDialog.__orbitaResetPasswordDialogBound) {
+                resetPasswordDialog.__orbitaResetPasswordDialogBound = true;
+                resetPasswordDialog.querySelectorAll('[data-settings-reset-password-close]').forEach((button) => {
+                    button.addEventListener('click', () => resetPasswordDialog.close());
+                });
+                resetPasswordDialog.addEventListener('click', (event) => {
+                    if (event.target === resetPasswordDialog) {
+                        resetPasswordDialog.close();
+                    }
+                });
+            }
+        }
+
         document.querySelectorAll('[data-settings-copy-api-key]').forEach((button) => {
             if (button.__orbitaApiKeyCopyBound) return;
             button.__orbitaApiKeyCopyBound = true;

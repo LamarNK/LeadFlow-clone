@@ -403,6 +403,13 @@
                                                                 </button>
                                                                 @if (!user.IsCurrentUser)
                                                                 {
+                                                                    <button type="button"
+                                                                            class="row-menu-item"
+                                                                            data-settings-reset-password
+                                                                            data-user-id="@user.Id"
+                                                                            data-user-email="@user.Email">
+                                                                        Сменить пароль
+                                                                    </button>
                                                                     @if (user.IsLocked)
                                                                     {
                                                                         <form asp-action="UnlockUser" method="post" class="settings-inline-form">
@@ -1047,6 +1054,32 @@
                 <button type="button" class="settings-secondary-btn" data-settings-dialog-close>Отмена</button>
                 <button type="submit" class="settings-primary-btn">Сохранить</button>
             </footer>
+        </form>
+    </dialog>
+    <dialog class="settings-dialog" id="resetPasswordDialog">
+        <form asp-action="ResetPassword"
+              method="post"
+              class="settings-dialog-form"
+              id="resetPasswordForm"
+              data-orbita-full-submit>
+            @Html.AntiForgeryToken()
+            <input type="hidden" name="UserId" id="resetPasswordUserId" />
+            <h2 class="settings-dialog-title">Сменить пароль</h2>
+            <p class="settings-dialog-subtitle" id="resetPasswordUserEmail"></p>
+            <label class="settings-field">
+                <span class="settings-field-label">Новый пароль</span>
+                <input type="password" name="Password" required minlength="8" autocomplete="new-password" />
+            </label>
+            <div class="settings-dialog-actions">
+                <button type="button" class="settings-secondary-btn" data-settings-reset-password-close>Отмена</button>
+                <button type="submit"
+                        class="settings-primary-btn"
+                        id="resetPasswordSubmit"
+                        formmethod="post"
+                        formaction="@Url.Action("ResetPassword", "Settings")">
+                    Сохранить
+                </button>
+            </div>
         </form>
     </dialog>
 </div>
