@@ -39,6 +39,7 @@ public sealed class WorkerDetailsLiveSnapshotViewModel
     public WorkerActivityViewModel CurrentActivity { get; init; } = new();
     public IReadOnlyList<WorkerActivityViewModel> ActiveAccountActivities { get; init; } = [];
     public IReadOnlyList<AdsPowerGroupDto> AdsPowerGroups { get; init; } = [];
+    public IReadOnlyList<EventFilterOptionViewModel> AccountGroupOptions { get; init; } = [];
 }
 
 public sealed class EventsLiveSnapshotViewModel

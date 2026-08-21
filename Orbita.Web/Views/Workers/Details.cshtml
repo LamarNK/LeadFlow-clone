@@ -9,7 +9,7 @@
     var installCommand = TempData["CreatedWorkerInstallCommand"] as string;
     var workersError = TempData["WorkersError"] as string;
     var workersSuccess = TempData["WorkersSuccess"] as string;
-    var workerAccountsSortRoute = new { id = Model.WorkerId, sort = Model.Sort.Column, dir = Model.Sort.Dir };
+    var workerAccountsSortRoute = new { id = Model.WorkerId, q = Model.AccountSearchQuery, groupId = Model.AccountGroupId, sort = Model.Sort.Column, dir = Model.Sort.Dir };
     var snapshotUrl = Url.Action("DetailsSnapshot", "Workers", workerAccountsSortRoute)!;
     var scheduleDayLabels = new Dictionary<string, string>(StringComparer.Ordinal)
     {
@@ -792,8 +792,45 @@
         <div class="card-header">
             <h2>Аккаунты воркера</h2>
         </div>
+        @{
+            var workerAccountsFormAction = Url.Action("Details", "Workers", new { id = Model.WorkerId });
+            var workerAccountsFilterBar = new ListFiltersBarViewModel
+            {
+                FormAction = workerAccountsFormAction!,
+                FormClass = "orbita-filters-form worker-accounts-filters",
+                SearchName = "q",
+                SearchPlaceholder = "Поиск по аккаунтам...",
+                SearchValue = Model.AccountSearchQuery,
+                FilterPanelId = "workerAccountsFilterPanel",
+                FilterToggleClass = "orbita-filters-toggle worker-accounts-filter-btn",
+                HasActiveFilters = Model.HasActiveAccountFilters,
+                ActiveFilterCount = Model.ActiveAccountFilterCount,
+                ActiveFilterChips = Model.ActiveAccountFilterChips,
+                ResetUrl = Url.Action("Details", "Workers", new { id = Model.WorkerId, sort = Model.Sort.Column, dir = Model.Sort.Dir })!,
+                FilterFieldsPartialName = "_WorkerAccountsFilterFields",
+                FilterFieldsModel = Model,
+                ExtraFormContent = $"<input type=\"hidden\" name=\"sort\" value=\"{Model.Sort.Column}\" /><input type=\"hidden\" name=\"dir\" value=\"{Model.Sort.Dir}\" />"
+            };
+        }
+        <div class="worker-accounts-toolbar">
+            <partial name="_ListFiltersBar" model="workerAccountsFilterBar" />
+        </div>
         <div class="card-body card-body-table worker-accounts-wrap">
-            <table class="data-table data-table--accounts data-table--cards">
+            <div data-worker-accounts-empty @(Model.Accounts.Count == 0 ? null : "hidden")>
+                <partial name="_TableEmptyState" model="@(new TableEmptyStateViewModel
+                {
+                    IconClass = "fa-solid fa-users",
+                    Title = Model.HasActiveAccountFilters ? "Аккаунты не найдены" : "Аккаунтов пока нет",
+                    Description = Model.HasActiveAccountFilters
+                        ? "Измените поиск или группу AdsPower."
+                        : "Дождитесь синхронизации профилей AdsPower с воркером.",
+                    CtaLabel = Model.HasActiveAccountFilters ? "Сбросить фильтры" : null,
+                    CtaUrl = Model.HasActiveAccountFilters
+                        ? Url.Action("Details", "Workers", new { id = Model.WorkerId, sort = Model.Sort.Column, dir = Model.Sort.Dir })
+                        : null
+                })" />
+            </div>
+            <table class="data-table data-table--accounts data-table--cards" @(Model.Accounts.Count == 0 ? "hidden" : null)>
                 <thead>
                     <tr>
                         <th>Вкл</th>

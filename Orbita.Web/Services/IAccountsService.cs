@@ -8,6 +8,7 @@ public interface IAccountsService
         string? searchQuery = null,
         string? tab = null,
         Guid? workerId = null,
+        string? groupId = null,
         int page = 1,
         int? pageSize = null,
         string? sort = null,

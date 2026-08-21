@@ -196,6 +196,12 @@ public sealed class WorkerDetailsViewModel
     public IReadOnlyList<DashboardEventRowViewModel> Events { get; init; } = [];
     public IReadOnlyList<WorkerPeriodStatViewModel> PeriodStats { get; init; } = [];
     public IReadOnlyList<WorkerAccountRowViewModel> Accounts { get; init; } = [];
+    public string? AccountSearchQuery { get; init; }
+    public string? AccountGroupId { get; init; }
+    public IReadOnlyList<EventFilterOptionViewModel> AccountGroupOptions { get; init; } = [];
+    public bool HasActiveAccountFilters { get; init; }
+    public IReadOnlyList<ActiveFilterChipViewModel> ActiveAccountFilterChips { get; init; } = [];
+    public int ActiveAccountFilterCount => ActiveAccountFilterChips.Count;
     public TableSortState Sort { get; init; } = TableSortState.Create("account", descending: false);
     public WorkerActivityViewModel CurrentActivity { get; init; } = new();
     public IReadOnlyList<WorkerActivityViewModel> ActiveAccountActivities { get; init; } = [];

@@ -2107,7 +2107,9 @@ internal static class DesignPreviewData
     public static WorkerDetailsViewModel? BuildWorkerDetailsViewModel(
         Guid id,
         string? sort = null,
-        string? sortDir = null)
+        string? sortDir = null,
+        string? accountSearchQuery = null,
+        string? accountGroupId = null)
     {
         var worker = GetWorker(id);
         if (worker is null) return null;
@@ -2120,7 +2122,9 @@ internal static class DesignPreviewData
             GetWorkerEvents(id),
             GetWorkerMeta(id),
             summary,
-            sort: tableSort);
+            sort: tableSort,
+            accountSearchQuery: accountSearchQuery,
+            accountGroupId: accountGroupId);
     }
 
     private static IReadOnlyList<WorkerBalanceDto> BuildWorkerBalances(Guid workerId) =>
@@ -2675,7 +2679,8 @@ internal static class DesignPreviewData
         string? sort = null,
         string? sortDir = null,
         bool showOfficeColumn = false,
-        Guid? workerId = null) =>
+        Guid? workerId = null,
+        string? groupId = null) =>
         AccountsIndexBuilder.Build(
             BuildPreviewAccountRows(),
             searchQuery,
@@ -2686,7 +2691,8 @@ internal static class DesignPreviewData
             pageSize,
             showOfficeColumn,
             workerId: workerId,
-            workers: ResponsesIndexBuilder.BuildWorkerOptions(GetWorkers(null)));
+            workers: ResponsesIndexBuilder.BuildWorkerOptions(GetWorkers(null)),
+            groupId: groupId);
 
     private static IReadOnlyList<AccountRowViewModel> BuildPreviewAccountRows()
     {

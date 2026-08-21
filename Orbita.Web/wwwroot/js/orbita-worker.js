@@ -613,9 +613,43 @@
         select.value = current;
     }
 
+    function syncWorkerAccountsEmptyState(accounts) {
+        var empty = document.querySelector('[data-worker-accounts-empty]');
+        var table = document.querySelector('.card--worker-accounts table.data-table--accounts');
+        var isEmpty = !accounts || !accounts.length;
+        if (empty) empty.hidden = !isEmpty;
+        if (table) table.hidden = isEmpty;
+    }
+
+    function updateAccountGroupFilterOptions(options) {
+        var select = document.querySelector('.worker-accounts-filters select[name="groupId"]');
+        if (!select || !shared) return;
+
+        var current = select.value || '';
+        var html = '';
+        (options || []).forEach(function (opt) {
+            var value = opt.value || '';
+            var label = opt.label || value || 'Все группы';
+            html += '<option value="' + shared.escapeHtml(value) + '">' + shared.escapeHtml(label) + '</option>';
+        });
+        if (!html) {
+            html = '<option value="">Все группы</option>';
+        }
+        if (current && !(options || []).some(function (o) { return (o.value || '') === current; })) {
+            html += '<option value="' + shared.escapeHtml(current) + '">' + shared.escapeHtml(current) + '</option>';
+        }
+        select.innerHTML = html;
+        select.value = current;
+    }
+
     function renderWorkerAccounts(accounts) {
         var tbody = document.querySelector('[data-orbita-live-body="worker-accounts"]');
         if (!tbody || !shared) return;
+        syncWorkerAccountsEmptyState(accounts);
+        if (!accounts || !accounts.length) {
+            tbody.innerHTML = '';
+            return;
+        }
         var workerId = getWorkerId();
         var expandedPanels = shared.captureExpandedSubprofilePanels(tbody);
         var nextIds = {};
@@ -784,6 +818,7 @@
         }
 
         updateAdsPowerGroupOptions(snapshot.adsPowerGroups);
+        updateAccountGroupFilterOptions(snapshot.accountGroupOptions);
 
         if (activityChart && snapshot.activityChart && snapshot.activityChart.values) {
             var chartData = snapshot.activityChart;

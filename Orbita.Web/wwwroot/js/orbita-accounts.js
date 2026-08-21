@@ -208,6 +208,10 @@
             ' data-subprofiles-json="' + subProfilesJson + '">' +
             toggleCell +
             '<td class="cell-account" data-label="Аккаунт"><a href="' + shared.escapeHtml(accountUrl) + '">' + shared.escapeHtml(account.accountName) + '</a>' +
+            (account.adsPowerGroupName || account.adsPowerGroupId
+                ? '<span class="worker-account-sub" title="Группа AdsPower">' +
+                    shared.escapeHtml(account.adsPowerGroupName || account.adsPowerGroupId) + '</span>'
+                : '') +
             (account.hasAvitoCredentials
                 ? '<span class="worker-account-sub worker-account-sub--ok" title="' +
                     shared.escapeHtml(account.avitoLogin || 'логин задан') +

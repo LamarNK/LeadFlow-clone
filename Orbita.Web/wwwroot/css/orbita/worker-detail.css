@@ -345,6 +345,15 @@
     margin-bottom: 0;
 }
 
+.worker-accounts-toolbar {
+    padding: 0 20px 12px;
+}
+
+.worker-accounts-toolbar .orbita-filters-bar {
+    margin-bottom: 0;
+    padding: 12px 14px;
+}
+
 .worker-accounts-wrap {
     overflow-x: auto;
 }

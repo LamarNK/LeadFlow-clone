@@ -85,13 +85,20 @@ public sealed class WorkersService(
         Guid id,
         string? sort = null,
         string? sortDir = null,
+        string? accountSearchQuery = null,
+        string? accountGroupId = null,
         CancellationToken ct = default)
     {
         var tableSort = TableSort.Parse(sort, sortDir, TableSort.WorkerAccounts.Default, TableSort.WorkerAccounts.Columns);
 
         if (previewOptions.Value.Enabled)
         {
-            return DesignPreviewData.BuildWorkerDetailsViewModel(id, sort, sortDir);
+            return DesignPreviewData.BuildWorkerDetailsViewModel(
+                id,
+                sort,
+                sortDir,
+                accountSearchQuery,
+                accountGroupId);
         }
 
         var apiWorker = await api.GetWorkerAsync(id, ct);
@@ -129,7 +136,9 @@ public sealed class WorkersService(
                 OperatingSystem = string.IsNullOrWhiteSpace(apiWorker.OperatingSystem) ? "—" : apiWorker.OperatingSystem,
                 ConnectionCheck = apiWorker.IsOnline ? "Успешно" : "Нет связи"
             },
-            sort: tableSort);
+            sort: tableSort,
+            accountSearchQuery: accountSearchQuery,
+            accountGroupId: accountGroupId);
     }
 
     public async Task<(CreateWorkerResultViewModel? Result, string? Error)> CreateWorkerAsync(

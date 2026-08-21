@@ -27,14 +27,18 @@ internal static class AccountsIndexBuilder
         bool showOfficeColumn = false,
         IOfficeContext? officeContext = null,
         Guid? workerId = null,
-        IReadOnlyList<EventFilterOptionViewModel>? workers = null)
+        IReadOnlyList<EventFilterOptionViewModel>? workers = null,
+        string? groupId = null)
     {
         page = Math.Max(1, page);
         tab = NormalizeTab(tab);
         var tableSort = TableSort.Parse(sort, sortDir, TableSort.Accounts.Default, TableSort.Accounts.Columns);
+        var normalizedGroupId = AdsPowerAccountGroupFilter.Normalize(groupId);
 
         var scopedRows = FilterByWorker(allRows, workerId);
-        var filtered = FilterRows(scopedRows, searchQuery, tab);
+        var groupOptions = AdsPowerAccountGroupFilter.BuildOptions(
+            scopedRows.Select(a => (a.AdsPowerGroupId, a.AdsPowerGroupName)));
+        var filtered = FilterRows(scopedRows, searchQuery, tab, normalizedGroupId);
         var sorted = TableSort.Accounts.Apply(filtered, tableSort).ToList();
         var total = sorted.Count;
         var paged = sorted.Skip((page - 1) * pageSize).Take(pageSize).ToList();
@@ -64,14 +68,21 @@ internal static class AccountsIndexBuilder
             ShowOfficeColumn = showOfficeColumn,
             WorkerId = workerId,
             Workers = workers ?? [],
-            HasActiveFilters = !string.IsNullOrWhiteSpace(searchQuery) || tab != "all" || workerId.HasValue,
+            GroupId = normalizedGroupId,
+            Groups = groupOptions,
+            HasActiveFilters = !string.IsNullOrWhiteSpace(searchQuery)
+                || tab != "all"
+                || workerId.HasValue
+                || normalizedGroupId is not null,
             ActiveFilterChips = FilterChipsBuilder.ForAccounts(
                 searchQuery,
                 tab,
                 TabDefinitions,
                 workerId,
                 workers ?? [],
-                pageSize)
+                pageSize,
+                normalizedGroupId,
+                groupOptions)
         };
     }
 
@@ -156,7 +167,9 @@ internal static class AccountsIndexBuilder
             IsProcessingNow = processing.IsProcessingNow,
             ProcessingLabel = processing.Label,
             ProcessingTone = processing.Tone,
-            ProcessingSubProfileId = processing.SubProfileId
+            ProcessingSubProfileId = processing.SubProfileId,
+            AdsPowerGroupId = account.AdsPowerGroupId,
+            AdsPowerGroupName = account.AdsPowerGroupName
         };
     }
 
@@ -175,14 +188,24 @@ internal static class AccountsIndexBuilder
     private static IReadOnlyList<AccountRowViewModel> FilterRows(
         IReadOnlyList<AccountRowViewModel> rows,
         string? searchQuery,
-        string tab)
+        string tab,
+        string? groupId)
     {
         IEnumerable<AccountRowViewModel> query = rows;
 
         if (!string.IsNullOrWhiteSpace(searchQuery))
         {
             query = query.Where(a =>
-                SearchQueryNormalizer.MatchesTokens(searchQuery, a.AccountName, a.WorkerName));
+                SearchQueryNormalizer.MatchesTokens(
+                    searchQuery,
+                    a.AccountName,
+                    a.WorkerName,
+                    a.AdsPowerGroupName));
+        }
+
+        if (!string.IsNullOrWhiteSpace(groupId))
+        {
+            query = query.Where(a => AdsPowerAccountGroupFilter.Matches(groupId, a.AdsPowerGroupId));
         }
 
         query = tab switch

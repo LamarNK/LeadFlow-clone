@@ -13,6 +13,7 @@ public sealed class AccountsService(
         string? searchQuery = null,
         string? tab = null,
         Guid? workerId = null,
+        string? groupId = null,
         int page = 1,
         int? pageSize = null,
         string? sort = null,
@@ -31,7 +32,8 @@ public sealed class AccountsService(
                 sort,
                 sortDir,
                 officeContext.ShowOfficeColumn,
-                workerId);
+                workerId,
+                groupId);
         }
 
         var allWorkers = await api.GetWorkersAsync(ct) ?? [];
@@ -76,6 +78,7 @@ public sealed class AccountsService(
             showOfficeColumn: officeContext.ShowOfficeColumn,
             officeContext: officeContext,
             workerId: workerId,
-            workers: workerOptions);
+            workers: workerOptions,
+            groupId: groupId);
     }
 }
