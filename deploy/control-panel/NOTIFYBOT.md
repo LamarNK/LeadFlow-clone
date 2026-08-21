@@ -65,7 +65,7 @@ docker compose -f docker-compose.images.yml --env-file .env up -d notifybot-api
 
 ## Бэкап БД
 
-Скрипт `backup-db.sh` бэкапит и Orbita, и NotifyBot:
+Скрипт `backup-db.sh` бэкапит Orbita и, если NotifyBot запущен, NotifyBot. Неактивный сервис пропускается:
 
 ```bash
 /opt/orbita/backup-db.sh
