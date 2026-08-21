@@ -14,15 +14,18 @@ internal static class PanelAggregateCache
     public static readonly TimeSpan DashboardTtl = TimeSpan.FromSeconds(7);
     public static readonly TimeSpan NavBadgesTtl = TimeSpan.FromSeconds(5);
     public static readonly TimeSpan StatisticsTtl = TimeSpan.FromSeconds(8);
+    public static readonly TimeSpan AccountsTtl = TimeSpan.FromSeconds(5);
 
     private const string DashboardPrefix = "d:";
     private const string StatisticsPrefix = "s:";
+    private const string AccountsPrefix = "a:";
 
     private static readonly ConcurrentDictionary<string, CacheEntry> Entries = new(StringComparer.Ordinal);
     private static readonly ConcurrentDictionary<string, SemaphoreSlim> Gates = new(StringComparer.Ordinal);
 
     private static long _dashboardVersion;
     private static long _statisticsVersion;
+    private static long _accountsVersion;
 
     public static string SummaryKey(
         OfficeScope scope,
@@ -44,6 +47,9 @@ internal static class PanelAggregateCache
         string accountFilterKey,
         string vacancyFilterKey) =>
         $"{StatisticsPrefix}{ScopeKey(scope, officeFilter)}:{fromLocal:yyyyMMdd}:{toLocal:yyyyMMdd}:{workerFilterKey}:{accountFilterKey}:{vacancyFilterKey}";
+
+    public static string AccountsKey(OfficeScope scope, Guid? officeFilter, Guid? workerId) =>
+        $"{AccountsPrefix}{ScopeKey(scope, officeFilter)}:{workerId?.ToString("D") ?? "-"}";
 
     public static async Task<T> GetOrCreateAsync<T>(string key, TimeSpan ttl, Func<Task<T>> factory)
         where T : class
@@ -87,16 +93,26 @@ internal static class PanelAggregateCache
     {
         var dashboard = false;
         var statistics = false;
+        var accounts = false;
         foreach (var kind in kinds)
         {
             switch (kind)
             {
                 case PanelChangeKind.Dashboard:
                 case PanelChangeKind.NavBadges:
+                    dashboard = true;
+                    break;
                 case PanelChangeKind.Responses:
                 case PanelChangeKind.Errors:
+                    dashboard = true;
+                    accounts = true;
+                    break;
                 case PanelChangeKind.Accounts:
                     dashboard = true;
+                    accounts = true;
+                    break;
+                case PanelChangeKind.Workers:
+                    accounts = true;
                     break;
                 case PanelChangeKind.Statistics:
                     statistics = true;
@@ -113,6 +129,11 @@ internal static class PanelAggregateCache
         {
             InvalidateStatistics();
         }
+
+        if (accounts)
+        {
+            InvalidateAccounts();
+        }
     }
 
     public static void InvalidateDashboard()
@@ -127,10 +148,17 @@ internal static class PanelAggregateCache
         RemovePrefix(StatisticsPrefix);
     }
 
+    public static void InvalidateAccounts()
+    {
+        Interlocked.Increment(ref _accountsVersion);
+        RemovePrefix(AccountsPrefix);
+    }
+
     public static void Clear()
     {
         Interlocked.Increment(ref _dashboardVersion);
         Interlocked.Increment(ref _statisticsVersion);
+        Interlocked.Increment(ref _accountsVersion);
         Entries.Clear();
     }
 
@@ -169,10 +197,20 @@ internal static class PanelAggregateCache
         }
     }
 
-    private static long CurrentVersion(string key) =>
-        key.StartsWith(StatisticsPrefix, StringComparison.Ordinal)
-            ? Volatile.Read(ref _statisticsVersion)
-            : Volatile.Read(ref _dashboardVersion);
+    private static long CurrentVersion(string key)
+    {
+        if (key.StartsWith(StatisticsPrefix, StringComparison.Ordinal))
+        {
+            return Volatile.Read(ref _statisticsVersion);
+        }
+
+        if (key.StartsWith(AccountsPrefix, StringComparison.Ordinal))
+        {
+            return Volatile.Read(ref _accountsVersion);
+        }
+
+        return Volatile.Read(ref _dashboardVersion);
+    }
 
     private static void RemovePrefix(string prefix)
     {

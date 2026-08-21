@@ -113,6 +113,22 @@ public static class DashboardEndpoints
             return detail is null ? Results.NotFound() : Results.Ok(detail);
         });
         var accountRead = app.MapGroup("/api/v1").RequireAuthorization(PanelPermissions.Accounts);
+        accountRead.MapGet("/accounts", async (
+            Guid? officeId,
+            Guid? workerId,
+            DashboardQueryService query,
+            OfficeScopeService officeScope,
+            ClaimsPrincipal principal,
+            CancellationToken ct) =>
+        {
+            var scope = await officeScope.ResolveAsync(principal, ct);
+            if (!scope.HasAccess)
+            {
+                return Results.Forbid();
+            }
+
+            return Results.Ok(await query.GetOfficeAccountsAsync(scope, officeId, workerId, ct));
+        });
         accountRead.MapGet("/workers/{id:guid}/accounts", async (
             Guid id,
             DashboardQueryService query,
