@@ -14,7 +14,7 @@ public static class AvitoCandidatesListPreparer
 {
     private const int MaxScrollRounds = 48;
     private const int StableRoundsRequired = 3;
-    private const int MaxPhoneRevealRounds = 32;
+    private const int MaxPhoneRevealRounds = 40;
     private const int MaxPhoneRevealRoundsWhenNoItems = 2;
     private const int MaxDetailEnrichClicks = 40;
 
@@ -66,12 +66,12 @@ public static class AvitoCandidatesListPreparer
                 lastCount = count;
             }
 
-            await Task.Delay(380, cancellationToken).ConfigureAwait(false);
+            await HumanDelay.AfterListScrollAsync(cancellationToken).ConfigureAwait(false);
         }
 
         _ = await executeScript(AvitoCandidatesPageScripts.BuildScrollToTopScript(), cancellationToken)
             .ConfigureAwait(false);
-        await Task.Delay(320, cancellationToken).ConfigureAwait(false);
+        await HumanDelay.AfterListScrollAsync(cancellationToken).ConfigureAwait(false);
 
         var domItems = lastCount < 0 ? 0 : lastCount;
         var phoneRevealLimit = domItems == 0 ? MaxPhoneRevealRoundsWhenNoItems : MaxPhoneRevealRounds;
@@ -120,7 +120,14 @@ public static class AvitoCandidatesListPreparer
                 if (revealStep?.Clicked > 0)
                 {
                     phoneClicksTotal += revealStep.Clicked;
-                    await Task.Delay(420, cancellationToken).ConfigureAwait(false);
+                    await HumanDelay.AfterPhoneRevealClickAsync(cancellationToken).ConfigureAwait(false);
+                    phonesProbe = await TryParsePhonesReadyAsync(executeScript, cancellationToken).ConfigureAwait(false);
+                    if (phonesProbe?.Ready == true || phonesProbe?.Items == 0)
+                    {
+                        break;
+                    }
+
+                    continue;
                 }
 
                 var popupStep = await TryRevealNextContactsPopupPhoneAsync(executeScript, cancellationToken)
@@ -128,7 +135,8 @@ public static class AvitoCandidatesListPreparer
                 if (popupStep?.Clicked == true)
                 {
                     phoneClicksTotal++;
-                    await Task.Delay(popupStep.Revealed ? 260 : 420, cancellationToken).ConfigureAwait(false);
+                    await HumanDelay.AfterPhoneRevealOutcomeAsync(popupStep.Revealed, cancellationToken)
+                        .ConfigureAwait(false);
                 }
 
                 phonesProbe = await TryParsePhonesReadyAsync(executeScript, cancellationToken).ConfigureAwait(false);
@@ -139,7 +147,7 @@ public static class AvitoCandidatesListPreparer
 
                 if (revealStep?.Masked == 0 && popupStep?.Pending == 0)
                 {
-                    await Task.Delay(280, cancellationToken).ConfigureAwait(false);
+                    await HumanDelay.DelayAsync(280, 520, cancellationToken).ConfigureAwait(false);
                 }
             }
         }
@@ -407,6 +415,8 @@ public static class AvitoCandidatesListPreparer
             {
                 entries[detail.PhoneDigits] = payload;
             }
+
+            await HumanDelay.AfterDetailPanelReadAsync(cancellationToken).ConfigureAwait(false);
         }
 
         return new DetailEnrichmentResult(entries, clicks, skipped, hits);
@@ -942,6 +952,64 @@ public static class AvitoCandidatesListPreparer
         Func<string, CancellationToken, Task<string>> executeScript,
         CancellationToken cancellationToken)
     {
+        var click = await TryParseContactsPopupClickAsync(executeScript, cancellationToken).ConfigureAwait(false);
+        if (click is null)
+        {
+            return null;
+        }
+
+        if (click.ClosedExisting)
+        {
+            await HumanDelay.DelayAsync(180, 420, cancellationToken).ConfigureAwait(false);
+            click = await TryParseContactsPopupClickAsync(executeScript, cancellationToken).ConfigureAwait(false);
+            if (click is null)
+            {
+                return null;
+            }
+        }
+
+        if (!click.Clicked)
+        {
+            return new ContactsPopupRevealProbe(click.Items, click.Pending, false, false);
+        }
+
+        await HumanDelay.AfterPhoneRevealClickAsync(cancellationToken).ConfigureAwait(false);
+
+        for (var elapsed = 0;
+             elapsed < MonitoringTiming.ContactsPopupMaxWaitMs;
+             elapsed += (MonitoringTiming.ContactsPopupPollMinMs + MonitoringTiming.ContactsPopupPollMaxMs) / 2)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var probe = await TryParseContactsPopupProbeAsync(executeScript, click.Index, cancellationToken)
+                .ConfigureAwait(false);
+            if (probe is { Revealed: true })
+            {
+                return new ContactsPopupRevealProbe(click.Items, click.Pending, true, true);
+            }
+
+            if (probe is { State: "error" })
+            {
+                _ = await executeScript(AvitoCandidatesPageScripts.BuildCloseContactsPopupScript(), cancellationToken)
+                    .ConfigureAwait(false);
+                return new ContactsPopupRevealProbe(click.Items, click.Pending, true, false);
+            }
+
+            await HumanDelay.DelayAsync(
+                    MonitoringTiming.ContactsPopupPollMinMs,
+                    MonitoringTiming.ContactsPopupPollMaxMs,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        _ = await executeScript(AvitoCandidatesPageScripts.BuildCloseContactsPopupScript(), cancellationToken)
+            .ConfigureAwait(false);
+        return new ContactsPopupRevealProbe(click.Items, click.Pending, true, false);
+    }
+
+    private static async Task<ContactsPopupClickProbe?> TryParseContactsPopupClickAsync(
+        Func<string, CancellationToken, Task<string>> executeScript,
+        CancellationToken cancellationToken)
+    {
         var raw = await executeScript(
                 AvitoCandidatesPageScripts.BuildRevealNextContactsPopupPhoneScript(),
                 cancellationToken)
@@ -955,11 +1023,40 @@ public static class AvitoCandidatesListPreparer
         {
             using var doc = JsonDocument.Parse(UnwrapJsonString(raw));
             var root = doc.RootElement;
-            return new ContactsPopupRevealProbe(
+            return new ContactsPopupClickProbe(
                 root.TryGetProperty("items", out var i) ? i.GetInt32() : 0,
                 root.TryGetProperty("pending", out var p) ? p.GetInt32() : 0,
                 root.TryGetProperty("clicked", out var c) && c.ValueKind == JsonValueKind.True,
-                root.TryGetProperty("revealed", out var r) && r.GetBoolean());
+                root.TryGetProperty("closedExisting", out var closed) && closed.ValueKind == JsonValueKind.True,
+                root.TryGetProperty("index", out var idx) ? idx.GetInt32() : -1);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static async Task<ContactsPopupStateProbe?> TryParseContactsPopupProbeAsync(
+        Func<string, CancellationToken, Task<string>> executeScript,
+        int targetIndex,
+        CancellationToken cancellationToken)
+    {
+        var raw = await executeScript(
+                AvitoCandidatesPageScripts.BuildContactsPopupProbeScript(targetIndex),
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(UnwrapJsonString(raw));
+            var root = doc.RootElement;
+            return new ContactsPopupStateProbe(
+                root.TryGetProperty("state", out var stateProp) ? stateProp.GetString() ?? "" : "",
+                root.TryGetProperty("revealed", out var revealedProp) && revealedProp.GetBoolean());
         }
         catch
         {
@@ -993,6 +1090,10 @@ public static class AvitoCandidatesListPreparer
     private sealed record RevealPhonesStepProbe(int Items, int Masked, int Clicked);
 
     private sealed record ContactsPopupRevealProbe(int Items, int Pending, bool Clicked, bool Revealed);
+
+    private sealed record ContactsPopupClickProbe(int Items, int Pending, bool Clicked, bool ClosedExisting, int Index);
+
+    private sealed record ContactsPopupStateProbe(string State, bool Revealed);
 
     private sealed record DetailPanelProbe(string PhoneDigits, string VacancyUrl, string Vacancy, string City, string Age);
 

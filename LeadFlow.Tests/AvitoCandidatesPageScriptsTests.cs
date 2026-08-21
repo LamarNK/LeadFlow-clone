@@ -6,6 +6,17 @@ namespace LeadFlow.Tests;
 public sealed class AvitoCandidatesPageScriptsTests
 {
     [Fact]
+    public void BuildFirewallProbeScript_DetectsStaticIpBlockPage()
+    {
+        var script = AvitoCandidatesPageScripts.BuildFirewallProbeScript();
+
+        Assert.Contains("location.hash === \"#block\"", script, StringComparison.Ordinal);
+        Assert.Contains("support.avito.ru/request/720", script, StringComparison.Ordinal);
+        Assert.Contains("Отключить\\s+VPN", script, StringComparison.Ordinal);
+        Assert.Contains("hasFirewallText && hasCaptchaWidget", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void BuildClickCandidateChatByIndexScript_UsesJobApplicationItemIndex()
     {
         var script = AvitoCandidatesPageScripts.BuildClickCandidateChatByIndexScript(2);
@@ -66,7 +77,8 @@ public sealed class AvitoCandidatesPageScriptsTests
         Assert.Contains("/\\*/.test(raw)", script, StringComparison.Ordinal);
         // Цикл кликов не гейтится shouldSkip — только наличие «*» в тексте кнопки.
         Assert.Contains("masked++", script, StringComparison.Ordinal);
-        Assert.Contains("target.click()", script, StringComparison.Ordinal);
+        Assert.Contains("humanClick", script, StringComparison.Ordinal);
+        Assert.Contains("if (clicked > 0)", script, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -89,8 +101,56 @@ public sealed class AvitoCandidatesPageScriptsTests
         Assert.Contains("job-application/response/contacts-popup/popup", script, StringComparison.Ordinal);
         Assert.Contains("временн", script, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("не\\s+удалось\\s+загрузить\\s+контактные\\s+данные", script, StringComparison.OrdinalIgnoreCase);
-        Assert.Contains("maxRetries = 3", script, StringComparison.Ordinal);
+        Assert.Contains("clickPhoneRevealTarget", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("waitForContactsPopup", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("while (Date.now() < sliceEnd)", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("maxRetries = 3", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildContactsPopupProbeScript_StoresRevealedPhoneAndCloses()
+    {
+        var script = AvitoCandidatesPageScripts.BuildContactsPopupProbeScript(3);
+
         Assert.Contains("__leadflowRevealedPhones", script, StringComparison.Ordinal);
+        Assert.Contains("snapshotContactsPopupState", script, StringComparison.Ordinal);
+        Assert.Contains("const index = 3;", script, StringComparison.Ordinal);
+        Assert.Contains("временн", script, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("не\\s+удалось\\s+загрузить\\s+контактные\\s+данные", script, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("while (Date.now() < sliceEnd)", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void PhoneHelpers_UsePointerMouseGestureInsteadOfBusyWait()
+    {
+        var script = AvitoCandidatesPageScripts.BuildPhonesReadyProbeScript();
+
+        Assert.Contains("humanClick", script, StringComparison.Ordinal);
+        Assert.Contains("pointerdown", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("waitForContactsPopup", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("while (Date.now() < sliceEnd)", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildScrollStepScript_UsesPartialViewportAndSmoothBehavior()
+    {
+        var script = AvitoCandidatesPageScripts.BuildScrollStepScript();
+
+        Assert.Contains("scrollBy", script, StringComparison.Ordinal);
+        Assert.Contains("behavior: \"smooth\"", script, StringComparison.Ordinal);
+        Assert.Contains("Math.random()", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("clientHeight * 0.9", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildClickCandidateItemByIndexScript_DispatchesPointerGesture()
+    {
+        var script = AvitoCandidatesPageScripts.BuildClickCandidateItemByIndexScript(1);
+
+        Assert.Contains("pointerdown", script, StringComparison.Ordinal);
+        Assert.Contains("mousedown", script, StringComparison.Ordinal);
+        Assert.Contains("mouseup", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("item.click()", script, StringComparison.Ordinal);
     }
 
     [Fact]

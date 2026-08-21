@@ -66,9 +66,56 @@ public static class HumanDelay
             MonitoringTiming.HumanDelayAfterCandidateClickMaxMs,
             cancellationToken);
 
+    public static Task AfterDetailPanelReadAsync(CancellationToken cancellationToken = default) =>
+        DelayAsync(
+            MonitoringTiming.HumanDelayAfterDetailPanelReadMinMs,
+            MonitoringTiming.HumanDelayAfterDetailPanelReadMaxMs,
+            cancellationToken);
+
+    public static Task AfterListScrollAsync(CancellationToken cancellationToken = default) =>
+        DelayAsync(
+            MonitoringTiming.HumanDelayAfterListScrollMinMs,
+            MonitoringTiming.HumanDelayAfterListScrollMaxMs,
+            cancellationToken);
+
+    public static Task AfterPhoneRevealClickAsync(CancellationToken cancellationToken = default) =>
+        DelayAsync(
+            MonitoringTiming.HumanDelayAfterPhoneRevealClickMinMs,
+            MonitoringTiming.HumanDelayAfterPhoneRevealClickMaxMs,
+            cancellationToken);
+
+    public static Task AfterPhoneRevealOutcomeAsync(bool revealed, CancellationToken cancellationToken = default) =>
+        revealed
+            ? DelayAsync(
+                MonitoringTiming.HumanDelayAfterPhoneRevealSuccessMinMs,
+                MonitoringTiming.HumanDelayAfterPhoneRevealSuccessMaxMs,
+                cancellationToken)
+            : DelayAsync(
+                MonitoringTiming.HumanDelayAfterPhoneRevealMissMinMs,
+                MonitoringTiming.HumanDelayAfterPhoneRevealMissMaxMs,
+                cancellationToken);
+
+    public static Task AfterMessengerCardAsync(CancellationToken cancellationToken = default) =>
+        DelayAsync(
+            MonitoringTiming.HumanDelayAfterMessengerCardMinMs,
+            MonitoringTiming.HumanDelayAfterMessengerCardMaxMs,
+            cancellationToken);
+
     public static Task BeforeMessengerAutoReplySendAsync(CancellationToken cancellationToken = default) =>
         DelayAsync(
             MonitoringTiming.MessengerAutoReplyAfterTypeMinMs,
             MonitoringTiming.MessengerAutoReplyAfterTypeMaxMs,
             cancellationToken);
+
+    /// <summary>Задержка между символами для <c>TypeAsync</c>.</summary>
+    public static int NextTypeCharDelayMs()
+    {
+        var lo = Math.Min(
+            MonitoringTiming.HumanTypeCharDelayMinMs,
+            MonitoringTiming.HumanTypeCharDelayMaxMs);
+        var hi = Math.Max(
+            MonitoringTiming.HumanTypeCharDelayMinMs,
+            MonitoringTiming.HumanTypeCharDelayMaxMs);
+        return lo == hi ? lo : Random.Shared.Next(lo, hi + 1);
+    }
 }

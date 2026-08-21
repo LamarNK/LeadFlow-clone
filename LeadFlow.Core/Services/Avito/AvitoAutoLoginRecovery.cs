@@ -516,13 +516,13 @@ public static class AvitoAutoLoginRecovery
         string value,
         CancellationToken cancellationToken)
     {
-        await input.ClickAsync(new ClickOptions { Delay = 20 }).ConfigureAwait(false);
-        await Task.Delay(40, cancellationToken).ConfigureAwait(false);
+        await input.ClickAsync(new ClickOptions { Delay = Random.Shared.Next(35, 80) }).ConfigureAwait(false);
+        await Task.Delay(Random.Shared.Next(60, 140), cancellationToken).ConfigureAwait(false);
         await page.Keyboard.DownAsync("Control").ConfigureAwait(false);
         await page.Keyboard.PressAsync("KeyA").ConfigureAwait(false);
         await page.Keyboard.UpAsync("Control").ConfigureAwait(false);
         await page.Keyboard.PressAsync("Backspace").ConfigureAwait(false);
-        await input.TypeAsync(value, new TypeOptions { Delay = 15 }).ConfigureAwait(false);
+        await input.TypeAsync(value, new TypeOptions { Delay = HumanDelay.NextTypeCharDelayMs() }).ConfigureAwait(false);
     }
 
     private static async Task<bool> TryMouseClickFirstAsync(
@@ -541,23 +541,10 @@ public static class AvitoAutoLoginRecovery
                     continue;
                 }
 
-                await handle.EvaluateFunctionAsync("el => el.scrollIntoView({ block: 'center', inline: 'center' })")
-                    .ConfigureAwait(false);
-                await Task.Delay(80, cancellationToken).ConfigureAwait(false);
-                var box = await handle.BoundingBoxAsync().ConfigureAwait(false);
-                if (box is null || box.Width < 1 || box.Height < 1)
+                if (await AvitoHumanPointer.TryClickHandleAsync(page, handle, cancellationToken).ConfigureAwait(false))
                 {
-                    continue;
+                    return true;
                 }
-
-                await page.Mouse.MoveAsync(box.X + box.Width / 2, box.Y + box.Height / 2).ConfigureAwait(false);
-                await Task.Delay(30, cancellationToken).ConfigureAwait(false);
-                await page.Mouse.ClickAsync(
-                        box.X + box.Width / 2,
-                        box.Y + box.Height / 2,
-                        new ClickOptions { Delay = 40 })
-                    .ConfigureAwait(false);
-                return true;
             }
             catch
             {

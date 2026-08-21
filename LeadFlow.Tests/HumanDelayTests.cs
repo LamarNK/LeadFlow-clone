@@ -56,6 +56,37 @@ public sealed class HumanDelayTests
             <= MonitoringTiming.HumanDelayBeforeCandidateClickMaxMs);
         Assert.True(MonitoringTiming.HumanDelayAfterCandidateClickMinMs
             <= MonitoringTiming.HumanDelayAfterCandidateClickMaxMs);
+        Assert.True(MonitoringTiming.HumanDelayAfterDetailPanelReadMinMs
+            <= MonitoringTiming.HumanDelayAfterDetailPanelReadMaxMs);
+        Assert.True(MonitoringTiming.HumanDelayAfterListScrollMinMs
+            <= MonitoringTiming.HumanDelayAfterListScrollMaxMs);
+        Assert.True(MonitoringTiming.HumanDelayAfterPhoneRevealClickMinMs
+            <= MonitoringTiming.HumanDelayAfterPhoneRevealClickMaxMs);
+        Assert.True(MonitoringTiming.HumanDelayAfterPhoneRevealSuccessMinMs
+            <= MonitoringTiming.HumanDelayAfterPhoneRevealSuccessMaxMs);
+        Assert.True(MonitoringTiming.HumanDelayAfterPhoneRevealMissMinMs
+            <= MonitoringTiming.HumanDelayAfterPhoneRevealMissMaxMs);
+        Assert.True(MonitoringTiming.HumanDelayAfterMessengerCardMinMs
+            <= MonitoringTiming.HumanDelayAfterMessengerCardMaxMs);
+        Assert.True(MonitoringTiming.HumanTypeCharDelayMinMs
+            <= MonitoringTiming.HumanTypeCharDelayMaxMs);
+        Assert.True(MonitoringTiming.ContactsPopupPollMinMs
+            <= MonitoringTiming.ContactsPopupPollMaxMs);
+        Assert.True(MonitoringTiming.HumanTypeCharDelayMinMs >= 30);
+        Assert.True(MonitoringTiming.HumanDelayAfterMessengerCardMinMs >= 2000);
+    }
+
+    [Fact]
+    public void NextTypeCharDelayMs_StaysInsideBounds()
+    {
+        for (var i = 0; i < 40; i++)
+        {
+            var delay = HumanDelay.NextTypeCharDelayMs();
+            Assert.InRange(
+                delay,
+                MonitoringTiming.HumanTypeCharDelayMinMs,
+                MonitoringTiming.HumanTypeCharDelayMaxMs);
+        }
     }
 
     [Fact]
