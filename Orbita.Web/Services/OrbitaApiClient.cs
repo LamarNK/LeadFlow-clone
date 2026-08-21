@@ -133,6 +133,25 @@ public sealed class OrbitaApiClient(
             ? Task.FromResult<IReadOnlyList<WorkerAccountDto>?>(DesignPreviewData.GetAccounts(id))
             : GetAsync<IReadOnlyList<WorkerAccountDto>>($"api/v1/workers/{id}/accounts", ct);
 
+    public Task<IReadOnlyList<OfficeAccountListItem>?> GetOfficeAccountsAsync(
+        Guid? workerId = null,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return Task.FromResult<IReadOnlyList<OfficeAccountListItem>?>(
+                DesignPreviewData.GetOfficeAccounts(officeContext.EffectiveOfficeId, workerId));
+        }
+
+        var path = WithOfficeQuery("api/v1/accounts");
+        if (workerId is Guid id)
+        {
+            path = AppendQuery(path, "workerId", id.ToString("D"));
+        }
+
+        return GetAsync<IReadOnlyList<OfficeAccountListItem>>(path, ct);
+    }
+
     public Task<IReadOnlyList<WorkerEventListItem>?> GetEventsAsync(
         Guid? workerId = null,
         int limit = 100,

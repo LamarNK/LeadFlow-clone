@@ -2346,6 +2346,36 @@ internal static class DesignPreviewData
         return [];
     }
 
+    public static IReadOnlyList<OfficeAccountListItem> GetOfficeAccounts(Guid? officeId, Guid? workerId = null)
+    {
+        var workers = GetWorkers(officeId);
+        if (workerId is Guid requestedWorkerId)
+        {
+            workers = workers.Where(w => w.Id == requestedWorkerId).ToList();
+        }
+
+        var items = new List<OfficeAccountListItem>();
+        foreach (var worker in workers)
+        {
+            var detail = GetWorker(worker.Id);
+            foreach (var account in GetAccounts(worker.Id))
+            {
+                var balance = detail?.Balances.FirstOrDefault(b => b.AccountId == account.AccountId);
+                items.Add(new OfficeAccountListItem(
+                    worker.Id,
+                    worker.DisplayName,
+                    worker.OfficeName,
+                    worker.IsOnline,
+                    worker.CurrentActivity,
+                    worker.ActiveAccounts ?? worker.CurrentActivity?.ActiveAccounts,
+                    account,
+                    balance));
+            }
+        }
+
+        return items;
+    }
+
     public static IReadOnlyList<WorkerEventListItem> Events =>
     [
         new(Guid.Parse("33333333-3333-3333-3333-333333333301"), WorkerMoscowId, "VDS-Москва-01", AccountAlphaId, "user_01", "Info", "Отклик отправлен в CRM", null, Now.AddMinutes(-1)),
