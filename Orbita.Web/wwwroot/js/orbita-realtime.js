@@ -105,6 +105,7 @@
 
         handler.fetchSnapshot()
             .catch(function (err) {
+                if (err && err.name === 'AbortError') return;
                 console.warn('Live snapshot refresh:', err);
             })
             .finally(function () {
@@ -132,6 +133,9 @@
 
     function scheduleRefresh(notification) {
         var kinds = normalizeKinds(notification.kinds || notification.Kinds);
+        if (window.OrbitaRuntime && typeof window.OrbitaRuntime.invalidateNavCacheForKinds === 'function') {
+            window.OrbitaRuntime.invalidateNavCacheForKinds(kinds);
+        }
         kinds.forEach(function (k) {
             if (pendingKinds.indexOf(k) < 0) pendingKinds.push(k);
         });
@@ -311,9 +315,10 @@
         connect: connect
     };
 
-    document.addEventListener('orbita:content-updated', function () {
+    document.addEventListener('orbita:content-updated', function (event) {
         bindRefreshButtons();
         fetchNavBadges();
+        if (event && event.detail && event.detail.skipLiveRefresh) return;
         var page = getActivePage();
         if (page && handlers[page]) {
             scheduleRefresh({ kinds: PAGE_KINDS[page] || [] });
