@@ -51,6 +51,12 @@ public static class MonitoringTiming
     public const int AdsPowerForcedNavigationMaxWaitMs = 8_000;
 
     /// <summary>
+    /// Сколько ждать результат проверки прокси на стартовой странице AdsPower
+    /// (<c>start.adspower.net</c>). IP-checker может идти несколько секунд.
+    /// </summary>
+    public const int AdsPowerStartPageProxyCheckMaxWaitMs = 20_000;
+
+    /// <summary>
     /// После стольких полных циклов мониторинга (с browser/start…browser/stop)
     /// воркер принудительно закрывает все известные браузеры AdsPower —
     /// чтобы окна, открытые оператором «посмотреть», не висели бесконечно.
@@ -102,13 +108,48 @@ public static class MonitoringTiming
     public const int HumanDelayBetweenSubProfilesMinMs = 8000;
     public const int HumanDelayBetweenSubProfilesMaxMs = 18000;
 
-    /// <summary>Перед кликом по карточке отклика (панель «Данные», чат) — короткий jitter, без долгих пауз.</summary>
-    public const int HumanDelayBeforeCandidateClickMinMs = 450;
-    public const int HumanDelayBeforeCandidateClickMaxMs = 950;
+    /// <summary>Перед кликом по карточке отклика (панель «Данные», чат).</summary>
+    public const int HumanDelayBeforeCandidateClickMinMs = 650;
+    public const int HumanDelayBeforeCandidateClickMaxMs = 1600;
 
     /// <summary>После клика по карточке до чтения панели или мини-чата.</summary>
-    public const int HumanDelayAfterCandidateClickMinMs = 520;
-    public const int HumanDelayAfterCandidateClickMaxMs = 1100;
+    public const int HumanDelayAfterCandidateClickMinMs = 800;
+    public const int HumanDelayAfterCandidateClickMaxMs = 2000;
+
+    /// <summary>После чтения панели «Данные» — имитация просмотра, до следующей карточки.</summary>
+    public const int HumanDelayAfterDetailPanelReadMinMs = 350;
+    public const int HumanDelayAfterDetailPanelReadMaxMs = 950;
+
+    /// <summary>После шага прокрутки списка откликов (подгрузка + «почитать»).</summary>
+    public const int HumanDelayAfterListScrollMinMs = 650;
+    public const int HumanDelayAfterListScrollMaxMs = 1500;
+
+    /// <summary>После клика «показать номер» до опроса popup / inline.</summary>
+    public const int HumanDelayAfterPhoneRevealClickMinMs = 700;
+    public const int HumanDelayAfterPhoneRevealClickMaxMs = 1700;
+
+    /// <summary>После успешного раскрытия номера — не сразу к следующей карточке.</summary>
+    public const int HumanDelayAfterPhoneRevealSuccessMinMs = 900;
+    public const int HumanDelayAfterPhoneRevealSuccessMaxMs = 2200;
+
+    /// <summary>Если popup не отдал номер — короткая пауза перед ретраем.</summary>
+    public const int HumanDelayAfterPhoneRevealMissMinMs = 500;
+    public const int HumanDelayAfterPhoneRevealMissMaxMs = 1100;
+
+    /// <summary>Опрос DOM popup контактов (мс).</summary>
+    public const int ContactsPopupPollMinMs = 220;
+    public const int ContactsPopupPollMaxMs = 420;
+
+    /// <summary>Максимум ожидания номера в popup после клика (мс).</summary>
+    public const int ContactsPopupMaxWaitMs = 5_500;
+
+    /// <summary>После закрытия мини-чата / сбора переписки — «прочитал и закрыл».</summary>
+    public const int HumanDelayAfterMessengerCardMinMs = 2400;
+    public const int HumanDelayAfterMessengerCardMaxMs = 6500;
+
+    /// <summary>Пауза между символами при наборе (логин, чат).</summary>
+    public const int HumanTypeCharDelayMinMs = 38;
+    public const int HumanTypeCharDelayMaxMs = 95;
 
     // ---- Ожидание готовности страницы откликов (сигналы DOM, не только таймер) ----
 
@@ -171,11 +212,11 @@ public static class MonitoringTiming
     /// <summary>Интервал опроса после submit (мс).</summary>
     public const int AutoLoginPostSubmitPollMs = 650;
 
-    /// <summary>Пауза после ввода текста в мини-чат перед отправкой (мс).</summary>
-    public const int MessengerAutoReplyAfterTypeMinMs = 350;
+    /// <summary>Пауза после набора текста в мини-чат перед отправкой (мс).</summary>
+    public const int MessengerAutoReplyAfterTypeMinMs = 800;
 
-    /// <summary>Пауза после ввода текста в мини-чат перед отправкой (мс).</summary>
-    public const int MessengerAutoReplyAfterTypeMaxMs = 900;
+    /// <summary>Пауза после набора текста в мини-чат перед отправкой (мс).</summary>
+    public const int MessengerAutoReplyAfterTypeMaxMs = 1800;
 
     /// <summary>Ожидание появления отправленного сообщения в истории чата (мс).</summary>
     public const int MessengerAutoReplyPostSendMaxWaitMs = 8_000;

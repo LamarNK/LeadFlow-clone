@@ -488,6 +488,11 @@ public sealed class MonitoringService(
                 LogActiveAdsChange("UpdateProfileStatsAsync.catch_ads_power_limit", account.Id, GetPersistedOrMemoryActiveAdCount(account), GetPersistedOrMemoryActiveAdCount(account), false);
                 await HandleAdsPowerDailyOpenLimitForAccountAsync(account, limitEx, token).ConfigureAwait(false);
             }
+            catch (AdsPowerProxyFailureException proxyEx)
+            {
+                LogActiveAdsChange("UpdateProfileStatsAsync.catch_ads_power_proxy", account.Id, GetPersistedOrMemoryActiveAdCount(account), GetPersistedOrMemoryActiveAdCount(account), false);
+                await HandleAdsPowerProxyFailureForAccountAsync(account, proxyEx, token).ConfigureAwait(false);
+            }
             catch (Exception ex)
             {
                 LogActiveAdsChange("UpdateProfileStatsAsync.catch_generic", account.Id, GetPersistedOrMemoryActiveAdCount(account), GetPersistedOrMemoryActiveAdCount(account), false);
@@ -830,6 +835,11 @@ public sealed class MonitoringService(
             await HandleAdsPowerProfileInUseForAccountAsync(account, profileInUseEx, cancellationToken).ConfigureAwait(false);
             return (0, true, false);
         }
+        catch (AdsPowerProxyFailureException proxyEx)
+        {
+            await HandleAdsPowerProxyFailureForAccountAsync(account, proxyEx, cancellationToken).ConfigureAwait(false);
+            return (0, true, false);
+        }
         finally
         {
             accountSw.Stop();
@@ -987,6 +997,52 @@ public sealed class MonitoringService(
                 ["accountName"] = account.DisplayName,
                 ["adsPower.apiCode"] = profileInUseEx.ApiCode,
                 ["adsPower.apiMessage"] = profileInUseEx.ApiMessage
+            });
+    }
+
+    private async Task HandleAdsPowerProxyFailureForAccountAsync(
+        AvitoAccount account,
+        AdsPowerProxyFailureException proxyEx,
+        CancellationToken ct)
+    {
+        account.Status = AvitoAccountStatus.RequiresManualAction;
+        account.LastErrorMessage = AccountIssueFormatting.FormatIssue(
+            account,
+            null,
+            AvitoSubProfileIssueKind.ProxyFailure,
+            proxyEx.UserMessage);
+
+        try
+        {
+            await repository.SaveAccountAsync(account, ct).ConfigureAwait(false);
+            await repository.AddLogAsync(new ProcessingLogItem
+            {
+                AccountId = account.Id,
+                Level = "Warning",
+                Message = "Прокси AdsPower не работает",
+                Details = proxyEx.Message
+            }, ct).ConfigureAwait(false);
+        }
+        catch (Exception persistEx)
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                $"Не удалось сохранить статус отказа прокси AdsPower для аккаунта {account.DisplayName}: {persistEx.Message}",
+                DeskLinkAuditLogLevel.Error);
+        }
+
+        UpdateStatus(MonitoringStatus.RequiresManualAction, account.LastErrorMessage);
+
+        _ = GlobalLogger.Instance.LogAsync(
+            $"AdsPower proxy failure for account {account.DisplayName}: {proxyEx.Message}",
+            DeskLinkAuditLogLevel.Warning,
+            memberName: nameof(HandleAdsPowerProxyFailureForAccountAsync),
+            filePath: "MonitoringService.cs",
+            errorKey: AdsPowerProxyFailureException.ErrorKey,
+            properties: new Dictionary<string, object?>
+            {
+                ["accountId"] = account.Id,
+                ["accountName"] = account.DisplayName,
+                ["adsPower.startPageUrl"] = proxyEx.PageUrl
             });
     }
 

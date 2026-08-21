@@ -97,6 +97,8 @@ public sealed class AdsPowerApiClientTests
         Assert.False(AdsPowerAvitoAutomationService.IsRetryableAdsPowerStartupFailure(
             new AdsPowerProfileInUseException(-1, "in use")));
         Assert.False(AdsPowerAvitoAutomationService.IsRetryableAdsPowerStartupFailure(
+            new AdsPowerProxyFailureException("https://start.adspower.net/?id=k1dp9we7")));
+        Assert.False(AdsPowerAvitoAutomationService.IsRetryableAdsPowerStartupFailure(
             new OperationCanceledException()));
     }
 

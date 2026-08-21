@@ -729,6 +729,14 @@ public sealed class WorkerMonitoringService(
             await _cycleJournal.FlushAsync(cancellationToken).ConfigureAwait(false);
             return new AccountCycleOutcome(0, true, false);
         }
+        catch (AdsPowerProxyFailureException proxyEx)
+        {
+            _cycleJournal.AbortCycle(cycleId);
+            cycleTerminal = true;
+            await HandleAdsPowerProxyFailureForAccountAsync(account, proxyEx, cancellationToken).ConfigureAwait(false);
+            await _cycleJournal.FlushAsync(cancellationToken).ConfigureAwait(false);
+            return new AccountCycleOutcome(0, true, false);
+        }
         catch (SessionDiagnosticException diagnosticEx)
         {
             _cycleJournal.AbortCycle(cycleId);
@@ -2162,6 +2170,27 @@ public sealed class WorkerMonitoringService(
             ct).ConfigureAwait(false);
     }
 
+    private async Task HandleAdsPowerProxyFailureForAccountAsync(
+        AvitoAccount account,
+        AdsPowerProxyFailureException proxyEx,
+        CancellationToken ct)
+    {
+        account.Status = AvitoAccountStatus.RequiresManualAction;
+        account.LastErrorMessage = AccountIssueFormatting.FormatIssue(
+            account,
+            null,
+            AvitoSubProfileIssueKind.ProxyFailure,
+            proxyEx.UserMessage);
+        WorkerMonitoringLogger.AccountFailed(account, "AdsPower proxy", proxyEx.UserMessage);
+        await repository.SaveAccountAsync(account, ct).ConfigureAwait(false);
+        await PublishAccountEventAsync(
+            account,
+            "Warning",
+            $"Прокси AdsPower не работает для {account.DisplayName}",
+            proxyEx.Message,
+            ct).ConfigureAwait(false);
+    }
+
     private Task PublishAccountEventAsync(
         AvitoAccount account,
         string level,
@@ -2326,14 +2355,16 @@ public sealed class WorkerMonitoringService(
         && ex is not AdsPowerRateLimitExceededException
         && ex is not AdsPowerDailyOpenLimitExceededException
         && ex is not AdsPowerProfileInUseException
+        && ex is not AdsPowerProxyFailureException
         && ex is not SessionDiagnosticException
         && !ShouldHandleAsSubProfileAutomationFailure(ex);
 
     private static bool ShouldHandleAsSubProfileAutomationFailure(Exception ex) =>
-        ex is AvitoPageMismatchException
-        or JsonException
-        or PuppeteerException
-        or InvalidOperationException;
+        ex is not AdsPowerProxyFailureException
+        && (ex is AvitoPageMismatchException
+            or JsonException
+            or PuppeteerException
+            or InvalidOperationException);
 
     private async Task<bool> HandleSubProfileSwitchFailureAsync(
         AvitoAccount account,

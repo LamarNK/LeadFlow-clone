@@ -1459,7 +1459,20 @@ public sealed partial class AdsPowerAvitoAutomationService(
         $@"(() => {{
             const el = document.querySelector('[data-marker=""component-profile-switch/profile-{Escape(subProfileId)}""]');
             if (!el) return false;
-            el.click();
+            const rect = el.getBoundingClientRect();
+            const x = rect.left + Math.max(rect.width, 1) * (0.32 + Math.random() * 0.36);
+            const y = rect.top + Math.max(rect.height, 1) * (0.32 + Math.random() * 0.36);
+            const base = {{ bubbles: true, cancelable: true, view: window, clientX: x, clientY: y, button: 0, buttons: 1 }};
+            try {{ el.scrollIntoView({{ block: 'center', inline: 'nearest' }}); }} catch {{}}
+            if (typeof PointerEvent === 'function') {{
+                el.dispatchEvent(new PointerEvent('pointerdown', Object.assign({{ pointerType: 'mouse', isPrimary: true, pointerId: 1 }}, base)));
+            }}
+            el.dispatchEvent(new MouseEvent('mousedown', base));
+            if (typeof PointerEvent === 'function') {{
+                el.dispatchEvent(new PointerEvent('pointerup', Object.assign({{ pointerType: 'mouse', isPrimary: true, pointerId: 1 }}, base)));
+            }}
+            el.dispatchEvent(new MouseEvent('mouseup', Object.assign({{}}, base, {{ buttons: 0 }})));
+            el.dispatchEvent(new MouseEvent('click', Object.assign({{}}, base, {{ buttons: 0 }})));
             return true;
         }})()";
 
@@ -1726,6 +1739,8 @@ public sealed partial class AdsPowerAvitoAutomationService(
         {
             await WaitForAdsPowerStartupNavigationAsync(browser, callerMemberName, cancellationToken)
                 .ConfigureAwait(false);
+            await EnsureAdsPowerProxyReadyAsync(browser, callerMemberName, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         var targetKind = ClassifyAutomationPageKind(preferredUrl);
@@ -1804,6 +1819,133 @@ public sealed partial class AdsPowerAvitoAutomationService(
 
             await Task.Delay(poll, cancellationToken).ConfigureAwait(false);
             elapsed += poll;
+        }
+    }
+
+    /// <summary>
+    /// Если AdsPower открыл стартовую вкладку с проверкой прокси — ждём результат.
+    /// «Proxy failure» означает, что на Avito идти незачем.
+    /// </summary>
+    internal static async Task EnsureAdsPowerProxyReadyAsync(
+        IBrowser browser,
+        string callerMemberName,
+        CancellationToken cancellationToken)
+    {
+        var timeout = TimeSpan.FromMilliseconds(MonitoringTiming.AdsPowerStartPageProxyCheckMaxWaitMs);
+        var poll = TimeSpan.FromMilliseconds(MonitoringTiming.AdsPowerStartupNavigationPollMs);
+        var elapsed = TimeSpan.Zero;
+        string? lastStartUrl = null;
+
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var pages = (await browser.PagesAsync().ConfigureAwait(false)).ToList();
+            var urls = new List<string>(pages.Count);
+            IPage? startPage = null;
+
+            foreach (var page in pages)
+            {
+                var url = await ReadPageUrlAsync(page).ConfigureAwait(false);
+                urls.Add(url);
+                if (startPage is null && AdsPowerStartPage.IsUrl(url))
+                {
+                    startPage = page;
+                    lastStartUrl = url;
+                }
+            }
+
+            if (urls.Any(IsUsableAvitoPageUrl))
+            {
+                return;
+            }
+
+            if (startPage is not null)
+            {
+                var status = await ProbeStartPageProxyStatusAsync(startPage, cancellationToken)
+                    .ConfigureAwait(false);
+                if (status == AdsPowerStartPageProxyStatus.Failed)
+                {
+                    _ = GlobalLogger.Instance.LogAsync(
+                        $"AdsPower: стартовая страница показала отказ прокси ({startPage.Url}).",
+                        DeskLinkAuditLogLevel.Warning,
+                        memberName: callerMemberName,
+                        errorKey: AdsPowerProxyFailureException.ErrorKey,
+                        properties: new Dictionary<string, object?>
+                        {
+                            ["automation.startPageUrl"] = startPage.Url,
+                            ["automation.startupUrls"] = string.Join(" | ", urls)
+                        });
+                    throw new AdsPowerProxyFailureException(startPage.Url);
+                }
+
+                if (status == AdsPowerStartPageProxyStatus.Ok)
+                {
+                    _ = GlobalLogger.Instance.LogAsync(
+                        "AdsPower: проверка прокси на стартовой странице прошла.",
+                        DeskLinkAuditLogLevel.Info,
+                        memberName: callerMemberName,
+                        properties: new Dictionary<string, object?>
+                        {
+                            ["automation.startPageUrl"] = startPage.Url,
+                            ["automation.proxyCheckWaitMs"] = elapsed.TotalMilliseconds
+                        });
+                    return;
+                }
+            }
+
+            if (elapsed >= timeout)
+            {
+                if (startPage is not null || AdsPowerStartPage.IsUrl(lastStartUrl))
+                {
+                    throw new AdsPowerProxyFailureException(
+                        startPage?.Url ?? lastStartUrl,
+                        "проверка прокси на стартовой странице AdsPower не завершилась.");
+                }
+
+                return;
+            }
+
+            await Task.Delay(poll, cancellationToken).ConfigureAwait(false);
+            elapsed += poll;
+        }
+    }
+
+    private static async Task<AdsPowerStartPageProxyStatus> ProbeStartPageProxyStatusAsync(
+        IPage page,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var html = await page.GetContentAsync().ConfigureAwait(false);
+            var fromHtml = AdsPowerStartPage.Parse(html);
+            if (fromHtml != AdsPowerStartPageProxyStatus.Unknown)
+            {
+                return fromHtml;
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+        }
+
+        try
+        {
+            var text = await page.EvaluateExpressionAsync<string>(
+                    "(() => (document.body && document.body.innerText) || '')()")
+                .ConfigureAwait(false);
+            return AdsPowerStartPage.Parse(text);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+
+            return AdsPowerStartPageProxyStatus.Unknown;
         }
     }
 
@@ -2125,7 +2267,8 @@ public sealed partial class AdsPowerAvitoAutomationService(
         ex is not OperationCanceledException
         and not AdsPowerDailyOpenLimitExceededException
         and not AdsPowerProfileInUseException
-        and not AdsPowerRateLimitExceededException;
+        and not AdsPowerRateLimitExceededException
+        and not AdsPowerProxyFailureException;
 
     internal static bool IsReusableStartupPlaceholderUrl(string? url)
     {
@@ -2555,6 +2698,15 @@ public sealed partial class AdsPowerAvitoAutomationService(
                     enrichmentHints?.AckOutboundChatSentAsync,
                     cancellationToken)
                 .ConfigureAwait(false);
+            if (!string.IsNullOrWhiteSpace(enrichment.ChannelUrl) || enrichment.ChatMessages.Count > 0)
+            {
+                await HumanDelay.AfterMessengerCardAsync(cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                await HumanDelay.AfterCandidateClickAsync(cancellationToken).ConfigureAwait(false);
+            }
+
             if (string.IsNullOrWhiteSpace(enrichment.ChannelUrl) && enrichment.ChatMessages.Count == 0)
             {
                 _ = GlobalLogger.Instance.LogAsync(
@@ -2609,7 +2761,15 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 const mini = link.closest('[class*=""channel-module-root""]');
                 const back = mini?.querySelector('[data-marker=""navigation/back""]');
                 if (back) {
-                    back.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+                    const rect = back.getBoundingClientRect();
+                    const x = rect.left + Math.max(rect.width, 1) * 0.5;
+                    const y = rect.top + Math.max(rect.height, 1) * 0.5;
+                    const base = { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y, button: 0 };
+                    back.dispatchEvent(new PointerEvent('pointerdown', Object.assign({ pointerType: 'mouse', isPrimary: true, pointerId: 1 }, base)));
+                    back.dispatchEvent(new MouseEvent('mousedown', base));
+                    back.dispatchEvent(new PointerEvent('pointerup', Object.assign({ pointerType: 'mouse', isPrimary: true, pointerId: 1 }, base)));
+                    back.dispatchEvent(new MouseEvent('mouseup', base));
+                    back.dispatchEvent(new MouseEvent('click', base));
                 }
             })()").ConfigureAwait(false);
 
@@ -2682,12 +2842,24 @@ public sealed partial class AdsPowerAvitoAutomationService(
         await CloseMiniMessengerPanelIfOpenAsync(page, cancellationToken).ConfigureAwait(false);
         await HumanDelay.BeforeCandidateClickAsync(cancellationToken).ConfigureAwait(false);
 
-        var clickRaw = await EvaluateWithRetryAsync<string>(
-                page,
-                AvitoCandidatesPageScripts.BuildClickCandidateChatByIndexScript(candidateIndex),
-                cancellationToken)
+        var clickedViaPointer = await TryClickCandidateChatWithPointerAsync(page, candidateIndex, cancellationToken)
             .ConfigureAwait(false);
-        if (!TryParseMessengerChatClickStep(clickRaw, out var clicked, out var clickReason) || !clicked)
+        string? clickReason = null;
+        var clicked = clickedViaPointer;
+        if (!clicked)
+        {
+            var clickRaw = await EvaluateWithRetryAsync<string>(
+                    page,
+                    AvitoCandidatesPageScripts.BuildClickCandidateChatByIndexScript(candidateIndex),
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (!TryParseMessengerChatClickStep(clickRaw, out clicked, out clickReason) || !clicked)
+            {
+                clicked = false;
+            }
+        }
+
+        if (!clicked)
         {
             if (!string.IsNullOrWhiteSpace(clickReason))
             {
@@ -2955,7 +3127,8 @@ public sealed partial class AdsPowerAvitoAutomationService(
         for (var round = 0; round < 4; round++)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            await Task.Delay(round == 0 ? 280 : 220, cancellationToken).ConfigureAwait(false);
+            await HumanDelay.DelayAsync(round == 0 ? 400 : 280, round == 0 ? 900 : 650, cancellationToken)
+                .ConfigureAwait(false);
 
             var messagesRaw = await EvaluateWithRetryAsync<string>(
                     page,
@@ -2975,12 +3148,109 @@ public sealed partial class AdsPowerAvitoAutomationService(
     private static IReadOnlyList<AvitoChatMessage> ParseMiniMessengerMessages(JsonArray chatMessages) =>
         AvitoChatMessagesJson.Parse(chatMessages.ToJsonString());
 
+    private static async Task<bool> TryClickCandidateChatWithPointerAsync(
+        IPage page,
+        int candidateIndex,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var items = await page.QuerySelectorAllAsync("[data-marker='job-application/item']").ConfigureAwait(false);
+            if (items is null || candidateIndex < 0 || candidateIndex >= items.Length)
+            {
+                return false;
+            }
+
+            var chat = await items[candidateIndex]
+                .QuerySelectorAsync("[data-marker='job-application/link/to-chat']")
+                .ConfigureAwait(false);
+            if (chat is null)
+            {
+                return false;
+            }
+
+            return await AvitoHumanPointer.TryClickHandleAsync(page, chat, cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static readonly string[] MiniMessengerSendSelectors =
+    [
+        "[data-marker='reply/send']",
+        "[data-marker='reply/submit']",
+        "[data-marker='reply/sendButton']",
+        "form[data-marker='reply'] button[type='submit']"
+    ];
+
+    private static async Task<bool> TrySendMiniMessengerTextWithPointerAsync(
+        IPage page,
+        string messageText,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var input = await page.QuerySelectorAsync("[data-marker='reply/input']").ConfigureAwait(false);
+            if (input is null)
+            {
+                return false;
+            }
+
+            if (!await AvitoHumanPointer.TryTypeIntoHandleAsync(page, input, messageText, cancellationToken)
+                    .ConfigureAwait(false))
+            {
+                return false;
+            }
+
+            await HumanDelay.BeforeMessengerAutoReplySendAsync(cancellationToken).ConfigureAwait(false);
+
+            foreach (var selector in MiniMessengerSendSelectors)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (await AvitoHumanPointer.TryClickSelectorAsync(page, selector, cancellationToken)
+                        .ConfigureAwait(false))
+                {
+                    return true;
+                }
+            }
+
+            await page.Keyboard.PressAsync("Enter").ConfigureAwait(false);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     private async Task<bool> TrySendMiniMessengerTextAsync(
         IPage page,
         string messageText,
         string purpose,
         CancellationToken cancellationToken)
     {
+        if (await TrySendMiniMessengerTextWithPointerAsync(page, messageText, cancellationToken).ConfigureAwait(false))
+        {
+            var appearedViaPointer = await WaitForEmployerAutoReplyInChatAsync(page, messageText, cancellationToken)
+                .ConfigureAwait(false);
+            _ = GlobalLogger.Instance.LogAsync(
+                appearedViaPointer
+                    ? $"AdsPower messenger {purpose} sent."
+                    : $"AdsPower messenger {purpose} submitted, but outgoing message was not confirmed in chat history.",
+                appearedViaPointer ? DeskLinkAuditLogLevel.Info : DeskLinkAuditLogLevel.Warning,
+                memberName: nameof(TrySendMiniMessengerTextAsync),
+                properties: new Dictionary<string, object?>
+                {
+                    ["page.url"] = page.Url,
+                    ["messenger.send.purpose"] = purpose,
+                    ["messenger.send.confirmed"] = appearedViaPointer,
+                    ["messenger.send.method"] = "pointer-type"
+                });
+            return appearedViaPointer;
+        }
+
         await HumanDelay.BeforeMessengerAutoReplySendAsync(cancellationToken).ConfigureAwait(false);
 
         var sendRaw = await EvaluateWithRetryAsync<string>(
