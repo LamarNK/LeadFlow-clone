@@ -217,6 +217,46 @@ public sealed class AdsPowerApiClientTests
     }
 
     [Fact]
+    public async Task GetProfileProxyAsync_UsesProfileIdAndReturnsCredentials()
+    {
+        HttpRequestMessage? capturedRequest = null;
+        var body = """
+            {"code":0,"data":{"list":[{
+              "user_id":"profile-1",
+              "user_proxy_config":{
+                "proxy_type":"socks5","proxy_host":"203.0.113.10","proxy_port":"1080",
+                "proxy_user":"login","proxy_password":"secret"
+              }
+            }]}}
+            """;
+        var client = BuildClient((request, _) =>
+        {
+            capturedRequest = request;
+            return Task.FromResult(StubHttpMessageHandler.Ok(body));
+        });
+
+        // До регрессии интерфейс AdsPower вообще не позволял прочитать proxy профиля:
+        // воркер всегда отправлял RuCaptchaTask как proxyless.
+        var method = typeof(AdsPowerApiClient).GetMethod("GetProfileProxyAsync");
+        Assert.NotNull(method);
+        var pending = Assert.IsAssignableFrom<Task>(method!.Invoke(client,
+            [new AdsPowerConnectionOptions("http://127.0.0.1:57610", null), "profile-1", CancellationToken.None]));
+        await pending;
+
+        Assert.NotNull(capturedRequest);
+        Assert.Equal("/api/v1/user/list", capturedRequest!.RequestUri?.AbsolutePath);
+        var query = Uri.UnescapeDataString(capturedRequest.RequestUri?.Query ?? string.Empty);
+        Assert.Contains("user_id=profile-1", query);
+        Assert.Contains("page_size=1", query);
+
+        var result = pending.GetType().GetProperty("Result")?.GetValue(pending);
+        Assert.NotNull(result);
+        Assert.Equal("socks5", result!.GetType().GetProperty("Type")?.GetValue(result));
+        Assert.Equal("203.0.113.10:1080", result.GetType().GetProperty("Address")?.GetValue(result));
+        Assert.Equal("login", result.GetType().GetProperty("Username")?.GetValue(result));
+    }
+
+    [Fact]
     public async Task ListGroupsAsync_ParsesGroupIdAndName()
     {
         HttpRequestMessage? capturedRequest = null;
@@ -389,6 +429,12 @@ public sealed class AdsPowerApiClientTests
             CancellationToken cancellationToken = default,
             string? groupId = null) =>
             Task.FromResult<IReadOnlyList<AdsPowerProfileSummary>>([]);
+
+        public Task<AdsPowerProfileProxy?> GetProfileProxyAsync(
+            AdsPowerConnectionOptions options,
+            string adsPowerUserId,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<AdsPowerProfileProxy?>(null);
 
         public Task<IReadOnlyList<AdsPowerGroupSummary>> ListGroupsAsync(
             AdsPowerConnectionOptions options,

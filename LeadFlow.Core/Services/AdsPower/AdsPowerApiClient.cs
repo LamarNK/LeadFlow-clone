@@ -64,6 +64,40 @@ public sealed class AdsPowerApiClient(IHttpClientFactory httpClientFactory) : IA
         return result;
     }
 
+    public Task<AdsPowerProfileProxy?> GetProfileProxyAsync(
+        AdsPowerConnectionOptions options,
+        string adsPowerUserId,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(adsPowerUserId);
+
+        return ExecuteWithRateLimitRetryAsync(
+            options,
+            async ct =>
+            {
+                var baseUrl = NormalizeBaseUrl(options.BaseUrl);
+                var url = $"{baseUrl}/api/v1/user/list?user_id={Uri.EscapeDataString(adsPowerUserId)}&page=1&page_size=1";
+                var (response, json) = await SendGetAsync(options, url, ct).ConfigureAwait(false);
+                if (!response.IsSuccessStatusCode)
+                {
+                    throw new InvalidOperationException(
+                        $"AdsPower user/list: {(int)response.StatusCode} {Truncate(json, 500)}");
+                }
+
+                using var doc = JsonDocument.Parse(string.IsNullOrWhiteSpace(json) ? "{}" : json);
+                var root = doc.RootElement;
+                EnsureApiSuccess(
+                    root,
+                    baseUrl,
+                    options,
+                    nameof(GetProfileProxyAsync),
+                    CreateProperties(baseUrl, hasApiKey: !string.IsNullOrWhiteSpace(options.ApiKey), userId: adsPowerUserId));
+
+                return ParseProfileProxy(root, adsPowerUserId);
+            },
+            cancellationToken);
+    }
+
     public async Task<IReadOnlyList<AdsPowerGroupSummary>> ListGroupsAsync(
         AdsPowerConnectionOptions options,
         CancellationToken cancellationToken = default)
@@ -221,6 +255,52 @@ public sealed class AdsPowerApiClient(IHttpClientFactory httpClientFactory) : IA
         }
 
         return result;
+    }
+
+    private static AdsPowerProfileProxy? ParseProfileProxy(JsonElement root, string adsPowerUserId)
+    {
+        if (!root.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Object
+            || !data.TryGetProperty("list", out var list) || list.ValueKind != JsonValueKind.Array)
+        {
+            return null;
+        }
+
+        foreach (var item in list.EnumerateArray())
+        {
+            if (!string.Equals(ReadStringish(item, "user_id"), adsPowerUserId, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            if (!item.TryGetProperty("user_proxy_config", out var config)
+                || config.ValueKind != JsonValueKind.Object)
+            {
+                return null;
+            }
+
+            var type = ReadStringish(config, "proxy_type")?.Trim().ToLowerInvariant();
+            var host = ReadStringish(config, "proxy_host")?.Trim();
+            var port = ReadStringish(config, "proxy_port")?.Trim();
+            if (string.IsNullOrWhiteSpace(type)
+                || string.Equals(type, "no_proxy", StringComparison.OrdinalIgnoreCase)
+                || string.IsNullOrWhiteSpace(host)
+                || !int.TryParse(port, out var portNumber)
+                || portNumber is <= 0 or > 65535)
+            {
+                return null;
+            }
+
+            var address = host.Contains(':') && !host.StartsWith('[')
+                ? $"[{host}]:{portNumber}"
+                : $"{host}:{portNumber}";
+            return new AdsPowerProfileProxy(
+                type,
+                address,
+                ReadStringish(config, "proxy_user")?.Trim(),
+                ReadStringish(config, "proxy_password"));
+        }
+
+        return null;
     }
 
     private static IReadOnlyList<AdsPowerGroupSummary> ParseGroupList(JsonElement root)

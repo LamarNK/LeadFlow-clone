@@ -8,6 +8,15 @@ public interface IAdsPowerApiClient
         string? groupId = null);
 
     /// <summary>
+    /// Считывает proxy текущего AdsPower-профиля из Local API. Нужен решателю капчи,
+    /// чтобы задача RuCaptcha шла с того же IP, что и браузер.
+    /// </summary>
+    Task<AdsPowerProfileProxy?> GetProfileProxyAsync(
+        AdsPowerConnectionOptions options,
+        string adsPowerUserId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Список групп профилей AdsPower (GET /api/v1/group/list).
     /// </summary>
     Task<IReadOnlyList<AdsPowerGroupSummary>> ListGroupsAsync(
