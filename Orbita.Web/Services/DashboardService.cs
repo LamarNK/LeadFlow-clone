@@ -17,7 +17,7 @@ public sealed class DashboardService(
             return DesignPreviewData.BuildDashboardViewModel(period, officeContext);
         }
 
-        var summary = await api.GetSummaryAsync(period.TimeZoneOffsetMinutes, ct);
+        var summary = await api.GetSummaryAsync(period.TimeZoneOffsetMinutes, period.From, period.To, ct);
         if (summary is null)
         {
             return new DashboardViewModel

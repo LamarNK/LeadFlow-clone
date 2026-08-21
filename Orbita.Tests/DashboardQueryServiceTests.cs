@@ -66,7 +66,12 @@ public sealed class DashboardQueryServiceTests
         await db.SaveChangesAsync();
 
         var sut = CreateService(db);
-        var summary = await sut.GetGlobalSummaryAsync(OfficeScope.ForOffice(OfficeId), OfficeId);
+        var summary = await sut.GetGlobalSummaryAsync(
+            OfficeScope.ForOffice(OfficeId),
+            OfficeId,
+            timeZoneOffsetMinutes: null,
+            fromLocal: yesterdayLocal,
+            toLocal: DateTime.Today);
 
         var yesterdayPoint = summary.WeeklyByDayActivity
             .Single(point => point.LocalDate == yesterdayLocal);
@@ -121,7 +126,12 @@ public sealed class DashboardQueryServiceTests
         });
         await db.SaveChangesAsync();
 
-        var summary = await CreateService(db).GetGlobalSummaryAsync(OfficeScope.ForOffice(OfficeId), OfficeId);
+        var summary = await CreateService(db).GetGlobalSummaryAsync(
+            OfficeScope.ForOffice(OfficeId),
+            OfficeId,
+            timeZoneOffsetMinutes: null,
+            fromLocal: yesterdayLocal,
+            toLocal: DateTime.Today);
 
         // Sent lands on today (send time), not on yesterday (collection time).
         Assert.Equal(1, summary.SentToCrm);
@@ -188,6 +198,29 @@ public sealed class DashboardQueryServiceTests
         Assert.Equal(3, summary.TotalToday);
         Assert.Equal(1, summary.Duplicates);
         Assert.Equal(2, summary.UniqueResponsesToday);
+    }
+
+    [Fact]
+    public async Task GetGlobalSummaryAsync_DefaultRange_IsTodayOnly()
+    {
+        DashboardQueryService.ClearCacheForTests();
+        await using var db = CreateDb();
+        var now = DateTime.UtcNow;
+        SeedWorker(db, now);
+        var yesterdayLocal = DateTime.Today.AddDays(-1);
+        var yesterdayUtc = Orbita.Api.Helpers.LocalCalendarDateRange
+            .GetUtcRangeForLocalCalendarDay(yesterdayLocal)
+            .UtcStartInclusive
+            .AddHours(12);
+        db.CandidateResponses.AddRange(
+            CreateResponse(now, ResponseStatuses.Sent),
+            CreateResponse(yesterdayUtc, ResponseStatuses.Sent));
+        await db.SaveChangesAsync();
+
+        var summary = await CreateService(db).GetGlobalSummaryAsync(OfficeScope.ForOffice(OfficeId), OfficeId);
+
+        Assert.Equal(1, summary.TotalToday);
+        Assert.DoesNotContain(summary.WeeklyByDayActivity, point => point.LocalDate == yesterdayLocal);
     }
 
     [Fact]

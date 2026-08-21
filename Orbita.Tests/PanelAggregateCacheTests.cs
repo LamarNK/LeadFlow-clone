@@ -67,8 +67,19 @@ public sealed class PanelAggregateCacheTests
     {
         var officeId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
         var manager = OfficeScope.ForOffice(officeId);
-        var withNullFilter = PanelAggregateCache.SummaryKey(manager, officeFilter: null, timeZoneOffsetMinutes: 0);
-        var withOwnFilter = PanelAggregateCache.SummaryKey(manager, officeFilter: officeId, timeZoneOffsetMinutes: 0);
+        var day = new DateTime(2026, 8, 21);
+        var withNullFilter = PanelAggregateCache.SummaryKey(
+            manager,
+            officeFilter: null,
+            timeZoneOffsetMinutes: 0,
+            day,
+            day);
+        var withOwnFilter = PanelAggregateCache.SummaryKey(
+            manager,
+            officeFilter: officeId,
+            timeZoneOffsetMinutes: 0,
+            day,
+            day);
 
         Assert.Equal(withNullFilter, withOwnFilter);
     }

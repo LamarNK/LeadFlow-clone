@@ -24,8 +24,13 @@ internal static class PanelAggregateCache
     private static long _dashboardVersion;
     private static long _statisticsVersion;
 
-    public static string SummaryKey(OfficeScope scope, Guid? officeFilter, int? timeZoneOffsetMinutes) =>
-        $"{DashboardPrefix}s:{ScopeKey(scope, officeFilter)}:{TzKey(timeZoneOffsetMinutes)}";
+    public static string SummaryKey(
+        OfficeScope scope,
+        Guid? officeFilter,
+        int? timeZoneOffsetMinutes,
+        DateTime fromLocal,
+        DateTime toLocal) =>
+        $"{DashboardPrefix}s:{ScopeKey(scope, officeFilter)}:{TzKey(timeZoneOffsetMinutes)}:{fromLocal:yyyyMMdd}:{toLocal:yyyyMMdd}";
 
     public static string NavBadgesKey(OfficeScope scope, Guid? officeFilter, int? timeZoneOffsetMinutes) =>
         $"{DashboardPrefix}b:{ScopeKey(scope, officeFilter)}:{TzKey(timeZoneOffsetMinutes)}";

@@ -24,12 +24,26 @@ public sealed class DashboardQueryService(
         OfficeScope scope,
         Guid? officeFilter = null,
         int? timeZoneOffsetMinutes = null,
+        DateTime? fromLocal = null,
+        DateTime? toLocal = null,
         CancellationToken ct = default)
     {
+        var nowUtc = DateTime.UtcNow;
+        var (startLocal, endLocal, _, _) = LocalCalendarDateRange.Normalize(
+            fromLocal,
+            toLocal,
+            timeZoneOffsetMinutes,
+            nowUtc);
         var summary = await PanelAggregateCache.GetOrCreateAsync(
-            PanelAggregateCache.SummaryKey(scope, officeFilter, timeZoneOffsetMinutes),
+            PanelAggregateCache.SummaryKey(scope, officeFilter, timeZoneOffsetMinutes, startLocal, endLocal),
             PanelAggregateCache.DashboardTtl,
-            () => ComputeGlobalSummaryCoreAsync(scope, officeFilter, timeZoneOffsetMinutes, ct));
+            () => ComputeGlobalSummaryCoreAsync(
+                scope,
+                officeFilter,
+                timeZoneOffsetMinutes,
+                startLocal,
+                endLocal,
+                ct));
         return await RefreshOnlineWorkersAsync(summary, scope, officeFilter, ct);
     }
 
@@ -49,6 +63,8 @@ public sealed class DashboardQueryService(
         OfficeScope scope,
         Guid? officeFilter,
         int? timeZoneOffsetMinutes,
+        DateTime startLocal,
+        DateTime endLocal,
         CancellationToken ct)
     {
         var nowUtc = DateTime.UtcNow;
@@ -56,10 +72,9 @@ public sealed class DashboardQueryService(
         var todayLocal = LocalCalendarDateRange.GetLocalCalendarDate(nowUtc, timeZoneOffsetMinutes);
         var todayStart = LocalCalendarDateRange.GetUtcRangeForLocalCalendarDay(todayLocal, timeZoneOffsetMinutes)
             .UtcStartInclusive;
-        var weeklyStartLocal = todayLocal.AddDays(-(LocalCalendarDateRange.MaxCalendarDays - 1));
-        var (_, _, weeklyUtcStart, weeklyUtcEnd) = LocalCalendarDateRange.Normalize(
-            weeklyStartLocal,
-            todayLocal,
+        var (_, _, periodUtcStart, periodUtcEnd) = LocalCalendarDateRange.Normalize(
+            startLocal,
+            endLocal,
             timeZoneOffsetMinutes,
             nowUtc);
         var workersQuery = officeScope
@@ -76,7 +91,7 @@ public sealed class DashboardQueryService(
 
         // "Sent" is counted by actual send time (CRM + Bitrix deliveries), not the response
         // collection date — a response collected yesterday but sent today counts for today.
-        var sendTimestamps = await LoadSendTimestampsAsync(workerIds, weeklyUtcStart, weeklyUtcEnd, ct);
+        var sendTimestamps = await LoadSendTimestampsAsync(workerIds, periodUtcStart, periodUtcEnd, ct);
 
         // Keep snapshot data only for account-level details (ads counts, balances) and activity charts
         var latestSnapshots = await db.WorkerSnapshots
@@ -104,7 +119,7 @@ public sealed class DashboardQueryService(
         int inProgress = responseStats.InProgress;
         int actionRequired = responseStats.ActionRequired;
 
-        var workerEventErrors = await ComputeWorkerEventErrorStatsAsync(workerIds, todayStart, ct);
+        var workerEventErrors = await ComputeWorkerEventErrorStatsAsync(workerIds, todayStart, periodUtcStart, ct);
         int errors = workerEventErrors.TodayCount;
 
         int connectedAccounts = statsList.Sum(s => s.ConnectedAccounts);
@@ -163,8 +178,8 @@ public sealed class DashboardQueryService(
             WeeklyByDayActivity: WorkerEventErrorStatsHelper.MergeDailyErrors(
                 await ComputeDailyActivityFromDbAsync(
                     workerIds,
-                    weeklyStartLocal,
-                    todayLocal,
+                    startLocal,
+                    endLocal,
                     sendTimestamps,
                     timeZoneOffsetMinutes,
                     ct),
@@ -365,7 +380,11 @@ public sealed class DashboardQueryService(
 
         var todayStart = nowUtc.Date;
         var todayEndUtc = LocalCalendarDateRange.GetUtcRangeForLocalCalendarDay(DateTime.Today).UtcEndExclusive;
-        var workerEventErrors = await ComputeWorkerEventErrorStatsAsync(new HashSet<Guid> { workerId }, todayStart, ct);
+        var workerEventErrors = await ComputeWorkerEventErrorStatsAsync(
+            new HashSet<Guid> { workerId },
+            todayStart,
+            todayStart,
+            ct);
         var workerSendTimestamps = await LoadSendTimestampsAsync(
             new HashSet<Guid> { workerId },
             todayStart,
@@ -1086,12 +1105,13 @@ public sealed class DashboardQueryService(
     private async Task<WorkerEventErrorStats> ComputeWorkerEventErrorStatsAsync(
         HashSet<Guid> workerIds,
         DateTime todayStartUtc,
+        DateTime eventsFromUtc,
         CancellationToken ct)
     {
         if (workerIds.Count == 0)
             return WorkerEventErrorStats.Empty;
 
-        var rangeStart = todayStartUtc.AddDays(-WorkerEventErrorStatsHelper.DailyLookbackDays);
+        var rangeStart = eventsFromUtc < todayStartUtc ? eventsFromUtc : todayStartUtc;
         var rows = await db.WorkerEvents
             .AsNoTracking()
             .Where(x => workerIds.Contains(x.WorkerId) && !x.IsDismissed)
@@ -1134,7 +1154,11 @@ public sealed class DashboardQueryService(
         var accountCounts = BuildAccountCounts(
             accountRows.Select(x => (x.WorkerId, x.Status, x.IsEnabledInPanel)));
         var responseStats = await ComputeWorkerTodayStatsAsync(workerIds, todayStartUtc, ct);
-        var workerEventErrors = await ComputeWorkerEventErrorStatsAsync(workerIds.ToHashSet(), todayStartUtc, ct);
+        var workerEventErrors = await ComputeWorkerEventErrorStatsAsync(
+            workerIds.ToHashSet(),
+            todayStartUtc,
+            todayStartUtc,
+            ct);
 
         return WorkerOperationalStatsHelper.Merge(
             workerIds,

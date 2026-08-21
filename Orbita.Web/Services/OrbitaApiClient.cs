@@ -75,7 +75,11 @@ public sealed class OrbitaApiClient(
         return payload;
     }
 
-    public Task<GlobalDashboardSummary?> GetSummaryAsync(int timeZoneOffsetMinutes = 0, CancellationToken ct = default)
+    public Task<GlobalDashboardSummary?> GetSummaryAsync(
+        int timeZoneOffsetMinutes = 0,
+        DateTime? fromLocal = null,
+        DateTime? toLocal = null,
+        CancellationToken ct = default)
     {
         if (_preview.Enabled)
         {
@@ -84,6 +88,16 @@ public sealed class OrbitaApiClient(
 
         var path = WithOfficeQuery("api/v1/dashboard/summary");
         path = AppendQuery(path, "tz", timeZoneOffsetMinutes.ToString());
+        if (fromLocal is DateTime from)
+        {
+            path = AppendQuery(path, "from", from.ToString("yyyy-MM-dd"));
+        }
+
+        if (toLocal is DateTime to)
+        {
+            path = AppendQuery(path, "to", to.ToString("yyyy-MM-dd"));
+        }
+
         return GetAsync<GlobalDashboardSummary>(path, ct);
     }
 

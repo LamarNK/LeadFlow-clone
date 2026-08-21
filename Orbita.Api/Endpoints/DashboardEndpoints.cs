@@ -47,6 +47,8 @@ public static class DashboardEndpoints
         dashboard.MapGet("/summary", async (
             Guid? officeId,
             int? tz,
+            DateTime? from,
+            DateTime? to,
             DashboardQueryService query,
             OfficeScopeService officeScope,
             ClaimsPrincipal principal,
@@ -58,7 +60,7 @@ public static class DashboardEndpoints
                 return Results.Forbid();
             }
 
-            return Results.Ok(await query.GetGlobalSummaryAsync(scope, officeId, tz, ct));
+            return Results.Ok(await query.GetGlobalSummaryAsync(scope, officeId, tz, from, to, ct));
         });
 
         app.MapGet("/api/v1/nav/badges", async (
