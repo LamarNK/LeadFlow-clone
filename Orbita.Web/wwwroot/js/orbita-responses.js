@@ -1639,21 +1639,27 @@
         shared.updateUpdatedClock(snapshot.updatedAtUtc);
     }
 
-    function fetchSnapshot() {
-        var shared = getShared();
-        var root = shared && shared.getLiveRoot();
-        if (!root) return Promise.resolve();
-        var url = root.getAttribute('data-orbita-snapshot');
-        if (!url) return Promise.resolve();
-        return fetch(url, { credentials: 'same-origin', headers: { Accept: 'application/json' } })
-            .then(function (res) {
-                if (!res.ok) throw new Error('Responses snapshot failed: ' + res.status);
-                return res.json();
-            })
-            .then(function (snapshot) { applySnapshot(snapshot, true); });
-    }
+    var snapshotFetcher = window.OrbitaLiveShared && window.OrbitaLiveShared.createSnapshotFetcher
+        ? window.OrbitaLiveShared.createSnapshotFetcher('responses', function (payload) { applySnapshot(payload, true); }, { errorName: 'Responses' })
+        : null;
 
     function initResponsesPage() {
+        var shared = getShared();
+        if (shared && shared.registerLivePage) {
+            shared.registerLivePage('responses', snapshotFetcher, function () {
+                initKpiCounters();
+                initRowNavigation();
+                initSendBitrixUi();
+                initBulkSelection();
+                localizeRelativeResponseTimes();
+                syncRowCheckboxes();
+                updateBulkBar();
+                var params = new URLSearchParams(window.location.search);
+                var selectedId = params.get('id');
+                if (selectedId) openResponseDetail(selectedId);
+            });
+            return;
+        }
         initKpiCounters();
         initRowNavigation();
         initSendBitrixUi();
@@ -1664,10 +1670,6 @@
         var params = new URLSearchParams(window.location.search);
         var selectedId = params.get('id');
         if (selectedId) openResponseDetail(selectedId);
-        var shared = getShared();
-        if (window.OrbitaLive && shared && shared.getLiveRoot()) {
-            window.OrbitaLive.register('responses', { fetchSnapshot: fetchSnapshot });
-        }
     }
 
     window.OrbitaResponses = window.OrbitaResponses || {};

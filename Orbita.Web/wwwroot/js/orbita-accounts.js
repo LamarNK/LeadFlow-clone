@@ -327,28 +327,29 @@
         shared.updateUpdatedClock(snapshot.updatedAtUtc);
     }
 
-    function fetchSnapshot() {
-        var root = shared && shared.getLiveRoot();
-        if (!root) return Promise.resolve();
-        var url = root.getAttribute('data-orbita-snapshot');
-        if (!url) return Promise.resolve();
-        return fetch(url, { credentials: 'same-origin', headers: { Accept: 'application/json' } })
-            .then(function (res) {
-                if (!res.ok) throw new Error('Accounts snapshot failed: ' + res.status);
-                return res.json();
-            })
-            .then(function (snapshot) { applySnapshot(snapshot, true); });
-    }
+    var snapshot = shared && shared.createSnapshotFetcher
+        ? shared.createSnapshotFetcher('accounts', function (payload) { applySnapshot(payload, true); }, { errorName: 'Accounts' })
+        : null;
 
     function initAccountsPage() {
+        if (shared && shared.registerLivePage) {
+            if (!shared.registerLivePage('accounts', snapshot, function () {
+                initKpiCounters();
+                initRowNavigation();
+                initAccountToggleButtons();
+                if (window.Orbita && typeof window.Orbita.initWorkerAccountEnableToggles === 'function') {
+                    window.Orbita.initWorkerAccountEnableToggles();
+                }
+            })) {
+                return;
+            }
+            return;
+        }
         initKpiCounters();
         initRowNavigation();
         initAccountToggleButtons();
         if (window.Orbita && typeof window.Orbita.initWorkerAccountEnableToggles === 'function') {
             window.Orbita.initWorkerAccountEnableToggles();
-        }
-        if (window.OrbitaLive && shared && shared.getLiveRoot()) {
-            window.OrbitaLive.register('accounts', { fetchSnapshot: fetchSnapshot });
         }
     }
 

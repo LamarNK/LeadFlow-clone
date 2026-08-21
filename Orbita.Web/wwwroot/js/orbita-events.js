@@ -115,25 +115,20 @@
         shared.updateUpdatedClock(snapshot.updatedAtUtc);
     }
 
-    function fetchSnapshot() {
-        var root = shared && shared.getLiveRoot();
-        if (!root) return Promise.resolve();
-        var url = root.getAttribute('data-orbita-snapshot');
-        if (!url) return Promise.resolve();
-        return fetch(url, { credentials: 'same-origin', headers: { Accept: 'application/json' } })
-            .then(function (res) {
-                if (!res.ok) throw new Error('Events snapshot failed: ' + res.status);
-                return res.json();
-            })
-            .then(function (snapshot) { applySnapshot(snapshot, true); });
-    }
+    var snapshotFetcher = shared && shared.createSnapshotFetcher
+        ? shared.createSnapshotFetcher('events', function (payload) { applySnapshot(payload, true); }, { errorName: 'Events' })
+        : null;
 
     function initEventsPage() {
+        if (shared && shared.registerLivePage) {
+            shared.registerLivePage('events', snapshotFetcher, function () {
+                initKpiCounters();
+                initFilterAutoSubmit();
+            });
+            return;
+        }
         initKpiCounters();
         initFilterAutoSubmit();
-        if (window.OrbitaLive && shared && shared.getLiveRoot()) {
-            window.OrbitaLive.register('events', { fetchSnapshot: fetchSnapshot });
-        }
     }
 
     initEventsPage();

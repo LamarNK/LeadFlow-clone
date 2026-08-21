@@ -834,20 +834,28 @@
         shared.updateUpdatedClock(snapshot.updatedAtUtc);
     }
 
-    function fetchSnapshot() {
-        var root = shared && shared.getLiveRoot();
-        if (!root) return Promise.resolve();
-        var url = root.getAttribute('data-orbita-snapshot');
-        if (!url) return Promise.resolve();
-        return fetch(url, { credentials: 'same-origin', headers: { Accept: 'application/json' } })
-            .then(function (res) {
-                if (!res.ok) throw new Error('Worker details snapshot failed: ' + res.status);
-                return res.json();
-            })
-            .then(function (snapshot) { applySnapshot(snapshot, true); });
-    }
+    var snapshotFetcher = shared && shared.createSnapshotFetcher
+        ? shared.createSnapshotFetcher('worker', function (payload) { applySnapshot(payload, true); }, { errorName: 'Worker details' })
+        : null;
 
     function initWorkerPage() {
+        if (shared && shared.registerLivePage) {
+            shared.registerLivePage('worker', snapshotFetcher, function () {
+                initKpiCounters();
+                if (window.Orbita && typeof window.Orbita.initWorkerRestartButtons === 'function') {
+                    window.Orbita.initWorkerRestartButtons();
+                }
+                if (window.Orbita && typeof window.Orbita.initWorkerAccountEnableToggles === 'function') {
+                    window.Orbita.initWorkerAccountEnableToggles();
+                }
+                initAccountRowNavigation();
+                initActivityChart();
+                initParallelismSlider();
+                initWorkerSettings();
+                initCopyButtons();
+            });
+            return;
+        }
         initKpiCounters();
         if (window.Orbita && typeof window.Orbita.initWorkerRestartButtons === 'function') {
             window.Orbita.initWorkerRestartButtons();
@@ -860,9 +868,6 @@
         initParallelismSlider();
         initWorkerSettings();
         initCopyButtons();
-        if (window.OrbitaLive && shared && shared.getLiveRoot()) {
-            window.OrbitaLive.register('worker', { fetchSnapshot: fetchSnapshot });
-        }
     }
 
     window.OrbitaWorker = window.OrbitaWorker || {};

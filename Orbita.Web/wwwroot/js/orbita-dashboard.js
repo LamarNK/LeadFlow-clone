@@ -58,7 +58,6 @@
     }
 
     var liveState = null;
-    var snapshotInFlight = false;
     var highlightMs = 1800;
 
     Chart.defaults.font.family = '"Segoe UI", system-ui, -apple-system, sans-serif';
@@ -1256,31 +1255,14 @@
         });
     }
 
+    var snapshotFetcher = window.OrbitaLiveShared && window.OrbitaLiveShared.createSnapshotFetcher
+        ? window.OrbitaLiveShared.createSnapshotFetcher('dashboard', function (payload) {
+            applySnapshot(payload, true);
+        }, { errorName: 'Dashboard', urlAttr: 'data-dashboard-snapshot' })
+        : null;
+
     function fetchSnapshot() {
-        var liveRoot = getLiveRoot();
-        if (!liveRoot || snapshotInFlight) return Promise.resolve();
-
-        var url = liveRoot.getAttribute('data-orbita-snapshot')
-            || liveRoot.getAttribute('data-dashboard-snapshot');
-        if (!url) return Promise.resolve();
-
-        snapshotInFlight = true;
-
-        return fetch(url, {
-            method: 'GET',
-            credentials: 'same-origin',
-            headers: { Accept: 'application/json' }
-        })
-            .then(function (response) {
-                if (!response.ok) throw new Error('Dashboard snapshot failed: ' + response.status);
-                return response.json();
-            })
-            .then(function (snapshot) {
-                applySnapshot(snapshot, true);
-            })
-            .finally(function () {
-                snapshotInFlight = false;
-            });
+        return snapshotFetcher ? snapshotFetcher.fetchSnapshot() : Promise.resolve();
     }
 
     function initLiveRefresh() {
@@ -1296,6 +1278,10 @@
             }
         }
 
+        if (window.OrbitaLiveShared && window.OrbitaLiveShared.registerLivePage) {
+            window.OrbitaLiveShared.registerLivePage('dashboard', snapshotFetcher);
+            return;
+        }
         if (window.OrbitaLive) {
             window.OrbitaLive.register('dashboard', { fetchSnapshot: fetchSnapshot });
         }
