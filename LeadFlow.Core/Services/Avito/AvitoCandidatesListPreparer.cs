@@ -29,7 +29,8 @@ public static class AvitoCandidatesListPreparer
         Func<IReadOnlyCollection<string>, CancellationToken, Task<IReadOnlySet<string>>>? resolveExistingPhonesAsync = null,
         Func<IReadOnlyList<CandidateLookupProfileDto>, CancellationToken, Task<IReadOnlySet<int>>>? resolveExistingMatchedProfileIndicesAsync = null,
         ResponseCollectionFilters? responseCollectionFilters = null,
-        Func<string, CancellationToken, Task<bool>>? isOpenPhoneWatchAsync = null)
+        Func<string, CancellationToken, Task<bool>>? isOpenPhoneWatchAsync = null,
+        bool skipDetailEnrich = false)
     {
         await AvitoFirewallProbe.ThrowIfBlockedAsync(executeScript, fetchHtmlSnapshot, pageUrl, cancellationToken)
             .ConfigureAwait(false);
@@ -37,6 +38,9 @@ public static class AvitoCandidatesListPreparer
         var lastCount = -1;
         var stableRounds = 0;
         var scrollRounds = 0;
+        var seenUnknownCard = false;
+        var consecutiveKnownOnlyLoadRounds = 0;
+        var stoppedOnKnownHistory = false;
 
         for (var round = 0; round < MaxScrollRounds; round++)
         {
@@ -49,8 +53,37 @@ public static class AvitoCandidatesListPreparer
                     .ConfigureAwait(false);
             }
 
+            var previousCount = lastCount < 0 ? 0 : lastCount;
             var step = await TryParseScrollStepAsync(executeScript, cancellationToken).ConfigureAwait(false);
             var count = step?.ItemCount ?? 0;
+
+            if (count > previousCount
+                && resolveExistingCardFingerprintsAsync is not null)
+            {
+                var newItemsAllKnown = await AreLoadedItemsAllKnownAsync(
+                        executeScript,
+                        previousCount,
+                        count,
+                        resolveExistingCardFingerprintsAsync,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                if (newItemsAllKnown)
+                {
+                    consecutiveKnownOnlyLoadRounds++;
+                }
+                else
+                {
+                    seenUnknownCard = true;
+                    consecutiveKnownOnlyLoadRounds = 0;
+                }
+
+                if (CandidatesScrollStop.ShouldStopAfterKnownHistory(seenUnknownCard, consecutiveKnownOnlyLoadRounds))
+                {
+                    stoppedOnKnownHistory = true;
+                    lastCount = count;
+                    break;
+                }
+            }
 
             if (count == lastCount && (step is null || !step.Moved || step.AtEnd))
             {
@@ -163,7 +196,7 @@ public static class AvitoCandidatesListPreparer
         var detailEnrichHits = 0;
         var isJobCrmPage = await TryDetectJobCrmResponsesPageAsync(executeScript, cancellationToken)
             .ConfigureAwait(false);
-        if (domItems > 0 && !isJobCrmPage)
+        if (domItems > 0 && !isJobCrmPage && !skipDetailEnrich)
         {
             var enrichment = await TryCollectDetailEnrichmentAsync(
                     executeScript,
@@ -203,13 +236,18 @@ public static class AvitoCandidatesListPreparer
 
         var detailEnrichNote = isJobCrmPage
             ? "detailEnrich=skipped (CRM page)"
-            : $"detailEnrich={result.DetailEnrichHits}/{result.DetailEnrichClicks} (skipped {result.DetailEnrichSkipped})";
+            : skipDetailEnrich
+                ? "detailEnrich=deferred (same pass as chat)"
+                : $"detailEnrich={result.DetailEnrichHits}/{result.DetailEnrichClicks} (skipped {result.DetailEnrichSkipped})";
+        var scrollNote = stoppedOnKnownHistory ? ", scrollStop=known-history" : "";
         _ = GlobalLogger.Instance.LogAsync(
-            $"Candidates list prepared for {logContext}: scrollRounds={result.ScrollRounds}, domItems={result.DomItemCount}, phonesReady={result.PhonesReady} ({result.CardsWithPhone}/{result.DomItemCount}), maskedLeft={result.MaskedPhonesLeft}, cardFingerprintSkips={result.CardFingerprintSkips}, phoneSkips={result.PhoneSkips}, profileSkips={result.ProfileSkips}, collectionFilterSkips={result.CollectionFilterSkips}, phoneRevealRounds={result.PhoneRevealRounds}, phoneClicks={result.PhoneRevealClicks}, {detailEnrichNote}.",
+            $"Candidates list prepared for {logContext}: scrollRounds={result.ScrollRounds}, domItems={result.DomItemCount}{scrollNote}, phonesReady={result.PhonesReady} ({result.CardsWithPhone}/{result.DomItemCount}), maskedLeft={result.MaskedPhonesLeft}, cardFingerprintSkips={result.CardFingerprintSkips}, phoneSkips={result.PhoneSkips}, profileSkips={result.ProfileSkips}, collectionFilterSkips={result.CollectionFilterSkips}, phoneRevealRounds={result.PhoneRevealRounds}, phoneClicks={result.PhoneRevealClicks}, {detailEnrichNote}.",
             DeskLinkAuditLogLevel.Info,
             properties: new Dictionary<string, object?>
             {
                 ["candidates.prepare.isJobCrmPage"] = isJobCrmPage,
+                ["candidates.prepare.skipDetailEnrich"] = skipDetailEnrich,
+                ["candidates.prepare.scrollStopKnownHistory"] = stoppedOnKnownHistory,
                 ["candidates.prepare.scrollRounds"] = result.ScrollRounds,
                 ["candidates.prepare.domItemCount"] = result.DomItemCount,
                 ["candidates.prepare.cardsWithPhone"] = result.CardsWithPhone,
@@ -721,6 +759,52 @@ public static class AvitoCandidatesListPreparer
     {
         var digits = NormalizePhoneDigits(phoneDigits);
         return digits.Length >= 10;
+    }
+
+    private static async Task<bool> AreLoadedItemsAllKnownAsync(
+        Func<string, CancellationToken, Task<string>> executeScript,
+        int fromIndex,
+        int toIndexExclusive,
+        Func<IReadOnlyCollection<string>, CancellationToken, Task<IReadOnlySet<string>>> resolveExistingCardFingerprintsAsync,
+        CancellationToken cancellationToken)
+    {
+        if (toIndexExclusive <= fromIndex)
+        {
+            return true;
+        }
+
+        var fingerprintsByIndex = await TryParseCardFingerprintsAsync(executeScript, cancellationToken)
+            .ConfigureAwait(false);
+        var batch = new List<string>();
+        for (var index = fromIndex; index < toIndexExclusive; index++)
+        {
+            if (!fingerprintsByIndex.TryGetValue(index, out var fingerprint)
+                || string.IsNullOrWhiteSpace(fingerprint))
+            {
+                return false;
+            }
+
+            batch.Add(fingerprint);
+        }
+
+        if (batch.Count == 0)
+        {
+            return false;
+        }
+
+        var existing = await resolveExistingCardFingerprintsAsync(
+                batch.Distinct(StringComparer.OrdinalIgnoreCase).ToArray(),
+                cancellationToken)
+            .ConfigureAwait(false);
+        foreach (var fingerprint in batch)
+        {
+            if (!existing.Contains(fingerprint))
+            {
+                return false;
+            }
+        }
+
+        return true;
     }
 
     private static async Task<int> TryApplyKnownCardFingerprintSkipsAsync(

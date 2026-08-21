@@ -95,7 +95,8 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 BuildResolveExistingPhonesCallback(messengerEnrichmentHints),
                 BuildResolveExistingMatchedProfileIndicesCallback(messengerEnrichmentHints),
                 messengerEnrichmentHints?.ResponseFilters,
-                messengerEnrichmentHints?.IsOpenPhoneWatchAsync).ConfigureAwait(false);
+                messengerEnrichmentHints?.IsOpenPhoneWatchAsync,
+                skipDetailEnrich: true).ConfigureAwait(false);
 
             var raw = await EvaluateWithRetryAsync<string>(page, ExtractionScript, cancellationToken).ConfigureAwait(false);
             if (string.IsNullOrWhiteSpace(raw))
@@ -2639,6 +2640,8 @@ public sealed partial class AdsPowerAvitoAutomationService(
             ? page.Url
             : CandidatesPageUrl;
 
+        var isJobCrm = await TryDetectJobCrmResponsesPageAsync(page, cancellationToken).ConfigureAwait(false);
+
         const int maxEnrich = 80;
         for (var i = 0; i < candidates.Count && i < maxEnrich; i++)
         {
@@ -2686,6 +2689,12 @@ public sealed partial class AdsPowerAvitoAutomationService(
                         continue;
                     }
                 }
+            }
+
+            if (!isJobCrm && CandidateJsonNeedsDetail(item))
+            {
+                await TryApplyDetailPanelToCandidateAsync(page, item, domIndex, cancellationToken)
+                    .ConfigureAwait(false);
             }
 
             var enrichment = await TryEnrichMessengerForCandidateCardAsync(
@@ -3147,6 +3156,147 @@ public sealed partial class AdsPowerAvitoAutomationService(
 
     private static IReadOnlyList<AvitoChatMessage> ParseMiniMessengerMessages(JsonArray chatMessages) =>
         AvitoChatMessagesJson.Parse(chatMessages.ToJsonString());
+
+    private static bool CandidateJsonNeedsDetail(JsonObject item)
+    {
+        var vacancyUrl = item["vacancyUrl"]?.GetValue<string>();
+        var age = item["age"]?.GetValue<string>();
+        return string.IsNullOrWhiteSpace(vacancyUrl) || string.IsNullOrWhiteSpace(age);
+    }
+
+    private static async Task<bool> TryDetectJobCrmResponsesPageAsync(IPage page, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var raw = await EvaluateWithRetryAsync<string>(
+                    page,
+                    AvitoCandidatesPageScripts.BuildIsJobCrmResponsesPageScript(),
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                return false;
+            }
+
+            using var doc = JsonDocument.Parse(UnwrapMessengerJson(raw));
+            return doc.RootElement.TryGetProperty("isJobCrm", out var prop) && prop.GetBoolean();
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private async Task TryApplyDetailPanelToCandidateAsync(
+        IPage page,
+        JsonObject item,
+        int candidateIndex,
+        CancellationToken cancellationToken)
+    {
+        await HumanDelay.BeforeCandidateClickAsync(cancellationToken).ConfigureAwait(false);
+        var clicked = await TryClickCandidateItemWithPointerAsync(page, candidateIndex, cancellationToken)
+            .ConfigureAwait(false);
+        if (!clicked)
+        {
+            var clickRaw = await EvaluateWithRetryAsync<string>(
+                    page,
+                    AvitoCandidatesPageScripts.BuildClickCandidateItemByIndexScript(candidateIndex),
+                    cancellationToken)
+                .ConfigureAwait(false);
+            clicked = TryParseMessengerChatClickStep(clickRaw, out var ok, out _) && ok;
+        }
+
+        if (!clicked)
+        {
+            return;
+        }
+
+        await HumanDelay.AfterCandidateClickAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var detailRaw = await EvaluateWithRetryAsync<string>(
+                    page,
+                    AvitoCandidatesPageScripts.BuildReadDetailPanelScript(),
+                    cancellationToken)
+                .ConfigureAwait(false);
+            ApplyDetailPanelJson(item, detailRaw);
+        }
+        catch
+        {
+            // Панель могла не открыться — чат всё равно пробуем.
+        }
+
+        _ = await EvaluateWithRetryAsync<string>(
+                page,
+                AvitoCandidatesPageScripts.BuildDismissCandidateDetailPanelScript(),
+                cancellationToken)
+            .ConfigureAwait(false);
+        await HumanDelay.AfterDetailPanelReadAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private static void ApplyDetailPanelJson(JsonObject item, string? detailRaw)
+    {
+        if (string.IsNullOrWhiteSpace(detailRaw))
+        {
+            return;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(UnwrapMessengerJson(detailRaw));
+            var root = doc.RootElement;
+            CopyIfMissing(item, root, "vacancyUrl");
+            CopyIfMissing(item, root, "vacancy");
+            CopyIfMissing(item, root, "city");
+            CopyIfMissing(item, root, "age");
+        }
+        catch
+        {
+            // ignore malformed panel snapshot
+        }
+    }
+
+    private static void CopyIfMissing(JsonObject item, JsonElement root, string property)
+    {
+        if (!root.TryGetProperty(property, out var value))
+        {
+            return;
+        }
+
+        var text = value.GetString();
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return;
+        }
+
+        var current = item[property]?.GetValue<string>();
+        if (string.IsNullOrWhiteSpace(current))
+        {
+            item[property] = text;
+        }
+    }
+
+    private static async Task<bool> TryClickCandidateItemWithPointerAsync(
+        IPage page,
+        int candidateIndex,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var items = await page.QuerySelectorAllAsync("[data-marker='job-application/item']").ConfigureAwait(false);
+            if (items is null || candidateIndex < 0 || candidateIndex >= items.Length)
+            {
+                return false;
+            }
+
+            return await AvitoHumanPointer.TryClickHandleAsync(page, items[candidateIndex], cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch
+        {
+            return false;
+        }
+    }
 
     private static async Task<bool> TryClickCandidateChatWithPointerAsync(
         IPage page,

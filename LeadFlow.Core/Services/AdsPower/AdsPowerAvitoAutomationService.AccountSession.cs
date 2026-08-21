@@ -516,7 +516,8 @@ public sealed partial class AdsPowerAvitoAutomationService
             BuildResolveExistingPhonesCallback(messengerEnrichmentHints),
             BuildResolveExistingMatchedProfileIndicesCallback(messengerEnrichmentHints),
             messengerEnrichmentHints?.ResponseFilters,
-            messengerEnrichmentHints?.IsOpenPhoneWatchAsync).ConfigureAwait(false);
+            messengerEnrichmentHints?.IsOpenPhoneWatchAsync,
+            skipDetailEnrich: true).ConfigureAwait(false);
 
         var raw = await EvaluateWithRetryAsync<string>(page, ExtractionScript, cancellationToken).ConfigureAwait(false);
         if (string.IsNullOrWhiteSpace(raw))

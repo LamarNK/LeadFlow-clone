@@ -911,11 +911,6 @@ public sealed class WorkerMonitoringService(
                     await PublishCandidateAsync(candidate, cancellationToken).ConfigureAwait(false);
                     publishedCount++;
                     publishedTotal++;
-                    if (!cancellationToken.IsCancellationRequested)
-                    {
-                        await HumanDelay.BetweenResponsesAsync(cancellationToken).ConfigureAwait(false);
-                    }
-
                     continue;
                 }
 
@@ -1026,12 +1021,6 @@ public sealed class WorkerMonitoringService(
                         await PublishCandidateAsync(candidate, cancellationToken).ConfigureAwait(false);
                         publishedCount++;
                         publishedTotal++;
-
-                        if (!cancellationToken.IsCancellationRequested)
-                        {
-                            await HumanDelay.BetweenResponsesAsync(cancellationToken).ConfigureAwait(false);
-                        }
-
                         continue;
                     }
 
@@ -1056,11 +1045,6 @@ public sealed class WorkerMonitoringService(
                 await PublishCandidateAsync(candidate, cancellationToken).ConfigureAwait(false);
                 publishedCount++;
                 publishedTotal++;
-
-                if (!cancellationToken.IsCancellationRequested)
-                {
-                    await HumanDelay.BetweenResponsesAsync(cancellationToken).ConfigureAwait(false);
-                }
             }
 
             if (filteredAge > 0 || filteredGender > 0 || filteredResponseAge > 0)
