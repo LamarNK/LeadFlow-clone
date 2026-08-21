@@ -18,6 +18,8 @@ public sealed class RuCaptchaClientTests
                 Assert.Contains("GeeTestTaskProxyless", body, StringComparison.Ordinal);
                 Assert.Contains("\"version\":4", body, StringComparison.Ordinal);
                 Assert.Contains("2d9c743cf7d63dbc9db578a608196bcd", body, StringComparison.Ordinal);
+                Assert.Contains("\"product\":\"bind\"", body, StringComparison.Ordinal);
+                Assert.Contains("\"language\":\"rus\"", body, StringComparison.Ordinal);
                 return Task.FromResult(StubHttpMessageHandler.Ok("""{"errorId":0,"taskId":42}"""));
             }
 

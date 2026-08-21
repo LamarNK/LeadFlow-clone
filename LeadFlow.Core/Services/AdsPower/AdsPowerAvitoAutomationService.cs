@@ -544,6 +544,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 ["screenshot.bytes"] = screenshot?.Length ?? 0
             });
 
+        AvitoCaptchaTaskContext.NoteUnsolved();
         throw new AvitoCaptchaDetectedException(kind, page.Url, html, screenshot);
     }
 

@@ -10,10 +10,10 @@ public sealed class AvitoGeeTestSolver(
     IRuCaptchaClient ruCaptcha,
     IWorkerConfigProvider configProvider) : IAvitoGeeTestSolver
 {
-    // Повторять тот же токенный запрос после verified:false только увеличивает риск IP-firewall.
-    // Новый вызов будет возможен после следующей пользовательской паузы/смены прокси.
-    private const int MaxAttempts = 1;
+    private const int MaxAttempts = AvitoGeeTestSolveSupport.MaxGeeTestAttempts;
     private const int PostVerifyNavigationTimeoutMs = 20_000;
+    private const int PostVerifyPaintPolls = 6;
+    private const int PostVerifyPaintPollMs = 400;
     private static readonly SemaphoreSlim Gate = new(
         AvitoGeeTestSolveSupport.MaxConcurrentGeeTestSolves,
         AvitoGeeTestSolveSupport.MaxConcurrentGeeTestSolves);
@@ -184,6 +184,8 @@ public sealed class AvitoGeeTestSolver(
                             ["captcha.attempt"] = attempt,
                             ["captcha.proxyMode"] = effectiveTaskOptions.UsesSuppliedProxy ? "profile" : "proxyless"
                         });
+                    await DelayBeforeRetryAsync(page, attempt, "RuCaptcha не решила", cancellationToken)
+                        .ConfigureAwait(false);
                     continue;
                 }
 
@@ -210,14 +212,15 @@ public sealed class AvitoGeeTestSolver(
                             ["captcha.proxyMode"] = effectiveTaskOptions.UsesSuppliedProxy ? "profile" : "proxyless",
                             ["captcha.userAgentPresent"] = !string.IsNullOrWhiteSpace(effectiveTaskOptions.UserAgent)
                         });
+                    await DelayBeforeRetryAsync(page, attempt, "токен отклонён", cancellationToken)
+                        .ConfigureAwait(false);
                     continue;
                 }
 
-                var leaveResult = await LeaveCaptchaPageAsync(page, cancellationToken).ConfigureAwait(false);
+                var leaveResult = await LeaveCaptchaPageAsync(page, cancellationToken, afterAcceptedVerify: true)
+                    .ConfigureAwait(false);
                 var after = leaveResult.Html;
-                if (leaveResult.Recovered
-                    && !string.IsNullOrWhiteSpace(after)
-                    && !AvitoCaptchaDetector.IsCaptchaHtml(after))
+                if (LeftCaptcha(leaveResult))
                 {
                     _ = GlobalLogger.Instance.LogAsync(
                         "Captcha: GeeTest v4 пройдена через RuCaptcha.",
@@ -228,6 +231,7 @@ public sealed class AvitoGeeTestSolver(
                             ["page.url"] = page.Url,
                             ["captcha.attempt"] = attempt
                         });
+                    AvitoCaptchaTaskContext.NoteSolved();
                     return true;
                 }
 
@@ -243,7 +247,8 @@ public sealed class AvitoGeeTestSolver(
                         ["captcha.htmlReceived"] = !string.IsNullOrWhiteSpace(after),
                         ["captcha.proxyMode"] = effectiveTaskOptions.UsesSuppliedProxy ? "profile" : "proxyless"
                     });
-                return false;
+                await DelayBeforeRetryAsync(page, attempt, "страница не ушла после verify", cancellationToken)
+                    .ConfigureAwait(false);
             }
 
             return false;
@@ -325,6 +330,8 @@ public sealed class AvitoGeeTestSolver(
                         ["captcha.attempt"] = attempt,
                         ["captcha.proxyMode"] = taskOptions.UsesSuppliedProxy ? "profile" : "proxyless"
                     });
+                await DelayBeforeRetryAsync(page, attempt, "RuCaptcha не решила hCaptcha", cancellationToken)
+                    .ConfigureAwait(false);
                 continue;
             }
 
@@ -346,14 +353,15 @@ public sealed class AvitoGeeTestSolver(
                         ["captcha.proxyMode"] = taskOptions.UsesSuppliedProxy ? "profile" : "proxyless",
                         ["captcha.userAgentPresent"] = !string.IsNullOrWhiteSpace(taskOptions.UserAgent)
                     });
+                await DelayBeforeRetryAsync(page, attempt, "токен hCaptcha отклонён", cancellationToken)
+                    .ConfigureAwait(false);
                 continue;
             }
 
-            var leaveResult = await LeaveCaptchaPageAsync(page, cancellationToken).ConfigureAwait(false);
+            var leaveResult = await LeaveCaptchaPageAsync(page, cancellationToken, afterAcceptedVerify: true)
+                .ConfigureAwait(false);
             var after = leaveResult.Html;
-            if (leaveResult.Recovered
-                && !string.IsNullOrWhiteSpace(after)
-                && !AvitoCaptchaDetector.IsCaptchaHtml(after))
+            if (LeftCaptcha(leaveResult))
             {
                 _ = GlobalLogger.Instance.LogAsync(
                     "Captcha: hCaptcha пройдена через RuCaptcha.",
@@ -364,6 +372,7 @@ public sealed class AvitoGeeTestSolver(
                         ["page.url"] = page.Url,
                         ["captcha.attempt"] = attempt
                     });
+                AvitoCaptchaTaskContext.NoteSolved();
                 return true;
             }
 
@@ -378,7 +387,8 @@ public sealed class AvitoGeeTestSolver(
                     ["captcha.redirectPending"] = AvitoCaptchaRedirectRecovery.RequiresRecovery(after),
                     ["captcha.proxyMode"] = taskOptions.UsesSuppliedProxy ? "profile" : "proxyless"
                 });
-            return false;
+            await DelayBeforeRetryAsync(page, attempt, "страница не ушла после hCaptcha", cancellationToken)
+                .ConfigureAwait(false);
         }
 
         return false;
@@ -437,6 +447,8 @@ public sealed class AvitoGeeTestSolver(
                         ["page.url"] = page.Url,
                         ["captcha.attempt"] = attempt
                     });
+                await DelayBeforeRetryAsync(page, attempt, "RuCaptcha не решила картинку", cancellationToken)
+                    .ConfigureAwait(false);
                 continue;
             }
 
@@ -456,14 +468,15 @@ public sealed class AvitoGeeTestSolver(
                         ["captcha.verify.verified"] = verify.Verified,
                         ["captcha.verify"] = verify.Summary
                     });
-                return false;
+                await DelayBeforeRetryAsync(page, attempt, "текст картинки отклонён", cancellationToken)
+                    .ConfigureAwait(false);
+                continue;
             }
 
-            var leaveResult = await LeaveCaptchaPageAsync(page, cancellationToken).ConfigureAwait(false);
+            var leaveResult = await LeaveCaptchaPageAsync(page, cancellationToken, afterAcceptedVerify: true)
+                .ConfigureAwait(false);
             var after = leaveResult.Html;
-            if (leaveResult.Recovered
-                && !string.IsNullOrWhiteSpace(after)
-                && !AvitoCaptchaDetector.IsCaptchaHtml(after))
+            if (LeftCaptcha(leaveResult))
             {
                 _ = GlobalLogger.Instance.LogAsync(
                     "Captcha: внутренняя картинка пройдена через RuCaptcha.",
@@ -474,6 +487,7 @@ public sealed class AvitoGeeTestSolver(
                         ["page.url"] = page.Url,
                         ["captcha.attempt"] = attempt
                     });
+                AvitoCaptchaTaskContext.NoteSolved();
                 return true;
             }
 
@@ -487,7 +501,8 @@ public sealed class AvitoGeeTestSolver(
                     ["captcha.recoveryAttempts"] = leaveResult.Attempts,
                     ["captcha.redirectPending"] = AvitoCaptchaRedirectRecovery.RequiresRecovery(after)
                 });
-            return false;
+            await DelayBeforeRetryAsync(page, attempt, "страница не ушла после картинки", cancellationToken)
+                .ConfigureAwait(false);
         }
 
         return false;
@@ -665,12 +680,90 @@ public sealed class AvitoGeeTestSolver(
     private static SemaphoreSlim GetPageGate(IPage page) =>
         PageGates.GetValue(page, static _ => new SemaphoreSlim(1, 1));
 
-    private static async Task<AvitoCaptchaLeaveResult> LeaveCaptchaPageAsync(
+    private static bool LeftCaptcha(AvitoCaptchaLeaveResult leave) =>
+        leave.Recovered
+        && !string.IsNullOrWhiteSpace(leave.Html)
+        && !AvitoCaptchaDetector.IsCaptchaHtml(leave.Html);
+
+    private static async Task DelayBeforeRetryAsync(
         IPage page,
+        int attempt,
+        string reason,
         CancellationToken cancellationToken)
     {
+        if (attempt >= MaxAttempts)
+        {
+            return;
+        }
+
+        _ = GlobalLogger.Instance.LogAsync(
+            $"Captcha: {reason} — обновляем страницу и повторяем ({attempt + 1}/{MaxAttempts}).",
+            DeskLinkAuditLogLevel.Info,
+            properties: new Dictionary<string, object?>
+            {
+                ["step"] = "captcha_retry_scheduled",
+                ["captcha.attempt"] = attempt,
+                ["page.url"] = page.Url
+            });
+        await Task.Delay(AvitoGeeTestSolveSupport.RetryDelayMs, cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await page.ReloadAsync(PostVerifyNavigationTimeoutMs).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                $"Captcha: reload перед повтором не завершился — {ex.Message}",
+                DeskLinkAuditLogLevel.Warning,
+                properties: new Dictionary<string, object?>
+                {
+                    ["step"] = "captcha_retry_reload_failed",
+                    ["page.url"] = page.Url
+                });
+        }
+
+        await Task.Delay(1200, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<AvitoCaptchaLeaveResult> LeaveCaptchaPageAsync(
+        IPage page,
+        CancellationToken cancellationToken,
+        bool afterAcceptedVerify = false)
+    {
+        var latestHtml = afterAcceptedVerify
+            ? await SafeGetHtmlAsync(page, cancellationToken).ConfigureAwait(false)
+            : await WaitForRedirectOverlayOrLeaveAsync(page, cancellationToken).ConfigureAwait(false);
+        if (!AvitoCaptchaDetector.IsCaptchaHtml(latestHtml))
+        {
+            return new AvitoCaptchaLeaveResult(true, latestHtml, 0);
+        }
+
+        if (!afterAcceptedVerify && !AvitoCaptchaRedirectRecovery.RequiresRecovery(latestHtml))
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                "Captcha: экран «Проверка пройдена, перенаправление» не появился — живую капчу не обновляем.",
+                DeskLinkAuditLogLevel.Info,
+                properties: new Dictionary<string, object?>
+                {
+                    ["step"] = "captcha_skip_reload_live_challenge",
+                    ["page.url"] = page.Url
+                });
+            return new AvitoCaptchaLeaveResult(false, latestHtml, 0);
+        }
+
+        if (afterAcceptedVerify)
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                "Captcha: Avito принял токен — уходим со страницы как штатный скрипт (Reload).",
+                DeskLinkAuditLogLevel.Info,
+                properties: new Dictionary<string, object?>
+                {
+                    ["step"] = "captcha_leave_after_accepted_verify",
+                    ["page.url"] = page.Url
+                });
+        }
+
         var currentTarget = AvitoCaptchaRedirectRecovery.GetCurrentPageTarget(page.Url);
-        string? latestHtml = null;
         var attempts = 0;
 
         for (var attempt = 1; ; attempt++)
@@ -686,11 +779,11 @@ public sealed class AvitoGeeTestSolver(
             {
                 switch (action)
                 {
-                    case AvitoCaptchaRecoveryAction.NavigateCurrentPage:
-                        await NavigateAsync(page, currentTarget).ConfigureAwait(false);
-                        break;
                     case AvitoCaptchaRecoveryAction.Reload:
                         await page.ReloadAsync(PostVerifyNavigationTimeoutMs).ConfigureAwait(false);
+                        break;
+                    case AvitoCaptchaRecoveryAction.NavigateCurrentPage:
+                        await NavigateAsync(page, currentTarget).ConfigureAwait(false);
                         break;
                     case AvitoCaptchaRecoveryAction.NavigateProfileItems:
                         await NavigateAsync(page, AvitoCaptchaRedirectRecovery.ProfileItemsUrl).ConfigureAwait(false);
@@ -723,7 +816,7 @@ public sealed class AvitoGeeTestSolver(
             _ = GlobalLogger.Instance.LogAsync(
                 redirectPending
                     ? $"Captcha: Avito всё ещё показывает «перенаправление» после {action}; пробуем следующий шаг восстановления."
-                    : $"Captcha: после verify страница всё ещё блокируется после {action}; повторную капчу не запрашиваем.",
+                    : $"Captcha: после {action} зелёный экран ушёл, но капча ещё на странице — дальше не перезагружаем.",
                 DeskLinkAuditLogLevel.Warning,
                 properties: new Dictionary<string, object?>
                 {
@@ -742,6 +835,26 @@ public sealed class AvitoGeeTestSolver(
         }
 
         return new AvitoCaptchaLeaveResult(false, latestHtml, attempts);
+    }
+
+    private static async Task<string?> WaitForRedirectOverlayOrLeaveAsync(
+        IPage page,
+        CancellationToken cancellationToken)
+    {
+        string? html = await SafeGetHtmlAsync(page, cancellationToken).ConfigureAwait(false);
+        for (var probe = 0; probe < PostVerifyPaintPolls; probe++)
+        {
+            if (!AvitoCaptchaDetector.IsCaptchaHtml(html)
+                || AvitoCaptchaRedirectRecovery.RequiresRecovery(html))
+            {
+                return html;
+            }
+
+            await Task.Delay(PostVerifyPaintPollMs, cancellationToken).ConfigureAwait(false);
+            html = await SafeGetHtmlAsync(page, cancellationToken).ConfigureAwait(false);
+        }
+
+        return html;
     }
 
     private static Task NavigateAsync(IPage page, string url) =>

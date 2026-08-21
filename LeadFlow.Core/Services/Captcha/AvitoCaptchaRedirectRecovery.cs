@@ -3,13 +3,17 @@ using System.Text.RegularExpressions;
 namespace LeadFlow.Core.Services.Captcha;
 
 /// <summary>
-/// План восстановления, когда Avito уже подтвердил проверку, но SPA не ушла с экрана
-/// «Проверка пройдена, перенаправление…». План ограничен тремя разными действиями,
-/// чтобы не создавать бесконечные reload/повторные обращения к капче.
+/// План восстановления только для залипшего экрана после успешного verify:
+/// зелёный текст «Проверка пройдена, перенаправление…» при скрытом GeeTest.
+/// Живую капчу с кнопкой «Продолжить» не перезагружаем.
 /// </summary>
 public static class AvitoCaptchaRedirectRecovery
 {
     public const string ProfileItemsUrl = "https://www.avito.ru/profile/pro/items";
+
+    private static readonly Regex ScriptOrStyleBlock = new(
+        @"<(script|style)\b[^>]*>.*?</\1>",
+        RegexOptions.IgnoreCase | RegexOptions.Singleline | RegexOptions.Compiled);
 
     public static bool RequiresRecovery(string? html)
     {
@@ -18,7 +22,8 @@ public static class AvitoCaptchaRedirectRecovery
             return false;
         }
 
-        var normalized = Regex.Replace(html, @"\s+", " ");
+        var visible = ScriptOrStyleBlock.Replace(html, " ");
+        var normalized = Regex.Replace(visible, @"\s+", " ");
         return normalized.Contains("Проверка пройдена", StringComparison.OrdinalIgnoreCase)
                && (normalized.Contains("перенаправ", StringComparison.OrdinalIgnoreCase)
                    || normalized.Contains("redirect", StringComparison.OrdinalIgnoreCase));
@@ -26,8 +31,8 @@ public static class AvitoCaptchaRedirectRecovery
 
     public static AvitoCaptchaRecoveryAction GetAction(int attempt) => attempt switch
     {
-        1 => AvitoCaptchaRecoveryAction.NavigateCurrentPage,
-        2 => AvitoCaptchaRecoveryAction.Reload,
+        1 => AvitoCaptchaRecoveryAction.Reload,
+        2 => AvitoCaptchaRecoveryAction.NavigateCurrentPage,
         3 => AvitoCaptchaRecoveryAction.NavigateProfileItems,
         _ => AvitoCaptchaRecoveryAction.None
     };

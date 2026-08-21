@@ -11,7 +11,17 @@ public static class AvitoGeeTestSolveSupport
     /// </summary>
     public const int MaxConcurrentGeeTestSolves = 16;
 
+    /// <summary>
+    /// Новая задача RuCaptcha на каждую попытку. Тот же токен повторно не шлём.
+    /// </summary>
+    public const int MaxGeeTestAttempts = 3;
+    public const int RetryDelayMs = 2_000;
+
     public const string AvitoCaptchaId = "2d9c743cf7d63dbc9db578a608196bcd";
+    /// <summary>
+    /// Живой Avito POST'ит сюда (<c>fetch('/web/3/firewallCaptcha/verify')</c>).
+    /// Статья RuCaptcha указывает <c>/web/1/...</c> — устаревший путь.
+    /// </summary>
     public const string VerifyPath = "/web/3/firewallCaptcha/verify";
 
     /// <summary>
@@ -348,6 +358,10 @@ public static class AvitoGeeTestSolveSupport
                 } catch {}
                 if (verified) {
                   document.cookie = 'captcha_solved=1; Path=/; Max-Age=10; SameSite=Lax';
+                  const formAction = document.querySelector('.form-action');
+                  if (formAction) {
+                    formAction.innerHTML = '<p style="color: green; font-size: 16px; font-weight: 700;">Проверка пройдена, перенаправление...</p>';
+                  }
                 }
                 return JSON.stringify({ ok: res.ok, status: res.status, verified, text: String(text || '').slice(0, 2000) });
               } catch (e) {
@@ -399,6 +413,10 @@ public static class AvitoGeeTestSolveSupport
                 } catch {}
                 if (verified) {
                   document.cookie = 'captcha_solved=1; Path=/; Max-Age=10; SameSite=Lax';
+                  const formAction = document.querySelector('.form-action');
+                  if (formAction) {
+                    formAction.innerHTML = '<p style="color: green; font-size: 16px; font-weight: 700;">Проверка пройдена, перенаправление...</p>';
+                  }
                 }
                 return JSON.stringify({ ok: res.ok, status: res.status, verified, text: String(text || '').slice(0, 2000) });
               } catch (e) {
@@ -444,6 +462,10 @@ public static class AvitoGeeTestSolveSupport
                 } catch {}
                 if (verified) {
                   document.cookie = 'captcha_solved=1; Path=/; Max-Age=10; SameSite=Lax';
+                  const formAction = document.querySelector('.form-action');
+                  if (formAction) {
+                    formAction.innerHTML = '<p style="color: green; font-size: 16px; font-weight: 700;">Проверка пройдена, перенаправление...</p>';
+                  }
                 }
                 return JSON.stringify({ ok: res.ok, status: res.status, verified, text: String(text || '').slice(0, 2000) });
               } catch (e) {

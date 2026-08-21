@@ -17,9 +17,36 @@ public sealed class AvitoGeeTestSolveSupportTests
     }
 
     [Fact]
+    public void CaptchaPassCounters_NoteSolvedAndUnsolved_ResetPerPass()
+    {
+        var counters = new AvitoCaptchaPassCounters();
+        using (AvitoCaptchaTaskContext.Use(options: null, counters))
+        {
+            AvitoCaptchaTaskContext.NoteSolved();
+            AvitoCaptchaTaskContext.NoteUnsolved();
+        }
+
+        Assert.Equal(2, counters.Seen);
+        Assert.Equal(1, counters.Solved);
+
+        var snapshot = counters.SnapshotAndReset();
+        Assert.Equal(2, snapshot.Seen);
+        Assert.Equal(1, snapshot.Solved);
+        Assert.Equal(0, counters.Seen);
+        Assert.Equal(0, counters.Solved);
+    }
+
+    [Fact]
     public void MaxConcurrentGeeTestSolves_AllowsSixteenParallelProviderTasks()
     {
         Assert.Equal(16, AvitoGeeTestSolveSupport.MaxConcurrentGeeTestSolves);
+    }
+
+    [Fact]
+    public void MaxGeeTestAttempts_AllowsThreeProviderTasksPerPage()
+    {
+        Assert.Equal(3, AvitoGeeTestSolveSupport.MaxGeeTestAttempts);
+        Assert.Equal(2000, AvitoGeeTestSolveSupport.RetryDelayMs);
     }
 
     [Fact]
@@ -79,6 +106,7 @@ public sealed class AvitoGeeTestSolveSupportTests
 
         var script = AvitoGeeTestSolveSupport.BuildVerifyScript(solution);
 
+        Assert.Equal("/web/3/firewallCaptcha/verify", AvitoGeeTestSolveSupport.VerifyPath);
         Assert.Contains("/web/3/firewallCaptcha/verify", script, StringComparison.Ordinal);
         Assert.Contains("X-Cube", script, StringComparison.Ordinal);
         Assert.Contains("lot-abc", script, StringComparison.Ordinal);
@@ -87,6 +115,8 @@ public sealed class AvitoGeeTestSolveSupportTests
         Assert.Contains("out==", script, StringComparison.Ordinal);
         Assert.Contains("2d9c743cf7d63dbc9db578a608196bcd", script, StringComparison.Ordinal);
         Assert.Contains("captcha-response", script, StringComparison.Ordinal);
+        Assert.Contains("Проверка пройдена, перенаправление", script, StringComparison.Ordinal);
+        Assert.Contains("form-action", script, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -123,7 +123,10 @@ public sealed class RuCaptchaClient(HttpClient http) : IRuCaptchaClient
                 ["version"] = 4,
                 ["initParameters"] = new Dictionary<string, string>
                 {
-                    ["captcha_id"] = captchaId
+                    ["captcha_id"] = captchaId,
+                    // Как initGeetest4 на firewall-странице Avito: product bind + rus.
+                    ["product"] = "bind",
+                    ["language"] = "rus"
                 }
             }
         };
