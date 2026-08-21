@@ -618,12 +618,14 @@ public sealed class MonitoringService(
                     }
 
                     var historicalHeat = await repository.GetHistoricalResponseIngestHeatScoreAsync(DateTime.UtcNow, cancellationToken);
-                    var delay = MonitoringCycleDelay.GetDelayAfterCycle(
-                        newResponsesThisCycle,
-                        accountsPolled,
-                        _consecutiveQuietMonitoringCycles,
-                        hadUndischargedBacklog,
-                        historicalHeat);
+                    var delay = MonitoringNightQuiet.ApplyFloor(
+                        MonitoringCycleDelay.GetDelayAfterCycle(
+                            newResponsesThisCycle,
+                            accountsPolled,
+                            _consecutiveQuietMonitoringCycles,
+                            hadUndischargedBacklog,
+                            historicalHeat),
+                        DateTime.UtcNow);
                     _ = GlobalLogger.Instance.LogAsync(
                         $"[monitoring] Следующий цикл через {delay.TotalMinutes:F1} мин (новых: {newResponsesThisCycle}, опрошено аккаунтов: {accountsPolled}, тихих циклов подряд: {_consecutiveQuietMonitoringCycles}, очередь откликов: {hadUndischargedBacklog}, истор. «жара» слота: {historicalHeat:F2}).",
                         DeskLinkAuditLogLevel.Info);

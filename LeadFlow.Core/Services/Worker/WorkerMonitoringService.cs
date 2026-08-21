@@ -383,6 +383,8 @@ public sealed class WorkerMonitoringService(
                         personalDelay = TimeSpan.FromMinutes(MonitoringTiming.CycleDelayMinMinutes);
                     }
 
+                    personalDelay = MonitoringNightQuiet.ApplyFloor(personalDelay, DateTime.UtcNow);
+
                     _accountNextEligibleUtc[job.Account.Id] = DateTime.UtcNow.Add(personalDelay);
 
                     WorkerMonitoringLogger.AccountPersonalDelay(
@@ -1258,7 +1260,10 @@ public sealed class WorkerMonitoringService(
                 return (publishedTotal, false, 1, false);
             }
 
-            var subProfiles = SubProfileEnabledFilter.GetEnabled(allSubProfiles, account.DisabledSubProfileIds);
+            var subProfiles = SubProfileEnabledFilter
+                .GetEnabled(allSubProfiles, account.DisabledSubProfileIds)
+                .ToList();
+            AvitoHumanVariation.Shuffle(subProfiles);
             if (subProfiles.Count == 0)
             {
                 var skipReason = allSubProfiles.Count > 0
@@ -1339,7 +1344,10 @@ public sealed class WorkerMonitoringService(
                         continue;
                     }
 
-                    await TryCaptureSubProfileBalanceAsync(sub, session, cancellationToken).ConfigureAwait(false);
+                    if (!AvitoHumanVariation.RollPermille(MonitoringTiming.SkipBalanceChancePermille))
+                    {
+                        await TryCaptureSubProfileBalanceAsync(sub, session, cancellationToken).ConfigureAwait(false);
+                    }
                     await PersistAccountSubProfilesAsync(account, allSubProfiles, cancellationToken)
                         .ConfigureAwait(false);
                     if (sub.Balance.HasValue || sub.Rating.HasValue || sub.ReviewsCount.HasValue)
@@ -1482,6 +1490,10 @@ public sealed class WorkerMonitoringService(
                 if (i < subProfiles.Count - 1 && !cancellationToken.IsCancellationRequested)
                 {
                     await HumanDelay.BetweenSubProfilesAsync(cancellationToken).ConfigureAwait(false);
+                    if (AvitoHumanVariation.RollPermille(MonitoringTiming.ExtraSubProfilePauseChancePermille))
+                    {
+                        await HumanDelay.DelayAsync(3000, 9000, cancellationToken).ConfigureAwait(false);
+                    }
                 }
             }
 

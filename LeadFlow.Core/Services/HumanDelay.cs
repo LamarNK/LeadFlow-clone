@@ -78,6 +78,18 @@ public static class HumanDelay
             MonitoringTiming.HumanDelayAfterListScrollMaxMs,
             cancellationToken);
 
+    public static Task AfterListReadyAsync(CancellationToken cancellationToken = default) =>
+        DelayAsync(
+            MonitoringTiming.HumanDelayAfterListReadyMinMs,
+            MonitoringTiming.HumanDelayAfterListReadyMaxMs,
+            cancellationToken);
+
+    public static Task AfterItemsLingerAsync(CancellationToken cancellationToken = default) =>
+        DelayAsync(
+            MonitoringTiming.HumanDelayItemsLingerMinMs,
+            MonitoringTiming.HumanDelayItemsLingerMaxMs,
+            cancellationToken);
+
     public static Task AfterPhoneRevealClickAsync(CancellationToken cancellationToken = default) =>
         DelayAsync(
             MonitoringTiming.HumanDelayAfterPhoneRevealClickMinMs,

@@ -30,9 +30,15 @@ public static class AvitoCandidatesListPreparer
         Func<IReadOnlyList<CandidateLookupProfileDto>, CancellationToken, Task<IReadOnlySet<int>>>? resolveExistingMatchedProfileIndicesAsync = null,
         ResponseCollectionFilters? responseCollectionFilters = null,
         Func<string, CancellationToken, Task<bool>>? isOpenPhoneWatchAsync = null,
-        bool skipDetailEnrich = false)
+        bool skipDetailEnrich = false,
+        Func<AvitoFirewallProbe.Detection, string?, CancellationToken, Task<bool>>? trySolveCaptchaAsync = null)
     {
-        await AvitoFirewallProbe.ThrowIfBlockedAsync(executeScript, fetchHtmlSnapshot, pageUrl, cancellationToken)
+        await AvitoFirewallProbe.ThrowIfBlockedAsync(
+                executeScript,
+                fetchHtmlSnapshot,
+                pageUrl,
+                cancellationToken,
+                trySolveCaptchaAsync)
             .ConfigureAwait(false);
 
         var lastCount = -1;
@@ -41,6 +47,7 @@ public static class AvitoCandidatesListPreparer
         var seenUnknownCard = false;
         var consecutiveKnownOnlyLoadRounds = 0;
         var stoppedOnKnownHistory = false;
+        var phoneRevealBudget = AvitoHumanVariation.NextPhoneRevealBudget();
 
         for (var round = 0; round < MaxScrollRounds; round++)
         {
@@ -49,7 +56,12 @@ public static class AvitoCandidatesListPreparer
 
             if (round > 0 && round % 3 == 0)
             {
-                await AvitoFirewallProbe.ThrowIfBlockedAsync(executeScript, fetchHtmlSnapshot, pageUrl, cancellationToken)
+                await AvitoFirewallProbe.ThrowIfBlockedAsync(
+                        executeScript,
+                        fetchHtmlSnapshot,
+                        pageUrl,
+                        cancellationToken,
+                        trySolveCaptchaAsync)
                     .ConfigureAwait(false);
             }
 
@@ -99,12 +111,21 @@ public static class AvitoCandidatesListPreparer
                 lastCount = count;
             }
 
+            if (round > 0
+                && AvitoHumanVariation.RollPermille(MonitoringTiming.ScrollBackChancePermille))
+            {
+                _ = await executeScript(AvitoCandidatesPageScripts.BuildScrollBackScript(), cancellationToken)
+                    .ConfigureAwait(false);
+                await HumanDelay.AfterListScrollAsync(cancellationToken).ConfigureAwait(false);
+            }
+
             await HumanDelay.AfterListScrollAsync(cancellationToken).ConfigureAwait(false);
         }
 
         _ = await executeScript(AvitoCandidatesPageScripts.BuildScrollToTopScript(), cancellationToken)
             .ConfigureAwait(false);
         await HumanDelay.AfterListScrollAsync(cancellationToken).ConfigureAwait(false);
+        await HumanDelay.AfterListReadyAsync(cancellationToken).ConfigureAwait(false);
 
         var domItems = lastCount < 0 ? 0 : lastCount;
         var phoneRevealLimit = domItems == 0 ? MaxPhoneRevealRoundsWhenNoItems : MaxPhoneRevealRounds;
@@ -147,6 +168,11 @@ public static class AvitoCandidatesListPreparer
             for (var i = 0; i < phoneRevealLimit; i++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
+                if (phoneClicksTotal >= phoneRevealBudget)
+                {
+                    break;
+                }
+
                 phoneRevealRounds++;
 
                 var revealStep = await TryRevealMaskedPhonesAsync(executeScript, cancellationToken).ConfigureAwait(false);
@@ -155,7 +181,9 @@ public static class AvitoCandidatesListPreparer
                     phoneClicksTotal += revealStep.Clicked;
                     await HumanDelay.AfterPhoneRevealClickAsync(cancellationToken).ConfigureAwait(false);
                     phonesProbe = await TryParsePhonesReadyAsync(executeScript, cancellationToken).ConfigureAwait(false);
-                    if (phonesProbe?.Ready == true || phonesProbe?.Items == 0)
+                    if (phonesProbe?.Ready == true
+                        || phonesProbe?.Items == 0
+                        || phoneClicksTotal >= phoneRevealBudget)
                     {
                         break;
                     }
@@ -173,7 +201,9 @@ public static class AvitoCandidatesListPreparer
                 }
 
                 phonesProbe = await TryParsePhonesReadyAsync(executeScript, cancellationToken).ConfigureAwait(false);
-                if (phonesProbe?.Ready == true || phonesProbe?.Items == 0)
+                if (phonesProbe?.Ready == true
+                    || phonesProbe?.Items == 0
+                    || phoneClicksTotal >= phoneRevealBudget)
                 {
                     break;
                 }
@@ -240,8 +270,11 @@ public static class AvitoCandidatesListPreparer
                 ? "detailEnrich=deferred (same pass as chat)"
                 : $"detailEnrich={result.DetailEnrichHits}/{result.DetailEnrichClicks} (skipped {result.DetailEnrichSkipped})";
         var scrollNote = stoppedOnKnownHistory ? ", scrollStop=known-history" : "";
+        var phoneCapNote = phoneClicksTotal >= phoneRevealBudget
+            ? $", phoneRevealCap={phoneRevealBudget}"
+            : "";
         _ = GlobalLogger.Instance.LogAsync(
-            $"Candidates list prepared for {logContext}: scrollRounds={result.ScrollRounds}, domItems={result.DomItemCount}{scrollNote}, phonesReady={result.PhonesReady} ({result.CardsWithPhone}/{result.DomItemCount}), maskedLeft={result.MaskedPhonesLeft}, cardFingerprintSkips={result.CardFingerprintSkips}, phoneSkips={result.PhoneSkips}, profileSkips={result.ProfileSkips}, collectionFilterSkips={result.CollectionFilterSkips}, phoneRevealRounds={result.PhoneRevealRounds}, phoneClicks={result.PhoneRevealClicks}, {detailEnrichNote}.",
+            $"Candidates list prepared for {logContext}: scrollRounds={result.ScrollRounds}, domItems={result.DomItemCount}{scrollNote}, phonesReady={result.PhonesReady} ({result.CardsWithPhone}/{result.DomItemCount}), maskedLeft={result.MaskedPhonesLeft}, cardFingerprintSkips={result.CardFingerprintSkips}, phoneSkips={result.PhoneSkips}, profileSkips={result.ProfileSkips}, collectionFilterSkips={result.CollectionFilterSkips}, phoneRevealRounds={result.PhoneRevealRounds}, phoneClicks={result.PhoneRevealClicks}{phoneCapNote}, {detailEnrichNote}.",
             DeskLinkAuditLogLevel.Info,
             properties: new Dictionary<string, object?>
             {
@@ -255,6 +288,8 @@ public static class AvitoCandidatesListPreparer
                 ["candidates.prepare.maskedPhonesLeft"] = result.MaskedPhonesLeft,
                 ["candidates.prepare.phoneRevealRounds"] = result.PhoneRevealRounds,
                 ["candidates.prepare.phoneRevealClicks"] = result.PhoneRevealClicks,
+                ["candidates.prepare.phoneRevealBudget"] = phoneRevealBudget,
+                ["candidates.prepare.phoneRevealCapped"] = phoneClicksTotal >= phoneRevealBudget,
                 ["candidates.prepare.detailEnrichClicks"] = result.DetailEnrichClicks,
                 ["candidates.prepare.detailEnrichSkipped"] = result.DetailEnrichSkipped,
                 ["candidates.prepare.detailEnrichHits"] = result.DetailEnrichHits,

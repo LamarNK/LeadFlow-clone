@@ -143,6 +143,16 @@ public sealed class AvitoCandidatesPageScriptsTests
     }
 
     [Fact]
+    public void BuildScrollBackScript_ScrollsUp()
+    {
+        var script = AvitoCandidatesPageScripts.BuildScrollBackScript();
+
+        Assert.Contains("scrollBy", script, StringComparison.Ordinal);
+        Assert.Contains("behavior: \"smooth\"", script, StringComparison.Ordinal);
+        Assert.Contains("delta = -Math.max", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void BuildClickCandidateItemByIndexScript_DispatchesPointerGesture()
     {
         var script = AvitoCandidatesPageScripts.BuildClickCandidateItemByIndexScript(1);

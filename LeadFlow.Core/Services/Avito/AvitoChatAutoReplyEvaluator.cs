@@ -45,6 +45,25 @@ public static class AvitoChatAutoReplyEvaluator
         return !AlreadySentAutoReply(messages, autoReplyMessage);
     }
 
+    /// <summary>
+    /// Автоответ не в том же проходе, где карточку увидели впервые, и не больше N штук за субпрофиль.
+    /// </summary>
+    public static bool ShouldSendOnThisPass(
+        bool enabled,
+        bool candidateAlreadyKnown,
+        int sentThisPass,
+        int maxPerPass,
+        IReadOnlyList<AvitoChatMessage> messages,
+        string autoReplyMessage)
+    {
+        if (!enabled || !candidateAlreadyKnown || sentThisPass >= maxPerPass)
+        {
+            return false;
+        }
+
+        return NeedsAutoReply(messages, autoReplyMessage);
+    }
+
     public static bool AlreadySentDefaultAutoReply(IReadOnlyList<AvitoChatMessage> messages) =>
         AlreadySentAutoReply(messages, AvitoMessengerAutoReply.DefaultMessage);
 

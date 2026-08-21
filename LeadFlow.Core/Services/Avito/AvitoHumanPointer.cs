@@ -32,6 +32,18 @@ internal static class AvitoHumanPointer
 
             var x = box.X + box.Width * (decimal)(0.32 + Random.Shared.NextDouble() * 0.36);
             var y = box.Y + box.Height * (decimal)(0.32 + Random.Shared.NextDouble() * 0.36);
+            if (AvitoHumanVariation.RollPermille(MonitoringTiming.MouseWanderChancePermille))
+            {
+                var wanderX = box.X + box.Width * (decimal)Random.Shared.NextDouble();
+                var wanderY = box.Y - (decimal)Random.Shared.Next(24, 90);
+                await page.Mouse.MoveAsync(
+                        wanderX,
+                        wanderY,
+                        new MoveOptions { Steps = Random.Shared.Next(4, 11) })
+                    .ConfigureAwait(false);
+                await HumanDelay.DelayAsync(40, 160, cancellationToken).ConfigureAwait(false);
+            }
+
             await page.Mouse.MoveAsync(x, y, new MoveOptions { Steps = Random.Shared.Next(5, 14) })
                 .ConfigureAwait(false);
             await HumanDelay.DelayAsync(25, 80, cancellationToken).ConfigureAwait(false);

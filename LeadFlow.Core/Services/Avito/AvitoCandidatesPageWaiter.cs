@@ -17,7 +17,8 @@ public static class AvitoCandidatesPageWaiter
         string? pageUrl,
         CancellationToken cancellationToken,
         string? baselineListSignature = null,
-        IPage? pageForRecovery = null)
+        IPage? pageForRecovery = null,
+        Func<AvitoFirewallProbe.Detection, string?, CancellationToken, Task<bool>>? trySolveCaptchaAsync = null)
     {
         var maxWaitMs = MonitoringTiming.CandidatesPageMaxWaitMs;
         var pollMs = MonitoringTiming.CandidatesPagePollMs;
@@ -31,7 +32,12 @@ public static class AvitoCandidatesPageWaiter
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            await AvitoFirewallProbe.ThrowIfBlockedAsync(executeScript, fetchHtmlSnapshot, pageUrl, cancellationToken)
+            await AvitoFirewallProbe.ThrowIfBlockedAsync(
+                    executeScript,
+                    fetchHtmlSnapshot,
+                    pageUrl,
+                    cancellationToken,
+                    trySolveCaptchaAsync)
                 .ConfigureAwait(false);
 
             await AvitoLoginProbe.ThrowIfLoginRequiredAsync(executeScript, cancellationToken, pageForRecovery)
@@ -96,7 +102,12 @@ public static class AvitoCandidatesPageWaiter
             await Task.Delay(pollMs, cancellationToken).ConfigureAwait(false);
         }
 
-        await AvitoFirewallProbe.ThrowIfBlockedAsync(executeScript, fetchHtmlSnapshot, pageUrl, cancellationToken)
+        await AvitoFirewallProbe.ThrowIfBlockedAsync(
+                executeScript,
+                fetchHtmlSnapshot,
+                pageUrl,
+                cancellationToken,
+                trySolveCaptchaAsync)
             .ConfigureAwait(false);
 
         await AvitoLoginProbe.ThrowIfLoginRequiredAsync(executeScript, cancellationToken, pageForRecovery)

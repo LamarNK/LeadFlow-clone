@@ -620,6 +620,46 @@ public static class AvitoCandidatesPageScripts
         })();
         """;
 
+    /// <summary>Короткий скролл вверх — как будто перечитали предыдущие карточки.</summary>
+    public static string BuildScrollBackScript() =>
+        """
+        (() => {
+            const countItems = () => document.querySelectorAll("[data-marker='job-application/item']").length;
+            const findScroller = () => {
+                const first = document.querySelector("[data-marker='job-application/item']");
+                if (first) {
+                    let node = first.parentElement;
+                    while (node && node !== document.body) {
+                        const style = window.getComputedStyle(node);
+                        const overflowY = style.overflowY;
+                        if ((overflowY === "auto" || overflowY === "scroll") && node.scrollHeight > node.clientHeight + 40) {
+                            return node;
+                        }
+                        node = node.parentElement;
+                    }
+                }
+
+                return document.scrollingElement || document.documentElement;
+            };
+
+            const scroller = findScroller();
+            const beforeTop = scroller.scrollTop;
+            const ratio = 0.18 + Math.random() * 0.22;
+            const delta = -Math.max(Math.floor(scroller.clientHeight * ratio), 120);
+            try {
+                scroller.scrollBy({ top: delta, left: 0, behavior: "smooth" });
+            } catch {
+                scroller.scrollBy(0, delta);
+            }
+            return JSON.stringify({
+                itemCount: countItems(),
+                scrollTop: scroller.scrollTop,
+                moved: Math.abs(scroller.scrollTop - beforeTop) > 2,
+                atEnd: false
+            });
+        })();
+        """;
+
     public static string BuildScrollToTopScript() =>
         """
         (() => {

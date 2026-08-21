@@ -84,6 +84,53 @@ public static class MonitoringTiming
     /// <summary>Как часто воркер перечитывает модалку «Выбор профиля» Avito Pro (часы).</summary>
     public const int SubProfilesRefreshIntervalHours = 24;
 
+    /// <summary>Максимум кликов «показать номер» на один субпрофиль за проход (Avito отдельно считает этот API).</summary>
+    public const int MaxPhoneRevealsPerSubProfilePerCycle = 10;
+
+    /// <summary>Нижняя граница бюджета раскрытия номеров за проход (рандом в [min..max]).</summary>
+    public const int MinPhoneRevealsPerSubProfilePerCycle = 6;
+
+    /// <summary>Максимум шаблонных автоответов в чат на один субпрофиль за проход.</summary>
+    public const int MaxMessengerAutoRepliesPerSubProfilePerCycle = 3;
+
+    /// <summary>Нижняя граница бюджета автоответов за проход.</summary>
+    public const int MinMessengerAutoRepliesPerSubProfilePerCycle = 1;
+
+    /// <summary>Вероятность (‰) пропустить чтение баланса в этом проходе субпрофиля.</summary>
+    public const int SkipBalanceChancePermille = 250;
+
+    /// <summary>Вероятность (‰) коротко прокрутить список назад, как при перечитывании.</summary>
+    public const int ScrollBackChancePermille = 200;
+
+    /// <summary>Вероятность (‰) задержаться на «Мои объявления» перед откликами.</summary>
+    public const int ItemsLingerChancePermille = 400;
+
+    /// <summary>Вероятность (‰) лишнего движения мыши перед кликом.</summary>
+    public const int MouseWanderChancePermille = 350;
+
+    /// <summary>Вероятность (‰) дополнительной паузы между субпрофилями.</summary>
+    public const int ExtraSubProfilePauseChancePermille = 300;
+
+    /// <summary>Пауза «смотрю список» после загрузки откликов.</summary>
+    public const int HumanDelayAfterListReadyMinMs = 1800;
+    public const int HumanDelayAfterListReadyMaxMs = 6500;
+
+    /// <summary>Пауза на объявлениях, если решили задержаться.</summary>
+    public const int HumanDelayItemsLingerMinMs = 2500;
+    public const int HumanDelayItemsLingerMaxMs = 9000;
+
+    /// <summary>Ночная тишина по Москве: с этого часа включительно.</summary>
+    public const int NightQuietStartHourInclusive = 23;
+
+    /// <summary>Ночная тишина по Москве: до этого часа (не включая).</summary>
+    public const int NightQuietEndHourExclusive = 7;
+
+    /// <summary>Нижняя граница паузы между циклами ночью (минуты).</summary>
+    public const int NightQuietDelayMinMinutes = 45;
+
+    /// <summary>Верхняя граница паузы между циклами ночью (минуты).</summary>
+    public const int NightQuietDelayMaxMinutes = 90;
+
     // ---- «Человеческие» рандомные паузы ----
     // Идея: после открытия страницы / переключения профиля / обработки отклика
     // имитируем чтение пользователем, чтобы не палить ботскую частоту запросов.

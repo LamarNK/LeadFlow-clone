@@ -74,6 +74,12 @@ public sealed class HumanDelayTests
             <= MonitoringTiming.ContactsPopupPollMaxMs);
         Assert.True(MonitoringTiming.HumanTypeCharDelayMinMs >= 30);
         Assert.True(MonitoringTiming.HumanDelayAfterMessengerCardMinMs >= 2000);
+        Assert.InRange(MonitoringTiming.MaxPhoneRevealsPerSubProfilePerCycle, 8, 12);
+        Assert.True(MonitoringTiming.MinPhoneRevealsPerSubProfilePerCycle
+                    <= MonitoringTiming.MaxPhoneRevealsPerSubProfilePerCycle);
+        Assert.InRange(MonitoringTiming.MaxMessengerAutoRepliesPerSubProfilePerCycle, 2, 3);
+        Assert.True(MonitoringTiming.HumanDelayAfterListReadyMinMs
+                    <= MonitoringTiming.HumanDelayAfterListReadyMaxMs);
     }
 
     [Fact]
