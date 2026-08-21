@@ -25,7 +25,9 @@ public static class AvitoAutoLoginScripts
                 document.getElementById("h-captcha") ||
                 document.querySelector(".h-captcha[data-sitekey]")
             );
-            const hasCaptcha = hasFirewallDom || hasFirewallText || hasCaptchaWidget;
+            const hasIpDialog = !!document.querySelector('[role="dialog"][aria-modal="true"], [aria-modal="true"]')
+              && /Доступ\s+ограничен|проблема\s+с\s+IP/i.test(probeText);
+            const hasCaptcha = hasFirewallDom || hasFirewallText || hasCaptchaWidget || hasIpDialog;
 
             const hasLoginDom = !!(
                 document.querySelector("[data-marker='auth-app-root']") ||

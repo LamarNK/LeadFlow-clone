@@ -132,9 +132,41 @@ public static class AvitoCaptchaDetector
 
         return Regex.IsMatch(
             html,
-            @"id=""geetest_captcha""|class=""geetest_widget""|data-geetest|initGeetest4?|geetest\.com|gt_captcha",
+            @"id=[""']?geetest_captcha|class=[""']geetest_widget|data-geetest|initGeetest4?|geetest\.com|gt_captcha|gt4\.js|/s/captcha/gt4",
             RegexOptions.IgnoreCase);
     }
+
+    /// <summary>
+    /// Экран/модалка «Доступ ограничен: проблема с IP», в том числе SPA-оверлей поверх кабинета
+    /// без <c>#geetest_captcha</c> — GeeTest стартует после «Продолжить».
+    /// </summary>
+    public static bool HasIpBlockChallenge(string? html)
+    {
+        if (string.IsNullOrWhiteSpace(html))
+        {
+            return false;
+        }
+
+        if (Regex.IsMatch(html, @"\bfirewall-container\b|\bjs-firewall-form\b|\bfirewall-title\b", RegexOptions.IgnoreCase))
+        {
+            return true;
+        }
+
+        var hasTitle = Regex.IsMatch(html, @"Доступ\s+ограничен", RegexOptions.IgnoreCase);
+        var hasIp = Regex.IsMatch(html, @"проблема\s+с\s+IP", RegexOptions.IgnoreCase);
+        var hasContinue = html.Contains("Продолжить", StringComparison.Ordinal);
+        var hasSupportTicket = html.Contains("support.avito.ru/request/720", StringComparison.OrdinalIgnoreCase);
+        var hasDialog = Regex.IsMatch(html, @"aria-modal\s*=\s*[""']true[""']|role\s*=\s*[""']dialog[""']", RegexOptions.IgnoreCase);
+        var hasScrollLockOverlay = html.Contains("data-scroll-lock-ignore", StringComparison.OrdinalIgnoreCase);
+
+        return (hasTitle && hasIp)
+               || (hasDialog && hasTitle && hasContinue)
+               || (hasSupportTicket && hasContinue && hasTitle)
+               || (hasScrollLockOverlay && hasTitle && hasIp);
+    }
+
+    public static bool CanAttemptGeeTestSolve(string? html) =>
+        HasGeeTestWidget(html) || HasIpBlockChallenge(html);
 
     /// <summary>
     /// captcha_id GeeTest v4 со страницы Avito. Если в HTML нет — фиксированное значение домена.

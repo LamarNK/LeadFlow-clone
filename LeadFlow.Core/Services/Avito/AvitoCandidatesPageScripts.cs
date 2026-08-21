@@ -470,10 +470,13 @@ public static class AvitoCandidatesPageScripts
                 document.querySelector(".h-captcha[data-sitekey]")
             );
             const hasFirewallText = /Доступ\s+ограничен|проблема\s+с\s+IP|firewallCaptcha|Отключить\s+VPN|самол[её]те/i.test(title + "\n" + bodyText);
+            const hasIpDialog = !!document.querySelector('[role="dialog"][aria-modal="true"], [aria-modal="true"]')
+              && /Доступ\s+ограничен|проблема\s+с\s+IP/i.test(title + "\n" + bodyText);
             const blocked =
-                itemCount === 0 &&
+                hasIpDialog ||
+                (itemCount === 0 &&
                 statusCount === 0 &&
-                (hasFirewallDom || (hasFirewallText && hasCaptchaWidget) || hasFirewallText);
+                (hasFirewallDom || (hasFirewallText && hasCaptchaWidget) || hasFirewallText));
 
             let kind = "firewall";
             if (blocked && document.getElementById("geetest_captcha")) {
@@ -509,10 +512,13 @@ public static class AvitoCandidatesPageScripts
             const hasFirewallDom = !!document.querySelector(".firewall-container, .js-firewall-form, .firewall-title")
                 || location.hash === "#block"
                 || !!document.querySelector('a[href*="support.avito.ru/request/720"]');
+            const hasIpDialog = !!document.querySelector('[role="dialog"][aria-modal="true"], [aria-modal="true"]')
+                && /Доступ\s+ограничен|проблема\s+с\s+IP/i.test(title + "\n" + bodyText);
             const blocked =
-                itemCount === 0 &&
+                hasIpDialog ||
+                (itemCount === 0 &&
                 statusCount === 0 &&
-                (hasFirewallDom || /Доступ\s+ограничен|проблема\s+с\s+IP|Отключить\s+VPN|самол[её]те/i.test(title + "\n" + bodyText));
+                (hasFirewallDom || /Доступ\s+ограничен|проблема\s+с\s+IP|Отключить\s+VPN|самол[её]те/i.test(title + "\n" + bodyText)));
 
             const hasListData = itemCount > 0 || statusCount > 0;
             const listRoot =
@@ -1773,7 +1779,10 @@ public static class AvitoCandidatesPageScripts
                 document.getElementById("h-captcha") ||
                 document.querySelector(".h-captcha[data-sitekey]")
             );
+            const hasIpDialog = !!document.querySelector('[role="dialog"][aria-modal="true"], [aria-modal="true"]')
+              && /Доступ\s+ограничен|проблема\s+с\s+IP/i.test(title + "\n" + bodyText);
             const hasCaptcha =
+                hasIpDialog ||
                 (itemCount === 0 && statusCount === 0 && (hasFirewallDom || (hasFirewallText && hasCaptchaWidget) || hasFirewallText)) ||
                 (!hasFirewallDom && /капч|captcha|подтвердите|проверочный код/i.test(bodyText));
 
