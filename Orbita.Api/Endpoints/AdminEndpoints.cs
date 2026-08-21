@@ -854,6 +854,7 @@ public static class AdminEndpoints
             string? level,
             string? service,
             DateTime? date,
+            Guid? workerId,
             int? page,
             int? pageSize,
             ServiceLogsQueryService logs,
@@ -863,6 +864,7 @@ public static class AdminEndpoints
                 level,
                 service,
                 date,
+                workerId,
                 page ?? 1,
                 pageSize ?? ServiceLogsQueryService.DefaultPageSize,
                 ct)));

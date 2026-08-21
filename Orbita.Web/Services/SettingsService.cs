@@ -40,7 +40,7 @@ public sealed class SettingsService(
                     workerId is null ? service : "Orbita.Worker",
                     date,
                     DesignPreviewData.BuildServiceLogsPage(
-                        workerId is null ? q : $"worker:{workerId:D}",
+                        q,
                         level,
                         workerId is null ? service : "Orbita.Worker",
                         date,
@@ -535,13 +535,13 @@ public sealed class SettingsService(
     {
         var workers = await api.GetAdminWorkersAsync(ct) ?? [];
         var workerOptions = SettingsIndexBuilder.BuildWorkerOptions(workers, workerId);
-        var effectiveQuery = workerId is null ? q : $"worker:{workerId:D}";
         var effectiveService = workerId is null ? service : "Orbita.Worker";
         var pageDto = await api.GetServiceLogsAsync(
-            effectiveQuery,
+            q,
             level,
             effectiveService,
             date ?? DateTime.UtcNow.Date,
+            workerId,
             page,
             SettingsIndexBuilder.LogsPageSize,
             ct) ?? new ServiceLogsPageDto([], 0, page, SettingsIndexBuilder.LogsPageSize);

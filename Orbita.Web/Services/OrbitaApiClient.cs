@@ -453,6 +453,7 @@ public sealed class OrbitaApiClient(
         string? level,
         string? service,
         DateTime? date,
+        Guid? workerId,
         int page,
         int pageSize,
         CancellationToken ct = default)
@@ -482,6 +483,11 @@ public sealed class OrbitaApiClient(
         if (date.HasValue)
         {
             query.Add($"date={date.Value:yyyy-MM-dd}");
+        }
+
+        if (workerId.HasValue)
+        {
+            query.Add($"workerId={workerId.Value:D}");
         }
 
         query.Add($"page={page}");
