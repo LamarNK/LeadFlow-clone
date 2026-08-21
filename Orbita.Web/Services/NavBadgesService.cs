@@ -34,7 +34,7 @@ public sealed class NavBadgesService(
                 previewCrmNotifications?.Enabled);
         }
 
-        var summaryTask = api.GetSummaryAsync(Helpers.BrowserTimeZone.Resolve(httpContextAccessor.HttpContext), ct);
+        var badgesTask = api.GetNavBadgesAsync(Helpers.BrowserTimeZone.Resolve(httpContextAccessor.HttpContext), ct);
         var canReadCrmNotifications = officeContext.EffectiveOfficeId is Guid
             && (httpContextAccessor.HttpContext?.User.HasClaim(
                     PanelPermissions.ClaimType,
@@ -45,8 +45,8 @@ public sealed class NavBadgesService(
         var crmNotificationsTask = canReadCrmNotifications
             ? api.GetCrmTaskNotificationSummaryAsync(ct)
             : Task.FromResult<CrmTaskNotificationSummaryDto?>(null);
-        await Task.WhenAll(summaryTask, crmNotificationsTask);
-        var live = await summaryTask;
+        await Task.WhenAll(badgesTask, crmNotificationsTask);
+        var live = await badgesTask;
         var crmNotifications = await crmNotificationsTask;
         if (live is null)
         {
@@ -59,12 +59,10 @@ public sealed class NavBadgesService(
                 crmNotifications?.Enabled);
         }
 
-        return new NavBadgesDto(
-            live.Errors,
-            live.UniqueResponsesToday,
-            live.ActionRequired,
-            live.AggregatedAtUtc,
-            crmNotifications?.Enabled == true ? crmNotifications.UnreadCount : 0,
-            crmNotifications?.Enabled);
+        return live with
+        {
+            CrmTaskNotificationsUnread = crmNotifications?.Enabled == true ? crmNotifications.UnreadCount : 0,
+            CrmTaskNotificationsEnabled = crmNotifications?.Enabled
+        };
     }
 }

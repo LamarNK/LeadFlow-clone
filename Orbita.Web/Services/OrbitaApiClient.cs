@@ -87,6 +87,23 @@ public sealed class OrbitaApiClient(
         return GetAsync<GlobalDashboardSummary>(path, ct);
     }
 
+    public Task<NavBadgesDto?> GetNavBadgesAsync(int timeZoneOffsetMinutes = 0, CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            var summary = DesignPreviewData.GetSummary(officeContext.EffectiveOfficeId);
+            return Task.FromResult<NavBadgesDto?>(new NavBadgesDto(
+                summary.Errors,
+                summary.UniqueResponsesToday,
+                summary.ActionRequired,
+                DateTime.UtcNow));
+        }
+
+        var path = WithOfficeQuery("api/v1/nav/badges");
+        path = AppendQuery(path, "tz", timeZoneOffsetMinutes.ToString());
+        return GetAsync<NavBadgesDto>(path, ct);
+    }
+
     public Task<IReadOnlyList<WorkerListItem>?> GetWorkersAsync(CancellationToken ct = default) =>
         _preview.Enabled
             ? Task.FromResult<IReadOnlyList<WorkerListItem>?>(DesignPreviewData.GetWorkers(officeContext.EffectiveOfficeId))

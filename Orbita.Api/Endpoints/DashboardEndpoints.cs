@@ -61,6 +61,23 @@ public static class DashboardEndpoints
             return Results.Ok(await query.GetGlobalSummaryAsync(scope, officeId, tz, ct));
         });
 
+        app.MapGet("/api/v1/nav/badges", async (
+            Guid? officeId,
+            int? tz,
+            DashboardQueryService query,
+            OfficeScopeService officeScope,
+            ClaimsPrincipal principal,
+            CancellationToken ct) =>
+        {
+            var scope = await officeScope.ResolveAsync(principal, ct);
+            if (!scope.HasAccess)
+            {
+                return Results.Ok(new NavBadgesDto(0, 0, 0, DateTime.UtcNow));
+            }
+
+            return Results.Ok(await query.GetNavBadgesAsync(scope, officeId, tz, ct));
+        }).RequireAuthorization();
+
         var workerRead = app.MapGroup("/api/v1").RequireAuthorization(PanelPermissions.Workers);
         workerRead.MapGet("/workers", async (
             Guid? officeId,

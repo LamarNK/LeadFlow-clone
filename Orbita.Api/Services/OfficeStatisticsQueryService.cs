@@ -13,26 +13,8 @@ public sealed class OfficeStatisticsQueryService(
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
-    private static (
-        DateTime ExpiresUtc,
-        OfficeStatisticsDto? Value,
-        OfficeScope Scope,
-        Guid? OfficeFilter,
-        DateTime FromLocal,
-        DateTime ToLocal,
-        string WorkerFilterKey,
-        string AccountFilterKey,
-        string VacancyFilterKey) _cache;
-    private static readonly object CacheLock = new();
-
     /// <summary>Test-only: static statistics cache must not leak across InMemory DB fixtures.</summary>
-    internal static void ClearCacheForTests()
-    {
-        lock (CacheLock)
-        {
-            _cache = default;
-        }
-    }
+    internal static void ClearCacheForTests() => PanelAggregateCache.Clear();
 
     public async Task<OfficeStatisticsDto> GetStatisticsAsync(
         OfficeScope scope,
@@ -57,29 +39,17 @@ public sealed class OfficeStatisticsQueryService(
         var workerFilterKey = BuildFilterKey(workerFilterSet);
         var accountFilterKey = BuildFilterKey(accountFilterSet);
         var vacancyFilterKey = string.IsNullOrWhiteSpace(vacancyFilter) ? string.Empty : vacancyFilter.Trim();
+        var cacheKey = PanelAggregateCache.StatisticsKey(
+            scope,
+            officeFilter,
+            startLocal,
+            endLocal,
+            workerFilterKey,
+            accountFilterKey,
+            vacancyFilterKey);
 
-        OfficeStatisticsDto? cachedResult = null;
-        lock (CacheLock)
+        async Task<OfficeStatisticsDto> ComputeAsync()
         {
-            if (_cache.Value is not null
-                && _cache.ExpiresUtc > nowUtc
-                && _cache.Scope.IsGlobalAdmin == scope.IsGlobalAdmin
-                && _cache.OfficeFilter == officeFilter
-                && _cache.FromLocal == startLocal
-                && _cache.ToLocal == endLocal
-                && _cache.WorkerFilterKey == workerFilterKey
-                && _cache.AccountFilterKey == accountFilterKey
-                && _cache.VacancyFilterKey == vacancyFilterKey)
-            {
-                cachedResult = _cache.Value;
-            }
-        }
-
-        if (cachedResult is not null)
-        {
-            return await RefreshOnlineStatusAsync(cachedResult, ct);
-        }
-
         var workersQuery = officeScope
             .ApplyWorkerFilter(db.Workers.AsNoTracking(), scope, officeFilter)
             .Where(x => x.MachineName != LeadFlowImportWorker.MachineName);
@@ -196,7 +166,7 @@ public sealed class OfficeStatisticsQueryService(
             accountRows,
             ct);
 
-        var result = new OfficeStatisticsDto(
+        return new OfficeStatisticsDto(
             balances,
             accountInfrastructure,
             workerInfrastructure,
@@ -207,12 +177,12 @@ public sealed class OfficeStatisticsQueryService(
             hrInsights,
             monitoringCycles,
             nowUtc);
-
-        lock (CacheLock)
-        {
-            _cache = (nowUtc.AddSeconds(8), result, scope, officeFilter, startLocal, endLocal, workerFilterKey, accountFilterKey, vacancyFilterKey);
         }
 
+        var result = await PanelAggregateCache.GetOrCreateAsync(
+            cacheKey,
+            PanelAggregateCache.StatisticsTtl,
+            ComputeAsync);
         return await RefreshOnlineStatusAsync(result, ct);
     }
 

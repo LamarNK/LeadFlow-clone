@@ -17,18 +17,8 @@ public sealed class DashboardQueryService(
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
-    // Lightweight 5-8s cache for summary to reduce repeated heavy aggregates under polling
-    private static (DateTime ExpiresUtc, GlobalDashboardSummary? Value, OfficeScope Scope, Guid? OfficeFilter) _summaryCache;
-    private static readonly object _cacheLock = new();
-
     /// <summary>Test-only: static summary cache must not leak across InMemory DB fixtures.</summary>
-    internal static void ClearCacheForTests()
-    {
-        lock (_cacheLock)
-        {
-            _summaryCache = default;
-        }
-    }
+    internal static void ClearCacheForTests() => PanelAggregateCache.Clear();
 
     public async Task<GlobalDashboardSummary> GetGlobalSummaryAsync(
         OfficeScope scope,
@@ -36,20 +26,32 @@ public sealed class DashboardQueryService(
         int? timeZoneOffsetMinutes = null,
         CancellationToken ct = default)
     {
-        var nowUtc = DateTime.UtcNow;
+        var summary = await PanelAggregateCache.GetOrCreateAsync(
+            PanelAggregateCache.SummaryKey(scope, officeFilter, timeZoneOffsetMinutes),
+            PanelAggregateCache.DashboardTtl,
+            () => ComputeGlobalSummaryCoreAsync(scope, officeFilter, timeZoneOffsetMinutes, ct));
+        return await RefreshOnlineWorkersAsync(summary, scope, officeFilter, ct);
+    }
 
-        // Check short TTL cache (avoids re-computing aggregates on every 10s dashboard poll)
-        lock (_cacheLock)
-        {
-            if (_summaryCache.Value is not null &&
-                _summaryCache.ExpiresUtc > nowUtc &&
-                _summaryCache.Scope.IsGlobalAdmin == scope.IsGlobalAdmin &&
-                _summaryCache.OfficeFilter == officeFilter)
-            {
-                // return a copy-ish (immutable record is fine to share)
-                return _summaryCache.Value with { AggregatedAtUtc = nowUtc };
-            }
-        }
+    public async Task<NavBadgesDto> GetNavBadgesAsync(
+        OfficeScope scope,
+        Guid? officeFilter = null,
+        int? timeZoneOffsetMinutes = null,
+        CancellationToken ct = default)
+    {
+        return await PanelAggregateCache.GetOrCreateAsync(
+            PanelAggregateCache.NavBadgesKey(scope, officeFilter, timeZoneOffsetMinutes),
+            PanelAggregateCache.NavBadgesTtl,
+            () => ComputeNavBadgesCoreAsync(scope, officeFilter, timeZoneOffsetMinutes, ct));
+    }
+
+    private async Task<GlobalDashboardSummary> ComputeGlobalSummaryCoreAsync(
+        OfficeScope scope,
+        Guid? officeFilter,
+        int? timeZoneOffsetMinutes,
+        CancellationToken ct)
+    {
+        var nowUtc = DateTime.UtcNow;
 
         var todayLocal = LocalCalendarDateRange.GetLocalCalendarDate(nowUtc, timeZoneOffsetMinutes);
         var todayStart = LocalCalendarDateRange.GetUtcRangeForLocalCalendarDay(todayLocal, timeZoneOffsetMinutes)
@@ -169,13 +171,68 @@ public sealed class DashboardQueryService(
                 workerEventErrors.Daily),
             AggregatedAtUtc: nowUtc);
 
-        // Store in short cache
-        lock (_cacheLock)
-        {
-            _summaryCache = (nowUtc.AddSeconds(7), result, scope, officeFilter);
-        }
+        PanelAggregateCache.Set(
+            PanelAggregateCache.NavBadgesKey(scope, officeFilter, timeZoneOffsetMinutes),
+            new NavBadgesDto(
+                result.Errors,
+                result.UniqueResponsesToday,
+                result.ActionRequired,
+                result.AggregatedAtUtc),
+            PanelAggregateCache.NavBadgesTtl);
 
         return result;
+    }
+
+    private async Task<NavBadgesDto> ComputeNavBadgesCoreAsync(
+        OfficeScope scope,
+        Guid? officeFilter,
+        int? timeZoneOffsetMinutes,
+        CancellationToken ct)
+    {
+        var nowUtc = DateTime.UtcNow;
+        var todayLocal = LocalCalendarDateRange.GetLocalCalendarDate(nowUtc, timeZoneOffsetMinutes);
+        var todayStart = LocalCalendarDateRange.GetUtcRangeForLocalCalendarDay(todayLocal, timeZoneOffsetMinutes)
+            .UtcStartInclusive;
+        var workerIds = await officeScope
+            .ApplyWorkerFilter(db.Workers.AsNoTracking(), scope, officeFilter)
+            .Where(x => x.MachineName != LeadFlowImportWorker.MachineName)
+            .Select(x => x.Id)
+            .ToListAsync(ct);
+        var workerIdSet = workerIds.ToHashSet();
+        if (workerIdSet.Count == 0)
+        {
+            return new NavBadgesDto(0, 0, 0, nowUtc);
+        }
+
+        var responseStats = await ComputeTodayResponseStatsAsync(workerIdSet, todayStart, ct);
+        var errorsToday = await CountTodayWorkerEventErrorsAsync(workerIdSet, todayStart, ct);
+        return new NavBadgesDto(
+            errorsToday,
+            Math.Max(0, responseStats.TotalToday - responseStats.Duplicates),
+            responseStats.ActionRequired,
+            nowUtc);
+    }
+
+    private async Task<GlobalDashboardSummary> RefreshOnlineWorkersAsync(
+        GlobalDashboardSummary summary,
+        OfficeScope scope,
+        Guid? officeFilter,
+        CancellationToken ct)
+    {
+        var nowUtc = DateTime.UtcNow;
+        var workers = await officeScope
+            .ApplyWorkerFilter(db.Workers.AsNoTracking(), scope, officeFilter)
+            .Where(x => x.MachineName != LeadFlowImportWorker.MachineName)
+            .Select(w => new { w.Id, w.LastSeenAtUtc })
+            .ToListAsync(ct);
+        var onlineWorkers = workers.Count(w =>
+            WorkerOnlineRules.IsOnline(w.LastSeenAtUtc, nowUtc, connectionRegistry.IsConnected(w.Id)));
+        return summary with
+        {
+            TotalWorkers = workers.Count,
+            OnlineWorkers = onlineWorkers,
+            AggregatedAtUtc = nowUtc
+        };
     }
 
     public async Task<IReadOnlyList<WorkerListItem>> GetWorkersAsync(
@@ -912,16 +969,42 @@ public sealed class DashboardQueryService(
         var query = db.CandidateResponses.AsNoTracking()
             .Where(x => x.WorkerId != null && workerIds.Contains(x.WorkerId.Value) && x.CollectedAt >= todayStartUtc);
 
-        var totalToday = await query.CountAsync(ct);
-        if (totalToday == 0)
+        var statusCounts = await query
+            .GroupBy(x => x.Status)
+            .Select(g => new { Status = g.Key, Count = g.Count() })
+            .ToListAsync(ct);
+        if (statusCounts.Count == 0)
+        {
             return (0, 0, 0, 0, 0);
+        }
 
-        var duplicates = await query.CountAsync(x => x.Status == ResponseStatuses.Duplicate, ct);
-        var errors = await query.CountAsync(x => x.Status == ResponseStatuses.Error, ct);
-        var actionReq = await query.CountAsync(x => x.Status == ResponseStatuses.ActionRequired, ct);
-        var inProgress = await query.CountAsync(x => x.Status == ResponseStatuses.InProgress, ct);
+        int CountFor(string status) =>
+            statusCounts.FirstOrDefault(x => x.Status == status)?.Count ?? 0;
+
+        var totalToday = statusCounts.Sum(x => x.Count);
+        var duplicates = CountFor(ResponseStatuses.Duplicate);
+        var errors = CountFor(ResponseStatuses.Error);
+        var actionReq = CountFor(ResponseStatuses.ActionRequired);
+        var inProgress = CountFor(ResponseStatuses.InProgress);
 
         return (totalToday, duplicates, errors + actionReq, inProgress, actionReq);
+    }
+
+    private async Task<int> CountTodayWorkerEventErrorsAsync(
+        HashSet<Guid> workerIds,
+        DateTime todayStartUtc,
+        CancellationToken ct)
+    {
+        if (workerIds.Count == 0)
+        {
+            return 0;
+        }
+
+        return await db.WorkerEvents
+            .AsNoTracking()
+            .Where(x => workerIds.Contains(x.WorkerId) && !x.IsDismissed && x.CreatedAtUtc >= todayStartUtc)
+            .Where(x => x.Level == "Error" || x.Level == "Warning")
+            .CountAsync(ct);
     }
 
     // Successful sends (CRM + Bitrix) in [utcStart, utcEnd) by actual send time.

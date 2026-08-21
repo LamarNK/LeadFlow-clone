@@ -7,6 +7,7 @@ using Orbita.Contracts;
 
 namespace Orbita.Tests;
 
+[Collection("PanelAggregateCache")]
 public sealed class DashboardQueryServiceTests
 {
     private static readonly Guid OfficeId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
@@ -189,14 +190,138 @@ public sealed class DashboardQueryServiceTests
         Assert.Equal(2, summary.UniqueResponsesToday);
     }
 
+    [Fact]
+    public async Task GetGlobalSummaryAsync_DifferentOfficeScopes_DoNotShareCache()
+    {
+        DashboardQueryService.ClearCacheForTests();
+        await using var db = CreateDb();
+        var now = DateTime.UtcNow;
+        var officeB = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1");
+        var workerB = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb1");
+        SeedWorker(db, now);
+        db.Offices.Add(new OfficeEntity
+        {
+            Id = officeB,
+            Name = "Office B",
+            RegistrationSecretHash = "hash-b",
+            CreatedAtUtc = now,
+            IsEnabled = true
+        });
+        db.Workers.Add(new WorkerEntity
+        {
+            Id = workerB,
+            OfficeId = officeB,
+            DisplayName = "worker-b",
+            MachineName = "pc-b",
+            ApiKeyHash = "hash-b",
+            AppVersion = "1.0",
+            MonitoringStatus = "Running",
+            LastSeenAtUtc = now,
+            CreatedAtUtc = now
+        });
+        db.CandidateResponses.AddRange(
+            CreateResponse(now, ResponseStatuses.Sent),
+            CreateResponse(now, ResponseStatuses.Sent, Guid.NewGuid(), workerB, officeB));
+        await db.SaveChangesAsync();
+
+        var sut = CreateService(db);
+        var officeASummary = await sut.GetGlobalSummaryAsync(OfficeScope.ForOffice(OfficeId), officeFilter: null);
+        var officeBSummary = await sut.GetGlobalSummaryAsync(OfficeScope.ForOffice(officeB), officeFilter: null);
+
+        Assert.Equal(1, officeASummary.TotalToday);
+        Assert.Equal(1, officeBSummary.TotalToday);
+    }
+
+    [Fact]
+    public async Task GetGlobalSummaryAsync_DifferentTimeZones_DoNotShareCache()
+    {
+        DashboardQueryService.ClearCacheForTests();
+        await using var db = CreateDb();
+        var now = DateTime.UtcNow;
+        SeedWorker(db, now);
+        var utcMidnight = DateTime.SpecifyKind(now.Date, DateTimeKind.Utc);
+        var lateYesterdayUtc = utcMidnight.AddHours(-2);
+        db.CandidateResponses.Add(CreateResponse(lateYesterdayUtc, ResponseStatuses.Sent));
+        await db.SaveChangesAsync();
+
+        var sut = CreateService(db);
+        var utcSummary = await sut.GetGlobalSummaryAsync(OfficeScope.ForOffice(OfficeId), OfficeId, timeZoneOffsetMinutes: 0);
+        var moscowSummary = await sut.GetGlobalSummaryAsync(OfficeScope.ForOffice(OfficeId), OfficeId, timeZoneOffsetMinutes: -180);
+
+        Assert.Equal(0, utcSummary.TotalToday);
+        Assert.Equal(1, moscowSummary.TotalToday);
+    }
+
+    [Fact]
+    public async Task GetGlobalSummaryAsync_Invalidate_RecomputesAfterNewResponse()
+    {
+        DashboardQueryService.ClearCacheForTests();
+        await using var db = CreateDb();
+        var now = DateTime.UtcNow;
+        SeedWorker(db, now);
+        db.CandidateResponses.Add(CreateResponse(now, ResponseStatuses.Sent));
+        await db.SaveChangesAsync();
+
+        var sut = CreateService(db);
+        var first = await sut.GetGlobalSummaryAsync(OfficeScope.ForOffice(OfficeId), OfficeId);
+        Assert.Equal(1, first.TotalToday);
+
+        db.CandidateResponses.Add(CreateResponse(now, ResponseStatuses.InProgress));
+        await db.SaveChangesAsync();
+
+        var cached = await sut.GetGlobalSummaryAsync(OfficeScope.ForOffice(OfficeId), OfficeId);
+        Assert.Equal(1, cached.TotalToday);
+
+        PanelAggregateCache.Invalidate([PanelChangeKind.Responses]);
+        var fresh = await sut.GetGlobalSummaryAsync(OfficeScope.ForOffice(OfficeId), OfficeId);
+        Assert.Equal(2, fresh.TotalToday);
+    }
+
+    [Fact]
+    public async Task GetNavBadgesAsync_ReturnsTodayCountsWithoutFullSummaryFields()
+    {
+        DashboardQueryService.ClearCacheForTests();
+        await using var db = CreateDb();
+        var now = DateTime.UtcNow;
+        SeedWorker(db, now);
+        db.CandidateResponses.AddRange(
+            CreateResponse(now, ResponseStatuses.Sent),
+            CreateResponse(now, ResponseStatuses.Duplicate),
+            CreateResponse(now, ResponseStatuses.ActionRequired));
+        db.WorkerEvents.Add(new WorkerEventEntity
+        {
+            Id = Guid.NewGuid(),
+            WorkerId = WorkerId,
+            Level = "Error",
+            Message = "fail",
+            CreatedAtUtc = now,
+            IsDismissed = false
+        });
+        await db.SaveChangesAsync();
+
+        var badges = await CreateService(db).GetNavBadgesAsync(OfficeScope.ForOffice(OfficeId), OfficeId);
+
+        Assert.Equal(2, badges.UniqueResponsesToday);
+        Assert.Equal(1, badges.ActionRequired);
+        Assert.Equal(1, badges.ErrorsToday);
+    }
+
     private static CandidateResponseEntity CreateResponse(DateTime collectedAt, string status) =>
         CreateResponse(collectedAt, status, Guid.NewGuid());
 
-    private static CandidateResponseEntity CreateResponse(DateTime collectedAt, string status, Guid id) => new()
+    private static CandidateResponseEntity CreateResponse(DateTime collectedAt, string status, Guid id) =>
+        CreateResponse(collectedAt, status, id, WorkerId, OfficeId);
+
+    private static CandidateResponseEntity CreateResponse(
+        DateTime collectedAt,
+        string status,
+        Guid id,
+        Guid workerId,
+        Guid officeId) => new()
     {
         Id = id,
-        OfficeId = OfficeId,
-        WorkerId = WorkerId,
+        OfficeId = officeId,
+        WorkerId = workerId,
         AccountId = AccountId,
         AccountName = "acc-1",
         Source = "Avito",
