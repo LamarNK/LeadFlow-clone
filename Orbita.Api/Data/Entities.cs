@@ -207,6 +207,8 @@ public sealed class WorkerEntity
     public long? LastRamTotalMb { get; set; }
     public string? AdsPowerApiBaseUrl { get; set; }
     public string? AdsPowerApiKey { get; set; }
+    /// <summary>Ключ RuCaptcha для автопрохождения GeeTest v4 на Avito.</summary>
+    public string? RuCaptchaApiKey { get; set; }
     /// <summary>ID группы AdsPower; null — синхронизировать все профили.</summary>
     public string? AdsPowerGroupId { get; set; }
     public string? AdsPowerGroupName { get; set; }

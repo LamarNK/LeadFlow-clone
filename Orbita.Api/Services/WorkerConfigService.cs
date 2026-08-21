@@ -116,7 +116,8 @@ public sealed class WorkerConfigService(
             worker.MessengerAutoReplyMessage,
             worker.PhoneUnchangedHours,
             worker.ResponseHighlightTargetsJson,
-            worker.AdsPowerGroupId);
+            worker.AdsPowerGroupId,
+            worker.RuCaptchaApiKey);
     }
 
     public async Task<bool> SyncAccountsAsync(
@@ -235,6 +236,13 @@ public sealed class WorkerConfigService(
             return (null, apiKeyError);
         }
 
+        if (!TryNormalizeAdsPowerApiKey(request.RuCaptchaApiKey, out var normalizedRuCaptchaKey, out var ruCaptchaKeyError))
+        {
+            return (null, ruCaptchaKeyError is null
+                ? null
+                : ruCaptchaKeyError.Replace("AdsPower", "RuCaptcha", StringComparison.Ordinal));
+        }
+
         var maxResponseAgeDays = ResponseCollectionFilters.ClampResponseAgeDays(request.ResponseFilterMaxResponseAgeDays);
         var filters = ResponseCollectionFilters.NormalizeLegacy(
             request.ResponseFilterEnabled,
@@ -261,6 +269,7 @@ public sealed class WorkerConfigService(
         worker.MaxConcurrentAccounts = request.MaxConcurrentAccounts;
         worker.AdsPowerApiBaseUrl = normalizedBaseUrl;
         worker.AdsPowerApiKey = normalizedApiKey;
+        worker.RuCaptchaApiKey = normalizedRuCaptchaKey;
         var normalizedGroupId = AdsPowerGroupsJson.NormalizeGroupId(request.AdsPowerGroupId);
         worker.AdsPowerGroupId = normalizedGroupId;
         worker.AdsPowerGroupName = normalizedGroupId is null

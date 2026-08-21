@@ -156,6 +156,7 @@ public sealed class WorkersController(IWorkersService workers) : Controller
         int maxConcurrentAccounts,
         string? adsPowerApiBaseUrl,
         string? adsPowerApiKey,
+        string? ruCaptchaApiKey,
         string? adsPowerGroupId,
         bool responseFilterEnabled = false,
         bool responseFilterExcludeFemale = false,
@@ -214,6 +215,7 @@ public sealed class WorkersController(IWorkersService workers) : Controller
             autoDeliverToCrm,
             autoDeliverToBitrix,
             responseHighlightTargetsJson,
+            ruCaptchaApiKey,
             ct);
         if (!success)
         {

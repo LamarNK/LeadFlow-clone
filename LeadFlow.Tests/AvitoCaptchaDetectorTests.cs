@@ -32,6 +32,7 @@ public sealed class AvitoCaptchaDetectorTests
 
         Assert.True(AvitoCaptchaDetector.IsCaptchaHtml(html));
         Assert.Equal("firewall", AvitoCaptchaDetector.Classify(html));
+        Assert.True(AvitoCaptchaDetector.HasGeeTestWidget(html));
     }
 
     [Fact]
@@ -162,6 +163,7 @@ public sealed class AvitoCaptchaDetectorTests
 
         Assert.True(AvitoCaptchaDetector.IsCaptchaHtml(html));
         Assert.Equal("firewall", AvitoCaptchaDetector.Classify(html));
+        Assert.False(AvitoCaptchaDetector.HasGeeTestWidget(html));
     }
 
     [Fact]

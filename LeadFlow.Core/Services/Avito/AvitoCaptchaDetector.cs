@@ -121,6 +121,51 @@ public static class AvitoCaptchaDetector
     }
 
     /// <summary>
+    /// GeeTest-виджет на странице (в том числе внутри firewall-контейнера).
+    /// </summary>
+    public static bool HasGeeTestWidget(string? html)
+    {
+        if (string.IsNullOrWhiteSpace(html))
+        {
+            return false;
+        }
+
+        return Regex.IsMatch(
+            html,
+            @"id=""geetest_captcha""|class=""geetest_widget""|data-geetest|initGeetest4?|geetest\.com|gt_captcha",
+            RegexOptions.IgnoreCase);
+    }
+
+    /// <summary>
+    /// captcha_id GeeTest v4 со страницы Avito. Если в HTML нет — фиксированное значение домена.
+    /// </summary>
+    public static string ExtractGeeTestCaptchaId(string? html)
+    {
+        if (string.IsNullOrWhiteSpace(html))
+        {
+            return AvitoGeeTestCaptchaId;
+        }
+
+        var dataAttr = Regex.Match(
+            html,
+            @"data-geetest\s*=\s*[""']([0-9a-f]{32})[""']",
+            RegexOptions.IgnoreCase);
+        if (dataAttr.Success)
+        {
+            return dataAttr.Groups[1].Value;
+        }
+
+        var initParam = Regex.Match(
+            html,
+            @"captcha_id[""']?\s*[:=]\s*[""']([0-9a-f]{32})[""']",
+            RegexOptions.IgnoreCase);
+        return initParam.Success ? initParam.Groups[1].Value : AvitoGeeTestCaptchaId;
+    }
+
+    /// <summary>Фиксированный captcha_id GeeTest v4 для avito.ru (RuCaptcha / 2captcha).</summary>
+    public const string AvitoGeeTestCaptchaId = "2d9c743cf7d63dbc9db578a608196bcd";
+
+    /// <summary>
     /// Есть ли в HTML признаки «обычной» страницы Avito — это страховка против ложных срабатываний
     /// текстовых маркеров (вроде слова «капча» в подсказке/футере).
     /// </summary>

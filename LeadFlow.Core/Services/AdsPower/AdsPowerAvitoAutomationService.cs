@@ -8,6 +8,7 @@ using LeadFlow.Core.Logging.Audit;
 using LeadFlow.Core.Services;
 using LeadFlow.Core.Services.Avito;
 using LeadFlow.Core.Services.Browser;
+using LeadFlow.Core.Services.Captcha;
 using Orbita.Contracts;
 using PuppeteerSharp;
 
@@ -21,7 +22,8 @@ namespace LeadFlow.Core.Services.AdsPower;
 public sealed partial class AdsPowerAvitoAutomationService(
     IAdsPowerApiClient adsPowerApiClient,
     ICandidateDuplicateRepository duplicateRepository,
-    IPhoneNormalizer phoneNormalizer) : IAdsPowerAvitoAutomationService
+    IPhoneNormalizer phoneNormalizer,
+    IAvitoGeeTestSolver? geeTestSolver = null) : IAdsPowerAvitoAutomationService
 {
     private const string CandidatesPageUrl = AvitoCandidatesPageUrls.LegacyCandidates;
     private const string JobResponsesPageUrl = AvitoCandidatesPageUrls.JobResponsesCrm;
@@ -72,6 +74,12 @@ public sealed partial class AdsPowerAvitoAutomationService(
             var executeScript = (string script, CancellationToken ct) =>
                 EvaluateWithRetryAsync<string>(page, script, ct);
 
+            if (IsOnActiveProfileItemsPage(page.Url)
+                && AvitoHumanVariation.RollPermille(MonitoringTiming.ItemsLingerChancePermille))
+            {
+                await HumanDelay.AfterItemsLingerAsync(cancellationToken).ConfigureAwait(false);
+            }
+
             await EnsureOnCandidatesPageAsync(page, adsPowerUserId, cancellationToken).ConfigureAwait(false);
 
             await AvitoCandidatesListPreparer.PrepareAsync(
@@ -96,7 +104,8 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 BuildResolveExistingMatchedProfileIndicesCallback(messengerEnrichmentHints),
                 messengerEnrichmentHints?.ResponseFilters,
                 messengerEnrichmentHints?.IsOpenPhoneWatchAsync,
-                skipDetailEnrich: true).ConfigureAwait(false);
+                skipDetailEnrich: true,
+                CreateCaptchaSolveCallback(page)).ConfigureAwait(false);
 
             var raw = await EvaluateWithRetryAsync<string>(page, ExtractionScript, cancellationToken).ConfigureAwait(false);
             if (string.IsNullOrWhiteSpace(raw))
@@ -498,13 +507,18 @@ public sealed partial class AdsPowerAvitoAutomationService(
     }
 
     /// <summary>
-    /// Если в HTML обнаружена капча/firewall — логируем и бросаем <see cref="AvitoCaptchaDetectedException"/>,
-    /// чтобы мониторинг перевёл аккаунт в RequiresManualAction и не долбил Avito дальше.
+    /// Если в HTML обнаружена капча/firewall — пробуем GeeTest v4 через RuCaptcha,
+    /// иначе бросаем <see cref="AvitoCaptchaDetectedException"/>.
     /// </summary>
-    private static async Task ThrowIfCaptchaAsync(IPage page, string html, CancellationToken cancellationToken)
+    private async Task ThrowIfCaptchaAsync(IPage page, string html, CancellationToken cancellationToken)
     {
         var kind = AvitoCaptchaDetector.Classify(html);
         if (kind is null)
+        {
+            return;
+        }
+
+        if (await TrySolveGeeTestAsync(page, html, page.Url, kind, cancellationToken).ConfigureAwait(false))
         {
             return;
         }
@@ -525,6 +539,56 @@ public sealed partial class AdsPowerAvitoAutomationService(
             });
 
         throw new AvitoCaptchaDetectedException(kind, page.Url, html, screenshot);
+    }
+
+    private Func<AvitoFirewallProbe.Detection, string?, CancellationToken, Task<bool>>? CreateCaptchaSolveCallback(
+        IPage page)
+    {
+        if (geeTestSolver is null)
+        {
+            return null;
+        }
+
+        return (detection, html, ct) => TrySolveGeeTestAsync(page, html, detection.Url ?? page.Url, detection.Kind, ct);
+    }
+
+    private async Task<bool> TrySolveGeeTestAsync(
+        IPage page,
+        string? html,
+        string? pageUrl,
+        string? kind,
+        CancellationToken cancellationToken)
+    {
+        if (geeTestSolver is null)
+        {
+            return false;
+        }
+
+        if (!AvitoCaptchaDetector.HasGeeTestWidget(html)
+            && !string.Equals(kind, "geetest", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        try
+        {
+            return await geeTestSolver
+                .TrySolveOnPageAsync(page, html, pageUrl, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                $"Captcha: автопроход GeeTest v4 не удался — {ex.Message}",
+                DeskLinkAuditLogLevel.Warning,
+                properties: new Dictionary<string, object?>
+                {
+                    ["step"] = "captcha_solve_failed",
+                    ["page.url"] = pageUrl ?? page.Url,
+                    ["captcha.kind"] = kind
+                });
+            return false;
+        }
     }
 
     public async Task<string> LoadProfileSwitchHtmlAsync(
@@ -1600,7 +1664,8 @@ public sealed partial class AdsPowerAvitoAutomationService(
                         page.Url,
                         cancellationToken,
                         staleListSignature,
-                        page)
+                        page,
+                        CreateCaptchaSolveCallback(page))
                     .ConfigureAwait(false);
 
                 state = await ProbePageStateAsync(page, cancellationToken).ConfigureAwait(false);
@@ -2641,6 +2706,8 @@ public sealed partial class AdsPowerAvitoAutomationService(
             : CandidatesPageUrl;
 
         var isJobCrm = await TryDetectJobCrmResponsesPageAsync(page, cancellationToken).ConfigureAwait(false);
+        var autoReplyBudget = AvitoHumanVariation.NextAutoReplyBudget();
+        var autoRepliesSent = 0;
 
         const int maxEnrich = 80;
         for (var i = 0; i < candidates.Count && i < maxEnrich; i++)
@@ -2705,8 +2772,14 @@ public sealed partial class AdsPowerAvitoAutomationService(
                     pendingForCandidate,
                     enrichmentHints?.ClaimOutboundChatForDeliveryAsync,
                     enrichmentHints?.AckOutboundChatSentAsync,
+                    candidateAlreadyKnown: isKnownSourceId,
+                    autoRepliesRemaining: autoReplyBudget - autoRepliesSent,
                     cancellationToken)
                 .ConfigureAwait(false);
+            if (enrichment.AutoReplySent)
+            {
+                autoRepliesSent++;
+            }
             if (!string.IsNullOrWhiteSpace(enrichment.ChannelUrl) || enrichment.ChatMessages.Count > 0)
             {
                 await HumanDelay.AfterMessengerCardAsync(cancellationToken).ConfigureAwait(false);
@@ -2795,7 +2868,10 @@ public sealed partial class AdsPowerAvitoAutomationService(
         await Task.Delay(200, cancellationToken).ConfigureAwait(false);
     }
 
-    private sealed record MessengerCardEnrichmentResult(string? ChannelUrl, JsonArray ChatMessages);
+    private sealed record MessengerCardEnrichmentResult(
+        string? ChannelUrl,
+        JsonArray ChatMessages,
+        bool AutoReplySent = false);
 
     private static async Task<bool> TryReadCandidateChatUnreadAsync(
         IPage page,
@@ -2846,8 +2922,11 @@ public sealed partial class AdsPowerAvitoAutomationService(
         IReadOnlyList<WorkerPendingChatMessageDto> pendingOutbound,
         Func<Guid, CancellationToken, Task<bool>>? claimOutboundChatForDeliveryAsync,
         Func<IReadOnlyList<Guid>, CancellationToken, Task>? ackOutboundChatSentAsync,
+        bool candidateAlreadyKnown,
+        int autoRepliesRemaining,
         CancellationToken cancellationToken)
     {
+        var autoReplySent = false;
         await CloseMiniMessengerPanelIfOpenAsync(page, cancellationToken).ConfigureAwait(false);
         await HumanDelay.BeforeCandidateClickAsync(cancellationToken).ConfigureAwait(false);
 
@@ -2885,7 +2964,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
                     });
             }
 
-            return new MessengerCardEnrichmentResult(null, new JsonArray());
+            return new MessengerCardEnrichmentResult(null, new JsonArray(), AutoReplySent: false);
         }
 
         await HumanDelay.AfterCandidateClickAsync(cancellationToken).ConfigureAwait(false);
@@ -2970,14 +3049,36 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 chatMessages = await CollectMiniMessengerMessagesAsync(page, cancellationToken).ConfigureAwait(false);
             }
         }
-        else if (autoReply.Enabled
-            && AvitoChatAutoReplyEvaluator.NeedsAutoReply(parsedChat, autoReply.Message))
+        else if (AvitoChatAutoReplyEvaluator.ShouldSendOnThisPass(
+                     autoReply.Enabled,
+                     candidateAlreadyKnown,
+                     sentThisPass: 0,
+                     maxPerPass: Math.Max(0, autoRepliesRemaining),
+                     parsedChat,
+                     autoReply.Message))
         {
             if (await TrySendMiniMessengerTextAsync(page, autoReply.Message, "auto-reply", cancellationToken)
                     .ConfigureAwait(false))
             {
+                autoReplySent = true;
                 chatMessages = await CollectMiniMessengerMessagesAsync(page, cancellationToken).ConfigureAwait(false);
             }
+        }
+        else if (autoReply.Enabled
+                 && AvitoChatAutoReplyEvaluator.NeedsAutoReply(parsedChat, autoReply.Message))
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                candidateAlreadyKnown
+                    ? "AdsPower messenger auto-reply skipped: pass budget exhausted."
+                    : "AdsPower messenger auto-reply deferred: first sight this pass.",
+                DeskLinkAuditLogLevel.Info,
+                memberName: nameof(TryEnrichMessengerForCandidateCardAsync),
+                properties: new Dictionary<string, object?>
+                {
+                    ["messenger.autoReply.deferred"] = true,
+                    ["messenger.autoReply.knownCandidate"] = candidateAlreadyKnown,
+                    ["messenger.autoReply.remaining"] = autoRepliesRemaining
+                });
         }
 
         if (string.IsNullOrWhiteSpace(channelUrl))
@@ -3001,7 +3102,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 .ConfigureAwait(false);
         }
 
-        return new MessengerCardEnrichmentResult(channelUrl, chatMessages);
+        return new MessengerCardEnrichmentResult(channelUrl, chatMessages, autoReplySent);
     }
 
     /// <summary>

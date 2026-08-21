@@ -898,6 +898,7 @@ public sealed class OrbitaApiClient(
         bool? autoDeliverToCrm = null,
         bool? autoDeliverToBitrix = null,
         string? responseHighlightTargetsJson = null,
+        string? ruCaptchaApiKey = null,
         CancellationToken ct = default)
     {
         using var request = new HttpRequestMessage(HttpMethod.Patch, $"api/v1/workers/{workerId}/settings");
@@ -924,7 +925,8 @@ public sealed class OrbitaApiClient(
             autoDeliverToCrm,
             autoDeliverToBitrix,
             responseHighlightTargetsJson,
-            adsPowerGroupId));
+            adsPowerGroupId,
+            ruCaptchaApiKey));
         using var response = await SendAuthenticatedAsync(request, ct);
         if (response is null)
         {

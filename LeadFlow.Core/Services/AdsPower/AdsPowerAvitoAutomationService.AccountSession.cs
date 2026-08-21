@@ -475,6 +475,12 @@ public sealed partial class AdsPowerAvitoAutomationService
             EvaluateWithRetryAsync<string>(page, script, ct);
 
         var waitSw = Stopwatch.StartNew();
+        if (IsOnActiveProfileItemsPage(page.Url)
+            && AvitoHumanVariation.RollPermille(MonitoringTiming.ItemsLingerChancePermille))
+        {
+            await HumanDelay.AfterItemsLingerAsync(cancellationToken).ConfigureAwait(false);
+        }
+
         await EnsureOnCandidatesPageAsync(page, adsPowerUserId, cancellationToken).ConfigureAwait(false);
 
         var finalSignature = await AvitoCandidatesPageWaiter
@@ -517,7 +523,8 @@ public sealed partial class AdsPowerAvitoAutomationService
             BuildResolveExistingMatchedProfileIndicesCallback(messengerEnrichmentHints),
             messengerEnrichmentHints?.ResponseFilters,
             messengerEnrichmentHints?.IsOpenPhoneWatchAsync,
-            skipDetailEnrich: true).ConfigureAwait(false);
+            skipDetailEnrich: true,
+            CreateCaptchaSolveCallback(page)).ConfigureAwait(false);
 
         var raw = await EvaluateWithRetryAsync<string>(page, ExtractionScript, cancellationToken).ConfigureAwait(false);
         if (string.IsNullOrWhiteSpace(raw))

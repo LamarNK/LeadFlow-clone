@@ -426,6 +426,29 @@ public sealed class WorkerConfigServiceTests
         Assert.False(config.ResponseFilterExcludeMale);
         Assert.Null(config.ResponseFilterMaxAgeMale);
         Assert.Null(config.ResponseFilterMaxAgeFemale);
+        Assert.Null(config.RuCaptchaApiKey);
+    }
+
+    [Fact]
+    public async Task UpdateSettingsAsync_PersistsRuCaptchaApiKey()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db);
+
+        var sut = CreateService(db);
+        var (config, error) = await sut.UpdateSettingsAsync(
+            WorkerId,
+            new UpdateWorkerSettingsRequest(
+                MaxConcurrentAccounts: 1,
+                RuCaptchaApiKey: "  rucaptcha-test-key  "),
+            OfficeScope.ForOffice(OfficeId));
+
+        Assert.Null(error);
+        Assert.NotNull(config);
+        Assert.Equal("rucaptcha-test-key", config!.RuCaptchaApiKey);
+
+        var worker = await db.Workers.SingleAsync();
+        Assert.Equal("rucaptcha-test-key", worker.RuCaptchaApiKey);
     }
 
     private static WorkerConfigService CreateService(OrbitaDbContext db, AvitoAccountSecretProtector? secrets = null)

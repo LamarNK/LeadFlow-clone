@@ -84,7 +84,9 @@ public sealed record WorkerConfigDto(
     /// <summary>JSON-набор профилей и субпрофилей, отклики из которых нужно подсвечивать.</summary>
     string? ResponseHighlightTargetsJson = null,
     /// <summary>ID группы AdsPower; null — синхронизировать все профили Local API.</summary>
-    string? AdsPowerGroupId = null)
+    string? AdsPowerGroupId = null,
+    /// <summary>Ключ RuCaptcha для автопрохождения GeeTest v4. Пусто — выкл.</summary>
+    string? RuCaptchaApiKey = null)
 {
     public ResponseCollectionFilters ResponseFilters =>
         ResponseCollectionFilters.NormalizeLegacy(
@@ -227,7 +229,9 @@ public sealed record UpdateWorkerSettingsRequest(
     /// <summary>JSON-набор профилей и субпрофилей, отклики из которых нужно подсвечивать.</summary>
     string? ResponseHighlightTargetsJson = null,
     /// <summary>ID группы AdsPower; пусто — все группы.</summary>
-    string? AdsPowerGroupId = null);
+    string? AdsPowerGroupId = null,
+    /// <summary>Ключ RuCaptcha для автопрохождения GeeTest v4. Пусто — выкл.</summary>
+    string? RuCaptchaApiKey = null);
 
 public sealed record UpdateWorkerAccountRequest(bool IsEnabledInPanel);
 

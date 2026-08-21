@@ -460,7 +460,8 @@ public sealed class DashboardQueryService(
             worker.ResponseHighlightTargetsJson,
             worker.AdsPowerGroupId,
             worker.AdsPowerGroupName,
-            AdsPowerGroupsJson.Parse(worker.AdsPowerGroupsJson));
+            AdsPowerGroupsJson.Parse(worker.AdsPowerGroupsJson),
+            worker.RuCaptchaApiKey);
     }
 
     public async Task<IReadOnlyList<WorkerAccountDto>> GetWorkerAccountsAsync(

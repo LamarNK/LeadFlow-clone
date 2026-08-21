@@ -97,6 +97,7 @@ internal static class WorkerDetailsBuilder
             MaxConcurrentAccountsLimit = maxConcurrentAccountsLimit,
             AdsPowerApiBaseUrl = worker.AdsPowerApiBaseUrl,
             AdsPowerApiKey = worker.AdsPowerApiKey,
+            RuCaptchaApiKey = worker.RuCaptchaApiKey,
             AdsPowerGroupId = worker.AdsPowerGroupId,
             AdsPowerGroupName = worker.AdsPowerGroupName,
             AdsPowerGroups = BuildAdsPowerGroupOptions(

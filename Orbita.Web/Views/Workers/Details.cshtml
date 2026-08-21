@@ -666,6 +666,20 @@
                                 Ключ из настроек AdsPower на VDS. Оставьте пустым, если Local API без авторизации.
                             </span>
                         </label>
+                        <label class="worker-settings-field" for="ruCaptchaApiKey">
+                            <span class="worker-settings-label">RuCaptcha API Key</span>
+                            <input type="password"
+                                   id="ruCaptchaApiKey"
+                                   name="ruCaptchaApiKey"
+                                   class="worker-settings-input"
+                                   value="@Model.RuCaptchaApiKey"
+                                   placeholder="@(string.IsNullOrWhiteSpace(Model.RuCaptchaApiKey) ? "Не задан — капча Avito вручную" : "Ключ задан")"
+                                   autocomplete="new-password"
+                                   spellcheck="false" />
+                            <span class="worker-settings-hint">
+                                Ключ с rucaptcha.com для автопрохождения GeeTest v4. Пока пусто — воркер останавливает аккаунт на капче.
+                            </span>
+                        </label>
                         <label class="worker-settings-field" for="adsPowerGroupId">
                             <span class="worker-settings-label">Группа AdsPower</span>
                             <select id="adsPowerGroupId"

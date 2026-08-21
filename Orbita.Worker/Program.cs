@@ -4,6 +4,7 @@ using LeadFlow.Core.Models;
 using LeadFlow.Core.Services;
 using LeadFlow.Core.Services.AdsPower;
 using LeadFlow.Core.Services.Avito;
+using LeadFlow.Core.Services.Captcha;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Orbita.Worker.Services;
@@ -144,6 +145,12 @@ internal static class Program
         host.Services.AddSingleton<IPhoneNormalizer, PhoneNormalizer>();
         host.Services.AddSingleton<ICandidateParser, CandidateParser>();
         host.Services.AddSingleton<IAdsPowerApiClient, AdsPowerApiClient>();
+        host.Services.AddHttpClient<IRuCaptchaClient, RuCaptchaClient>(client =>
+        {
+            client.BaseAddress = new Uri(RuCaptchaClient.DefaultBaseUrl);
+            client.Timeout = TimeSpan.FromSeconds(30);
+        });
+        host.Services.AddSingleton<IAvitoGeeTestSolver, AvitoGeeTestSolver>();
         host.Services.AddSingleton<IAdsPowerAvitoAutomationService, AdsPowerAvitoAutomationService>();
         host.Services.AddSingleton<LeadFlow.Core.Services.Captcha.CaptchaSessionHost>();
         host.Services.AddSingleton<CaptchaSessionCoordinator>();

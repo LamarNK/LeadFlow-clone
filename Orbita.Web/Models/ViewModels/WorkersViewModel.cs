@@ -153,6 +153,7 @@ public sealed class WorkerDetailsViewModel
     public int MaxConcurrentAccountsLimit { get; init; } = 1;
     public string? AdsPowerApiBaseUrl { get; init; }
     public string? AdsPowerApiKey { get; init; }
+    public string? RuCaptchaApiKey { get; init; }
     public string? AdsPowerGroupId { get; init; }
     public string? AdsPowerGroupName { get; init; }
     public IReadOnlyList<AdsPowerGroupDto> AdsPowerGroups { get; init; } = [];

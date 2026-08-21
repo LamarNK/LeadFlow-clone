@@ -199,6 +199,7 @@ public sealed class WorkersService(
         bool? autoDeliverToCrm = null,
         bool? autoDeliverToBitrix = null,
         string? responseHighlightTargetsJson = null,
+        string? ruCaptchaApiKey = null,
         CancellationToken ct = default) =>
         api.UpdateWorkerSettingsAsync(
             workerId,
@@ -224,6 +225,7 @@ public sealed class WorkersService(
             autoDeliverToCrm,
             autoDeliverToBitrix,
             responseHighlightTargetsJson,
+            ruCaptchaApiKey,
             ct);
 
     public Task<(bool Success, string? Error)> UpdateWorkerAccountAsync(

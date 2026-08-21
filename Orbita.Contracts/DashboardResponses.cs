@@ -107,7 +107,8 @@ public sealed record WorkerDetail(
     string? ResponseHighlightTargetsJson = null,
     string? AdsPowerGroupId = null,
     string? AdsPowerGroupName = null,
-    IReadOnlyList<AdsPowerGroupDto>? AdsPowerGroups = null);
+    IReadOnlyList<AdsPowerGroupDto>? AdsPowerGroups = null,
+    string? RuCaptchaApiKey = null);
 
 public sealed record WorkerEventListItem(
     Guid Id,
