@@ -176,7 +176,8 @@ internal static class WorkerMonitoringLogger
     private static string DescribeIssueKind(string kind) => kind switch
     {
         AvitoSubProfileIssueKind.AuthRequired => "нужен вход",
-        AvitoSubProfileIssueKind.Captcha => "капча / IP",
+        AvitoSubProfileIssueKind.Captcha => "капча",
+        AvitoSubProfileIssueKind.IpBlock => "блок IP",
         AvitoSubProfileIssueKind.SwitchFailed => "переключение",
         AvitoSubProfileIssueKind.ParseFailed => "разбор страницы",
         AvitoSubProfileIssueKind.ProfileInUse => "профиль занят",

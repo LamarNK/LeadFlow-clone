@@ -46,4 +46,7 @@ public sealed record MonitoringSubProfileRunUploadDto(
     int FoundCount = 0,
     int PublishedCount = 0,
     int DeferredCount = 0,
-    int SkippedDuplicateCount = 0);
+    int SkippedDuplicateCount = 0,
+    int CollectedCount = 0,
+    int CaptchaCount = 0,
+    int CaptchaSolvedCount = 0);

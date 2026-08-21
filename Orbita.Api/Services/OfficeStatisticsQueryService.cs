@@ -284,12 +284,19 @@ public sealed class OfficeStatisticsQueryService(
         if (journalCycles.Count > 0)
         {
             var accountCatalog = BuildMonitoringAccountCatalog(accountRows);
+            var collected = await LoadMonitoringCollectedResponsesAsync(
+                workerIds,
+                utcStart,
+                utcEnd,
+                allowedAccountNames,
+                ct);
             return MonitoringCycleReportBuilder.BuildFromJournal(
                 journalCycles,
                 startLocal,
                 endLocal,
                 allowedAccountNames,
-                accountCatalog: accountCatalog);
+                collected,
+                accountCatalog);
         }
 
         // Monitoring activity is recorded only by the typed journal. File logs are
@@ -340,7 +347,10 @@ public sealed class OfficeStatisticsQueryService(
                 x.ErrorType,
                 x.ErrorMessage,
                 x.PublishedCount,
-                x.FoundCount
+                x.FoundCount,
+                x.CollectedCount,
+                x.CaptchaCount,
+                x.CaptchaSolvedCount
             })
             .ToListAsync(ct);
 
@@ -361,7 +371,10 @@ public sealed class OfficeStatisticsQueryService(
                         s.ErrorType,
                         s.ErrorMessage,
                         s.PublishedCount,
-                        s.FoundCount))
+                        s.FoundCount,
+                        s.CollectedCount,
+                        s.CaptchaCount,
+                        s.CaptchaSolvedCount))
                     .OrderBy(s => s.Position)
                     .ThenBy(s => s.StartedAtUtc)
                     .ToList());
@@ -374,6 +387,42 @@ public sealed class OfficeStatisticsQueryService(
                 c.FinishedAtUtc,
                 c.Status,
                 subsByCycle.GetValueOrDefault(c.Id) ?? []))
+            .ToList();
+    }
+
+    /// <summary>
+    /// Newly collected responses in the monitoring window, used as the source of truth
+    /// for «откликов за проход». Republishes do not change CollectedAt.
+    /// </summary>
+    private async Task<IReadOnlyList<MonitoringCycleSentResponse>> LoadMonitoringCollectedResponsesAsync(
+        HashSet<Guid> workerIds,
+        DateTime utcStart,
+        DateTime utcEnd,
+        IReadOnlySet<string> allowedAccountNames,
+        CancellationToken ct)
+    {
+        var padStart = utcStart.AddHours(-12);
+        var padEnd = utcEnd.AddHours(12);
+        var rows = await db.CandidateResponses
+            .AsNoTracking()
+            .Where(x => x.WorkerId != null && workerIds.Contains(x.WorkerId.Value))
+            .Where(x => x.CollectedAt >= padStart && x.CollectedAt < padEnd)
+            .Select(x => new
+            {
+                x.AccountName,
+                x.AvitoSubProfileId,
+                x.AvitoSubProfileName,
+                x.CollectedAt
+            })
+            .ToListAsync(ct);
+
+        return rows
+            .Select(x => new MonitoringCycleSentResponse(
+                (x.AccountName ?? string.Empty).Trim(),
+                (x.AvitoSubProfileName ?? string.Empty).Trim(),
+                x.CollectedAt,
+                (x.AvitoSubProfileId ?? string.Empty).Trim()))
+            .Where(x => allowedAccountNames.Contains(x.AccountName))
             .ToList();
     }
 

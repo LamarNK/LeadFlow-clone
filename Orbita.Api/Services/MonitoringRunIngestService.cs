@@ -133,18 +133,23 @@ public sealed class MonitoringRunIngestService(OrbitaDbContext db)
                     var published = Math.Max(0, subDto.PublishedCount);
                     var deferred = Math.Max(0, subDto.DeferredCount);
                     var skippedDup = Math.Max(0, subDto.SkippedDuplicateCount);
+                    var collected = Math.Max(0, subDto.CollectedCount);
+                    var captcha = Math.Max(0, subDto.CaptchaCount);
+                    var captchaSolved = Math.Min(captcha, Math.Max(0, subDto.CaptchaSolvedCount));
 
                     await db.Database.ExecuteSqlInterpolatedAsync($"""
                         INSERT INTO "MonitoringSubProfileRuns" (
                             "Id", "CycleRunId", "SubProfileId", "SubProfileName",
                             "Position", "Total", "StartedAtUtc", "CompletedAtUtc",
                             "Outcome", "ErrorType", "ErrorMessage",
-                            "FoundCount", "PublishedCount", "DeferredCount", "SkippedDuplicateCount")
+                            "FoundCount", "PublishedCount", "DeferredCount", "SkippedDuplicateCount",
+                            "CollectedCount", "CaptchaCount", "CaptchaSolvedCount")
                         VALUES (
                             {subDto.Id}, {cycleDto.Id}, {subProfileId}, {subName},
                             {position}, {total}, {subStarted}, {subCompleted},
                             {outcome}, {errorType}, {errorMessage},
-                            {found}, {published}, {deferred}, {skippedDup})
+                            {found}, {published}, {deferred}, {skippedDup},
+                            {collected}, {captcha}, {captchaSolved})
                         ON CONFLICT ("Id") DO UPDATE SET
                             "CycleRunId" = EXCLUDED."CycleRunId",
                             "SubProfileId" = EXCLUDED."SubProfileId",
@@ -159,7 +164,10 @@ public sealed class MonitoringRunIngestService(OrbitaDbContext db)
                             "FoundCount" = EXCLUDED."FoundCount",
                             "PublishedCount" = EXCLUDED."PublishedCount",
                             "DeferredCount" = EXCLUDED."DeferredCount",
-                            "SkippedDuplicateCount" = EXCLUDED."SkippedDuplicateCount"
+                            "SkippedDuplicateCount" = EXCLUDED."SkippedDuplicateCount",
+                            "CollectedCount" = EXCLUDED."CollectedCount",
+                            "CaptchaCount" = EXCLUDED."CaptchaCount",
+                            "CaptchaSolvedCount" = EXCLUDED."CaptchaSolvedCount"
                         """, ct).ConfigureAwait(false);
                 }
 
@@ -307,6 +315,11 @@ public sealed class MonitoringRunIngestService(OrbitaDbContext db)
                 subEntity.PublishedCount = Math.Max(0, subDto.PublishedCount);
                 subEntity.DeferredCount = Math.Max(0, subDto.DeferredCount);
                 subEntity.SkippedDuplicateCount = Math.Max(0, subDto.SkippedDuplicateCount);
+                subEntity.CollectedCount = Math.Max(0, subDto.CollectedCount);
+                subEntity.CaptchaCount = Math.Max(0, subDto.CaptchaCount);
+                subEntity.CaptchaSolvedCount = Math.Min(
+                    subEntity.CaptchaCount,
+                    Math.Max(0, subDto.CaptchaSolvedCount));
             }
 
             accepted++;

@@ -5,7 +5,8 @@ public sealed record CandidateBatchPublishResult(
     int ReadyCount,
     int PublishedCount,
     int DeferredByCycleLimit,
-    int SkippedPersonDuplicates = 0)
+    int SkippedPersonDuplicates = 0,
+    int CollectedCount = 0)
 {
-    public static CandidateBatchPublishResult Empty { get; } = new(0, 0, 0, 0);
+    public static CandidateBatchPublishResult Empty { get; } = new(0, 0, 0, 0, 0);
 }

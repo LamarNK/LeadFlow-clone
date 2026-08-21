@@ -1294,7 +1294,13 @@
 .monitoring-col-name { width: 160px; min-width: 120px; }
 .monitoring-col-times { min-width: 220px; }
 .monitoring-col-leads { width: 120px; }
+.monitoring-col-captcha { width: 140px; min-width: 110px; }
 .monitoring-col-errors { min-width: 180px; }
+
+.monitoring-report-captcha-total {
+    margin: 0 0 8px;
+    font-size: 13px;
+}
 
 .monitoring-report-row--muted td {
     opacity: 0.65;

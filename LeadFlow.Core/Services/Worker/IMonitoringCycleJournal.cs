@@ -24,14 +24,22 @@ public interface IMonitoringCycleJournal
         int foundCount,
         int publishedCount,
         int deferredCount = 0,
-        int skippedDuplicateCount = 0);
+        int skippedDuplicateCount = 0,
+        int collectedCount = 0,
+        int captchaCount = 0,
+        int captchaSolvedCount = 0);
 
     /// <summary>Ошибка прохода субпрофиля.</summary>
     void FailSubProfile(
         Guid cycleId,
         Guid subProfileRunId,
         string? errorType,
-        string? errorMessage);
+        string? errorMessage,
+        int foundCount = 0,
+        int publishedCount = 0,
+        int collectedCount = 0,
+        int captchaCount = 0,
+        int captchaSolvedCount = 0);
 
     /// <summary>Цикл завершён нормально (все субпрофили в очереди отработаны).</summary>
     void CompleteCycle(Guid cycleId);

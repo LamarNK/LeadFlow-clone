@@ -1901,6 +1901,15 @@ namespace Orbita.Api.Data.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
 
+                    b.Property<int>("CaptchaCount")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("CaptchaSolvedCount")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("CollectedCount")
+                        .HasColumnType("integer");
+
                     b.Property<int>("FoundCount")
                         .HasColumnType("integer");
 

@@ -26,7 +26,8 @@ internal sealed record MonitoringCycleLogEvent(
 internal sealed record MonitoringCycleSentResponse(
     string AccountName,
     string SubProfileName,
-    DateTime TimestampUtc);
+    DateTime TimestampUtc,
+    string SubProfileId = "");
 
 /// <summary>Снимок цикла из типизированного журнала (без логов).</summary>
 internal sealed record MonitoringCycleRunSnapshot(
@@ -49,7 +50,10 @@ internal sealed record MonitoringSubProfileRunSnapshot(
     string? ErrorType,
     string? ErrorMessage,
     int PublishedCount,
-    int FoundCount = 0);
+    int FoundCount = 0,
+    int CollectedCount = 0,
+    int CaptchaCount = 0,
+    int CaptchaSolvedCount = 0);
 
 /// <summary>Enabled subprofiles of an account (panel order) for a full day matrix.</summary>
 internal sealed record MonitoringAccountSubProfileCatalogEntry(
@@ -103,6 +107,8 @@ internal static partial class MonitoringCycleReportBuilder
     /// <summary>
     /// Полный отчёт только из типизированного журнала запусков.
     /// «Успешное завершение» = проход субпрофиля без ошибки (Outcome=Completed), не факт отправки лида.
+    /// «Откликов» — сколько новых откликов собрано в проходе (CandidateResponses.CollectedAt в окне прохода).
+    /// Если collected не передан, берётся CollectedCount журнала, иначе PublishedCount (legacy).
     /// Строки — все включённые субпрофили аккаунта (каталог), журнал накладывается поверх.
     /// </summary>
     public static MonitoringCycleReportDto BuildFromJournal(
@@ -136,6 +142,9 @@ internal static partial class MonitoringCycleReportBuilder
         var leadSummaries = new List<MonitoringCycleLeadSummaryDto>();
         var totalNotStartedPositions = 0;
         var accountsWithNotStarted = 0;
+        var remainingCollected = sentResponses?.ToList();
+        var reportCaptcha = 0;
+        var reportCaptchaSolved = 0;
 
         foreach (var day in EnumerateDays(startLocal, endLocal))
         {
@@ -164,9 +173,13 @@ internal static partial class MonitoringCycleReportBuilder
                 var posToName = rowsMeta.ToDictionary(r => r.Position, r => r.Name);
                 var posTimes = rowsMeta.ToDictionary(r => r.Position, _ => new List<DateTime?>());
                 var posResponses = rowsMeta.ToDictionary(r => r.Position, _ => new List<string?>());
+                var posCaptcha = rowsMeta.ToDictionary(r => r.Position, _ => new List<string?>());
                 var posErrors = rowsMeta.ToDictionary(r => r.Position, _ => new List<MonitoringCycleErrorDto>());
                 var posHadRun = rowsMeta.ToDictionary(r => r.Position, _ => false);
+                var posLeadTotals = rowsMeta.ToDictionary(r => r.Position, _ => 0);
                 var posExplicitNotStarted = new HashSet<int>();
+                var accountCaptcha = 0;
+                var accountCaptchaSolved = 0;
 
                 for (var cycleIndex = 0; cycleIndex < accountCycles.Count; cycleIndex++)
                 {
@@ -196,6 +209,7 @@ internal static partial class MonitoringCycleReportBuilder
                         {
                             posTimes[position].Add(null);
                             posResponses[position].Add(null);
+                            posCaptcha[position].Add(null);
                             // A subprofile is "not started" only when the last interrupted
                             // cycle never reached it. A failed run still counts as started.
                             if (cycleInterrupted
@@ -213,17 +227,32 @@ internal static partial class MonitoringCycleReportBuilder
                             ? posToName[position]
                             : run.SubProfileName.Trim();
 
-                        // PublishedCount is the number of responses successfully processed in this pass.
+                        var passLeads = CountCollectedForRun(
+                            accountName,
+                            cycle,
+                            run,
+                            remainingCollected);
+                        var (captchaSeen, captchaSolved) = CaptchaForRun(run);
+                        accountCaptcha += captchaSeen;
+                        accountCaptchaSolved += captchaSolved;
+                        var captchaText = FormatCaptchaPass(captchaSeen, captchaSolved);
+
                         if (run.Outcome == MonitoringSubProfileRunOutcomes.Completed
                             && run.CompletedAtUtc is DateTime completedAt)
                         {
                             posTimes[position].Add(completedAt);
-                            posResponses[position].Add(run.PublishedCount.ToString(CultureInfo.InvariantCulture));
+                            posResponses[position].Add(passLeads.ToString(CultureInfo.InvariantCulture));
+                            posLeadTotals[position] += passLeads;
+                            posCaptcha[position].Add(captchaText);
                         }
                         else if (run.Outcome == MonitoringSubProfileRunOutcomes.Failed)
                         {
                             posTimes[position].Add(null);
-                            posResponses[position].Add(null);
+                            posResponses[position].Add(passLeads > 0
+                                ? passLeads.ToString(CultureInfo.InvariantCulture)
+                                : null);
+                            posLeadTotals[position] += passLeads;
+                            posCaptcha[position].Add(captchaText);
                             var detail = !string.IsNullOrWhiteSpace(run.ErrorMessage)
                                 ? run.ErrorMessage!
                                 : !string.IsNullOrWhiteSpace(run.ErrorType)
@@ -243,6 +272,7 @@ internal static partial class MonitoringCycleReportBuilder
                             // Started but not finished — no completion tick, no "не запущен".
                             posTimes[position].Add(null);
                             posResponses[position].Add(null);
+                            posCaptcha[position].Add(null);
                         }
                     }
                 }
@@ -263,20 +293,11 @@ internal static partial class MonitoringCycleReportBuilder
                     notStartedSummaries.Add($"  {accountName}: {notStarted.Count} не запущены — {names}");
                 }
 
-                var leadTotal = accountCycles
-                    .SelectMany(c => c.SubProfiles)
-                    .Where(run => run.Outcome == MonitoringSubProfileRunOutcomes.Completed
-                        && run.CompletedAtUtc is not null)
-                    .Sum(run => run.PublishedCount);
+                var leadTotal = posLeadTotals.Values.Sum();
                 var leadParts = new List<string>();
                 foreach (var position in posToName.Keys.OrderBy(x => x))
                 {
-                    var positionResponseTotal = accountCycles
-                        .SelectMany(c => c.SubProfiles)
-                        .Where(run => MatchRunToRowPosition(run, rowsMeta) == position)
-                        .Where(run => run.Outcome == MonitoringSubProfileRunOutcomes.Completed
-                            && run.CompletedAtUtc is not null)
-                        .Sum(run => run.PublishedCount);
+                    var positionResponseTotal = posLeadTotals[position];
                     if (positionResponseTotal > 0)
                     {
                         leadParts.Add($"{position}/{totalPositions} ({posToName[position]}) = {positionResponseTotal}");
@@ -287,6 +308,8 @@ internal static partial class MonitoringCycleReportBuilder
                     accountName,
                     leadTotal,
                     leadParts));
+                reportCaptcha += accountCaptcha;
+                reportCaptchaSolved += accountCaptchaSolved;
 
                 var tableRows = posToName.Keys
                     .OrderBy(x => x)
@@ -294,6 +317,10 @@ internal static partial class MonitoringCycleReportBuilder
                     {
                         var times = posTimes[position].Where(t => t is not null).Select(t => t!.Value).ToList();
                         var leads = posResponses[position].Where(v => v is not null).Select(v => v!).ToList();
+                        var captcha = posCaptcha[position]
+                            .Where(v => !string.IsNullOrWhiteSpace(v) && v != "—")
+                            .Select(v => v!)
+                            .ToList();
                         var errors = posErrors[position]
                             .GroupBy(e => (e.TimestampUtc, e.Detail))
                             .Select(g => g.First())
@@ -306,7 +333,8 @@ internal static partial class MonitoringCycleReportBuilder
                             times,
                             leads,
                             errors,
-                            WasStarted: posHadRun[position]);
+                            WasStarted: posHadRun[position],
+                            CaptchaPerCycle: captcha);
                     })
                     .ToList();
 
@@ -318,7 +346,9 @@ internal static partial class MonitoringCycleReportBuilder
                     accountCycles.Count,
                     leadTotal,
                     tableRows,
-                    notStarted.Select(p => $"{p}/{totalPositions} ({posToName[p]})").ToList()));
+                    notStarted.Select(p => $"{p}/{totalPositions} ({posToName[p]})").ToList(),
+                    accountCaptcha,
+                    accountCaptchaSolved));
             }
         }
 
@@ -341,7 +371,9 @@ internal static partial class MonitoringCycleReportBuilder
             reports
                 .OrderBy(x => x.DateUtc)
                 .ThenBy(x => ExtractAccountSortKey(x.AccountName))
-                .ToList());
+                .ToList(),
+            reportCaptcha,
+            reportCaptchaSolved);
     }
 
     /// <summary>
@@ -743,6 +775,103 @@ internal static partial class MonitoringCycleReportBuilder
         }
 
         return rows;
+    }
+
+    private static int CountCollectedForRun(
+        string accountName,
+        MonitoringCycleRunSnapshot cycle,
+        MonitoringSubProfileRunSnapshot run,
+        List<MonitoringCycleSentResponse>? remainingCollected)
+    {
+        if (run.Outcome is not MonitoringSubProfileRunOutcomes.Completed
+            and not MonitoringSubProfileRunOutcomes.Failed)
+        {
+            return 0;
+        }
+
+        if (remainingCollected is not null)
+        {
+            var nextStart = cycle.SubProfiles
+                .Where(x => x.StartedAtUtc > run.StartedAtUtc)
+                .Select(x => (DateTime?)x.StartedAtUtc)
+                .OrderBy(x => x)
+                .FirstOrDefault();
+            var windowEnd = run.CompletedAtUtc
+                ?? cycle.FinishedAtUtc
+                ?? DateTime.MaxValue;
+            var matches = remainingCollected
+                .Where(x =>
+                    string.Equals(x.AccountName, accountName, StringComparison.OrdinalIgnoreCase)
+                    && MatchesCollectedSubProfile(x, run)
+                    && x.TimestampUtc >= run.StartedAtUtc
+                    && x.TimestampUtc <= windowEnd
+                    && (nextStart is null
+                        || x.TimestampUtc < nextStart.Value
+                        || (run.CompletedAtUtc is DateTime completed && x.TimestampUtc <= completed)))
+                .ToList();
+            foreach (var match in matches)
+            {
+                remainingCollected.Remove(match);
+            }
+
+            return matches.Count;
+        }
+
+        return run.CollectedCount > 0 ? run.CollectedCount : run.PublishedCount;
+    }
+
+    private static bool MatchesCollectedSubProfile(
+        MonitoringCycleSentResponse collected,
+        MonitoringSubProfileRunSnapshot run)
+    {
+        var collectedId = collected.SubProfileId?.Trim() ?? string.Empty;
+        var runId = run.SubProfileId?.Trim() ?? string.Empty;
+        if (!string.IsNullOrWhiteSpace(collectedId) && !string.IsNullOrWhiteSpace(runId))
+        {
+            return string.Equals(collectedId, runId, StringComparison.OrdinalIgnoreCase);
+        }
+
+        var collectedName = string.IsNullOrWhiteSpace(collected.SubProfileName)
+            ? "—"
+            : collected.SubProfileName.Trim();
+        var runName = string.IsNullOrWhiteSpace(run.SubProfileName)
+            ? "—"
+            : run.SubProfileName.Trim();
+        return string.Equals(collectedName, runName, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static (int Seen, int Solved) CaptchaForRun(MonitoringSubProfileRunSnapshot run)
+    {
+        var seen = Math.Max(0, run.CaptchaCount);
+        var solved = Math.Min(seen, Math.Max(0, run.CaptchaSolvedCount));
+        if (seen == 0
+            && run.Outcome == MonitoringSubProfileRunOutcomes.Failed
+            && string.Equals(run.ErrorType, "captcha", StringComparison.OrdinalIgnoreCase))
+        {
+            seen = 1;
+        }
+
+        return (seen, solved);
+    }
+
+    internal static string FormatCaptchaPass(int seen, int solved)
+    {
+        if (seen <= 0)
+        {
+            return "—";
+        }
+
+        if (solved >= seen)
+        {
+            return seen == 1 ? "решена" : $"{seen} решены";
+        }
+
+        if (solved <= 0)
+        {
+            return seen == 1 ? "не решена" : $"{seen} не решены";
+        }
+
+        return $"решено {solved}/{seen}";
     }
 
     private static int? MatchRunToRowPosition(
