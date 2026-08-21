@@ -90,7 +90,9 @@ public static class AvitoPageStateScripts
             ) || location.hash === "#block"
               || !!document.querySelector('a[href*="support.avito.ru/request/720"]');
             const hasFirewallText = /Доступ\s+ограничен|проблема\s+с\s+IP|firewallCaptcha|Отключить\s+VPN|самол[её]те/i.test(probeText);
-            const hasFirewallIp = hasFirewallDom || hasFirewallText;
+            const hasIpDialog = !!document.querySelector('[role="dialog"][aria-modal="true"], [aria-modal="true"]')
+              && /Доступ\s+ограничен|проблема\s+с\s+IP/i.test(probeText);
+            const hasFirewallIp = hasFirewallDom || hasFirewallText || hasIpDialog;
 
             const hasCaptchaWidget = !!(
                 document.getElementById("geetest_captcha") ||
@@ -99,6 +101,13 @@ public static class AvitoPageStateScripts
                 document.querySelector(".h-captcha[data-sitekey]")
             );
             const hasCaptcha = hasFirewallIp || hasCaptchaWidget;
+            // Баннер Avito Pro: скрытые объявления из-за нулевого/недостаточного аванса.
+            // Оба текста обязательны, чтобы не принять обычный блок баланса за ошибку.
+            const hasInsufficientAdvance =
+                /объявления\s+не\s+видны\s+в\s+поиске/i.test(probeText)
+                && /на\s+авансе\s+недостаточно\s+денег/i.test(probeText);
+            const hasEmailConfirmationRequired =
+                /подтвердите\s+почту\s+по\s+ссылке\s+из\s+письма/i.test(probeText);
 
             let pageKind = "unknown";
             if (hasCaptcha) {
@@ -136,7 +145,9 @@ public static class AvitoPageStateScripts
                 candidatesItemCount,
                 hasLoginForm,
                 hasCaptcha,
-                hasFirewallIp
+                hasFirewallIp,
+                hasInsufficientAdvance,
+                hasEmailConfirmationRequired
             });
         })();
         """;

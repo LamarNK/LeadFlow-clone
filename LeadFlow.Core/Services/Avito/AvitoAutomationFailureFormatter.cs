@@ -12,6 +12,19 @@ public static class AvitoAutomationFailureFormatter
         Exception? inner = null,
         IReadOnlyList<string>? recoveryAttempts = null)
     {
+        if (pageState?.HasInsufficientAdvance == true)
+        {
+            var emailHint = pageState.HasEmailConfirmationRequired
+                ? " Также подтвердите почту по ссылке из письма Avito."
+                : string.Empty;
+            return $"на авансе недостаточно денег: объявления скрыты в поиске, поэтому новые отклики не поступают. Пополните аванс в Avito.{emailHint}";
+        }
+
+        if (pageState?.HasEmailConfirmationRequired == true)
+        {
+            return "подтвердите почту по ссылке из письма Avito, чтобы завершить настройку профиля.";
+        }
+
         if (pageState?.HasFirewallIp == true
             || (pageState?.HasCaptcha == true && pageState.PageKind == AvitoPageKind.Captcha))
         {
@@ -75,6 +88,8 @@ public static class AvitoAutomationFailureFormatter
         pageState switch
         {
             _ when inner is AvitoLoginRequiredException => AvitoSubProfileIssueKind.AuthRequired,
+            { HasInsufficientAdvance: true } => AvitoSubProfileIssueKind.InsufficientAdvance,
+            { HasEmailConfirmationRequired: true } => AvitoSubProfileIssueKind.EmailConfirmationRequired,
             { HasFirewallIp: true } or { HasCaptcha: true } or { PageKind: AvitoPageKind.Captcha } => AvitoSubProfileIssueKind.Captcha,
             _ when SuggestsLogin(pageState) => AvitoSubProfileIssueKind.AuthRequired,
             { HasLoginForm: true } or { PageKind: AvitoPageKind.Login } => AvitoSubProfileIssueKind.AuthRequired,

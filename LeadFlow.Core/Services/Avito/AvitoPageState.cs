@@ -12,7 +12,9 @@ public sealed record AvitoPageState(
     int CandidatesItemCount,
     bool HasLoginForm,
     bool HasCaptcha,
-    bool HasFirewallIp = false)
+    bool HasFirewallIp = false,
+    bool HasInsufficientAdvance = false,
+    bool HasEmailConfirmationRequired = false)
 {
     public bool IsOnCandidates =>
         PageKind == AvitoPageKind.Candidates
@@ -20,6 +22,9 @@ public sealed record AvitoPageState(
 
     public string DescribeKindRu() => PageKind switch
     {
+        _ when HasInsufficientAdvance && HasEmailConfirmationRequired => "объявления скрыты: недостаточно денег на авансе; требуется подтверждение почты",
+        _ when HasInsufficientAdvance => "объявления скрыты: недостаточно денег на авансе",
+        _ when HasEmailConfirmationRequired => "требуется подтверждение почты",
         AvitoPageKind.Candidates => "страница откликов",
         AvitoPageKind.Dashboard => "главная панель Avito Pro",
         AvitoPageKind.ProfileItems => "раздел «Мои объявления»",

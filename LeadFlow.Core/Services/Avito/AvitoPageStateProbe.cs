@@ -39,7 +39,11 @@ public static class AvitoPageStateProbe
                 root.TryGetProperty("candidatesItemCount", out var items) ? items.GetInt32() : 0,
                 root.TryGetProperty("hasLoginForm", out var login) && login.ValueKind == JsonValueKind.True,
                 root.TryGetProperty("hasCaptcha", out var captcha) && captcha.ValueKind == JsonValueKind.True,
-                root.TryGetProperty("hasFirewallIp", out var firewall) && firewall.ValueKind == JsonValueKind.True);
+                root.TryGetProperty("hasFirewallIp", out var firewall) && firewall.ValueKind == JsonValueKind.True,
+                root.TryGetProperty("hasInsufficientAdvance", out var insufficientAdvance)
+                    && insufficientAdvance.ValueKind == JsonValueKind.True,
+                root.TryGetProperty("hasEmailConfirmationRequired", out var emailConfirmation)
+                    && emailConfirmation.ValueKind == JsonValueKind.True);
         }
         catch
         {

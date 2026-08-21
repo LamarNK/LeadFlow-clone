@@ -12,6 +12,8 @@ public static class AvitoSubProfileIssueKind
     public const string ProfileInUse = "profile_in_use";
     public const string ProxyFailure = "proxy_failure";
     public const string ParseFailed = "parse_failed";
+    public const string InsufficientAdvance = "insufficient_advance";
+    public const string EmailConfirmationRequired = "email_confirmation_required";
     public const string Other = "other";
 
     public static string ToDisplayLabel(string? kind) => kind switch
@@ -25,6 +27,8 @@ public static class AvitoSubProfileIssueKind
         ProfileInUse => "профиль занят",
         ProxyFailure => "прокси не работает",
         ParseFailed => "ошибка парсинга",
+        InsufficientAdvance => "недостаточно денег на авансе",
+        EmailConfirmationRequired => "подтвердите почту",
         _ => "проблема"
     };
 }
