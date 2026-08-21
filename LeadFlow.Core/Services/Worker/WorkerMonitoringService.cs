@@ -7,6 +7,7 @@ using LeadFlow.Core.Logging.Audit;
 using LeadFlow.Core.Models;
 using LeadFlow.Core.Services.AdsPower;
 using LeadFlow.Core.Services.Avito;
+using LeadFlow.Core.Services.Captcha;
 using LeadFlow.Core.Services.Browser;
 using Orbita.Contracts;
 using PuppeteerSharp;
@@ -1099,6 +1100,13 @@ public sealed class WorkerMonitoringService(
         var monitorContext = new BrowserMonitorRuntimeContext();
         var loginCredentials = AvitoLoginCredentials.TryCreate(account.AvitoLogin, account.AvitoPassword);
         using var loginScope = AvitoAutoLoginContext.Use(loginCredentials);
+        using var captchaTaskScope = AvitoCaptchaTaskContext.Use(
+            GeeTestV4TaskOptions.FromBrowserProfile(
+                account.AssignedUserAgent,
+                account.ProxyType,
+                account.ProxyAddress,
+                account.ProxyUsername,
+                account.ProxyPassword));
         try
         {
             await using var session = await adsPowerAvitoAutomationService
@@ -1347,6 +1355,8 @@ public sealed class WorkerMonitoringService(
                     if (!AvitoHumanVariation.RollPermille(MonitoringTiming.SkipBalanceChancePermille))
                     {
                         await TryCaptureSubProfileBalanceAsync(sub, session, cancellationToken).ConfigureAwait(false);
+                        await RefreshProfileAlertsAsync(account, session, sub, cancellationToken)
+                            .ConfigureAwait(false);
                     }
                     await PersistAccountSubProfilesAsync(account, allSubProfiles, cancellationToken)
                         .ConfigureAwait(false);
@@ -1430,6 +1440,8 @@ public sealed class WorkerMonitoringService(
                     if (collectStats && statsAggregate is not null)
                     {
                         var part = await CollectProfileItemsFromSessionAsync(account, session, cancellationToken)
+                            .ConfigureAwait(false);
+                        await RefreshProfileAlertsAsync(account, session, sub, cancellationToken)
                             .ConfigureAwait(false);
                         if (part.ParseSuccess)
                         {
@@ -1849,6 +1861,51 @@ public sealed class WorkerMonitoringService(
     {
         var money = await session.TryReadMoneySidebarAsync(cancellationToken).ConfigureAwait(false);
         money?.ApplyTo(sub);
+    }
+
+    /// <summary>
+    /// Фиксирует неблокирующие предупреждения Avito после чтения сайдбара страницы «Мои объявления».
+    /// </summary>
+    private async Task RefreshProfileAlertsAsync(
+        AvitoAccount account,
+        IAdsPowerAccountSession session,
+        AvitoSubProfile sub,
+        CancellationToken cancellationToken)
+    {
+        var state = await TryGetPageStateAsync(session, cancellationToken).ConfigureAwait(false);
+        var kind = state?.HasInsufficientAdvance == true
+            ? AvitoSubProfileIssueKind.InsufficientAdvance
+            : state?.HasEmailConfirmationRequired == true
+                ? AvitoSubProfileIssueKind.EmailConfirmationRequired
+                : null;
+        if (kind is null)
+        {
+            if (sub.LastIssueKind is AvitoSubProfileIssueKind.InsufficientAdvance
+                or AvitoSubProfileIssueKind.EmailConfirmationRequired)
+            {
+                AccountIssueTracker.ClearSubProfileIssue(sub);
+                AccountIssueTracker.RefreshAccountIssueMessage(account);
+            }
+
+            return;
+        }
+
+        if (string.Equals(sub.LastIssueKind, kind, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        var detail = AvitoAutomationFailureFormatter.Format("проверка объявлений", state);
+        await PublishSubProfileIssueWithDiagnosticAsync(
+                account,
+                session,
+                sub,
+                kind,
+                detail,
+                cancellationToken,
+                pageState: state,
+                expectedStep: "проверка объявлений")
+            .ConfigureAwait(false);
     }
 
     private async Task TryCaptureAccountBalanceAsync(

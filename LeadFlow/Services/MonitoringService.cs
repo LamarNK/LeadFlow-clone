@@ -5,6 +5,7 @@ using System.Diagnostics;
 
 
 
+using LeadFlow.Core.Services.Captcha;
 using LeadFlow.Services.Browser;
 using System.Text.Json;
 
@@ -1120,9 +1121,54 @@ public sealed class MonitoringService(
         }
     }
 
+    private async Task RefreshProfileAlertsAsync(
+        AvitoAccount account,
+        IAdsPowerAccountSession session,
+        AvitoSubProfile sub,
+        CancellationToken cancellationToken)
+    {
+        AvitoPageState? state;
+        try
+        {
+            state = await session.GetPageStateAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            return;
+        }
+
+        var kind = state?.HasInsufficientAdvance == true
+            ? AvitoSubProfileIssueKind.InsufficientAdvance
+            : state?.HasEmailConfirmationRequired == true
+                ? AvitoSubProfileIssueKind.EmailConfirmationRequired
+                : null;
+        if (kind is not null)
+        {
+            if (string.Equals(sub.LastIssueKind, kind, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            var detail = AvitoAutomationFailureFormatter.Format("проверка объявлений", state);
+            await PersistSubProfileIssueAsync(account, sub, kind, detail, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        if (sub.LastIssueKind is AvitoSubProfileIssueKind.InsufficientAdvance
+            or AvitoSubProfileIssueKind.EmailConfirmationRequired)
+        {
+            AccountIssueTracker.ClearSubProfileIssue(sub);
+            account.SetSubProfiles(account.SubProfiles.ToList());
+            AccountIssueTracker.RefreshAccountIssueMessage(account);
+            await repository.SaveAccountAsync(account, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
     private void MarkSubProfileHealthy(AvitoAccount account, AvitoSubProfile sub)
     {
-        if (!sub.HasIssue)
+        if (!sub.HasIssue
+            || sub.LastIssueKind is AvitoSubProfileIssueKind.InsufficientAdvance
+                or AvitoSubProfileIssueKind.EmailConfirmationRequired)
         {
             return;
         }
@@ -1362,6 +1408,13 @@ public sealed class MonitoringService(
         }
 
         var adsPowerProfileId = account.AdsPowerProfileId!;
+        using var captchaTaskScope = AvitoCaptchaTaskContext.Use(
+            GeeTestV4TaskOptions.FromBrowserProfile(
+                account.AssignedUserAgent,
+                account.ProxyType,
+                account.ProxyAddress,
+                account.ProxyUsername,
+                account.ProxyPassword));
         await using var adsPowerSession = await adsPowerAvitoAutomationService
             .OpenAccountSessionAsync(options, adsPowerProfileId, cancellationToken)
             .ConfigureAwait(false);
@@ -1535,6 +1588,8 @@ public sealed class MonitoringService(
                             $"Аккаунт \"{account.DisplayName}\": собираем объявления — суб-профиль «{sub.Name}» ({i + 1}/{subProfiles.Count}).");
 
                         var part = await CollectProfileItemsFromSessionAsync(account, adsPowerSession, cancellationToken)
+                            .ConfigureAwait(false);
+                        await RefreshProfileAlertsAsync(account, adsPowerSession, sub, cancellationToken)
                             .ConfigureAwait(false);
                         if (!part.ParseSuccess)
                         {
