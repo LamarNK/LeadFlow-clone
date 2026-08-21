@@ -72,6 +72,76 @@ public static class RuCaptchaResponseParser
             CaptchaOutput: captchaOutput);
     }
 
+    /// <summary>Разбирает token / gRecaptchaResponse, возвращаемый HCaptchaTask.</summary>
+    public static HCaptchaSolution? ParseHCaptchaTaskResult(string json, out bool pending)
+    {
+        pending = false;
+        using var doc = ParseObject(json);
+        var root = doc.RootElement;
+        ThrowIfApiError(root);
+
+        var status = root.TryGetProperty("status", out var statusProp) ? statusProp.GetString() : null;
+        if (string.Equals(status, "processing", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(status, "pending", StringComparison.OrdinalIgnoreCase))
+        {
+            pending = true;
+            return null;
+        }
+
+        if (!string.Equals(status, "ready", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new RuCaptchaException($"RuCaptcha getTaskResult: неожиданный статус «{status}».");
+        }
+
+        if (!root.TryGetProperty("solution", out var solution) || solution.ValueKind != JsonValueKind.Object)
+        {
+            throw new RuCaptchaException("RuCaptcha getTaskResult: нет solution hCaptcha.");
+        }
+
+        var token = ReadString(solution, "gRecaptchaResponse") ?? ReadString(solution, "token");
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            throw new RuCaptchaException("RuCaptcha solution hCaptcha не содержит token.");
+        }
+
+        return new HCaptchaSolution(token);
+    }
+
+    /// <summary>Разбирает <c>solution.text</c>, возвращаемый ImageToTextTask.</summary>
+    public static ImageCaptchaSolution? ParseImageToTextTaskResult(string json, out bool pending)
+    {
+        pending = false;
+        using var doc = ParseObject(json);
+        var root = doc.RootElement;
+        ThrowIfApiError(root);
+
+        var status = root.TryGetProperty("status", out var statusProp) ? statusProp.GetString() : null;
+        if (string.Equals(status, "processing", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(status, "pending", StringComparison.OrdinalIgnoreCase))
+        {
+            pending = true;
+            return null;
+        }
+
+        if (!string.Equals(status, "ready", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new RuCaptchaException($"RuCaptcha getTaskResult: неожиданный статус «{status}».");
+        }
+
+        if (!root.TryGetProperty("solution", out var solution) || solution.ValueKind != JsonValueKind.Object)
+        {
+            throw new RuCaptchaException("RuCaptcha getTaskResult: нет solution картинки.");
+        }
+
+        var text = ReadString(solution, "text");
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            throw new RuCaptchaException("RuCaptcha solution картинки не содержит text.");
+        }
+
+        return new ImageCaptchaSolution(text.Trim());
+    }
+
     public static bool IsVerifyAccepted(string? raw)
     {
         if (string.IsNullOrWhiteSpace(raw))
@@ -86,6 +156,11 @@ public static class RuCaptchaResponseParser
             if (root.TryGetProperty("error", out _))
             {
                 return false;
+            }
+
+            if (root.TryGetProperty("verified", out var verifiedProp) && verifiedProp.ValueKind == JsonValueKind.True)
+            {
+                return true;
             }
 
             var httpOk = !root.TryGetProperty("ok", out var okProp) || okProp.ValueKind != JsonValueKind.False;

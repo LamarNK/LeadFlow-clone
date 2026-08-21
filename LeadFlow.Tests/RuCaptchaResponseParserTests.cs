@@ -75,9 +75,53 @@ public sealed class RuCaptchaResponseParserTests
     }
 
     [Fact]
+    public void ParseHCaptchaTaskResult_Ready_ReturnsResponseToken()
+    {
+        const string json = """
+            {"errorId":0,"status":"ready","solution":{"gRecaptchaResponse":"hcaptcha-token"}}
+            """;
+
+        var solution = RuCaptchaResponseParser.ParseHCaptchaTaskResult(json, out var pending);
+
+        Assert.False(pending);
+        Assert.NotNull(solution);
+        Assert.Equal("hcaptcha-token", solution!.Token);
+    }
+
+    [Fact]
+    public void ParseImageToTextTaskResult_Ready_ReturnsRecognizedText()
+    {
+        const string json = """
+            {"errorId":0,"status":"ready","solution":{"text":"aB72"}}
+            """;
+
+        var solution = RuCaptchaResponseParser.ParseImageToTextTaskResult(json, out var pending);
+
+        Assert.False(pending);
+        Assert.NotNull(solution);
+        Assert.Equal("aB72", solution!.Text);
+    }
+
+    [Fact]
     public void IsVerifyAccepted_VerifiedTrue()
     {
         const string raw = """{"ok":true,"status":200,"text":"{\"verified\":true}"}""";
+
+        Assert.True(RuCaptchaResponseParser.IsVerifyAccepted(raw));
+    }
+
+    [Fact]
+    public void IsVerifyAccepted_WrapperVerifiedFlag()
+    {
+        const string raw = """{"ok":true,"status":200,"verified":true,"text":"{}"}""";
+
+        Assert.True(RuCaptchaResponseParser.IsVerifyAccepted(raw));
+    }
+
+    [Fact]
+    public void IsVerifyAccepted_AvitoSuccessResult()
+    {
+        const string raw = """{"ok":true,"status":200,"text":"{\"success\":{\"result\":{\"verified\":true}}}"}""";
 
         Assert.True(RuCaptchaResponseParser.IsVerifyAccepted(raw));
     }
