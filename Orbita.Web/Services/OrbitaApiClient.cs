@@ -879,6 +879,7 @@ public sealed class OrbitaApiClient(
         int maxConcurrentAccounts,
         string? adsPowerApiBaseUrl,
         string? adsPowerApiKey,
+        string? adsPowerGroupId = null,
         bool responseFilterEnabled = false,
         bool responseFilterExcludeFemale = false,
         bool responseFilterExcludeMale = false,
@@ -922,7 +923,8 @@ public sealed class OrbitaApiClient(
             phoneUnchangedHours,
             autoDeliverToCrm,
             autoDeliverToBitrix,
-            responseHighlightTargetsJson));
+            responseHighlightTargetsJson,
+            adsPowerGroupId));
         using var response = await SendAuthenticatedAsync(request, ct);
         if (response is null)
         {

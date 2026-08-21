@@ -457,7 +457,10 @@ public sealed class DashboardQueryService(
             worker.AutoDeliverToBitrix,
             worker.OfficeId,
             worker.Office?.Name ?? string.Empty,
-            worker.ResponseHighlightTargetsJson);
+            worker.ResponseHighlightTargetsJson,
+            worker.AdsPowerGroupId,
+            worker.AdsPowerGroupName,
+            AdsPowerGroupsJson.Parse(worker.AdsPowerGroupsJson));
     }
 
     public async Task<IReadOnlyList<WorkerAccountDto>> GetWorkerAccountsAsync(
@@ -487,6 +490,8 @@ public sealed class DashboardQueryService(
                 x.LastErrorMessage,
                 x.LastMonitoringAt,
                 x.AdsPowerProfileId,
+                x.AdsPowerGroupId,
+                x.AdsPowerGroupName,
                 x.SubProfilesJson,
                 x.SubProfilesRefreshedAtUtc,
                 x.SubProfilesRefreshRequestedAtUtc,
@@ -698,7 +703,9 @@ public sealed class DashboardQueryService(
                         lastEventAt,
                         lastResponseAt),
                     hasCredentials,
-                    string.IsNullOrWhiteSpace(x.AvitoLogin) ? null : x.AvitoLogin.Trim());
+                    string.IsNullOrWhiteSpace(x.AvitoLogin) ? null : x.AvitoLogin.Trim(),
+                    x.AdsPowerGroupId,
+                    x.AdsPowerGroupName);
             })
             .ToList();
 

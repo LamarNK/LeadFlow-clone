@@ -8,22 +8,113 @@ namespace LeadFlow.Core.Services.AdsPower;
 public sealed class AdsPowerApiClient(IHttpClientFactory httpClientFactory) : IAdsPowerApiClient
 {
     private const int RateLimitMaxAttempts = 6;
+    private const int ProfileListPageSize = 100;
+    private const int ProfileListMaxPages = 50;
+    private const int GroupListPageSize = 2000;
+    private const int GroupListMaxPages = 10;
 
-    public Task<IReadOnlyList<AdsPowerProfileSummary>> ListProfilesAsync(
+    public async Task<IReadOnlyList<AdsPowerProfileSummary>> ListProfilesAsync(
         AdsPowerConnectionOptions options,
-        CancellationToken cancellationToken = default) =>
+        CancellationToken cancellationToken = default,
+        string? groupId = null)
+    {
+        var baseUrl = NormalizeBaseUrl(options.BaseUrl);
+        var normalizedGroupId = string.IsNullOrWhiteSpace(groupId) ? null : groupId.Trim();
+        Log(
+            $"AdsPower list request started for {baseUrl}.",
+            DeskLinkAuditLogLevel.Info,
+            nameof(ListProfilesAsync),
+            CreateProperties(
+                baseUrl,
+                hasApiKey: !string.IsNullOrWhiteSpace(options.ApiKey),
+                groupId: normalizedGroupId));
+
+        var result = new List<AdsPowerProfileSummary>();
+        for (var page = 1; page <= ProfileListMaxPages; page++)
+        {
+            var pageItems = await ListProfilesPageAsync(
+                    options,
+                    baseUrl,
+                    normalizedGroupId,
+                    page,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            result.AddRange(pageItems);
+            if (pageItems.Count < ProfileListPageSize)
+            {
+                break;
+            }
+        }
+
+        if (normalizedGroupId is not null)
+        {
+            result.RemoveAll(p =>
+                !string.Equals(p.GroupId, normalizedGroupId, StringComparison.Ordinal));
+        }
+
+        Log(
+            $"AdsPower list request completed successfully. Profiles loaded: {result.Count}.",
+            DeskLinkAuditLogLevel.Info,
+            nameof(ListProfilesAsync),
+            CreateProperties(
+                baseUrl,
+                hasApiKey: !string.IsNullOrWhiteSpace(options.ApiKey),
+                groupId: normalizedGroupId,
+                profileCount: result.Count));
+        return result;
+    }
+
+    public async Task<IReadOnlyList<AdsPowerGroupSummary>> ListGroupsAsync(
+        AdsPowerConnectionOptions options,
+        CancellationToken cancellationToken = default)
+    {
+        var baseUrl = NormalizeBaseUrl(options.BaseUrl);
+        Log(
+            $"AdsPower group list request started for {baseUrl}.",
+            DeskLinkAuditLogLevel.Info,
+            nameof(ListGroupsAsync),
+            CreateProperties(baseUrl, hasApiKey: !string.IsNullOrWhiteSpace(options.ApiKey)));
+
+        var result = new List<AdsPowerGroupSummary>();
+        for (var page = 1; page <= GroupListMaxPages; page++)
+        {
+            var pageItems = await ListGroupsPageAsync(options, baseUrl, page, cancellationToken)
+                .ConfigureAwait(false);
+            result.AddRange(pageItems);
+            if (pageItems.Count < GroupListPageSize)
+            {
+                break;
+            }
+        }
+
+        Log(
+            $"AdsPower group list request completed. Groups loaded: {result.Count}.",
+            DeskLinkAuditLogLevel.Info,
+            nameof(ListGroupsAsync),
+            CreateProperties(
+                baseUrl,
+                hasApiKey: !string.IsNullOrWhiteSpace(options.ApiKey),
+                profileCount: result.Count));
+        return result;
+    }
+
+    private Task<IReadOnlyList<AdsPowerProfileSummary>> ListProfilesPageAsync(
+        AdsPowerConnectionOptions options,
+        string baseUrl,
+        string? groupId,
+        int page,
+        CancellationToken cancellationToken) =>
         ExecuteWithRateLimitRetryAsync(
             options,
             async ct =>
             {
-                var baseUrl = NormalizeBaseUrl(options.BaseUrl);
-                var url = $"{baseUrl}/api/v1/user/list?page=1&page_size=100";
-                Log(
-                    $"AdsPower list request started for {baseUrl}.",
-                    DeskLinkAuditLogLevel.Info,
-                    nameof(ListProfilesAsync),
-                    CreateProperties(baseUrl, hasApiKey: !string.IsNullOrWhiteSpace(options.ApiKey)));
+                var query = $"page={page}&page_size={ProfileListPageSize}";
+                if (!string.IsNullOrWhiteSpace(groupId))
+                {
+                    query += "&group_id=" + Uri.EscapeDataString(groupId);
+                }
 
+                var url = $"{baseUrl}/api/v1/user/list?{query}";
                 var (response, json) = await SendGetAsync(options, url, ct).ConfigureAwait(false);
                 if (!response.IsSuccessStatusCode)
                 {
@@ -34,6 +125,7 @@ public sealed class AdsPowerApiClient(IHttpClientFactory httpClientFactory) : IA
                         CreateProperties(
                             baseUrl,
                             hasApiKey: !string.IsNullOrWhiteSpace(options.ApiKey),
+                            groupId: groupId,
                             httpStatusCode: (int)response.StatusCode));
                     throw new InvalidOperationException(
                         $"AdsPower API вернул {(int)response.StatusCode}: {Truncate(json, 500)}");
@@ -48,48 +140,133 @@ public sealed class AdsPowerApiClient(IHttpClientFactory httpClientFactory) : IA
                     nameof(ListProfilesAsync),
                     CreateProperties(
                         baseUrl,
-                        hasApiKey: !string.IsNullOrWhiteSpace(options.ApiKey)));
-
-                if (!root.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Object)
-                {
-                    return (IReadOnlyList<AdsPowerProfileSummary>)[];
-                }
-
-                if (!data.TryGetProperty("list", out var list) || list.ValueKind != JsonValueKind.Array)
-                {
-                    return [];
-                }
-
-                var result = new List<AdsPowerProfileSummary>();
-                foreach (var item in list.EnumerateArray())
-                {
-                    var userId = item.TryGetProperty("user_id", out var uid) ? uid.GetString() : null;
-                    if (string.IsNullOrWhiteSpace(userId))
-                    {
-                        continue;
-                    }
-
-                    var name = item.TryGetProperty("name", out var n) ? n.GetString() : null;
-                    var serial = item.TryGetProperty("serial_number", out var sn) ? sn.GetString() : null;
-                    var group = item.TryGetProperty("group_name", out var gn) ? gn.GetString() : null;
-                    result.Add(new AdsPowerProfileSummary(
-                        userId,
-                        string.IsNullOrWhiteSpace(name) ? userId : name!,
-                        serial,
-                        group));
-                }
-
-                Log(
-                    $"AdsPower list request completed successfully. Profiles loaded: {result.Count}.",
-                    DeskLinkAuditLogLevel.Info,
-                    nameof(ListProfilesAsync),
-                    CreateProperties(
-                        baseUrl,
                         hasApiKey: !string.IsNullOrWhiteSpace(options.ApiKey),
-                        profileCount: result.Count));
-                return result;
+                        groupId: groupId));
+
+                return ParseProfileList(root);
             },
             cancellationToken);
+
+    private Task<IReadOnlyList<AdsPowerGroupSummary>> ListGroupsPageAsync(
+        AdsPowerConnectionOptions options,
+        string baseUrl,
+        int page,
+        CancellationToken cancellationToken) =>
+        ExecuteWithRateLimitRetryAsync(
+            options,
+            async ct =>
+            {
+                var url = $"{baseUrl}/api/v1/group/list?page={page}&page_size={GroupListPageSize}";
+                var (response, json) = await SendGetAsync(options, url, ct).ConfigureAwait(false);
+                if (!response.IsSuccessStatusCode)
+                {
+                    Log(
+                        $"AdsPower group list failed with HTTP {(int)response.StatusCode}. Body: {Truncate(json, 500)}",
+                        DeskLinkAuditLogLevel.Error,
+                        nameof(ListGroupsAsync),
+                        CreateProperties(
+                            baseUrl,
+                            hasApiKey: !string.IsNullOrWhiteSpace(options.ApiKey),
+                            httpStatusCode: (int)response.StatusCode));
+                    throw new InvalidOperationException(
+                        $"AdsPower group/list: {(int)response.StatusCode} {Truncate(json, 500)}");
+                }
+
+                using var doc = JsonDocument.Parse(string.IsNullOrWhiteSpace(json) ? "{}" : json);
+                var root = doc.RootElement;
+                EnsureApiSuccess(
+                    root,
+                    baseUrl,
+                    options,
+                    nameof(ListGroupsAsync),
+                    CreateProperties(
+                        baseUrl,
+                        hasApiKey: !string.IsNullOrWhiteSpace(options.ApiKey)));
+
+                return ParseGroupList(root);
+            },
+            cancellationToken);
+
+    private static IReadOnlyList<AdsPowerProfileSummary> ParseProfileList(JsonElement root)
+    {
+        if (!root.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Object)
+        {
+            return [];
+        }
+
+        if (!data.TryGetProperty("list", out var list) || list.ValueKind != JsonValueKind.Array)
+        {
+            return [];
+        }
+
+        var result = new List<AdsPowerProfileSummary>();
+        foreach (var item in list.EnumerateArray())
+        {
+            var userId = ReadStringish(item, "user_id");
+            if (string.IsNullOrWhiteSpace(userId))
+            {
+                continue;
+            }
+
+            var name = ReadStringish(item, "name");
+            var serial = ReadStringish(item, "serial_number");
+            var groupName = ReadStringish(item, "group_name");
+            var groupId = ReadStringish(item, "group_id");
+            result.Add(new AdsPowerProfileSummary(
+                userId,
+                string.IsNullOrWhiteSpace(name) ? userId : name,
+                serial,
+                groupName,
+                groupId));
+        }
+
+        return result;
+    }
+
+    private static IReadOnlyList<AdsPowerGroupSummary> ParseGroupList(JsonElement root)
+    {
+        if (!root.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Object)
+        {
+            return [];
+        }
+
+        if (!data.TryGetProperty("list", out var list) || list.ValueKind != JsonValueKind.Array)
+        {
+            return [];
+        }
+
+        var result = new List<AdsPowerGroupSummary>();
+        foreach (var item in list.EnumerateArray())
+        {
+            var groupId = ReadStringish(item, "group_id");
+            if (string.IsNullOrWhiteSpace(groupId))
+            {
+                continue;
+            }
+
+            var groupName = ReadStringish(item, "group_name");
+            result.Add(new AdsPowerGroupSummary(
+                groupId,
+                string.IsNullOrWhiteSpace(groupName) ? groupId : groupName));
+        }
+
+        return result;
+    }
+
+    private static string? ReadStringish(JsonElement element, string name)
+    {
+        if (!element.TryGetProperty(name, out var prop))
+        {
+            return null;
+        }
+
+        return prop.ValueKind switch
+        {
+            JsonValueKind.String => prop.GetString(),
+            JsonValueKind.Number => prop.GetRawText(),
+            _ => null
+        };
+    }
 
     public Task<AdsPowerBrowserStartResult> StartBrowserAsync(
         AdsPowerConnectionOptions options,
@@ -437,7 +614,8 @@ public sealed class AdsPowerApiClient(IHttpClientFactory httpClientFactory) : IA
         string? openUrl = null,
         int? httpStatusCode = null,
         int? apiCode = null,
-        int? profileCount = null)
+        int? profileCount = null,
+        string? groupId = null)
     {
         return new Dictionary<string, object?>
         {
@@ -447,7 +625,8 @@ public sealed class AdsPowerApiClient(IHttpClientFactory httpClientFactory) : IA
             ["adsPower.openUrl"] = openUrl,
             ["adsPower.httpStatusCode"] = httpStatusCode,
             ["adsPower.apiCode"] = apiCode,
-            ["adsPower.profileCount"] = profileCount
+            ["adsPower.profileCount"] = profileCount,
+            ["adsPower.groupId"] = groupId
         };
     }
 

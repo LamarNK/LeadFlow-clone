@@ -2255,6 +2255,14 @@ namespace Orbita.Api.Data.Migrations
                     b.Property<int>("ActiveAdsCount")
                         .HasColumnType("integer");
 
+                    b.Property<string>("AdsPowerGroupId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("AdsPowerGroupName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
                     b.Property<string>("AdsPowerProfileId")
                         .IsRequired()
                         .HasMaxLength(128)
@@ -2412,6 +2420,18 @@ namespace Orbita.Api.Data.Migrations
                     b.Property<string>("AdsPowerApiKey")
                         .HasMaxLength(256)
                         .HasColumnType("character varying(256)");
+
+                    b.Property<string>("AdsPowerGroupId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("AdsPowerGroupName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("AdsPowerGroupsJson")
+                        .HasMaxLength(16000)
+                        .HasColumnType("character varying(16000)");
 
                     b.Property<string>("AgentVersion")
                         .HasMaxLength(50)

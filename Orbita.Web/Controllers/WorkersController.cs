@@ -59,7 +59,8 @@ public sealed class WorkersController(IWorkersService workers) : Controller
             Events = model.Events,
             ActivityChart = model.ActivityChart,
             CurrentActivity = model.CurrentActivity,
-            ActiveAccountActivities = model.ActiveAccountActivities
+            ActiveAccountActivities = model.ActiveAccountActivities,
+            AdsPowerGroups = model.AdsPowerGroups
         });
     }
 
@@ -146,6 +147,7 @@ public sealed class WorkersController(IWorkersService workers) : Controller
         int maxConcurrentAccounts,
         string? adsPowerApiBaseUrl,
         string? adsPowerApiKey,
+        string? adsPowerGroupId,
         bool responseFilterEnabled = false,
         bool responseFilterExcludeFemale = false,
         bool responseFilterExcludeMale = false,
@@ -184,6 +186,7 @@ public sealed class WorkersController(IWorkersService workers) : Controller
             maxConcurrentAccounts,
             adsPowerApiBaseUrl,
             adsPowerApiKey,
+            adsPowerGroupId,
             responseFilterEnabled,
             responseFilterExcludeFemale,
             responseFilterExcludeMale,

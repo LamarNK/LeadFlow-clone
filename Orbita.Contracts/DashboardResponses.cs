@@ -104,7 +104,10 @@ public sealed record WorkerDetail(
     bool AutoDeliverToBitrix = true,
     Guid OfficeId = default,
     string OfficeName = "",
-    string? ResponseHighlightTargetsJson = null);
+    string? ResponseHighlightTargetsJson = null,
+    string? AdsPowerGroupId = null,
+    string? AdsPowerGroupName = null,
+    IReadOnlyList<AdsPowerGroupDto>? AdsPowerGroups = null);
 
 public sealed record WorkerEventListItem(
     Guid Id,

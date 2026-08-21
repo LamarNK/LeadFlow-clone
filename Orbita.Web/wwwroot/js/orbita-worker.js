@@ -592,6 +592,27 @@
         }
     }
 
+    function updateAdsPowerGroupOptions(groups) {
+        var select = document.getElementById('adsPowerGroupId');
+        if (!select || !shared) return;
+        var dirty = document.querySelector('[data-worker-settings-dirty]');
+        if (dirty && !dirty.hidden) return;
+
+        var current = select.value || '';
+        var html = '<option value="">Все группы</option>';
+        (groups || []).forEach(function (group) {
+            var id = group.groupId || '';
+            if (!id) return;
+            var name = group.groupName || id;
+            html += '<option value="' + shared.escapeHtml(id) + '">' + shared.escapeHtml(name) + '</option>';
+        });
+        if (current && !(groups || []).some(function (g) { return (g.groupId || '') === current; })) {
+            html += '<option value="' + shared.escapeHtml(current) + '">' + shared.escapeHtml(current) + '</option>';
+        }
+        select.innerHTML = html;
+        select.value = current;
+    }
+
     function renderWorkerAccounts(accounts) {
         var tbody = document.querySelector('[data-orbita-live-body="worker-accounts"]');
         if (!tbody || !shared) return;
@@ -616,6 +637,10 @@
             var activityHtml = account.lastActivityUtc
                 ? '<time data-orbita-utc="' + shared.escapeHtml(account.lastActivityUtc) + '" data-orbita-format="activity"></time>'
                 : '—';
+            var adsPowerGroup = account.adsPowerGroupName || account.adsPowerGroupId
+                ? '<span class="worker-account-sub" title="Группа AdsPower">' +
+                    shared.escapeHtml(account.adsPowerGroupName || account.adsPowerGroupId) + '</span>'
+                : '';
             var adsPower = account.adsPowerProfileId
                 ? '<span class="worker-account-sub">AdsPower ' + shared.escapeHtml(account.adsPowerProfileId) + '</span>'
                 : '';
@@ -642,7 +667,7 @@
                 '<td class="cell-toggle" data-label="Вкл"><label class="worker-toggle" title="' + shared.escapeHtml(toggleTitle) + '">' +
                 '<input type="checkbox" data-account-enable-toggle data-worker-id="' + shared.escapeHtml(workerId) + '" data-account-id="' + shared.escapeHtml(account.id) + '"' + checked + ' />' +
                 '<span class="worker-toggle-slider"></span></label></td>' +
-                '<td class="cell-name" data-label="Аккаунт"><a href="' + shared.escapeHtml(accountSearchUrl(account.displayName)) + '">' + shared.escapeHtml(account.displayName) + '</a>' + adsPower + avitoCreds + subProfiles + '</td>' +
+                '<td class="cell-name" data-label="Аккаунт"><a href="' + shared.escapeHtml(accountSearchUrl(account.displayName)) + '">' + shared.escapeHtml(account.displayName) + '</a>' + adsPowerGroup + adsPower + avitoCreds + subProfiles + '</td>' +
                 '<td data-label="Статус">' + statusHtml + '</td>' +
                 '<td class="cell-num cell-balance" data-label="Баланс"><span class="account-balance-multiline">' + shared.escapeHtml(account.balanceText || '—') + '</span></td>' +
                 (function () {
@@ -757,6 +782,8 @@
         } else if (!liveState) {
             renderWorkerAccounts(snapshot.accounts);
         }
+
+        updateAdsPowerGroupOptions(snapshot.adsPowerGroups);
 
         if (activityChart && snapshot.activityChart && snapshot.activityChart.values) {
             var chartData = snapshot.activityChart;

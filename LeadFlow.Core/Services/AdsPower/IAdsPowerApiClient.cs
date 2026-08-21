@@ -4,6 +4,14 @@ public interface IAdsPowerApiClient
 {
     Task<IReadOnlyList<AdsPowerProfileSummary>> ListProfilesAsync(
         AdsPowerConnectionOptions options,
+        CancellationToken cancellationToken = default,
+        string? groupId = null);
+
+    /// <summary>
+    /// Список групп профилей AdsPower (GET /api/v1/group/list).
+    /// </summary>
+    Task<IReadOnlyList<AdsPowerGroupSummary>> ListGroupsAsync(
+        AdsPowerConnectionOptions options,
         CancellationToken cancellationToken = default);
 
     /// <summary>

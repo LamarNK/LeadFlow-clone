@@ -666,6 +666,35 @@
                                 Ключ из настроек AdsPower на VDS. Оставьте пустым, если Local API без авторизации.
                             </span>
                         </label>
+                        <label class="worker-settings-field" for="adsPowerGroupId">
+                            <span class="worker-settings-label">Группа AdsPower</span>
+                            <select id="adsPowerGroupId"
+                                    name="adsPowerGroupId"
+                                    class="worker-settings-input">
+                                <option value="">Все группы</option>
+                                @foreach (var group in Model.AdsPowerGroups)
+                                {
+                                    var isSelected = string.Equals(group.GroupId, Model.AdsPowerGroupId, StringComparison.Ordinal);
+                                    var groupLabel = string.IsNullOrWhiteSpace(group.GroupName) ? group.GroupId : group.GroupName;
+                                    if (isSelected)
+                                    {
+                                        <option value="@group.GroupId" selected="selected">@groupLabel</option>
+                                    }
+                                    else
+                                    {
+                                        <option value="@group.GroupId">@groupLabel</option>
+                                    }
+                                }
+                            </select>
+                            <span class="worker-settings-hint">
+                                В AdsPower профили делятся по группам. Выберите группу этого воркера — в список попадут только её профили.
+                                Пока группа не выбрана, синхронизируются все аккаунты.
+                                @if (Model.AdsPowerGroups.Count == 0)
+                                {
+                                    <text> Список появится после синхронизации воркера с AdsPower.</text>
+                                }
+                            </span>
+                        </label>
                         <div class="worker-settings-effective">
                             <span class="worker-settings-label">Текущий URL для воркера</span>
                             <code class="worker-settings-effective-value">@Model.EffectiveAdsPowerApiBaseUrl</code>
@@ -799,6 +828,10 @@
                         </td>
                         <td class="cell-name" data-label="Аккаунт">
                             <a href="@accountSearchUrl">@account.DisplayName</a>
+                            @if (!string.IsNullOrWhiteSpace(account.AdsPowerGroupName) || !string.IsNullOrWhiteSpace(account.AdsPowerGroupId))
+                            {
+                                <span class="worker-account-sub" title="Группа AdsPower">@(account.AdsPowerGroupName ?? account.AdsPowerGroupId)</span>
+                            }
                             @if (!string.IsNullOrWhiteSpace(account.AdsPowerProfileId))
                             {
                                 <span class="worker-account-sub">AdsPower @account.AdsPowerProfileId</span>

@@ -41,6 +41,7 @@ public sealed class WorkerOrchestrator(
     public void RequestStopMonitoring() => _monitoringRequested = false;
 
     private DateTime _lastAccountSyncUtc = DateTime.MinValue;
+    private string? _lastSyncedAdsPowerGroupId;
     private string? _enabledAccountsFingerprint;
     private DateTime _enabledAccountsChangedAtUtc = DateTime.MinValue;
     private string? _pushedCommand;
@@ -132,10 +133,15 @@ public sealed class WorkerOrchestrator(
                     var enabledCount = config.Accounts.Count(a => a.IsEnabled);
                     runtimeState.Status = "Онлайн";
 
-                    if (DateTime.UtcNow - _lastAccountSyncUtc >= AccountSyncInterval)
+                    var groupChanged = !string.Equals(
+                        _lastSyncedAdsPowerGroupId,
+                        config.AdsPowerGroupId,
+                        StringComparison.Ordinal);
+                    if (groupChanged || DateTime.UtcNow - _lastAccountSyncUtc >= AccountSyncInterval)
                     {
                         await SyncAdsPowerProfilesAsync(config, stoppingToken).ConfigureAwait(false);
                         _lastAccountSyncUtc = DateTime.UtcNow;
+                        _lastSyncedAdsPowerGroupId = config.AdsPowerGroupId;
                     }
 
                     var pendingCaptcha = TryConsumePushedCaptchaSession() ?? config.PendingCaptchaSession;
@@ -471,18 +477,32 @@ public sealed class WorkerOrchestrator(
         IReadOnlyList<AdsPowerProfileSummary> profiles;
         try
         {
-            profiles = await adsPowerApi.ListProfilesAsync(options, ct).ConfigureAwait(false);
+            profiles = await adsPowerApi.ListProfilesAsync(options, ct, config.AdsPowerGroupId)
+                .ConfigureAwait(false);
         }
         catch
         {
             return;
         }
 
+        IReadOnlyList<AdsPowerGroupDto>? groups = null;
+        try
+        {
+            groups = (await adsPowerApi.ListGroupsAsync(options, ct).ConfigureAwait(false))
+                .Select(g => new AdsPowerGroupDto(g.GroupId, g.GroupName))
+                .ToList();
+        }
+        catch
+        {
+            // Группы — справочник для панели; без них всё равно синхронизируем профили.
+        }
+
         var items = profiles
-            .Select(p => new WorkerAccountSyncItemDto(p.UserId, p.Name))
+            .Select(p => new WorkerAccountSyncItemDto(p.UserId, p.Name, p.GroupId, p.GroupName))
             .ToList();
 
-        await apiClient.SyncAccountsAsync(new WorkerAccountSyncRequest(items), ct).ConfigureAwait(false);
+        await apiClient.SyncAccountsAsync(new WorkerAccountSyncRequest(items, groups), ct)
+            .ConfigureAwait(false);
     }
 
     private async Task SendHeartbeatAsync(Guid workerId, CancellationToken ct)

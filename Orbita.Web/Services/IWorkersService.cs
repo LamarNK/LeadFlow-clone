@@ -27,6 +27,7 @@ public interface IWorkersService
         int maxConcurrentAccounts,
         string? adsPowerApiBaseUrl,
         string? adsPowerApiKey,
+        string? adsPowerGroupId = null,
         bool responseFilterEnabled = false,
         bool responseFilterExcludeFemale = false,
         bool responseFilterExcludeMale = false,

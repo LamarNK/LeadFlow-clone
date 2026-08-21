@@ -207,6 +207,11 @@ public sealed class WorkerEntity
     public long? LastRamTotalMb { get; set; }
     public string? AdsPowerApiBaseUrl { get; set; }
     public string? AdsPowerApiKey { get; set; }
+    /// <summary>ID группы AdsPower; null — синхронизировать все профили.</summary>
+    public string? AdsPowerGroupId { get; set; }
+    public string? AdsPowerGroupName { get; set; }
+    /// <summary>JSON-список групп AdsPower, последний раз полученный с воркера.</summary>
+    public string? AdsPowerGroupsJson { get; set; }
     public string? LastUpdateVersion { get; set; }
     public bool? LastUpdateSuccess { get; set; }
     public string? LastUpdateMessage { get; set; }
@@ -253,6 +258,8 @@ public sealed class WorkerAccountEntity
     public Guid WorkerId { get; set; }
     public Guid AccountId { get; set; }
     public string AdsPowerProfileId { get; set; } = string.Empty;
+    public string? AdsPowerGroupId { get; set; }
+    public string? AdsPowerGroupName { get; set; }
     public string DisplayName { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
     public bool IsEnabled { get; set; }

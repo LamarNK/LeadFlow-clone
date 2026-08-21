@@ -75,6 +75,12 @@ internal static class WorkerDetailsBuilder
             MaxConcurrentAccountsLimit = maxConcurrentAccountsLimit,
             AdsPowerApiBaseUrl = worker.AdsPowerApiBaseUrl,
             AdsPowerApiKey = worker.AdsPowerApiKey,
+            AdsPowerGroupId = worker.AdsPowerGroupId,
+            AdsPowerGroupName = worker.AdsPowerGroupName,
+            AdsPowerGroups = BuildAdsPowerGroupOptions(
+                worker.AdsPowerGroups,
+                worker.AdsPowerGroupId,
+                worker.AdsPowerGroupName),
             ResponseFilterEnabled = worker.ResponseFilterEnabled,
             ResponseFilterExcludeFemale = worker.ResponseFilterExcludeFemale,
             ResponseFilterExcludeMale = worker.ResponseFilterExcludeMale,
@@ -149,6 +155,8 @@ internal static class WorkerDetailsBuilder
             DisplayName = account.DisplayName,
             IsEnabledInPanel = account.IsEnabledInPanel,
             AdsPowerProfileId = account.AdsPowerProfileId,
+            AdsPowerGroupId = account.AdsPowerGroupId,
+            AdsPowerGroupName = account.AdsPowerGroupName,
             HasAvitoCredentials = account.HasAvitoCredentials,
             AvitoLogin = account.AvitoLogin,
             StatusLabel = label,
@@ -175,6 +183,31 @@ internal static class WorkerDetailsBuilder
             ProcessingTone = processing.Tone,
             ProcessingSubProfileId = processing.SubProfileId
         };
+    }
+
+    private static IReadOnlyList<AdsPowerGroupDto> BuildAdsPowerGroupOptions(
+        IReadOnlyList<AdsPowerGroupDto>? groups,
+        string? selectedGroupId,
+        string? selectedGroupName)
+    {
+        var result = (groups ?? [])
+            .Where(x => !string.IsNullOrWhiteSpace(x.GroupId))
+            .GroupBy(x => x.GroupId, StringComparer.Ordinal)
+            .Select(g => g.First())
+            .OrderBy(x => x.GroupName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (!string.IsNullOrWhiteSpace(selectedGroupId)
+            && result.All(x => !string.Equals(x.GroupId, selectedGroupId, StringComparison.Ordinal)))
+        {
+            result.Insert(
+                0,
+                new AdsPowerGroupDto(
+                    selectedGroupId,
+                    string.IsNullOrWhiteSpace(selectedGroupName) ? selectedGroupId : selectedGroupName));
+        }
+
+        return result;
     }
 
     private static string FormatAccountBalanceText(WorkerBalanceDto balance)

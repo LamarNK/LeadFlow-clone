@@ -183,6 +183,70 @@ public sealed class AdsPowerApiClientTests
     }
 
     [Fact]
+    public async Task ListProfilesAsync_PassesGroupId_AndParsesGroupFields()
+    {
+        HttpRequestMessage? capturedRequest = null;
+        var body = """
+            {"code":0,"data":{"list":[
+              {"user_id":"u1","name":"Acc","serial_number":"12","group_id":1001,"group_name":"Orbita"}
+            ]}}
+            """;
+        var client = BuildClient((request, _) =>
+        {
+            capturedRequest = request;
+            return Task.FromResult(StubHttpMessageHandler.Ok(body));
+        });
+
+        var profiles = await client.ListProfilesAsync(
+            new AdsPowerConnectionOptions("http://127.0.0.1:57610", null),
+            CancellationToken.None,
+            groupId: "1001");
+
+        Assert.NotNull(capturedRequest);
+        Assert.Equal("/api/v1/user/list", capturedRequest!.RequestUri?.AbsolutePath);
+        var query = Uri.UnescapeDataString(capturedRequest.RequestUri?.Query ?? string.Empty);
+        Assert.Contains("group_id=1001", query);
+        Assert.Contains("page=1", query);
+        Assert.Contains("page_size=100", query);
+        var profile = Assert.Single(profiles);
+        Assert.Equal("u1", profile.UserId);
+        Assert.Equal("Acc", profile.Name);
+        Assert.Equal("12", profile.SerialNumber);
+        Assert.Equal("1001", profile.GroupId);
+        Assert.Equal("Orbita", profile.GroupName);
+    }
+
+    [Fact]
+    public async Task ListGroupsAsync_ParsesGroupIdAndName()
+    {
+        HttpRequestMessage? capturedRequest = null;
+        var body = """
+            {"code":0,"data":{"list":[
+              {"group_id":"0","group_name":"Ungrouped"},
+              {"group_id":1001,"group_name":"Orbita"}
+            ]}}
+            """;
+        var client = BuildClient((request, _) =>
+        {
+            capturedRequest = request;
+            return Task.FromResult(StubHttpMessageHandler.Ok(body));
+        });
+
+        var groups = await client.ListGroupsAsync(
+            new AdsPowerConnectionOptions("http://127.0.0.1:57610", "secret-key"),
+            CancellationToken.None);
+
+        Assert.NotNull(capturedRequest);
+        Assert.Equal("Bearer", capturedRequest!.Headers.Authorization?.Scheme);
+        Assert.Equal("/api/v1/group/list", capturedRequest.RequestUri?.AbsolutePath);
+        Assert.Equal(2, groups.Count);
+        Assert.Equal("0", groups[0].GroupId);
+        Assert.Equal("Ungrouped", groups[0].GroupName);
+        Assert.Equal("1001", groups[1].GroupId);
+        Assert.Equal("Orbita", groups[1].GroupName);
+    }
+
+    [Fact]
     public async Task StartBrowserAsync_UsesBearerAuthorizationHeader_AndEncodesOpenUrl()
     {
         HttpRequestMessage? capturedRequest = null;
@@ -322,8 +386,14 @@ public sealed class AdsPowerApiClientTests
 
         public Task<IReadOnlyList<AdsPowerProfileSummary>> ListProfilesAsync(
             AdsPowerConnectionOptions options,
-            CancellationToken cancellationToken = default) =>
+            CancellationToken cancellationToken = default,
+            string? groupId = null) =>
             Task.FromResult<IReadOnlyList<AdsPowerProfileSummary>>([]);
+
+        public Task<IReadOnlyList<AdsPowerGroupSummary>> ListGroupsAsync(
+            AdsPowerConnectionOptions options,
+            CancellationToken cancellationToken = default) =>
+            Task.FromResult<IReadOnlyList<AdsPowerGroupSummary>>([]);
 
         public Task<AdsPowerBrowserStartResult> StartBrowserAsync(
             AdsPowerConnectionOptions options,
