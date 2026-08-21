@@ -43,6 +43,8 @@ public sealed partial class AdsPowerAvitoAutomationService(
         CancellationToken cancellationToken = default,
         CandidatesMessengerEnrichmentHints? messengerEnrichmentHints = null)
     {
+        using var captchaScope = await UseProfileCaptchaContextAsync(options, adsPowerUserId, cancellationToken)
+            .ConfigureAwait(false);
         var start = await adsPowerApiClient
             .StartBrowserAsync(options, adsPowerUserId, openUrl: null, cancellationToken)
             .ConfigureAwait(false);
@@ -155,6 +157,8 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 ["avito.url"] = ProfileItemsPageUrl
             });
 
+        using var captchaScope = await UseProfileCaptchaContextAsync(options, adsPowerUserId, cancellationToken)
+            .ConfigureAwait(false);
         var start = await adsPowerApiClient
             .StartBrowserAsync(options, adsPowerUserId, openUrl: null, cancellationToken)
             .ConfigureAwait(false);
@@ -362,6 +366,8 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 ["avito.url"] = ProfileBlockedItemsPageUrl
             });
 
+        using var captchaScope = await UseProfileCaptchaContextAsync(options, adsPowerUserId, cancellationToken)
+            .ConfigureAwait(false);
         var start = await adsPowerApiClient
             .StartBrowserAsync(options, adsPowerUserId, openUrl: null, cancellationToken)
             .ConfigureAwait(false);
@@ -552,6 +558,111 @@ public sealed partial class AdsPowerAvitoAutomationService(
         return (detection, html, ct) => TrySolveGeeTestAsync(page, html, detection.Url ?? page.Url, detection.Kind, ct);
     }
 
+    private async Task<GeeTestV4TaskOptions> ResolveCaptchaTaskOptionsAsync(
+        AdsPowerConnectionOptions options,
+        string adsPowerUserId,
+        CancellationToken cancellationToken)
+    {
+        var current = AvitoCaptchaTaskContext.Options ?? new GeeTestV4TaskOptions();
+        try
+        {
+            var profileProxy = await adsPowerApiClient
+                .GetProfileProxyAsync(options, adsPowerUserId, cancellationToken)
+                .ConfigureAwait(false);
+            if (profileProxy is null)
+            {
+                return current;
+            }
+
+            var profileParsed = GeeTestV4Proxy.TryCreate(
+                profileProxy.Type,
+                profileProxy.Address,
+                profileProxy.Username,
+                profileProxy.Password);
+            var merged = profileParsed is null ? current : current.WithProxy(profileParsed);
+            _ = GlobalLogger.Instance.LogAsync(
+                profileParsed is not null
+                    ? "Captcha: RuCaptcha получит прокси профиля AdsPower."
+                    : "Captcha: прокси профиля AdsPower не разобран, оставляем текущий режим RuCaptcha.",
+                profileParsed is not null ? DeskLinkAuditLogLevel.Info : DeskLinkAuditLogLevel.Warning,
+                properties: new Dictionary<string, object?>
+                {
+                    ["step"] = profileParsed is not null
+                        ? "captcha_profile_proxy_applied"
+                        : "captcha_profile_proxy_unparsed",
+                    ["adsPower.userId"] = adsPowerUserId,
+                    ["captcha.proxyType"] = profileProxy.Type,
+                    ["captcha.proxyMode"] = merged.UsesSuppliedProxy ? "profile" : "proxyless"
+                });
+            return merged;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                $"Captcha: не удалось прочитать прокси профиля AdsPower — {ex.Message}",
+                DeskLinkAuditLogLevel.Warning,
+                properties: new Dictionary<string, object?>
+                {
+                    ["step"] = "captcha_profile_proxy_read_failed",
+                    ["adsPower.userId"] = adsPowerUserId
+                });
+            return current;
+        }
+    }
+
+    private async Task<IDisposable> UseProfileCaptchaContextAsync(
+        AdsPowerConnectionOptions options,
+        string adsPowerUserId,
+        CancellationToken cancellationToken)
+    {
+        var captchaOptions = await ResolveCaptchaTaskOptionsAsync(options, adsPowerUserId, cancellationToken)
+            .ConfigureAwait(false);
+        return AvitoCaptchaTaskContext.Use(captchaOptions);
+    }
+
+    private async Task ThrowIfCaptchaOnPageAsync(IPage page, CancellationToken cancellationToken)
+    {
+        string? html = null;
+        try
+        {
+            html = await page.GetContentAsync().ConfigureAwait(false);
+        }
+        catch
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(html)
+            || (!AvitoCaptchaDetector.IsCaptchaHtml(html)
+                && !AvitoCaptchaDetector.CanAttemptGeeTestSolve(html)))
+        {
+            return;
+        }
+
+        await ThrowIfCaptchaAsync(page, html, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<bool> TryClearGeeTestCaptchaAsync(IPage page, CancellationToken cancellationToken)
+    {
+        string? html = null;
+        try
+        {
+            html = await page.GetContentAsync().ConfigureAwait(false);
+        }
+        catch
+        {
+            // солвер снимет HTML сам
+        }
+
+        return await TrySolveGeeTestAsync(
+                page,
+                html,
+                page.Url,
+                AvitoCaptchaDetector.Classify(html),
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
     private async Task<bool> TrySolveGeeTestAsync(
         IPage page,
         string? html,
@@ -564,7 +675,9 @@ public sealed partial class AdsPowerAvitoAutomationService(
             return false;
         }
 
-        if (!AvitoCaptchaDetector.HasGeeTestWidget(html)
+        if (html is not null
+            && !AvitoCaptchaRedirectRecovery.RequiresRecovery(html)
+            && !AvitoCaptchaDetector.CanAttemptGeeTestSolve(html)
             && !string.Equals(kind, "geetest", StringComparison.OrdinalIgnoreCase))
         {
             return false;
@@ -573,7 +686,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
         try
         {
             return await geeTestSolver
-                .TrySolveOnPageAsync(page, html, pageUrl, cancellationToken)
+                .TrySolveOnPageAsync(page, html, pageUrl, AvitoCaptchaTaskContext.Options, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -609,6 +722,8 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 ["avito.url"] = ProfileSwitchPageUrl
             });
 
+        using var captchaScope = await UseProfileCaptchaContextAsync(options, adsPowerUserId, cancellationToken)
+            .ConfigureAwait(false);
         var start = await adsPowerApiClient
             .StartBrowserAsync(options, adsPowerUserId, openUrl: null, cancellationToken)
             .ConfigureAwait(false);
@@ -787,6 +902,8 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 ["avito.subProfileId"] = subProfileId
             });
 
+        using var captchaScope = await UseProfileCaptchaContextAsync(options, adsPowerUserId, cancellationToken)
+            .ConfigureAwait(false);
         var start = await adsPowerApiClient
             .StartBrowserAsync(options, adsPowerUserId, openUrl: null, cancellationToken)
             .ConfigureAwait(false);
@@ -1181,6 +1298,8 @@ public sealed partial class AdsPowerAvitoAutomationService(
         ArgumentException.ThrowIfNullOrWhiteSpace(url);
         var target = url.Trim();
 
+        using var captchaScope = await UseProfileCaptchaContextAsync(options, adsPowerUserId, cancellationToken)
+            .ConfigureAwait(false);
         var start = await adsPowerApiClient
             .StartBrowserAsync(options, adsPowerUserId, openUrl: null, cancellationToken)
             .ConfigureAwait(false);
@@ -1297,7 +1416,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
     /// Всегда открывает модалку «Выбор профиля» через <c>/profile/dashboard#profile/switch?withEntities=true</c>,
     /// чтобы прочитать актуальный <c>isCurrent</c>, а не состояние с другой страницы Avito.
     /// </summary>
-    private static async Task EnsureSwitchModalAsync(
+    private async Task EnsureSwitchModalAsync(
         IPage page,
         CancellationToken cancellationToken,
         string callerMemberName = nameof(EnsureSwitchModalAsync))
@@ -1328,7 +1447,11 @@ public sealed partial class AdsPowerAvitoAutomationService(
                         ["page.url"] = page.Url,
                         ["attempt"] = i + 1
                     });
-                return;
+                await ThrowIfCaptchaOnPageAsync(page, cancellationToken).ConfigureAwait(false);
+                if (IsOnProfileSwitchPage(page.Url))
+                {
+                    return;
+                }
             }
             catch (Exception ex) when (IsRecoverableNavigationError(ex))
             {
@@ -1399,7 +1522,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
     }
 
     /// <summary>Ждём корень модалки и карточки профилей перед чтением <c>isCurrent</c> или кликом.</summary>
-    private static async Task<bool> AwaitProfileSwitchModalContentAsync(
+    private async Task<bool> AwaitProfileSwitchModalContentAsync(
         IPage page,
         CancellationToken cancellationToken,
         string callerMemberName)
@@ -1440,11 +1563,17 @@ public sealed partial class AdsPowerAvitoAutomationService(
             .ConfigureAwait(false);
     }
 
-    private static async Task<bool> TryAwaitProfileSwitchModalContentOnceAsync(
+    private async Task<bool> TryAwaitProfileSwitchModalContentOnceAsync(
         IPage page,
         CancellationToken cancellationToken,
         string callerMemberName)
     {
+        await ThrowIfCaptchaOnPageAsync(page, cancellationToken).ConfigureAwait(false);
+        if (!IsOnProfileSwitchPage(page.Url))
+        {
+            return false;
+        }
+
         var modalReady = false;
         try
         {
@@ -1469,6 +1598,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
 
         if (!modalReady)
         {
+            await ThrowIfCaptchaOnPageAsync(page, cancellationToken).ConfigureAwait(false);
             return false;
         }
 
@@ -1635,6 +1765,8 @@ public sealed partial class AdsPowerAvitoAutomationService(
                     await Task.Delay(3000, cancellationToken).ConfigureAwait(false);
                     await page.GoToAsync(targetUrl, navigationOptions).ConfigureAwait(false);
                 }
+
+                state = await ProbePageStateAsync(page, cancellationToken).ConfigureAwait(false);
 
                 string? staleListSignature = null;
                 if (AvitoCandidatesPageUrls.IsCandidatesResponsesUrl(page.Url))
