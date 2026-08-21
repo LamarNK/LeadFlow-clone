@@ -106,6 +106,30 @@ public sealed class AvitoAutomationFailureFormatterTests
     }
 
     [Fact]
+    public void Format_WhenFirewallIpOnLoginUrl_PrefersIpBlockOverLogin()
+    {
+        var state = new AvitoPageState(
+            AvitoPageKind.Captcha,
+            "https://www.avito.ru/profile/login",
+            "Доступ ограничен: проблема с IP",
+            false,
+            0,
+            null,
+            null,
+            0,
+            false,
+            true,
+            HasFirewallIp: true);
+
+        var message = AvitoAutomationFailureFormatter.Format("переключение субпрофиля", state);
+        var kind = AvitoAutomationFailureFormatter.MapDiagnosticKind(state, null);
+
+        Assert.Equal(AvitoSubProfileIssueKind.Captcha, kind);
+        Assert.Contains("проблема с IP", message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("авторизац", message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void Format_WhenCandidatesPageDuringSwitch_ReturnsLoadOrOverlayHint()
     {
         var state = new AvitoPageState(

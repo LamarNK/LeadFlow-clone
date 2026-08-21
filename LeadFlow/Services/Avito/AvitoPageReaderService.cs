@@ -19,8 +19,9 @@ public sealed class AvitoPageReaderService(IWebPageAutomationService automationS
             (() => {
                 const bodyText = document.body?.innerText ?? "";
                 const hasCaptcha =
-                    /капч|captcha|подтвердите|проверочный код|Доступ\s+ограничен|проблема\s+с\s+IP/i.test(bodyText) ||
-                    !!document.querySelector('.firewall-container, .js-firewall-form, .firewall-title, .h-captcha');
+                    /капч|captcha|подтвердите|проверочный код|Доступ\s+ограничен|проблема\s+с\s+IP|Отключить\s+VPN|самол[её]те/i.test(bodyText) ||
+                    location.hash === '#block' ||
+                    !!document.querySelector('.firewall-container, .js-firewall-form, .firewall-title, .h-captcha, a[href*="support.avito.ru/request/720"]');
                 const isVisible = (element) => {
                     if (!element) return false;
                     const style = window.getComputedStyle(element);

@@ -121,4 +121,65 @@ public sealed class AvitoCaptchaDetectorTests
         Assert.True(AvitoCaptchaDetector.IsCaptchaHtml(html));
         Assert.Equal("firewall", AvitoCaptchaDetector.Classify(html));
     }
+
+    [Fact]
+    public void IsCaptchaHtml_StaticIpBlockPageWithoutFirewallContainer_DetectedAsFirewall()
+    {
+        // Реальный снимок 2026: Avito отдаёт отдельную HTML-страницу без .firewall-container
+        // и без виджета капчи. Заголовок в <title>/<h1>, советы про VPN/«в самолёте»,
+        // ссылка в поддержку и авто-reload с hash #block.
+        const string html = """
+            <html><head>
+              <title>Доступ ограничен: проблема с IP</title>
+            </head>
+            <body>
+              <div class="container">
+                <div class="content">
+                  <h1>Доступ ограничен: проблема с IP</h1>
+                  <p>Иногда такое случается — подождите немного и обновите страницу. Если проблема не уходит, вот что можно сделать:</p>
+                  <ul>
+                    <li>Отключить VPN.</li>
+                    <li>Включить и выключить режим «В самолёте».</li>
+                    <li>Подключиться к другой сети.</li>
+                    <li>Перезагрузить роутер.</li>
+                  </ul>
+                  <p>
+                    Если и это не сработает, напишите <a href="https://support.avito.ru/request/720">в поддержку</a>.
+                    В письме укажите город, провайдера и IP-адрес (его можно посмотреть на yandex.ru/internet).
+                  </p>
+                </div>
+              </div>
+              <script>
+                if (window.location.hash != "#block") {
+                    setTimeout(function(){
+                        window.location.replace(window.location.pathname + window.location.search + "#block");
+                        window.location.reload();
+                    }, "1000");
+                }
+              </script>
+            </body></html>
+            """;
+
+        Assert.True(AvitoCaptchaDetector.IsCaptchaHtml(html));
+        Assert.Equal("firewall", AvitoCaptchaDetector.Classify(html));
+    }
+
+    [Fact]
+    public void IsCaptchaHtml_StaticIpBlockMarkersWithoutTitle_DetectedAsFirewall()
+    {
+        // Страховка: даже без фразы «Доступ ограничен» уникальные маркеры страницы
+        // (hash #block, тикет поддержки, совет про VPN) должны дать firewall.
+        const string html = """
+            <html><body>
+              <ul><li>Отключить VPN.</li><li>режим «В самолёте»</li></ul>
+              <a href="https://support.avito.ru/request/720">поддержка</a>
+              <script>
+                if (window.location.hash != "#block") { window.location.reload(); }
+              </script>
+            </body></html>
+            """;
+
+        Assert.True(AvitoCaptchaDetector.IsCaptchaHtml(html));
+        Assert.Equal("firewall", AvitoCaptchaDetector.Classify(html));
+    }
 }

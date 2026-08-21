@@ -6,6 +6,9 @@ namespace LeadFlow.Core.Services.Avito;
 /// Детектит «капча/firewall»-страницы Avito, которые встречают нас вместо нормального HTML.
 /// Источник правил — реальные снимки HTML:
 ///   • <c>&lt;div class="firewall-container"&gt;</c> с заголовком «Доступ ограничен: проблема с IP»
+///   • статическая страница «Доступ ограничен: проблема с IP» без виджета капчи
+///     (h1 + советы про VPN/«в самолёте», ссылка <c>support.avito.ru/request/720</c>,
+///     авто-reload с <c>#block</c>),
 ///   • hCaptcha (<c>&lt;div class="h-captcha"&gt;</c>, <c>data-sitekey</c>),
 ///   • geetest (<c>id="geetest_captcha"</c>),
 ///   • старая капча с картинкой (<c>id="inner-captcha"</c>),
@@ -20,6 +23,10 @@ public static class AvitoCaptchaDetector
         @"\bfirewall-container\b" +
         @"|\bjs-firewall-form\b" +
         @"|\bfirewall-title\b" +
+        @"|location\.hash\s*!=\s*[""']#block[""']" +
+        @"|support\.avito\.ru/request/720" +
+        @"|Отключить\s+VPN" +
+        @"|В\s+самол[её]те" +
         @"|id=""geetest_captcha""" +
         @"|initGeetest" +
         @"|geetest\.com" +
@@ -81,7 +88,7 @@ public static class AvitoCaptchaDetector
 
         if (Regex.IsMatch(
                 html,
-                @"\bfirewall-container\b|\bjs-firewall-form\b|\bfirewall-title\b|Доступ\s+ограничен|проблема\s+с\s+IP",
+                @"\bfirewall-container\b|\bjs-firewall-form\b|\bfirewall-title\b|Доступ\s+ограничен|проблема\s+с\s+IP|location\.hash\s*!=\s*[""']#block[""']|support\.avito\.ru/request/720|Отключить\s+VPN|В\s+самол[её]те",
                 RegexOptions.IgnoreCase))
         {
             return "firewall";
