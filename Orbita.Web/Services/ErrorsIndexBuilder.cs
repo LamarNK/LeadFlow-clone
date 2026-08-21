@@ -92,7 +92,8 @@ internal static class ErrorsIndexBuilder
         var severity = WorkerEventClassifier.InferSeverity(item.Level, item.Message, item.Details);
         var occurredAt = item.CreatedAtUtc;
 
-        var isCaptcha = WorkerEventClassifier.IsCaptcha(item.Message, item.Details);
+        var isIpBlock = WorkerEventClassifier.IsIpBlock(item.Message, item.Details);
+        var isCaptcha = !isIpBlock && WorkerEventClassifier.IsCaptcha(item.Message, item.Details);
         return new ErrorRowViewModel
         {
             Id = item.Id,
@@ -264,6 +265,8 @@ internal static class ErrorsIndexBuilder
         var text = $"{message} {details}";
         if (WorkerEventClassifier.MapIssueLabelToErrorType(message) is { } issueType)
             return issueType;
+        if (WorkerEventClassifier.IsIpBlock(text, details))
+            return "blocked";
         if (WorkerEventClassifier.IsCaptcha(text, details))
             return "blocked";
         if (text.Contains("авториз", StringComparison.OrdinalIgnoreCase)

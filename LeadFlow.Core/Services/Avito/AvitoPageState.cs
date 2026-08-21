@@ -31,7 +31,7 @@ public sealed record AvitoPageState(
         AvitoPageKind.ProfileSwitchModal => "модалка «Выбор профиля»",
         AvitoPageKind.Login => "форма входа",
         AvitoPageKind.Captcha when HasFirewallIp => "блок IP Avito",
-        AvitoPageKind.Captcha => "капча / блок IP",
+        AvitoPageKind.Captcha => "капча",
         _ => "неизвестная страница"
     };
 

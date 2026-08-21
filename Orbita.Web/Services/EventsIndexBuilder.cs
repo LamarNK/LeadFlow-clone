@@ -12,7 +12,8 @@ internal static class EventsIndexBuilder
         new() { Value = "", Label = "Все типы" },
         new() { Value = "response", Label = "Новый отклик" },
         new() { Value = "duplicate", Label = "Дубль" },
-        new() { Value = "captcha", Label = "Капча / блок IP" },
+        new() { Value = "captcha", Label = "Капча" },
+        new() { Value = "ip_block", Label = "Блок IP" },
         new() { Value = "switch", Label = "Не переключился" },
         new() { Value = "error", Label = "Ошибка" },
         new() { Value = "auth", Label = "Авторизация" },
@@ -98,7 +99,8 @@ internal static class EventsIndexBuilder
         var (typeLabel, typeIcon, typeTone) = EventTypePresentation(type, item.Message);
         var description = BuildDescription(item.Message, item.Details);
 
-        var isCaptcha = WorkerEventClassifier.IsCaptcha(item.Message, item.Details);
+        var isIpBlock = WorkerEventClassifier.IsIpBlock(item.Message, item.Details);
+        var isCaptcha = !isIpBlock && WorkerEventClassifier.IsCaptcha(item.Message, item.Details);
         return new EventRowViewModel
         {
             Id = item.Id,
@@ -292,6 +294,8 @@ internal static class EventsIndexBuilder
             return "duplicate";
         if (WorkerEventClassifier.MapIssueLabelToEventType(message) is { } issueType)
             return issueType;
+        if (WorkerEventClassifier.IsIpBlock(text, details))
+            return "ip_block";
         if (WorkerEventClassifier.IsCaptcha(text, details))
             return "captcha";
         if (text.Contains("авториз") || text.Contains("вход") || text.Contains("нужен вход") || text.Contains("требуется действие"))
@@ -347,7 +351,8 @@ internal static class EventsIndexBuilder
         {
         "response" => ("Новый отклик", "fa-regular fa-circle-check", "success"),
         "duplicate" => ("Дубликат", "fa-solid fa-triangle-exclamation", "warning"),
-        "captcha" => ("Капча / блок IP", "fa-solid fa-shield-halved", "warning"),
+        "captcha" => ("Капча", "fa-solid fa-shield-halved", "warning"),
+        "ip_block" => ("Блок IP", "fa-solid fa-ban", "warning"),
         "switch" => ("Не переключился", "fa-solid fa-arrows-rotate", "warning"),
         "error" => ("Ошибка отправки", "fa-regular fa-circle-xmark", "error"),
         "auth" => ("Авторизация", "fa-solid fa-key", "info"),

@@ -4,6 +4,7 @@ namespace LeadFlow.Core.Models;
 public static class AvitoSubProfileIssueKind
 {
     public const string Captcha = "captcha";
+    public const string IpBlock = "ip_block";
     public const string AuthRequired = "auth_required";
     public const string Timeout = "timeout";
     public const string SwitchFailed = "switch_failed";
@@ -18,7 +19,8 @@ public static class AvitoSubProfileIssueKind
 
     public static string ToDisplayLabel(string? kind) => kind switch
     {
-        Captcha => "капча / блок IP",
+        Captcha => "капча",
+        IpBlock => "блок IP",
         AuthRequired => "нужен вход",
         Timeout => "таймаут",
         SwitchFailed => "не переключился",
@@ -31,4 +33,10 @@ public static class AvitoSubProfileIssueKind
         EmailConfirmationRequired => "подтвердите почту",
         _ => "проблема"
     };
+
+    /// <summary>Переводит технический вид проверки Avito в отдельный тип проблемы.</summary>
+    public static string FromCaptchaKind(string? captchaKind) =>
+        string.Equals(captchaKind, "firewall", StringComparison.OrdinalIgnoreCase)
+            ? IpBlock
+            : Captcha;
 }

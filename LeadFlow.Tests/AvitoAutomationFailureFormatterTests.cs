@@ -101,7 +101,8 @@ public sealed class AvitoAutomationFailureFormatterTests
         var message = AvitoAutomationFailureFormatter.Format("переключение субпрофиля", state);
         var kind = AvitoAutomationFailureFormatter.MapDiagnosticKind(state, null);
 
-        Assert.Equal(AvitoSubProfileIssueKind.Captcha, kind);
+        Assert.Equal(AvitoSubProfileIssueKind.IpBlock, kind);
+        Assert.True(AvitoAutomationFailureFormatter.IsAccountBlockingIssue(kind));
         Assert.Contains("проблема с IP", message, StringComparison.OrdinalIgnoreCase);
     }
 
@@ -175,7 +176,7 @@ public sealed class AvitoAutomationFailureFormatterTests
         var message = AvitoAutomationFailureFormatter.Format("переключение субпрофиля", state);
         var kind = AvitoAutomationFailureFormatter.MapDiagnosticKind(state, null);
 
-        Assert.Equal(AvitoSubProfileIssueKind.Captcha, kind);
+        Assert.Equal(AvitoSubProfileIssueKind.IpBlock, kind);
         Assert.Contains("проблема с IP", message, StringComparison.OrdinalIgnoreCase);
         Assert.DoesNotContain("авторизац", message, StringComparison.OrdinalIgnoreCase);
     }

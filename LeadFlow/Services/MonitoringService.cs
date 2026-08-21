@@ -863,13 +863,16 @@ public sealed class MonitoringService(
         CancellationToken ct)
     {
         account.Status = AvitoAccountStatus.RequiresManualAction;
-        var detail = $"Avito показал капчу/блок IP ({captchaEx.Kind}). Откройте браузер и пройдите проверку.";
+        var issueKind = AvitoSubProfileIssueKind.FromCaptchaKind(captchaEx.Kind);
+        var detail = issueKind == AvitoSubProfileIssueKind.IpBlock
+            ? "Avito ограничил доступ из-за IP. Откройте браузер и дождитесь разблокировки или смените IP."
+            : $"Avito показал капчу ({captchaEx.Kind}). Откройте браузер и пройдите проверку.";
         if (!account.HasSubProfileIssues)
         {
             account.LastErrorMessage = AccountIssueFormatting.FormatIssue(
                 account,
                 null,
-                AvitoSubProfileIssueKind.Captcha,
+                issueKind,
                 detail);
         }
         else
@@ -884,21 +887,23 @@ public sealed class MonitoringService(
             {
                 AccountId = account.Id,
                 Level = "Warning",
-                Message = "Avito показал капчу/firewall",
+                Message = issueKind == AvitoSubProfileIssueKind.IpBlock
+                    ? "Avito ограничил доступ из-за IP"
+                    : "Avito показал капчу",
                 Details = $"{captchaEx.Kind} :: {captchaEx.Url ?? "<unknown url>"} :: {account.LastErrorMessage}"
             }, ct).ConfigureAwait(false);
         }
         catch (Exception persistEx)
         {
             _ = GlobalLogger.Instance.LogAsync(
-                $"Не удалось сохранить статус капчи для аккаунта {account.DisplayName}: {persistEx.Message}",
+                $"Не удалось сохранить статус проверки Avito для аккаунта {account.DisplayName}: {persistEx.Message}",
                 DeskLinkAuditLogLevel.Error);
         }
 
         UpdateStatus(MonitoringStatus.RequiresManualAction, account.LastErrorMessage);
 
         _ = GlobalLogger.Instance.LogAsync(
-            $"Avito captcha/firewall detected for account {account.DisplayName} (kind={captchaEx.Kind}, url={captchaEx.Url ?? "<unknown>"}).",
+            $"Avito {(issueKind == AvitoSubProfileIssueKind.IpBlock ? "IP block" : "captcha")} detected for account {account.DisplayName} (kind={captchaEx.Kind}, url={captchaEx.Url ?? "<unknown>"}).",
             DeskLinkAuditLogLevel.Warning,
             properties: new Dictionary<string, object?>
             {
@@ -1105,6 +1110,7 @@ public sealed class MonitoringService(
         var monitoringStatus = kind switch
         {
             AvitoSubProfileIssueKind.Captcha => MonitoringStatus.RequiresManualAction,
+            AvitoSubProfileIssueKind.IpBlock => MonitoringStatus.RequiresManualAction,
             AvitoSubProfileIssueKind.AuthRequired => MonitoringStatus.RequiresAuthorization,
             _ => MonitoringStatus.Running
         };
@@ -1701,11 +1707,14 @@ public sealed class MonitoringService(
             }
             catch (AvitoCaptchaDetectedException captchaEx)
             {
+                var issueKind = AvitoSubProfileIssueKind.FromCaptchaKind(captchaEx.Kind);
                 await PersistSubProfileIssueAsync(
                         account,
                         sub,
-                        AvitoSubProfileIssueKind.Captcha,
-                        $"Avito показал капчу/блок IP ({captchaEx.Kind}). Откройте браузер и пройдите проверку.",
+                        issueKind,
+                        issueKind == AvitoSubProfileIssueKind.IpBlock
+                            ? "Avito ограничил доступ из-за IP. Откройте браузер и дождитесь разблокировки или смените IP."
+                            : $"Avito показал капчу ({captchaEx.Kind}). Откройте браузер и пройдите проверку.",
                         cancellationToken)
                     .ConfigureAwait(false);
                 throw;

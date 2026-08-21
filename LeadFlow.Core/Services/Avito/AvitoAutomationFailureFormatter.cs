@@ -35,7 +35,7 @@ public static class AvitoAutomationFailureFormatter
 
         if (pageState?.HasCaptcha == true || pageState?.PageKind == AvitoPageKind.Captcha)
         {
-            return "на странице капча или блок IP — нужна ручная проверка в браузере.";
+            return "на странице капча — нужна ручная проверка в браузере.";
         }
 
         if (SuggestsLogin(pageState))
@@ -90,7 +90,8 @@ public static class AvitoAutomationFailureFormatter
             _ when inner is AvitoLoginRequiredException => AvitoSubProfileIssueKind.AuthRequired,
             { HasInsufficientAdvance: true } => AvitoSubProfileIssueKind.InsufficientAdvance,
             { HasEmailConfirmationRequired: true } => AvitoSubProfileIssueKind.EmailConfirmationRequired,
-            { HasFirewallIp: true } or { HasCaptcha: true } or { PageKind: AvitoPageKind.Captcha } => AvitoSubProfileIssueKind.Captcha,
+            { HasFirewallIp: true } => AvitoSubProfileIssueKind.IpBlock,
+            { HasCaptcha: true } or { PageKind: AvitoPageKind.Captcha } => AvitoSubProfileIssueKind.Captcha,
             _ when SuggestsLogin(pageState) => AvitoSubProfileIssueKind.AuthRequired,
             { HasLoginForm: true } or { PageKind: AvitoPageKind.Login } => AvitoSubProfileIssueKind.AuthRequired,
             { ProfileSwitchModalOpen: true } => AvitoSubProfileIssueKind.SwitchFailed,
@@ -100,7 +101,9 @@ public static class AvitoAutomationFailureFormatter
         };
 
     public static bool IsAccountBlockingIssue(string kind) =>
-        kind is AvitoSubProfileIssueKind.AuthRequired or AvitoSubProfileIssueKind.Captcha;
+        kind is AvitoSubProfileIssueKind.AuthRequired
+            or AvitoSubProfileIssueKind.Captcha
+            or AvitoSubProfileIssueKind.IpBlock;
 
     private static string FormatAttempts(IReadOnlyList<string>? recoveryAttempts) =>
         recoveryAttempts is { Count: > 0 }
