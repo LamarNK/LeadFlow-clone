@@ -29,13 +29,9 @@ public sealed class StatisticsService(
             return DesignPreviewData.BuildStatisticsIndexViewModel(period, officeContext, filters);
         }
 
-        var workers = await api.GetWorkersAsync(ct) ?? [];
-        var accounts = await api.GetResponseFilterAccountsAsync(ct) ?? [];
-        var workerOptions = BuildWorkerOptions(workers);
-        var accountOptions = BuildAccountOptions(accounts);
-        var activeFilterChips = FilterChipsBuilder.ForStatistics(filters, period, workerOptions, accountOptions);
-
-        var data = await api.GetStatisticsAsync(
+        var workersTask = api.GetWorkersAsync(ct);
+        var accountsTask = api.GetResponseFilterAccountsAsync(ct);
+        var dataTask = api.GetStatisticsAsync(
             period.From,
             period.To,
             filters.WorkerIds,
@@ -43,6 +39,15 @@ public sealed class StatisticsService(
             filters.VacancyQuery,
             period.TimeZoneOffsetMinutes,
             ct);
+        await Task.WhenAll(workersTask, accountsTask, dataTask);
+
+        var workers = await workersTask ?? [];
+        var accounts = await accountsTask ?? [];
+        var workerOptions = BuildWorkerOptions(workers);
+        var accountOptions = BuildAccountOptions(accounts);
+        var activeFilterChips = FilterChipsBuilder.ForStatistics(filters, period, workerOptions, accountOptions);
+
+        var data = await dataTask;
         if (data is null)
         {
             return new StatisticsViewModel

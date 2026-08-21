@@ -68,26 +68,15 @@ public sealed class SettingsService(
             return previewModel with { Header = PageHeaderBuilder.SettingsAdmin() };
         }
 
-        var offices = await api.GetOfficesAsync(ct) ?? [];
+        var officesTask = api.GetOfficesAsync(ct);
         var model = activeTab switch
         {
             "logs" => await BuildLogsTabAsync(q, level, service, date, workerId, page, ct),
-            "offices" => await BuildOfficesTabAsync(officeId, ct),
-            "profiles" => SettingsIndexBuilder.BuildProfilesTab(
-                await api.GetPanelUsersAsync(ct) ?? [],
-                offices,
-                await api.GetAccessProfilesAsync(ct) ?? SettingsIndexBuilder.DefaultAccessProfiles,
-                currentUserId),
-            "workers" => SettingsIndexBuilder.BuildWorkersTab(
-                await api.GetAdminWorkersAsync(ct) ?? [],
-                offices,
-                await api.GetWorkerRegistrationInfoAsync(ct)),
+            "offices" => await BuildOfficesTabAsync(officesTask, officeId, ct),
+            "profiles" => await BuildProfilesTabAsync(officesTask, currentUserId, ct),
+            "workers" => await BuildWorkersTabAsync(officesTask, ct),
             "worker-releases" => await BuildWorkerReleasesTabAsync(ct),
-            _ => SettingsIndexBuilder.BuildUsersTab(
-                await api.GetPanelUsersAsync(ct) ?? [],
-                offices,
-                currentUserId,
-                await api.GetAccessProfilesAsync(ct) ?? SettingsIndexBuilder.DefaultAccessProfiles)
+            _ => await BuildUsersTabAsync(officesTask, currentUserId, ct)
         };
         return model with { Header = PageHeaderBuilder.SettingsAdmin() };
     }
@@ -533,10 +522,9 @@ public sealed class SettingsService(
         int page,
         CancellationToken ct)
     {
-        var workers = await api.GetAdminWorkersAsync(ct) ?? [];
-        var workerOptions = SettingsIndexBuilder.BuildWorkerOptions(workers, workerId);
         var effectiveService = workerId is null ? service : "Orbita.Worker";
-        var pageDto = await api.GetServiceLogsAsync(
+        var workersTask = api.GetAdminWorkersAsync(ct);
+        var pageTask = api.GetServiceLogsAsync(
             q,
             level,
             effectiveService,
@@ -544,9 +532,56 @@ public sealed class SettingsService(
             workerId,
             page,
             SettingsIndexBuilder.LogsPageSize,
-            ct) ?? new ServiceLogsPageDto([], 0, page, SettingsIndexBuilder.LogsPageSize);
+            ct);
+        await Task.WhenAll(workersTask, pageTask);
+        var workers = await workersTask ?? [];
+        var workerOptions = SettingsIndexBuilder.BuildWorkerOptions(workers, workerId);
+        var pageDto = await pageTask ?? new ServiceLogsPageDto([], 0, page, SettingsIndexBuilder.LogsPageSize);
 
         return SettingsIndexBuilder.BuildLogsTab(q, level, effectiveService, date, pageDto, workerId, workerOptions);
+    }
+
+    private async Task<SettingsIndexViewModel> BuildUsersTabAsync(
+        Task<IReadOnlyList<OfficeDto>?> officesTask,
+        string? currentUserId,
+        CancellationToken ct)
+    {
+        var usersTask = api.GetPanelUsersAsync(ct);
+        var profilesTask = api.GetAccessProfilesAsync(ct);
+        await Task.WhenAll(officesTask, usersTask, profilesTask);
+        return SettingsIndexBuilder.BuildUsersTab(
+            await usersTask ?? [],
+            await officesTask ?? [],
+            currentUserId,
+            await profilesTask ?? SettingsIndexBuilder.DefaultAccessProfiles);
+    }
+
+    private async Task<SettingsIndexViewModel> BuildProfilesTabAsync(
+        Task<IReadOnlyList<OfficeDto>?> officesTask,
+        string? currentUserId,
+        CancellationToken ct)
+    {
+        var usersTask = api.GetPanelUsersAsync(ct);
+        var profilesTask = api.GetAccessProfilesAsync(ct);
+        await Task.WhenAll(officesTask, usersTask, profilesTask);
+        return SettingsIndexBuilder.BuildProfilesTab(
+            await usersTask ?? [],
+            await officesTask ?? [],
+            await profilesTask ?? SettingsIndexBuilder.DefaultAccessProfiles,
+            currentUserId);
+    }
+
+    private async Task<SettingsIndexViewModel> BuildWorkersTabAsync(
+        Task<IReadOnlyList<OfficeDto>?> officesTask,
+        CancellationToken ct)
+    {
+        var workersTask = api.GetAdminWorkersAsync(ct);
+        var registrationTask = api.GetWorkerRegistrationInfoAsync(ct);
+        await Task.WhenAll(officesTask, workersTask, registrationTask);
+        return SettingsIndexBuilder.BuildWorkersTab(
+            await workersTask ?? [],
+            await officesTask ?? [],
+            await registrationTask);
     }
 
     private async Task<SettingsIndexViewModel> BuildWorkerReleasesTabAsync(CancellationToken ct)
@@ -557,17 +592,15 @@ public sealed class SettingsService(
     }
 
     private async Task<SettingsIndexViewModel> BuildOfficesTabAsync(
+        Task<IReadOnlyList<OfficeDto>?> officesTask,
         Guid? officeId,
         CancellationToken ct)
     {
-        var offices = await api.GetOfficesAsync(ct) ?? [];
-        OfficeDetailDto? selected = null;
-        if (officeId is Guid parsedOfficeId)
-        {
-            selected = await api.GetOfficeAsync(parsedOfficeId, ct);
-        }
-
-        return SettingsIndexBuilder.BuildOfficesTab(offices, selected);
+        var selectedTask = officeId is Guid parsedOfficeId
+            ? api.GetOfficeAsync(parsedOfficeId, ct)
+            : Task.FromResult<OfficeDetailDto?>(null);
+        await Task.WhenAll(officesTask, selectedTask);
+        return SettingsIndexBuilder.BuildOfficesTab(await officesTask ?? [], await selectedTask);
     }
 
     private static (IReadOnlyList<long> ManagerIds, string? Error) ParseManagerUserIds(string? value)

@@ -36,10 +36,17 @@ public sealed class WorkersService(
                 officeContext.EffectiveOfficeId,
                 officeContext.ShowOfficeColumn);
 
-        var workers = await api.GetWorkersAsync(ct) ?? [];
-        var latestRelease = await api.GetLatestWorkerReleaseAsync(ct);
         var isAdmin = httpContextAccessor.HttpContext?.User.IsInRole(PanelRoles.Admin) == true;
-        var offices = isAdmin ? await api.GetOfficesAsync(ct) ?? [] : [];
+        var workersTask = api.GetWorkersAsync(ct);
+        var latestReleaseTask = api.GetLatestWorkerReleaseAsync(ct);
+        var officesTask = isAdmin
+            ? api.GetOfficesAsync(ct)
+            : Task.FromResult<IReadOnlyList<OfficeDto>?>([]);
+        await Task.WhenAll(workersTask, latestReleaseTask, officesTask);
+
+        var workers = await workersTask ?? [];
+        var latestRelease = await latestReleaseTask;
+        var offices = await officesTask ?? [];
         var rows = workers.Select(MapRow).ToList();
 
         if (!string.IsNullOrWhiteSpace(searchQuery))
@@ -101,11 +108,16 @@ public sealed class WorkersService(
                 accountGroupId);
         }
 
-        var apiWorker = await api.GetWorkerAsync(id, ct);
+        var workerTask = api.GetWorkerAsync(id, ct);
+        var accountsTask = api.GetWorkerAccountsAsync(id, ct);
+        var eventsTask = api.GetEventsAsync(workerId: id, limit: 10, ct: ct);
+        await Task.WhenAll(workerTask, accountsTask, eventsTask);
+
+        var apiWorker = await workerTask;
         if (apiWorker is null) return null;
 
-        var accounts = await api.GetWorkerAccountsAsync(id, ct) ?? [];
-        var events = await api.GetEventsAsync(workerId: id, limit: 10, ct: ct) ?? [];
+        var accounts = await accountsTask ?? [];
+        var events = await eventsTask ?? [];
         var workerEvents = events
             .Where(e => e.WorkerId == id)
             .Take(10)

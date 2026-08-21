@@ -17,7 +17,15 @@ public sealed class DashboardService(
             return DesignPreviewData.BuildDashboardViewModel(period, officeContext);
         }
 
-        var summary = await api.GetSummaryAsync(period.TimeZoneOffsetMinutes, period.From, period.To, ct);
+        var summaryTask = api.GetSummaryAsync(period.TimeZoneOffsetMinutes, period.From, period.To, ct);
+        var workersTask = api.GetWorkersAsync(ct);
+        var eventsTask = api.GetEventsAsync(
+            limit: DashboardRecentEvents.Limit,
+            sinceUtc: DashboardRecentEvents.SinceUtc,
+            ct: ct);
+        await Task.WhenAll(summaryTask, workersTask, eventsTask);
+
+        var summary = await summaryTask;
         if (summary is null)
         {
             return new DashboardViewModel
@@ -26,11 +34,8 @@ public sealed class DashboardService(
             };
         }
 
-        var workers = await api.GetWorkersAsync(ct) ?? [];
-        var events = await api.GetEventsAsync(
-            limit: DashboardRecentEvents.Limit,
-            sinceUtc: DashboardRecentEvents.SinceUtc,
-            ct: ct) ?? [];
+        var workers = await workersTask ?? [];
+        var events = await eventsTask ?? [];
         var accountStats = await BuildAccountStatsAsync(workers, summary, ct);
         var periodStats = AggregatePeriodStats(summary, period);
         var kpiCards = BuildKpiCards(summary, periodStats, period, accountStats);
