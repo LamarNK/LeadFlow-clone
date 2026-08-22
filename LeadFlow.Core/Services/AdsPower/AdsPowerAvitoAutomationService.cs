@@ -689,6 +689,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
         if (html is not null
             && !AvitoCaptchaRedirectRecovery.RequiresRecovery(html)
             && !AvitoCaptchaDetector.CanAttemptGeeTestSolve(html)
+            && !AvitoCaptchaDetector.HasSolvableCaptchaChallenge(html)
             && !string.Equals(kind, "geetest", StringComparison.OrdinalIgnoreCase))
         {
             return false;

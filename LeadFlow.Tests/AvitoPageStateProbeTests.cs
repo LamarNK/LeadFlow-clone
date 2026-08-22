@@ -11,6 +11,8 @@ public sealed class AvitoPageStateProbeTests
         var script = AvitoPageStateScripts.BuildProbeScript();
 
         Assert.Contains("const hasIpBlock", script, StringComparison.Ordinal);
+        Assert.Contains("const hasCaptchaChallenge", script, StringComparison.Ordinal);
+        Assert.Contains("!hasCaptchaChallenge && (hasIpText || hasStaticIpBlock)", script, StringComparison.Ordinal);
         Assert.Contains("const hasFirewallIp = hasIpBlock", script, StringComparison.Ordinal);
     }
 

@@ -5,10 +5,11 @@ namespace LeadFlow.Core.Services.Avito;
 /// <summary>
 /// Детектит «капча/firewall»-страницы Avito, которые встречают нас вместо нормального HTML.
 /// Источник правил — реальные снимки HTML:
-///   • <c>&lt;div class="firewall-container"&gt;</c> с заголовком «Доступ ограничен: проблема с IP»
-///   • статическая страница «Доступ ограничен: проблема с IP» без виджета капчи
+///   • капча: firewall с кнопкой «Продолжить» / «для решения капчи» / GeeTest/hCaptcha
+///     (заголовок может быть «Доступ ограничен: проблема с IP» — это всё равно капча);
+///   • блок IP: статическая страница «Доступ ограничен: проблема с IP» без виджета и без «Продолжить»
 ///     (h1 + советы про VPN/«в самолёте», ссылка <c>support.avito.ru/request/720</c>,
-///     авто-reload с <c>#block</c>),
+///     авто-reload с <c>#block</c>);
 ///   • hCaptcha (<c>&lt;div class="h-captcha"&gt;</c>, <c>data-sitekey</c>),
 ///   • geetest (<c>id="geetest_captcha"</c>),
 ///   • старая капча с картинкой (<c>id="inner-captcha"</c>),
@@ -91,6 +92,11 @@ public static class AvitoCaptchaDetector
             return "firewall";
         }
 
+        if (HasSolvableCaptchaChallenge(html) && HasGeeTestWidget(html))
+        {
+            return "geetest";
+        }
+
         if (Regex.IsMatch(html, @"\bh-captcha\b|hcaptcha\.com|data-hcaptcha-widget-id", RegexOptions.IgnoreCase))
         {
             return "hCaptcha";
@@ -139,13 +145,55 @@ public static class AvitoCaptchaDetector
     }
 
     /// <summary>
-    /// Экран/модалка «Доступ ограничен: проблема с IP», в том числе SPA-оверлей поверх кабинета.
-    /// Это блокировка IP, а не капча: присутствие firewall-разметки или кнопки «Продолжить»
-    /// само по себе не должно менять тип проблемы.
+    /// Живая проверка Avito: GeeTest/hCaptcha/картинка, текст «для решения капчи»
+    /// или кнопка «Продолжить» на firewall-экране. Заголовок «проблема с IP» тут не важен —
+    /// это капча, её можно решать.
+    /// </summary>
+    public static bool HasSolvableCaptchaChallenge(string? html)
+    {
+        if (string.IsNullOrWhiteSpace(html))
+        {
+            return false;
+        }
+
+        if (HasGeeTestWidget(html))
+        {
+            return true;
+        }
+
+        if (Regex.IsMatch(
+                html,
+                @"\bh-captcha\b|hcaptcha\.com|data-hcaptcha-widget-id|id=[""']inner-captcha",
+                RegexOptions.IgnoreCase))
+        {
+            return true;
+        }
+
+        if (Regex.IsMatch(html, @"решени[еюя]\s+капч", RegexOptions.IgnoreCase))
+        {
+            return true;
+        }
+
+        if (!html.Contains("Продолжить", StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        return Regex.IsMatch(
+                   html,
+                   @"firewall-container|js-firewall-form|firewall-title|role=[""']dialog[""']",
+                   RegexOptions.IgnoreCase)
+               || Regex.IsMatch(html, @"капч", RegexOptions.IgnoreCase);
+    }
+
+    /// <summary>
+    /// Статическая страница «Доступ ограничен: проблема с IP» без виджета и без «Продолжить»
+    /// (иллюстрация, VPN/«в самолёте», авто-reload <c>#block</c>). Это блок IP, а не капча.
+    /// Экран с кнопкой «Продолжить» / «для решения капчи» — капча, даже при том же заголовке.
     /// </summary>
     public static bool HasIpBlockChallenge(string? html)
     {
-        if (string.IsNullOrWhiteSpace(html))
+        if (string.IsNullOrWhiteSpace(html) || HasSolvableCaptchaChallenge(html))
         {
             return false;
         }

@@ -69,7 +69,7 @@ public sealed class AvitoCaptchaRedirectRecoveryTests
             """;
 
         Assert.False(AvitoCaptchaRedirectRecovery.RequiresRecovery(html));
-        Assert.False(AvitoGeeTestSolveSupport.ShouldCreateProviderTask(html));
+        Assert.True(AvitoGeeTestSolveSupport.ShouldCreateProviderTask(html));
     }
 
     [Fact]
@@ -86,7 +86,7 @@ public sealed class AvitoCaptchaRedirectRecoveryTests
             """;
 
         Assert.False(AvitoCaptchaRedirectRecovery.RequiresRecovery(html));
-        Assert.False(AvitoGeeTestSolveSupport.ShouldCreateProviderTask(html));
+        Assert.True(AvitoGeeTestSolveSupport.ShouldCreateProviderTask(html));
     }
 
     [Theory]

@@ -1,3 +1,4 @@
+using LeadFlow.Core.Models;
 using LeadFlow.Core.Services.Avito;
 using LeadFlow.Core.Services.Captcha;
 using Xunit;
@@ -32,8 +33,10 @@ public sealed class AvitoCaptchaDetectorTests
             """;
 
         Assert.True(AvitoCaptchaDetector.IsCaptchaHtml(html));
-        Assert.Equal("firewall", AvitoCaptchaDetector.Classify(html));
+        Assert.Equal("geetest", AvitoCaptchaDetector.Classify(html));
         Assert.True(AvitoCaptchaDetector.HasGeeTestWidget(html));
+        Assert.True(AvitoCaptchaDetector.HasSolvableCaptchaChallenge(html));
+        Assert.False(AvitoCaptchaDetector.HasIpBlockChallenge(html));
     }
 
     [Fact]
@@ -190,17 +193,18 @@ public sealed class AvitoCaptchaDetectorTests
             """;
 
         Assert.True(AvitoCaptchaDetector.IsCaptchaHtml(html));
-        Assert.Equal("firewall", AvitoCaptchaDetector.Classify(html));
+        Assert.Equal("geetest", AvitoCaptchaDetector.Classify(html));
         Assert.True(AvitoCaptchaDetector.HasGeeTestWidget(html));
         Assert.Equal(AvitoCaptchaDetector.AvitoGeeTestCaptchaId, AvitoCaptchaDetector.ExtractGeeTestCaptchaId(html));
-        Assert.True(AvitoCaptchaDetector.HasIpBlockChallenge(html));
-        Assert.False(AvitoCaptchaDetector.CanAttemptGeeTestSolve(html));
-        Assert.False(AvitoGeeTestSolveSupport.CanAutoSolve(html, "key"));
-        Assert.False(AvitoGeeTestSolveSupport.ShouldCreateProviderTask(html));
+        Assert.True(AvitoCaptchaDetector.HasSolvableCaptchaChallenge(html));
+        Assert.False(AvitoCaptchaDetector.HasIpBlockChallenge(html));
+        Assert.True(AvitoCaptchaDetector.CanAttemptGeeTestSolve(html));
+        Assert.True(AvitoGeeTestSolveSupport.CanAutoSolve(html, "key"));
+        Assert.True(AvitoGeeTestSolveSupport.ShouldCreateProviderTask(html));
     }
 
     [Fact]
-    public void HasIpBlockChallenge_SpaModalOverCabinet_WithoutGeetestDom()
+    public void SpaModalOverCabinet_WithContinueForCaptcha_IsCaptchaNotIpBlock()
     {
         const string html = """
             <div data-marker="item-snippet/12345">Объявление</div>
@@ -213,15 +217,17 @@ public sealed class AvitoCaptchaDetectorTests
             """;
 
         Assert.True(AvitoCaptchaDetector.IsCaptchaHtml(html));
-        Assert.Equal("firewall", AvitoCaptchaDetector.Classify(html));
+        Assert.Equal("captcha", AvitoCaptchaDetector.Classify(html));
         Assert.False(AvitoCaptchaDetector.HasGeeTestWidget(html));
-        Assert.True(AvitoCaptchaDetector.HasIpBlockChallenge(html));
+        Assert.True(AvitoCaptchaDetector.HasSolvableCaptchaChallenge(html));
+        Assert.False(AvitoCaptchaDetector.HasIpBlockChallenge(html));
         Assert.False(AvitoCaptchaDetector.CanAttemptGeeTestSolve(html));
         Assert.False(AvitoGeeTestSolveSupport.CanAutoSolve(html, "key"));
+        Assert.True(AvitoGeeTestSolveSupport.ShouldCreateProviderTask(html));
     }
 
     [Fact]
-    public void HasIpBlockChallenge_SpaDialogScrollLockInnerLayer_Html3()
+    public void SpaDialog_WithContinueForCaptcha_IsCaptchaNotIpBlock()
     {
         const string html = """
             <div data-scroll-lock-ignore="true" class="fe3060c124f8f2ee">
@@ -238,10 +244,12 @@ public sealed class AvitoCaptchaDetectorTests
             """;
 
         Assert.True(AvitoCaptchaDetector.IsCaptchaHtml(html));
-        Assert.Equal("firewall", AvitoCaptchaDetector.Classify(html));
+        Assert.Equal("captcha", AvitoCaptchaDetector.Classify(html));
         Assert.False(AvitoCaptchaDetector.HasGeeTestWidget(html));
-        Assert.True(AvitoCaptchaDetector.HasIpBlockChallenge(html));
+        Assert.True(AvitoCaptchaDetector.HasSolvableCaptchaChallenge(html));
+        Assert.False(AvitoCaptchaDetector.HasIpBlockChallenge(html));
         Assert.False(AvitoCaptchaDetector.CanAttemptGeeTestSolve(html));
+        Assert.True(AvitoGeeTestSolveSupport.ShouldCreateProviderTask(html));
         Assert.Contains("Продолжить", AvitoGeeTestSolveSupport.BuildClickContinueScript(), StringComparison.Ordinal);
         Assert.Contains("data-scroll-lock-ignore", AvitoGeeTestSolveSupport.BuildClickContinueScript(), StringComparison.Ordinal);
     }
@@ -282,5 +290,71 @@ public sealed class AvitoCaptchaDetectorTests
         Assert.False(AvitoCaptchaDetector.HasIpBlockChallenge(html));
         Assert.Equal("geetest", AvitoCaptchaDetector.Classify(html));
         Assert.True(AvitoCaptchaDetector.CanAttemptGeeTestSolve(html));
+    }
+
+    [Fact]
+    public void Classify_ContinueButtonIpTitle_IsCaptcha_NotFirewall()
+    {
+        // Скрин 2026-08-22: красный крест, «Продолжить для решения капчи».
+        // Заголовок «проблема с IP» не делает это блоком IP.
+        const string html = """
+            <div class="firewall-container">
+              <h2 class="firewall-title">Доступ ограничен: проблема с IP</h2>
+              <p>Иногда такое случается, чтобы вернуться на сайт нажмите на кнопку
+              <b>Продолжить</b> для решения капчи</p>
+              <button type="button" name="submit">Продолжить</button>
+              <p>Что можно сделать, если проблема повторяется</p>
+              <ul>
+                <li>Отключить VPN.</li>
+                <li>Перезагрузить роутер.</li>
+                <li>Запустить проверку антивирусом.</li>
+              </ul>
+              <a href="https://support.avito.ru/request/720">напишите поддержке</a>
+              <p>Что не так с IP</p>
+            </div>
+            """;
+
+        Assert.True(AvitoCaptchaDetector.IsCaptchaHtml(html));
+        Assert.True(AvitoCaptchaDetector.HasSolvableCaptchaChallenge(html));
+        Assert.False(AvitoCaptchaDetector.HasIpBlockChallenge(html));
+        Assert.NotEqual("firewall", AvitoCaptchaDetector.Classify(html));
+        Assert.Equal(AvitoSubProfileIssueKind.Captcha, AvitoSubProfileIssueKind.FromCaptchaKind(AvitoCaptchaDetector.Classify(html)));
+    }
+
+    [Fact]
+    public void Classify_StaticIpBlockPageWithDucks_IsFirewall()
+    {
+        // Скрин 2026-08-22: иллюстрация, без «Продолжить» и без капчи.
+        const string html = """
+            <html><head>
+              <title>Доступ ограничен: проблема с IP</title>
+            </head>
+            <body>
+              <div class="container">
+                <h1>Доступ ограничен: проблема с IP</h1>
+                <p>Иногда такое случается — подождите немного и обновите страницу. Если проблема не уходит, вот что можно сделать:</p>
+                <ul>
+                  <li>Отключить VPN.</li>
+                  <li>Включить и выключить режим «В самолёте».</li>
+                  <li>Подключиться к другой сети.</li>
+                  <li>Перезагрузить роутер.</li>
+                </ul>
+                <p>
+                  Если и это не сработает, напишите <a href="https://support.avito.ru/request/720">в поддержку</a>.
+                </p>
+              </div>
+              <script>
+                if (window.location.hash != "#block") {
+                    window.location.reload();
+                }
+              </script>
+            </body></html>
+            """;
+
+        Assert.True(AvitoCaptchaDetector.IsCaptchaHtml(html));
+        Assert.False(AvitoCaptchaDetector.HasSolvableCaptchaChallenge(html));
+        Assert.True(AvitoCaptchaDetector.HasIpBlockChallenge(html));
+        Assert.Equal("firewall", AvitoCaptchaDetector.Classify(html));
+        Assert.Equal(AvitoSubProfileIssueKind.IpBlock, AvitoSubProfileIssueKind.FromCaptchaKind("firewall"));
     }
 }

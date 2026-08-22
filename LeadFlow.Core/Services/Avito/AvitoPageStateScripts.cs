@@ -95,16 +95,21 @@ public static class AvitoPageStateScripts
             const hasStaticIpBlock = location.hash === "#block"
               && !!document.querySelector('a[href*="support.avito.ru/request/720"]')
               && /Отключить\s+VPN|самол[её]те/i.test(probeText);
-            const hasIpBlock = hasIpText || hasStaticIpBlock;
-            const hasFirewallIp = hasIpBlock;
-
             const hasCaptchaWidget = !!(
                 document.getElementById("geetest_captcha") ||
                 document.getElementById("inner-captcha") ||
                 document.getElementById("h-captcha") ||
                 document.querySelector(".h-captcha[data-sitekey]")
             );
-            const hasCaptcha = hasFirewallDom || hasFirewallText || hasCaptchaWidget || hasIpBlock;
+            const hasCaptchaContinue = /Продолжить/i.test(probeText)
+              && (/капч/i.test(probeText)
+                  || !!document.querySelector('.firewall-container, .js-firewall-form, .firewall-title, form.js-firewall-form, [role="dialog"][aria-modal="true"]'));
+            const hasCaptchaChallenge = hasCaptchaWidget
+              || /решени[еюя]\s+капч/i.test(probeText)
+              || hasCaptchaContinue;
+            const hasIpBlock = !hasCaptchaChallenge && (hasIpText || hasStaticIpBlock);
+            const hasFirewallIp = hasIpBlock;
+            const hasCaptcha = hasFirewallDom || hasFirewallText || hasCaptchaWidget || hasIpBlock || hasCaptchaChallenge;
             // Баннер Avito Pro: скрытые объявления из-за нулевого/недостаточного аванса.
             // Оба текста обязательны, чтобы не принять обычный блок баланса за ошибку.
             const hasInsufficientAdvance =
