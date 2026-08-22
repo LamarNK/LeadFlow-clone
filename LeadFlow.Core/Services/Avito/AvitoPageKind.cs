@@ -9,5 +9,7 @@ public enum AvitoPageKind
     ProfileItems,
     ProfileSwitchModal,
     Login,
-    Captcha
+    Captcha,
+    /// <summary>Заглушка Avito «Ошибка / обновите страницу» — часто из-за зависшего прокси.</summary>
+    TransientError
 }

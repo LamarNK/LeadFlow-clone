@@ -218,6 +218,18 @@ public static class MonitoringTiming
     /// <summary>Сколько раз повторять переключение субпрофиля с восстановлением страницы между попытками.</summary>
     public const int SubProfileSwitchMaxAttempts = 3;
 
+    /// <summary>
+    /// Сколько раз обновлять вкладку, если Avito показал заглушку «Ошибка / обновите страницу»
+    /// (часто из-за зависшего прокси).
+    /// </summary>
+    public const int TransientErrorReloadMaxAttempts = 2;
+
+    /// <summary>Пауза после обновления заглушки Avito перед повторной проверкой DOM (мс).</summary>
+    public const int TransientErrorReloadSettleMs = 1800;
+
+    /// <summary>Таймаут Reload на заглушке Avito (мс).</summary>
+    public const int TransientErrorReloadTimeoutMs = 45_000;
+
     /// <summary>Максимум ожидания подтверждения активного суб-профиля после switch (мс).</summary>
     public const int VerifySubProfileMaxWaitMs = 20_000;
 

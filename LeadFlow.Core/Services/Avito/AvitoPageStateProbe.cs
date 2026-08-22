@@ -43,7 +43,9 @@ public static class AvitoPageStateProbe
                 root.TryGetProperty("hasInsufficientAdvance", out var insufficientAdvance)
                     && insufficientAdvance.ValueKind == JsonValueKind.True,
                 root.TryGetProperty("hasEmailConfirmationRequired", out var emailConfirmation)
-                    && emailConfirmation.ValueKind == JsonValueKind.True);
+                    && emailConfirmation.ValueKind == JsonValueKind.True,
+                root.TryGetProperty("hasTransientError", out var transientError)
+                    && transientError.ValueKind == JsonValueKind.True);
         }
         catch
         {
@@ -59,6 +61,7 @@ public static class AvitoPageStateProbe
         "profileswitchmodal" => AvitoPageKind.ProfileSwitchModal,
         "login" => AvitoPageKind.Login,
         "captcha" => AvitoPageKind.Captcha,
+        "transienterror" => AvitoPageKind.TransientError,
         _ => AvitoPageKind.Unknown
     };
 

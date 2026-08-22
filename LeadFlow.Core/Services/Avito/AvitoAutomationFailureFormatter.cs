@@ -43,6 +43,11 @@ public static class AvitoAutomationFailureFormatter
             return "требуется повторная авторизация в Avito — автовход не удался, откройте браузер AdsPower и войдите (телефон/почта и пароль).";
         }
 
+        if (pageState?.IsTransientPageError == true)
+        {
+            return "страница Avito зависла с ошибкой «обновите страницу» — прокси мог подвиснуть, повторные обновления не помогли.";
+        }
+
         if (pageState?.ProfileSwitchModalOpen == true)
         {
             var count = pageState.ProfileCardsCount;
@@ -94,6 +99,7 @@ public static class AvitoAutomationFailureFormatter
             { HasCaptcha: true } or { PageKind: AvitoPageKind.Captcha } => AvitoSubProfileIssueKind.Captcha,
             _ when SuggestsLogin(pageState) => AvitoSubProfileIssueKind.AuthRequired,
             { HasLoginForm: true } or { PageKind: AvitoPageKind.Login } => AvitoSubProfileIssueKind.AuthRequired,
+            { HasTransientError: true } or { PageKind: AvitoPageKind.TransientError } => AvitoSubProfileIssueKind.SwitchFailed,
             { ProfileSwitchModalOpen: true } => AvitoSubProfileIssueKind.SwitchFailed,
             _ when inner is AvitoPageMismatchException => AvitoSubProfileIssueKind.SwitchFailed,
             _ when inner is JsonException => AvitoSubProfileIssueKind.ParseFailed,

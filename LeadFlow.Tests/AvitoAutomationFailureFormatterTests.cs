@@ -183,6 +183,32 @@ public sealed class AvitoAutomationFailureFormatterTests
     }
 
     [Fact]
+    public void Format_WhenTransientErrorPage_ExplainsRefreshAndProxy()
+    {
+        var state = new AvitoPageState(
+            AvitoPageKind.TransientError,
+            "https://www.avito.ru/profile/pro/items",
+            "Мои объявления",
+            false,
+            0,
+            null,
+            "Кадровый отдел 3",
+            0,
+            false,
+            false,
+            HasTransientError: true);
+
+        var message = AvitoAutomationFailureFormatter.Format("переключение субпрофиля", state);
+        var kind = AvitoAutomationFailureFormatter.MapDiagnosticKind(state, null);
+
+        Assert.Equal(AvitoSubProfileIssueKind.SwitchFailed, kind);
+        Assert.False(AvitoAutomationFailureFormatter.IsAccountBlockingIssue(kind));
+        Assert.Contains("обновите страницу", message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("прокси", message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("ошибка на шаге", message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void Format_WhenCandidatesPageDuringSwitch_ReturnsLoadOrOverlayHint()
     {
         var state = new AvitoPageState(

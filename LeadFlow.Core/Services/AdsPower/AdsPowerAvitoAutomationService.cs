@@ -1460,6 +1460,36 @@ public sealed partial class AdsPowerAvitoAutomationService(
                         ["attempt"] = i + 1
                     });
                 await ThrowIfCaptchaOnPageAsync(page, cancellationToken).ConfigureAwait(false);
+                var switchNavState = await ProbePageStateAsync(page, cancellationToken).ConfigureAwait(false);
+                if (switchNavState?.IsTransientPageError == true)
+                {
+                    _ = GlobalLogger.Instance.LogAsync(
+                        "AdsPower profile-switch: Avito error page after switch navigation, refreshing.",
+                        DeskLinkAuditLogLevel.Warning,
+                        memberName: callerMemberName,
+                        properties: new Dictionary<string, object?>
+                        {
+                            ["step"] = "switch_nav_transient_error",
+                            ["page.url"] = page.Url,
+                            ["attempt"] = i + 1
+                        });
+
+                    var recovered = await TryRecoverTransientAvitoErrorAsync(
+                            page,
+                            cancellationToken,
+                            callerMemberName)
+                        .ConfigureAwait(false);
+                    if (!recovered)
+                    {
+                        if (i < 2)
+                        {
+                            continue;
+                        }
+
+                        break;
+                    }
+                }
+
                 if (IsOnProfileSwitchPage(page.Url))
                 {
                     return;
@@ -1718,6 +1748,18 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 cancellationToken.ThrowIfCancellationRequested();
 
                 var state = await ProbePageStateAsync(page, cancellationToken).ConfigureAwait(false);
+                if (state?.IsTransientPageError == true)
+                {
+                    recoveryAttempts.Add($"попытка {attempt}: обновить страницу (ошибка Avito, прокси мог подвиснуть)");
+                    if (await TryRecoverTransientAvitoErrorAsync(
+                            page,
+                            cancellationToken,
+                            nameof(EnsureOnCandidatesPageAsync)).ConfigureAwait(false))
+                    {
+                        continue;
+                    }
+                }
+
                 if (AvitoAutomationFailureFormatter.SuggestsLogin(state))
                 {
                     if (await TryRecoverAvitoLoginAsync(page, cancellationToken).ConfigureAwait(false))

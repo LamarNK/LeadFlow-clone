@@ -182,6 +182,13 @@ public sealed partial class AdsPowerAvitoAutomationService
             warmupState = await ProbePageStateAsync(page, cancellationToken).ConfigureAwait(false);
         }
 
+        if (warmupState?.IsTransientPageError == true)
+        {
+            await TryRecoverTransientAvitoErrorAsync(page, cancellationToken, nameof(WarmUpSessionPageAsync))
+                .ConfigureAwait(false);
+            warmupState = await ProbePageStateAsync(page, cancellationToken).ConfigureAwait(false);
+        }
+
         if (warmupState?.HasLoginForm == true
             || warmupState?.PageKind == AvitoPageKind.Login
             || AvitoAutomationFailureFormatter.SuggestsLogin(warmupState))
@@ -229,6 +236,9 @@ public sealed partial class AdsPowerAvitoAutomationService
             return false;
         }
 
+        await TryRecoverTransientAvitoErrorAsync(page, cancellationToken, nameof(SwitchSubProfileOnPageAsync))
+            .ConfigureAwait(false);
+
         for (var attempt = 1; attempt <= MonitoringTiming.SubProfileSwitchMaxAttempts; attempt++)
         {
             if (await TrySwitchSubProfileOnPageOnceAsync(page, subProfileId, cancellationToken)
@@ -269,7 +279,8 @@ public sealed partial class AdsPowerAvitoAutomationService
                     ["step"] = "switch_retry",
                     ["attempt"] = attempt,
                     ["avito.subProfileId"] = subProfileId,
-                    ["page.url"] = page.Url
+                    ["page.url"] = page.Url,
+                    ["page.transientError"] = postFailState?.IsTransientPageError == true
                 });
 
             await RecoverPageBeforeSubProfileSwitchRetryAsync(page, cancellationToken, attempt)
@@ -284,11 +295,119 @@ public sealed partial class AdsPowerAvitoAutomationService
         CancellationToken cancellationToken,
         int attempt)
     {
+        await TryRecoverTransientAvitoErrorAsync(page, cancellationToken, nameof(SwitchSubProfileOnPageAsync))
+            .ConfigureAwait(false);
         await DismissAvitoBlockingOverlaysAsync(page, cancellationToken).ConfigureAwait(false);
         await DismissProfileSwitchModalAsync(page, cancellationToken).ConfigureAwait(false);
         await BounceToDashboardBeforeSwitchAsync(page, cancellationToken, nameof(SwitchSubProfileOnPageAsync))
             .ConfigureAwait(false);
         await Task.Delay(attempt * 1200, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static bool IsTransientAvitoError(AvitoPageState? pageState) =>
+        pageState?.IsTransientPageError == true;
+
+    /// <summary>
+    /// Заглушка Avito «Ошибка / обновите страницу»: сначала клик «Обновить», затем Reload.
+    /// Прокси AdsPower часто отвисает после пары обновлений.
+    /// </summary>
+    private async Task<bool> TryRecoverTransientAvitoErrorAsync(
+        IPage page,
+        CancellationToken cancellationToken,
+        string callerMemberName)
+    {
+        var state = await ProbePageStateAsync(page, cancellationToken).ConfigureAwait(false);
+        if (!IsTransientAvitoError(state))
+        {
+            return true;
+        }
+
+        for (var attempt = 1; attempt <= MonitoringTiming.TransientErrorReloadMaxAttempts; attempt++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var clickedRefresh = false;
+            if (attempt == 1)
+            {
+                clickedRefresh = await PuppeteerJsonEvaluator.EvaluateBoolAsync(
+                        page,
+                        AvitoPageStateScripts.BuildClickRefreshOnTransientErrorScript(),
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            if (!clickedRefresh)
+            {
+                await TryReloadPageForTransientErrorAsync(page, cancellationToken).ConfigureAwait(false);
+            }
+
+            _ = GlobalLogger.Instance.LogAsync(
+                clickedRefresh
+                    ? $"AdsPower: Avito error page — clicked «Обновить» ({attempt}/{MonitoringTiming.TransientErrorReloadMaxAttempts})."
+                    : $"AdsPower: Avito error page — reloaded tab ({attempt}/{MonitoringTiming.TransientErrorReloadMaxAttempts}), proxy may be stuck.",
+                DeskLinkAuditLogLevel.Warning,
+                memberName: callerMemberName,
+                properties: new Dictionary<string, object?>
+                {
+                    ["step"] = "transient_error_reload",
+                    ["attempt"] = attempt,
+                    ["reload.clickedRefresh"] = clickedRefresh,
+                    ["page.url"] = page.Url
+                });
+
+            await Task.Delay(MonitoringTiming.TransientErrorReloadSettleMs, cancellationToken)
+                .ConfigureAwait(false);
+
+            state = await ProbePageStateAsync(page, cancellationToken).ConfigureAwait(false);
+            if (!IsTransientAvitoError(state))
+            {
+                _ = GlobalLogger.Instance.LogAsync(
+                    "AdsPower: Avito recovered after refresh of error page.",
+                    DeskLinkAuditLogLevel.Info,
+                    memberName: callerMemberName,
+                    properties: new Dictionary<string, object?>
+                    {
+                        ["step"] = "transient_error_recovered",
+                        ["attempt"] = attempt,
+                        ["page.url"] = page.Url
+                    });
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static async Task TryReloadPageForTransientErrorAsync(
+        IPage page,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await page.ReloadAsync(MonitoringTiming.TransientErrorReloadTimeoutMs).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            await Task.Delay(1400, cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await page.ReloadAsync(MonitoringTiming.TransientErrorReloadTimeoutMs).ConfigureAwait(false);
+            }
+            catch (Exception retryEx) when (retryEx is not OperationCanceledException)
+            {
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"AdsPower: reload of Avito error page failed: {retryEx.Message}",
+                    DeskLinkAuditLogLevel.Warning,
+                    memberName: nameof(TryReloadPageForTransientErrorAsync),
+                    properties: new Dictionary<string, object?>
+                    {
+                        ["step"] = "transient_error_reload_failed",
+                        ["page.url"] = page.Url,
+                        ["error.type"] = retryEx.GetType().FullName,
+                        ["error.first"] = ex.Message
+                    });
+            }
+        }
     }
 
     private static bool CanTryClearCaptcha(AvitoPageState? pageState) =>

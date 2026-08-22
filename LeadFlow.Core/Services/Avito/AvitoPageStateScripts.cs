@@ -117,12 +117,18 @@ public static class AvitoPageStateScripts
                 && /на\s+авансе\s+недостаточно\s+денег/i.test(probeText);
             const hasEmailConfirmationRequired =
                 /подтвердите\s+почту\s+по\s+ссылке\s+из\s+письма/i.test(probeText);
+            // Заглушка SPA: «Ошибка / Попробуйте обновить страницу…» — URL при этом остаётся /profile/pro/items.
+            const hasTransientError =
+                /Попробуйте\s+обновить\s+страницу\s+или\s+загляните\s+позже/i.test(probeText)
+                || /обязательно\s+всё\s+починим/i.test(probeText);
 
             let pageKind = "unknown";
             if (hasCaptcha) {
                 pageKind = "captcha";
             } else if (hasLoginForm) {
                 pageKind = "login";
+            } else if (hasTransientError) {
+                pageKind = "transientError";
             } else if (profileSwitchModalOpen) {
                 pageKind = "profileSwitchModal";
             } else if (
@@ -156,8 +162,25 @@ public static class AvitoPageStateScripts
                 hasCaptcha,
                 hasFirewallIp,
                 hasInsufficientAdvance,
-                hasEmailConfirmationRequired
+                hasEmailConfirmationRequired,
+                hasTransientError
             });
         })();
+        """;
+
+    /// <summary>Кликает кнопку «Обновить» на заглушке Avito, только если виден её текст.</summary>
+    public static string BuildClickRefreshOnTransientErrorScript() =>
+        """
+        (() => {
+            const probeText = ((document.title ?? "") + "\n" + (document.body?.innerText ?? "")).slice(0, 8000);
+            const isTransient =
+                /Попробуйте\s+обновить\s+страницу\s+или\s+загляните\s+позже/i.test(probeText)
+                || /обязательно\s+всё\s+починим/i.test(probeText);
+            if (!isTransient) return false;
+            const buttons = Array.from(document.querySelectorAll("button, a, [role='button']"));
+            const btn = buttons.find((el) => /^\s*Обновить\s*$/i.test((el.textContent || "").trim()));
+            if (!btn) return false;
+            try { btn.click(); return true; } catch { return false; }
+        })()
         """;
 }
