@@ -183,6 +183,155 @@ public sealed class CandidateIngestionServiceTests
     }
 
     [Fact]
+    public async Task IngestBatchAsync_ExistingWatch_BackfillsCreatedAtFromChatWhenFallbackWasUsed()
+    {
+        await using var db = CreateDb();
+        SeedWorker(db, autoDistributionEnabled: false);
+
+        var accountId = Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc");
+        var collectedAt = new DateTime(2026, 8, 21, 14, 22, 56, DateTimeKind.Utc);
+        var chatAt = new DateTime(2026, 8, 14, 8, 15, 0, DateTimeKind.Utc);
+        var person = TestCandidatePersonFactory.CreatePerson(OfficeId, createdAtUtc: collectedAt);
+        var response = TestCandidatePersonFactory.CreateResponse(
+            OfficeId,
+            person.Id,
+            WorkerId,
+            sourceResponseId: "phone-watch:chat-date",
+            createdAt: collectedAt);
+        response.AccountId = accountId;
+        response.ChatMessagesJson = string.Empty;
+        db.CandidatePersons.Add(person);
+        db.CandidateResponses.Add(response);
+        await db.SaveChangesAsync();
+
+        var sut = CreateService(db);
+        await sut.IngestBatchAsync(WorkerId, new WorkerCandidateBatchRequest([
+            new WorkerCandidateDto(
+                accountId,
+                "acc",
+                "Avito",
+                "phone-watch:chat-date",
+                "",
+                "Test User",
+                25,
+                null,
+                "79001111111",
+                "Москва",
+                "Охранник",
+                "",
+                "",
+                "",
+                "",
+                """[{"text":"Кандидат откликнулся на вакансию. Его данные сохранились в разделе «Отклики».","at":"2026-08-14T08:15:00Z","side":"left","isPlatform":true}]""",
+                chatAt,
+                CollectedAt: DateTime.UtcNow)
+        ]));
+
+        var stored = await db.CandidateResponses.SingleAsync(x => x.Id == response.Id);
+        Assert.Equal(chatAt, stored.CreatedAt);
+        Assert.Equal(collectedAt, stored.CollectedAt);
+    }
+
+    [Fact]
+    public async Task IngestBatchAsync_ExistingWatch_BackfillsCreatedAtFromChatJsonWhenWorkerSentFallback()
+    {
+        await using var db = CreateDb();
+        SeedWorker(db, autoDistributionEnabled: false);
+
+        var accountId = Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc");
+        var collectedAt = new DateTime(2026, 8, 21, 14, 22, 56, DateTimeKind.Utc);
+        var laterPassAt = new DateTime(2026, 8, 21, 18, 0, 0, DateTimeKind.Utc);
+        var person = TestCandidatePersonFactory.CreatePerson(OfficeId, createdAtUtc: collectedAt);
+        var response = TestCandidatePersonFactory.CreateResponse(
+            OfficeId,
+            person.Id,
+            WorkerId,
+            sourceResponseId: "phone-watch:chat-json",
+            createdAt: collectedAt);
+        response.AccountId = accountId;
+        db.CandidatePersons.Add(person);
+        db.CandidateResponses.Add(response);
+        await db.SaveChangesAsync();
+
+        var sut = CreateService(db);
+        await sut.IngestBatchAsync(WorkerId, new WorkerCandidateBatchRequest([
+            new WorkerCandidateDto(
+                accountId,
+                "acc",
+                "Avito",
+                "phone-watch:chat-json",
+                "",
+                "Test User",
+                25,
+                null,
+                "79001111111",
+                "Москва",
+                "Охранник",
+                "",
+                "",
+                "",
+                "",
+                """[{"text":"Кандидат откликнулся на вакансию.","at":"2026-08-14T08:15:00Z","side":"left","isPlatform":true}]""",
+                laterPassAt,
+                CollectedAt: laterPassAt)
+        ]));
+
+        var stored = await db.CandidateResponses.SingleAsync(x => x.Id == response.Id);
+        Assert.Equal(new DateTime(2026, 8, 14, 8, 15, 0, DateTimeKind.Utc), stored.CreatedAt);
+        Assert.Equal(collectedAt, stored.CollectedAt);
+    }
+
+    [Fact]
+    public async Task IngestBatchAsync_ExistingWatch_DoesNotOverwriteKnownCreatedAt()
+    {
+        await using var db = CreateDb();
+        SeedWorker(db, autoDistributionEnabled: false);
+
+        var accountId = Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc");
+        var collectedAt = new DateTime(2026, 8, 21, 14, 22, 56, DateTimeKind.Utc);
+        var knownAt = new DateTime(2026, 8, 10, 9, 0, 0, DateTimeKind.Utc);
+        var person = TestCandidatePersonFactory.CreatePerson(OfficeId, createdAtUtc: collectedAt);
+        var response = TestCandidatePersonFactory.CreateResponse(
+            OfficeId,
+            person.Id,
+            WorkerId,
+            sourceResponseId: "phone-watch:known-date",
+            createdAt: knownAt);
+        response.AccountId = accountId;
+        response.CollectedAt = collectedAt;
+        db.CandidatePersons.Add(person);
+        db.CandidateResponses.Add(response);
+        await db.SaveChangesAsync();
+
+        var sut = CreateService(db);
+        await sut.IngestBatchAsync(WorkerId, new WorkerCandidateBatchRequest([
+            new WorkerCandidateDto(
+                accountId,
+                "acc",
+                "Avito",
+                "phone-watch:known-date",
+                "",
+                "Test User",
+                25,
+                null,
+                "79001111111",
+                "Москва",
+                "Охранник",
+                "",
+                "",
+                "",
+                "",
+                """[{"text":"Кандидат откликнулся на вакансию.","at":"2026-08-14T08:15:00Z","side":"left","isPlatform":true}]""",
+                new DateTime(2026, 8, 14, 8, 15, 0, DateTimeKind.Utc),
+                CollectedAt: DateTime.UtcNow)
+        ]));
+
+        var stored = await db.CandidateResponses.SingleAsync(x => x.Id == response.Id);
+        Assert.Equal(knownAt, stored.CreatedAt);
+        Assert.Equal(collectedAt, stored.CollectedAt);
+    }
+
+    [Fact]
     public async Task IngestBatchAsync_PhoneChangedMetric_DoesNotMarkAsDuplicate()
     {
         await using var db = CreateDb();
