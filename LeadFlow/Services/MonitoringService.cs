@@ -1475,7 +1475,7 @@ public sealed class MonitoringService(
                     .SwitchSubProfileAsync(sub.Id, cancellationToken)
                     .ConfigureAwait(false);
 
-                if (!switched)
+                if (!switched.Ok)
                 {
                     _ = GlobalLogger.Instance.LogAsync(
                         $"Sub-profile \"{sub.Name}\" (id={sub.Id}) of account {account.DisplayName}: profile switch failed (modal did not close), skipping.",

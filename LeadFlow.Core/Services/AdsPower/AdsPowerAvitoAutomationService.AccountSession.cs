@@ -226,43 +226,44 @@ public sealed partial class AdsPowerAvitoAutomationService
         return page;
     }
 
-    private async Task<bool> SwitchSubProfileOnPageAsync(
+    private async Task<SubProfileSwitchResult> SwitchSubProfileOnPageAsync(
         IPage page,
         string subProfileId,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(subProfileId))
         {
-            return false;
+            return new SubProfileSwitchResult(SubProfileSwitchStatus.Unknown, "empty-id");
         }
 
         await TryRecoverTransientAvitoErrorAsync(page, cancellationToken, nameof(SwitchSubProfileOnPageAsync))
             .ConfigureAwait(false);
 
+        SubProfileSwitchResult last = new(SubProfileSwitchStatus.Unknown);
         for (var attempt = 1; attempt <= MonitoringTiming.SubProfileSwitchMaxAttempts; attempt++)
         {
-            if (await TrySwitchSubProfileOnPageOnceAsync(page, subProfileId, cancellationToken)
-                    .ConfigureAwait(false))
+            last = await TrySwitchSubProfileOnPageOnceAsync(page, subProfileId, cancellationToken)
+                .ConfigureAwait(false);
+            if (last.Ok)
             {
-                return true;
+                return last;
             }
 
-            var postFailState = await ProbePageStateAsync(page, cancellationToken).ConfigureAwait(false);
-            if (postFailState?.HasCaptcha == true || postFailState?.PageKind == AvitoPageKind.Captcha)
+            if (last.IsCaptcha)
             {
+                var postFailState = await ProbePageStateAsync(page, cancellationToken).ConfigureAwait(false);
                 if (CanTryClearCaptcha(postFailState)
                     && await TryClearGeeTestCaptchaAsync(page, cancellationToken).ConfigureAwait(false))
                 {
                     continue;
                 }
 
-                return false;
+                return last;
             }
 
-            if (postFailState?.HasLoginForm == true
-                || postFailState?.PageKind == AvitoPageKind.Login)
+            if (last.IsLogin)
             {
-                return false;
+                return last;
             }
 
             if (attempt >= MonitoringTiming.SubProfileSwitchMaxAttempts)
@@ -279,15 +280,15 @@ public sealed partial class AdsPowerAvitoAutomationService
                     ["step"] = "switch_retry",
                     ["attempt"] = attempt,
                     ["avito.subProfileId"] = subProfileId,
-                    ["page.url"] = page.Url,
-                    ["page.transientError"] = postFailState?.IsTransientPageError == true
+                    ["switch.status"] = last.Status.ToString(),
+                    ["page.url"] = page.Url
                 });
 
             await RecoverPageBeforeSubProfileSwitchRetryAsync(page, cancellationToken, attempt)
                 .ConfigureAwait(false);
         }
 
-        return false;
+        return last;
     }
 
     private async Task RecoverPageBeforeSubProfileSwitchRetryAsync(
@@ -414,7 +415,7 @@ public sealed partial class AdsPowerAvitoAutomationService
         pageState?.HasFirewallIp != true
         && (pageState?.HasCaptcha == true || pageState?.PageKind == AvitoPageKind.Captcha);
 
-    private async Task<bool> TrySwitchSubProfileOnPageOnceAsync(
+    private async Task<SubProfileSwitchResult> TrySwitchSubProfileOnPageOnceAsync(
         IPage page,
         string subProfileId,
         CancellationToken cancellationToken)
@@ -475,7 +476,7 @@ public sealed partial class AdsPowerAvitoAutomationService
                         ["page.url"] = page.Url,
                         ["pageState"] = preSwitchState.DescribeForDiagnostics()
                     });
-                return false;
+                return new SubProfileSwitchResult(SubProfileSwitchStatus.Login);
             }
         }
 
@@ -500,7 +501,10 @@ public sealed partial class AdsPowerAvitoAutomationService
                         ["page.url"] = page.Url,
                         ["pageState"] = preSwitchState?.DescribeForDiagnostics()
                     });
-                return false;
+                return new SubProfileSwitchResult(
+                    preSwitchState?.HasFirewallIp == true
+                        ? SubProfileSwitchStatus.IpBlock
+                        : SubProfileSwitchStatus.Captcha);
             }
         }
 
@@ -527,7 +531,7 @@ public sealed partial class AdsPowerAvitoAutomationService
                     ["avito.subProfileId"] = subProfileId,
                     ["page.url"] = page.Url
                 });
-            return false;
+            return new SubProfileSwitchResult(SubProfileSwitchStatus.ModalNotReady);
         }
 
         if (await IsTargetSubProfileAlreadyCurrentAsync(page, subProfileId).ConfigureAwait(false))
@@ -542,7 +546,7 @@ public sealed partial class AdsPowerAvitoAutomationService
                     ["step"] = "already_current",
                     ["avito.subProfileId"] = subProfileId
                 });
-            return true;
+            return SubProfileSwitchResult.Succeeded;
         }
 
         var switched = await TryClickSubProfileCardAndWaitCloseAsync(page, subProfileId, cancellationToken)
@@ -550,9 +554,10 @@ public sealed partial class AdsPowerAvitoAutomationService
         if (!switched)
         {
             await DismissProfileSwitchModalAsync(page, cancellationToken).ConfigureAwait(false);
+            return new SubProfileSwitchResult(SubProfileSwitchStatus.ClickFailed);
         }
 
-        return switched;
+        return SubProfileSwitchResult.Succeeded;
     }
 
     private async Task<bool> VerifyActiveSubProfileOnPageAsync(
@@ -1016,7 +1021,7 @@ public sealed partial class AdsPowerAvitoAutomationService
             CancellationToken cancellationToken = default) =>
             BrowserMonitorScreencastCapture.StartAsync(page, cancellationToken);
 
-        public async Task<bool> SwitchSubProfileAsync(string subProfileId, CancellationToken cancellationToken = default)
+        public async Task<SubProfileSwitchResult> SwitchSubProfileAsync(string subProfileId, CancellationToken cancellationToken = default)
         {
             using var _ = AvitoCaptchaTaskContext.Use(captchaOptions);
             return await owner.SwitchSubProfileOnPageAsync(page, subProfileId, cancellationToken).ConfigureAwait(false);

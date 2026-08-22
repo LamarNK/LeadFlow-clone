@@ -776,11 +776,11 @@ public sealed class MonitoringServiceTests
         {
             public string AdsPowerUserId { get; } = adsPowerUserId;
 
-            public Task<bool> SwitchSubProfileAsync(string subProfileId, CancellationToken cancellationToken = default)
+            public Task<SubProfileSwitchResult> SwitchSubProfileAsync(string subProfileId, CancellationToken cancellationToken = default)
             {
                 owner._currentSubProfileId = subProfileId;
                 owner.SwitchCalls.Add(subProfileId);
-                return Task.FromResult(true);
+                return Task.FromResult(SubProfileSwitchResult.Succeeded);
             }
 
             public Task<bool> VerifyActiveSubProfileAsync(string subProfileId, CancellationToken cancellationToken = default) =>
