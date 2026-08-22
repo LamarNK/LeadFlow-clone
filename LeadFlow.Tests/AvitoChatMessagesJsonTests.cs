@@ -39,6 +39,23 @@ public sealed class AvitoChatMessagesJsonTests
     }
 
     [Fact]
+    public void TryGetResponseAtUtc_IgnoresPlatformMessagesThatAreNotCandidateResponses()
+    {
+        var messages = AvitoChatMessagesJson.Parse(
+            """
+            [
+              {"text":"Вакансия снята с публикации","at":"2026-06-16T12:00:00Z","side":"left","isPlatform":true},
+              {"text":"Кандидат откликнулся на вакансию.","at":"2026-06-18T00:09:31Z","side":"left","isPlatform":true},
+              {"text":"Здравствуйте","at":"2026-06-20T12:00:00Z","side":"left","isPlatform":false}
+            ]
+            """);
+
+        var at = AvitoChatMessagesJson.TryGetResponseAtUtc(messages);
+
+        Assert.Equal(new DateTime(2026, 6, 18, 0, 9, 31, DateTimeKind.Utc), at);
+    }
+
+    [Fact]
     public void TryGetResponseAtUtc_FallsBackToEarliestAnyWhenNoPlatform()
     {
         var messages = AvitoChatMessagesJson.Parse(

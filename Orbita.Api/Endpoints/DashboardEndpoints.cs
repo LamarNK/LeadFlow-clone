@@ -47,6 +47,8 @@ public static class DashboardEndpoints
         dashboard.MapGet("/summary", async (
             Guid? officeId,
             int? tz,
+            DateTime? from,
+            DateTime? to,
             DashboardQueryService query,
             OfficeScopeService officeScope,
             ClaimsPrincipal principal,
@@ -58,8 +60,25 @@ public static class DashboardEndpoints
                 return Results.Forbid();
             }
 
-            return Results.Ok(await query.GetGlobalSummaryAsync(scope, officeId, tz, ct));
+            return Results.Ok(await query.GetGlobalSummaryAsync(scope, officeId, tz, from, to, ct));
         });
+
+        app.MapGet("/api/v1/nav/badges", async (
+            Guid? officeId,
+            int? tz,
+            DashboardQueryService query,
+            OfficeScopeService officeScope,
+            ClaimsPrincipal principal,
+            CancellationToken ct) =>
+        {
+            var scope = await officeScope.ResolveAsync(principal, ct);
+            if (!scope.HasAccess)
+            {
+                return Results.Ok(new NavBadgesDto(0, 0, 0, DateTime.UtcNow));
+            }
+
+            return Results.Ok(await query.GetNavBadgesAsync(scope, officeId, tz, ct));
+        }).RequireAuthorization();
 
         var workerRead = app.MapGroup("/api/v1").RequireAuthorization(PanelPermissions.Workers);
         workerRead.MapGet("/workers", async (
@@ -94,6 +113,22 @@ public static class DashboardEndpoints
             return detail is null ? Results.NotFound() : Results.Ok(detail);
         });
         var accountRead = app.MapGroup("/api/v1").RequireAuthorization(PanelPermissions.Accounts);
+        accountRead.MapGet("/accounts", async (
+            Guid? officeId,
+            Guid? workerId,
+            DashboardQueryService query,
+            OfficeScopeService officeScope,
+            ClaimsPrincipal principal,
+            CancellationToken ct) =>
+        {
+            var scope = await officeScope.ResolveAsync(principal, ct);
+            if (!scope.HasAccess)
+            {
+                return Results.Forbid();
+            }
+
+            return Results.Ok(await query.GetOfficeAccountsAsync(scope, officeId, workerId, ct));
+        });
         accountRead.MapGet("/workers/{id:guid}/accounts", async (
             Guid id,
             DashboardQueryService query,

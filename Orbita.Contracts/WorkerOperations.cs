@@ -82,7 +82,11 @@ public sealed record WorkerConfigDto(
     /// </summary>
     int? PhoneUnchangedHours = null,
     /// <summary>JSON-набор профилей и субпрофилей, отклики из которых нужно подсвечивать.</summary>
-    string? ResponseHighlightTargetsJson = null)
+    string? ResponseHighlightTargetsJson = null,
+    /// <summary>ID группы AdsPower; null — синхронизировать все профили Local API.</summary>
+    string? AdsPowerGroupId = null,
+    /// <summary>Ключ RuCaptcha для автопрохождения GeeTest v4. Пусто — выкл.</summary>
+    string? RuCaptchaApiKey = null)
 {
     public ResponseCollectionFilters ResponseFilters =>
         ResponseCollectionFilters.NormalizeLegacy(
@@ -98,12 +102,17 @@ public sealed record WorkerConfigDto(
         ResponsePhoneWatchRules.ResolveUnchangedHours(PhoneUnchangedHours);
 }
 
+public sealed record AdsPowerGroupDto(string GroupId, string GroupName);
+
 public sealed record WorkerAccountSyncItemDto(
     string AdsPowerProfileId,
-    string DisplayName);
+    string DisplayName,
+    string? AdsPowerGroupId = null,
+    string? AdsPowerGroupName = null);
 
 public sealed record WorkerAccountSyncRequest(
-    IReadOnlyList<WorkerAccountSyncItemDto> Accounts);
+    IReadOnlyList<WorkerAccountSyncItemDto> Accounts,
+    IReadOnlyList<AdsPowerGroupDto>? Groups = null);
 
 public sealed record WorkerCandidateDto(
     Guid AccountId,
@@ -218,7 +227,11 @@ public sealed record UpdateWorkerSettingsRequest(
     /// <summary>Авто-отправка новых откликов в Bitrix (схема офиса). Legacy-канал.</summary>
     bool? AutoDeliverToBitrix = null,
     /// <summary>JSON-набор профилей и субпрофилей, отклики из которых нужно подсвечивать.</summary>
-    string? ResponseHighlightTargetsJson = null);
+    string? ResponseHighlightTargetsJson = null,
+    /// <summary>ID группы AdsPower; пусто — все группы.</summary>
+    string? AdsPowerGroupId = null,
+    /// <summary>Ключ RuCaptcha для автопрохождения GeeTest v4. Пусто — выкл.</summary>
+    string? RuCaptchaApiKey = null);
 
 public sealed record UpdateWorkerAccountRequest(bool IsEnabledInPanel);
 

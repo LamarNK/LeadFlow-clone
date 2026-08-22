@@ -17,6 +17,8 @@ public sealed class AccountsIndexViewModel
     public string? SearchQuery { get; init; }
     public Guid? WorkerId { get; init; }
     public IReadOnlyList<EventFilterOptionViewModel> Workers { get; init; } = [];
+    public string? GroupId { get; init; }
+    public IReadOnlyList<EventFilterOptionViewModel> Groups { get; init; } = [];
     public TableSortState Sort { get; init; } = TableSortState.Create("account", descending: false);
     public bool ShowOfficeColumn { get; init; }
     public bool HasActiveFilters { get; init; }
@@ -65,6 +67,8 @@ public sealed class AccountRowViewModel
     public string? ProcessingLabel { get; init; }
     public string ProcessingTone { get; init; } = "live";
     public string? ProcessingSubProfileId { get; init; }
+    public string? AdsPowerGroupId { get; init; }
+    public string? AdsPowerGroupName { get; init; }
 }
 
 public sealed class AccountProcessingViewModel

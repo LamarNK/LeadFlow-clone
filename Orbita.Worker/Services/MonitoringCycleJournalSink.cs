@@ -49,6 +49,9 @@ public sealed class MonitoringCycleJournalSink(
         public int PublishedCount { get; set; }
         public int DeferredCount { get; set; }
         public int SkippedDuplicateCount { get; set; }
+        public int CollectedCount { get; set; }
+        public int CaptchaCount { get; set; }
+        public int CaptchaSolvedCount { get; set; }
     }
 
     public Guid BeginCycle(Guid accountId, string accountName)
@@ -102,7 +105,10 @@ public sealed class MonitoringCycleJournalSink(
         int foundCount,
         int publishedCount,
         int deferredCount = 0,
-        int skippedDuplicateCount = 0)
+        int skippedDuplicateCount = 0,
+        int collectedCount = 0,
+        int captchaCount = 0,
+        int captchaSolvedCount = 0)
     {
         if (!_cycles.TryGetValue(cycleId, out var cycle)
             || !cycle.SubProfiles.TryGetValue(subProfileRunId, out var sub))
@@ -112,10 +118,15 @@ public sealed class MonitoringCycleJournalSink(
 
         sub.Outcome = MonitoringSubProfileRunOutcomes.Completed;
         sub.CompletedAtUtc = DateTime.UtcNow;
-        sub.FoundCount = Math.Max(0, foundCount);
-        sub.PublishedCount = Math.Max(0, publishedCount);
-        sub.DeferredCount = Math.Max(0, deferredCount);
-        sub.SkippedDuplicateCount = Math.Max(0, skippedDuplicateCount);
+        ApplyCounts(
+            sub,
+            foundCount,
+            publishedCount,
+            deferredCount,
+            skippedDuplicateCount,
+            collectedCount,
+            captchaCount,
+            captchaSolvedCount);
         cycle.Dirty = true;
         _ = MaybeFlushAsync();
     }
@@ -124,7 +135,12 @@ public sealed class MonitoringCycleJournalSink(
         Guid cycleId,
         Guid subProfileRunId,
         string? errorType,
-        string? errorMessage)
+        string? errorMessage,
+        int foundCount = 0,
+        int publishedCount = 0,
+        int collectedCount = 0,
+        int captchaCount = 0,
+        int captchaSolvedCount = 0)
     {
         if (!_cycles.TryGetValue(cycleId, out var cycle)
             || !cycle.SubProfiles.TryGetValue(subProfileRunId, out var sub))
@@ -136,6 +152,15 @@ public sealed class MonitoringCycleJournalSink(
         sub.CompletedAtUtc = DateTime.UtcNow;
         sub.ErrorType = string.IsNullOrWhiteSpace(errorType) ? null : errorType.Trim();
         sub.ErrorMessage = string.IsNullOrWhiteSpace(errorMessage) ? null : errorMessage.Trim();
+        ApplyCounts(
+            sub,
+            foundCount,
+            publishedCount,
+            deferredCount: 0,
+            skippedDuplicateCount: 0,
+            collectedCount,
+            captchaCount,
+            captchaSolvedCount);
         cycle.Dirty = true;
         _ = MaybeFlushAsync();
     }
@@ -295,8 +320,30 @@ public sealed class MonitoringCycleJournalSink(
                     s.FoundCount,
                     s.PublishedCount,
                     s.DeferredCount,
-                    s.SkippedDuplicateCount))
+                    s.SkippedDuplicateCount,
+                    s.CollectedCount,
+                    s.CaptchaCount,
+                    s.CaptchaSolvedCount))
                 .ToList());
+
+    private static void ApplyCounts(
+        MutableSubProfile sub,
+        int foundCount,
+        int publishedCount,
+        int deferredCount,
+        int skippedDuplicateCount,
+        int collectedCount,
+        int captchaCount,
+        int captchaSolvedCount)
+    {
+        sub.FoundCount = Math.Max(0, foundCount);
+        sub.PublishedCount = Math.Max(0, publishedCount);
+        sub.DeferredCount = Math.Max(0, deferredCount);
+        sub.SkippedDuplicateCount = Math.Max(0, skippedDuplicateCount);
+        sub.CollectedCount = Math.Max(0, collectedCount);
+        sub.CaptchaCount = Math.Max(0, captchaCount);
+        sub.CaptchaSolvedCount = Math.Min(sub.CaptchaCount, Math.Max(0, captchaSolvedCount));
+    }
 
     public async ValueTask DisposeAsync()
     {

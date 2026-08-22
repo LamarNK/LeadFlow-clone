@@ -9,6 +9,7 @@
         q = Model.SearchQuery,
         tab = Model.ActiveTab,
         workerId = Model.WorkerId,
+        groupId = Model.GroupId,
         pageSize = pagination.PageSize,
         sort = Model.Sort.Column,
         dir = Model.Sort.Dir
@@ -18,6 +19,7 @@
         q = Model.SearchQuery,
         tab = Model.ActiveTab,
         workerId = Model.WorkerId,
+        groupId = Model.GroupId,
         page = pagination.Page,
         pageSize = pagination.PageSize,
         sort = Model.Sort.Column,
@@ -51,7 +53,7 @@
         {
             var isActive = tab.Id == Model.ActiveTab;
             <a class="accounts-tab @(isActive ? "accounts-tab--active" : "")"
-               href="@Url.Action("Index", new { tab = tab.Id, q = Model.SearchQuery, workerId = Model.WorkerId, pageSize = pagination.PageSize, sort = Model.Sort.Column, dir = Model.Sort.Dir, page = 1 })"
+               href="@Url.Action("Index", new { tab = tab.Id, q = Model.SearchQuery, workerId = Model.WorkerId, groupId = Model.GroupId, pageSize = pagination.PageSize, sort = Model.Sort.Column, dir = Model.Sort.Dir, page = 1 })"
                aria-current="@(isActive ? "page" : null)">@tab.Label</a>
         }
     </nav>
@@ -140,6 +142,10 @@
                         </td>
                         <td class="cell-account" data-label="Аккаунт">
                             <a href="@accountUrl">@account.AccountName</a>
+                            @if (!string.IsNullOrWhiteSpace(account.AdsPowerGroupName) || !string.IsNullOrWhiteSpace(account.AdsPowerGroupId))
+                            {
+                                <span class="worker-account-sub" title="Группа AdsPower">@(account.AdsPowerGroupName ?? account.AdsPowerGroupId)</span>
+                            }
                             @if (account.HasAvitoCredentials)
                             {
                                 <span class="worker-account-sub worker-account-sub--ok" title="@(account.AvitoLogin ?? "логин задан")">
@@ -289,7 +295,7 @@
                 Pagination = pagination,
                 Controller = "Accounts",
                 Action = "Index",
-                RouteValues = new { q = Model.SearchQuery, tab = Model.ActiveTab, pageSize = pagination.PageSize, sort = Model.Sort.Column, dir = Model.Sort.Dir },
+                RouteValues = new { q = Model.SearchQuery, tab = Model.ActiveTab, workerId = Model.WorkerId, groupId = Model.GroupId, pageSize = pagination.PageSize, sort = Model.Sort.Column, dir = Model.Sort.Dir },
                 ExtraClass = "orbita-live-pagination"
             })" />
         </div>

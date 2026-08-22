@@ -1,0 +1,10 @@
+[Unit]
+Description=Orbita PostgreSQL backup
+Wants=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/orbita
+UMask=0077
+ExecStart=/opt/orbita/backup-db.sh

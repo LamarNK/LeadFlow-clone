@@ -68,8 +68,8 @@ public static class AvitoChatMessagesJson
     }
 
     /// <summary>
-    /// Дата отклика из мини-чата: предпочитаем platform («Кандидат откликнулся…»),
-    /// иначе самое раннее сообщение с <c>at</c>.
+    /// Дата отклика из мини-чата: предпочитаем системное сообщение
+    /// «Кандидат откликнулся…», иначе самое раннее сообщение с <c>at</c>.
     /// </summary>
     public static DateTime? TryGetResponseAtUtc(IReadOnlyList<AvitoChatMessage> messages)
     {
@@ -93,7 +93,8 @@ public static class AvitoChatMessagesJson
                 earliestAny = atUtc;
             }
 
-            if (message.IsPlatform && (earliestPlatform is null || atUtc < earliestPlatform.Value))
+            if (IsCandidateResponsePlatformMessage(message)
+                && (earliestPlatform is null || atUtc < earliestPlatform.Value))
             {
                 earliestPlatform = atUtc;
             }
@@ -101,6 +102,10 @@ public static class AvitoChatMessagesJson
 
         return earliestPlatform ?? earliestAny;
     }
+
+    private static bool IsCandidateResponsePlatformMessage(AvitoChatMessage message) =>
+        message.IsPlatform
+        && message.Text.Contains("кандидат откликнулся", StringComparison.OrdinalIgnoreCase);
 
     public static bool TryParseMessageAtUtc(string? at, out DateTime utc)
     {

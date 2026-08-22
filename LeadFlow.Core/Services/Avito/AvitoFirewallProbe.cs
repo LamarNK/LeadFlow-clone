@@ -23,7 +23,8 @@ public static class AvitoFirewallProbe
         Func<string, CancellationToken, Task<string>> executeScript,
         Func<CancellationToken, Task<string?>>? fetchHtmlSnapshot,
         string? pageUrl,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Func<Detection, string?, CancellationToken, Task<bool>>? trySolveAsync = null)
     {
         var detection = await TryDetectAsync(executeScript, cancellationToken).ConfigureAwait(false);
         if (detection is null)
@@ -41,6 +42,15 @@ public static class AvitoFirewallProbe
             catch
             {
                 // Достаточно kind/title из probe.
+            }
+        }
+
+        if (trySolveAsync is not null)
+        {
+            var solved = await trySolveAsync(detection, html, cancellationToken).ConfigureAwait(false);
+            if (solved)
+            {
+                return;
             }
         }
 

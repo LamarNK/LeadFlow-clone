@@ -88,6 +88,8 @@ public sealed class PanelUserRowViewModel
     public bool IsCurrentUser { get; init; }
     public bool IsLocked { get; init; }
     public bool HasPermissionOverride { get; init; }
+    public DateTime? LastSeenAtUtc { get; init; }
+    public bool IsOnline { get; init; }
     public IReadOnlyList<string> EffectivePermissions { get; init; } = [];
     public string BitrixStatus { get; init; } = BitrixValidationStatuses.NotConfigured;
     public string BitrixStatusLabel { get; init; } = "Не настроено";

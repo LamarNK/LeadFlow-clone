@@ -13,6 +13,7 @@ public sealed class AccountsService(
         string? searchQuery = null,
         string? tab = null,
         Guid? workerId = null,
+        string? groupId = null,
         int page = 1,
         int? pageSize = null,
         string? sort = null,
@@ -31,39 +32,30 @@ public sealed class AccountsService(
                 sort,
                 sortDir,
                 officeContext.ShowOfficeColumn,
-                workerId);
+                workerId,
+                groupId);
         }
 
-        var allWorkers = await api.GetWorkersAsync(ct) ?? [];
+        var workersTask = api.GetWorkersAsync(ct);
+        var officeAccountsTask = api.GetOfficeAccountsAsync(workerId, ct);
+        await Task.WhenAll(workersTask, officeAccountsTask);
+
+        var allWorkers = await workersTask ?? [];
         var workerOptions = ResponsesIndexBuilder.BuildWorkerOptions(allWorkers);
+        var officeAccounts = await officeAccountsTask ?? [];
 
-        var workers = workerId is Guid wid
-            ? allWorkers.Where(w => w.Id == wid).ToList()
-            : allWorkers;
-
-        var rows = new List<AccountRowViewModel>();
-        foreach (var worker in workers)
-        {
-            var accounts = await api.GetWorkerAccountsAsync(worker.Id, ct);
-            if (accounts is null) continue;
-
-            var workerDetail = await api.GetWorkerAsync(worker.Id, ct);
-            foreach (var account in accounts)
-            {
-                var balanceDetail = workerDetail?.Balances.FirstOrDefault(b => b.AccountId == account.AccountId);
-                var balance = balanceDetail?.TotalBalance ?? 0;
-                rows.Add(AccountsIndexBuilder.MapAccount(
-                    account,
-                    worker.Id,
-                    worker.DisplayName,
-                    worker.OfficeName,
-                    balance,
-                    balanceDetail,
-                    worker.CurrentActivity,
-                    worker.IsOnline,
-                    worker.ActiveAccounts ?? worker.CurrentActivity?.ActiveAccounts));
-            }
-        }
+        var rows = officeAccounts
+            .Select(item => AccountsIndexBuilder.MapAccount(
+                item.Account,
+                item.WorkerId,
+                item.WorkerDisplayName,
+                item.OfficeName,
+                item.Balance?.TotalBalance ?? 0,
+                item.Balance,
+                item.CurrentActivity,
+                item.WorkerIsOnline,
+                item.ActiveAccounts ?? item.CurrentActivity?.ActiveAccounts))
+            .ToList();
 
         return AccountsIndexBuilder.Build(
             rows,
@@ -76,6 +68,7 @@ public sealed class AccountsService(
             showOfficeColumn: officeContext.ShowOfficeColumn,
             officeContext: officeContext,
             workerId: workerId,
-            workers: workerOptions);
+            workers: workerOptions,
+            groupId: groupId);
     }
 }

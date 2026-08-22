@@ -147,6 +147,54 @@ public sealed class AvitoPageStateProbeTests
     }
 
     [Fact]
+    public void TryParse_InsufficientAdvance_DetectsHiddenAdsBanner()
+    {
+        const string json = """
+            {
+              "pageKind":"profileItems",
+              "url":"https://www.avito.ru/profile/pro/items",
+              "title":"Мои объявления",
+              "profileSwitchModalOpen":false,
+              "profileCardsCount":0,
+              "candidatesItemCount":0,
+              "hasLoginForm":false,
+              "hasCaptcha":false,
+              "hasInsufficientAdvance":true
+            }
+            """;
+
+        var state = AvitoPageStateProbe.TryParse(json);
+
+        Assert.NotNull(state);
+        Assert.True(state!.HasInsufficientAdvance);
+        Assert.Contains("недостаточно денег", state.DescribeKindRu(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void TryParse_EmailConfirmationRequired_DetectsConfirmationBanner()
+    {
+        const string json = """
+            {
+              "pageKind":"profileItems",
+              "url":"https://www.avito.ru/profile/pro/items",
+              "title":"Мои объявления",
+              "profileSwitchModalOpen":false,
+              "profileCardsCount":0,
+              "candidatesItemCount":0,
+              "hasLoginForm":false,
+              "hasCaptcha":false,
+              "hasEmailConfirmationRequired":true
+            }
+            """;
+
+        var state = AvitoPageStateProbe.TryParse(json);
+
+        Assert.NotNull(state);
+        Assert.True(state!.HasEmailConfirmationRequired);
+        Assert.Contains("почт", state.DescribeKindRu(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void DescribeForDiagnostics_IncludesModalAndSubProfile()
     {
         var state = new AvitoPageState(

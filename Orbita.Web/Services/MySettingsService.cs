@@ -127,8 +127,11 @@ public sealed class MySettingsService(OrbitaApiClient api, IOptions<DesignPrevie
 
     private async Task<ProfileSettingsViewModel?> BuildProfileAsync(CancellationToken ct)
     {
-        var profile = await api.GetPanelProfileAsync(ct);
-        var policy = await api.GetPasswordPolicyAsync(ct);
+        var profileTask = api.GetPanelProfileAsync(ct);
+        var policyTask = api.GetPasswordPolicyAsync(ct);
+        await Task.WhenAll(profileTask, policyTask);
+        var profile = await profileTask;
+        var policy = await policyTask;
         if (profile is null)
         {
             return null;
@@ -147,8 +150,15 @@ public sealed class MySettingsService(OrbitaApiClient api, IOptions<DesignPrevie
         Guid? instanceId,
         CancellationToken ct)
     {
-        var officeBitrixSettings = await api.GetOfficeBitrixSettingsAsync(ct: ct);
-        var instances = await api.GetBitrixInstancesAsync(ct: ct) ?? [];
+        var officeBitrixSettingsTask = api.GetOfficeBitrixSettingsAsync(ct: ct);
+        var instancesTask = api.GetBitrixInstancesAsync(ct: ct);
+        var detailTask = instanceId is Guid selectedId && selectedId != Guid.Empty
+            ? api.GetBitrixInstanceAsync(selectedId, ct: ct)
+            : Task.FromResult<BitrixInstanceDto?>(null);
+        await Task.WhenAll(officeBitrixSettingsTask, instancesTask, detailTask);
+
+        var officeBitrixSettings = await officeBitrixSettingsTask;
+        var instances = await instancesTask ?? [];
         var canManage = officeBitrixSettings is not null;
 
         BitrixInstanceEditorViewModel? editor = null;
@@ -156,9 +166,9 @@ public sealed class MySettingsService(OrbitaApiClient api, IOptions<DesignPrevie
         {
             editor = CreateNewEditor();
         }
-        else if (instanceId is Guid selectedId)
+        else
         {
-            var detail = await api.GetBitrixInstanceAsync(selectedId, ct: ct);
+            var detail = await detailTask;
             if (detail is not null)
             {
                 editor = MapEditor(detail);
@@ -179,10 +189,15 @@ public sealed class MySettingsService(OrbitaApiClient api, IOptions<DesignPrevie
 
     private async Task<DistributionEditorViewModel?> BuildDistributionAsync(CancellationToken ct)
     {
-        var officeBitrixSettings = await api.GetOfficeBitrixSettingsAsync(ct: ct);
+        var officeBitrixSettingsTask = api.GetOfficeBitrixSettingsAsync(ct: ct);
+        var instancesTask = api.GetBitrixInstancesAsync(ct: ct);
+        var routeTask = api.GetDistributionRouteAsync(ct: ct);
+        await Task.WhenAll(officeBitrixSettingsTask, instancesTask, routeTask);
+
+        var officeBitrixSettings = await officeBitrixSettingsTask;
         var canManage = officeBitrixSettings is not null;
-        var instances = await api.GetBitrixInstancesAsync(ct: ct) ?? [];
-        var route = await api.GetDistributionRouteAsync(ct: ct)
+        var instances = await instancesTask ?? [];
+        var route = await routeTask
             ?? new DistributionRouteDto(Guid.Empty, officeBitrixSettings?.OfficeId ?? Guid.Empty, false, [], null);
 
         var instancePayload = instances

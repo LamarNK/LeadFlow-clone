@@ -103,15 +103,10 @@ public sealed class ResponsesQueryService(
         var unique = total - duplicates;
         var uniqueAuthors = await ResponseSummaryMetrics.CountUniqueAuthorsAsync(query, ct);
 
-        double? avgMinutes = null;
-        var collected = await query
+        var avgMinutes = await query
             .Where(x => x.CollectedAt > x.CreatedAt)
-            .Select(x => new { x.CreatedAt, x.CollectedAt })
-            .ToListAsync(ct);
-        if (collected.Count > 0)
-        {
-            avgMinutes = collected.Average(x => (x.CollectedAt - x.CreatedAt).TotalMinutes);
-        }
+            .Select(x => (double?)(x.CollectedAt - x.CreatedAt).TotalMinutes)
+            .AverageAsync(ct);
 
         return new ResponsesSummaryDto(
             total,

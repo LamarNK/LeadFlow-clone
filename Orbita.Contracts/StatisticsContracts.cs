@@ -114,7 +114,8 @@ public sealed record MonitoringCycleSubProfileRowDto(
     IReadOnlyList<DateTime> CompletionTimesUtc,
     IReadOnlyList<string> LeadsPerCycle,
     IReadOnlyList<MonitoringCycleErrorDto> Errors,
-    bool WasStarted = false);
+    bool WasStarted = false,
+    IReadOnlyList<string>? CaptchaPerCycle = null);
 
 public sealed record MonitoringCycleAccountReportDto(
     string AccountName,
@@ -123,7 +124,9 @@ public sealed record MonitoringCycleAccountReportDto(
     int CycleCount,
     int TotalLeads,
     IReadOnlyList<MonitoringCycleSubProfileRowDto> Rows,
-    IReadOnlyList<string> NotStartedPositions);
+    IReadOnlyList<string> NotStartedPositions,
+    int TotalCaptcha = 0,
+    int TotalCaptchaSolved = 0);
 
 public sealed record MonitoringCycleLeadSummaryDto(
     string AccountName,
@@ -137,4 +140,6 @@ public sealed record MonitoringCycleReportDto(
     int NotStartedPositions,
     IReadOnlyList<string> NotStartedSummaries,
     IReadOnlyList<MonitoringCycleLeadSummaryDto> LeadSummaries,
-    IReadOnlyList<MonitoringCycleAccountReportDto> AccountReports);
+    IReadOnlyList<MonitoringCycleAccountReportDto> AccountReports,
+    int TotalCaptcha = 0,
+    int TotalCaptchaSolved = 0);

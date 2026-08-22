@@ -226,7 +226,7 @@ public static class AccountIssueTracker
     private static void SyncAccountStatusFromSubProfileIssues(AvitoAccount account)
     {
         if (account.SubProfiles.Any(static sub =>
-                sub.HasIssue && sub.LastIssueKind == AvitoSubProfileIssueKind.Captcha))
+                sub.HasIssue && sub.LastIssueKind is AvitoSubProfileIssueKind.Captcha or AvitoSubProfileIssueKind.IpBlock))
         {
             account.Status = AvitoAccountStatus.RequiresManualAction;
             return;

@@ -14,13 +14,14 @@ public sealed class AccountsController(IAccountsService accounts, IWorkersServic
         string? q,
         string? tab,
         Guid? workerId,
+        string? groupId,
         int page = 1,
         int? pageSize = null,
         string? sort = null,
         string? dir = null,
         CancellationToken ct = default)
     {
-        var model = await accounts.GetIndexAsync(q, tab, workerId, page, pageSize, sort, dir, ct);
+        var model = await accounts.GetIndexAsync(q, tab, workerId, groupId, page, pageSize, sort, dir, ct);
         return Json(new AccountsLiveSnapshotViewModel
         {
             UpdatedAtUtc = model.Header.UpdatedAtUtc,
@@ -35,13 +36,14 @@ public sealed class AccountsController(IAccountsService accounts, IWorkersServic
         string? q,
         string? tab,
         Guid? workerId,
+        string? groupId,
         int page = 1,
         int? pageSize = null,
         string? sort = null,
         string? dir = null,
         CancellationToken ct = default)
     {
-        var model = await accounts.GetIndexAsync(q, tab, workerId, page, pageSize, sort, dir, ct);
+        var model = await accounts.GetIndexAsync(q, tab, workerId, groupId, page, pageSize, sort, dir, ct);
         return View(model);
     }
 

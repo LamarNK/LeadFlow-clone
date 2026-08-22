@@ -115,7 +115,9 @@ public sealed class WorkerConfigService(
             worker.MessengerAutoReplyEnabled,
             worker.MessengerAutoReplyMessage,
             worker.PhoneUnchangedHours,
-            worker.ResponseHighlightTargetsJson);
+            worker.ResponseHighlightTargetsJson,
+            worker.AdsPowerGroupId,
+            worker.RuCaptchaApiKey);
     }
 
     public async Task<bool> SyncAccountsAsync(
@@ -151,6 +153,8 @@ public sealed class WorkerConfigService(
             {
                 account.AdsPowerProfileId = item.AdsPowerProfileId.Trim();
                 account.DisplayName = item.DisplayName.Trim();
+                account.AdsPowerGroupId = AdsPowerGroupsJson.NormalizeGroupId(item.AdsPowerGroupId);
+                account.AdsPowerGroupName = AdsPowerGroupsJson.NormalizeGroupName(item.AdsPowerGroupName);
                 account.UpdatedAtUtc = now;
             }
             else
@@ -161,6 +165,8 @@ public sealed class WorkerConfigService(
                     AccountId = accountId,
                     AdsPowerProfileId = item.AdsPowerProfileId.Trim(),
                     DisplayName = item.DisplayName.Trim(),
+                    AdsPowerGroupId = AdsPowerGroupsJson.NormalizeGroupId(item.AdsPowerGroupId),
+                    AdsPowerGroupName = AdsPowerGroupsJson.NormalizeGroupName(item.AdsPowerGroupName),
                     Status = string.Empty,
                     IsEnabled = false,
                     IsEnabledInPanel = false,
@@ -172,6 +178,18 @@ public sealed class WorkerConfigService(
         foreach (var stale in existing.Values.Where(x => !syncedAccountIds.Contains(x.AccountId)))
         {
             db.WorkerAccounts.Remove(stale);
+        }
+
+        if (request.Groups is not null)
+        {
+            var groups = AdsPowerGroupsJson.Parse(AdsPowerGroupsJson.Serialize(request.Groups));
+            worker.AdsPowerGroupsJson = AdsPowerGroupsJson.Serialize(groups);
+            if (!string.IsNullOrWhiteSpace(worker.AdsPowerGroupId))
+            {
+                worker.AdsPowerGroupName =
+                    AdsPowerGroupsJson.ResolveGroupName(worker.AdsPowerGroupId, groups)
+                    ?? worker.AdsPowerGroupName;
+            }
         }
 
         await db.SaveChangesAsync(ct);
@@ -218,6 +236,13 @@ public sealed class WorkerConfigService(
             return (null, apiKeyError);
         }
 
+        if (!TryNormalizeAdsPowerApiKey(request.RuCaptchaApiKey, out var normalizedRuCaptchaKey, out var ruCaptchaKeyError))
+        {
+            return (null, ruCaptchaKeyError is null
+                ? null
+                : ruCaptchaKeyError.Replace("AdsPower", "RuCaptcha", StringComparison.Ordinal));
+        }
+
         var maxResponseAgeDays = ResponseCollectionFilters.ClampResponseAgeDays(request.ResponseFilterMaxResponseAgeDays);
         var filters = ResponseCollectionFilters.NormalizeLegacy(
             request.ResponseFilterEnabled,
@@ -244,6 +269,15 @@ public sealed class WorkerConfigService(
         worker.MaxConcurrentAccounts = request.MaxConcurrentAccounts;
         worker.AdsPowerApiBaseUrl = normalizedBaseUrl;
         worker.AdsPowerApiKey = normalizedApiKey;
+        worker.RuCaptchaApiKey = normalizedRuCaptchaKey;
+        var normalizedGroupId = AdsPowerGroupsJson.NormalizeGroupId(request.AdsPowerGroupId);
+        worker.AdsPowerGroupId = normalizedGroupId;
+        worker.AdsPowerGroupName = normalizedGroupId is null
+            ? null
+            : AdsPowerGroupsJson.ResolveGroupName(
+                  normalizedGroupId,
+                  AdsPowerGroupsJson.Parse(worker.AdsPowerGroupsJson))
+              ?? worker.AdsPowerGroupName;
         worker.ResponseFilterEnabled = filters.Enabled;
         worker.ResponseFilterExcludeFemale = filters.ExcludeFemale;
         worker.ResponseFilterExcludeMale = filters.ExcludeMale;

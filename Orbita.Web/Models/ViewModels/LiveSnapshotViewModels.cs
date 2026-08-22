@@ -1,3 +1,5 @@
+using Orbita.Contracts;
+
 namespace Orbita.Web.Models.ViewModels;
 
 public sealed class ResponsesLiveSnapshotViewModel
@@ -36,6 +38,8 @@ public sealed class WorkerDetailsLiveSnapshotViewModel
     public LineChartViewModel ActivityChart { get; init; } = new();
     public WorkerActivityViewModel CurrentActivity { get; init; } = new();
     public IReadOnlyList<WorkerActivityViewModel> ActiveAccountActivities { get; init; } = [];
+    public IReadOnlyList<AdsPowerGroupDto> AdsPowerGroups { get; init; } = [];
+    public IReadOnlyList<EventFilterOptionViewModel> AccountGroupOptions { get; init; } = [];
 }
 
 public sealed class EventsLiveSnapshotViewModel

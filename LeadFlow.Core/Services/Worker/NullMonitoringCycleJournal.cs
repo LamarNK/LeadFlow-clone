@@ -19,7 +19,10 @@ public sealed class NullMonitoringCycleJournal : IMonitoringCycleJournal
         int foundCount,
         int publishedCount,
         int deferredCount = 0,
-        int skippedDuplicateCount = 0)
+        int skippedDuplicateCount = 0,
+        int collectedCount = 0,
+        int captchaCount = 0,
+        int captchaSolvedCount = 0)
     {
     }
 
@@ -27,7 +30,12 @@ public sealed class NullMonitoringCycleJournal : IMonitoringCycleJournal
         Guid cycleId,
         Guid subProfileRunId,
         string? errorType,
-        string? errorMessage)
+        string? errorMessage,
+        int foundCount = 0,
+        int publishedCount = 0,
+        int collectedCount = 0,
+        int captchaCount = 0,
+        int captchaSolvedCount = 0)
     {
     }
 

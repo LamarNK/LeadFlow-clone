@@ -201,6 +201,19 @@
         const editUserDialog = document.getElementById('editUserDialog');
         if (editUserDialog) {
             const form = document.getElementById('editUserForm');
+            const enforceUpdateUserPost = () => {
+                if (!form) return;
+
+                const action = form.getAttribute('data-update-user-action');
+                if (action) {
+                    form.setAttribute('action', action);
+                }
+
+                // The password form must never fall back to the browser's default GET.
+                // This is repeated when the dialog opens because its markup can be swapped
+                // by the fast-navigation shell after the initial page load.
+                form.setAttribute('method', 'post');
+            };
             const userIdInput = document.getElementById('editUserId');
             const userEmailLabel = document.getElementById('editUserEmail');
             const userInitials = document.getElementById('editUserInitials');
@@ -213,6 +226,7 @@
             const originalUseProfilePermissionsInput = document.getElementById('editUserOriginalUseProfilePermissions');
             const originalPermissionKeysInput = document.getElementById('editUserOriginalPermissionKeys');
             const passwordInput = document.getElementById('editUserPassword');
+            const submitError = document.getElementById('editUserSubmitError');
             const accessFields = document.getElementById('editUserAccessFields');
             const officeField = document.getElementById('editUserOfficeField');
             const passwordField = document.getElementById('editUserPasswordField');
@@ -247,6 +261,8 @@
                         || !roleInput || !originalRoleInput || !officeInput || !originalOfficeInput
                         || !passwordInput || !accessFields || !passwordField || !useProfilePermissionsInput) return;
 
+                    enforceUpdateUserPost();
+
                     const isCurrentUser = button.getAttribute('data-user-is-current') === 'true';
                     const fullName = button.getAttribute('data-user-full-name') || '';
                     const email = button.getAttribute('data-user-email') || '';
@@ -274,6 +290,10 @@
                     originalUseProfilePermissionsInput.value = String(!hasPermissionOverride);
                     originalPermissionKeysInput.value = Array.from(permissions).join(',');
                     passwordInput.value = '';
+                    if (submitError) {
+                        submitError.hidden = true;
+                        submitError.textContent = '';
+                    }
                     useProfilePermissionsInput.checked = !hasPermissionOverride;
                     permissionInputs.forEach((input) => {
                         input.checked = permissions.has(input.value);
@@ -287,6 +307,53 @@
                         window.requestAnimationFrame(() => fullNameInput.focus());
                     }
                 });
+            });
+
+            form?.addEventListener('submit', async (event) => {
+                enforceUpdateUserPost();
+                if (typeof window.fetch !== 'function') return;
+
+                event.preventDefault();
+                if (form.dataset.updateUserPending === 'true') return;
+
+                const action = form.getAttribute('action');
+                if (!action) return;
+
+                let formData;
+                try {
+                    formData = new FormData(form, event.submitter || undefined);
+                } catch {
+                    formData = new FormData(form);
+                }
+
+                const submitButton = form.querySelector('button[type="submit"]');
+                form.dataset.updateUserPending = 'true';
+                submitButton?.setAttribute('disabled', 'disabled');
+                if (submitError) {
+                    submitError.hidden = true;
+                    submitError.textContent = '';
+                }
+
+                try {
+                    const response = await fetch(action, {
+                        method: 'POST',
+                        credentials: 'same-origin',
+                        body: formData
+                    });
+                    if (!response.ok) {
+                        throw new Error('Update user failed: ' + response.status);
+                    }
+
+                    window.location.assign(response.url || '/Settings?tab=users');
+                } catch (error) {
+                    form.removeAttribute('data-update-user-pending');
+                    submitButton?.removeAttribute('disabled');
+                    if (submitError) {
+                        submitError.textContent = 'Не удалось сохранить изменения. Обновите страницу и повторите попытку.';
+                        submitError.hidden = false;
+                    }
+                    console.error('User update failed', error);
+                }
             });
 
             if (!editUserDialog.__orbitaDialogBound) {

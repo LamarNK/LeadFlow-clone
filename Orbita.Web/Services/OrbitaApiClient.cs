@@ -75,7 +75,11 @@ public sealed class OrbitaApiClient(
         return payload;
     }
 
-    public Task<GlobalDashboardSummary?> GetSummaryAsync(int timeZoneOffsetMinutes = 0, CancellationToken ct = default)
+    public Task<GlobalDashboardSummary?> GetSummaryAsync(
+        int timeZoneOffsetMinutes = 0,
+        DateTime? fromLocal = null,
+        DateTime? toLocal = null,
+        CancellationToken ct = default)
     {
         if (_preview.Enabled)
         {
@@ -84,7 +88,34 @@ public sealed class OrbitaApiClient(
 
         var path = WithOfficeQuery("api/v1/dashboard/summary");
         path = AppendQuery(path, "tz", timeZoneOffsetMinutes.ToString());
+        if (fromLocal is DateTime from)
+        {
+            path = AppendQuery(path, "from", from.ToString("yyyy-MM-dd"));
+        }
+
+        if (toLocal is DateTime to)
+        {
+            path = AppendQuery(path, "to", to.ToString("yyyy-MM-dd"));
+        }
+
         return GetAsync<GlobalDashboardSummary>(path, ct);
+    }
+
+    public Task<NavBadgesDto?> GetNavBadgesAsync(int timeZoneOffsetMinutes = 0, CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            var summary = DesignPreviewData.GetSummary(officeContext.EffectiveOfficeId);
+            return Task.FromResult<NavBadgesDto?>(new NavBadgesDto(
+                summary.Errors,
+                summary.UniqueResponsesToday,
+                summary.ActionRequired,
+                DateTime.UtcNow));
+        }
+
+        var path = WithOfficeQuery("api/v1/nav/badges");
+        path = AppendQuery(path, "tz", timeZoneOffsetMinutes.ToString());
+        return GetAsync<NavBadgesDto>(path, ct);
     }
 
     public Task<IReadOnlyList<WorkerListItem>?> GetWorkersAsync(CancellationToken ct = default) =>
@@ -101,6 +132,25 @@ public sealed class OrbitaApiClient(
         _preview.Enabled
             ? Task.FromResult<IReadOnlyList<WorkerAccountDto>?>(DesignPreviewData.GetAccounts(id))
             : GetAsync<IReadOnlyList<WorkerAccountDto>>($"api/v1/workers/{id}/accounts", ct);
+
+    public Task<IReadOnlyList<OfficeAccountListItem>?> GetOfficeAccountsAsync(
+        Guid? workerId = null,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return Task.FromResult<IReadOnlyList<OfficeAccountListItem>?>(
+                DesignPreviewData.GetOfficeAccounts(officeContext.EffectiveOfficeId, workerId));
+        }
+
+        var path = WithOfficeQuery("api/v1/accounts");
+        if (workerId is Guid id)
+        {
+            path = AppendQuery(path, "workerId", id.ToString("D"));
+        }
+
+        return GetAsync<IReadOnlyList<OfficeAccountListItem>>(path, ct);
+    }
 
     public Task<IReadOnlyList<WorkerEventListItem>?> GetEventsAsync(
         Guid? workerId = null,
@@ -222,6 +272,12 @@ public sealed class OrbitaApiClient(
 
     public Task<IReadOnlyList<PanelUserDto>?> GetPanelUsersAsync(CancellationToken ct = default) =>
         GetAsync<IReadOnlyList<PanelUserDto>>("api/v1/admin/users", ct);
+
+    public async Task RecordActivityAsync(CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "api/v1/auth/activity");
+        using var response = await SendAuthenticatedAsync(request, ct);
+    }
 
     public Task<IReadOnlyList<PanelUserDto>?> GetOfficeStaffUsersAsync(
         Guid? officeId = null,
@@ -416,6 +472,7 @@ public sealed class OrbitaApiClient(
         string? level,
         string? service,
         DateTime? date,
+        Guid? workerId,
         int page,
         int pageSize,
         CancellationToken ct = default)
@@ -445,6 +502,11 @@ public sealed class OrbitaApiClient(
         if (date.HasValue)
         {
             query.Add($"date={date.Value:yyyy-MM-dd}");
+        }
+
+        if (workerId.HasValue)
+        {
+            query.Add($"workerId={workerId.Value:D}");
         }
 
         query.Add($"page={page}");
@@ -842,6 +904,7 @@ public sealed class OrbitaApiClient(
         int maxConcurrentAccounts,
         string? adsPowerApiBaseUrl,
         string? adsPowerApiKey,
+        string? adsPowerGroupId = null,
         bool responseFilterEnabled = false,
         bool responseFilterExcludeFemale = false,
         bool responseFilterExcludeMale = false,
@@ -860,6 +923,7 @@ public sealed class OrbitaApiClient(
         bool? autoDeliverToCrm = null,
         bool? autoDeliverToBitrix = null,
         string? responseHighlightTargetsJson = null,
+        string? ruCaptchaApiKey = null,
         CancellationToken ct = default)
     {
         using var request = new HttpRequestMessage(HttpMethod.Patch, $"api/v1/workers/{workerId}/settings");
@@ -885,7 +949,9 @@ public sealed class OrbitaApiClient(
             phoneUnchangedHours,
             autoDeliverToCrm,
             autoDeliverToBitrix,
-            responseHighlightTargetsJson));
+            responseHighlightTargetsJson,
+            adsPowerGroupId,
+            ruCaptchaApiKey));
         using var response = await SendAuthenticatedAsync(request, ct);
         if (response is null)
         {

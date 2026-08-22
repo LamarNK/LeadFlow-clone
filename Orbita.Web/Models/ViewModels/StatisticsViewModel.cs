@@ -161,6 +161,8 @@ public sealed class MonitoringCycleReportViewModel
     public bool IsDetailed { get; init; }
     public bool HasData { get; init; }
     public int TotalLeads { get; init; }
+    public int TotalCaptcha { get; init; }
+    public int TotalCaptchaSolved { get; init; }
     public int AccountsWithNotStarted { get; init; }
     public int NotStartedPositions { get; init; }
     public int ZeroLeadAccountCount { get; init; }
@@ -192,6 +194,9 @@ public sealed class MonitoringCycleAccountReportViewModel
     public int SubProfileCount { get; init; }
     public int CycleCount { get; init; }
     public int TotalLeads { get; init; }
+    public int TotalCaptcha { get; init; }
+    public int TotalCaptchaSolved { get; init; }
+    public string CaptchaText { get; init; } = "—";
     public IReadOnlyList<MonitoringCycleSubProfileRowViewModel> Rows { get; init; } = [];
 }
 
@@ -201,6 +206,7 @@ public sealed class MonitoringCycleSubProfileRowViewModel
     public string Name { get; init; } = string.Empty;
     public IReadOnlyList<DateTime> CompletionTimesUtc { get; init; } = [];
     public string LeadsText { get; init; } = "—";
+    public string CaptchaText { get; init; } = "—";
     public IReadOnlyList<MonitoringCycleErrorViewModel> Errors { get; init; } = [];
     public bool HasErrors { get; init; }
     public bool HasNotStarted { get; init; }

@@ -23,6 +23,7 @@ public sealed class ServiceLogsQueryService(IConfiguration configuration)
         string? level,
         string? service,
         DateTime? date,
+        Guid? workerId,
         int page,
         int pageSize,
         CancellationToken ct = default)
@@ -31,11 +32,15 @@ public sealed class ServiceLogsQueryService(IConfiguration configuration)
         pageSize = Math.Clamp(pageSize, 1, MaxPageSize);
 
         var parsedLevel = ParseLevel(level);
+        IReadOnlyCollection<DeskLinkAuditLogLevel>? parsedLevels = parsedLevel.HasValue
+            ? [parsedLevel.Value]
+            : null;
         var filterDate = date?.Date ?? DateTime.UtcNow.Date;
         var entries = await aggregateReader.Value.SearchLogsAsync(
-            parsedLevel,
+            parsedLevels,
             searchText,
             filterDate,
+            workerId.HasValue ? $"worker:{workerId.Value:D}" : null,
             string.IsNullOrWhiteSpace(service) ? null : service.Trim());
 
         ct.ThrowIfCancellationRequested();

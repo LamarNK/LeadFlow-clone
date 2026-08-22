@@ -163,4 +163,81 @@ public sealed class AccountsIndexBuilderTests
         Assert.Contains(model.Accounts, a => a.AccountName == "healthy");
         Assert.DoesNotContain(model.Accounts, a => a.AccountName == "disabled-error");
     }
+
+    [Fact]
+    public void Build_GroupFilter_LimitsRowsAndAddsChip()
+    {
+        var rows = new List<AccountRowViewModel>
+        {
+            new()
+            {
+                Id = Guid.NewGuid(),
+                AccountName = "orbita-acc",
+                WorkerId = Guid.NewGuid(),
+                WorkerName = "Worker-1",
+                StatusTone = "active",
+                IsEnabledInPanel = true,
+                AdsPowerGroupId = "1001",
+                AdsPowerGroupName = "Orbita"
+            },
+            new()
+            {
+                Id = Guid.NewGuid(),
+                AccountName = "other-acc",
+                WorkerId = Guid.NewGuid(),
+                WorkerName = "Worker-1",
+                StatusTone = "active",
+                IsEnabledInPanel = true,
+                AdsPowerGroupId = "1002",
+                AdsPowerGroupName = "Other"
+            }
+        };
+
+        var model = AccountsIndexBuilder.Build(rows, searchQuery: null, tab: "all", page: 1, groupId: "1001");
+
+        Assert.Single(model.Accounts);
+        Assert.Equal("orbita-acc", model.Accounts[0].AccountName);
+        Assert.True(model.HasActiveFilters);
+        Assert.Contains(model.ActiveFilterChips, c => c.Label == "Группа: Orbita");
+        Assert.Equal(2, model.KpiCards.Single(k => k.Key == "total").CountValue);
+    }
+
+    [Fact]
+    public void Build_UngroupedFilter_ReturnsAccountsWithoutGroup()
+    {
+        var rows = new List<AccountRowViewModel>
+        {
+            new()
+            {
+                Id = Guid.NewGuid(),
+                AccountName = "plain",
+                WorkerId = Guid.NewGuid(),
+                WorkerName = "Worker-1",
+                StatusTone = "active",
+                IsEnabledInPanel = true
+            },
+            new()
+            {
+                Id = Guid.NewGuid(),
+                AccountName = "grouped",
+                WorkerId = Guid.NewGuid(),
+                WorkerName = "Worker-1",
+                StatusTone = "active",
+                IsEnabledInPanel = true,
+                AdsPowerGroupId = "1001",
+                AdsPowerGroupName = "Orbita"
+            }
+        };
+
+        var model = AccountsIndexBuilder.Build(
+            rows,
+            searchQuery: null,
+            tab: "all",
+            page: 1,
+            groupId: AdsPowerAccountGroupFilter.UngroupedValue);
+
+        Assert.Single(model.Accounts);
+        Assert.Equal("plain", model.Accounts[0].AccountName);
+        Assert.Contains(model.Groups, g => g.Value == AdsPowerAccountGroupFilter.UngroupedValue);
+    }
 }

@@ -122,7 +122,87 @@
     }
 
     function getLiveRoot() {
-        return document.querySelector('[data-orbita-live]');
+        return document.querySelector('[data-orbita-live]') || document.querySelector('[data-dashboard-live]');
+    }
+
+    function getLivePageName(root) {
+        root = root || getLiveRoot();
+        if (!root) return null;
+        return root.getAttribute('data-orbita-live-page')
+            || (root.hasAttribute('data-dashboard-live') ? 'dashboard' : null);
+    }
+
+    function createSnapshotFetcher(page, applySnapshot, options) {
+        options = options || {};
+        var generation = 0;
+        var controller = null;
+
+        function isOnPage() {
+            return getLivePageName() === page;
+        }
+
+        function reset() {
+            generation++;
+            if (controller) {
+                try { controller.abort(); } catch (e) { }
+                controller = null;
+            }
+        }
+
+        function fetchSnapshot() {
+            var root = getLiveRoot();
+            if (!root || getLivePageName(root) !== page) return Promise.resolve();
+            var url = root.getAttribute('data-orbita-snapshot')
+                || root.getAttribute(options.urlAttr || '')
+                || (page === 'dashboard' ? root.getAttribute('data-dashboard-snapshot') : '');
+            if (!url) return Promise.resolve();
+
+            var gen = ++generation;
+            if (controller) {
+                try { controller.abort(); } catch (e) { }
+            }
+            controller = new AbortController();
+            return fetch(url, {
+                method: 'GET',
+                credentials: 'same-origin',
+                headers: options.headers || { Accept: 'application/json' },
+                signal: controller.signal
+            }).then(function (res) {
+                if (res.status === 204) return null;
+                if (!res.ok) throw new Error((options.errorName || page) + ' snapshot failed: ' + res.status);
+                return options.asText ? res.text() : res.json();
+            }).then(function (payload) {
+                if (gen !== generation) return;
+                if (getLivePageName() !== page) return;
+                if (payload == null || payload === '') return;
+                applySnapshot(payload);
+            }).catch(function (err) {
+                if (err && err.name === 'AbortError') return;
+                throw err;
+            });
+        }
+
+        return {
+            fetchSnapshot: fetchSnapshot,
+            reset: reset,
+            isOnPage: isOnPage
+        };
+    }
+
+    function registerLivePage(page, fetcher, extraInit) {
+        if (!fetcher || !fetcher.isOnPage()) {
+            if (fetcher) fetcher.reset();
+            if (window.OrbitaLive && typeof window.OrbitaLive.unregister === 'function') {
+                window.OrbitaLive.unregister(page);
+            }
+            return false;
+        }
+        fetcher.reset();
+        if (typeof extraInit === 'function') extraInit();
+        if (window.OrbitaLive) {
+            window.OrbitaLive.register(page, { fetchSnapshot: fetcher.fetchSnapshot });
+        }
+        return true;
     }
 
     function getLiveAttr(name) {
@@ -592,6 +672,9 @@
         updateKpiCards: updateKpiCards,
         animateKpiValue: animateKpiValue,
         getLiveRoot: getLiveRoot,
+        getLivePageName: getLivePageName,
+        createSnapshotFetcher: createSnapshotFetcher,
+        registerLivePage: registerLivePage,
         getLiveAttr: getLiveAttr,
         urlFromTemplate: urlFromTemplate,
         getRequestVerificationToken: getRequestVerificationToken,

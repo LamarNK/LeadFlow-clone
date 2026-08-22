@@ -6,6 +6,9 @@ namespace LeadFlow.Core.Services.Avito;
 /// Детектит «капча/firewall»-страницы Avito, которые встречают нас вместо нормального HTML.
 /// Источник правил — реальные снимки HTML:
 ///   • <c>&lt;div class="firewall-container"&gt;</c> с заголовком «Доступ ограничен: проблема с IP»
+///   • статическая страница «Доступ ограничен: проблема с IP» без виджета капчи
+///     (h1 + советы про VPN/«в самолёте», ссылка <c>support.avito.ru/request/720</c>,
+///     авто-reload с <c>#block</c>),
 ///   • hCaptcha (<c>&lt;div class="h-captcha"&gt;</c>, <c>data-sitekey</c>),
 ///   • geetest (<c>id="geetest_captcha"</c>),
 ///   • старая капча с картинкой (<c>id="inner-captcha"</c>),
@@ -20,6 +23,10 @@ public static class AvitoCaptchaDetector
         @"\bfirewall-container\b" +
         @"|\bjs-firewall-form\b" +
         @"|\bfirewall-title\b" +
+        @"|location\.hash\s*!=\s*[""']#block[""']" +
+        @"|support\.avito\.ru/request/720" +
+        @"|Отключить\s+VPN" +
+        @"|В\s+самол[её]те" +
         @"|id=""geetest_captcha""" +
         @"|initGeetest" +
         @"|geetest\.com" +
@@ -81,7 +88,7 @@ public static class AvitoCaptchaDetector
 
         if (Regex.IsMatch(
                 html,
-                @"\bfirewall-container\b|\bjs-firewall-form\b|\bfirewall-title\b|Доступ\s+ограничен|проблема\s+с\s+IP",
+                @"\bfirewall-container\b|\bjs-firewall-form\b|\bfirewall-title\b|Доступ\s+ограничен|проблема\s+с\s+IP|location\.hash\s*!=\s*[""']#block[""']|support\.avito\.ru/request/720|Отключить\s+VPN|В\s+самол[её]те",
                 RegexOptions.IgnoreCase))
         {
             return "firewall";
@@ -112,6 +119,83 @@ public static class AvitoCaptchaDetector
 
         return null;
     }
+
+    /// <summary>
+    /// GeeTest-виджет на странице (в том числе внутри firewall-контейнера).
+    /// </summary>
+    public static bool HasGeeTestWidget(string? html)
+    {
+        if (string.IsNullOrWhiteSpace(html))
+        {
+            return false;
+        }
+
+        return Regex.IsMatch(
+            html,
+            @"id=[""']?geetest_captcha|class=[""']geetest_widget|data-geetest|initGeetest4?|geetest\.com|gt_captcha|gt4\.js|/s/captcha/gt4",
+            RegexOptions.IgnoreCase);
+    }
+
+    /// <summary>
+    /// Экран/модалка «Доступ ограничен: проблема с IP», в том числе SPA-оверлей поверх кабинета
+    /// без <c>#geetest_captcha</c> — GeeTest стартует после «Продолжить».
+    /// </summary>
+    public static bool HasIpBlockChallenge(string? html)
+    {
+        if (string.IsNullOrWhiteSpace(html))
+        {
+            return false;
+        }
+
+        if (Regex.IsMatch(html, @"\bfirewall-container\b|\bjs-firewall-form\b|\bfirewall-title\b", RegexOptions.IgnoreCase))
+        {
+            return true;
+        }
+
+        var hasTitle = Regex.IsMatch(html, @"Доступ\s+ограничен", RegexOptions.IgnoreCase);
+        var hasIp = Regex.IsMatch(html, @"проблема\s+с\s+IP", RegexOptions.IgnoreCase);
+        var hasContinue = html.Contains("Продолжить", StringComparison.Ordinal);
+        var hasSupportTicket = html.Contains("support.avito.ru/request/720", StringComparison.OrdinalIgnoreCase);
+        var hasDialog = Regex.IsMatch(html, @"aria-modal\s*=\s*[""']true[""']|role\s*=\s*[""']dialog[""']", RegexOptions.IgnoreCase);
+        var hasScrollLockOverlay = html.Contains("data-scroll-lock-ignore", StringComparison.OrdinalIgnoreCase);
+
+        return (hasTitle && hasIp)
+               || (hasDialog && hasTitle && hasContinue)
+               || (hasSupportTicket && hasContinue && hasTitle)
+               || (hasScrollLockOverlay && hasTitle && hasIp);
+    }
+
+    public static bool CanAttemptGeeTestSolve(string? html) =>
+        HasGeeTestWidget(html) || HasIpBlockChallenge(html);
+
+    /// <summary>
+    /// captcha_id GeeTest v4 со страницы Avito. Если в HTML нет — фиксированное значение домена.
+    /// </summary>
+    public static string ExtractGeeTestCaptchaId(string? html)
+    {
+        if (string.IsNullOrWhiteSpace(html))
+        {
+            return AvitoGeeTestCaptchaId;
+        }
+
+        var dataAttr = Regex.Match(
+            html,
+            @"data-geetest\s*=\s*[""']([0-9a-f]{32})[""']",
+            RegexOptions.IgnoreCase);
+        if (dataAttr.Success)
+        {
+            return dataAttr.Groups[1].Value;
+        }
+
+        var initParam = Regex.Match(
+            html,
+            @"captcha_id[""']?\s*[:=]\s*[""']([0-9a-f]{32})[""']",
+            RegexOptions.IgnoreCase);
+        return initParam.Success ? initParam.Groups[1].Value : AvitoGeeTestCaptchaId;
+    }
+
+    /// <summary>Фиксированный captcha_id GeeTest v4 для avito.ru (RuCaptcha / 2captcha).</summary>
+    public const string AvitoGeeTestCaptchaId = "2d9c743cf7d63dbc9db578a608196bcd";
 
     /// <summary>
     /// Есть ли в HTML признаки «обычной» страницы Avito — это страховка против ложных срабатываний

@@ -592,9 +592,64 @@
         }
     }
 
+    function updateAdsPowerGroupOptions(groups) {
+        var select = document.getElementById('adsPowerGroupId');
+        if (!select || !shared) return;
+        var dirty = document.querySelector('[data-worker-settings-dirty]');
+        if (dirty && !dirty.hidden) return;
+
+        var current = select.value || '';
+        var html = '<option value="">Все группы</option>';
+        (groups || []).forEach(function (group) {
+            var id = group.groupId || '';
+            if (!id) return;
+            var name = group.groupName || id;
+            html += '<option value="' + shared.escapeHtml(id) + '">' + shared.escapeHtml(name) + '</option>';
+        });
+        if (current && !(groups || []).some(function (g) { return (g.groupId || '') === current; })) {
+            html += '<option value="' + shared.escapeHtml(current) + '">' + shared.escapeHtml(current) + '</option>';
+        }
+        select.innerHTML = html;
+        select.value = current;
+    }
+
+    function syncWorkerAccountsEmptyState(accounts) {
+        var empty = document.querySelector('[data-worker-accounts-empty]');
+        var table = document.querySelector('.card--worker-accounts table.data-table--accounts');
+        var isEmpty = !accounts || !accounts.length;
+        if (empty) empty.hidden = !isEmpty;
+        if (table) table.hidden = isEmpty;
+    }
+
+    function updateAccountGroupFilterOptions(options) {
+        var select = document.querySelector('.worker-accounts-filters select[name="groupId"]');
+        if (!select || !shared) return;
+
+        var current = select.value || '';
+        var html = '';
+        (options || []).forEach(function (opt) {
+            var value = opt.value || '';
+            var label = opt.label || value || 'Все группы';
+            html += '<option value="' + shared.escapeHtml(value) + '">' + shared.escapeHtml(label) + '</option>';
+        });
+        if (!html) {
+            html = '<option value="">Все группы</option>';
+        }
+        if (current && !(options || []).some(function (o) { return (o.value || '') === current; })) {
+            html += '<option value="' + shared.escapeHtml(current) + '">' + shared.escapeHtml(current) + '</option>';
+        }
+        select.innerHTML = html;
+        select.value = current;
+    }
+
     function renderWorkerAccounts(accounts) {
         var tbody = document.querySelector('[data-orbita-live-body="worker-accounts"]');
         if (!tbody || !shared) return;
+        syncWorkerAccountsEmptyState(accounts);
+        if (!accounts || !accounts.length) {
+            tbody.innerHTML = '';
+            return;
+        }
         var workerId = getWorkerId();
         var expandedPanels = shared.captureExpandedSubprofilePanels(tbody);
         var nextIds = {};
@@ -616,6 +671,10 @@
             var activityHtml = account.lastActivityUtc
                 ? '<time data-orbita-utc="' + shared.escapeHtml(account.lastActivityUtc) + '" data-orbita-format="activity"></time>'
                 : '—';
+            var adsPowerGroup = account.adsPowerGroupName || account.adsPowerGroupId
+                ? '<span class="worker-account-sub" title="Группа AdsPower">' +
+                    shared.escapeHtml(account.adsPowerGroupName || account.adsPowerGroupId) + '</span>'
+                : '';
             var adsPower = account.adsPowerProfileId
                 ? '<span class="worker-account-sub">AdsPower ' + shared.escapeHtml(account.adsPowerProfileId) + '</span>'
                 : '';
@@ -642,7 +701,7 @@
                 '<td class="cell-toggle" data-label="Вкл"><label class="worker-toggle" title="' + shared.escapeHtml(toggleTitle) + '">' +
                 '<input type="checkbox" data-account-enable-toggle data-worker-id="' + shared.escapeHtml(workerId) + '" data-account-id="' + shared.escapeHtml(account.id) + '"' + checked + ' />' +
                 '<span class="worker-toggle-slider"></span></label></td>' +
-                '<td class="cell-name" data-label="Аккаунт"><a href="' + shared.escapeHtml(accountSearchUrl(account.displayName)) + '">' + shared.escapeHtml(account.displayName) + '</a>' + adsPower + avitoCreds + subProfiles + '</td>' +
+                '<td class="cell-name" data-label="Аккаунт"><a href="' + shared.escapeHtml(accountSearchUrl(account.displayName)) + '">' + shared.escapeHtml(account.displayName) + '</a>' + adsPowerGroup + adsPower + avitoCreds + subProfiles + '</td>' +
                 '<td data-label="Статус">' + statusHtml + '</td>' +
                 '<td class="cell-num cell-balance" data-label="Баланс"><span class="account-balance-multiline">' + shared.escapeHtml(account.balanceText || '—') + '</span></td>' +
                 (function () {
@@ -758,6 +817,9 @@
             renderWorkerAccounts(snapshot.accounts);
         }
 
+        updateAdsPowerGroupOptions(snapshot.adsPowerGroups);
+        updateAccountGroupFilterOptions(snapshot.accountGroupOptions);
+
         if (activityChart && snapshot.activityChart && snapshot.activityChart.values) {
             var chartData = snapshot.activityChart;
             if (window.OrbitaTime && window.OrbitaTime.localizeHourlyChart) {
@@ -772,20 +834,28 @@
         shared.updateUpdatedClock(snapshot.updatedAtUtc);
     }
 
-    function fetchSnapshot() {
-        var root = shared && shared.getLiveRoot();
-        if (!root) return Promise.resolve();
-        var url = root.getAttribute('data-orbita-snapshot');
-        if (!url) return Promise.resolve();
-        return fetch(url, { credentials: 'same-origin', headers: { Accept: 'application/json' } })
-            .then(function (res) {
-                if (!res.ok) throw new Error('Worker details snapshot failed: ' + res.status);
-                return res.json();
-            })
-            .then(function (snapshot) { applySnapshot(snapshot, true); });
-    }
+    var snapshotFetcher = shared && shared.createSnapshotFetcher
+        ? shared.createSnapshotFetcher('worker', function (payload) { applySnapshot(payload, true); }, { errorName: 'Worker details' })
+        : null;
 
     function initWorkerPage() {
+        if (shared && shared.registerLivePage) {
+            shared.registerLivePage('worker', snapshotFetcher, function () {
+                initKpiCounters();
+                if (window.Orbita && typeof window.Orbita.initWorkerRestartButtons === 'function') {
+                    window.Orbita.initWorkerRestartButtons();
+                }
+                if (window.Orbita && typeof window.Orbita.initWorkerAccountEnableToggles === 'function') {
+                    window.Orbita.initWorkerAccountEnableToggles();
+                }
+                initAccountRowNavigation();
+                initActivityChart();
+                initParallelismSlider();
+                initWorkerSettings();
+                initCopyButtons();
+            });
+            return;
+        }
         initKpiCounters();
         if (window.Orbita && typeof window.Orbita.initWorkerRestartButtons === 'function') {
             window.Orbita.initWorkerRestartButtons();
@@ -798,9 +868,6 @@
         initParallelismSlider();
         initWorkerSettings();
         initCopyButtons();
-        if (window.OrbitaLive && shared && shared.getLiveRoot()) {
-            window.OrbitaLive.register('worker', { fetchSnapshot: fetchSnapshot });
-        }
     }
 
     window.OrbitaWorker = window.OrbitaWorker || {};

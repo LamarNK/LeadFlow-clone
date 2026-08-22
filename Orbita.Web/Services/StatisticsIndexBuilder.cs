@@ -325,6 +325,8 @@ internal static class StatisticsIndexBuilder
                 || report.NotStartedSummaries.Count > 0
                 || report.TotalLeads > 0,
             TotalLeads = report.TotalLeads,
+            TotalCaptcha = report.TotalCaptcha,
+            TotalCaptchaSolved = report.TotalCaptchaSolved,
             AccountsWithNotStarted = report.AccountsWithNotStarted,
             NotStartedPositions = report.NotStartedPositions,
             ZeroLeadAccountCount = leadSummaries.Count(x => x.TotalLeads == 0),
@@ -344,6 +346,9 @@ internal static class StatisticsIndexBuilder
                     SubProfileCount = account.SubProfileCount,
                     CycleCount = account.CycleCount,
                     TotalLeads = account.TotalLeads,
+                    TotalCaptcha = account.TotalCaptcha,
+                    TotalCaptchaSolved = account.TotalCaptchaSolved,
+                    CaptchaText = FormatCaptchaSummary(account.TotalCaptcha, account.TotalCaptchaSolved),
                     Rows = account.Rows
                         .Select(row => new MonitoringCycleSubProfileRowViewModel
                         {
@@ -353,6 +358,9 @@ internal static class StatisticsIndexBuilder
                             LeadsText = row.LeadsPerCycle.Count == 0
                                 ? "—"
                                 : string.Join(", ", row.LeadsPerCycle),
+                            CaptchaText = row.CaptchaPerCycle is { Count: > 0 } captcha
+                                ? string.Join(", ", captcha)
+                                : "—",
                             Errors = row.Errors
                                 .Select(error => new MonitoringCycleErrorViewModel
                                 {
@@ -367,6 +375,26 @@ internal static class StatisticsIndexBuilder
                 })
                 .ToList()
         };
+    }
+
+    private static string FormatCaptchaSummary(int seen, int solved)
+    {
+        if (seen <= 0)
+        {
+            return "—";
+        }
+
+        if (solved >= seen)
+        {
+            return seen == 1 ? "решена" : $"{seen} решены";
+        }
+
+        if (solved <= 0)
+        {
+            return seen == 1 ? "не решена" : $"{seen} не решены";
+        }
+
+        return $"решено {solved}/{seen}";
     }
 
     private static readonly Regex NotStartedSummaryRegex = new(

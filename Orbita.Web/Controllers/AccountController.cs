@@ -124,6 +124,15 @@ public sealed class AccountController(
     [Authorize]
     [HttpPost]
     [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Heartbeat(CancellationToken ct)
+    {
+        await api.RecordActivityAsync(ct);
+        return NoContent();
+    }
+
+    [Authorize]
+    [HttpPost]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> Logout(CancellationToken ct)
     {
         var email = User.FindFirst(System.Security.Claims.ClaimTypes.Email)?.Value

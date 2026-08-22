@@ -1,13 +1,12 @@
 (function (runtime) {
     document.querySelector('.orbita-nav')?.addEventListener('mouseover', function (e) {
         var link = e.target.closest('a.nav-item');
-        if (link && link.href) {
-            // just warming the browser cache, no big deal
+        if (!link || !link.href || typeof runtime.prefetch !== 'function') return;
+        try {
             var u = new URL(link.href, window.location.origin);
-            if (u.origin === window.location.origin) {
-                fetch(u.pathname + u.search, { method: 'GET', credentials: 'same-origin', headers: { 'X-Orbita-Content-Only': '1' } }).catch(() => {});
-            }
-        }
+            if (u.origin !== window.location.origin) return;
+            runtime.prefetch(u.pathname + u.search);
+        } catch (ex) { }
     }, { passive: true });
 
     // Expose for other scripts (row clicks etc)

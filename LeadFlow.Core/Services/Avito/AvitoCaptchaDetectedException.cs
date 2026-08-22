@@ -42,8 +42,13 @@ public sealed class AvitoCaptchaDetectedException : Exception
 
     public string? SubProfileName { get; }
 
-    private static string BuildMessage(string kind, string? url) =>
-        string.IsNullOrEmpty(url)
-            ? $"Avito показал капчу/блок IP ({kind})."
-            : $"Avito показал капчу/блок IP ({kind}) на странице {url}.";
+    private static string BuildMessage(string kind, string? url)
+    {
+        var subject = string.Equals(kind, "firewall", StringComparison.OrdinalIgnoreCase)
+            ? "Avito ограничил доступ из-за IP"
+            : "Avito показал капчу";
+        return string.IsNullOrEmpty(url)
+            ? $"{subject} ({kind})."
+            : $"{subject} ({kind}) на странице {url}.";
+    }
 }

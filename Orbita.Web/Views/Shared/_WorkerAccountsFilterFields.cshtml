@@ -1,0 +1,12 @@
+@model WorkerDetailsViewModel
+<div class="orbita-filters-fields worker-accounts-filters-row" id="workerAccountsFilterPanel" data-orbita-collapsible-filters hidden>
+    <label class="orbita-filters-field worker-accounts-filter-field">
+        <span class="orbita-filters-label worker-accounts-filter-label">Группа AdsPower</span>
+        <select name="groupId" class="orbita-filters-select" aria-label="Группа AdsPower">
+            @foreach (var opt in Model.AccountGroupOptions)
+            {
+                <option value="@opt.Value" selected="@(opt.Value == (Model.AccountGroupId ?? ""))">@opt.Label</option>
+            }
+        </select>
+    </label>
+</div>

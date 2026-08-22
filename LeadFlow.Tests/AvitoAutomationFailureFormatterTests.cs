@@ -101,8 +101,84 @@ public sealed class AvitoAutomationFailureFormatterTests
         var message = AvitoAutomationFailureFormatter.Format("переключение субпрофиля", state);
         var kind = AvitoAutomationFailureFormatter.MapDiagnosticKind(state, null);
 
-        Assert.Equal(AvitoSubProfileIssueKind.Captcha, kind);
+        Assert.Equal(AvitoSubProfileIssueKind.IpBlock, kind);
+        Assert.True(AvitoAutomationFailureFormatter.IsAccountBlockingIssue(kind));
         Assert.Contains("проблема с IP", message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Format_WhenAdvanceIsInsufficient_ExplainsWhyResponsesAreUnavailable()
+    {
+        var state = new AvitoPageState(
+            AvitoPageKind.ProfileItems,
+            "https://www.avito.ru/profile/pro/items",
+            "Мои объявления",
+            false,
+            0,
+            null,
+            null,
+            0,
+            false,
+            false,
+            HasInsufficientAdvance: true);
+
+        var message = AvitoAutomationFailureFormatter.Format("сбор откликов", state);
+        var kind = AvitoAutomationFailureFormatter.MapDiagnosticKind(state, null);
+
+        Assert.Equal(AvitoSubProfileIssueKind.InsufficientAdvance, kind);
+        Assert.False(AvitoAutomationFailureFormatter.IsAccountBlockingIssue(kind));
+        Assert.Contains("недостаточно денег", message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("отклик", message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("пополн", message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Format_WhenEmailConfirmationIsRequired_ExplainsRequiredAction()
+    {
+        var state = new AvitoPageState(
+            AvitoPageKind.ProfileItems,
+            "https://www.avito.ru/profile/pro/items",
+            "Мои объявления",
+            false,
+            0,
+            null,
+            null,
+            0,
+            false,
+            false,
+            HasEmailConfirmationRequired: true);
+
+        var message = AvitoAutomationFailureFormatter.Format("проверка объявлений", state);
+        var kind = AvitoAutomationFailureFormatter.MapDiagnosticKind(state, null);
+
+        Assert.Equal(AvitoSubProfileIssueKind.EmailConfirmationRequired, kind);
+        Assert.Contains("почт", message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("письм", message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("подтверд", message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Format_WhenFirewallIpOnLoginUrl_PrefersIpBlockOverLogin()
+    {
+        var state = new AvitoPageState(
+            AvitoPageKind.Captcha,
+            "https://www.avito.ru/profile/login",
+            "Доступ ограничен: проблема с IP",
+            false,
+            0,
+            null,
+            null,
+            0,
+            false,
+            true,
+            HasFirewallIp: true);
+
+        var message = AvitoAutomationFailureFormatter.Format("переключение субпрофиля", state);
+        var kind = AvitoAutomationFailureFormatter.MapDiagnosticKind(state, null);
+
+        Assert.Equal(AvitoSubProfileIssueKind.IpBlock, kind);
+        Assert.Contains("проблема с IP", message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("авторизац", message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

@@ -16,6 +16,11 @@ backup_db() {
   local prefix="$4"
   local file="$BACKUP_DIR/${prefix}_${STAMP}.sql.gz"
 
+  if ! docker compose -f "$COMPOSE_FILE" --project-directory "$ORBITA_DIR" ps --status running --services | grep -Fxq "$service"; then
+    echo "[$(date -Is)] Skipping $service: service is not running"
+    return 0
+  fi
+
   docker compose -f "$COMPOSE_FILE" --project-directory "$ORBITA_DIR" exec -T "$service" pg_dump -U "$user" "$db" | gzip > "$file"
   find "$BACKUP_DIR" -name "${prefix}_*.sql.gz" -mtime +$RETENTION_DAYS -delete
   echo "[$(date -Is)] Backup saved: $file ($(du -h "$file" | cut -f1))"

@@ -8,6 +8,7 @@ using LeadFlow.Core.Logging.Audit;
 using LeadFlow.Core.Services;
 using LeadFlow.Core.Services.Avito;
 using LeadFlow.Core.Services.Browser;
+using LeadFlow.Core.Services.Captcha;
 using Orbita.Contracts;
 using PuppeteerSharp;
 
@@ -21,7 +22,8 @@ namespace LeadFlow.Core.Services.AdsPower;
 public sealed partial class AdsPowerAvitoAutomationService(
     IAdsPowerApiClient adsPowerApiClient,
     ICandidateDuplicateRepository duplicateRepository,
-    IPhoneNormalizer phoneNormalizer) : IAdsPowerAvitoAutomationService
+    IPhoneNormalizer phoneNormalizer,
+    IAvitoGeeTestSolver? geeTestSolver = null) : IAdsPowerAvitoAutomationService
 {
     private const string CandidatesPageUrl = AvitoCandidatesPageUrls.LegacyCandidates;
     private const string JobResponsesPageUrl = AvitoCandidatesPageUrls.JobResponsesCrm;
@@ -41,6 +43,8 @@ public sealed partial class AdsPowerAvitoAutomationService(
         CancellationToken cancellationToken = default,
         CandidatesMessengerEnrichmentHints? messengerEnrichmentHints = null)
     {
+        using var captchaScope = await UseProfileCaptchaContextAsync(options, adsPowerUserId, cancellationToken)
+            .ConfigureAwait(false);
         var start = await adsPowerApiClient
             .StartBrowserAsync(options, adsPowerUserId, openUrl: null, cancellationToken)
             .ConfigureAwait(false);
@@ -72,6 +76,12 @@ public sealed partial class AdsPowerAvitoAutomationService(
             var executeScript = (string script, CancellationToken ct) =>
                 EvaluateWithRetryAsync<string>(page, script, ct);
 
+            if (IsOnActiveProfileItemsPage(page.Url)
+                && AvitoHumanVariation.RollPermille(MonitoringTiming.ItemsLingerChancePermille))
+            {
+                await HumanDelay.AfterItemsLingerAsync(cancellationToken).ConfigureAwait(false);
+            }
+
             await EnsureOnCandidatesPageAsync(page, adsPowerUserId, cancellationToken).ConfigureAwait(false);
 
             await AvitoCandidatesListPreparer.PrepareAsync(
@@ -95,7 +105,9 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 BuildResolveExistingPhonesCallback(messengerEnrichmentHints),
                 BuildResolveExistingMatchedProfileIndicesCallback(messengerEnrichmentHints),
                 messengerEnrichmentHints?.ResponseFilters,
-                messengerEnrichmentHints?.IsOpenPhoneWatchAsync).ConfigureAwait(false);
+                messengerEnrichmentHints?.IsOpenPhoneWatchAsync,
+                skipDetailEnrich: true,
+                CreateCaptchaSolveCallback(page)).ConfigureAwait(false);
 
             var raw = await EvaluateWithRetryAsync<string>(page, ExtractionScript, cancellationToken).ConfigureAwait(false);
             if (string.IsNullOrWhiteSpace(raw))
@@ -145,6 +157,8 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 ["avito.url"] = ProfileItemsPageUrl
             });
 
+        using var captchaScope = await UseProfileCaptchaContextAsync(options, adsPowerUserId, cancellationToken)
+            .ConfigureAwait(false);
         var start = await adsPowerApiClient
             .StartBrowserAsync(options, adsPowerUserId, openUrl: null, cancellationToken)
             .ConfigureAwait(false);
@@ -352,6 +366,8 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 ["avito.url"] = ProfileBlockedItemsPageUrl
             });
 
+        using var captchaScope = await UseProfileCaptchaContextAsync(options, adsPowerUserId, cancellationToken)
+            .ConfigureAwait(false);
         var start = await adsPowerApiClient
             .StartBrowserAsync(options, adsPowerUserId, openUrl: null, cancellationToken)
             .ConfigureAwait(false);
@@ -497,13 +513,18 @@ public sealed partial class AdsPowerAvitoAutomationService(
     }
 
     /// <summary>
-    /// Если в HTML обнаружена капча/firewall — логируем и бросаем <see cref="AvitoCaptchaDetectedException"/>,
-    /// чтобы мониторинг перевёл аккаунт в RequiresManualAction и не долбил Avito дальше.
+    /// Если в HTML обнаружена капча/firewall — пробуем GeeTest v4 через RuCaptcha,
+    /// иначе бросаем <see cref="AvitoCaptchaDetectedException"/>.
     /// </summary>
-    private static async Task ThrowIfCaptchaAsync(IPage page, string html, CancellationToken cancellationToken)
+    private async Task ThrowIfCaptchaAsync(IPage page, string html, CancellationToken cancellationToken)
     {
         var kind = AvitoCaptchaDetector.Classify(html);
         if (kind is null)
+        {
+            return;
+        }
+
+        if (await TrySolveGeeTestAsync(page, html, page.Url, kind, cancellationToken).ConfigureAwait(false))
         {
             return;
         }
@@ -523,7 +544,165 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 ["screenshot.bytes"] = screenshot?.Length ?? 0
             });
 
+        AvitoCaptchaTaskContext.NoteUnsolved();
         throw new AvitoCaptchaDetectedException(kind, page.Url, html, screenshot);
+    }
+
+    private Func<AvitoFirewallProbe.Detection, string?, CancellationToken, Task<bool>>? CreateCaptchaSolveCallback(
+        IPage page)
+    {
+        if (geeTestSolver is null)
+        {
+            return null;
+        }
+
+        return (detection, html, ct) => TrySolveGeeTestAsync(page, html, detection.Url ?? page.Url, detection.Kind, ct);
+    }
+
+    private async Task<GeeTestV4TaskOptions> ResolveCaptchaTaskOptionsAsync(
+        AdsPowerConnectionOptions options,
+        string adsPowerUserId,
+        CancellationToken cancellationToken)
+    {
+        var current = AvitoCaptchaTaskContext.Options ?? new GeeTestV4TaskOptions();
+        try
+        {
+            var profileProxy = await adsPowerApiClient
+                .GetProfileProxyAsync(options, adsPowerUserId, cancellationToken)
+                .ConfigureAwait(false);
+            if (profileProxy is null)
+            {
+                return current;
+            }
+
+            var profileParsed = GeeTestV4Proxy.TryCreate(
+                profileProxy.Type,
+                profileProxy.Address,
+                profileProxy.Username,
+                profileProxy.Password);
+            var merged = profileParsed is null ? current : current.WithProxy(profileParsed);
+            _ = GlobalLogger.Instance.LogAsync(
+                profileParsed is not null
+                    ? "Captcha: RuCaptcha получит прокси профиля AdsPower."
+                    : "Captcha: прокси профиля AdsPower не разобран, оставляем текущий режим RuCaptcha.",
+                profileParsed is not null ? DeskLinkAuditLogLevel.Info : DeskLinkAuditLogLevel.Warning,
+                properties: new Dictionary<string, object?>
+                {
+                    ["step"] = profileParsed is not null
+                        ? "captcha_profile_proxy_applied"
+                        : "captcha_profile_proxy_unparsed",
+                    ["adsPower.userId"] = adsPowerUserId,
+                    ["captcha.proxyType"] = profileProxy.Type,
+                    ["captcha.proxyMode"] = merged.UsesSuppliedProxy ? "profile" : "proxyless"
+                });
+            return merged;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                $"Captcha: не удалось прочитать прокси профиля AdsPower — {ex.Message}",
+                DeskLinkAuditLogLevel.Warning,
+                properties: new Dictionary<string, object?>
+                {
+                    ["step"] = "captcha_profile_proxy_read_failed",
+                    ["adsPower.userId"] = adsPowerUserId
+                });
+            return current;
+        }
+    }
+
+    private async Task<IDisposable> UseProfileCaptchaContextAsync(
+        AdsPowerConnectionOptions options,
+        string adsPowerUserId,
+        CancellationToken cancellationToken)
+    {
+        var captchaOptions = await ResolveCaptchaTaskOptionsAsync(options, adsPowerUserId, cancellationToken)
+            .ConfigureAwait(false);
+        return AvitoCaptchaTaskContext.Use(captchaOptions);
+    }
+
+    private async Task ThrowIfCaptchaOnPageAsync(IPage page, CancellationToken cancellationToken)
+    {
+        string? html = null;
+        try
+        {
+            html = await page.GetContentAsync().ConfigureAwait(false);
+        }
+        catch
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(html)
+            || (!AvitoCaptchaDetector.IsCaptchaHtml(html)
+                && !AvitoCaptchaDetector.CanAttemptGeeTestSolve(html)))
+        {
+            return;
+        }
+
+        await ThrowIfCaptchaAsync(page, html, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<bool> TryClearGeeTestCaptchaAsync(IPage page, CancellationToken cancellationToken)
+    {
+        string? html = null;
+        try
+        {
+            html = await page.GetContentAsync().ConfigureAwait(false);
+        }
+        catch
+        {
+            // солвер снимет HTML сам
+        }
+
+        return await TrySolveGeeTestAsync(
+                page,
+                html,
+                page.Url,
+                AvitoCaptchaDetector.Classify(html),
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private async Task<bool> TrySolveGeeTestAsync(
+        IPage page,
+        string? html,
+        string? pageUrl,
+        string? kind,
+        CancellationToken cancellationToken)
+    {
+        if (geeTestSolver is null)
+        {
+            return false;
+        }
+
+        if (html is not null
+            && !AvitoCaptchaRedirectRecovery.RequiresRecovery(html)
+            && !AvitoCaptchaDetector.CanAttemptGeeTestSolve(html)
+            && !string.Equals(kind, "geetest", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        try
+        {
+            return await geeTestSolver
+                .TrySolveOnPageAsync(page, html, pageUrl, AvitoCaptchaTaskContext.Options, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                $"Captcha: автопроход GeeTest v4 не удался — {ex.Message}",
+                DeskLinkAuditLogLevel.Warning,
+                properties: new Dictionary<string, object?>
+                {
+                    ["step"] = "captcha_solve_failed",
+                    ["page.url"] = pageUrl ?? page.Url,
+                    ["captcha.kind"] = kind
+                });
+            return false;
+        }
     }
 
     public async Task<string> LoadProfileSwitchHtmlAsync(
@@ -544,6 +723,8 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 ["avito.url"] = ProfileSwitchPageUrl
             });
 
+        using var captchaScope = await UseProfileCaptchaContextAsync(options, adsPowerUserId, cancellationToken)
+            .ConfigureAwait(false);
         var start = await adsPowerApiClient
             .StartBrowserAsync(options, adsPowerUserId, openUrl: null, cancellationToken)
             .ConfigureAwait(false);
@@ -722,6 +903,8 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 ["avito.subProfileId"] = subProfileId
             });
 
+        using var captchaScope = await UseProfileCaptchaContextAsync(options, adsPowerUserId, cancellationToken)
+            .ConfigureAwait(false);
         var start = await adsPowerApiClient
             .StartBrowserAsync(options, adsPowerUserId, openUrl: null, cancellationToken)
             .ConfigureAwait(false);
@@ -1116,6 +1299,8 @@ public sealed partial class AdsPowerAvitoAutomationService(
         ArgumentException.ThrowIfNullOrWhiteSpace(url);
         var target = url.Trim();
 
+        using var captchaScope = await UseProfileCaptchaContextAsync(options, adsPowerUserId, cancellationToken)
+            .ConfigureAwait(false);
         var start = await adsPowerApiClient
             .StartBrowserAsync(options, adsPowerUserId, openUrl: null, cancellationToken)
             .ConfigureAwait(false);
@@ -1232,7 +1417,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
     /// Всегда открывает модалку «Выбор профиля» через <c>/profile/dashboard#profile/switch?withEntities=true</c>,
     /// чтобы прочитать актуальный <c>isCurrent</c>, а не состояние с другой страницы Avito.
     /// </summary>
-    private static async Task EnsureSwitchModalAsync(
+    private async Task EnsureSwitchModalAsync(
         IPage page,
         CancellationToken cancellationToken,
         string callerMemberName = nameof(EnsureSwitchModalAsync))
@@ -1263,7 +1448,11 @@ public sealed partial class AdsPowerAvitoAutomationService(
                         ["page.url"] = page.Url,
                         ["attempt"] = i + 1
                     });
-                return;
+                await ThrowIfCaptchaOnPageAsync(page, cancellationToken).ConfigureAwait(false);
+                if (IsOnProfileSwitchPage(page.Url))
+                {
+                    return;
+                }
             }
             catch (Exception ex) when (IsRecoverableNavigationError(ex))
             {
@@ -1334,7 +1523,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
     }
 
     /// <summary>Ждём корень модалки и карточки профилей перед чтением <c>isCurrent</c> или кликом.</summary>
-    private static async Task<bool> AwaitProfileSwitchModalContentAsync(
+    private async Task<bool> AwaitProfileSwitchModalContentAsync(
         IPage page,
         CancellationToken cancellationToken,
         string callerMemberName)
@@ -1375,11 +1564,17 @@ public sealed partial class AdsPowerAvitoAutomationService(
             .ConfigureAwait(false);
     }
 
-    private static async Task<bool> TryAwaitProfileSwitchModalContentOnceAsync(
+    private async Task<bool> TryAwaitProfileSwitchModalContentOnceAsync(
         IPage page,
         CancellationToken cancellationToken,
         string callerMemberName)
     {
+        await ThrowIfCaptchaOnPageAsync(page, cancellationToken).ConfigureAwait(false);
+        if (!IsOnProfileSwitchPage(page.Url))
+        {
+            return false;
+        }
+
         var modalReady = false;
         try
         {
@@ -1404,6 +1599,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
 
         if (!modalReady)
         {
+            await ThrowIfCaptchaOnPageAsync(page, cancellationToken).ConfigureAwait(false);
             return false;
         }
 
@@ -1459,7 +1655,20 @@ public sealed partial class AdsPowerAvitoAutomationService(
         $@"(() => {{
             const el = document.querySelector('[data-marker=""component-profile-switch/profile-{Escape(subProfileId)}""]');
             if (!el) return false;
-            el.click();
+            const rect = el.getBoundingClientRect();
+            const x = rect.left + Math.max(rect.width, 1) * (0.32 + Math.random() * 0.36);
+            const y = rect.top + Math.max(rect.height, 1) * (0.32 + Math.random() * 0.36);
+            const base = {{ bubbles: true, cancelable: true, view: window, clientX: x, clientY: y, button: 0, buttons: 1 }};
+            try {{ el.scrollIntoView({{ block: 'center', inline: 'nearest' }}); }} catch {{}}
+            if (typeof PointerEvent === 'function') {{
+                el.dispatchEvent(new PointerEvent('pointerdown', Object.assign({{ pointerType: 'mouse', isPrimary: true, pointerId: 1 }}, base)));
+            }}
+            el.dispatchEvent(new MouseEvent('mousedown', base));
+            if (typeof PointerEvent === 'function') {{
+                el.dispatchEvent(new PointerEvent('pointerup', Object.assign({{ pointerType: 'mouse', isPrimary: true, pointerId: 1 }}, base)));
+            }}
+            el.dispatchEvent(new MouseEvent('mouseup', Object.assign({{}}, base, {{ buttons: 0 }})));
+            el.dispatchEvent(new MouseEvent('click', Object.assign({{}}, base, {{ buttons: 0 }})));
             return true;
         }})()";
 
@@ -1558,6 +1767,8 @@ public sealed partial class AdsPowerAvitoAutomationService(
                     await page.GoToAsync(targetUrl, navigationOptions).ConfigureAwait(false);
                 }
 
+                state = await ProbePageStateAsync(page, cancellationToken).ConfigureAwait(false);
+
                 string? staleListSignature = null;
                 if (AvitoCandidatesPageUrls.IsCandidatesResponsesUrl(page.Url))
                 {
@@ -1586,7 +1797,8 @@ public sealed partial class AdsPowerAvitoAutomationService(
                         page.Url,
                         cancellationToken,
                         staleListSignature,
-                        page)
+                        page,
+                        CreateCaptchaSolveCallback(page))
                     .ConfigureAwait(false);
 
                 state = await ProbePageStateAsync(page, cancellationToken).ConfigureAwait(false);
@@ -1726,6 +1938,8 @@ public sealed partial class AdsPowerAvitoAutomationService(
         {
             await WaitForAdsPowerStartupNavigationAsync(browser, callerMemberName, cancellationToken)
                 .ConfigureAwait(false);
+            await EnsureAdsPowerProxyReadyAsync(browser, callerMemberName, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         var targetKind = ClassifyAutomationPageKind(preferredUrl);
@@ -1804,6 +2018,133 @@ public sealed partial class AdsPowerAvitoAutomationService(
 
             await Task.Delay(poll, cancellationToken).ConfigureAwait(false);
             elapsed += poll;
+        }
+    }
+
+    /// <summary>
+    /// Если AdsPower открыл стартовую вкладку с проверкой прокси — ждём результат.
+    /// «Proxy failure» означает, что на Avito идти незачем.
+    /// </summary>
+    internal static async Task EnsureAdsPowerProxyReadyAsync(
+        IBrowser browser,
+        string callerMemberName,
+        CancellationToken cancellationToken)
+    {
+        var timeout = TimeSpan.FromMilliseconds(MonitoringTiming.AdsPowerStartPageProxyCheckMaxWaitMs);
+        var poll = TimeSpan.FromMilliseconds(MonitoringTiming.AdsPowerStartupNavigationPollMs);
+        var elapsed = TimeSpan.Zero;
+        string? lastStartUrl = null;
+
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var pages = (await browser.PagesAsync().ConfigureAwait(false)).ToList();
+            var urls = new List<string>(pages.Count);
+            IPage? startPage = null;
+
+            foreach (var page in pages)
+            {
+                var url = await ReadPageUrlAsync(page).ConfigureAwait(false);
+                urls.Add(url);
+                if (startPage is null && AdsPowerStartPage.IsUrl(url))
+                {
+                    startPage = page;
+                    lastStartUrl = url;
+                }
+            }
+
+            if (urls.Any(IsUsableAvitoPageUrl))
+            {
+                return;
+            }
+
+            if (startPage is not null)
+            {
+                var status = await ProbeStartPageProxyStatusAsync(startPage, cancellationToken)
+                    .ConfigureAwait(false);
+                if (status == AdsPowerStartPageProxyStatus.Failed)
+                {
+                    _ = GlobalLogger.Instance.LogAsync(
+                        $"AdsPower: стартовая страница показала отказ прокси ({startPage.Url}).",
+                        DeskLinkAuditLogLevel.Warning,
+                        memberName: callerMemberName,
+                        errorKey: AdsPowerProxyFailureException.ErrorKey,
+                        properties: new Dictionary<string, object?>
+                        {
+                            ["automation.startPageUrl"] = startPage.Url,
+                            ["automation.startupUrls"] = string.Join(" | ", urls)
+                        });
+                    throw new AdsPowerProxyFailureException(startPage.Url);
+                }
+
+                if (status == AdsPowerStartPageProxyStatus.Ok)
+                {
+                    _ = GlobalLogger.Instance.LogAsync(
+                        "AdsPower: проверка прокси на стартовой странице прошла.",
+                        DeskLinkAuditLogLevel.Info,
+                        memberName: callerMemberName,
+                        properties: new Dictionary<string, object?>
+                        {
+                            ["automation.startPageUrl"] = startPage.Url,
+                            ["automation.proxyCheckWaitMs"] = elapsed.TotalMilliseconds
+                        });
+                    return;
+                }
+            }
+
+            if (elapsed >= timeout)
+            {
+                if (startPage is not null || AdsPowerStartPage.IsUrl(lastStartUrl))
+                {
+                    throw new AdsPowerProxyFailureException(
+                        startPage?.Url ?? lastStartUrl,
+                        "проверка прокси на стартовой странице AdsPower не завершилась.");
+                }
+
+                return;
+            }
+
+            await Task.Delay(poll, cancellationToken).ConfigureAwait(false);
+            elapsed += poll;
+        }
+    }
+
+    private static async Task<AdsPowerStartPageProxyStatus> ProbeStartPageProxyStatusAsync(
+        IPage page,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var html = await page.GetContentAsync().ConfigureAwait(false);
+            var fromHtml = AdsPowerStartPage.Parse(html);
+            if (fromHtml != AdsPowerStartPageProxyStatus.Unknown)
+            {
+                return fromHtml;
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+        }
+
+        try
+        {
+            var text = await page.EvaluateExpressionAsync<string>(
+                    "(() => (document.body && document.body.innerText) || '')()")
+                .ConfigureAwait(false);
+            return AdsPowerStartPage.Parse(text);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+
+            return AdsPowerStartPageProxyStatus.Unknown;
         }
     }
 
@@ -2125,7 +2466,8 @@ public sealed partial class AdsPowerAvitoAutomationService(
         ex is not OperationCanceledException
         and not AdsPowerDailyOpenLimitExceededException
         and not AdsPowerProfileInUseException
-        and not AdsPowerRateLimitExceededException;
+        and not AdsPowerRateLimitExceededException
+        and not AdsPowerProxyFailureException;
 
     internal static bool IsReusableStartupPlaceholderUrl(string? url)
     {
@@ -2496,6 +2838,10 @@ public sealed partial class AdsPowerAvitoAutomationService(
             ? page.Url
             : CandidatesPageUrl;
 
+        var isJobCrm = await TryDetectJobCrmResponsesPageAsync(page, cancellationToken).ConfigureAwait(false);
+        var autoReplyBudget = AvitoHumanVariation.NextAutoReplyBudget();
+        var autoRepliesSent = 0;
+
         const int maxEnrich = 80;
         for (var i = 0; i < candidates.Count && i < maxEnrich; i++)
         {
@@ -2545,6 +2891,12 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 }
             }
 
+            if (!isJobCrm && CandidateJsonNeedsDetail(item))
+            {
+                await TryApplyDetailPanelToCandidateAsync(page, item, domIndex, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
             var enrichment = await TryEnrichMessengerForCandidateCardAsync(
                     page,
                     domIndex,
@@ -2553,8 +2905,23 @@ public sealed partial class AdsPowerAvitoAutomationService(
                     pendingForCandidate,
                     enrichmentHints?.ClaimOutboundChatForDeliveryAsync,
                     enrichmentHints?.AckOutboundChatSentAsync,
+                    candidateAlreadyKnown: isKnownSourceId,
+                    autoRepliesRemaining: autoReplyBudget - autoRepliesSent,
                     cancellationToken)
                 .ConfigureAwait(false);
+            if (enrichment.AutoReplySent)
+            {
+                autoRepliesSent++;
+            }
+            if (!string.IsNullOrWhiteSpace(enrichment.ChannelUrl) || enrichment.ChatMessages.Count > 0)
+            {
+                await HumanDelay.AfterMessengerCardAsync(cancellationToken).ConfigureAwait(false);
+            }
+            else
+            {
+                await HumanDelay.AfterCandidateClickAsync(cancellationToken).ConfigureAwait(false);
+            }
+
             if (string.IsNullOrWhiteSpace(enrichment.ChannelUrl) && enrichment.ChatMessages.Count == 0)
             {
                 _ = GlobalLogger.Instance.LogAsync(
@@ -2609,7 +2976,15 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 const mini = link.closest('[class*=""channel-module-root""]');
                 const back = mini?.querySelector('[data-marker=""navigation/back""]');
                 if (back) {
-                    back.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, view: window }));
+                    const rect = back.getBoundingClientRect();
+                    const x = rect.left + Math.max(rect.width, 1) * 0.5;
+                    const y = rect.top + Math.max(rect.height, 1) * 0.5;
+                    const base = { bubbles: true, cancelable: true, view: window, clientX: x, clientY: y, button: 0 };
+                    back.dispatchEvent(new PointerEvent('pointerdown', Object.assign({ pointerType: 'mouse', isPrimary: true, pointerId: 1 }, base)));
+                    back.dispatchEvent(new MouseEvent('mousedown', base));
+                    back.dispatchEvent(new PointerEvent('pointerup', Object.assign({ pointerType: 'mouse', isPrimary: true, pointerId: 1 }, base)));
+                    back.dispatchEvent(new MouseEvent('mouseup', base));
+                    back.dispatchEvent(new MouseEvent('click', base));
                 }
             })()").ConfigureAwait(false);
 
@@ -2626,7 +3001,10 @@ public sealed partial class AdsPowerAvitoAutomationService(
         await Task.Delay(200, cancellationToken).ConfigureAwait(false);
     }
 
-    private sealed record MessengerCardEnrichmentResult(string? ChannelUrl, JsonArray ChatMessages);
+    private sealed record MessengerCardEnrichmentResult(
+        string? ChannelUrl,
+        JsonArray ChatMessages,
+        bool AutoReplySent = false);
 
     private static async Task<bool> TryReadCandidateChatUnreadAsync(
         IPage page,
@@ -2677,17 +3055,32 @@ public sealed partial class AdsPowerAvitoAutomationService(
         IReadOnlyList<WorkerPendingChatMessageDto> pendingOutbound,
         Func<Guid, CancellationToken, Task<bool>>? claimOutboundChatForDeliveryAsync,
         Func<IReadOnlyList<Guid>, CancellationToken, Task>? ackOutboundChatSentAsync,
+        bool candidateAlreadyKnown,
+        int autoRepliesRemaining,
         CancellationToken cancellationToken)
     {
+        var autoReplySent = false;
         await CloseMiniMessengerPanelIfOpenAsync(page, cancellationToken).ConfigureAwait(false);
         await HumanDelay.BeforeCandidateClickAsync(cancellationToken).ConfigureAwait(false);
 
-        var clickRaw = await EvaluateWithRetryAsync<string>(
-                page,
-                AvitoCandidatesPageScripts.BuildClickCandidateChatByIndexScript(candidateIndex),
-                cancellationToken)
+        var clickedViaPointer = await TryClickCandidateChatWithPointerAsync(page, candidateIndex, cancellationToken)
             .ConfigureAwait(false);
-        if (!TryParseMessengerChatClickStep(clickRaw, out var clicked, out var clickReason) || !clicked)
+        string? clickReason = null;
+        var clicked = clickedViaPointer;
+        if (!clicked)
+        {
+            var clickRaw = await EvaluateWithRetryAsync<string>(
+                    page,
+                    AvitoCandidatesPageScripts.BuildClickCandidateChatByIndexScript(candidateIndex),
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (!TryParseMessengerChatClickStep(clickRaw, out clicked, out clickReason) || !clicked)
+            {
+                clicked = false;
+            }
+        }
+
+        if (!clicked)
         {
             if (!string.IsNullOrWhiteSpace(clickReason))
             {
@@ -2704,7 +3097,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
                     });
             }
 
-            return new MessengerCardEnrichmentResult(null, new JsonArray());
+            return new MessengerCardEnrichmentResult(null, new JsonArray(), AutoReplySent: false);
         }
 
         await HumanDelay.AfterCandidateClickAsync(cancellationToken).ConfigureAwait(false);
@@ -2789,14 +3182,36 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 chatMessages = await CollectMiniMessengerMessagesAsync(page, cancellationToken).ConfigureAwait(false);
             }
         }
-        else if (autoReply.Enabled
-            && AvitoChatAutoReplyEvaluator.NeedsAutoReply(parsedChat, autoReply.Message))
+        else if (AvitoChatAutoReplyEvaluator.ShouldSendOnThisPass(
+                     autoReply.Enabled,
+                     candidateAlreadyKnown,
+                     sentThisPass: 0,
+                     maxPerPass: Math.Max(0, autoRepliesRemaining),
+                     parsedChat,
+                     autoReply.Message))
         {
             if (await TrySendMiniMessengerTextAsync(page, autoReply.Message, "auto-reply", cancellationToken)
                     .ConfigureAwait(false))
             {
+                autoReplySent = true;
                 chatMessages = await CollectMiniMessengerMessagesAsync(page, cancellationToken).ConfigureAwait(false);
             }
+        }
+        else if (autoReply.Enabled
+                 && AvitoChatAutoReplyEvaluator.NeedsAutoReply(parsedChat, autoReply.Message))
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                candidateAlreadyKnown
+                    ? "AdsPower messenger auto-reply skipped: pass budget exhausted."
+                    : "AdsPower messenger auto-reply deferred: first sight this pass.",
+                DeskLinkAuditLogLevel.Info,
+                memberName: nameof(TryEnrichMessengerForCandidateCardAsync),
+                properties: new Dictionary<string, object?>
+                {
+                    ["messenger.autoReply.deferred"] = true,
+                    ["messenger.autoReply.knownCandidate"] = candidateAlreadyKnown,
+                    ["messenger.autoReply.remaining"] = autoRepliesRemaining
+                });
         }
 
         if (string.IsNullOrWhiteSpace(channelUrl))
@@ -2820,7 +3235,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 .ConfigureAwait(false);
         }
 
-        return new MessengerCardEnrichmentResult(channelUrl, chatMessages);
+        return new MessengerCardEnrichmentResult(channelUrl, chatMessages, autoReplySent);
     }
 
     /// <summary>
@@ -2955,7 +3370,8 @@ public sealed partial class AdsPowerAvitoAutomationService(
         for (var round = 0; round < 4; round++)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            await Task.Delay(round == 0 ? 280 : 220, cancellationToken).ConfigureAwait(false);
+            await HumanDelay.DelayAsync(round == 0 ? 400 : 280, round == 0 ? 900 : 650, cancellationToken)
+                .ConfigureAwait(false);
 
             var messagesRaw = await EvaluateWithRetryAsync<string>(
                     page,
@@ -2975,12 +3391,250 @@ public sealed partial class AdsPowerAvitoAutomationService(
     private static IReadOnlyList<AvitoChatMessage> ParseMiniMessengerMessages(JsonArray chatMessages) =>
         AvitoChatMessagesJson.Parse(chatMessages.ToJsonString());
 
+    private static bool CandidateJsonNeedsDetail(JsonObject item)
+    {
+        var vacancyUrl = item["vacancyUrl"]?.GetValue<string>();
+        var age = item["age"]?.GetValue<string>();
+        return string.IsNullOrWhiteSpace(vacancyUrl) || string.IsNullOrWhiteSpace(age);
+    }
+
+    private static async Task<bool> TryDetectJobCrmResponsesPageAsync(IPage page, CancellationToken cancellationToken)
+    {
+        try
+        {
+            var raw = await EvaluateWithRetryAsync<string>(
+                    page,
+                    AvitoCandidatesPageScripts.BuildIsJobCrmResponsesPageScript(),
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (string.IsNullOrWhiteSpace(raw))
+            {
+                return false;
+            }
+
+            using var doc = JsonDocument.Parse(UnwrapMessengerJson(raw));
+            return doc.RootElement.TryGetProperty("isJobCrm", out var prop) && prop.GetBoolean();
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private async Task TryApplyDetailPanelToCandidateAsync(
+        IPage page,
+        JsonObject item,
+        int candidateIndex,
+        CancellationToken cancellationToken)
+    {
+        await HumanDelay.BeforeCandidateClickAsync(cancellationToken).ConfigureAwait(false);
+        var clicked = await TryClickCandidateItemWithPointerAsync(page, candidateIndex, cancellationToken)
+            .ConfigureAwait(false);
+        if (!clicked)
+        {
+            var clickRaw = await EvaluateWithRetryAsync<string>(
+                    page,
+                    AvitoCandidatesPageScripts.BuildClickCandidateItemByIndexScript(candidateIndex),
+                    cancellationToken)
+                .ConfigureAwait(false);
+            clicked = TryParseMessengerChatClickStep(clickRaw, out var ok, out _) && ok;
+        }
+
+        if (!clicked)
+        {
+            return;
+        }
+
+        await HumanDelay.AfterCandidateClickAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var detailRaw = await EvaluateWithRetryAsync<string>(
+                    page,
+                    AvitoCandidatesPageScripts.BuildReadDetailPanelScript(),
+                    cancellationToken)
+                .ConfigureAwait(false);
+            ApplyDetailPanelJson(item, detailRaw);
+        }
+        catch
+        {
+            // Панель могла не открыться — чат всё равно пробуем.
+        }
+
+        _ = await EvaluateWithRetryAsync<string>(
+                page,
+                AvitoCandidatesPageScripts.BuildDismissCandidateDetailPanelScript(),
+                cancellationToken)
+            .ConfigureAwait(false);
+        await HumanDelay.AfterDetailPanelReadAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private static void ApplyDetailPanelJson(JsonObject item, string? detailRaw)
+    {
+        if (string.IsNullOrWhiteSpace(detailRaw))
+        {
+            return;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(UnwrapMessengerJson(detailRaw));
+            var root = doc.RootElement;
+            CopyIfMissing(item, root, "vacancyUrl");
+            CopyIfMissing(item, root, "vacancy");
+            CopyIfMissing(item, root, "city");
+            CopyIfMissing(item, root, "age");
+        }
+        catch
+        {
+            // ignore malformed panel snapshot
+        }
+    }
+
+    private static void CopyIfMissing(JsonObject item, JsonElement root, string property)
+    {
+        if (!root.TryGetProperty(property, out var value))
+        {
+            return;
+        }
+
+        var text = value.GetString();
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return;
+        }
+
+        var current = item[property]?.GetValue<string>();
+        if (string.IsNullOrWhiteSpace(current))
+        {
+            item[property] = text;
+        }
+    }
+
+    private static async Task<bool> TryClickCandidateItemWithPointerAsync(
+        IPage page,
+        int candidateIndex,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var items = await page.QuerySelectorAllAsync("[data-marker='job-application/item']").ConfigureAwait(false);
+            if (items is null || candidateIndex < 0 || candidateIndex >= items.Length)
+            {
+                return false;
+            }
+
+            return await AvitoHumanPointer.TryClickHandleAsync(page, items[candidateIndex], cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static async Task<bool> TryClickCandidateChatWithPointerAsync(
+        IPage page,
+        int candidateIndex,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var items = await page.QuerySelectorAllAsync("[data-marker='job-application/item']").ConfigureAwait(false);
+            if (items is null || candidateIndex < 0 || candidateIndex >= items.Length)
+            {
+                return false;
+            }
+
+            var chat = await items[candidateIndex]
+                .QuerySelectorAsync("[data-marker='job-application/link/to-chat']")
+                .ConfigureAwait(false);
+            if (chat is null)
+            {
+                return false;
+            }
+
+            return await AvitoHumanPointer.TryClickHandleAsync(page, chat, cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static readonly string[] MiniMessengerSendSelectors =
+    [
+        "[data-marker='reply/send']",
+        "[data-marker='reply/submit']",
+        "[data-marker='reply/sendButton']",
+        "form[data-marker='reply'] button[type='submit']"
+    ];
+
+    private static async Task<bool> TrySendMiniMessengerTextWithPointerAsync(
+        IPage page,
+        string messageText,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var input = await page.QuerySelectorAsync("[data-marker='reply/input']").ConfigureAwait(false);
+            if (input is null)
+            {
+                return false;
+            }
+
+            if (!await AvitoHumanPointer.TryTypeIntoHandleAsync(page, input, messageText, cancellationToken)
+                    .ConfigureAwait(false))
+            {
+                return false;
+            }
+
+            await HumanDelay.BeforeMessengerAutoReplySendAsync(cancellationToken).ConfigureAwait(false);
+
+            foreach (var selector in MiniMessengerSendSelectors)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                if (await AvitoHumanPointer.TryClickSelectorAsync(page, selector, cancellationToken)
+                        .ConfigureAwait(false))
+                {
+                    return true;
+                }
+            }
+
+            await page.Keyboard.PressAsync("Enter").ConfigureAwait(false);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
     private async Task<bool> TrySendMiniMessengerTextAsync(
         IPage page,
         string messageText,
         string purpose,
         CancellationToken cancellationToken)
     {
+        if (await TrySendMiniMessengerTextWithPointerAsync(page, messageText, cancellationToken).ConfigureAwait(false))
+        {
+            var appearedViaPointer = await WaitForEmployerAutoReplyInChatAsync(page, messageText, cancellationToken)
+                .ConfigureAwait(false);
+            _ = GlobalLogger.Instance.LogAsync(
+                appearedViaPointer
+                    ? $"AdsPower messenger {purpose} sent."
+                    : $"AdsPower messenger {purpose} submitted, but outgoing message was not confirmed in chat history.",
+                appearedViaPointer ? DeskLinkAuditLogLevel.Info : DeskLinkAuditLogLevel.Warning,
+                memberName: nameof(TrySendMiniMessengerTextAsync),
+                properties: new Dictionary<string, object?>
+                {
+                    ["page.url"] = page.Url,
+                    ["messenger.send.purpose"] = purpose,
+                    ["messenger.send.confirmed"] = appearedViaPointer,
+                    ["messenger.send.method"] = "pointer-type"
+                });
+            return appearedViaPointer;
+        }
+
         await HumanDelay.BeforeMessengerAutoReplySendAsync(cancellationToken).ConfigureAwait(false);
 
         var sendRaw = await EvaluateWithRetryAsync<string>(

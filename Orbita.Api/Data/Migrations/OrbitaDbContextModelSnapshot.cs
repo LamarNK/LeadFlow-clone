@@ -1901,6 +1901,15 @@ namespace Orbita.Api.Data.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
 
+                    b.Property<int>("CaptchaCount")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("CaptchaSolvedCount")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("CollectedCount")
+                        .HasColumnType("integer");
+
                     b.Property<int>("FoundCount")
                         .HasColumnType("integer");
 
@@ -2128,6 +2137,9 @@ namespace Orbita.Api.Data.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("character varying(256)");
 
+                    b.Property<DateTime?>("LastSeenAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<Guid?>("OfficeId")
                         .HasColumnType("uuid");
 
@@ -2251,6 +2263,14 @@ namespace Orbita.Api.Data.Migrations
 
                     b.Property<int>("ActiveAdsCount")
                         .HasColumnType("integer");
+
+                    b.Property<string>("AdsPowerGroupId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("AdsPowerGroupName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
 
                     b.Property<string>("AdsPowerProfileId")
                         .IsRequired()
@@ -2409,6 +2429,18 @@ namespace Orbita.Api.Data.Migrations
                     b.Property<string>("AdsPowerApiKey")
                         .HasMaxLength(256)
                         .HasColumnType("character varying(256)");
+
+                    b.Property<string>("AdsPowerGroupId")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("AdsPowerGroupName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("AdsPowerGroupsJson")
+                        .HasMaxLength(16000)
+                        .HasColumnType("character varying(16000)");
 
                     b.Property<string>("AgentVersion")
                         .HasMaxLength(50)
@@ -2572,6 +2604,10 @@ namespace Orbita.Api.Data.Migrations
                     b.Property<string>("ResponseHighlightTargetsJson")
                         .HasMaxLength(16000)
                         .HasColumnType("character varying(16000)");
+
+                    b.Property<string>("RuCaptchaApiKey")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
 
                     b.Property<DateTime?>("StartedAtUtc")
                         .HasColumnType("timestamp with time zone");

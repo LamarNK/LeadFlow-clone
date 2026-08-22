@@ -155,6 +155,15 @@ public sealed class WindowService(
                     });
             }
         }
+        else if (AdsPowerProxyFailureException.LooksLikeMessage(result.ErrorMessage))
+        {
+            account.Status = AvitoAccountStatus.RequiresManualAction;
+            account.LastErrorMessage = AccountIssueFormatting.FormatIssue(
+                account,
+                null,
+                AvitoSubProfileIssueKind.ProxyFailure,
+                result.ErrorMessage!);
+        }
         else if (result.HasCaptcha)
         {
             account.Status = AvitoAccountStatus.RequiresManualAction;

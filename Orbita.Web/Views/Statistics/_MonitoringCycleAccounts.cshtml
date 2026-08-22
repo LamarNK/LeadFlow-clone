@@ -13,6 +13,7 @@
                     <th class="cell-num">Суб-проф.</th>
                     <th class="cell-num">Циклы</th>
                     <th class="cell-num">Отклики</th>
+                    <th class="cell-num">Капча</th>
                 </tr>
             </thead>
             <tbody data-monitoring-accounts>
@@ -34,9 +35,10 @@
                         <td class="cell-num" data-label="Суб-проф.">@account.SubProfileCount</td>
                         <td class="cell-num" data-label="Циклы">@account.CycleCount</td>
                         <td class="cell-num" data-label="Отклики">@account.TotalLeads</td>
+                        <td class="cell-num" data-label="Капча">@account.CaptchaText</td>
                     </tr>
                     <tr class="monitoring-account-detail-row" data-monitoring-account-detail="@account.AccountName" hidden>
-                        <td colspan="5">
+                        <td colspan="6">
                             <div class="monitoring-report-table-wrap">
                                 <table class="data-table monitoring-report-table">
                                     <thead>
@@ -45,6 +47,7 @@
                                             <th class="monitoring-col-name">Название</th>
                                             <th class="monitoring-col-times">Успешное завершение</th>
                                             <th class="monitoring-col-leads">Откликов</th>
+                                            <th class="monitoring-col-captcha">Капча</th>
                                             <th class="monitoring-col-errors">Ошибки</th>
                                         </tr>
                                     </thead>
@@ -74,6 +77,7 @@
                                                     }
                                                 </td>
                                                 <td class="monitoring-col-leads">@row.LeadsText</td>
+                                                <td class="monitoring-col-captcha">@row.CaptchaText</td>
                                                 <td class="monitoring-col-errors @(row.HasErrors ? "cell-bad" : "cell-muted")">
                                                     @if (row.Errors.Count == 0)
                                                     {

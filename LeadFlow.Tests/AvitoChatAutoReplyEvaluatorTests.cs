@@ -93,6 +93,62 @@ public sealed class AvitoChatAutoReplyEvaluatorTests
 
         Assert.False(AvitoChatAutoReplyEvaluator.NeedsAutoReply(messages, configuredMessage));
     }
+
+    [Fact]
+    public void ShouldSendOnThisPass_FirstSight_IsFalseEvenIfChatNeedsReply()
+    {
+        var messages = new[] { Candidate("Здравствуйте") };
+
+        Assert.False(AvitoChatAutoReplyEvaluator.ShouldSendOnThisPass(
+            enabled: true,
+            candidateAlreadyKnown: false,
+            sentThisPass: 0,
+            maxPerPass: 3,
+            messages,
+            AvitoMessengerAutoReply.DefaultMessage));
+    }
+
+    [Fact]
+    public void ShouldSendOnThisPass_KnownAndNeedsReply_IsTrue()
+    {
+        var messages = new[] { Candidate("Здравствуйте") };
+
+        Assert.True(AvitoChatAutoReplyEvaluator.ShouldSendOnThisPass(
+            enabled: true,
+            candidateAlreadyKnown: true,
+            sentThisPass: 0,
+            maxPerPass: 3,
+            messages,
+            AvitoMessengerAutoReply.DefaultMessage));
+    }
+
+    [Fact]
+    public void ShouldSendOnThisPass_CapReached_IsFalse()
+    {
+        var messages = new[] { Candidate("Здравствуйте") };
+
+        Assert.False(AvitoChatAutoReplyEvaluator.ShouldSendOnThisPass(
+            enabled: true,
+            candidateAlreadyKnown: true,
+            sentThisPass: 3,
+            maxPerPass: 3,
+            messages,
+            AvitoMessengerAutoReply.DefaultMessage));
+    }
+
+    [Fact]
+    public void ShouldSendOnThisPass_Disabled_IsFalse()
+    {
+        var messages = new[] { Candidate("Здравствуйте") };
+
+        Assert.False(AvitoChatAutoReplyEvaluator.ShouldSendOnThisPass(
+            enabled: false,
+            candidateAlreadyKnown: true,
+            sentThisPass: 0,
+            maxPerPass: 3,
+            messages,
+            AvitoMessengerAutoReply.DefaultMessage));
+    }
     private static AvitoChatMessage Platform(string text) => new()
     {
         Text = text,

@@ -29,6 +29,7 @@ public static class WorkerEventClassifier
         return Normalize(label) switch
         {
             "капча / блок ip" => "captcha",
+            "блок ip" => "ip_block",
             "нужен вход" => "auth",
             "не переключился" => "switch",
             "ошибка парсинга" or "таймаут" or "проблема" => "error",
@@ -46,6 +47,7 @@ public static class WorkerEventClassifier
         return Normalize(label) switch
         {
             "капча / блок ip" => "blocked",
+            "блок ip" => "blocked",
             "нужен вход" => "auth",
             "не переключился" => "automation",
             "ошибка парсинга" => "parsing",
@@ -58,9 +60,11 @@ public static class WorkerEventClassifier
 
     public static bool IsCaptcha(string text, string? details)
     {
+        if (IsIpBlock(text, details))
+            return false;
+
         if (text.Contains("капча", StringComparison.OrdinalIgnoreCase)
             || text.Contains("captcha", StringComparison.OrdinalIgnoreCase)
-            || text.Contains("блок ip", StringComparison.OrdinalIgnoreCase)
             || text.Contains("firewall", StringComparison.OrdinalIgnoreCase))
             return true;
 
@@ -72,9 +76,15 @@ public static class WorkerEventClassifier
             || lowerDetails.Contains("subprofile-captcha")
             || lowerDetails.Contains("image-captcha")
             || lowerDetails.Contains("hcaptcha")
-            || lowerDetails.Contains("geetest")
-            || lowerDetails.Contains("\"kind\":\"firewall");
+            || lowerDetails.Contains("geetest");
     }
+
+    public static bool IsIpBlock(string text, string? details) =>
+        text.Contains("блок ip", StringComparison.OrdinalIgnoreCase)
+        || text.Contains("проблема с ip", StringComparison.OrdinalIgnoreCase)
+        || text.Contains("доступ ограничен", StringComparison.OrdinalIgnoreCase)
+        || (!string.IsNullOrWhiteSpace(details)
+            && details.Contains("\"kind\":\"firewall", StringComparison.OrdinalIgnoreCase));
 
     public static bool IsAutomationFailure(string text, string level)
     {
@@ -196,7 +206,7 @@ public static class WorkerEventClassifier
 
         return Normalize(label) switch
         {
-            "капча / блок ip" or "нужен вход" => "high",
+            "капча / блок ip" or "блок ip" or "нужен вход" => "high",
             "профиль занят" or "лимит частоты adspower" or "дневной лимит adspower" => "low",
             "таймаут" => level.Equals("Error", StringComparison.OrdinalIgnoreCase) ? "medium" : "low",
             "не переключился" or "проблема" or "ошибка парсинга" => "medium",

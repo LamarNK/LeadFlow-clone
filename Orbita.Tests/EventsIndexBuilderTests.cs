@@ -18,7 +18,7 @@ public sealed class EventsIndexBuilderTests
         var row = EventsIndexBuilder.MapEvent(CreateEvent("Warning", message));
 
         Assert.Equal("captcha", row.EventType);
-        Assert.Equal("Капча / блок IP", row.EventTypeLabel);
+        Assert.Equal("Капча", row.EventTypeLabel);
         Assert.Equal("warning", row.EventTypeTone);
     }
 
@@ -73,7 +73,20 @@ public sealed class EventsIndexBuilderTests
             details));
 
         Assert.Equal("captcha", row.EventType);
-        Assert.Equal("Капча / блок IP", row.EventTypeLabel);
+        Assert.Equal("Капча", row.EventTypeLabel);
+    }
+
+    [Fact]
+    public void MapEvent_IpBlock_IsClassifiedSeparately_AndCannotOpenCaptchaSolver()
+    {
+        const string message = "Субпрофиль «СлужбаРФ 6» · аккаунт «Avito 8 (2)» — блок IP: доступ ограничен: проблема с IP.";
+        const string details = """{"kind":"firewall","url":"https://www.avito.ru/profile/candidates"}""";
+
+        var row = EventsIndexBuilder.MapEvent(CreateEvent("Warning", message, details));
+
+        Assert.Equal("ip_block", row.EventType);
+        Assert.Equal("Блок IP", row.EventTypeLabel);
+        Assert.False(row.CanSolveCaptcha);
     }
 
     private static WorkerEventListItem CreateEvent(string level, string message, string? details = null) =>

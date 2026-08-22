@@ -12,22 +12,35 @@ public static class AvitoAutomationFailureFormatter
         Exception? inner = null,
         IReadOnlyList<string>? recoveryAttempts = null)
     {
-        if (SuggestsLogin(pageState))
+        if (pageState?.HasInsufficientAdvance == true)
         {
-            return "требуется повторная авторизация в Avito — автовход не удался, откройте браузер AdsPower и войдите (телефон/почта и пароль).";
+            var emailHint = pageState.HasEmailConfirmationRequired
+                ? " Также подтвердите почту по ссылке из письма Avito."
+                : string.Empty;
+            return $"на авансе недостаточно денег: объявления скрыты в поиске, поэтому новые отклики не поступают. Пополните аванс в Avito.{emailHint}";
+        }
+
+        if (pageState?.HasEmailConfirmationRequired == true)
+        {
+            return "подтвердите почту по ссылке из письма Avito, чтобы завершить настройку профиля.";
         }
 
         if (pageState?.HasFirewallIp == true
             || (pageState?.HasCaptcha == true && pageState.PageKind == AvitoPageKind.Captcha))
         {
             return pageState?.HasFirewallIp == true
-                ? "доступ ограничен: проблема с IP — откройте браузер AdsPower и нажмите «Продолжить» / пройдите проверку."
+                ? "доступ ограничен: проблема с IP — откройте браузер AdsPower, дождитесь разблокировки или пройдите проверку."
                 : "на странице капча — нужна ручная проверка в браузере AdsPower.";
         }
 
         if (pageState?.HasCaptcha == true || pageState?.PageKind == AvitoPageKind.Captcha)
         {
-            return "на странице капча или блок IP — нужна ручная проверка в браузере.";
+            return "на странице капча — нужна ручная проверка в браузере.";
+        }
+
+        if (SuggestsLogin(pageState))
+        {
+            return "требуется повторная авторизация в Avito — автовход не удался, откройте браузер AdsPower и войдите (телефон/почта и пароль).";
         }
 
         if (pageState?.ProfileSwitchModalOpen == true)
@@ -75,9 +88,12 @@ public static class AvitoAutomationFailureFormatter
         pageState switch
         {
             _ when inner is AvitoLoginRequiredException => AvitoSubProfileIssueKind.AuthRequired,
+            { HasInsufficientAdvance: true } => AvitoSubProfileIssueKind.InsufficientAdvance,
+            { HasEmailConfirmationRequired: true } => AvitoSubProfileIssueKind.EmailConfirmationRequired,
+            { HasFirewallIp: true } => AvitoSubProfileIssueKind.IpBlock,
+            { HasCaptcha: true } or { PageKind: AvitoPageKind.Captcha } => AvitoSubProfileIssueKind.Captcha,
             _ when SuggestsLogin(pageState) => AvitoSubProfileIssueKind.AuthRequired,
             { HasLoginForm: true } or { PageKind: AvitoPageKind.Login } => AvitoSubProfileIssueKind.AuthRequired,
-            { HasFirewallIp: true } or { HasCaptcha: true } or { PageKind: AvitoPageKind.Captcha } => AvitoSubProfileIssueKind.Captcha,
             { ProfileSwitchModalOpen: true } => AvitoSubProfileIssueKind.SwitchFailed,
             _ when inner is AvitoPageMismatchException => AvitoSubProfileIssueKind.SwitchFailed,
             _ when inner is JsonException => AvitoSubProfileIssueKind.ParseFailed,
@@ -85,7 +101,9 @@ public static class AvitoAutomationFailureFormatter
         };
 
     public static bool IsAccountBlockingIssue(string kind) =>
-        kind is AvitoSubProfileIssueKind.AuthRequired or AvitoSubProfileIssueKind.Captcha;
+        kind is AvitoSubProfileIssueKind.AuthRequired
+            or AvitoSubProfileIssueKind.Captcha
+            or AvitoSubProfileIssueKind.IpBlock;
 
     private static string FormatAttempts(IReadOnlyList<string>? recoveryAttempts) =>
         recoveryAttempts is { Count: > 0 }

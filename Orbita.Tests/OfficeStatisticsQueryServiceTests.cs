@@ -5,6 +5,7 @@ using Orbita.Contracts;
 
 namespace Orbita.Tests;
 
+[Collection("PanelAggregateCache")]
 public sealed class OfficeStatisticsQueryServiceTests
 {
     private static readonly Guid OfficeA = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
@@ -33,6 +34,28 @@ public sealed class OfficeStatisticsQueryServiceTests
         Assert.Equal(2, result.Responses.Total);
         Assert.Equal(1, result.HrInsights.TopCities.Count);
         Assert.Equal("Москва", result.HrInsights.TopCities[0].Name);
+    }
+
+    [Fact]
+    public async Task GetStatisticsAsync_DifferentOfficeScopesWithNullFilter_DoNotShareCache()
+    {
+        await using var db = CreateDb();
+        SeedOfficeData(db);
+
+        var sut = CreateService(db);
+        var officeA = await sut.GetStatisticsAsync(
+            OfficeScope.ForOffice(OfficeA),
+            officeFilter: null,
+            DateTime.Today.AddDays(-6),
+            DateTime.Today);
+        var officeB = await sut.GetStatisticsAsync(
+            OfficeScope.ForOffice(OfficeB),
+            officeFilter: null,
+            DateTime.Today.AddDays(-6),
+            DateTime.Today);
+
+        Assert.Equal(2, officeA.Responses.Total);
+        Assert.Equal(1, officeB.Responses.Total);
     }
 
     [Fact]

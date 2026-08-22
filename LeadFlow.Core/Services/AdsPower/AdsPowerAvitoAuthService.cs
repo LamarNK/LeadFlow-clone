@@ -235,6 +235,26 @@ public sealed class AdsPowerAvitoAuthService(
 
             return result;
         }
+        catch (AdsPowerProxyFailureException ex)
+        {
+            Log(
+                DeskLinkAuditLogLevel.Warning,
+                $"Auth check: прокси AdsPower не работает: {ex.Message}",
+                new Dictionary<string, object?>
+                {
+                    ["step"] = "proxy_failure",
+                    ["page.url"] = ex.PageUrl,
+                    ["error.type"] = ex.GetType().FullName
+                },
+                AdsPowerProxyFailureException.ErrorKey);
+            return new AdsPowerAvitoAuthResult(
+                IsAuthorized: false,
+                ProfileName: null,
+                CurrentUrl: ex.PageUrl,
+                HasLoginForm: false,
+                HasCaptcha: false,
+                ErrorMessage: ex.UserMessage);
+        }
         catch (Exception ex)
         {
             Log(
@@ -309,6 +329,9 @@ public sealed class AdsPowerAvitoAuthService(
     {
         await AdsPowerAvitoAutomationService
             .WaitForAdsPowerStartupNavigationAsync(browser, nameof(GetOrCreateAvitoPageAsync), cancellationToken)
+            .ConfigureAwait(false);
+        await AdsPowerAvitoAutomationService
+            .EnsureAdsPowerProxyReadyAsync(browser, nameof(GetOrCreateAvitoPageAsync), cancellationToken)
             .ConfigureAwait(false);
 
         var existingPages = (await browser.PagesAsync().ConfigureAwait(false)).ToList();
@@ -577,8 +600,9 @@ public sealed class AdsPowerAvitoAuthService(
             // Текстовые + структурные маркеры: firewall-страница Avito («Доступ ограничен»)
             // в bodyText слова «firewall» не содержит, поэтому проверяем DOM-узлы напрямую.
             const hasCaptcha =
-                /капч|captcha|подтвердите[\s\S]*проверочный код|Доступ\s+ограничен|проблема\s+с\s+IP/i.test(bodyText) ||
-                !!document.querySelector('.firewall-container, .js-firewall-form, .firewall-title, .h-captcha') ||
+                /капч|captcha|подтвердите[\s\S]*проверочный код|Доступ\s+ограничен|проблема\s+с\s+IP|Отключить\s+VPN|самол[её]те/i.test(bodyText) ||
+                location.hash === '#block' ||
+                !!document.querySelector('.firewall-container, .js-firewall-form, .firewall-title, .h-captcha, a[href*="support.avito.ru/request/720"]') ||
                 !!document.getElementById('h-captcha') ||
                 !!document.getElementById('geetest_captcha') ||
                 !!document.getElementById('inner-captcha');

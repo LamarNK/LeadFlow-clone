@@ -7,6 +7,28 @@ namespace Orbita.Tests;
 public sealed class SettingsUserGroupsTests
 {
     [Fact]
+    public void BuildUsersTab_PreservesUserPresenceFromApi()
+    {
+        var lastSeenAtUtc = new DateTime(2026, 8, 18, 12, 0, 0, DateTimeKind.Utc);
+        var model = SettingsIndexBuilder.BuildUsersTab(
+            [new PanelUserDto(
+                "operator",
+                "operator@orbita.local",
+                true,
+                PanelRoles.Operator,
+                false,
+                FullName: "Оператор",
+                LastSeenAtUtc: lastSeenAtUtc,
+                IsOnline: true)],
+            [],
+            "operator");
+
+        var user = Assert.Single(model.Users);
+        Assert.True(user.IsOnline);
+        Assert.Equal(lastSeenAtUtc, user.LastSeenAtUtc);
+    }
+
+    [Fact]
     public void BuildUserGroups_SplitsAdminsOfficesAndUnassigned()
     {
         var officeOne = Guid.Parse("11111111-1111-1111-1111-111111111111");

@@ -29,12 +29,16 @@ public sealed class WorkersController(IWorkersService workers) : Controller
         Guid id,
         string? sort = null,
         string? dir = null,
+        string? q = null,
+        string? groupId = null,
         CancellationToken ct = default)
     {
         var model = await workers.GetDetailsAsync(
             id,
             sort: sort,
             sortDir: dir,
+            accountSearchQuery: q,
+            accountGroupId: groupId,
             ct: ct);
 
         if (model is null)
@@ -59,7 +63,9 @@ public sealed class WorkersController(IWorkersService workers) : Controller
             Events = model.Events,
             ActivityChart = model.ActivityChart,
             CurrentActivity = model.CurrentActivity,
-            ActiveAccountActivities = model.ActiveAccountActivities
+            ActiveAccountActivities = model.ActiveAccountActivities,
+            AdsPowerGroups = model.AdsPowerGroups,
+            AccountGroupOptions = model.AccountGroupOptions
         });
     }
 
@@ -112,12 +118,16 @@ public sealed class WorkersController(IWorkersService workers) : Controller
         Guid id,
         string? sort = null,
         string? dir = null,
+        string? q = null,
+        string? groupId = null,
         CancellationToken ct = default)
     {
         var model = await workers.GetDetailsAsync(
             id,
             sort: sort,
             sortDir: dir,
+            accountSearchQuery: q,
+            accountGroupId: groupId,
             ct);
         return model is null ? NotFound() : View(model);
     }
@@ -146,6 +156,8 @@ public sealed class WorkersController(IWorkersService workers) : Controller
         int maxConcurrentAccounts,
         string? adsPowerApiBaseUrl,
         string? adsPowerApiKey,
+        string? ruCaptchaApiKey,
+        string? adsPowerGroupId,
         bool responseFilterEnabled = false,
         bool responseFilterExcludeFemale = false,
         bool responseFilterExcludeMale = false,
@@ -184,6 +196,7 @@ public sealed class WorkersController(IWorkersService workers) : Controller
             maxConcurrentAccounts,
             adsPowerApiBaseUrl,
             adsPowerApiKey,
+            adsPowerGroupId,
             responseFilterEnabled,
             responseFilterExcludeFemale,
             responseFilterExcludeMale,
@@ -202,6 +215,7 @@ public sealed class WorkersController(IWorkersService workers) : Controller
             autoDeliverToCrm,
             autoDeliverToBitrix,
             responseHighlightTargetsJson,
+            ruCaptchaApiKey,
             ct);
         if (!success)
         {

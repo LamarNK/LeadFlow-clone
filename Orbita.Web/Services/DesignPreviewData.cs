@@ -2107,7 +2107,9 @@ internal static class DesignPreviewData
     public static WorkerDetailsViewModel? BuildWorkerDetailsViewModel(
         Guid id,
         string? sort = null,
-        string? sortDir = null)
+        string? sortDir = null,
+        string? accountSearchQuery = null,
+        string? accountGroupId = null)
     {
         var worker = GetWorker(id);
         if (worker is null) return null;
@@ -2120,7 +2122,9 @@ internal static class DesignPreviewData
             GetWorkerEvents(id),
             GetWorkerMeta(id),
             summary,
-            sort: tableSort);
+            sort: tableSort,
+            accountSearchQuery: accountSearchQuery,
+            accountGroupId: accountGroupId);
     }
 
     private static IReadOnlyList<WorkerBalanceDto> BuildWorkerBalances(Guid workerId) =>
@@ -2340,6 +2344,36 @@ internal static class DesignPreviewData
         }
 
         return [];
+    }
+
+    public static IReadOnlyList<OfficeAccountListItem> GetOfficeAccounts(Guid? officeId, Guid? workerId = null)
+    {
+        var workers = GetWorkers(officeId);
+        if (workerId is Guid requestedWorkerId)
+        {
+            workers = workers.Where(w => w.Id == requestedWorkerId).ToList();
+        }
+
+        var items = new List<OfficeAccountListItem>();
+        foreach (var worker in workers)
+        {
+            var detail = GetWorker(worker.Id);
+            foreach (var account in GetAccounts(worker.Id))
+            {
+                var balance = detail?.Balances.FirstOrDefault(b => b.AccountId == account.AccountId);
+                items.Add(new OfficeAccountListItem(
+                    worker.Id,
+                    worker.DisplayName,
+                    worker.OfficeName,
+                    worker.IsOnline,
+                    worker.CurrentActivity,
+                    worker.ActiveAccounts ?? worker.CurrentActivity?.ActiveAccounts,
+                    account,
+                    balance));
+            }
+        }
+
+        return items;
     }
 
     public static IReadOnlyList<WorkerEventListItem> Events =>
@@ -2675,7 +2709,8 @@ internal static class DesignPreviewData
         string? sort = null,
         string? sortDir = null,
         bool showOfficeColumn = false,
-        Guid? workerId = null) =>
+        Guid? workerId = null,
+        string? groupId = null) =>
         AccountsIndexBuilder.Build(
             BuildPreviewAccountRows(),
             searchQuery,
@@ -2686,7 +2721,8 @@ internal static class DesignPreviewData
             pageSize,
             showOfficeColumn,
             workerId: workerId,
-            workers: ResponsesIndexBuilder.BuildWorkerOptions(GetWorkers(null)));
+            workers: ResponsesIndexBuilder.BuildWorkerOptions(GetWorkers(null)),
+            groupId: groupId);
 
     private static IReadOnlyList<AccountRowViewModel> BuildPreviewAccountRows()
     {
@@ -2777,11 +2813,16 @@ internal static class DesignPreviewData
 
     public static IReadOnlyList<PanelUserDto> PanelUsers =>
     [
-        new("preview-admin", "admin@orbita.local", true, PanelRoles.Admin, false, FullName: "Администратор Орбита"),
-        new("preview-office-lead", "lead@orbita.local", true, PanelRoles.OfficeLead, false, PreviewOfficeId, "Основной", "Марина Ковалёва"),
-        new(PreviewManagerElena, "elena@orbita.local", true, PanelRoles.Manager, false, PreviewOfficeId, "Основной", "Елена Воронцова"),
-        new(PreviewManagerIgor, "igor@orbita.local", true, PanelRoles.SeniorManager, false, PreviewOfficeId, "Основной", "Игорь Савельев"),
-        new("preview-operator", "operator@orbita.local", true, PanelRoles.Operator, true, PreviewOfficeId, "Основной", "Алексей Селезнёв")
+        new("preview-admin", "admin@orbita.local", true, PanelRoles.Admin, false,
+            FullName: "Администратор Орбита", LastSeenAtUtc: Now.AddMinutes(-1), IsOnline: true),
+        new("preview-office-lead", "lead@orbita.local", true, PanelRoles.OfficeLead, false,
+            PreviewOfficeId, "Основной", "Марина Ковалёва", LastSeenAtUtc: Now.AddMinutes(-14)),
+        new(PreviewManagerElena, "elena@orbita.local", true, PanelRoles.Manager, false,
+            PreviewOfficeId, "Основной", "Елена Воронцова", LastSeenAtUtc: Now.AddMinutes(-2), IsOnline: true),
+        new(PreviewManagerIgor, "igor@orbita.local", true, PanelRoles.SeniorManager, false,
+            PreviewOfficeId, "Основной", "Игорь Савельев", LastSeenAtUtc: Now.AddHours(-3)),
+        new("preview-operator", "operator@orbita.local", true, PanelRoles.Operator, true,
+            PreviewOfficeId, "Основной", "Алексей Селезнёв", LastSeenAtUtc: Now.AddDays(-1))
     ];
 
     private static readonly object OfficeStaffSync = new();

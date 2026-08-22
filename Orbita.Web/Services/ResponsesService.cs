@@ -74,14 +74,32 @@ public sealed class ResponsesService(
             sort,
             sortDir);
 
-        var pageDto = await api.GetResponsesPageAsync(query, ct)
-            ?? new ResponsesPageDto([], 0, page, pageSize.Value);
-        var summary = await api.GetResponsesSummaryAsync(query, ct)
-            ?? new ResponsesSummaryDto(0, 0, 0, 0, 0, null);
-        var workers = await api.GetWorkersAsync(ct) ?? [];
-        var accounts = await api.GetResponseFilterAccountsAsync(ct) ?? [];
-        var bitrixInstances = await api.GetBitrixInstancesAsync(ct: ct) ?? [];
-        var officeOptionsDto = await api.GetOfficeOptionsAsync(ct) ?? [];
+        var pageTask = api.GetResponsesPageAsync(query, ct);
+        var summaryTask = api.GetResponsesSummaryAsync(query, ct);
+        var workersTask = api.GetWorkersAsync(ct);
+        var accountsTask = api.GetResponseFilterAccountsAsync(ct);
+        var bitrixTask = api.GetBitrixInstancesAsync(ct: ct);
+        var officesTask = api.GetOfficeOptionsAsync(ct);
+        var vacanciesTask = api.GetResponseFilterVacanciesAsync(fromUtc, toUtc, ct);
+        var detailTask = selectedId is Guid selectedResponseId
+            ? api.GetResponseDetailAsync(selectedResponseId, ct)
+            : Task.FromResult<ResponseDetailDto?>(null);
+        await Task.WhenAll(
+            pageTask,
+            summaryTask,
+            workersTask,
+            accountsTask,
+            bitrixTask,
+            officesTask,
+            vacanciesTask,
+            detailTask);
+
+        var pageDto = await pageTask ?? new ResponsesPageDto([], 0, page, pageSize.Value);
+        var summary = await summaryTask ?? new ResponsesSummaryDto(0, 0, 0, 0, 0, null);
+        var workers = await workersTask ?? [];
+        var accounts = await accountsTask ?? [];
+        var bitrixInstances = await bitrixTask ?? [];
+        var officeOptionsDto = await officesTask ?? [];
         var officeOptions = officeOptionsDto
             .Select(o => new EventFilterOptionViewModel { Value = o.Id.ToString(), Label = o.Name })
             .ToList();
@@ -94,16 +112,13 @@ public sealed class ResponsesService(
                 CrmEnabled = true
             })
             .ToList();
-        var vacancyOptions = await api.GetResponseFilterVacanciesAsync(fromUtc, toUtc, ct) ?? [];
+        var vacancyOptions = await vacanciesTask ?? [];
 
         ResponseDetailViewModel? selected = null;
-        if (selectedId is Guid id)
+        var detail = await detailTask;
+        if (detail is not null)
         {
-            var detail = await api.GetResponseDetailAsync(id, ct);
-            if (detail is not null)
-            {
-                selected = ResponsesIndexBuilder.MapDetail(detail);
-            }
+            selected = ResponsesIndexBuilder.MapDetail(detail);
         }
 
         var workerOptions = ResponsesIndexBuilder.BuildWorkerOptions(workers);
@@ -341,8 +356,11 @@ public sealed class ResponsesService(
             return DesignPreviewData.BuildResponsesDeliverOptions();
         }
 
-        var officeOptionsDto = await api.GetOfficeOptionsAsync(ct) ?? [];
-        var bitrixInstances = await api.GetBitrixInstancesAsync(ct: ct) ?? [];
+        var officeOptionsTask = api.GetOfficeOptionsAsync(ct);
+        var bitrixInstancesTask = api.GetBitrixInstancesAsync(ct: ct);
+        await Task.WhenAll(officeOptionsTask, bitrixInstancesTask);
+        var officeOptionsDto = await officeOptionsTask ?? [];
+        var bitrixInstances = await bitrixInstancesTask ?? [];
 
         return new ResponsesDeliverOptionsViewModel
         {

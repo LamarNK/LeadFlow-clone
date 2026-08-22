@@ -1,0 +1,11 @@
+[Unit]
+Description=Daily Orbita PostgreSQL backup
+
+[Timer]
+OnCalendar=*-*-* 23:30:00 UTC
+Persistent=true
+RandomizedDelaySec=10m
+Unit=orbita-db-backup.service
+
+[Install]
+WantedBy=timers.target

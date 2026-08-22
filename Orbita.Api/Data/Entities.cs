@@ -46,6 +46,8 @@ public sealed class PanelUserProfileEntity
     public string UserId { get; set; } = string.Empty;
     public string? FullName { get; set; }
     public Guid? OfficeId { get; set; }
+    /// <summary>UTC-момент последней активности пользователя в веб-панели.</summary>
+    public DateTime? LastSeenAtUtc { get; set; }
     public int CrmCapacity { get; set; } = 300;
     public bool CrmShiftActive { get; set; }
 
@@ -205,6 +207,13 @@ public sealed class WorkerEntity
     public long? LastRamTotalMb { get; set; }
     public string? AdsPowerApiBaseUrl { get; set; }
     public string? AdsPowerApiKey { get; set; }
+    /// <summary>Ключ RuCaptcha для автопрохождения GeeTest v4 на Avito.</summary>
+    public string? RuCaptchaApiKey { get; set; }
+    /// <summary>ID группы AdsPower; null — синхронизировать все профили.</summary>
+    public string? AdsPowerGroupId { get; set; }
+    public string? AdsPowerGroupName { get; set; }
+    /// <summary>JSON-список групп AdsPower, последний раз полученный с воркера.</summary>
+    public string? AdsPowerGroupsJson { get; set; }
     public string? LastUpdateVersion { get; set; }
     public bool? LastUpdateSuccess { get; set; }
     public string? LastUpdateMessage { get; set; }
@@ -251,6 +260,8 @@ public sealed class WorkerAccountEntity
     public Guid WorkerId { get; set; }
     public Guid AccountId { get; set; }
     public string AdsPowerProfileId { get; set; } = string.Empty;
+    public string? AdsPowerGroupId { get; set; }
+    public string? AdsPowerGroupName { get; set; }
     public string DisplayName { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
     public bool IsEnabled { get; set; }
@@ -338,6 +349,10 @@ public sealed class MonitoringSubProfileRunEntity
     public int PublishedCount { get; set; }
     public int DeferredCount { get; set; }
     public int SkippedDuplicateCount { get; set; }
+    /// <summary>Новые отклики, впервые собранные в этом проходе (без повторных публикаций).</summary>
+    public int CollectedCount { get; set; }
+    public int CaptchaCount { get; set; }
+    public int CaptchaSolvedCount { get; set; }
 
     public MonitoringCycleRunEntity CycleRun { get; set; } = null!;
 }

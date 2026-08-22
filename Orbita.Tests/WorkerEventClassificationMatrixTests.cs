@@ -16,6 +16,10 @@ public sealed class WorkerEventClassificationMatrixTests
             "captcha", "blocked"
         },
         {
+            "блок IP", "доступ ограничен: проблема с IP.", "Warning",
+            "ip_block", "blocked"
+        },
+        {
             "нужен вход", "требуется повторная авторизация.", "Warning",
             "auth", "auth"
         },

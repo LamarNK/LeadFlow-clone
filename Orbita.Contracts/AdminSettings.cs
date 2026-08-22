@@ -9,7 +9,9 @@ public sealed record PanelUserDto(
     Guid? OfficeId = null,
     string? OfficeName = null,
     string? FullName = null,
-    IReadOnlyList<string>? PermissionOverride = null);
+    IReadOnlyList<string>? PermissionOverride = null,
+    DateTime? LastSeenAtUtc = null,
+    bool IsOnline = false);
 
 public sealed record CreatePanelUserRequest(
     string Email,

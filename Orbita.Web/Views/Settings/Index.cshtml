@@ -335,6 +335,20 @@
                                                         <span class="settings-user-person__content">
                                                             <strong class="settings-user-person__name">@displayName</strong>
                                                             <span class="settings-user-email">@user.Email</span>
+                                                            @if (user.IsOnline)
+                                                            {
+                                                                <span class="settings-user-presence settings-user-presence--online">Онлайн</span>
+                                                            }
+                                                            else if (user.LastSeenAtUtc is not null)
+                                                            {
+                                                                <span class="settings-user-presence settings-user-presence--offline">
+                                                                    Был(а) онлайн <partial name="_UtcTime" model="@(new UtcTimeDisplayModel(user.LastSeenAtUtc, "activity"))" />
+                                                                </span>
+                                                            }
+                                                            else
+                                                            {
+                                                                <span class="settings-user-presence settings-user-presence--unknown">Не входил(а)</span>
+                                                            }
                                                             <span class="settings-user-person__badges">
                                                                 @if (user.IsCurrentUser)
                                                                 {
@@ -955,7 +969,12 @@
         </div>
     }
     <dialog class="settings-dialog settings-dialog--user" id="editUserDialog">
-        <form asp-action="UpdateUser" method="post" class="settings-dialog-form settings-user-dialog" id="editUserForm">
+        <form asp-action="UpdateUser"
+              method="post"
+              class="settings-dialog-form settings-user-dialog"
+              id="editUserForm"
+              data-update-user-action="@Url.Action("UpdateUser", "Settings")"
+              data-orbita-full-submit>
             @Html.AntiForgeryToken()
             <input type="hidden" name="UserId" id="editUserId" />
             <input type="hidden" name="OriginalFullName" id="editUserOriginalFullName" />
@@ -1038,6 +1057,7 @@
                 </section>
             </div>
             <footer class="settings-dialog-actions">
+                <p class="settings-user-dialog__submit-error" id="editUserSubmitError" role="alert" hidden></p>
                 <button type="button" class="settings-secondary-btn" data-settings-dialog-close>Отмена</button>
                 <button type="submit" class="settings-primary-btn">Сохранить</button>
             </footer>

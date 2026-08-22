@@ -5,6 +5,7 @@ using System.Diagnostics;
 
 
 
+using LeadFlow.Core.Services.Captcha;
 using LeadFlow.Services.Browser;
 using System.Text.Json;
 
@@ -488,6 +489,11 @@ public sealed class MonitoringService(
                 LogActiveAdsChange("UpdateProfileStatsAsync.catch_ads_power_limit", account.Id, GetPersistedOrMemoryActiveAdCount(account), GetPersistedOrMemoryActiveAdCount(account), false);
                 await HandleAdsPowerDailyOpenLimitForAccountAsync(account, limitEx, token).ConfigureAwait(false);
             }
+            catch (AdsPowerProxyFailureException proxyEx)
+            {
+                LogActiveAdsChange("UpdateProfileStatsAsync.catch_ads_power_proxy", account.Id, GetPersistedOrMemoryActiveAdCount(account), GetPersistedOrMemoryActiveAdCount(account), false);
+                await HandleAdsPowerProxyFailureForAccountAsync(account, proxyEx, token).ConfigureAwait(false);
+            }
             catch (Exception ex)
             {
                 LogActiveAdsChange("UpdateProfileStatsAsync.catch_generic", account.Id, GetPersistedOrMemoryActiveAdCount(account), GetPersistedOrMemoryActiveAdCount(account), false);
@@ -613,12 +619,14 @@ public sealed class MonitoringService(
                     }
 
                     var historicalHeat = await repository.GetHistoricalResponseIngestHeatScoreAsync(DateTime.UtcNow, cancellationToken);
-                    var delay = MonitoringCycleDelay.GetDelayAfterCycle(
-                        newResponsesThisCycle,
-                        accountsPolled,
-                        _consecutiveQuietMonitoringCycles,
-                        hadUndischargedBacklog,
-                        historicalHeat);
+                    var delay = MonitoringNightQuiet.ApplyFloor(
+                        MonitoringCycleDelay.GetDelayAfterCycle(
+                            newResponsesThisCycle,
+                            accountsPolled,
+                            _consecutiveQuietMonitoringCycles,
+                            hadUndischargedBacklog,
+                            historicalHeat),
+                        DateTime.UtcNow);
                     _ = GlobalLogger.Instance.LogAsync(
                         $"[monitoring] Следующий цикл через {delay.TotalMinutes:F1} мин (новых: {newResponsesThisCycle}, опрошено аккаунтов: {accountsPolled}, тихих циклов подряд: {_consecutiveQuietMonitoringCycles}, очередь откликов: {hadUndischargedBacklog}, истор. «жара» слота: {historicalHeat:F2}).",
                         DeskLinkAuditLogLevel.Info);
@@ -830,6 +838,11 @@ public sealed class MonitoringService(
             await HandleAdsPowerProfileInUseForAccountAsync(account, profileInUseEx, cancellationToken).ConfigureAwait(false);
             return (0, true, false);
         }
+        catch (AdsPowerProxyFailureException proxyEx)
+        {
+            await HandleAdsPowerProxyFailureForAccountAsync(account, proxyEx, cancellationToken).ConfigureAwait(false);
+            return (0, true, false);
+        }
         finally
         {
             accountSw.Stop();
@@ -850,13 +863,16 @@ public sealed class MonitoringService(
         CancellationToken ct)
     {
         account.Status = AvitoAccountStatus.RequiresManualAction;
-        var detail = $"Avito показал капчу/блок IP ({captchaEx.Kind}). Откройте браузер и пройдите проверку.";
+        var issueKind = AvitoSubProfileIssueKind.FromCaptchaKind(captchaEx.Kind);
+        var detail = issueKind == AvitoSubProfileIssueKind.IpBlock
+            ? "Avito ограничил доступ из-за IP. Откройте браузер и дождитесь разблокировки или смените IP."
+            : $"Avito показал капчу ({captchaEx.Kind}). Откройте браузер и пройдите проверку.";
         if (!account.HasSubProfileIssues)
         {
             account.LastErrorMessage = AccountIssueFormatting.FormatIssue(
                 account,
                 null,
-                AvitoSubProfileIssueKind.Captcha,
+                issueKind,
                 detail);
         }
         else
@@ -871,21 +887,23 @@ public sealed class MonitoringService(
             {
                 AccountId = account.Id,
                 Level = "Warning",
-                Message = "Avito показал капчу/firewall",
+                Message = issueKind == AvitoSubProfileIssueKind.IpBlock
+                    ? "Avito ограничил доступ из-за IP"
+                    : "Avito показал капчу",
                 Details = $"{captchaEx.Kind} :: {captchaEx.Url ?? "<unknown url>"} :: {account.LastErrorMessage}"
             }, ct).ConfigureAwait(false);
         }
         catch (Exception persistEx)
         {
             _ = GlobalLogger.Instance.LogAsync(
-                $"Не удалось сохранить статус капчи для аккаунта {account.DisplayName}: {persistEx.Message}",
+                $"Не удалось сохранить статус проверки Avito для аккаунта {account.DisplayName}: {persistEx.Message}",
                 DeskLinkAuditLogLevel.Error);
         }
 
         UpdateStatus(MonitoringStatus.RequiresManualAction, account.LastErrorMessage);
 
         _ = GlobalLogger.Instance.LogAsync(
-            $"Avito captcha/firewall detected for account {account.DisplayName} (kind={captchaEx.Kind}, url={captchaEx.Url ?? "<unknown>"}).",
+            $"Avito {(issueKind == AvitoSubProfileIssueKind.IpBlock ? "IP block" : "captcha")} detected for account {account.DisplayName} (kind={captchaEx.Kind}, url={captchaEx.Url ?? "<unknown>"}).",
             DeskLinkAuditLogLevel.Warning,
             properties: new Dictionary<string, object?>
             {
@@ -990,6 +1008,52 @@ public sealed class MonitoringService(
             });
     }
 
+    private async Task HandleAdsPowerProxyFailureForAccountAsync(
+        AvitoAccount account,
+        AdsPowerProxyFailureException proxyEx,
+        CancellationToken ct)
+    {
+        account.Status = AvitoAccountStatus.RequiresManualAction;
+        account.LastErrorMessage = AccountIssueFormatting.FormatIssue(
+            account,
+            null,
+            AvitoSubProfileIssueKind.ProxyFailure,
+            proxyEx.UserMessage);
+
+        try
+        {
+            await repository.SaveAccountAsync(account, ct).ConfigureAwait(false);
+            await repository.AddLogAsync(new ProcessingLogItem
+            {
+                AccountId = account.Id,
+                Level = "Warning",
+                Message = "Прокси AdsPower не работает",
+                Details = proxyEx.Message
+            }, ct).ConfigureAwait(false);
+        }
+        catch (Exception persistEx)
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                $"Не удалось сохранить статус отказа прокси AdsPower для аккаунта {account.DisplayName}: {persistEx.Message}",
+                DeskLinkAuditLogLevel.Error);
+        }
+
+        UpdateStatus(MonitoringStatus.RequiresManualAction, account.LastErrorMessage);
+
+        _ = GlobalLogger.Instance.LogAsync(
+            $"AdsPower proxy failure for account {account.DisplayName}: {proxyEx.Message}",
+            DeskLinkAuditLogLevel.Warning,
+            memberName: nameof(HandleAdsPowerProxyFailureForAccountAsync),
+            filePath: "MonitoringService.cs",
+            errorKey: AdsPowerProxyFailureException.ErrorKey,
+            properties: new Dictionary<string, object?>
+            {
+                ["accountId"] = account.Id,
+                ["accountName"] = account.DisplayName,
+                ["adsPower.startPageUrl"] = proxyEx.PageUrl
+            });
+    }
+
     private async Task HandleAdsPowerRateLimitForAccountAsync(
         AvitoAccount account,
         AdsPowerRateLimitExceededException rateEx,
@@ -1046,6 +1110,7 @@ public sealed class MonitoringService(
         var monitoringStatus = kind switch
         {
             AvitoSubProfileIssueKind.Captcha => MonitoringStatus.RequiresManualAction,
+            AvitoSubProfileIssueKind.IpBlock => MonitoringStatus.RequiresManualAction,
             AvitoSubProfileIssueKind.AuthRequired => MonitoringStatus.RequiresAuthorization,
             _ => MonitoringStatus.Running
         };
@@ -1062,9 +1127,54 @@ public sealed class MonitoringService(
         }
     }
 
+    private async Task RefreshProfileAlertsAsync(
+        AvitoAccount account,
+        IAdsPowerAccountSession session,
+        AvitoSubProfile sub,
+        CancellationToken cancellationToken)
+    {
+        AvitoPageState? state;
+        try
+        {
+            state = await session.GetPageStateAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            return;
+        }
+
+        var kind = state?.HasInsufficientAdvance == true
+            ? AvitoSubProfileIssueKind.InsufficientAdvance
+            : state?.HasEmailConfirmationRequired == true
+                ? AvitoSubProfileIssueKind.EmailConfirmationRequired
+                : null;
+        if (kind is not null)
+        {
+            if (string.Equals(sub.LastIssueKind, kind, StringComparison.Ordinal))
+            {
+                return;
+            }
+
+            var detail = AvitoAutomationFailureFormatter.Format("проверка объявлений", state);
+            await PersistSubProfileIssueAsync(account, sub, kind, detail, cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        if (sub.LastIssueKind is AvitoSubProfileIssueKind.InsufficientAdvance
+            or AvitoSubProfileIssueKind.EmailConfirmationRequired)
+        {
+            AccountIssueTracker.ClearSubProfileIssue(sub);
+            account.SetSubProfiles(account.SubProfiles.ToList());
+            AccountIssueTracker.RefreshAccountIssueMessage(account);
+            await repository.SaveAccountAsync(account, cancellationToken).ConfigureAwait(false);
+        }
+    }
+
     private void MarkSubProfileHealthy(AvitoAccount account, AvitoSubProfile sub)
     {
-        if (!sub.HasIssue)
+        if (!sub.HasIssue
+            || sub.LastIssueKind is AvitoSubProfileIssueKind.InsufficientAdvance
+                or AvitoSubProfileIssueKind.EmailConfirmationRequired)
         {
             return;
         }
@@ -1304,6 +1414,13 @@ public sealed class MonitoringService(
         }
 
         var adsPowerProfileId = account.AdsPowerProfileId!;
+        using var captchaTaskScope = AvitoCaptchaTaskContext.Use(
+            GeeTestV4TaskOptions.FromBrowserProfile(
+                account.AssignedUserAgent,
+                account.ProxyType,
+                account.ProxyAddress,
+                account.ProxyUsername,
+                account.ProxyPassword));
         await using var adsPowerSession = await adsPowerAvitoAutomationService
             .OpenAccountSessionAsync(options, adsPowerProfileId, cancellationToken)
             .ConfigureAwait(false);
@@ -1478,6 +1595,8 @@ public sealed class MonitoringService(
 
                         var part = await CollectProfileItemsFromSessionAsync(account, adsPowerSession, cancellationToken)
                             .ConfigureAwait(false);
+                        await RefreshProfileAlertsAsync(account, adsPowerSession, sub, cancellationToken)
+                            .ConfigureAwait(false);
                         if (!part.ParseSuccess)
                         {
                             var parseReason = part.ParseFailureReason ?? "parse_failed";
@@ -1588,11 +1707,14 @@ public sealed class MonitoringService(
             }
             catch (AvitoCaptchaDetectedException captchaEx)
             {
+                var issueKind = AvitoSubProfileIssueKind.FromCaptchaKind(captchaEx.Kind);
                 await PersistSubProfileIssueAsync(
                         account,
                         sub,
-                        AvitoSubProfileIssueKind.Captcha,
-                        $"Avito показал капчу/блок IP ({captchaEx.Kind}). Откройте браузер и пройдите проверку.",
+                        issueKind,
+                        issueKind == AvitoSubProfileIssueKind.IpBlock
+                            ? "Avito ограничил доступ из-за IP. Откройте браузер и дождитесь разблокировки или смените IP."
+                            : $"Avito показал капчу ({captchaEx.Kind}). Откройте браузер и пройдите проверку.",
                         cancellationToken)
                     .ConfigureAwait(false);
                 throw;

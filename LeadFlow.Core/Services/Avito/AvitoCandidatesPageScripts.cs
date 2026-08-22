@@ -169,10 +169,59 @@ public static class AvitoCandidatesPageScripts
             !!document.querySelector("[data-marker='job-application/response/contacts-popup/popup']")
             || hasContactsPopupLoadError();
 
+        const humanClick = (element) => {
+            if (!element) {
+                return false;
+            }
+
+            try {
+                const rect = element.getBoundingClientRect();
+                const x = rect.left + Math.max(rect.width, 1) * (0.32 + Math.random() * 0.36);
+                const y = rect.top + Math.max(rect.height, 1) * (0.32 + Math.random() * 0.36);
+                const base = {
+                    bubbles: true,
+                    cancelable: true,
+                    view: window,
+                    clientX: x,
+                    clientY: y,
+                    button: 0,
+                    buttons: 1
+                };
+                try {
+                    element.scrollIntoView({ block: "center", inline: "nearest" });
+                } catch {
+                }
+
+                if (typeof PointerEvent === "function") {
+                    element.dispatchEvent(new PointerEvent("pointerdown", {
+                        ...base,
+                        pointerType: "mouse",
+                        isPrimary: true,
+                        pointerId: 1
+                    }));
+                }
+
+                element.dispatchEvent(new MouseEvent("mousedown", base));
+                if (typeof PointerEvent === "function") {
+                    element.dispatchEvent(new PointerEvent("pointerup", {
+                        ...base,
+                        pointerType: "mouse",
+                        isPrimary: true,
+                        pointerId: 1
+                    }));
+                }
+
+                element.dispatchEvent(new MouseEvent("mouseup", { ...base, buttons: 0 }));
+                element.dispatchEvent(new MouseEvent("click", { ...base, buttons: 0 }));
+                return true;
+            } catch {
+                return false;
+            }
+        };
+
         const closeContactsPopup = () => {
             const closeBtn = document.querySelector("[data-marker='job-application/response/contacts-popup/close']");
-            if (closeBtn) {
-                closeBtn.click();
+            if (closeBtn && humanClick(closeBtn)) {
                 return true;
             }
 
@@ -188,60 +237,36 @@ public static class AvitoCandidatesPageScripts
         const clickPhoneRevealTarget = (item) => {
             const callBtn = item.querySelector("[data-marker='job-application/call-button']");
             if (callBtn) {
-                try {
-                    callBtn.scrollIntoView({ block: "center", inline: "nearest" });
-                } catch {
-                }
-
-                callBtn.click();
+                humanClick(callBtn);
                 return { clicked: true, kind: "call-button" };
             }
 
             const phoneBtn = item.querySelector("[data-marker='job-application/phone']");
             const raw = phoneBtn?.textContent ?? "";
             if (phoneBtn && /\*/.test(raw)) {
-                try {
-                    phoneBtn.scrollIntoView({ block: "center", inline: "nearest" });
-                } catch {
-                }
-
                 const text = phoneBtn.querySelector(".styles-module-text");
-                (text ?? phoneBtn).click();
+                humanClick(text ?? phoneBtn);
                 return { clicked: true, kind: "masked-phone" };
             }
 
             return { clicked: false, kind: "none" };
         };
 
-        const waitForContactsPopup = (timeoutMs) => {
-            const started = Date.now();
-            while (Date.now() - started < timeoutMs) {
-                if (isContactsPopupOpen()) {
-                    if (hasContactsPopupLoadError()) {
-                        return "error";
-                    }
-
-                    const phone = readContactsPopupPhone();
-                    if (phone) {
-                        return "ready";
-                    }
-                }
-
-                const sliceEnd = Date.now() + 50;
-                while (Date.now() < sliceEnd) {
-                }
-            }
-
+        const snapshotContactsPopupState = () => {
             if (hasContactsPopupLoadError()) {
-                return "error";
+                return { state: "error", phone: "" };
             }
 
-            if (isContactsPopupOpen()) {
-                const phone = readContactsPopupPhone();
-                return phone ? "ready" : "timeout";
+            if (!isContactsPopupOpen()) {
+                return { state: "closed", phone: "" };
             }
 
-            return "timeout";
+            const phone = readContactsPopupPhone();
+            if (phone) {
+                return { state: "ready", phone };
+            }
+
+            return { state: "open", phone: "" };
         };
         """;
 
@@ -436,18 +461,22 @@ public static class AvitoCandidatesPageScripts
             const bodyText = (document.body?.innerText ?? "").slice(0, 12000);
             const hasFirewallDom = !!document.querySelector(
                 ".firewall-container, .js-firewall-form, .firewall-title, form.js-firewall-form"
-            );
+            ) || location.hash === "#block"
+              || !!document.querySelector('a[href*="support.avito.ru/request/720"]');
             const hasCaptchaWidget = !!(
                 document.getElementById("geetest_captcha") ||
                 document.getElementById("inner-captcha") ||
                 document.getElementById("h-captcha") ||
                 document.querySelector(".h-captcha[data-sitekey]")
             );
-            const hasFirewallText = /Доступ\s+ограничен|проблема\s+с\s+IP|firewallCaptcha/i.test(title + "\n" + bodyText);
+            const hasFirewallText = /Доступ\s+ограничен|проблема\s+с\s+IP|firewallCaptcha|Отключить\s+VPN|самол[её]те/i.test(title + "\n" + bodyText);
+            const hasIpDialog = !!document.querySelector('[role="dialog"][aria-modal="true"], [aria-modal="true"]')
+              && /Доступ\s+ограничен|проблема\s+с\s+IP/i.test(title + "\n" + bodyText);
             const blocked =
-                itemCount === 0 &&
+                hasIpDialog ||
+                (itemCount === 0 &&
                 statusCount === 0 &&
-                (hasFirewallDom || (hasFirewallText && hasCaptchaWidget) || hasFirewallText);
+                (hasFirewallDom || (hasFirewallText && hasCaptchaWidget) || hasFirewallText));
 
             let kind = "firewall";
             if (blocked && document.getElementById("geetest_captcha")) {
@@ -480,11 +509,16 @@ public static class AvitoCandidatesPageScripts
             const itemCount = document.querySelectorAll("[data-marker='job-application/item']").length;
             const statusCount = document.querySelectorAll("[data-marker='job-application/response/status-select-button']").length;
             const title = (document.title ?? "").trim();
-            const hasFirewallDom = !!document.querySelector(".firewall-container, .js-firewall-form, .firewall-title");
+            const hasFirewallDom = !!document.querySelector(".firewall-container, .js-firewall-form, .firewall-title")
+                || location.hash === "#block"
+                || !!document.querySelector('a[href*="support.avito.ru/request/720"]');
+            const hasIpDialog = !!document.querySelector('[role="dialog"][aria-modal="true"], [aria-modal="true"]')
+                && /Доступ\s+ограничен|проблема\s+с\s+IP/i.test(title + "\n" + bodyText);
             const blocked =
-                itemCount === 0 &&
+                hasIpDialog ||
+                (itemCount === 0 &&
                 statusCount === 0 &&
-                (hasFirewallDom || /Доступ\s+ограничен|проблема\s+с\s+IP/i.test(title));
+                (hasFirewallDom || /Доступ\s+ограничен|проблема\s+с\s+IP|Отключить\s+VPN|самол[её]те/i.test(title + "\n" + bodyText)));
 
             const hasListData = itemCount > 0 || statusCount > 0;
             const listRoot =
@@ -574,8 +608,13 @@ public static class AvitoCandidatesPageScripts
 
             const scroller = findScroller();
             const beforeTop = scroller.scrollTop;
-            const delta = Math.max(Math.floor(scroller.clientHeight * 0.9), 500);
-            scroller.scrollBy(0, delta);
+            const ratio = 0.32 + Math.random() * 0.28;
+            const delta = Math.max(Math.floor(scroller.clientHeight * ratio), 180);
+            try {
+                scroller.scrollBy({ top: delta, left: 0, behavior: "smooth" });
+            } catch {
+                scroller.scrollBy(0, delta);
+            }
             const atEnd = scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 8;
             return JSON.stringify({
                 itemCount: countItems(),
@@ -583,6 +622,46 @@ public static class AvitoCandidatesPageScripts
                 scrollHeight: scroller.scrollHeight,
                 moved: Math.abs(scroller.scrollTop - beforeTop) > 2,
                 atEnd
+            });
+        })();
+        """;
+
+    /// <summary>Короткий скролл вверх — как будто перечитали предыдущие карточки.</summary>
+    public static string BuildScrollBackScript() =>
+        """
+        (() => {
+            const countItems = () => document.querySelectorAll("[data-marker='job-application/item']").length;
+            const findScroller = () => {
+                const first = document.querySelector("[data-marker='job-application/item']");
+                if (first) {
+                    let node = first.parentElement;
+                    while (node && node !== document.body) {
+                        const style = window.getComputedStyle(node);
+                        const overflowY = style.overflowY;
+                        if ((overflowY === "auto" || overflowY === "scroll") && node.scrollHeight > node.clientHeight + 40) {
+                            return node;
+                        }
+                        node = node.parentElement;
+                    }
+                }
+
+                return document.scrollingElement || document.documentElement;
+            };
+
+            const scroller = findScroller();
+            const beforeTop = scroller.scrollTop;
+            const ratio = 0.18 + Math.random() * 0.22;
+            const delta = -Math.max(Math.floor(scroller.clientHeight * ratio), 120);
+            try {
+                scroller.scrollBy({ top: delta, left: 0, behavior: "smooth" });
+            } catch {
+                scroller.scrollBy(0, delta);
+            }
+            return JSON.stringify({
+                itemCount: countItems(),
+                scrollTop: scroller.scrollTop,
+                moved: Math.abs(scroller.scrollTop - beforeTop) > 2,
+                atEnd: false
             });
         })();
         """;
@@ -603,7 +682,16 @@ public static class AvitoCandidatesPageScripts
                     node = node.parentElement;
                 }
             }
-            scroller.scrollTop = 0;
+            try {
+                scroller.scrollTo({ top: 0, behavior: "smooth" });
+            } catch {
+                scroller.scrollTop = 0;
+            }
+
+            if (scroller.scrollTop > 2) {
+                scroller.scrollTop = 0;
+            }
+
             return JSON.stringify({ ok: true });
         })();
         """;
@@ -733,11 +821,50 @@ public static class AvitoCandidatesPageScripts
                 return rect.width > 0 && rect.height > 0;
             };
 
-            const dispatchClick = (element) => {
-                element.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
-                if (typeof element.click === "function") {
-                    element.click();
+            const humanClick = (element) => {
+                if (!element) {
+                    return false;
                 }
+
+                const rect = element.getBoundingClientRect();
+                const x = rect.left + Math.max(rect.width, 1) * (0.32 + Math.random() * 0.36);
+                const y = rect.top + Math.max(rect.height, 1) * (0.32 + Math.random() * 0.36);
+                const base = {
+                    bubbles: true,
+                    cancelable: true,
+                    view: window,
+                    clientX: x,
+                    clientY: y,
+                    button: 0,
+                    buttons: 1
+                };
+                try {
+                    element.scrollIntoView({ block: "center", inline: "nearest" });
+                } catch {
+                }
+
+                if (typeof PointerEvent === "function") {
+                    element.dispatchEvent(new PointerEvent("pointerdown", {
+                        ...base,
+                        pointerType: "mouse",
+                        isPrimary: true,
+                        pointerId: 1
+                    }));
+                }
+
+                element.dispatchEvent(new MouseEvent("mousedown", base));
+                if (typeof PointerEvent === "function") {
+                    element.dispatchEvent(new PointerEvent("pointerup", {
+                        ...base,
+                        pointerType: "mouse",
+                        isPrimary: true,
+                        pointerId: 1
+                    }));
+                }
+
+                element.dispatchEvent(new MouseEvent("mouseup", { ...base, buttons: 0 }));
+                element.dispatchEvent(new MouseEvent("click", { ...base, buttons: 0 }));
+                return true;
             };
 
             const items = Array.from(document.querySelectorAll("[data-marker='job-application/item']"));
@@ -757,12 +884,7 @@ public static class AvitoCandidatesPageScripts
             }
 
             try {
-                chat.scrollIntoView({ block: "center", inline: "nearest" });
-            } catch {
-            }
-
-            try {
-                dispatchClick(chat);
+                humanClick(chat);
                 return JSON.stringify({ ok: true, index: idx, items: items.length });
             } catch (error) {
                 return JSON.stringify({ ok: false, reason: String(error), index: idx, items: items.length });
@@ -781,13 +903,54 @@ public static class AvitoCandidatesPageScripts
             }
 
             const item = items[index];
-            try {
-                item.scrollIntoView({ block: "center", inline: "nearest" });
-            } catch {
-            }
+            const humanClick = (element) => {
+                if (!element) {
+                    return false;
+                }
+
+                const rect = element.getBoundingClientRect();
+                const x = rect.left + Math.max(rect.width, 1) * (0.32 + Math.random() * 0.36);
+                const y = rect.top + Math.max(rect.height, 1) * (0.32 + Math.random() * 0.36);
+                const base = {
+                    bubbles: true,
+                    cancelable: true,
+                    view: window,
+                    clientX: x,
+                    clientY: y,
+                    button: 0,
+                    buttons: 1
+                };
+                try {
+                    element.scrollIntoView({ block: "center", inline: "nearest" });
+                } catch {
+                }
+
+                if (typeof PointerEvent === "function") {
+                    element.dispatchEvent(new PointerEvent("pointerdown", {
+                        ...base,
+                        pointerType: "mouse",
+                        isPrimary: true,
+                        pointerId: 1
+                    }));
+                }
+
+                element.dispatchEvent(new MouseEvent("mousedown", base));
+                if (typeof PointerEvent === "function") {
+                    element.dispatchEvent(new PointerEvent("pointerup", {
+                        ...base,
+                        pointerType: "mouse",
+                        isPrimary: true,
+                        pointerId: 1
+                    }));
+                }
+
+                element.dispatchEvent(new MouseEvent("mouseup", { ...base, buttons: 0 }));
+                element.dispatchEvent(new MouseEvent("click", { ...base, buttons: 0 }));
+                return true;
+            };
 
             try {
-                item.click();
+                humanClick(item);
                 return JSON.stringify({ ok: true, index, items: items.length });
             } catch (error) {
                 return JSON.stringify({ ok: false, reason: String(error), index, items: items.length });
@@ -1222,16 +1385,7 @@ public static class AvitoCandidatesPageScripts
                     return false;
                 }
 
-                try {
-                    element.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
-                    if (typeof element.click === "function") {
-                        element.click();
-                    }
-
-                    return true;
-                } catch {
-                    return false;
-                }
+                return humanClick(element);
             };
 
             dispatchEscape();
@@ -1300,26 +1454,11 @@ public static class AvitoCandidatesPageScripts
                 return JSON.stringify({ ok: false, reason: "no_messages_list", messages: [] });
             }
 
-            const countMessages = () => list.querySelectorAll("[data-marker='message']").length;
-            let lastCount = countMessages();
-            let stableRounds = 0;
-            for (let round = 0; round < 24; round++) {
-                const prevTop = list.scrollTop;
-                list.scrollTop = 0;
-                if (Math.abs(list.scrollTop - prevTop) < 1) {
-                    list.scrollTop = Math.max(0, list.scrollHeight - list.clientHeight);
-                }
-
-                const count = countMessages();
-                if (count === lastCount) {
-                    stableRounds++;
-                    if (stableRounds >= 3) {
-                        break;
-                    }
-                } else {
-                    stableRounds = 0;
-                    lastCount = count;
-                }
+            const step = Math.max(Math.floor(list.clientHeight * 0.65), 180);
+            try {
+                list.scrollBy({ top: -step, left: 0, behavior: "smooth" });
+            } catch {
+                list.scrollTop = Math.max(0, list.scrollTop - step);
             }
 
             const readText = (message) => {
@@ -1492,17 +1631,12 @@ public static class AvitoCandidatesPageScripts
                 // Под маской всегда кликаем — даже если карточка «известна» (phone-watch / смена номера).
                 masked++;
                 clearCachedPhone(index);
-                try {
-                    btn.scrollIntoView({ block: "center", inline: "nearest" });
-                } catch {
+                if (clicked > 0) {
+                    continue;
                 }
 
-                const target = pickPhoneClickTarget(btn);
-                try {
-                    target.click();
-                    clicked++;
-                } catch {
-                }
+                humanClick(pickPhoneClickTarget(btn));
+                clicked++;
             }
 
             return JSON.stringify({ items: items.length, masked, clicked });
@@ -1510,14 +1644,13 @@ public static class AvitoCandidatesPageScripts
         """;
 
     /// <summary>
-    /// Раскрывает один номер через popup «Показать номер телефона» (новый UX: call-button → contacts-popup).
-    /// При ошибке «Не удалось загрузить контактные данные» повторяет клик.
+    /// Клик по одному номеру через popup «Показать номер телефона» (новый UX: call-button → contacts-popup).
+    /// Ожидание результата — на стороне C# (<see cref="BuildContactsPopupProbeScript"/>), без busy-wait в JS.
     /// </summary>
     public static string BuildRevealNextContactsPopupPhoneScript() =>
         $$"""
         (() => {
         {{ContactsPhoneHelpersJs}}
-            const store = initRevealedPhonesStore();
             const items = Array.from(document.querySelectorAll("[data-marker='job-application/item']"));
             let pending = 0;
             for (let index = 0; index < items.length; index++) {
@@ -1531,15 +1664,21 @@ public static class AvitoCandidatesPageScripts
                     items: items.length,
                     pending: 0,
                     clicked: false,
-                    revealed: false
+                    revealed: false,
+                    index: -1
                 });
             }
 
             if (isContactsPopupOpen()) {
                 closeContactsPopup();
-                const settleEnd = Date.now() + 120;
-                while (Date.now() < settleEnd) {
-                }
+                return JSON.stringify({
+                    items: items.length,
+                    pending,
+                    clicked: false,
+                    revealed: false,
+                    closedExisting: true,
+                    index: -1
+                });
             }
 
             let targetIndex = -1;
@@ -1566,58 +1705,54 @@ public static class AvitoCandidatesPageScripts
                     pending,
                     clicked: false,
                     revealed: false,
-                    reason: "no_popup_target"
+                    reason: "no_popup_target",
+                    index: -1
                 });
             }
 
-            let retries = 0;
-            let phone = "";
-            let lastState = "timeout";
-            const maxRetries = 3;
-            while (retries < maxRetries && !phone) {
-                retries++;
-                const clickResult = clickPhoneRevealTarget(targetItem);
-                if (!clickResult.clicked) {
-                    break;
+            const clickResult = clickPhoneRevealTarget(targetItem);
+            return JSON.stringify({
+                items: items.length,
+                pending,
+                clicked: !!clickResult.clicked,
+                revealed: false,
+                index: targetIndex,
+                kind: clickResult.kind
+            });
+        })();
+        """;
+
+    /// <summary>Снимок popup контактов; при готовом номере пишет кэш и закрывает окно.</summary>
+    public static string BuildContactsPopupProbeScript(int targetIndex) =>
+        $$"""
+        (() => {
+        {{ContactsPhoneHelpersJs}}
+            const index = {{targetIndex}};
+            const snap = snapshotContactsPopupState();
+            if (snap.state === "ready" && snap.phone) {
+                const store = initRevealedPhonesStore();
+                if (index >= 0) {
+                    store[String(index)] = snap.phone;
                 }
 
-                lastState = waitForContactsPopup(3500);
-                if (lastState === "error") {
-                    closeContactsPopup();
-                    const settleEnd = Date.now() + 180;
-                    while (Date.now() < settleEnd) {
-                    }
-
-                    continue;
-                }
-
-                if (lastState === "ready") {
-                    phone = readContactsPopupPhone();
-                }
-
-                if (!phone) {
-                    closeContactsPopup();
-                    const settleEnd = Date.now() + 180;
-                    while (Date.now() < settleEnd) {
-                    }
-                }
-            }
-
-            if (phone) {
-                store[String(targetIndex)] = phone;
                 closeContactsPopup();
             }
 
             return JSON.stringify({
-                items: items.length,
-                pending,
-                clicked: true,
-                index: targetIndex,
-                revealed: !!phone,
-                phone,
-                retries,
-                state: lastState
+                state: snap.state,
+                phone: snap.phone,
+                revealed: snap.state === "ready" && !!snap.phone,
+                index
             });
+        })();
+        """;
+
+    public static string BuildCloseContactsPopupScript() =>
+        $$"""
+        (() => {
+        {{ContactsPhoneHelpersJs}}
+            closeContactsPopup();
+            return JSON.stringify({ ok: true });
         })();
         """;
 
@@ -1635,15 +1770,19 @@ public static class AvitoCandidatesPageScripts
             const bodyText = document.body?.innerText ?? "";
             const hasFirewallDom = !!document.querySelector(
                 ".firewall-container, .js-firewall-form, .firewall-title, form.js-firewall-form"
-            );
-            const hasFirewallText = /Доступ\s+ограничен|проблема\s+с\s+IP|firewallCaptcha/i.test(title + "\n" + bodyText);
+            ) || location.hash === "#block"
+              || !!document.querySelector('a[href*="support.avito.ru/request/720"]');
+            const hasFirewallText = /Доступ\s+ограничен|проблема\s+с\s+IP|firewallCaptcha|Отключить\s+VPN|самол[её]те/i.test(title + "\n" + bodyText);
             const hasCaptchaWidget = !!(
                 document.getElementById("geetest_captcha") ||
                 document.getElementById("inner-captcha") ||
                 document.getElementById("h-captcha") ||
                 document.querySelector(".h-captcha[data-sitekey]")
             );
+            const hasIpDialog = !!document.querySelector('[role="dialog"][aria-modal="true"], [aria-modal="true"]')
+              && /Доступ\s+ограничен|проблема\s+с\s+IP/i.test(title + "\n" + bodyText);
             const hasCaptcha =
+                hasIpDialog ||
                 (itemCount === 0 && statusCount === 0 && (hasFirewallDom || (hasFirewallText && hasCaptchaWidget) || hasFirewallText)) ||
                 (!hasFirewallDom && /капч|captcha|подтвердите|проверочный код/i.test(bodyText));
 

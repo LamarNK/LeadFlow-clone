@@ -9,7 +9,7 @@
     var installCommand = TempData["CreatedWorkerInstallCommand"] as string;
     var workersError = TempData["WorkersError"] as string;
     var workersSuccess = TempData["WorkersSuccess"] as string;
-    var workerAccountsSortRoute = new { id = Model.WorkerId, sort = Model.Sort.Column, dir = Model.Sort.Dir };
+    var workerAccountsSortRoute = new { id = Model.WorkerId, q = Model.AccountSearchQuery, groupId = Model.AccountGroupId, sort = Model.Sort.Column, dir = Model.Sort.Dir };
     var snapshotUrl = Url.Action("DetailsSnapshot", "Workers", workerAccountsSortRoute)!;
     var scheduleDayLabels = new Dictionary<string, string>(StringComparer.Ordinal)
     {
@@ -666,6 +666,49 @@
                                 Ключ из настроек AdsPower на VDS. Оставьте пустым, если Local API без авторизации.
                             </span>
                         </label>
+                        <label class="worker-settings-field" for="ruCaptchaApiKey">
+                            <span class="worker-settings-label">RuCaptcha API Key</span>
+                            <input type="password"
+                                   id="ruCaptchaApiKey"
+                                   name="ruCaptchaApiKey"
+                                   class="worker-settings-input"
+                                   value="@Model.RuCaptchaApiKey"
+                                   placeholder="@(string.IsNullOrWhiteSpace(Model.RuCaptchaApiKey) ? "Не задан — капча Avito вручную" : "Ключ задан")"
+                                   autocomplete="new-password"
+                                   spellcheck="false" />
+                            <span class="worker-settings-hint">
+                                Ключ с rucaptcha.com для автопрохождения GeeTest v4. Пока пусто — воркер останавливает аккаунт на капче.
+                            </span>
+                        </label>
+                        <label class="worker-settings-field" for="adsPowerGroupId">
+                            <span class="worker-settings-label">Группа AdsPower</span>
+                            <select id="adsPowerGroupId"
+                                    name="adsPowerGroupId"
+                                    class="worker-settings-input">
+                                <option value="">Все группы</option>
+                                @foreach (var group in Model.AdsPowerGroups)
+                                {
+                                    var isSelected = string.Equals(group.GroupId, Model.AdsPowerGroupId, StringComparison.Ordinal);
+                                    var groupLabel = string.IsNullOrWhiteSpace(group.GroupName) ? group.GroupId : group.GroupName;
+                                    if (isSelected)
+                                    {
+                                        <option value="@group.GroupId" selected="selected">@groupLabel</option>
+                                    }
+                                    else
+                                    {
+                                        <option value="@group.GroupId">@groupLabel</option>
+                                    }
+                                }
+                            </select>
+                            <span class="worker-settings-hint">
+                                В AdsPower профили делятся по группам. Выберите группу этого воркера — в список попадут только её профили.
+                                Пока группа не выбрана, синхронизируются все аккаунты.
+                                @if (Model.AdsPowerGroups.Count == 0)
+                                {
+                                    <text> Список появится после синхронизации воркера с AdsPower.</text>
+                                }
+                            </span>
+                        </label>
                         <div class="worker-settings-effective">
                             <span class="worker-settings-label">Текущий URL для воркера</span>
                             <code class="worker-settings-effective-value">@Model.EffectiveAdsPowerApiBaseUrl</code>
@@ -763,8 +806,45 @@
         <div class="card-header">
             <h2>Аккаунты воркера</h2>
         </div>
+        @{
+            var workerAccountsFormAction = Url.Action("Details", "Workers", new { id = Model.WorkerId });
+            var workerAccountsFilterBar = new ListFiltersBarViewModel
+            {
+                FormAction = workerAccountsFormAction!,
+                FormClass = "orbita-filters-form worker-accounts-filters",
+                SearchName = "q",
+                SearchPlaceholder = "Поиск по аккаунтам...",
+                SearchValue = Model.AccountSearchQuery,
+                FilterPanelId = "workerAccountsFilterPanel",
+                FilterToggleClass = "orbita-filters-toggle worker-accounts-filter-btn",
+                HasActiveFilters = Model.HasActiveAccountFilters,
+                ActiveFilterCount = Model.ActiveAccountFilterCount,
+                ActiveFilterChips = Model.ActiveAccountFilterChips,
+                ResetUrl = Url.Action("Details", "Workers", new { id = Model.WorkerId, sort = Model.Sort.Column, dir = Model.Sort.Dir })!,
+                FilterFieldsPartialName = "_WorkerAccountsFilterFields",
+                FilterFieldsModel = Model,
+                ExtraFormContent = $"<input type=\"hidden\" name=\"sort\" value=\"{Model.Sort.Column}\" /><input type=\"hidden\" name=\"dir\" value=\"{Model.Sort.Dir}\" />"
+            };
+        }
+        <div class="worker-accounts-toolbar">
+            <partial name="_ListFiltersBar" model="workerAccountsFilterBar" />
+        </div>
         <div class="card-body card-body-table worker-accounts-wrap">
-            <table class="data-table data-table--accounts data-table--cards">
+            <div data-worker-accounts-empty @(Model.Accounts.Count == 0 ? null : "hidden")>
+                <partial name="_TableEmptyState" model="@(new TableEmptyStateViewModel
+                {
+                    IconClass = "fa-solid fa-users",
+                    Title = Model.HasActiveAccountFilters ? "Аккаунты не найдены" : "Аккаунтов пока нет",
+                    Description = Model.HasActiveAccountFilters
+                        ? "Измените поиск или группу AdsPower."
+                        : "Дождитесь синхронизации профилей AdsPower с воркером.",
+                    CtaLabel = Model.HasActiveAccountFilters ? "Сбросить фильтры" : null,
+                    CtaUrl = Model.HasActiveAccountFilters
+                        ? Url.Action("Details", "Workers", new { id = Model.WorkerId, sort = Model.Sort.Column, dir = Model.Sort.Dir })
+                        : null
+                })" />
+            </div>
+            <table class="data-table data-table--accounts data-table--cards" @(Model.Accounts.Count == 0 ? "hidden" : null)>
                 <thead>
                     <tr>
                         <th>Вкл</th>
@@ -799,6 +879,10 @@
                         </td>
                         <td class="cell-name" data-label="Аккаунт">
                             <a href="@accountSearchUrl">@account.DisplayName</a>
+                            @if (!string.IsNullOrWhiteSpace(account.AdsPowerGroupName) || !string.IsNullOrWhiteSpace(account.AdsPowerGroupId))
+                            {
+                                <span class="worker-account-sub" title="Группа AdsPower">@(account.AdsPowerGroupName ?? account.AdsPowerGroupId)</span>
+                            }
                             @if (!string.IsNullOrWhiteSpace(account.AdsPowerProfileId))
                             {
                                 <span class="worker-account-sub">AdsPower @account.AdsPowerProfileId</span>
