@@ -63,6 +63,16 @@ public sealed class PanelUserProfileEntity
 }
 
 /// <summary>
+/// Час, в котором пользователь панели был онлайн (UTC, усечённый до часа).
+/// Одна строка на пару пользователь+час — для графика пиковой активности.
+/// </summary>
+public sealed class PanelUserPresenceHourEntity
+{
+    public string UserId { get; set; } = string.Empty;
+    public DateTime HourUtc { get; set; }
+}
+
+/// <summary>
 /// История CRM-смен менеджера (для аналитики: длительность, забытый стоп и т.п.).
 /// Открытая смена: <see cref="EndedAtUtc"/> == null.
 /// </summary>

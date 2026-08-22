@@ -50,6 +50,8 @@ public sealed class SettingsUserUpdateFormTests : IClassFixture<WebApplicationFa
         Assert.Contains("action=\"/Settings/UpdateUser\"", updateFormTag.Value);
         Assert.Contains("method=\"post\"", updateFormTag.Value);
         Assert.DoesNotMatch("id=\"resetPasswordForm\"", usersHtml);
+        Assert.Contains("data-settings-user-presence", usersHtml);
+        Assert.Contains("Пик обычно", usersHtml);
 
         var updateToken = Regex.Match(
             usersHtml,

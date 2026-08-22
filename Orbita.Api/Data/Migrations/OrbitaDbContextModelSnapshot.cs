@@ -2150,6 +2150,22 @@ namespace Orbita.Api.Data.Migrations
                     b.ToTable("PanelUserProfiles");
                 });
 
+            modelBuilder.Entity("Orbita.Api.Data.PanelUserPresenceHourEntity", b =>
+                {
+                    b.Property<string>("UserId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<DateTime>("HourUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("UserId", "HourUtc");
+
+                    b.HasIndex("HourUtc");
+
+                    b.ToTable("PanelUserPresenceHours");
+                });
+
             modelBuilder.Entity("Orbita.Api.Data.ResponseBitrixDeliveryEntity", b =>
                 {
                     b.Property<Guid>("Id")

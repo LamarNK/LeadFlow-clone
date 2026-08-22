@@ -273,6 +273,9 @@ public sealed class OrbitaApiClient(
     public Task<IReadOnlyList<PanelUserDto>?> GetPanelUsersAsync(CancellationToken ct = default) =>
         GetAsync<IReadOnlyList<PanelUserDto>>("api/v1/admin/users", ct);
 
+    public Task<PanelUserPresenceHourSeriesDto?> GetPanelUserPresenceHourSeriesAsync(CancellationToken ct = default) =>
+        GetAsync<PanelUserPresenceHourSeriesDto>("api/v1/admin/users/presence-stats", ct);
+
     public async Task RecordActivityAsync(CancellationToken ct = default)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, "api/v1/auth/activity");

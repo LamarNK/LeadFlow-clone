@@ -234,6 +234,8 @@ public sealed class PanelUserService(
             await db.SaveChangesAsync(ct);
         }
 
+        await PanelUserPresenceStore.DeleteUserAsync(db, id, ct);
+
         var deleteResult = await users.DeleteAsync(user);
         if (!deleteResult.Succeeded)
         {
@@ -768,9 +770,11 @@ public sealed class PanelUserService(
             return;
         }
 
-        profile.LastSeenAtUtc = DateTime.UtcNow;
-        await db.SaveChangesAsync(ct);
+        await PanelUserPresenceStore.TouchAsync(db, profile, DateTime.UtcNow, ct);
     }
+
+    public Task<PanelUserPresenceHourSeriesDto> GetPresenceHourSeriesAsync(CancellationToken ct = default) =>
+        PanelUserPresenceStore.GetHourSeriesAsync(db, DateTime.UtcNow, ct);
 
     private async Task<string?> ValidateOfficeAssignmentAsync(string role, Guid? officeId, CancellationToken ct)
     {

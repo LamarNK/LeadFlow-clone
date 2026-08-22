@@ -63,7 +63,8 @@ public sealed class SettingsService(
                 _ => SettingsIndexBuilder.BuildUsersTab(
                     previewUsers,
                     previewOffices,
-                    currentUserId ?? "preview-admin")
+                    currentUserId ?? "preview-admin",
+                    presenceHours: DesignPreviewData.UserPresenceHours)
             };
             return previewModel with { Header = PageHeaderBuilder.SettingsAdmin() };
         }
@@ -548,12 +549,14 @@ public sealed class SettingsService(
     {
         var usersTask = api.GetPanelUsersAsync(ct);
         var profilesTask = api.GetAccessProfilesAsync(ct);
-        await Task.WhenAll(officesTask, usersTask, profilesTask);
+        var presenceTask = api.GetPanelUserPresenceHourSeriesAsync(ct);
+        await Task.WhenAll(officesTask, usersTask, profilesTask, presenceTask);
         return SettingsIndexBuilder.BuildUsersTab(
             await usersTask ?? [],
             await officesTask ?? [],
             currentUserId,
-            await profilesTask ?? SettingsIndexBuilder.DefaultAccessProfiles);
+            await profilesTask ?? SettingsIndexBuilder.DefaultAccessProfiles,
+            presenceHours: await presenceTask);
     }
 
     private async Task<SettingsIndexViewModel> BuildProfilesTabAsync(

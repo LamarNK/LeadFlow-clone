@@ -47,6 +47,9 @@ public static class AdminEndpoints
         admin.MapGet("/users", async (PanelUserService panelUsers, CancellationToken ct) =>
             Results.Ok(await panelUsers.ListAsync(ct)));
 
+        admin.MapGet("/users/presence-stats", async (PanelUserService panelUsers, CancellationToken ct) =>
+            Results.Ok(await panelUsers.GetPresenceHourSeriesAsync(ct)));
+
         admin.MapPost("/users", async (
             CreatePanelUserRequest request,
             PanelUserService panelUsers,

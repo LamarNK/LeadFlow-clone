@@ -2811,6 +2811,33 @@ internal static class DesignPreviewData
         return rows;
     }
 
+    public static PanelUserPresenceHourSeriesDto UserPresenceHours
+    {
+        get
+        {
+            var typical = new[] { 0, 0, 0, 0, 0, 0, 1, 2, 4, 7, 9, 11, 8, 7, 8, 7, 6, 4, 2, 1, 1, 0, 0, 0 };
+            var today = new[] { 0, 0, 0, 0, 0, 0, 0, 1, 3, 5, 8, 10, 6, 5, 7, 6, 4, 2, 1, 0, 0, 0, 0, 0 };
+            var currentHour = TimeZoneInfo.ConvertTimeFromUtc(
+                DateTime.SpecifyKind(Now, DateTimeKind.Utc),
+                TimeZoneInfo.CreateCustomTimeZone("MSK", TimeSpan.FromHours(3), "MSK", "MSK")).Hour;
+            if (currentHour is >= 0 and < 24)
+            {
+                today[currentHour] = Math.Max(today[currentHour], 2);
+            }
+
+            return new PanelUserPresenceHourSeriesDto(
+                typical,
+                today,
+                11,
+                typical[11],
+                11,
+                today[11],
+                14,
+                currentHour,
+                Now);
+        }
+    }
+
     public static IReadOnlyList<PanelUserDto> PanelUsers =>
     [
         new("preview-admin", "admin@orbita.local", true, PanelRoles.Admin, false,

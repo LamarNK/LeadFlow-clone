@@ -10,6 +10,7 @@ public sealed record SettingsIndexViewModel
     public required IReadOnlyList<SettingsTabViewModel> Tabs { get; init; }
     public IReadOnlyList<PanelUserRowViewModel> Users { get; init; } = [];
     public IReadOnlyList<PanelUserGroupViewModel> UserGroups { get; init; } = [];
+    public PanelUserPresenceStatsViewModel? PresenceStats { get; init; }
     public IReadOnlyList<AccessProfileRowViewModel> Profiles { get; init; } = [];
     public IReadOnlyList<EventFilterOptionViewModel> ProfileOptions { get; init; } = [];
     public WorkersSettingsViewModel? Workers { get; init; }
@@ -96,6 +97,32 @@ public sealed class PanelUserRowViewModel
     public string BitrixStatusTone { get; init; } = "neutral";
     public Guid? OfficeId { get; init; }
     public string? OfficeName { get; init; }
+}
+
+public sealed class PanelUserPresenceStatsViewModel
+{
+    public int Total { get; init; }
+    public int Online { get; init; }
+    public int Offline { get; init; }
+    public int NeverSeen { get; init; }
+    public int CurrentHour { get; init; }
+    public string? TypicalPeakLabel { get; init; }
+    public string? TodayPeakLabel { get; init; }
+    public int TodayPeakValue { get; init; }
+    public bool HasHourlyData { get; init; }
+    public IReadOnlyList<PanelUserPresenceHourBarViewModel> Hours { get; init; } = [];
+}
+
+public sealed class PanelUserPresenceHourBarViewModel
+{
+    public int Hour { get; init; }
+    public int Typical { get; init; }
+    public int Today { get; init; }
+    public int HeightPercent { get; init; }
+    public bool IsTypicalPeak { get; init; }
+    public bool IsCurrentHour { get; init; }
+    public string AxisLabel { get; init; } = string.Empty;
+    public string Title { get; init; } = string.Empty;
 }
 
 public sealed class PanelUserGroupViewModel

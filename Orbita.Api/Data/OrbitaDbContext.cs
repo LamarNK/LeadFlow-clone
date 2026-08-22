@@ -10,6 +10,7 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
 {
     public DbSet<OfficeEntity> Offices => Set<OfficeEntity>();
     public DbSet<PanelUserProfileEntity> PanelUserProfiles => Set<PanelUserProfileEntity>();
+    public DbSet<PanelUserPresenceHourEntity> PanelUserPresenceHours => Set<PanelUserPresenceHourEntity>();
     public DbSet<WorkerEntity> Workers => Set<WorkerEntity>();
     public DbSet<WorkerSnapshotEntity> WorkerSnapshots => Set<WorkerSnapshotEntity>();
     public DbSet<WorkerAccountEntity> WorkerAccounts => Set<WorkerAccountEntity>();
@@ -83,6 +84,13 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
                 .WithMany(x => x.UserProfiles)
                 .HasForeignKey(x => x.OfficeId)
                 .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<PanelUserPresenceHourEntity>(entity =>
+        {
+            entity.HasKey(x => new { x.UserId, x.HourUtc });
+            entity.Property(x => x.UserId).HasMaxLength(128);
+            entity.HasIndex(x => x.HourUtc);
         });
 
         modelBuilder.Entity<CrmDailyDistributionSessionEntity>(entity =>

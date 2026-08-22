@@ -26,6 +26,70 @@ public sealed class SettingsUserGroupsTests
         var user = Assert.Single(model.Users);
         Assert.True(user.IsOnline);
         Assert.Equal(lastSeenAtUtc, user.LastSeenAtUtc);
+        Assert.NotNull(model.PresenceStats);
+        Assert.Equal(1, model.PresenceStats.Online);
+        Assert.Equal(1, model.PresenceStats.Total);
+    }
+
+    [Fact]
+    public void BuildPresenceStats_ExposesPeakHourAndOnlineCounts()
+    {
+        var users = new List<PanelUserRowViewModel>
+        {
+            new()
+            {
+                Id = "online",
+                Email = "online@orbita.local",
+                Role = PanelRoles.Operator,
+                RoleLabel = "Оператор",
+                ProfileId = "operator",
+                IsOnline = true,
+                LastSeenAtUtc = DateTime.UtcNow
+            },
+            new()
+            {
+                Id = "offline",
+                Email = "offline@orbita.local",
+                Role = PanelRoles.Manager,
+                RoleLabel = "Менеджер",
+                ProfileId = "manager",
+                LastSeenAtUtc = DateTime.UtcNow.AddHours(-2)
+            },
+            new()
+            {
+                Id = "never",
+                Email = "never@orbita.local",
+                Role = PanelRoles.Operator,
+                RoleLabel = "Оператор",
+                ProfileId = "operator"
+            }
+        };
+        var typical = new int[24];
+        typical[11] = 6;
+        typical[12] = 4;
+        var today = new int[24];
+        today[11] = 3;
+        var stats = SettingsIndexBuilder.BuildPresenceStats(
+            users,
+            new PanelUserPresenceHourSeriesDto(
+                typical,
+                today,
+                11,
+                6,
+                11,
+                3,
+                14,
+                11,
+                DateTime.UtcNow));
+
+        Assert.Equal(1, stats.Online);
+        Assert.Equal(1, stats.Offline);
+        Assert.Equal(1, stats.NeverSeen);
+        Assert.Equal(3, stats.Total);
+        Assert.Equal("11:00–12:00", stats.TypicalPeakLabel);
+        Assert.True(stats.HasHourlyData);
+        Assert.True(stats.Hours[11].IsTypicalPeak);
+        Assert.True(stats.Hours[11].IsCurrentHour);
     }
 
     [Fact]
