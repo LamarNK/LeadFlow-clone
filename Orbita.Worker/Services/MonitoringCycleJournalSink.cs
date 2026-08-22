@@ -99,6 +99,39 @@ public sealed class MonitoringCycleJournalSink(
         return id;
     }
 
+    public void SkipSubProfile(
+        Guid cycleId,
+        string subProfileId,
+        string subProfileName,
+        int position,
+        int total,
+        string? errorType,
+        string? errorMessage)
+    {
+        if (!_cycles.TryGetValue(cycleId, out var cycle))
+        {
+            return;
+        }
+
+        var id = Guid.NewGuid();
+        var now = DateTime.UtcNow;
+        cycle.SubProfiles[id] = new MutableSubProfile
+        {
+            Id = id,
+            SubProfileId = subProfileId?.Trim() ?? string.Empty,
+            SubProfileName = string.IsNullOrWhiteSpace(subProfileName) ? "—" : subProfileName.Trim(),
+            Position = Math.Max(1, position),
+            Total = Math.Max(total, position),
+            StartedAtUtc = now,
+            CompletedAtUtc = now,
+            Outcome = MonitoringSubProfileRunOutcomes.Skipped,
+            ErrorType = string.IsNullOrWhiteSpace(errorType) ? "not-reached" : errorType.Trim(),
+            ErrorMessage = string.IsNullOrWhiteSpace(errorMessage) ? "очередь не дошла" : errorMessage.Trim()
+        };
+        cycle.Dirty = true;
+        _ = MaybeFlushAsync();
+    }
+
     public void CompleteSubProfile(
         Guid cycleId,
         Guid subProfileRunId,

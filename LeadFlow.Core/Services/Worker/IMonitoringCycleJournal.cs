@@ -29,6 +29,16 @@ public interface IMonitoringCycleJournal
         int captchaCount = 0,
         int captchaSolvedCount = 0);
 
+    /// <summary>Субпрофиль не запускался в этом цикле — очередь не дошла.</summary>
+    void SkipSubProfile(
+        Guid cycleId,
+        string subProfileId,
+        string subProfileName,
+        int position,
+        int total,
+        string? errorType,
+        string? errorMessage);
+
     /// <summary>Ошибка прохода субпрофиля.</summary>
     void FailSubProfile(
         Guid cycleId,

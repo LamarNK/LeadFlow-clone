@@ -277,8 +277,8 @@ public sealed class WorkerMonitoringService(
                     var runningIds = running.Select(static j => j.Account.Id).ToHashSet();
                     var due = accounts
                         .Where(a => !runningIds.Contains(a.Id))
-                        .Where(a => GetNextEligibleUtc(a.Id) <= now)
-                        .OrderBy(a => GetNextEligibleUtc(a.Id))
+                        .Where(a => GetNextEligibleUtc(a) <= now)
+                        .OrderBy(a => GetNextEligibleUtc(a))
                         .ThenBy(a => a.DisplayName, StringComparer.OrdinalIgnoreCase)
                         .ToList();
 
@@ -298,7 +298,7 @@ public sealed class WorkerMonitoringService(
                     if (running.Count == 0)
                     {
                         var nextDue = accounts
-                            .Select(a => GetNextEligibleUtc(a.Id))
+                            .Select(GetNextEligibleUtc)
                             .DefaultIfEmpty(now.AddSeconds(30))
                             .Min();
                         var wait = nextDue - DateTime.UtcNow;
@@ -386,7 +386,17 @@ public sealed class WorkerMonitoringService(
 
                     personalDelay = MonitoringNightQuiet.ApplyFloor(personalDelay, DateTime.UtcNow);
 
-                    _accountNextEligibleUtc[job.Account.Id] = DateTime.UtcNow.Add(personalDelay);
+                    var nextEligible = DateTime.UtcNow.Add(personalDelay);
+                    _accountNextEligibleUtc[job.Account.Id] = nextEligible;
+                    job.Account.NextMonitoringAtUtc = nextEligible;
+                    try
+                    {
+                        await repository.SaveAccountAsync(job.Account, cancellationToken).ConfigureAwait(false);
+                    }
+                    catch
+                    {
+                        // Пауза уже в памяти процесса; файл/рантайм — best effort.
+                    }
 
                     WorkerMonitoringLogger.AccountPersonalDelay(
                         job.Account,
@@ -440,8 +450,14 @@ public sealed class WorkerMonitoringService(
         }
     }
 
-    private DateTime GetNextEligibleUtc(Guid accountId) =>
-        _accountNextEligibleUtc.TryGetValue(accountId, out var at) ? at : DateTime.MinValue;
+    private DateTime GetNextEligibleUtc(AvitoAccount account)
+    {
+        DateTime? memoryNext = _accountNextEligibleUtc.TryGetValue(account.Id, out var at) ? at : null;
+        return MonitoringAccountResume.ResolveNextEligibleUtc(
+            memoryNext,
+            account.NextMonitoringAtUtc,
+            account.LastMonitoringAt);
+    }
 
     private async Task<bool> TryRecoverLoopAsync(Exception ex, CancellationToken cancellationToken)
     {
@@ -1313,16 +1329,20 @@ public sealed class WorkerMonitoringService(
                 ? new ProfileResult { ParseSuccess = false, PageLoadedSuccessfully = true, ActiveTabCounterResolved = true }
                 : null;
             var consecutiveCaptchaFails = 0;
+            var lastStartedIndex = -1;
+            string? remainingSkipReason = null;
 
             for (var i = 0; i < subProfiles.Count; i++)
             {
                 if (cancellationToken.IsCancellationRequested)
                 {
                     aborted = true;
+                    remainingSkipReason ??= FormatRemainingSkipReason("cancelled", subName: null);
                     break;
                 }
 
                 var sub = subProfiles[i];
+                lastStartedIndex = i;
                 diagnosticSubProfile = sub;
                 monitorContext.SubProfileId = sub.Id;
                 monitorContext.SubProfileName = sub.Name;
@@ -1370,6 +1390,7 @@ public sealed class WorkerMonitoringService(
                                 captchaCount: blockingCaptcha.Seen,
                                 captchaSolvedCount: blockingCaptcha.Solved);
                             aborted = true;
+                            remainingSkipReason = FormatRemainingSkipReason("switch-failed", sub.Name);
                             break;
                         }
 
@@ -1528,6 +1549,11 @@ public sealed class WorkerMonitoringService(
                         || MonitoringPassFailurePolicy.ShouldStopRemainingAfterCaptcha(consecutiveCaptchaFails))
                     {
                         aborted = true;
+                        remainingSkipReason = issueKind == AvitoSubProfileIssueKind.IpBlock
+                            ? FormatRemainingSkipReason("ip-block", sub.Name)
+                            : consecutiveCaptchaFails >= MonitoringPassFailurePolicy.ConsecutiveCaptchaStopsRemaining
+                                ? FormatRemainingSkipReason("captcha-consecutive", sub.Name)
+                                : FormatRemainingSkipReason("captcha", sub.Name);
                         break;
                     }
                 }
@@ -1545,6 +1571,7 @@ public sealed class WorkerMonitoringService(
                         captcha.Seen,
                         captcha.Solved);
                     aborted = true;
+                    remainingSkipReason = FormatRemainingSkipReason("auth-required", sub.Name);
                     await HandleLoginRequiredForAccountAsync(
                             account,
                             new AvitoLoginRequiredException(
@@ -1571,6 +1598,7 @@ public sealed class WorkerMonitoringService(
                         captcha.Seen,
                         captcha.Solved);
                     aborted = true;
+                    remainingSkipReason = FormatRemainingSkipReason("proxy", sub.Name, proxyEx.UserMessage);
                     await HandleAdsPowerProxyFailureForAccountAsync(account, proxyEx, cancellationToken)
                         .ConfigureAwait(false);
                     break;
@@ -1601,6 +1629,7 @@ public sealed class WorkerMonitoringService(
                             account,
                             $"проблема на субпрофиле «{sub.Name}»");
                         aborted = true;
+                        remainingSkipReason = FormatRemainingSkipReason("automation", sub.Name, ex.Message);
                         break;
                     }
                 }
@@ -1613,6 +1642,15 @@ public sealed class WorkerMonitoringService(
                         await HumanDelay.DelayAsync(3000, 9000, cancellationToken).ConfigureAwait(false);
                     }
                 }
+            }
+
+            if (aborted)
+            {
+                SkipRemainingSubProfiles(
+                    cycleId,
+                    subProfiles,
+                    lastStartedIndex,
+                    remainingSkipReason);
             }
 
             await PersistAccountSubProfilesAsync(account, allSubProfiles, cancellationToken).ConfigureAwait(false);
@@ -1696,6 +1734,56 @@ public sealed class WorkerMonitoringService(
         }
 
         return (seen, Math.Min(seen, solved));
+    }
+
+    private void SkipRemainingSubProfiles(
+        Guid cycleId,
+        IReadOnlyList<AvitoSubProfile> subProfiles,
+        int lastStartedIndex,
+        string? reason)
+    {
+        var skipReason = string.IsNullOrWhiteSpace(reason)
+            ? FormatRemainingSkipReason("aborted", subName: null)
+            : reason;
+        for (var i = lastStartedIndex + 1; i < subProfiles.Count; i++)
+        {
+            var leftover = subProfiles[i];
+            _cycleJournal.SkipSubProfile(
+                cycleId,
+                leftover.Id,
+                leftover.Name,
+                i + 1,
+                subProfiles.Count,
+                "not-reached",
+                skipReason);
+        }
+    }
+
+    private static string FormatRemainingSkipReason(string kind, string? subName, string? detail = null)
+    {
+        var who = string.IsNullOrWhiteSpace(subName) ? null : $"«{subName.Trim()}»";
+        var trimmedDetail = string.IsNullOrWhiteSpace(detail) ? null : detail.Trim();
+        if (trimmedDetail is { Length: > 80 })
+        {
+            trimmedDetail = trimmedDetail[..80];
+        }
+
+        return kind switch
+        {
+            "captcha" => $"очередь не дошла: капча на {who}",
+            "captcha-consecutive" => $"очередь не дошла: 2 капчи подряд, последняя на {who}",
+            "ip-block" => $"очередь не дошла: блок IP на {who}",
+            "auth-required" => $"очередь не дошла: нужен вход ({who})",
+            "switch-failed" => $"очередь не дошла: не удалось переключить {who}",
+            "proxy" => trimmedDetail is null
+                ? $"очередь не дошла: прокси на {who}"
+                : $"очередь не дошла: {trimmedDetail}",
+            "automation" => trimmedDetail is null
+                ? $"очередь не дошла: ошибка на {who}"
+                : $"очередь не дошла: {trimmedDetail} ({who})",
+            "cancelled" => "очередь не дошла: остановлен",
+            _ => "очередь не дошла: цикл прерван"
+        };
     }
 
     private Task<bool> IsOpenPhoneWatchForHintsAsync(

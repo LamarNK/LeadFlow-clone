@@ -26,6 +26,17 @@ public sealed class NullMonitoringCycleJournal : IMonitoringCycleJournal
     {
     }
 
+    public void SkipSubProfile(
+        Guid cycleId,
+        string subProfileId,
+        string subProfileName,
+        int position,
+        int total,
+        string? errorType,
+        string? errorMessage)
+    {
+    }
+
     public void FailSubProfile(
         Guid cycleId,
         Guid subProfileRunId,
