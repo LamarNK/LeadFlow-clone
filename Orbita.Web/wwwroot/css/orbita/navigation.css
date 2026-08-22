@@ -5,7 +5,7 @@
 
 .orbita-nav-loading {
     position: absolute;
-    left: var(--orbita-sidebar-width);
+    left: calc(var(--orbita-sidebar-width) + var(--orbita-sidebar-gutter, 0px));
     top: 0;
     right: 0;
     bottom: 0;
