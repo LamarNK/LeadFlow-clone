@@ -1,6 +1,6 @@
 :root,
 [data-theme="light"] {
-    --orbita-sidebar-width: 328px;
+    --orbita-sidebar-width: 280px;
     --orbita-sidebar-collapsed-width: 76px;
     --orbita-sidebar-gutter: 0px;
     --bg-page: #f4f6f9;
@@ -63,7 +63,7 @@ a:hover { color: var(--accent-hover); }
     width: var(--orbita-sidebar-width);
     height: 100vh;
     height: 100dvh;
-    padding: 34px 28px 28px;
+    padding: 24px 18px 20px;
     display: flex;
     flex-direction: column;
     background:
@@ -98,28 +98,28 @@ a:hover { color: var(--accent-hover); }
     display: flex;
     align-items: center;
     justify-content: space-between;
-    min-height: 54px;
+    min-height: 46px;
     flex-shrink: 0;
 }
 
 .orbita-sidebar-brand {
     display: flex;
     align-items: center;
-    gap: 13px;
+    gap: 10px;
     min-width: 0;
 }
 
 .orbita-sidebar-brand img {
     width: auto;
-    height: 50px;
-    max-width: 54px;
+    height: 42px;
+    max-width: 46px;
     object-fit: contain;
     display: block;
     flex-shrink: 0;
 }
 
 .orbita-sidebar-brand span {
-    font-size: 26px;
+    font-size: 22px;
     font-weight: 700;
     letter-spacing: -0.035em;
     color: #ffffff;
@@ -130,14 +130,14 @@ a:hover { color: var(--accent-hover); }
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 54px;
-    height: 54px;
+    width: 44px;
+    height: 44px;
     padding: 0;
     border: 1px solid rgba(143, 180, 236, 0.1);
-    border-radius: 16px;
+    border-radius: 12px;
     background: rgba(57, 86, 137, 0.14);
     color: #c4d5f2;
-    font-size: 24px;
+    font-size: 21px;
     line-height: 1;
     cursor: pointer;
     transition: background 0.2s ease, color 0.2s ease;
@@ -152,10 +152,10 @@ a:hover { color: var(--accent-hover); }
 .orbita-nav {
     display: flex;
     flex-direction: column;
-    gap: 30px;
+    gap: 22px;
     flex: 1;
     min-height: 0;
-    margin-top: 42px;
+    margin-top: 30px;
     overflow-y: auto;
     overflow-x: hidden;
     padding: 0 2px 6px;
@@ -163,19 +163,19 @@ a:hover { color: var(--accent-hover); }
 
 .orbita-nav-section {
     display: grid;
-    gap: 14px;
+    gap: 10px;
     flex: 0 0 auto;
 }
 
 .orbita-nav-section-items {
     display: grid;
-    gap: 8px;
+    gap: 5px;
 }
 
 .orbita-nav-section-title {
-    margin: 0 0 0 12px;
+    margin: 0 0 0 10px;
     color: #91a7ca;
-    font-size: 13px;
+    font-size: 12px;
     font-weight: 700;
     letter-spacing: 0.045em;
     line-height: 1.2;
@@ -185,21 +185,21 @@ a:hover { color: var(--accent-hover); }
 .orbita-nav .nav-item {
     display: flex;
     align-items: center;
-    gap: 16px;
-    min-height: 54px;
-    padding: 0 18px;
+    gap: 13px;
+    min-height: 46px;
+    padding: 0 14px;
     border: 1px solid transparent;
-    border-radius: 15px;
+    border-radius: 12px;
     color: #c8d2e5;
-    font-size: 17px;
+    font-size: 15px;
     font-weight: 500;
     text-decoration: none;
     transition: background 0.2s ease, transform 0.2s ease, color 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
 }
 
 .orbita-nav .nav-item i {
-    width: 24px;
-    font-size: 21px;
+    width: 22px;
+    font-size: 19px;
     text-align: center;
     color: #bdcce3;
     flex-shrink: 0;
@@ -217,7 +217,7 @@ a:hover { color: var(--accent-hover); }
 }
 
 .orbita-nav .nav-item.active {
-    min-height: 58px;
+    min-height: 50px;
     background: linear-gradient(100deg, rgba(51, 101, 187, 0.24), rgba(66, 104, 166, 0.15));
     border-color: rgba(60, 133, 255, 0.36);
     box-shadow: inset 0 1px 0 rgba(138, 183, 255, 0.08), 0 10px 25px rgba(8, 45, 109, 0.12);
@@ -236,7 +236,7 @@ a:hover { color: var(--accent-hover); }
 }
 
 .orbita-nav-section--crm .nav-item {
-    min-height: 54px;
+    min-height: 46px;
     background: linear-gradient(100deg, rgba(57, 84, 130, 0.22), rgba(58, 84, 127, 0.13));
 }
 
@@ -251,7 +251,7 @@ a:hover { color: var(--accent-hover); }
 
 .orbita-sidebar-footer {
     margin-top: auto;
-    padding: 28px 2px 2px;
+    padding: 20px 2px 2px;
     display: flex;
     flex-direction: column;
     gap: 10px;
@@ -268,14 +268,14 @@ a:hover { color: var(--accent-hover); }
 .sidebar-btn {
     display: flex;
     align-items: center;
-    gap: 16px;
-    min-height: 50px;
-    padding: 0 18px;
+    gap: 13px;
+    min-height: 44px;
+    padding: 0 14px;
     border: 0;
-    border-radius: 15px;
+    border-radius: 12px;
     background: transparent;
     color: #c8d2e5;
-    font-size: 17px;
+    font-size: 15px;
     font-weight: 500;
     font-family: inherit;
     cursor: pointer;
@@ -285,8 +285,8 @@ a:hover { color: var(--accent-hover); }
 }
 
 .sidebar-btn i {
-    width: 24px;
-    font-size: 21px;
+    width: 22px;
+    font-size: 19px;
     text-align: center;
     flex-shrink: 0;
 }
@@ -402,14 +402,14 @@ html.sidebar-collapsed .sidebar-btn {
 .orbita-nav .nav-badge {
     top: 50%;
     right: 16px;
-    min-width: 34px;
-    height: 30px;
-    padding: 0 10px;
+    min-width: 30px;
+    height: 26px;
+    padding: 0 8px;
     border: 0;
     background: linear-gradient(135deg, #ff5f65, #e7354a);
     box-shadow: 0 6px 14px rgba(238, 59, 79, 0.22);
-    font-size: 13px;
-    line-height: 30px;
+    font-size: 12px;
+    line-height: 26px;
     transform: translateY(-50%);
 }
 
