@@ -524,7 +524,9 @@ public sealed partial class AdsPowerAvitoAutomationService(
             return;
         }
 
-        if (await TrySolveGeeTestAsync(page, html, page.Url, kind, cancellationToken).ConfigureAwait(false))
+        var isIpBlock = AvitoCaptchaDetector.HasIpBlockChallenge(html);
+        if (!isIpBlock
+            && await TrySolveGeeTestAsync(page, html, page.Url, kind, cancellationToken).ConfigureAwait(false))
         {
             return;
         }
@@ -534,17 +536,20 @@ public sealed partial class AdsPowerAvitoAutomationService(
             .ConfigureAwait(false);
 
         _ = GlobalLogger.Instance.LogAsync(
-            $"AdsPower captcha/firewall detected ({kind}) on {page.Url ?? "<unknown>"}.",
+            $"AdsPower {(isIpBlock ? "IP block" : "captcha")} detected ({kind}) on {page.Url ?? "<unknown>"}.",
             DeskLinkAuditLogLevel.Warning,
             properties: new Dictionary<string, object?>
             {
-                ["step"] = "captcha_detected",
+                ["step"] = isIpBlock ? "ip_block_detected" : "captcha_detected",
                 ["page.url"] = page.Url,
-                ["captcha.kind"] = kind,
+                ["issue.kind"] = isIpBlock ? "ip_block" : kind,
                 ["screenshot.bytes"] = screenshot?.Length ?? 0
             });
 
-        AvitoCaptchaTaskContext.NoteUnsolved();
+        if (!isIpBlock)
+        {
+            AvitoCaptchaTaskContext.NoteUnsolved();
+        }
         throw new AvitoCaptchaDetectedException(kind, page.Url, html, screenshot);
     }
 
@@ -671,6 +676,11 @@ public sealed partial class AdsPowerAvitoAutomationService(
         string? kind,
         CancellationToken cancellationToken)
     {
+        if (html is not null && AvitoCaptchaDetector.HasIpBlockChallenge(html))
+        {
+            return false;
+        }
+
         if (geeTestSolver is null)
         {
             return false;

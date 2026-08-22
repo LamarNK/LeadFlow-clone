@@ -78,7 +78,7 @@ public static class AvitoFirewallProbe
             var kind = root.TryGetProperty("kind", out var kindProp) ? kindProp.GetString() : null;
             var url = root.TryGetProperty("url", out var urlProp) ? urlProp.GetString() : null;
             var title = root.TryGetProperty("title", out var titleProp) ? titleProp.GetString() : null;
-            return new Detection(string.IsNullOrWhiteSpace(kind) ? "firewall" : kind!, url, title);
+            return new Detection(string.IsNullOrWhiteSpace(kind) ? "captcha" : kind!, url, title);
         }
         catch
         {

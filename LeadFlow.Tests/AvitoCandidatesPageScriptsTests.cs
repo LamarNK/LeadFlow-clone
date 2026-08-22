@@ -14,6 +14,7 @@ public sealed class AvitoCandidatesPageScriptsTests
         Assert.Contains("support.avito.ru/request/720", script, StringComparison.Ordinal);
         Assert.Contains("Отключить\\s+VPN", script, StringComparison.Ordinal);
         Assert.Contains("hasFirewallText && hasCaptchaWidget", script, StringComparison.Ordinal);
+        Assert.Contains("const hasIpBlock", script, StringComparison.Ordinal);
     }
 
     [Fact]

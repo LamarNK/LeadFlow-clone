@@ -86,10 +86,7 @@ public static class AvitoCaptchaDetector
             return null;
         }
 
-        if (Regex.IsMatch(
-                html,
-                @"\bfirewall-container\b|\bjs-firewall-form\b|\bfirewall-title\b|Доступ\s+ограничен|проблема\s+с\s+IP|location\.hash\s*!=\s*[""']#block[""']|support\.avito\.ru/request/720|Отключить\s+VPN|В\s+самол[её]те",
-                RegexOptions.IgnoreCase))
+        if (HasIpBlockChallenge(html))
         {
             return "firewall";
         }
@@ -110,6 +107,11 @@ public static class AvitoCaptchaDetector
         if (Regex.IsMatch(html, @"id=""inner-captcha""", RegexOptions.IgnoreCase))
         {
             return "image-captcha";
+        }
+
+        if (StrongMarkers.IsMatch(html))
+        {
+            return "captcha";
         }
 
         if (TextMarkers.IsMatch(html) && !HasNormalAvitoMarkers(html))
@@ -137,8 +139,9 @@ public static class AvitoCaptchaDetector
     }
 
     /// <summary>
-    /// Экран/модалка «Доступ ограничен: проблема с IP», в том числе SPA-оверлей поверх кабинета
-    /// без <c>#geetest_captcha</c> — GeeTest стартует после «Продолжить».
+    /// Экран/модалка «Доступ ограничен: проблема с IP», в том числе SPA-оверлей поверх кабинета.
+    /// Это блокировка IP, а не капча: присутствие firewall-разметки или кнопки «Продолжить»
+    /// само по себе не должно менять тип проблемы.
     /// </summary>
     public static bool HasIpBlockChallenge(string? html)
     {
@@ -147,26 +150,20 @@ public static class AvitoCaptchaDetector
             return false;
         }
 
-        if (Regex.IsMatch(html, @"\bfirewall-container\b|\bjs-firewall-form\b|\bfirewall-title\b", RegexOptions.IgnoreCase))
-        {
-            return true;
-        }
-
         var hasTitle = Regex.IsMatch(html, @"Доступ\s+ограничен", RegexOptions.IgnoreCase);
         var hasIp = Regex.IsMatch(html, @"проблема\s+с\s+IP", RegexOptions.IgnoreCase);
-        var hasContinue = html.Contains("Продолжить", StringComparison.Ordinal);
-        var hasSupportTicket = html.Contains("support.avito.ru/request/720", StringComparison.OrdinalIgnoreCase);
-        var hasDialog = Regex.IsMatch(html, @"aria-modal\s*=\s*[""']true[""']|role\s*=\s*[""']dialog[""']", RegexOptions.IgnoreCase);
-        var hasScrollLockOverlay = html.Contains("data-scroll-lock-ignore", StringComparison.OrdinalIgnoreCase);
+        var hasStaticIpMarkers = Regex.IsMatch(
+                html,
+                @"location\.hash\s*!=\s*[""']#block[""']",
+                RegexOptions.IgnoreCase)
+            && html.Contains("support.avito.ru/request/720", StringComparison.OrdinalIgnoreCase)
+            && Regex.IsMatch(html, @"Отключить\s+VPN|В\s+самол[её]те", RegexOptions.IgnoreCase);
 
-        return (hasTitle && hasIp)
-               || (hasDialog && hasTitle && hasContinue)
-               || (hasSupportTicket && hasContinue && hasTitle)
-               || (hasScrollLockOverlay && hasTitle && hasIp);
+        return (hasTitle && hasIp) || hasStaticIpMarkers;
     }
 
     public static bool CanAttemptGeeTestSolve(string? html) =>
-        HasGeeTestWidget(html) || HasIpBlockChallenge(html);
+        !HasIpBlockChallenge(html) && HasGeeTestWidget(html);
 
     /// <summary>
     /// captcha_id GeeTest v4 со страницы Avito. Если в HTML нет — фиксированное значение домена.

@@ -65,7 +65,7 @@ public sealed class AvitoGeeTestSolveSupportTests
     }
 
     [Fact]
-    public void ShouldCreateProviderTask_IpFirewallChallenge_ReturnsTrue()
+    public void ShouldCreateProviderTask_IpFirewallChallenge_ReturnsFalse()
     {
         const string html = """
             <div class="firewall-container">
@@ -74,7 +74,7 @@ public sealed class AvitoGeeTestSolveSupportTests
             </div>
             """;
 
-        Assert.True(AvitoGeeTestSolveSupport.ShouldCreateProviderTask(html));
+        Assert.False(AvitoGeeTestSolveSupport.ShouldCreateProviderTask(html));
     }
 
     [Fact]

@@ -29,7 +29,7 @@ public static class AvitoAutomationFailureFormatter
             || (pageState?.HasCaptcha == true && pageState.PageKind == AvitoPageKind.Captcha))
         {
             return pageState?.HasFirewallIp == true
-                ? "доступ ограничен: проблема с IP — откройте браузер AdsPower, дождитесь разблокировки или пройдите проверку."
+                ? "доступ ограничен: проблема с IP — откройте браузер AdsPower, дождитесь разблокировки или смените IP."
                 : "на странице капча — нужна ручная проверка в браузере AdsPower.";
         }
 

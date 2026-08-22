@@ -193,8 +193,10 @@ public sealed class AvitoCaptchaDetectorTests
         Assert.Equal("firewall", AvitoCaptchaDetector.Classify(html));
         Assert.True(AvitoCaptchaDetector.HasGeeTestWidget(html));
         Assert.Equal(AvitoCaptchaDetector.AvitoGeeTestCaptchaId, AvitoCaptchaDetector.ExtractGeeTestCaptchaId(html));
-        Assert.True(AvitoGeeTestSolveSupport.CanAutoSolve(html, "key"));
         Assert.True(AvitoCaptchaDetector.HasIpBlockChallenge(html));
+        Assert.False(AvitoCaptchaDetector.CanAttemptGeeTestSolve(html));
+        Assert.False(AvitoGeeTestSolveSupport.CanAutoSolve(html, "key"));
+        Assert.False(AvitoGeeTestSolveSupport.ShouldCreateProviderTask(html));
     }
 
     [Fact]
@@ -214,7 +216,7 @@ public sealed class AvitoCaptchaDetectorTests
         Assert.Equal("firewall", AvitoCaptchaDetector.Classify(html));
         Assert.False(AvitoCaptchaDetector.HasGeeTestWidget(html));
         Assert.True(AvitoCaptchaDetector.HasIpBlockChallenge(html));
-        Assert.True(AvitoCaptchaDetector.CanAttemptGeeTestSolve(html));
+        Assert.False(AvitoCaptchaDetector.CanAttemptGeeTestSolve(html));
         Assert.False(AvitoGeeTestSolveSupport.CanAutoSolve(html, "key"));
     }
 
@@ -239,7 +241,7 @@ public sealed class AvitoCaptchaDetectorTests
         Assert.Equal("firewall", AvitoCaptchaDetector.Classify(html));
         Assert.False(AvitoCaptchaDetector.HasGeeTestWidget(html));
         Assert.True(AvitoCaptchaDetector.HasIpBlockChallenge(html));
-        Assert.True(AvitoCaptchaDetector.CanAttemptGeeTestSolve(html));
+        Assert.False(AvitoCaptchaDetector.CanAttemptGeeTestSolve(html));
         Assert.Contains("Продолжить", AvitoGeeTestSolveSupport.BuildClickContinueScript(), StringComparison.Ordinal);
         Assert.Contains("data-scroll-lock-ignore", AvitoGeeTestSolveSupport.BuildClickContinueScript(), StringComparison.Ordinal);
     }
@@ -261,5 +263,24 @@ public sealed class AvitoCaptchaDetectorTests
 
         Assert.True(AvitoCaptchaDetector.IsCaptchaHtml(html));
         Assert.Equal("firewall", AvitoCaptchaDetector.Classify(html));
+        Assert.True(AvitoCaptchaDetector.HasIpBlockChallenge(html));
+    }
+
+    [Fact]
+    public void Classify_FirewallContainerWithGeeTestWithoutIp_IsCaptcha()
+    {
+        const string html = """
+            <div class="firewall-container">
+              <div id="geetest_captcha">
+                <script src="https://www.avito.st/s/captcha/gt4.js"></script>
+              </div>
+              <button type="button">Продолжить</button>
+            </div>
+            """;
+
+        Assert.True(AvitoCaptchaDetector.IsCaptchaHtml(html));
+        Assert.False(AvitoCaptchaDetector.HasIpBlockChallenge(html));
+        Assert.Equal("geetest", AvitoCaptchaDetector.Classify(html));
+        Assert.True(AvitoCaptchaDetector.CanAttemptGeeTestSolve(html));
     }
 }

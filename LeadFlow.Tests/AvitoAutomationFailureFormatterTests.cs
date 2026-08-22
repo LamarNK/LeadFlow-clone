@@ -104,6 +104,7 @@ public sealed class AvitoAutomationFailureFormatterTests
         Assert.Equal(AvitoSubProfileIssueKind.IpBlock, kind);
         Assert.True(AvitoAutomationFailureFormatter.IsAccountBlockingIssue(kind));
         Assert.Contains("проблема с IP", message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("капча", message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

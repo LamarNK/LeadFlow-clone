@@ -40,7 +40,7 @@ public sealed class AvitoCaptchaRedirectRecoveryTests
     }
 
     [Fact]
-    public void RequiresRecovery_ClassicFirewallScriptContainsRedirectTemplate_IsStillLiveChallenge()
+    public void RequiresRecovery_ClassicIpFirewall_DoesNotCreateCaptchaTask()
     {
         // Реальный HTML Avito: зелёная фраза живёт в <script> как шаблон showRedirectMessage,
         // а на экране кнопка «Продолжить». GetContentAsync отдаёт скрипт целиком —
@@ -69,11 +69,11 @@ public sealed class AvitoCaptchaRedirectRecoveryTests
             """;
 
         Assert.False(AvitoCaptchaRedirectRecovery.RequiresRecovery(html));
-        Assert.True(AvitoGeeTestSolveSupport.ShouldCreateProviderTask(html));
+        Assert.False(AvitoGeeTestSolveSupport.ShouldCreateProviderTask(html));
     }
 
     [Fact]
-    public void RequiresRecovery_UnsolvedContinuePrompt_ReturnsFalse()
+    public void RequiresRecovery_UnsolvedIpPrompt_DoesNotCreateCaptchaTask()
     {
         const string html = """
             <div class="firewall-container">
@@ -86,7 +86,7 @@ public sealed class AvitoCaptchaRedirectRecoveryTests
             """;
 
         Assert.False(AvitoCaptchaRedirectRecovery.RequiresRecovery(html));
-        Assert.True(AvitoGeeTestSolveSupport.ShouldCreateProviderTask(html));
+        Assert.False(AvitoGeeTestSolveSupport.ShouldCreateProviderTask(html));
     }
 
     [Theory]

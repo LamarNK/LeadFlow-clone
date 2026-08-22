@@ -90,9 +90,13 @@ public static class AvitoPageStateScripts
             ) || location.hash === "#block"
               || !!document.querySelector('a[href*="support.avito.ru/request/720"]');
             const hasFirewallText = /Доступ\s+ограничен|проблема\s+с\s+IP|firewallCaptcha|Отключить\s+VPN|самол[её]те/i.test(probeText);
-            const hasIpDialog = !!document.querySelector('[role="dialog"][aria-modal="true"], [aria-modal="true"]')
-              && /Доступ\s+ограничен|проблема\s+с\s+IP/i.test(probeText);
-            const hasFirewallIp = hasFirewallDom || hasFirewallText || hasIpDialog;
+            const hasIpText = /Доступ\s+ограничен/i.test(probeText)
+              && /проблема\s+с\s+IP/i.test(probeText);
+            const hasStaticIpBlock = location.hash === "#block"
+              && !!document.querySelector('a[href*="support.avito.ru/request/720"]')
+              && /Отключить\s+VPN|самол[её]те/i.test(probeText);
+            const hasIpBlock = hasIpText || hasStaticIpBlock;
+            const hasFirewallIp = hasIpBlock;
 
             const hasCaptchaWidget = !!(
                 document.getElementById("geetest_captcha") ||
@@ -100,7 +104,7 @@ public static class AvitoPageStateScripts
                 document.getElementById("h-captcha") ||
                 document.querySelector(".h-captcha[data-sitekey]")
             );
-            const hasCaptcha = hasFirewallIp || hasCaptchaWidget;
+            const hasCaptcha = hasFirewallDom || hasFirewallText || hasCaptchaWidget || hasIpBlock;
             // Баннер Avito Pro: скрытые объявления из-за нулевого/недостаточного аванса.
             // Оба текста обязательны, чтобы не принять обычный блок баланса за ошибку.
             const hasInsufficientAdvance =

@@ -176,12 +176,10 @@ public sealed partial class AdsPowerAvitoAutomationService
         // вызывался только позже, при переключении субпрофиля: браузер уже
         // показывал users-list/login-form, но до этого шага поток не доходил.
         var warmupState = await ProbePageStateAsync(page, cancellationToken).ConfigureAwait(false);
-        if (warmupState?.HasCaptcha == true || warmupState?.PageKind == AvitoPageKind.Captcha)
+        if (CanTryClearCaptcha(warmupState)
+            && await TryClearGeeTestCaptchaAsync(page, cancellationToken).ConfigureAwait(false))
         {
-            if (await TryClearGeeTestCaptchaAsync(page, cancellationToken).ConfigureAwait(false))
-            {
-                warmupState = await ProbePageStateAsync(page, cancellationToken).ConfigureAwait(false);
-            }
+            warmupState = await ProbePageStateAsync(page, cancellationToken).ConfigureAwait(false);
         }
 
         if (warmupState?.HasLoginForm == true
@@ -242,7 +240,8 @@ public sealed partial class AdsPowerAvitoAutomationService
             var postFailState = await ProbePageStateAsync(page, cancellationToken).ConfigureAwait(false);
             if (postFailState?.HasCaptcha == true || postFailState?.PageKind == AvitoPageKind.Captcha)
             {
-                if (await TryClearGeeTestCaptchaAsync(page, cancellationToken).ConfigureAwait(false))
+                if (CanTryClearCaptcha(postFailState)
+                    && await TryClearGeeTestCaptchaAsync(page, cancellationToken).ConfigureAwait(false))
                 {
                     continue;
                 }
@@ -291,6 +290,10 @@ public sealed partial class AdsPowerAvitoAutomationService
             .ConfigureAwait(false);
         await Task.Delay(attempt * 1200, cancellationToken).ConfigureAwait(false);
     }
+
+    private static bool CanTryClearCaptcha(AvitoPageState? pageState) =>
+        pageState?.HasFirewallIp != true
+        && (pageState?.HasCaptcha == true || pageState?.PageKind == AvitoPageKind.Captcha);
 
     private async Task<bool> TrySwitchSubProfileOnPageOnceAsync(
         IPage page,
@@ -359,7 +362,8 @@ public sealed partial class AdsPowerAvitoAutomationService
 
         if (preSwitchState?.HasCaptcha == true || preSwitchState?.PageKind == AvitoPageKind.Captcha)
         {
-            if (await TryClearGeeTestCaptchaAsync(page, cancellationToken).ConfigureAwait(false))
+            if (CanTryClearCaptcha(preSwitchState)
+                && await TryClearGeeTestCaptchaAsync(page, cancellationToken).ConfigureAwait(false))
             {
                 preSwitchState = await ProbePageStateAsync(page, cancellationToken).ConfigureAwait(false);
             }

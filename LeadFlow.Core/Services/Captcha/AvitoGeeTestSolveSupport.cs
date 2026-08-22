@@ -179,7 +179,9 @@ public static class AvitoGeeTestSolveSupport
     /// выбрать hCaptcha или внутреннюю картинку. Окончательное решение принимает probe в браузере.
     /// </summary>
     public static bool CanAutoSolve(string? html, string? apiKey) =>
-        !string.IsNullOrWhiteSpace(apiKey) && AvitoCaptchaDetector.HasGeeTestWidget(html);
+        !string.IsNullOrWhiteSpace(apiKey)
+        && !AvitoCaptchaDetector.HasIpBlockChallenge(html)
+        && AvitoCaptchaDetector.HasGeeTestWidget(html);
 
     /// <summary>
     /// Новую платную задачу RuCaptcha создаём только пока Avito ещё требует проверку.
@@ -187,7 +189,9 @@ public static class AvitoGeeTestSolveSupport
     /// </summary>
     public static bool ShouldCreateProviderTask(string? html)
     {
-        if (string.IsNullOrWhiteSpace(html) || AvitoCaptchaRedirectRecovery.RequiresRecovery(html))
+        if (string.IsNullOrWhiteSpace(html)
+            || AvitoCaptchaRedirectRecovery.RequiresRecovery(html)
+            || AvitoCaptchaDetector.HasIpBlockChallenge(html))
         {
             return false;
         }

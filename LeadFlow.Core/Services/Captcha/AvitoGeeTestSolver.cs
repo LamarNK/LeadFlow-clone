@@ -53,6 +53,11 @@ public sealed class AvitoGeeTestSolver(
         try
         {
             html ??= await SafeGetHtmlAsync(page, cancellationToken).ConfigureAwait(false);
+            if (AvitoCaptchaDetector.HasIpBlockChallenge(html))
+            {
+                return false;
+            }
+
             if (AvitoCaptchaRedirectRecovery.RequiresRecovery(html))
             {
                 _ = GlobalLogger.Instance.LogAsync(

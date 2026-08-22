@@ -470,20 +470,25 @@ public static class AvitoCandidatesPageScripts
                 document.querySelector(".h-captcha[data-sitekey]")
             );
             const hasFirewallText = /Доступ\s+ограничен|проблема\s+с\s+IP|firewallCaptcha|Отключить\s+VPN|самол[её]те/i.test(title + "\n" + bodyText);
-            const hasIpDialog = !!document.querySelector('[role="dialog"][aria-modal="true"], [aria-modal="true"]')
-              && /Доступ\s+ограничен|проблема\s+с\s+IP/i.test(title + "\n" + bodyText);
+            const probeText = title + "\n" + bodyText;
+            const hasIpText = /Доступ\s+ограничен/i.test(probeText)
+              && /проблема\s+с\s+IP/i.test(probeText);
+            const hasStaticIpBlock = location.hash === "#block"
+              && !!document.querySelector('a[href*="support.avito.ru/request/720"]')
+              && /Отключить\s+VPN|самол[её]те/i.test(probeText);
+            const hasIpBlock = hasIpText || hasStaticIpBlock;
             const blocked =
-                hasIpDialog ||
+                hasIpBlock ||
                 (itemCount === 0 &&
                 statusCount === 0 &&
                 (hasFirewallDom || (hasFirewallText && hasCaptchaWidget) || hasFirewallText));
 
-            let kind = "firewall";
-            if (blocked && document.getElementById("geetest_captcha")) {
+            let kind = hasIpBlock ? "firewall" : "captcha";
+            if (!hasIpBlock && blocked && document.getElementById("geetest_captcha")) {
                 kind = "geetest";
-            } else if (blocked && document.getElementById("inner-captcha")) {
+            } else if (!hasIpBlock && blocked && document.getElementById("inner-captcha")) {
                 kind = "image-captcha";
-            } else if (blocked && (document.getElementById("h-captcha") || document.querySelector(".h-captcha[data-sitekey]"))) {
+            } else if (!hasIpBlock && blocked && (document.getElementById("h-captcha") || document.querySelector(".h-captcha[data-sitekey]"))) {
                 kind = "hCaptcha";
             }
 
