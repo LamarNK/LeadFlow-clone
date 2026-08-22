@@ -54,11 +54,11 @@ public sealed class NullMonitoringCycleJournal : IMonitoringCycleJournal
     {
     }
 
-    public void AbortCycle(Guid cycleId)
+    public void AbortCycle(Guid cycleId, string? errorType = null, string? errorMessage = null)
     {
     }
 
-    public void FailCycle(Guid cycleId)
+    public void FailCycle(Guid cycleId, string? errorType = null, string? errorMessage = null)
     {
     }
 

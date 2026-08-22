@@ -55,10 +55,10 @@ public interface IMonitoringCycleJournal
     void CompleteCycle(Guid cycleId);
 
     /// <summary>Цикл прерван (блокирующая ошибка, капча, остановка).</summary>
-    void AbortCycle(Guid cycleId);
+    void AbortCycle(Guid cycleId, string? errorType = null, string? errorMessage = null);
 
     /// <summary>Цикл завершился фатальной ошибкой аккаунта.</summary>
-    void FailCycle(Guid cycleId);
+    void FailCycle(Guid cycleId, string? errorType = null, string? errorMessage = null);
 
     Task FlushAsync(CancellationToken cancellationToken = default);
 }

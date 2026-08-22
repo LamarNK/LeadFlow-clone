@@ -714,7 +714,14 @@ public sealed class WorkerMonitoringService(
                 subProfilesProcessed);
             if (aborted)
             {
-                _cycleJournal.AbortCycle(cycleId);
+                _cycleJournal.AbortCycle(
+                    cycleId,
+                    errorType: subProfilesProcessed == 0 ? "cycle-start" : null,
+                    errorMessage: subProfilesProcessed == 0
+                        ? (string.IsNullOrWhiteSpace(account.LastErrorMessage)
+                            ? "цикл прерван до первого субпрофиля"
+                            : account.LastErrorMessage)
+                        : null);
             }
             else
             {
@@ -727,7 +734,7 @@ public sealed class WorkerMonitoringService(
         }
         catch (AvitoCaptchaDetectedException captchaEx)
         {
-            _cycleJournal.AbortCycle(cycleId);
+            _cycleJournal.AbortCycle(cycleId, "captcha", captchaEx.Message);
             cycleTerminal = true;
             await HandleCaptchaForAccountAsync(account, captchaEx, cancellationToken).ConfigureAwait(false);
             await _cycleJournal.FlushAsync(cancellationToken).ConfigureAwait(false);
@@ -735,7 +742,7 @@ public sealed class WorkerMonitoringService(
         }
         catch (AvitoLoginRequiredException loginEx)
         {
-            _cycleJournal.AbortCycle(cycleId);
+            _cycleJournal.AbortCycle(cycleId, "auth-required", loginEx.Message);
             cycleTerminal = true;
             await HandleLoginRequiredForAccountAsync(account, loginEx, cancellationToken).ConfigureAwait(false);
             await _cycleJournal.FlushAsync(cancellationToken).ConfigureAwait(false);
@@ -743,7 +750,7 @@ public sealed class WorkerMonitoringService(
         }
         catch (AdsPowerDailyOpenLimitExceededException limitEx)
         {
-            _cycleJournal.AbortCycle(cycleId);
+            _cycleJournal.AbortCycle(cycleId, "ads-power-limit", limitEx.Message);
             cycleTerminal = true;
             await HandleAdsPowerDailyOpenLimitForAccountAsync(account, limitEx, cancellationToken).ConfigureAwait(false);
             await _cycleJournal.FlushAsync(cancellationToken).ConfigureAwait(false);
@@ -751,7 +758,7 @@ public sealed class WorkerMonitoringService(
         }
         catch (AdsPowerRateLimitExceededException rateEx)
         {
-            _cycleJournal.AbortCycle(cycleId);
+            _cycleJournal.AbortCycle(cycleId, "ads-power-rate", rateEx.Message);
             cycleTerminal = true;
             await HandleAdsPowerRateLimitForAccountAsync(account, rateEx, cancellationToken).ConfigureAwait(false);
             var reason = string.IsNullOrWhiteSpace(account.LastErrorMessage)
@@ -762,7 +769,7 @@ public sealed class WorkerMonitoringService(
         }
         catch (AdsPowerProfileInUseException profileInUseEx)
         {
-            _cycleJournal.AbortCycle(cycleId);
+            _cycleJournal.AbortCycle(cycleId, "profile-in-use", profileInUseEx.Message);
             cycleTerminal = true;
             await HandleAdsPowerProfileInUseForAccountAsync(account, profileInUseEx, cancellationToken).ConfigureAwait(false);
             await _cycleJournal.FlushAsync(cancellationToken).ConfigureAwait(false);
@@ -770,7 +777,7 @@ public sealed class WorkerMonitoringService(
         }
         catch (AdsPowerProxyFailureException proxyEx)
         {
-            _cycleJournal.AbortCycle(cycleId);
+            _cycleJournal.AbortCycle(cycleId, "proxy", proxyEx.UserMessage);
             cycleTerminal = true;
             await HandleAdsPowerProxyFailureForAccountAsync(account, proxyEx, cancellationToken).ConfigureAwait(false);
             await _cycleJournal.FlushAsync(cancellationToken).ConfigureAwait(false);
@@ -778,7 +785,7 @@ public sealed class WorkerMonitoringService(
         }
         catch (SessionDiagnosticException diagnosticEx)
         {
-            _cycleJournal.AbortCycle(cycleId);
+            _cycleJournal.AbortCycle(cycleId, "session", diagnosticEx.Message);
             cycleTerminal = true;
             await HandleSessionDiagnosticForAccountAsync(account, diagnosticEx, cancellationToken).ConfigureAwait(false);
             await _cycleJournal.FlushAsync(cancellationToken).ConfigureAwait(false);
@@ -811,7 +818,7 @@ public sealed class WorkerMonitoringService(
                 $"Ошибка аккаунта {account.DisplayName}: {ex.Message}",
                 ex.Message,
                 cancellationToken).ConfigureAwait(false);
-            _cycleJournal.FailCycle(cycleId);
+            _cycleJournal.FailCycle(cycleId, "automation", ex.Message);
             cycleTerminal = true;
             await _cycleJournal.FlushAsync(cancellationToken).ConfigureAwait(false);
             return new AccountCycleOutcome(0, true, false);
