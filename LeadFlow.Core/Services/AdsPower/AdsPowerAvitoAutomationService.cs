@@ -2807,6 +2807,15 @@ public sealed partial class AdsPowerAvitoAutomationService(
     private static bool LooksLikeCompleteRussianMobile(string normalized) =>
         normalized.Length == 11 && normalized.StartsWith("7", StringComparison.Ordinal);
 
+    private bool CandidateJsonHasCompletePhone(JsonObject item)
+    {
+        var raw = item["phone"]?.GetValue<string>()
+                  ?? item["phoneDigits"]?.GetValue<string>()
+                  ?? string.Empty;
+        var normalized = phoneNormalizer.Normalize(raw) ?? string.Empty;
+        return LooksLikeCompleteRussianMobile(normalized);
+    }
+
     private static int ReadCandidateDomIndex(JsonObject item, int jsonIndex)
     {
         if (item.TryGetPropertyValue("domIndex", out var domIndexNode)
@@ -2915,33 +2924,34 @@ public sealed partial class AdsPowerAvitoAutomationService(
             var pendingForCandidate = ResolvePendingForCandidate(
                 enrichmentHints?.PendingBySourceResponseId,
                 sourceResponseIdForSkip);
-            if (isKnownSourceId)
+            var hasCompletePhone = CandidateJsonHasCompletePhone(item);
+            var hasPendingOutbound = pendingForCandidate.Count > 0;
+            var openPhoneWatch = false;
+            if (!hasPendingOutbound
+                && enrichmentHints?.IsOpenPhoneWatchAsync is not null
+                && !string.IsNullOrWhiteSpace(fullNameForWatch)
+                && (isKnownSourceId || !hasCompletePhone))
             {
-                // Уже в базе: чат не трогаем, если нет unread — кроме open phone-watch
-                // (кандидат может ответить, пока следим за сменой номера)
-                // и кроме очереди исходящих менеджера.
-                var hasUnread = await TryReadCandidateChatUnreadAsync(page, domIndex, cancellationToken)
+                openPhoneWatch = await enrichmentHints
+                    .IsOpenPhoneWatchAsync(fullNameForWatch, cancellationToken)
                     .ConfigureAwait(false);
-                if (!hasUnread)
-                {
-                    var openPhoneWatch = false;
-                    if (enrichmentHints?.IsOpenPhoneWatchAsync is not null
-                        && !string.IsNullOrWhiteSpace(fullNameForWatch))
-                    {
-                        openPhoneWatch = await enrichmentHints
-                            .IsOpenPhoneWatchAsync(fullNameForWatch, cancellationToken)
-                            .ConfigureAwait(false);
-                    }
+            }
 
-                    if (MessengerEnrichmentSkip.ShouldSkipKnownCandidate(
-                            isKnownSourceId,
-                            hasUnread,
-                            openPhoneWatch,
-                            pendingForCandidate.Count > 0))
-                    {
-                        continue;
-                    }
-                }
+            var hasUnread = false;
+            if (isKnownSourceId && !hasPendingOutbound && !openPhoneWatch)
+            {
+                hasUnread = await TryReadCandidateChatUnreadAsync(page, domIndex, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            if (MessengerEnrichmentSkip.ShouldSkipOpeningCard(
+                    isKnownSourceId,
+                    hasUnread,
+                    openPhoneWatch,
+                    hasPendingOutbound,
+                    hasCompletePhone))
+            {
+                continue;
             }
 
             if (!isJobCrm && CandidateJsonNeedsDetail(item))

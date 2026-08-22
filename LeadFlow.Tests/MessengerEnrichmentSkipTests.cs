@@ -36,4 +36,40 @@ public sealed class MessengerEnrichmentSkipTests
             hasUnread: false,
             openPhoneWatch: false,
             hasPendingOutbound: false));
+
+    [Fact]
+    public void ShouldSkipOpeningCard_UnknownWithoutPhone_IsTrue() =>
+        Assert.True(MessengerEnrichmentSkip.ShouldSkipOpeningCard(
+            isKnownSourceId: false,
+            hasUnread: false,
+            openPhoneWatch: false,
+            hasPendingOutbound: false,
+            hasCompletePhone: false));
+
+    [Fact]
+    public void ShouldSkipOpeningCard_UnknownWithPhone_IsFalse() =>
+        Assert.False(MessengerEnrichmentSkip.ShouldSkipOpeningCard(
+            isKnownSourceId: false,
+            hasUnread: false,
+            openPhoneWatch: false,
+            hasPendingOutbound: false,
+            hasCompletePhone: true));
+
+    [Fact]
+    public void ShouldSkipOpeningCard_UnknownWithoutPhone_OpenWatch_IsFalse() =>
+        Assert.False(MessengerEnrichmentSkip.ShouldSkipOpeningCard(
+            isKnownSourceId: false,
+            hasUnread: false,
+            openPhoneWatch: true,
+            hasPendingOutbound: false,
+            hasCompletePhone: false));
+
+    [Fact]
+    public void ShouldSkipOpeningCard_UnknownWithoutPhone_Pending_IsFalse() =>
+        Assert.False(MessengerEnrichmentSkip.ShouldSkipOpeningCard(
+            isKnownSourceId: false,
+            hasUnread: false,
+            openPhoneWatch: false,
+            hasPendingOutbound: true,
+            hasCompletePhone: false));
 }
