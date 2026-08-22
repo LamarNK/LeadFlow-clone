@@ -358,9 +358,14 @@ internal static class StatisticsIndexBuilder
                             LeadsText = row.LeadsPerCycle.Count == 0
                                 ? "—"
                                 : string.Join(", ", row.LeadsPerCycle),
-                            CaptchaText = row.CaptchaPerCycle is { Count: > 0 } captcha
-                                ? string.Join(", ", captcha)
-                                : "—",
+                            CaptchaEvents = (row.CaptchaPerCycle ?? [])
+                                .Select(captcha => new MonitoringCycleCaptchaViewModel
+                                {
+                                    TimestampUtc = captcha.TimestampUtc,
+                                    Status = captcha.Status,
+                                    Unsolved = captcha.Unsolved
+                                })
+                                .ToList(),
                             Errors = row.Errors
                                 .Select(error => new MonitoringCycleErrorViewModel
                                 {
@@ -368,6 +373,7 @@ internal static class StatisticsIndexBuilder
                                     Detail = error.Detail
                                 })
                                 .ToList(),
+                            Passes = MapPasses(row),
                             HasErrors = row.Errors.Count > 0,
                             HasNotStarted = !row.WasStarted
                         })
@@ -375,6 +381,58 @@ internal static class StatisticsIndexBuilder
                 })
                 .ToList()
         };
+    }
+
+    private static IReadOnlyList<MonitoringCyclePassViewModel> MapPasses(MonitoringCycleSubProfileRowDto row)
+    {
+        if (row.Passes is { Count: > 0 } passes)
+        {
+            return passes
+                .Select(pass => new MonitoringCyclePassViewModel
+                {
+                    TimestampUtc = pass.TimestampUtc,
+                    Completed = pass.Completed,
+                    InProgress = pass.InProgress,
+                    HasCollected = pass.HasCollected,
+                    CollectedCount = pass.CollectedCount,
+                    CaptchaStatus = pass.CaptchaStatus,
+                    CaptchaUnsolved = pass.CaptchaUnsolved,
+                    ErrorDetail = pass.ErrorDetail
+                })
+                .ToList();
+        }
+
+        var fallback = new List<MonitoringCyclePassViewModel>(
+            row.CompletionTimesUtc.Count + row.Errors.Count);
+        for (var i = 0; i < row.CompletionTimesUtc.Count; i++)
+        {
+            var hasCollected = i < row.LeadsPerCycle.Count;
+            var collected = 0;
+            if (hasCollected)
+            {
+                _ = int.TryParse(row.LeadsPerCycle[i], NumberStyles.Integer, CultureInfo.InvariantCulture, out collected);
+            }
+
+            fallback.Add(new MonitoringCyclePassViewModel
+            {
+                TimestampUtc = row.CompletionTimesUtc[i],
+                Completed = true,
+                HasCollected = hasCollected,
+                CollectedCount = collected
+            });
+        }
+
+        foreach (var error in row.Errors)
+        {
+            fallback.Add(new MonitoringCyclePassViewModel
+            {
+                TimestampUtc = error.TimestampUtc,
+                ErrorDetail = error.Detail
+            });
+        }
+
+        fallback.Sort((a, b) => a.TimestampUtc.CompareTo(b.TimestampUtc));
+        return fallback;
     }
 
     private static string FormatCaptchaSummary(int seen, int solved)

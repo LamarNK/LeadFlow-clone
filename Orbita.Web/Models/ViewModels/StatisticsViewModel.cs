@@ -206,10 +206,32 @@ public sealed class MonitoringCycleSubProfileRowViewModel
     public string Name { get; init; } = string.Empty;
     public IReadOnlyList<DateTime> CompletionTimesUtc { get; init; } = [];
     public string LeadsText { get; init; } = "—";
-    public string CaptchaText { get; init; } = "—";
+    public IReadOnlyList<MonitoringCycleCaptchaViewModel> CaptchaEvents { get; init; } = [];
     public IReadOnlyList<MonitoringCycleErrorViewModel> Errors { get; init; } = [];
+    public IReadOnlyList<MonitoringCyclePassViewModel> Passes { get; init; } = [];
     public bool HasErrors { get; init; }
     public bool HasNotStarted { get; init; }
+}
+
+public sealed class MonitoringCyclePassViewModel
+{
+    public DateTime TimestampUtc { get; init; }
+    public bool Completed { get; init; }
+    public bool InProgress { get; init; }
+    public bool HasCollected { get; init; }
+    public int CollectedCount { get; init; }
+    public string? CaptchaStatus { get; init; }
+    public bool CaptchaUnsolved { get; init; }
+    public string? ErrorDetail { get; init; }
+    public bool HasCaptcha => !string.IsNullOrWhiteSpace(CaptchaStatus);
+    public bool HasError => !string.IsNullOrWhiteSpace(ErrorDetail);
+}
+
+public sealed class MonitoringCycleCaptchaViewModel
+{
+    public DateTime TimestampUtc { get; init; }
+    public string Status { get; init; } = string.Empty;
+    public bool Unsolved { get; init; }
 }
 
 public sealed class MonitoringCycleErrorViewModel

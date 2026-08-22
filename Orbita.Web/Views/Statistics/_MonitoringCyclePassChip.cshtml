@@ -1,0 +1,42 @@
+@model MonitoringCyclePassViewModel
+@{
+    var pass = Model;
+    var modifier = pass.HasError
+        ? "monitoring-pass--error"
+        : pass.CaptchaUnsolved
+            ? "monitoring-pass--captcha-fail"
+            : pass.HasCaptcha
+                ? "monitoring-pass--captcha"
+                : pass.InProgress
+                    ? "monitoring-pass--pending"
+                    : "monitoring-pass--ok";
+    var captchaLabel = pass.CaptchaUnsolved
+        ? (string.IsNullOrWhiteSpace(pass.CaptchaStatus) ? "капча не решена" : pass.CaptchaStatus)
+        : pass.HasCaptcha
+            ? "капча"
+            : null;
+}
+<span class="monitoring-pass @modifier">
+    <span class="monitoring-pass-time">
+        <partial name="_UtcTime" model="@(new UtcTimeDisplayModel(pass.TimestampUtc, "time"))" />
+    </span>
+    @if (pass.HasCollected)
+    {
+        <span class="monitoring-pass-leads @(pass.CollectedCount > 0 ? "monitoring-pass-leads--hit" : null)">
+            @pass.CollectedCount
+            <span class="monitoring-pass-leads-unit">откл.</span>
+        </span>
+    }
+    @if (captchaLabel is not null)
+    {
+        <span class="monitoring-pass-flag @(pass.CaptchaUnsolved ? "monitoring-pass-flag--bad" : null)">@captchaLabel</span>
+    }
+    @if (pass.InProgress && !pass.HasError)
+    {
+        <span class="monitoring-pass-flag monitoring-pass-flag--pending">идёт</span>
+    }
+    @if (pass.HasError)
+    {
+        <span class="monitoring-pass-error">@pass.ErrorDetail</span>
+    }
+</span>

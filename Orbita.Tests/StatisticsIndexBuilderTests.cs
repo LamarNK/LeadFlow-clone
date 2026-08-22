@@ -129,6 +129,62 @@ public sealed class StatisticsIndexBuilderTests
         Assert.Equal(1, model.MonitoringCycles.ZeroLeadAccountCount);
     }
 
+    [Fact]
+    public void Build_MapsCaptchaToPassTimestamp()
+    {
+        var firstPass = DateTime.SpecifyKind(new DateTime(2026, 8, 22, 7, 4, 18), DateTimeKind.Utc);
+        var secondPass = DateTime.SpecifyKind(new DateTime(2026, 8, 22, 8, 17, 13), DateTimeKind.Utc);
+        var monitoring = new MonitoringCycleReportDto(
+            true,
+            0,
+            0,
+            0,
+            [],
+            [],
+            [
+                new MonitoringCycleAccountReportDto(
+                    "Авито 1",
+                    firstPass.Date,
+                    10,
+                    2,
+                    0,
+                    [
+                        new MonitoringCycleSubProfileRowDto(
+                            3,
+                            10,
+                            "Кадровый отдел3",
+                            [firstPass, secondPass],
+                            ["0", "0"],
+                            [],
+                            WasStarted: true,
+                            CaptchaPerCycle:
+                            [
+                                new MonitoringCycleCaptchaDto(secondPass, "решена")
+                            ],
+                            Passes:
+                            [
+                                new MonitoringCyclePassDto(firstPass, true, 0, true),
+                                new MonitoringCyclePassDto(secondPass, true, 0, true, "решена")
+                            ])
+                    ],
+                    [])
+            ]);
+
+        var data = CreateData(lowBalanceCount: 0, monitoringCycles: monitoring);
+        var model = BuildModel(data, DashboardPeriod.Today, new FakeOfficeContext());
+
+        var row = Assert.Single(model.MonitoringCycles.AccountReports[0].Rows);
+        Assert.Equal(2, row.CompletionTimesUtc.Count);
+        var captcha = Assert.Single(row.CaptchaEvents);
+        Assert.Equal(secondPass, captcha.TimestampUtc);
+        Assert.Equal("решена", captcha.Status);
+        Assert.False(captcha.Unsolved);
+        Assert.Equal(2, row.Passes.Count);
+        Assert.Null(row.Passes[0].CaptchaStatus);
+        Assert.Equal(secondPass, row.Passes[1].TimestampUtc);
+        Assert.Equal("решена", row.Passes[1].CaptchaStatus);
+    }
+
     private static StatisticsViewModel BuildModel(
         OfficeStatisticsDto data,
         DashboardPeriod period,

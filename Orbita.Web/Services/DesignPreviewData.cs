@@ -1588,7 +1588,19 @@ internal static class DesignPreviewData
                         ],
                         ["2", "0", "1"],
                         [],
-                        WasStarted: true),
+                        WasStarted: true,
+                        CaptchaPerCycle:
+                        [
+                            new MonitoringCycleCaptchaDto(
+                                previewDayUtc.AddHours(7).AddMinutes(22).AddSeconds(59),
+                                "решена")
+                        ],
+                        Passes:
+                        [
+                            new MonitoringCyclePassDto(previewDayUtc.AddHours(2).AddMinutes(3).AddSeconds(16), true, 2, true),
+                            new MonitoringCyclePassDto(previewDayUtc.AddHours(7).AddMinutes(22).AddSeconds(59), true, 0, true, "решена"),
+                            new MonitoringCyclePassDto(previewDayUtc.AddHours(15).AddMinutes(18).AddSeconds(9), true, 1, true)
+                        ]),
                     new MonitoringCycleSubProfileRowDto(
                         10,
                         10,
@@ -1600,7 +1612,13 @@ internal static class DesignPreviewData
                         ],
                         ["0", "1", "0"],
                         [],
-                        WasStarted: true)
+                        WasStarted: true,
+                        Passes:
+                        [
+                            new MonitoringCyclePassDto(previewDayUtc.AddHours(2).AddMinutes(5).AddSeconds(50), true, 0, true),
+                            new MonitoringCyclePassDto(previewDayUtc.AddHours(10).AddMinutes(7).AddSeconds(46), true, 1, true),
+                            new MonitoringCyclePassDto(previewDayUtc.AddHours(20).AddMinutes(11).AddSeconds(35), true, 0, true)
+                        ])
                 ],
                 [])
         };
@@ -1621,7 +1639,11 @@ internal static class DesignPreviewData
                         [secondDayUtc.AddHours(11).AddMinutes(4)],
                         ["1"],
                         [],
-                        WasStarted: true)
+                        WasStarted: true,
+                        Passes:
+                        [
+                            new MonitoringCyclePassDto(secondDayUtc.AddHours(11).AddMinutes(4), true, 1, true)
+                        ])
                 ],
                 []));
         }

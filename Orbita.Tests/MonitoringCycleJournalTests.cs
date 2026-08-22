@@ -218,10 +218,90 @@ public sealed class MonitoringCycleJournalTests
 
         Assert.Equal(2, report.TotalCaptcha);
         Assert.Equal(1, report.TotalCaptchaSolved);
-        Assert.Equal(["решена"], report.AccountReports[0].Rows[0].CaptchaPerCycle);
-        Assert.Equal(["не решена"], report.AccountReports[0].Rows[1].CaptchaPerCycle);
+        var solved = Assert.Single(report.AccountReports[0].Rows[0].CaptchaPerCycle!);
+        Assert.Equal("решена", solved.Status);
+        Assert.False(solved.Unsolved);
+        Assert.Equal(cycleStart.AddMinutes(2), solved.TimestampUtc);
+        var failed = Assert.Single(report.AccountReports[0].Rows[1].CaptchaPerCycle!);
+        Assert.Equal("не решена", failed.Status);
+        Assert.True(failed.Unsolved);
+        Assert.Equal(done, failed.TimestampUtc);
+        var failedPass = Assert.Single(report.AccountReports[0].Rows[1].Passes!);
+        Assert.False(failedPass.Completed);
+        Assert.Equal("не решена", failedPass.CaptchaStatus);
+        Assert.Equal("капча", failedPass.ErrorDetail);
         Assert.Equal("решена", MonitoringCycleReportBuilder.FormatCaptchaPass(1, 1));
         Assert.Equal("не решена", MonitoringCycleReportBuilder.FormatCaptchaPass(1, 0));
+    }
+
+    [Fact]
+    public void BuildFromJournal_CaptchaTiedToPassTimestamp()
+    {
+        var firstStart = TimeZoneInfo.ConvertTimeToUtc(Day.AddHours(10).AddMinutes(4), TimeZoneInfo.Local);
+        var firstDone = firstStart.AddMinutes(3);
+        var secondStart = TimeZoneInfo.ConvertTimeToUtc(Day.AddHours(11).AddMinutes(17), TimeZoneInfo.Local);
+        var secondDone = secondStart.AddMinutes(2);
+        var cycles = new List<MonitoringCycleRunSnapshot>
+        {
+            new(
+                Guid.NewGuid(),
+                "Avito 1",
+                firstStart,
+                firstDone,
+                MonitoringCycleRunStatuses.Completed,
+                [
+                    new MonitoringSubProfileRunSnapshot(
+                        Guid.NewGuid(),
+                        "sp-3",
+                        "Кадровый отдел3",
+                        3,
+                        10,
+                        firstStart,
+                        firstDone,
+                        MonitoringSubProfileRunOutcomes.Completed,
+                        null,
+                        null,
+                        PublishedCount: 0)
+                ]),
+            new(
+                Guid.NewGuid(),
+                "Avito 1",
+                secondStart,
+                secondDone,
+                MonitoringCycleRunStatuses.Completed,
+                [
+                    new MonitoringSubProfileRunSnapshot(
+                        Guid.NewGuid(),
+                        "sp-3",
+                        "Кадровый отдел3",
+                        3,
+                        10,
+                        secondStart,
+                        secondDone,
+                        MonitoringSubProfileRunOutcomes.Completed,
+                        null,
+                        null,
+                        PublishedCount: 0,
+                        CaptchaCount: 1,
+                        CaptchaSolvedCount: 1)
+                ])
+        };
+
+        var report = MonitoringCycleReportBuilder.BuildFromJournal(cycles, Day, Day);
+
+        var row = Assert.Single(report.AccountReports[0].Rows);
+        Assert.Equal(2, row.CompletionTimesUtc.Count);
+        Assert.Equal([firstDone, secondDone], row.CompletionTimesUtc);
+        var captcha = Assert.Single(row.CaptchaPerCycle!);
+        Assert.Equal(secondDone, captcha.TimestampUtc);
+        Assert.Equal("решена", captcha.Status);
+        Assert.False(captcha.Unsolved);
+        Assert.Equal(2, row.Passes!.Count);
+        Assert.Null(row.Passes[0].CaptchaStatus);
+        Assert.Equal(secondDone, row.Passes[1].TimestampUtc);
+        Assert.Equal("решена", row.Passes[1].CaptchaStatus);
+        Assert.True(row.Passes[0].Completed);
+        Assert.True(row.Passes[1].Completed);
     }
 
     [Fact]

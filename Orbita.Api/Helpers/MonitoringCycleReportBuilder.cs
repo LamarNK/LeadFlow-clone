@@ -173,8 +173,9 @@ internal static partial class MonitoringCycleReportBuilder
                 var posToName = rowsMeta.ToDictionary(r => r.Position, r => r.Name);
                 var posTimes = rowsMeta.ToDictionary(r => r.Position, _ => new List<DateTime?>());
                 var posResponses = rowsMeta.ToDictionary(r => r.Position, _ => new List<string?>());
-                var posCaptcha = rowsMeta.ToDictionary(r => r.Position, _ => new List<string?>());
+                var posCaptcha = rowsMeta.ToDictionary(r => r.Position, _ => new List<MonitoringCycleCaptchaDto>());
                 var posErrors = rowsMeta.ToDictionary(r => r.Position, _ => new List<MonitoringCycleErrorDto>());
+                var posPasses = rowsMeta.ToDictionary(r => r.Position, _ => new List<MonitoringCyclePassDto>());
                 var posHadRun = rowsMeta.ToDictionary(r => r.Position, _ => false);
                 var posLeadTotals = rowsMeta.ToDictionary(r => r.Position, _ => 0);
                 var posExplicitNotStarted = new HashSet<int>();
@@ -209,7 +210,6 @@ internal static partial class MonitoringCycleReportBuilder
                         {
                             posTimes[position].Add(null);
                             posResponses[position].Add(null);
-                            posCaptcha[position].Add(null);
                             // A subprofile is "not started" only when the last interrupted
                             // cycle never reached it. A failed run still counts as started.
                             if (cycleInterrupted
@@ -235,44 +235,40 @@ internal static partial class MonitoringCycleReportBuilder
                         var (captchaSeen, captchaSolved) = CaptchaForRun(run);
                         accountCaptcha += captchaSeen;
                         accountCaptchaSolved += captchaSolved;
-                        var captchaText = FormatCaptchaPass(captchaSeen, captchaSolved);
-
-                        if (run.Outcome == MonitoringSubProfileRunOutcomes.Completed
-                            && run.CompletedAtUtc is DateTime completedAt)
+                        var pass = BuildPass(run, passLeads, captchaSeen, captchaSolved);
+                        posPasses[position].Add(pass);
+                        if (pass.CaptchaStatus is { Length: > 0 } captchaStatus)
                         {
-                            posTimes[position].Add(completedAt);
+                            posCaptcha[position].Add(new MonitoringCycleCaptchaDto(
+                                pass.TimestampUtc,
+                                captchaStatus,
+                                Unsolved: pass.CaptchaUnsolved));
+                        }
+
+                        if (pass.Completed)
+                        {
+                            posTimes[position].Add(pass.TimestampUtc);
                             posResponses[position].Add(passLeads.ToString(CultureInfo.InvariantCulture));
                             posLeadTotals[position] += passLeads;
-                            posCaptcha[position].Add(captchaText);
                         }
-                        else if (run.Outcome == MonitoringSubProfileRunOutcomes.Failed)
+                        else if (!pass.InProgress)
                         {
                             posTimes[position].Add(null);
-                            posResponses[position].Add(passLeads > 0
+                            posResponses[position].Add(pass.HasCollected
                                 ? passLeads.ToString(CultureInfo.InvariantCulture)
                                 : null);
                             posLeadTotals[position] += passLeads;
-                            posCaptcha[position].Add(captchaText);
-                            var detail = !string.IsNullOrWhiteSpace(run.ErrorMessage)
-                                ? run.ErrorMessage!
-                                : !string.IsNullOrWhiteSpace(run.ErrorType)
-                                    ? run.ErrorType!
-                                    : "Ошибка прохода";
-                            if (detail.Length > 80)
+                            if (pass.ErrorDetail is { Length: > 0 } detail)
                             {
-                                detail = detail[..80];
+                                posErrors[position].Add(new MonitoringCycleErrorDto(
+                                    pass.TimestampUtc,
+                                    detail));
                             }
-
-                            posErrors[position].Add(new MonitoringCycleErrorDto(
-                                run.CompletedAtUtc ?? run.StartedAtUtc,
-                                detail));
                         }
                         else
                         {
-                            // Started but not finished — no completion tick, no "не запущен".
                             posTimes[position].Add(null);
                             posResponses[position].Add(null);
-                            posCaptcha[position].Add(null);
                         }
                     }
                 }
@@ -318,13 +314,19 @@ internal static partial class MonitoringCycleReportBuilder
                         var times = posTimes[position].Where(t => t is not null).Select(t => t!.Value).ToList();
                         var leads = posResponses[position].Where(v => v is not null).Select(v => v!).ToList();
                         var captcha = posCaptcha[position]
-                            .Where(v => !string.IsNullOrWhiteSpace(v) && v != "—")
-                            .Select(v => v!)
+                            .GroupBy(c => (c.TimestampUtc, c.Status))
+                            .Select(g => g.First())
+                            .OrderBy(c => c.TimestampUtc)
                             .ToList();
                         var errors = posErrors[position]
                             .GroupBy(e => (e.TimestampUtc, e.Detail))
                             .Select(g => g.First())
                             .OrderBy(e => e.TimestampUtc)
+                            .ToList();
+                        var passes = posPasses[position]
+                            .GroupBy(p => (p.TimestampUtc, p.Completed, p.CaptchaStatus, p.ErrorDetail, p.InProgress))
+                            .Select(g => g.First())
+                            .OrderBy(p => p.TimestampUtc)
                             .ToList();
                         return new MonitoringCycleSubProfileRowDto(
                             position,
@@ -334,7 +336,8 @@ internal static partial class MonitoringCycleReportBuilder
                             leads,
                             errors,
                             WasStarted: posHadRun[position],
-                            CaptchaPerCycle: captcha);
+                            CaptchaPerCycle: captcha,
+                            Passes: passes);
                     })
                     .ToList();
 
@@ -852,6 +855,59 @@ internal static partial class MonitoringCycleReportBuilder
         }
 
         return (seen, solved);
+    }
+
+    private static MonitoringCyclePassDto BuildPass(
+        MonitoringSubProfileRunSnapshot run,
+        int passLeads,
+        int captchaSeen,
+        int captchaSolved)
+    {
+        var timestamp = run.CompletedAtUtc ?? run.StartedAtUtc;
+        var captchaStatus = captchaSeen > 0 ? FormatCaptchaPass(captchaSeen, captchaSolved) : null;
+        var captchaUnsolved = captchaSeen > 0 && captchaSolved < captchaSeen;
+        if (run.Outcome == MonitoringSubProfileRunOutcomes.Completed
+            && run.CompletedAtUtc is DateTime)
+        {
+            return new MonitoringCyclePassDto(
+                timestamp,
+                Completed: true,
+                CollectedCount: passLeads,
+                HasCollected: true,
+                CaptchaStatus: captchaStatus,
+                CaptchaUnsolved: captchaUnsolved);
+        }
+
+        if (run.Outcome == MonitoringSubProfileRunOutcomes.Failed)
+        {
+            var detail = !string.IsNullOrWhiteSpace(run.ErrorMessage)
+                ? run.ErrorMessage!
+                : !string.IsNullOrWhiteSpace(run.ErrorType)
+                    ? run.ErrorType!
+                    : "Ошибка прохода";
+            if (detail.Length > 80)
+            {
+                detail = detail[..80];
+            }
+
+            return new MonitoringCyclePassDto(
+                timestamp,
+                Completed: false,
+                CollectedCount: passLeads,
+                HasCollected: passLeads > 0,
+                CaptchaStatus: captchaStatus,
+                CaptchaUnsolved: captchaUnsolved,
+                ErrorDetail: detail);
+        }
+
+        return new MonitoringCyclePassDto(
+            timestamp,
+            Completed: false,
+            CollectedCount: 0,
+            HasCollected: false,
+            CaptchaStatus: captchaStatus,
+            CaptchaUnsolved: captchaUnsolved,
+            InProgress: true);
     }
 
     internal static string FormatCaptchaPass(int seen, int solved)

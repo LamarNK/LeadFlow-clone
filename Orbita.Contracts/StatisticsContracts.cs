@@ -107,6 +107,21 @@ public sealed record MonitoringCycleErrorDto(
     DateTime TimestampUtc,
     string Detail);
 
+public sealed record MonitoringCycleCaptchaDto(
+    DateTime TimestampUtc,
+    string Status,
+    bool Unsolved = false);
+
+public sealed record MonitoringCyclePassDto(
+    DateTime TimestampUtc,
+    bool Completed,
+    int CollectedCount,
+    bool HasCollected,
+    string? CaptchaStatus = null,
+    bool CaptchaUnsolved = false,
+    string? ErrorDetail = null,
+    bool InProgress = false);
+
 public sealed record MonitoringCycleSubProfileRowDto(
     int Position,
     int TotalPositions,
@@ -115,7 +130,8 @@ public sealed record MonitoringCycleSubProfileRowDto(
     IReadOnlyList<string> LeadsPerCycle,
     IReadOnlyList<MonitoringCycleErrorDto> Errors,
     bool WasStarted = false,
-    IReadOnlyList<string>? CaptchaPerCycle = null);
+    IReadOnlyList<MonitoringCycleCaptchaDto>? CaptchaPerCycle = null,
+    IReadOnlyList<MonitoringCyclePassDto>? Passes = null);
 
 public sealed record MonitoringCycleAccountReportDto(
     string AccountName,
