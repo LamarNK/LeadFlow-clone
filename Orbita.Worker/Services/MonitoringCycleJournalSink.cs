@@ -200,18 +200,43 @@ public sealed class MonitoringCycleJournalSink(
 
     public void CompleteCycle(Guid cycleId) => FinishCycle(cycleId, MonitoringCycleRunStatuses.Completed);
 
-    public void AbortCycle(Guid cycleId) => FinishCycle(cycleId, MonitoringCycleRunStatuses.Aborted);
+    public void AbortCycle(Guid cycleId, string? errorType = null, string? errorMessage = null) =>
+        FinishCycle(cycleId, MonitoringCycleRunStatuses.Aborted, errorType, errorMessage);
 
-    public void FailCycle(Guid cycleId) => FinishCycle(cycleId, MonitoringCycleRunStatuses.Failed);
+    public void FailCycle(Guid cycleId, string? errorType = null, string? errorMessage = null) =>
+        FinishCycle(cycleId, MonitoringCycleRunStatuses.Failed, errorType, errorMessage);
 
     public Task FlushAsync(CancellationToken cancellationToken = default) =>
         FlushInternalAsync(cancellationToken);
 
-    private void FinishCycle(Guid cycleId, string status)
+    private void FinishCycle(
+        Guid cycleId,
+        string status,
+        string? errorType = null,
+        string? errorMessage = null)
     {
         if (!_cycles.TryGetValue(cycleId, out var cycle))
         {
             return;
+        }
+
+        if (cycle.SubProfiles.Count == 0 && !string.IsNullOrWhiteSpace(errorMessage))
+        {
+            var id = Guid.NewGuid();
+            var now = DateTime.UtcNow;
+            cycle.SubProfiles[id] = new MutableSubProfile
+            {
+                Id = id,
+                SubProfileId = string.Empty,
+                SubProfileName = "—",
+                Position = 1,
+                Total = 1,
+                StartedAtUtc = cycle.StartedAtUtc,
+                CompletedAtUtc = now,
+                Outcome = MonitoringSubProfileRunOutcomes.Failed,
+                ErrorType = string.IsNullOrWhiteSpace(errorType) ? "cycle-start" : errorType.Trim(),
+                ErrorMessage = errorMessage.Trim()
+            };
         }
 
         cycle.Status = status;
