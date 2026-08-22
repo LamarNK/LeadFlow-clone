@@ -89,6 +89,20 @@ public sealed class EventsIndexBuilderTests
         Assert.False(row.CanSolveCaptcha);
     }
 
+    [Fact]
+    public void MapEvent_CaptchaWithIpTitle_ClassifiedAsCaptcha_CanSolve()
+    {
+        const string message =
+            "Субпрофиль «Кадровый отдел Смоленск 2» · аккаунт «Авито 85» — капча: нужна проверка на странице откликов.";
+        const string details = """{"kind":"geetest","url":"https://www.avito.ru/profile/candidates"}""";
+
+        var row = EventsIndexBuilder.MapEvent(CreateEvent("Warning", message, details));
+
+        Assert.Equal("captcha", row.EventType);
+        Assert.Equal("Капча", row.EventTypeLabel);
+        Assert.True(row.CanSolveCaptcha);
+    }
+
     private static WorkerEventListItem CreateEvent(string level, string message, string? details = null) =>
         new(
             Guid.Parse("33333333-3333-3333-3333-333333333333"),

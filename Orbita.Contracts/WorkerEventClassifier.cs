@@ -28,7 +28,7 @@ public static class WorkerEventClassifier
 
         return Normalize(label) switch
         {
-            "капча / блок ip" => "captcha",
+            "капча" or "капча / блок ip" => "captcha",
             "блок ip" => "ip_block",
             "нужен вход" => "auth",
             "не переключился" => "switch",
@@ -46,7 +46,7 @@ public static class WorkerEventClassifier
 
         return Normalize(label) switch
         {
-            "капча / блок ip" => "blocked",
+            "капча" or "капча / блок ip" => "blocked",
             "блок ip" => "blocked",
             "нужен вход" => "auth",
             "не переключился" => "automation",
@@ -79,12 +79,17 @@ public static class WorkerEventClassifier
             || lowerDetails.Contains("geetest");
     }
 
-    public static bool IsIpBlock(string text, string? details) =>
-        text.Contains("блок ip", StringComparison.OrdinalIgnoreCase)
-        || text.Contains("проблема с ip", StringComparison.OrdinalIgnoreCase)
-        || text.Contains("доступ ограничен", StringComparison.OrdinalIgnoreCase)
-        || (!string.IsNullOrWhiteSpace(details)
-            && details.Contains("\"kind\":\"firewall", StringComparison.OrdinalIgnoreCase));
+    public static bool IsIpBlock(string text, string? details)
+    {
+        if (HasCaptchaChallengeSignals(text, details))
+            return false;
+
+        return text.Contains("блок ip", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("проблема с ip", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("доступ ограничен", StringComparison.OrdinalIgnoreCase)
+            || (!string.IsNullOrWhiteSpace(details)
+                && details.Contains("\"kind\":\"firewall", StringComparison.OrdinalIgnoreCase));
+    }
 
     public static bool IsAutomationFailure(string text, string level)
     {
@@ -206,7 +211,7 @@ public static class WorkerEventClassifier
 
         return Normalize(label) switch
         {
-            "капча / блок ip" or "блок ip" or "нужен вход" => "high",
+            "капча" or "капча / блок ip" or "блок ip" or "нужен вход" => "high",
             "профиль занят" or "лимит частоты adspower" or "дневной лимит adspower" => "low",
             "таймаут" => level.Equals("Error", StringComparison.OrdinalIgnoreCase) ? "medium" : "low",
             "не переключился" or "проблема" or "ошибка парсинга" => "medium",
@@ -243,6 +248,39 @@ public static class WorkerEventClassifier
         || lower.Contains("лимит частоты adspower")
         || lower.Contains("дневной лимит adspower")
         || lower.Contains("rate limit adspower");
+
+    /// <summary>
+    /// Капча с «Продолжить»/GeeTest важнее заголовка «проблема с IP»: иначе событие
+    /// попадает в группу «Блок IP» и панель не предлагает решить капчу.
+    /// Явная метка «блок IP» остаётся блоком IP.
+    /// </summary>
+    private static bool HasCaptchaChallengeSignals(string text, string? details)
+    {
+        var label = TryParseIssueLabel(text);
+        if (label is not null)
+        {
+            var normalized = Normalize(label);
+            if (normalized is "капча" or "капча / блок ip")
+                return true;
+            if (normalized == "блок ip")
+                return false;
+        }
+
+        if (text.Contains("решения капчи", StringComparison.OrdinalIgnoreCase)
+            || text.Contains("для решения капчи", StringComparison.OrdinalIgnoreCase))
+        {
+            return true;
+        }
+
+        if (string.IsNullOrWhiteSpace(details) || !details.TrimStart().StartsWith('{'))
+            return false;
+
+        var lowerDetails = details.ToLowerInvariant();
+        return lowerDetails.Contains("\"kind\":\"geetest")
+            || lowerDetails.Contains("\"kind\":\"hcaptcha")
+            || lowerDetails.Contains("\"kind\":\"image-captcha")
+            || lowerDetails.Contains("\"kind\":\"captcha");
+    }
 
     private static string Normalize(string label) => label.Trim().ToLowerInvariant();
 }
