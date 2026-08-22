@@ -477,6 +477,116 @@ public sealed class MonitoringCycleJournalTests
     }
 
     [Fact]
+    public void BuildFromJournal_EmptyCycles_UsesAccountError_SessionClosed()
+    {
+        var start = TimeZoneInfo.ConvertTimeToUtc(Day.AddHours(10), TimeZoneInfo.Local);
+        var cycles = new List<MonitoringCycleRunSnapshot>
+        {
+            new(
+                Guid.NewGuid(),
+                "Avito 12 (2)",
+                start,
+                start.AddHours(2),
+                MonitoringCycleRunStatuses.Failed,
+                [])
+        };
+        var catalog = new Dictionary<string, IReadOnlyList<MonitoringAccountSubProfileCatalogEntry>>(
+            StringComparer.OrdinalIgnoreCase)
+        {
+            ["Avito 12 (2)"] =
+            [
+                new(1, "a", "РаботаPP 2"),
+                new(2, "b", "РаботаPP")
+            ]
+        };
+        var errors = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Avito 12 (2)"] =
+                "Protocol error (Runtime.evaluate): Session closed. Most likely the Page has been closed.Close reason: Target.detachedFromTarget"
+        };
+
+        var report = MonitoringCycleReportBuilder.BuildFromJournal(
+            cycles, Day, Day, accountCatalog: catalog, accountLastErrors: errors);
+
+        Assert.Equal(2, report.AccountReports[0].Rows.Count);
+        Assert.All(report.AccountReports[0].Rows, row =>
+        {
+            Assert.False(row.WasStarted);
+            Assert.Equal("браузер закрыл страницу", row.NotStartedReason);
+        });
+    }
+
+    [Fact]
+    public void BuildFromJournal_EmptyCycles_WithoutAccountError_SaysDiedBeforeQueue()
+    {
+        var start = TimeZoneInfo.ConvertTimeToUtc(Day.AddHours(10), TimeZoneInfo.Local);
+        var cycles = new List<MonitoringCycleRunSnapshot>
+        {
+            new(
+                Guid.NewGuid(),
+                "Avito 12 (2)",
+                start,
+                null,
+                MonitoringCycleRunStatuses.Running,
+                [])
+        };
+        var catalog = new Dictionary<string, IReadOnlyList<MonitoringAccountSubProfileCatalogEntry>>(
+            StringComparer.OrdinalIgnoreCase)
+        {
+            ["Avito 12 (2)"] = [new(1, "a", "РаботаPP")]
+        };
+
+        var report = MonitoringCycleReportBuilder.BuildFromJournal(cycles, Day, Day, accountCatalog: catalog);
+
+        var row = Assert.Single(report.AccountReports[0].Rows);
+        Assert.False(row.WasStarted);
+        Assert.Equal("браузер не открылся — цикл завис", row.NotStartedReason);
+    }
+
+    [Fact]
+    public void BuildFromJournal_CycleLevelFailRun_DoesNotAddCatalogRow()
+    {
+        var start = TimeZoneInfo.ConvertTimeToUtc(Day.AddHours(11), TimeZoneInfo.Local);
+        var done = start.AddMinutes(3);
+        var cycles = new List<MonitoringCycleRunSnapshot>
+        {
+            new(
+                Guid.NewGuid(),
+                "Avito 12 (2)",
+                start,
+                done,
+                MonitoringCycleRunStatuses.Failed,
+                [
+                    Sp(
+                        "",
+                        "—",
+                        1,
+                        1,
+                        start,
+                        done,
+                        MonitoringSubProfileRunOutcomes.Failed,
+                        "automation",
+                        "Protocol error (Runtime.evaluate): Session closed. Most likely the Page has been closed.")
+                ])
+        };
+        var catalog = new Dictionary<string, IReadOnlyList<MonitoringAccountSubProfileCatalogEntry>>(
+            StringComparer.OrdinalIgnoreCase)
+        {
+            ["Avito 12 (2)"] = [new(1, "a", "РаботаPP"), new(2, "b", "РаботаPP 2")]
+        };
+
+        var report = MonitoringCycleReportBuilder.BuildFromJournal(cycles, Day, Day, accountCatalog: catalog);
+
+        Assert.Equal(2, report.AccountReports[0].Rows.Count);
+        Assert.DoesNotContain(report.AccountReports[0].Rows, r => r.Name == "—");
+        Assert.All(report.AccountReports[0].Rows, row =>
+        {
+            Assert.False(row.WasStarted);
+            Assert.Equal("браузер закрыл страницу", row.NotStartedReason);
+        });
+    }
+
+    [Fact]
     public void BuildFromJournal_SkippedOutcome_BecomesSkipChip_NotStarted()
     {
         var start = TimeZoneInfo.ConvertTimeToUtc(Day.AddHours(14), TimeZoneInfo.Local);
