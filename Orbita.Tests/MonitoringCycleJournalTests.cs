@@ -362,6 +362,158 @@ public sealed class MonitoringCycleJournalTests
         // Others never started in this interrupted cycle → not started.
         Assert.True(report.AccountsWithNotStarted >= 1);
         Assert.Contains(report.AccountReports[0].NotStartedPositions, x => x.Contains("ВетерПеремен 10"));
+        var wp10 = Assert.Single(report.AccountReports[0].Rows, r => r.Name == "ВетерПеремен 10");
+        Assert.Contains("сейчас обрабатывается «Ветер3»", wp10.NotStartedReason ?? string.Empty);
+    }
+
+    [Fact]
+    public void BuildFromJournal_NotStarted_ExplainsCaptchaAbort()
+    {
+        var start = TimeZoneInfo.ConvertTimeToUtc(Day.AddHours(10), TimeZoneInfo.Local);
+        var done = start.AddMinutes(4);
+        var cycles = new List<MonitoringCycleRunSnapshot>
+        {
+            new(
+                Guid.NewGuid(),
+                "Avito 1",
+                start,
+                done,
+                MonitoringCycleRunStatuses.Aborted,
+                [
+                    Sp("a", "отдел 4", 1, 3, start, done, MonitoringSubProfileRunOutcomes.Failed, "captcha", "капча")
+                ])
+        };
+        var catalog = new Dictionary<string, IReadOnlyList<MonitoringAccountSubProfileCatalogEntry>>(
+            StringComparer.OrdinalIgnoreCase)
+        {
+            ["Avito 1"] =
+            [
+                new(1, "a", "отдел 4"),
+                new(2, "b", "Березники 10"),
+                new(3, "c", "отдел 7")
+            ]
+        };
+
+        var report = MonitoringCycleReportBuilder.BuildFromJournal(cycles, Day, Day, accountCatalog: catalog);
+
+        var skipped = Assert.Single(report.AccountReports[0].Rows, r => r.Name == "Березники 10");
+        Assert.False(skipped.WasStarted);
+        Assert.Equal("очередь не дошла: капча на «отдел 4»", skipped.NotStartedReason);
+        Assert.Equal(done, skipped.NotStartedAtUtc);
+    }
+
+    [Fact]
+    public void BuildFromJournal_NotStarted_ExplainsConsecutiveCaptcha()
+    {
+        var start = TimeZoneInfo.ConvertTimeToUtc(Day.AddHours(11), TimeZoneInfo.Local);
+        var firstFail = start.AddMinutes(3);
+        var secondFail = start.AddMinutes(6);
+        var cycles = new List<MonitoringCycleRunSnapshot>
+        {
+            new(
+                Guid.NewGuid(),
+                "Avito 1",
+                start,
+                secondFail,
+                MonitoringCycleRunStatuses.Aborted,
+                [
+                    Sp("a", "отдел 4", 1, 3, start, firstFail, MonitoringSubProfileRunOutcomes.Failed, "captcha", "капча"),
+                    Sp("c", "отдел 7", 2, 3, firstFail, secondFail, MonitoringSubProfileRunOutcomes.Failed, "captcha", "капча")
+                ])
+        };
+        var catalog = new Dictionary<string, IReadOnlyList<MonitoringAccountSubProfileCatalogEntry>>(
+            StringComparer.OrdinalIgnoreCase)
+        {
+            ["Avito 1"] =
+            [
+                new(1, "a", "отдел 4"),
+                new(2, "b", "Березники 10"),
+                new(3, "c", "отдел 7")
+            ]
+        };
+
+        var report = MonitoringCycleReportBuilder.BuildFromJournal(cycles, Day, Day, accountCatalog: catalog);
+
+        var skipped = Assert.Single(report.AccountReports[0].Rows, r => r.Name == "Березники 10");
+        Assert.False(skipped.WasStarted);
+        Assert.Equal("очередь не дошла: 2 капчи подряд, последняя на «отдел 7»", skipped.NotStartedReason);
+    }
+
+    [Fact]
+    public void BuildFromJournal_NotStarted_WhenCompletedCycleOmittedSub()
+    {
+        var start = TimeZoneInfo.ConvertTimeToUtc(Day.AddHours(9), TimeZoneInfo.Local);
+        var done = start.AddMinutes(10);
+        var cycles = new List<MonitoringCycleRunSnapshot>
+        {
+            new(
+                Guid.NewGuid(),
+                "Avito 1",
+                start,
+                done,
+                MonitoringCycleRunStatuses.Completed,
+                [
+                    Sp("a", "отдел 4", 1, 2, start, start.AddMinutes(5), MonitoringSubProfileRunOutcomes.Completed),
+                    Sp("c", "отдел 7", 2, 2, start.AddMinutes(5), done, MonitoringSubProfileRunOutcomes.Completed)
+                ])
+        };
+        var catalog = new Dictionary<string, IReadOnlyList<MonitoringAccountSubProfileCatalogEntry>>(
+            StringComparer.OrdinalIgnoreCase)
+        {
+            ["Avito 1"] =
+            [
+                new(1, "a", "отдел 4"),
+                new(2, "b", "Березники 10"),
+                new(3, "c", "отдел 7")
+            ]
+        };
+
+        var report = MonitoringCycleReportBuilder.BuildFromJournal(cycles, Day, Day, accountCatalog: catalog);
+
+        var skipped = Assert.Single(report.AccountReports[0].Rows, r => r.Name == "Березники 10");
+        Assert.False(skipped.WasStarted);
+        Assert.Equal("не попал в проходы за день", skipped.NotStartedReason);
+        Assert.Equal(done, skipped.NotStartedAtUtc);
+    }
+
+    [Fact]
+    public void BuildFromJournal_SkippedOutcome_BecomesSkipChip_NotStarted()
+    {
+        var start = TimeZoneInfo.ConvertTimeToUtc(Day.AddHours(14), TimeZoneInfo.Local);
+        var failAt = start.AddMinutes(2);
+        var skipAt = start.AddMinutes(2).AddSeconds(1);
+        var cycles = new List<MonitoringCycleRunSnapshot>
+        {
+            new(
+                Guid.NewGuid(),
+                "Avito 1",
+                start,
+                skipAt,
+                MonitoringCycleRunStatuses.Aborted,
+                [
+                    Sp("a", "отдел 4", 1, 2, start, failAt, MonitoringSubProfileRunOutcomes.Failed, "captcha", "капча"),
+                    Sp(
+                        "b",
+                        "Березники 10",
+                        2,
+                        2,
+                        skipAt,
+                        skipAt,
+                        MonitoringSubProfileRunOutcomes.Skipped,
+                        "not-reached",
+                        "очередь не дошла: капча на «отдел 4»")
+                ])
+        };
+
+        var report = MonitoringCycleReportBuilder.BuildFromJournal(cycles, Day, Day);
+
+        var skipped = Assert.Single(report.AccountReports[0].Rows, r => r.Name == "Березники 10");
+        Assert.False(skipped.WasStarted);
+        var pass = Assert.Single(skipped.Passes!);
+        Assert.True(pass.Skipped);
+        Assert.Equal("очередь не дошла: капча на «отдел 4»", pass.ErrorDetail);
+        Assert.False(pass.InProgress);
+        Assert.Equal("очередь не дошла: капча на «отдел 4»", skipped.NotStartedReason);
     }
 
     [Fact]
@@ -839,6 +991,29 @@ public sealed class MonitoringCycleJournalTests
         Assert.Equal(["1"], result.MonitoringCycles.AccountReports[0].Rows[0].LeadsPerCycle);
         Assert.Equal(1, result.Responses.Total);
     }
+
+    private static MonitoringSubProfileRunSnapshot Sp(
+        string id,
+        string name,
+        int position,
+        int total,
+        DateTime startedAtUtc,
+        DateTime? completedAtUtc,
+        string outcome,
+        string? errorType = null,
+        string? errorMessage = null) =>
+        new(
+            Guid.NewGuid(),
+            id,
+            name,
+            position,
+            total,
+            startedAtUtc,
+            completedAtUtc,
+            outcome,
+            errorType,
+            errorMessage,
+            PublishedCount: 0);
 
     private static OrbitaDbContext CreateDb()
     {

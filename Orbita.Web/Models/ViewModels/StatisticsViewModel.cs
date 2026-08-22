@@ -211,6 +211,8 @@ public sealed class MonitoringCycleSubProfileRowViewModel
     public IReadOnlyList<MonitoringCyclePassViewModel> Passes { get; init; } = [];
     public bool HasErrors { get; init; }
     public bool HasNotStarted { get; init; }
+    public string? NotStartedReason { get; init; }
+    public DateTime? NotStartedAtUtc { get; init; }
 }
 
 public sealed class MonitoringCyclePassViewModel
@@ -223,6 +225,7 @@ public sealed class MonitoringCyclePassViewModel
     public string? CaptchaStatus { get; init; }
     public bool CaptchaUnsolved { get; init; }
     public string? ErrorDetail { get; init; }
+    public bool Skipped { get; init; }
     public bool HasCaptcha => !string.IsNullOrWhiteSpace(CaptchaStatus);
     public bool HasError => !string.IsNullOrWhiteSpace(ErrorDetail);
 }

@@ -1361,6 +1361,11 @@
     color: var(--accent);
 }
 
+.monitoring-pass-flag--skip {
+    background: color-mix(in srgb, var(--text-secondary) 12%, var(--bg-card));
+    color: var(--text-secondary);
+}
+
 .monitoring-pass-error {
     color: #b42318;
     max-width: 32ch;
@@ -1380,6 +1385,18 @@
 .monitoring-pass--pending {
     border-style: dashed;
     color: var(--text-secondary);
+}
+
+.monitoring-pass--skipped {
+    border-style: dashed;
+    color: var(--text-secondary);
+    background: color-mix(in srgb, var(--text-secondary) 6%, var(--bg-card));
+}
+
+.monitoring-pass-skip-reason {
+    color: var(--text-secondary);
+    max-width: 48ch;
+    overflow-wrap: anywhere;
 }
 
 .monitoring-pass-empty {

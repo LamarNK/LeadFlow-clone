@@ -66,7 +66,26 @@
                                                 <td class="monitoring-col-passes" data-label="Проходы">
                                                     @if (row.Passes.Count == 0)
                                                     {
-                                                        <span class="monitoring-pass-empty">@(row.HasNotStarted ? "не запускался" : "—")</span>
+                                                        @if (row.HasNotStarted)
+                                                        {
+                                                            <span class="monitoring-pass monitoring-pass--skipped">
+                                                                @if (row.NotStartedAtUtc is DateTime notStartedAt)
+                                                                {
+                                                                    <span class="monitoring-pass-time">
+                                                                        <partial name="_UtcTime" model="@(new UtcTimeDisplayModel(notStartedAt, "time"))" />
+                                                                    </span>
+                                                                }
+                                                                <span class="monitoring-pass-flag monitoring-pass-flag--skip">не запускался</span>
+                                                                @if (!string.IsNullOrWhiteSpace(row.NotStartedReason))
+                                                                {
+                                                                    <span class="monitoring-pass-skip-reason">@row.NotStartedReason</span>
+                                                                }
+                                                            </span>
+                                                        }
+                                                        else
+                                                        {
+                                                            <span class="monitoring-pass-empty">—</span>
+                                                        }
                                                     }
                                                     else
                                                     {

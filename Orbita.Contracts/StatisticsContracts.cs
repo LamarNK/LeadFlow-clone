@@ -120,7 +120,8 @@ public sealed record MonitoringCyclePassDto(
     string? CaptchaStatus = null,
     bool CaptchaUnsolved = false,
     string? ErrorDetail = null,
-    bool InProgress = false);
+    bool InProgress = false,
+    bool Skipped = false);
 
 public sealed record MonitoringCycleSubProfileRowDto(
     int Position,
@@ -131,7 +132,9 @@ public sealed record MonitoringCycleSubProfileRowDto(
     IReadOnlyList<MonitoringCycleErrorDto> Errors,
     bool WasStarted = false,
     IReadOnlyList<MonitoringCycleCaptchaDto>? CaptchaPerCycle = null,
-    IReadOnlyList<MonitoringCyclePassDto>? Passes = null);
+    IReadOnlyList<MonitoringCyclePassDto>? Passes = null,
+    string? NotStartedReason = null,
+    DateTime? NotStartedAtUtc = null);
 
 public sealed record MonitoringCycleAccountReportDto(
     string AccountName,

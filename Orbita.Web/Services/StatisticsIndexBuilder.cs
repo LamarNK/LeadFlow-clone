@@ -375,7 +375,9 @@ internal static class StatisticsIndexBuilder
                                 .ToList(),
                             Passes = MapPasses(row),
                             HasErrors = row.Errors.Count > 0,
-                            HasNotStarted = !row.WasStarted
+                            HasNotStarted = !row.WasStarted,
+                            NotStartedReason = row.NotStartedReason,
+                            NotStartedAtUtc = row.NotStartedAtUtc
                         })
                         .ToList()
                 })
@@ -397,7 +399,8 @@ internal static class StatisticsIndexBuilder
                     CollectedCount = pass.CollectedCount,
                     CaptchaStatus = pass.CaptchaStatus,
                     CaptchaUnsolved = pass.CaptchaUnsolved,
-                    ErrorDetail = pass.ErrorDetail
+                    ErrorDetail = pass.ErrorDetail,
+                    Skipped = pass.Skipped
                 })
                 .ToList();
         }

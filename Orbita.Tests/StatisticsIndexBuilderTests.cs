@@ -185,6 +185,49 @@ public sealed class StatisticsIndexBuilderTests
         Assert.Equal("решена", row.Passes[1].CaptchaStatus);
     }
 
+    [Fact]
+    public void Build_MapsNotStartedReason()
+    {
+        var stoppedAt = DateTime.SpecifyKind(new DateTime(2026, 8, 22, 11, 30, 33), DateTimeKind.Utc);
+        var monitoring = new MonitoringCycleReportDto(
+            true,
+            0,
+            1,
+            1,
+            ["  Авито 1: 1 не запущены — 2/10 (Березники 10)"],
+            [],
+            [
+                new MonitoringCycleAccountReportDto(
+                    "Авито 1",
+                    stoppedAt.Date,
+                    10,
+                    1,
+                    0,
+                    [
+                        new MonitoringCycleSubProfileRowDto(
+                            2,
+                            10,
+                            "Березники 10",
+                            [],
+                            [],
+                            [],
+                            WasStarted: false,
+                            NotStartedReason: "очередь не дошла: капча на «отдел 4»",
+                            NotStartedAtUtc: stoppedAt)
+                    ],
+                    ["2/10 (Березники 10)"])
+            ]);
+
+        var data = CreateData(lowBalanceCount: 0, monitoringCycles: monitoring);
+        var model = BuildModel(data, DashboardPeriod.Today, new FakeOfficeContext());
+
+        var row = Assert.Single(model.MonitoringCycles.AccountReports[0].Rows);
+        Assert.True(row.HasNotStarted);
+        Assert.Equal("очередь не дошла: капча на «отдел 4»", row.NotStartedReason);
+        Assert.Equal(stoppedAt, row.NotStartedAtUtc);
+        Assert.Empty(row.Passes);
+    }
+
     private static StatisticsViewModel BuildModel(
         OfficeStatisticsDto data,
         DashboardPeriod period,

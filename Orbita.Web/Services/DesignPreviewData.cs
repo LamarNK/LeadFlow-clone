@@ -1602,6 +1602,16 @@ internal static class DesignPreviewData
                             new MonitoringCyclePassDto(previewDayUtc.AddHours(15).AddMinutes(18).AddSeconds(9), true, 1, true)
                         ]),
                     new MonitoringCycleSubProfileRowDto(
+                        2,
+                        10,
+                        "Кадровый отдел Березники 10",
+                        [],
+                        [],
+                        [],
+                        WasStarted: false,
+                        NotStartedReason: "очередь не дошла: 2 капчи подряд, последняя на «Кадровый отдел 4»",
+                        NotStartedAtUtc: previewDayUtc.AddHours(10).AddMinutes(30).AddSeconds(33)),
+                    new MonitoringCycleSubProfileRowDto(
                         10,
                         10,
                         "контракт РФ 10",
