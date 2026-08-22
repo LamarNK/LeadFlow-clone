@@ -30,6 +30,30 @@ public static class CrmEndpoints
         var crmAnalytics = app.MapGroup("/api/v1/crm").RequireAuthorization(PanelPermissions.CrmAnalytics);
         var crmAdmin = app.MapGroup("/api/v1/crm").RequireAuthorization(PanelPermissions.CrmTeam);
 
+        crmBoard.MapGet("/calls/{callId:guid}/recording", async (
+            Guid callId,
+            CrmWorkspaceService workspace,
+            ClaimsPrincipal principal,
+            CancellationToken ct) =>
+        {
+            var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier)
+                         ?? principal.FindFirstValue("sub");
+            if (string.IsNullOrWhiteSpace(userId)) return Results.Forbid();
+
+            var recording = await workspace.OpenCallRecordingAsync(
+                callId,
+                userId,
+                PanelRoles.HasElevatedOfficeAccess(principal),
+                ct);
+            return recording.Stream is null
+                ? Results.NotFound()
+                : Results.File(
+                    recording.Stream,
+                    recording.ContentType ?? "audio/wav",
+                    recording.FileName ?? $"Звонок-{callId:N}.wav",
+                    enableRangeProcessing: true);
+        });
+
         crmBoard.MapGet("/board", async (
             CrmWorkspaceService workspace,
             OfficeScopeService officeScope,

@@ -1,11 +1,23 @@
 @model CrmTelephonyPageViewModel
 @{
-    ViewData["Title"] = "Телефония SIPOUT";
+    var isPlusofon = Model.Provider == CrmTelephonyProviders.Plusofon;
+    var isAsterisk = Model.Provider == CrmTelephonyProviders.Asterisk;
+    var isBeeline = Model.Provider == CrmTelephonyProviders.Beeline;
+    var providerLabel = isPlusofon ? "Плюсофон" : isAsterisk ? "SIP-сервер" : isBeeline ? "Билайн SIP" : "SIPOUT";
+    var bindingsByUser = Model.Settings.UserBindings.ToDictionary(x => x.UserId, StringComparer.Ordinal);
+    var phoneUsersByUser = Model.PhoneUsers.ToDictionary(x => x.UserId, StringComparer.Ordinal);
+    static string OutboundLineLabel(string? provider) => provider switch
+    {
+        CrmTelephonyProviders.Beeline => "Билайн",
+        CrmTelephonyProviders.Plusofon => "Плюсофон",
+        _ => "Номер по умолчанию"
+    };
+    ViewData["Title"] = "Телефония";
 }
 <partial name="_PageHeader" model="@(new PageHeaderViewModel
 {
-    Title = "Телефония SIPOUT",
-    Subtitle = $"Автоматическая запись звонков в CRM · {Model.OfficeName}",
+    Title = "Телефония",
+    Subtitle = $"Линии, сотрудники и записи звонков · {Model.OfficeName}",
     ShowRefresh = false
 })" />
 
@@ -14,7 +26,32 @@
         <a class="settings-link-btn" href="@Url.Action("Index", "Settings", new { tab = "offices", officeId = Model.OfficeId })">
             <i class="fa-solid fa-arrow-left" aria-hidden="true"></i> К офису
         </a>
+        <span class="telephony-access-note">
+            <i class="fa-solid fa-shield-halved" aria-hidden="true"></i>
+            @(Model.CanManage ? "Вы можете изменять телефонию офиса" : "Просмотр без права изменения")
+        </span>
     </div>
+
+    <section class="telephony-provider-overview" aria-label="Подключения телефонии">
+        @foreach (var summary in Model.ProviderSummaries)
+        {
+            var selected = string.Equals(summary.Provider, Model.Provider, StringComparison.OrdinalIgnoreCase);
+            var statusLabel = summary.IsEnabled ? "Работает" : summary.IsConfigured ? "Приостановлен" : "Не настроен";
+            <a class="telephony-provider-card @(selected ? "telephony-provider-card--selected" : null)"
+               href="@Url.Action("Telephony", "TelephonySettings", new { officeId = Model.OfficeId, provider = summary.Provider })"
+               aria-current="@(selected ? "page" : null)">
+                <span class="telephony-provider-card__icon"><i class="fa-solid @summary.Icon" aria-hidden="true"></i></span>
+                <span class="telephony-provider-card__body">
+                    <strong>@summary.Name</strong>
+                    <small>@summary.Description</small>
+                    <span class="telephony-provider-card__meta">@summary.BoundUsersCount сотрудников подключено</span>
+                </span>
+                <span class="settings-status-pill @(summary.IsEnabled ? "settings-status-pill--online" : summary.IsConfigured ? "settings-status-pill--warning" : "settings-status-pill--disabled")">
+                    @statusLabel
+                </span>
+            </a>
+        }
+    </section>
 
     @if (!string.IsNullOrWhiteSpace(Model.StatusMessage))
     {
@@ -25,35 +62,274 @@
         <div class="settings-alert settings-alert--error" role="alert">@Model.ErrorMessage</div>
     }
 
-    @if (!string.IsNullOrWhiteSpace(Model.SipoutWebRequestUrl))
+    @if (!string.IsNullOrWhiteSpace(Model.ProviderSetupUrl))
     {
         <section class="card telephony-secret-card">
             <div class="card-header settings-card-header">
                 <div>
-                    <h2 class="settings-card-title">Адрес WebRequest для SIPOUT</h2>
-                    <p class="settings-card-subtitle">Показывается один раз. Не отправляйте ссылку в общие чаты.</p>
+                    <h2 class="settings-card-title">Данные webhook для @providerLabel</h2>
+                    <p class="settings-card-subtitle">Показываются один раз. Не отправляйте их в общие чаты.</p>
                 </div>
             </div>
             <div class="card-body">
                 <div class="telephony-copy-row">
-                    <code id="sipoutWebRequestUrl">@Model.SipoutWebRequestUrl</code>
-                    <button type="button" class="settings-primary-btn settings-primary-btn--compact" data-copy-sipout-url>Копировать</button>
+                    <code id="telephonyProviderUrl">@Model.ProviderSetupUrl</code>
+                    <button type="button" class="settings-primary-btn settings-primary-btn--compact" data-copy-telephony-value="telephonyProviderUrl">Копировать URL</button>
                 </div>
-                <ol class="telephony-steps">
-                    <li>В виртуальной АТС SIPOUT откройте сценарий звонка.</li>
-                    <li>В системном обработчике завершения <strong>h</strong> добавьте действие <strong>WebRequest</strong>.</li>
-                    <li>Вставьте адрес целиком и включите запись разговоров.</li>
-                </ol>
+                @if (isPlusofon || isAsterisk)
+                {
+                    <div class="telephony-copy-row">
+                        <code id="telephonyProviderSecret">@Model.WebhookSecretHeader: @Model.WebhookSecret</code>
+                        <button type="button" class="settings-primary-btn settings-primary-btn--compact" data-copy-telephony-value="telephonyProviderSecret">Копировать заголовок</button>
+                    </div>
+                    @if (isAsterisk)
+                    {
+                        <ol class="telephony-steps">
+                            <li>Запишите <strong>Public ID</strong> из адреса и секретный HTTP-заголовок в защищённый <code>.env</code> SIP-контейнера.</li>
+                            <li>Asterisk отправляет сюда multipart-поля звонка и файл <strong>recording</strong> после завершения разговора.</li>
+                            <li>Внутренние номера сотрудников свяжите с пользователями ниже.</li>
+                        </ol>
+                    }
+                    else
+                    {
+                        <ol class="telephony-steps">
+                            <li>В Плюсофоне создайте webhook события <strong>destroy</strong> для всех звонков.</li>
+                            <li>Укажите URL выше и добавьте HTTP-заголовок целиком.</li>
+                            <li>Передавайте поля <strong>call_id, direction, from, to, internal, timestamp, duration</strong>.</li>
+                        </ol>
+                    }
+                }
+                else
+                {
+                    <ol class="telephony-steps">
+                        <li>В виртуальной АТС SIPOUT откройте сценарий звонка.</li>
+                        <li>В системном обработчике завершения <strong>h</strong> добавьте действие <strong>WebRequest</strong>.</li>
+                        <li>Вставьте адрес целиком и включите запись разговоров.</li>
+                    </ol>
+                }
             </div>
         </section>
     }
 
+    @if (isPlusofon)
+    {
+        <section class="card">
+            <div class="card-header settings-card-header">
+                <div>
+                    <h2 class="settings-card-title">API для записей звонков</h2>
+                    <p class="settings-card-subtitle">Реквизиты нужны только серверу Орбиты и обратно не показываются</p>
+                </div>
+                <span class="settings-status-pill @(Model.Settings.ProviderCredentialsConfigured ? "settings-status-pill--online" : "settings-status-pill--disabled")">
+                    @(Model.Settings.ProviderCredentialsConfigured ? "Настроено" : "Не настроено")
+                </span>
+            </div>
+            <div class="card-body">
+                <form asp-controller="TelephonySettings" asp-action="SavePlusofonCredentials" method="post" class="telephony-binding-form" autocomplete="off">
+                    @Html.AntiForgeryToken()
+                    <input type="hidden" name="officeId" value="@Model.OfficeId" />
+                    <label class="settings-field">
+                        <span class="settings-field-label">Client ID</span>
+                        <input type="text" name="clientId" required maxlength="128" autocomplete="off" />
+                    </label>
+                    <label class="settings-field">
+                        <span class="settings-field-label">Access token</span>
+                        <input type="password" name="accessToken" required maxlength="4096" autocomplete="new-password" />
+                    </label>
+                    @if (Model.CanManage)
+                    {
+                        <button type="submit" class="settings-primary-btn">
+                            @(Model.Settings.ProviderCredentialsConfigured ? "Заменить реквизиты" : "Сохранить реквизиты")
+                        </button>
+                    }
+                </form>
+                <p class="telephony-configured-note">
+                    Токен шифруется Data Protection Орбиты. В логах и интерфейсе его значение не выводится.
+                </p>
+            </div>
+        </section>
+    }
+
+    @if (isBeeline)
+    {
+        var account = Model.Settings.SipAccount;
+        var registrationTone = account?.RegistrationStatus == "registered"
+            ? "settings-status-pill--online"
+            : account?.RegistrationStatus == "rejected"
+                ? "settings-status-pill--danger"
+                : "settings-status-pill--warning";
+        var registrationLabel = account?.RegistrationStatus switch
+        {
+            "registered" => "Зарегистрирован",
+            "rejected" => "Отклонён провайдером",
+            "unregistered" => "Не зарегистрирован",
+            "runtime-unavailable" => "SIP-сервер недоступен",
+            _ => Model.Settings.ProviderCredentialsConfigured ? "Проверяется" : "Не настроен"
+        };
+        <section class="card telephony-sip-account-card">
+            <div class="card-header settings-card-header">
+                <div>
+                    <h2 class="settings-card-title">SIP-аккаунт Билайна</h2>
+                    <p class="settings-card-subtitle">Линия офиса, через которую Asterisk совершает и принимает звонки</p>
+                </div>
+                <span class="settings-status-pill @registrationTone">@registrationLabel</span>
+            </div>
+            <div class="card-body">
+                <form asp-controller="TelephonySettings" asp-action="SaveSipProviderAccount" method="post" class="telephony-sip-account-grid" autocomplete="off">
+                    @Html.AntiForgeryToken()
+                    <input type="hidden" name="OfficeId" value="@Model.OfficeId" />
+                    <input type="hidden" name="Provider" value="@CrmTelephonyProviders.Beeline" />
+                    <label class="settings-field">
+                        <span class="settings-field-label">SIP proxy</span>
+                        <input type="text" name="Server" value="@account?.Server" required maxlength="253" placeholder="ekt.ip.beeline.ru" autocomplete="off" />
+                    </label>
+                    <label class="settings-field">
+                        <span class="settings-field-label">Domain</span>
+                        <input type="text" name="Domain" value="@account?.Domain" maxlength="253" placeholder="ip.beeline.ru" autocomplete="off" />
+                    </label>
+                    <label class="settings-field">
+                        <span class="settings-field-label">SIP User ID</span>
+                        <input type="text" name="SipLogin" value="@account?.SipLogin" required maxlength="128" autocomplete="off" />
+                    </label>
+                    <label class="settings-field">
+                        <span class="settings-field-label">Authorization User ID</span>
+                        <input type="text" name="AuthorizationLogin" value="@account?.AuthorizationLogin" required maxlength="256" autocomplete="off" />
+                    </label>
+                    <label class="settings-field">
+                        <span class="settings-field-label">SIP-пароль</span>
+                        <input type="password" name="Password" maxlength="4096" autocomplete="new-password"
+                               placeholder="@(account?.PasswordConfigured == true ? "Оставьте пустым, чтобы не менять" : "Обязательно при первой настройке")" />
+                    </label>
+                    <div class="telephony-sip-account-grid__pair">
+                        <label class="settings-field">
+                            <span class="settings-field-label">Порт</span>
+                            <input type="number" name="Port" value="@(account?.Port ?? 5060)" min="1" max="65535" required />
+                        </label>
+                        <label class="settings-field">
+                            <span class="settings-field-label">Транспорт</span>
+                            <select name="Transport" required>
+                                <option value="udp" selected="@(account?.Transport != "tcp")">UDP</option>
+                                <option value="tcp" selected="@(account?.Transport == "tcp")">TCP</option>
+                            </select>
+                        </label>
+                    </div>
+                    <label class="telephony-sip-outbound-option">
+                        <input type="checkbox" name="UseForOutbound" value="true" checked="@(account?.UseForOutbound == true)" />
+                        <span>
+                            <strong>Использовать Билайн для исходящих звонков</strong>
+                            <small>Новые звонки из карточки будут направляться через этот аккаунт.</small>
+                        </span>
+                    </label>
+                    <div class="telephony-sip-account-grid__actions">
+                        @if (Model.CanManage)
+                        {
+                            <button type="submit" class="settings-primary-btn">
+                                @(Model.Settings.ProviderCredentialsConfigured ? "Сохранить и переподключить" : "Подключить аккаунт")
+                            </button>
+                        }
+                        <span>Пароль шифруется в БД и никогда не возвращается в браузер.</span>
+                    </div>
+                </form>
+                <div class="telephony-binding-guide telephony-sip-account-help">
+                    <span class="telephony-binding-guide__icon"><i class="fa-solid fa-link" aria-hidden="true"></i></span>
+                    <div>
+                        <strong>Что привязывается к сотруднику</strong>
+                        <p>Этот аккаунт — общий транк офиса. Тестовому менеджеру отдельно оставьте внутренний номер <strong>201</strong> в разделе «SIP-сервер»: так Орбита определит автора звонка и положит запись в его карточку.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+    }
+
+    @if (isAsterisk || isBeeline)
+    {
+        <section class="card telephony-staff-card telephony-office-users-card">
+            <div class="card-header settings-card-header">
+                <div>
+                    <h2 class="settings-card-title">Пользователи телефонии</h2>
+                    <p class="settings-card-subtitle">Внутренний номер и линия исходящих звонков — как в привычных настройках Bitrix24</p>
+                </div>
+                @if (Model.CanManage)
+                {
+                    <button type="button"
+                            class="settings-primary-btn settings-primary-btn--compact"
+                            data-telephony-open-user>
+                        <i class="fa-solid fa-user-plus" aria-hidden="true"></i>
+                        Подключить сотрудника
+                    </button>
+                }
+            </div>
+            <div class="telephony-binding-guide">
+                <span class="telephony-binding-guide__icon"><i class="fa-solid fa-circle-info" aria-hidden="true"></i></span>
+                <div>
+                    <strong>Одна настройка вместо отдельных аккаунтов</strong>
+                    <p>Плюсофон и Билайн подключаются один раз на офис. Для сотрудника здесь задаётся только его внутренний номер и линия, через которую пойдут исходящие звонки.</p>
+                </div>
+            </div>
+            <div class="card-body telephony-staff-body">
+                <div class="telephony-staff-table telephony-staff-table--bitrix" role="table" aria-label="Пользователи телефонии">
+                    <div class="telephony-staff-table__head" role="row">
+                        <span>Пользователь</span>
+                        <span>Внутренний номер</span>
+                        <span>Номер для исходящего звонка</span>
+                        <span>Телефонный аппарат</span>
+                        <span></span>
+                    </div>
+                    @foreach (var user in Model.OfficeUsers)
+                    {
+                        phoneUsersByUser.TryGetValue(user.Id, out var phoneUser);
+                        var displayName = string.IsNullOrWhiteSpace(user.FullName) ? user.Email : user.FullName;
+                        <div class="telephony-staff-table__row" role="row">
+                            <span class="telephony-employee">
+                                <span class="telephony-employee__avatar">@displayName.Trim()[0]</span>
+                                <span>
+                                    <strong>@displayName</strong>
+                                    <small>@PanelRoles.Label(user.Role)</small>
+                                </span>
+                            </span>
+                            <span class="telephony-mono">@(phoneUser?.ProviderUserKey ?? "—")</span>
+                            <span>
+                                <span class="telephony-line-name">@OutboundLineLabel(phoneUser?.OutboundProvider)</span>
+                            </span>
+                            <span>
+                                <span class="settings-status-pill @(phoneUser is null ? "settings-status-pill--disabled" : "settings-status-pill--online")">
+                                    @(phoneUser is null ? "Не подключён" : "Встроенная телефония")
+                                </span>
+                            </span>
+                            <span class="telephony-staff-table__actions">
+                                @if (Model.CanManage)
+                                {
+                                    <button type="button"
+                                            class="settings-secondary-btn telephony-edit-btn"
+                                            title="Настроить внутренний номер и линию исходящих звонков"
+                                            data-telephony-open-user
+                                            data-user-id="@user.Id"
+                                            data-user-name="@displayName"
+                                            data-provider-key="@phoneUser?.ProviderUserKey"
+                                            data-outbound-provider="@(phoneUser?.OutboundProvider ?? CrmTelephonyOutboundProviders.Default)">
+                                        <i class="fa-solid fa-pen" aria-hidden="true"></i>
+                                        Настроить
+                                    </button>
+                                }
+                                else
+                                {
+                                    <span class="telephony-muted">Только просмотр</span>
+                                }
+                            </span>
+                        </div>
+                    }
+                </div>
+            </div>
+        </section>
+    }
+
+    @if (!isBeeline)
+    {
     <div class="telephony-settings-grid">
         <section class="card">
             <div class="card-header settings-card-header">
                 <div>
                     <h2 class="settings-card-title">Приём звонков</h2>
-                    <p class="settings-card-subtitle">SIPOUT отправляет событие после завершения разговора</p>
+                    <p class="settings-card-subtitle">@providerLabel отправляет событие после завершения разговора</p>
                 </div>
                 <span class="settings-status-pill @(Model.Settings.IsEnabled ? "settings-status-pill--online" : "settings-status-pill--disabled")">
                     @(Model.Settings.IsEnabled ? "Включён" : Model.Settings.IsConfigured ? "Приостановлен" : "Не настроен")
@@ -64,19 +340,23 @@
                     Орбита сопоставляет номер клиента с основной или дополнительной телефонией карточки,
                     сохраняет направление и длительность звонка и показывает запись в ленте.
                 </p>
+                @if (Model.CanManage)
+                {
                 <div class="telephony-actions">
-                    <form asp-action="RotateTelephonyReceiver" method="post">
+                    <form asp-controller="TelephonySettings" asp-action="RotateTelephonyReceiver" method="post">
                         @Html.AntiForgeryToken()
                         <input type="hidden" name="officeId" value="@Model.OfficeId" />
+                        <input type="hidden" name="provider" value="@Model.Provider" />
                         <button type="submit" class="settings-primary-btn">
-                            @(Model.Settings.IsConfigured ? "Перевыпустить адрес" : "Создать адрес SIPOUT")
+                            @(Model.Settings.IsConfigured ? "Перевыпустить адрес" : $"Создать адрес {providerLabel}")
                         </button>
                     </form>
                     @if (Model.Settings.IsConfigured)
                     {
-                        <form asp-action="SetTelephonyEnabled" method="post">
+                        <form asp-controller="TelephonySettings" asp-action="SetTelephonyEnabled" method="post">
                             @Html.AntiForgeryToken()
                             <input type="hidden" name="officeId" value="@Model.OfficeId" />
+                            <input type="hidden" name="provider" value="@Model.Provider" />
                             <input type="hidden" name="enabled" value="@(!Model.Settings.IsEnabled)" />
                             <button type="submit" class="settings-secondary-btn">
                                 @(Model.Settings.IsEnabled ? "Приостановить" : "Включить")
@@ -84,6 +364,7 @@
                         </form>
                     }
                 </div>
+                }
                 @if (Model.Settings.IsConfigured)
                 {
                     <p class="telephony-configured-note">
@@ -93,73 +374,196 @@
             </div>
         </section>
 
-        <section class="card">
+        @if (!isAsterisk)
+        {
+        <section class="card telephony-staff-card">
             <div class="card-header settings-card-header">
                 <div>
-                    <h2 class="settings-card-title">Привязка сотрудников</h2>
-                    <p class="settings-card-subtitle">Внутренний номер SIPOUT определяет автора звонка в ленте</p>
+                    <h2 class="settings-card-title">Линии сотрудников</h2>
+                    <p class="settings-card-subtitle">Кто и с какого внутреннего номера работает через @providerLabel</p>
                 </div>
-                <span class="settings-office-count">@Model.Settings.UserBindings.Count</span>
+                @if (Model.CanManage)
+                {
+                    <button type="button"
+                            class="settings-primary-btn settings-primary-btn--compact"
+                            data-telephony-open-binding>
+                        <i class="fa-solid fa-plus" aria-hidden="true"></i>
+                        Привязать линию
+                    </button>
+                }
             </div>
-            <div class="card-body">
-                <form asp-action="SaveTelephonyBinding" method="post" class="telephony-binding-form">
-                    @Html.AntiForgeryToken()
-                    <input type="hidden" name="OfficeId" value="@Model.OfficeId" />
-                    <label class="settings-field">
-                        <span class="settings-field-label">Сотрудник</span>
-                        <select name="UserId" required>
-                            <option value="">Выберите сотрудника</option>
-                            @foreach (var user in Model.OfficeUsers)
-                            {
-                                <option value="@user.Id">@(string.IsNullOrWhiteSpace(user.FullName) ? user.Email : user.FullName)</option>
-                            }
-                        </select>
-                    </label>
-                    <label class="settings-field">
-                        <span class="settings-field-label">Внутренний номер / логин SIPOUT</span>
-                        <input type="text" name="ProviderUserKey" required maxlength="128" placeholder="Например, 201" />
-                    </label>
-                    <button type="submit" class="settings-primary-btn">Сохранить привязку</button>
-                </form>
-
-                <div class="telephony-binding-list">
-                    @if (Model.Settings.UserBindings.Count == 0)
+            <div class="telephony-binding-guide">
+                <span class="telephony-binding-guide__icon"><i class="fa-solid fa-circle-info" aria-hidden="true"></i></span>
+                <div>
+                    <strong>Как это работает</strong>
+                    <p>Сначала линия или внутренний номер создаётся на SIP-сервере либо у провайдера. Здесь Орбита только связывает уже существующий номер с сотрудником, чтобы определить автора звонка и записать разговор в карточку клиента.</p>
+                </div>
+            </div>
+            <div class="card-body telephony-staff-body">
+                <div class="telephony-staff-table" role="table" aria-label="Линии сотрудников">
+                    <div class="telephony-staff-table__head" role="row">
+                        <span>Сотрудник</span>
+                        <span>Провайдер</span>
+                        <span>Внутренний номер</span>
+                        <span>Исходящий номер</span>
+                        <span>Статус</span>
+                        <span></span>
+                    </div>
+                    @foreach (var user in Model.OfficeUsers)
                     {
-                        <p class="settings-empty-cell">Привязок пока нет.</p>
-                    }
-                    else
-                    {
-                        @foreach (var binding in Model.Settings.UserBindings)
-                        {
-                            <div class="telephony-binding-row">
-                                <div>
-                                    <strong>@binding.UserName</strong>
-                                    <span>SIPOUT @binding.ProviderUserKey</span>
-                                </div>
-                                <form asp-action="DeleteTelephonyBinding" method="post">
-                                    @Html.AntiForgeryToken()
-                                    <input type="hidden" name="officeId" value="@Model.OfficeId" />
-                                    <input type="hidden" name="userId" value="@binding.UserId" />
-                                    <button type="submit" class="settings-danger-link">Удалить</button>
-                                </form>
-                            </div>
-                        }
+                        bindingsByUser.TryGetValue(user.Id, out var binding);
+                        var displayName = string.IsNullOrWhiteSpace(user.FullName) ? user.Email : user.FullName;
+                        <div class="telephony-staff-table__row" role="row">
+                            <span class="telephony-employee">
+                                <span class="telephony-employee__avatar">@displayName.Trim()[0]</span>
+                                <span>
+                                    <strong>@displayName</strong>
+                                    <small>@PanelRoles.Label(user.Role)</small>
+                                </span>
+                            </span>
+                            <span><strong>@providerLabel</strong></span>
+                            <span class="telephony-mono">@(binding?.ProviderUserKey ?? "—")</span>
+                            <span class="telephony-muted">@(binding is null ? "—" : "По маршруту провайдера")</span>
+                            <span>
+                                <span class="settings-status-pill @(binding is null ? "settings-status-pill--disabled" : "settings-status-pill--online")">
+                                    @(binding is null ? "Не подключён" : "Готов к работе")
+                                </span>
+                            </span>
+                            <span class="telephony-staff-table__actions">
+                                @if (Model.CanManage)
+                                {
+                                    <button type="button"
+                                            class="settings-secondary-btn telephony-edit-btn"
+                                            data-telephony-open-binding
+                                            data-user-id="@user.Id"
+                                            data-user-name="@displayName"
+                                            data-provider-key="@binding?.ProviderUserKey">
+                                        <i class="fa-solid fa-pen" aria-hidden="true"></i>
+                                        @(binding is null ? "Настроить" : "Изменить")
+                                    </button>
+                                }
+                                else
+                                {
+                                    <span class="telephony-muted">Только просмотр</span>
+                                }
+                            </span>
+                        </div>
                     }
                 </div>
             </div>
         </section>
+        }
     </div>
+    }
 </div>
 
-@section Scripts {
-    <script>
-        document.querySelector('[data-copy-sipout-url]')?.addEventListener('click', async event => {
-            const value = document.getElementById('sipoutWebRequestUrl')?.textContent?.trim();
-            if (!value) return;
-            await navigator.clipboard.writeText(value);
-            const button = event.currentTarget;
-            button.textContent = 'Скопировано';
-            window.setTimeout(() => button.textContent = 'Копировать', 1500);
-        });
-    </script>
+@if ((isAsterisk || isBeeline) && Model.CanManage)
+{
+<div class="telephony-modal" data-telephony-user-modal hidden>
+    <button type="button" class="telephony-modal__backdrop" data-telephony-close-user aria-label="Закрыть"></button>
+    <section class="telephony-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="telephonyUserTitle">
+        <header class="telephony-modal__header">
+            <div>
+                <span class="telephony-modal__eyebrow">@Model.OfficeName · телефония офиса</span>
+                <h2 id="telephonyUserTitle">Настройка сотрудника</h2>
+                <p>Внутренний номер определяет менеджера, а исходящая линия — через какого оператора будет выполнен звонок.</p>
+            </div>
+            <button type="button" class="telephony-modal__close" data-telephony-close-user aria-label="Закрыть">
+                <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+            </button>
+        </header>
+        <form asp-controller="TelephonySettings" asp-action="SaveTelephonyBinding" method="post" class="telephony-modal__form">
+            @Html.AntiForgeryToken()
+            <input type="hidden" name="OfficeId" value="@Model.OfficeId" />
+            <input type="hidden" name="Provider" value="@CrmTelephonyProviders.Asterisk" />
+            <label class="settings-field telephony-modal__wide">
+                <span class="settings-field-label">Пользователь</span>
+                <select name="UserId" required data-telephony-phone-user-select>
+                    <option value="">Выберите сотрудника</option>
+                    @foreach (var user in Model.OfficeUsers)
+                    {
+                        <option value="@user.Id">@(string.IsNullOrWhiteSpace(user.FullName) ? user.Email : user.FullName)</option>
+                    }
+                </select>
+            </label>
+            <label class="settings-field">
+                <span class="settings-field-label">Внутренний номер</span>
+                <input type="text" inputmode="numeric" pattern="[0-9]{1,8}" name="ProviderUserKey" required maxlength="8" placeholder="Например, 201" data-telephony-phone-extension />
+            </label>
+            <label class="settings-field">
+                <span class="settings-field-label">Номер для исходящего звонка</span>
+                <select name="OutboundProvider" data-telephony-outbound-provider>
+                    <option value="@CrmTelephonyOutboundProviders.Default">Номер по умолчанию (Плюсофон)</option>
+                    <option value="@CrmTelephonyProviders.Plusofon">Плюсофон</option>
+                    <option value="@CrmTelephonyProviders.Beeline">Билайн</option>
+                </select>
+            </label>
+            <div class="telephony-provider-note telephony-modal__wide">
+                <i class="fa-solid fa-shield-halved" aria-hidden="true"></i>
+                <span>SIP‑логин и пароль оператора остаются общими реквизитами офиса и сотруднику не показываются.</span>
+            </div>
+            <footer class="telephony-modal__footer telephony-modal__wide">
+                <button type="button" class="settings-secondary-btn" data-telephony-close-user>Отмена</button>
+                <button type="submit" class="settings-primary-btn">Сохранить</button>
+            </footer>
+        </form>
+    </section>
+</div>
+}
+
+@if (Model.CanManage)
+{
+<div class="telephony-modal" data-telephony-binding-modal hidden>
+    <button type="button" class="telephony-modal__backdrop" data-telephony-close-binding aria-label="Закрыть"></button>
+    <section class="telephony-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="telephonyBindingTitle">
+        <header class="telephony-modal__header">
+            <div>
+                <span class="telephony-modal__eyebrow">@Model.OfficeName · @providerLabel</span>
+                <h2 id="telephonyBindingTitle">Привязка линии к сотруднику</h2>
+                <p>Выберите сотрудника и укажите уже созданный внутренний номер или SIP-логин. Новая линия в телефонии здесь не создаётся.</p>
+            </div>
+            <button type="button" class="telephony-modal__close" data-telephony-close-binding aria-label="Закрыть">
+                <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+            </button>
+        </header>
+        <form asp-controller="TelephonySettings" asp-action="SaveTelephonyBinding" method="post" class="telephony-modal__form">
+            @Html.AntiForgeryToken()
+            <input type="hidden" name="OfficeId" value="@Model.OfficeId" />
+            <input type="hidden" name="Provider" value="@Model.Provider" />
+            <label class="settings-field telephony-modal__wide">
+                <span class="settings-field-label">Сотрудник</span>
+                <select name="UserId" required data-telephony-user-select>
+                    <option value="">Выберите сотрудника</option>
+                    @foreach (var user in Model.OfficeUsers)
+                    {
+                        <option value="@user.Id">@(string.IsNullOrWhiteSpace(user.FullName) ? user.Email : user.FullName)</option>
+                    }
+                </select>
+            </label>
+            <label class="settings-field">
+                <span class="settings-field-label">Провайдер</span>
+                <input type="text" value="@providerLabel" disabled />
+            </label>
+            <label class="settings-field">
+                <span class="settings-field-label">Внутренний номер / SIP-логин</span>
+                <input type="text" name="ProviderUserKey" required maxlength="128" placeholder="Например, 201" data-telephony-provider-key />
+                <small class="telephony-field-note">Значение должно совпадать с номером на SIP-сервере или в кабинете провайдера.</small>
+            </label>
+            <div class="telephony-provider-note telephony-modal__wide">
+                <i class="fa-solid fa-shield-halved" aria-hidden="true"></i>
+                <span>Пароль SIP, исходящий номер и маршрутизация настраиваются у провайдера или на SIP-сервере. Орбита не запрашивает и не показывает эти секреты.</span>
+            </div>
+            <div class="telephony-permissions telephony-modal__wide">
+                <span class="settings-field-label">Разрешённые действия</span>
+                <span><i class="fa-solid fa-arrow-up-right-dots" aria-hidden="true"></i> Исходящие звонки</span>
+                <span><i class="fa-solid fa-phone-volume" aria-hidden="true"></i> Входящие звонки</span>
+                <span><i class="fa-solid fa-microphone-lines" aria-hidden="true"></i> Запись разговора</span>
+            </div>
+            <footer class="telephony-modal__footer telephony-modal__wide">
+                <button type="button" class="settings-secondary-btn" data-telephony-close-binding>Отмена</button>
+                <button type="submit" class="settings-primary-btn">Сохранить привязку</button>
+            </footer>
+        </form>
+    </section>
+</div>
 }

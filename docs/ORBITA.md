@@ -7,6 +7,8 @@
 - `Orbita.Api` — REST API + PostgreSQL
 - `Orbita.Web` — MVC (Controllers + Views + ViewModels)
 - `Orbita.Contracts` — общие DTO
+- `Orbita.TelephonyGateway` — опциональный изолированный ingress и зашифрованная очередь событий телефонии
+- `asterisk` (Compose profile `telephony-media`) — опциональная отдельная SIP/RTP-звонилка и загрузка записей в приватное хранилище CRM
 - `tools/OrbitaMockWorker` — имитация воркеров для тестов
 
 ## Локальный запуск
@@ -117,11 +119,11 @@ publish\build.bat -Target orbita-worker
 - SSH только по ключу, CrowdSec + Caddy (HTTPS) на сервере.
 - Публичный ключ:
   `ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIAfD+Y6/za2llrCsfESqBUl5r+osc+sZZ7LzhH0z12JO orbita`
-- Готовые секреты для `.env`:
+- Шаблон переменных для `.env` (рабочие значения хранить только на сервере):
   ```
-  REGISTRATION_SECRET=vfqFzRXuK5sPJdL3oNEr1MeYWZwxCDaUG62n0V8m
-  JWT_KEY=GwxfgyOpT72RkYEeVdcqQbu8AvlZ3IDFP19HWzLMj6srt4KB
-  ADMIN_PASSWORD=Orbq0Mei6RpAku7tIvd!
+  REGISTRATION_SECRET=replace-with-a-new-random-secret
+  JWT_KEY=replace-with-a-new-random-signing-key-at-least-32-bytes
+  ADMIN_PASSWORD=replace-with-a-new-strong-password
   CORS_ORIGIN_0=https://orbitsu.ru
   CORS_ORIGIN_1=https://www.orbitsu.ru
   ```

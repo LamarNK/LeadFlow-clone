@@ -1,0 +1,58 @@
+[general]
+static=yes
+writeprotect=yes
+
+[globals]
+RECORDING_DIR=/var/spool/asterisk/recording
+
+[from-orbita-managers]
+; Plusofon expects Russian external numbers in 7XXXXXXXXXX format.
+exten => _8XXXXXXXXXX,1,Goto(7${EXTEN:1},1)
+exten => _X.,1,NoOp(Orbita outgoing call)
+ same => n,Set(__ORBITA_CALL_ID=${FILTER(0-9.,${UNIQUEID})})
+ same => n,Set(__ORBITA_DIRECTION=outbound)
+ same => n,Set(__ORBITA_INTERNAL=${FILTER(0-9,${CALLERID(num)})})
+ same => n,Set(__ORBITA_OFFICE_ID=${DB(orbita_user/office_id/${ORBITA_INTERNAL})})
+ same => n,Set(__ORBITA_CALLER=${FILTER(0-9+,${CALLERID(num)})})
+ same => n,Set(__ORBITA_CALLED=${FILTER(0-9+,${EXTEN})})
+ same => n,Set(__ORBITA_STARTED_AT=${EPOCH})
+ same => n,Set(__ORBITA_RECORDING=${RECORDING_DIR}/${ORBITA_CALL_ID}.wav)
+ same => n,MixMonitor(${ORBITA_RECORDING},b)
+ same => n,Set(ORBITA_OUTBOUND_ENDPOINT=${DB(orbita_user/outbound_endpoint/${ORBITA_INTERNAL})})
+ same => n,ExecIf($["${ORBITA_OUTBOUND_ENDPOINT}"=""]?Set(ORBITA_OUTBOUND_ENDPOINT=${DB(orbita_office/outbound_endpoint/${ORBITA_OFFICE_ID})}))
+ same => n,ExecIf($["${ORBITA_OUTBOUND_ENDPOINT}"=""]?Set(ORBITA_OUTBOUND_ENDPOINT=${DB(orbita/outbound_endpoint)}))
+ same => n,ExecIf($["${ORBITA_OUTBOUND_ENDPOINT}"=""]?Set(ORBITA_OUTBOUND_ENDPOINT=${ASTERISK_OUTBOUND_ENDPOINT}))
+ same => n,Dial(PJSIP/${ORBITA_CALLED}@${ORBITA_OUTBOUND_ENDPOINT},60)
+ same => n,Hangup()
+exten => h,1,Gosub(orbita-publish,s,1)
+
+[from-orbita-provider]
+exten => _X.,1,NoOp(Orbita incoming call)
+ same => n,Set(__ORBITA_CALL_ID=${FILTER(0-9.,${UNIQUEID})})
+ same => n,Set(__ORBITA_DIRECTION=inbound)
+ same => n,Set(__ORBITA_INTERNAL=${FILTER(0-9,${ASTERISK_DEFAULT_EXTENSION})})
+ same => n,Set(__ORBITA_CALLER=${FILTER(0-9+,${CALLERID(num)})})
+ same => n,Set(__ORBITA_CALLED=${FILTER(0-9+,${EXTEN})})
+ same => n,Set(__ORBITA_STARTED_AT=${EPOCH})
+ same => n,Set(__ORBITA_RECORDING=${RECORDING_DIR}/${ORBITA_CALL_ID}.wav)
+ same => n,MixMonitor(${ORBITA_RECORDING},b)
+ same => n,Set(ORBITA_ROUTE=${SHELL(/opt/orbita-asterisk/resolve-inbound-route.sh ${ORBITA_OFFICE_ID} ${ORBITA_CALLER} ${ORBITA_CALLED})})
+ same => n,Set(ORBITA_PREFERRED=${FILTER(0-9,${CUT(ORBITA_ROUTE,^,1)})})
+ same => n,Set(ORBITA_FALLBACK=${CUT(ORBITA_ROUTE,^,2)})
+ same => n,GotoIf($["${ORBITA_PREFERRED}"=""]?fallback)
+ same => n,Set(__ORBITA_INTERNAL=${ORBITA_PREFERRED})
+ same => n,Dial(PJSIP/${ORBITA_PREFERRED}-webrtc,15)
+ same => n,GotoIf($["${DIALSTATUS}"="ANSWER"]?done)
+ same => n(fallback),GotoIf($["${ORBITA_FALLBACK}"=""]?default)
+ same => n,Dial(${ORBITA_FALLBACK},45)
+ same => n,Goto(done)
+ same => n(default),Set(__ORBITA_INTERNAL=${FILTER(0-9,${ASTERISK_DEFAULT_EXTENSION})})
+ same => n,Dial(PJSIP/${ORBITA_INTERNAL}-webrtc,60)
+ same => n(done),Hangup()
+exten => h,1,Gosub(orbita-publish,s,1)
+
+[orbita-publish]
+exten => s,1,NoOp(Publish Orbita call after hangup)
+ same => n,StopMixMonitor()
+ same => n,TrySystem(/opt/orbita-asterisk/publish-call.sh ${ORBITA_CALL_ID} ${ORBITA_CALLER} ${ORBITA_CALLED} ${ORBITA_DIRECTION} ${ORBITA_INTERNAL} ${ORBITA_STARTED_AT} ${CDR(billsec)} ${ORBITA_RECORDING} ${ORBITA_OFFICE_ID})
+ same => n,Return()

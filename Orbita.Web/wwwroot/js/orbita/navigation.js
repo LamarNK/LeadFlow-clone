@@ -351,10 +351,19 @@
             var meta = content.querySelector('.orbita-page-meta');
             var pageTitle = null;
             var pageKey = null;
+            var nextShellVersion = null;
             if (meta) {
                 pageTitle = meta.getAttribute('data-orbita-page-title');
                 pageKey = meta.getAttribute('data-orbita-controller');
+                nextShellVersion = meta.getAttribute('data-orbita-shell-version');
                 meta.parentNode.removeChild(meta);
+            }
+            var currentShellVersion = document.body.getAttribute('data-orbita-shell-version');
+            if (nextShellVersion && currentShellVersion !== nextShellVersion) {
+                // A new build may add or remove sidebar items while this tab still holds
+                // the old shell. Load the target as a full document exactly once.
+                window.location.href = targetPath;
+                return;
             }
             if (pageTitle) {
                 document.title = pageTitle;
@@ -591,7 +600,13 @@
                 var meta = content.querySelector('.orbita-page-meta');
                 var pageTitle = meta && meta.getAttribute('data-orbita-page-title');
                 var pageKey = meta && meta.getAttribute('data-orbita-controller');
+                var nextShellVersion = meta && meta.getAttribute('data-orbita-shell-version');
                 if (meta) meta.remove();
+                var currentShellVersion = document.body.getAttribute('data-orbita-shell-version');
+                if (nextShellVersion && currentShellVersion !== nextShellVersion) {
+                    window.location.href = recoveryPath;
+                    return;
+                }
                 if (pageTitle) document.title = pageTitle;
 
                 var finalPath = finalUrl.pathname + finalUrl.search;

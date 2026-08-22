@@ -858,6 +858,8 @@ public sealed class CrmTelephonyWebhookEntity
     public string Provider { get; set; } = string.Empty;
     public Guid PublicId { get; set; }
     public string SecretHash { get; set; } = string.Empty;
+    public string? ProviderClientId { get; set; }
+    public string? ProviderAccessTokenProtected { get; set; }
     public bool IsEnabled { get; set; } = true;
     public DateTime CreatedAtUtc { get; set; }
     public DateTime UpdatedAtUtc { get; set; }
@@ -870,6 +872,7 @@ public sealed class CrmTelephonyUserBindingEntity
     public Guid OfficeId { get; set; }
     public string Provider { get; set; } = string.Empty;
     public string ProviderUserKey { get; set; } = string.Empty;
+    public string OutboundProvider { get; set; } = CrmTelephonyOutboundProviders.Default;
     public string UserId { get; set; } = string.Empty;
     public DateTime CreatedAtUtc { get; set; }
     public DateTime UpdatedAtUtc { get; set; }
@@ -892,6 +895,11 @@ public sealed class CrmCallEntity
     public DateTime StartedAtUtc { get; set; }
     public int DurationSeconds { get; set; }
     public string? RecordingUrl { get; set; }
+    public string? RecordingStoragePath { get; set; }
+    public string? RecordingContentType { get; set; }
+    public string? RecordingFileName { get; set; }
+    public int RecordingFetchAttempts { get; set; }
+    public DateTime? NextRecordingFetchAtUtc { get; set; }
     public DateTime ReceivedAtUtc { get; set; }
     public DateTime UpdatedAtUtc { get; set; }
 }

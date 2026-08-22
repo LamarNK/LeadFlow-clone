@@ -26,7 +26,18 @@ services:
       LOG_SERVICE_NAME: Orbita.Api
       Logs__SharedRoot: /app/Data/logs
       DataProtection__KeysPath: /app/Data/dataprotection-api
+      CrmCallRecordings__DataPath: /app/Data/crm/call-recordings
+      CrmSipRuntime__ConfigPath: /app/Data/telephony-runtime
       BitrixWorkforce__PublicBaseUrl: http://localhost:8080
+      TelephonyGateway__PublicBaseUrl: ${TELEPHONY_GATEWAY_PUBLIC_BASE_URL:-}
+      TelephonyWebRtc__Enabled: ${TELEPHONY_WEBRTC_ENABLED:-false}
+      TelephonyWebRtc__WebSocketUrl: ${TELEPHONY_WEBRTC_WS_URL:-}
+      TelephonyWebRtc__SipDomain: ${TELEPHONY_WEBRTC_SIP_DOMAIN:-}
+      TelephonyWebRtc__Extension: ${ASTERISK_WEBRTC_EXTENSION:-}
+      TelephonyWebRtc__AuthorizationUsername: ${ASTERISK_WEBRTC_AUTH_USERNAME:-}
+      TelephonyWebRtc__Password: ${ASTERISK_WEBRTC_PASSWORD:-}
+      TelephonyWebRtc__Endpoints__202__AuthorizationUsername: ${ASTERISK_WEBRTC_202_AUTH_USERNAME:-}
+      TelephonyWebRtc__Endpoints__202__Password: ${ASTERISK_WEBRTC_202_PASSWORD:-}
     depends_on:
       - postgres
     ports:
@@ -34,6 +45,8 @@ services:
     volumes:
       - orbita_logs:/app/Data/logs
       - orbita_dataprotection_api:/app/Data/dataprotection-api
+      - orbita_crm_call_recordings:/app/Data/crm/call-recordings
+      - orbita_telephony_runtime:/app/Data/telephony-runtime
 
   web:
     build:
@@ -54,8 +67,88 @@ services:
       - orbita_logs:/app/Data/logs
       - orbita_dataprotection:/app/Data/dataprotection
 
+  telephony-gateway:
+    profiles: ["telephony", "telephony-media"]
+    build:
+      context: ../..
+      dockerfile: deploy/control-panel/Dockerfile.telephony-gateway
+    restart: unless-stopped
+    environment:
+      ASPNETCORE_URLS: http://+:8080
+      TelephonyGateway__OrbitaApiBaseUrl: http://api:8080
+      TelephonyGateway__QueuePath: /app/Data/queue
+      TelephonyGateway__QueueEncryptionKey: ${TELEPHONY_GATEWAY_QUEUE_KEY:-AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=}
+      TelephonyGateway__MaxQueueItems: ${TELEPHONY_GATEWAY_MAX_QUEUE_ITEMS:-100000}
+      TelephonyGateway__MaxQueueBytes: ${TELEPHONY_GATEWAY_MAX_QUEUE_BYTES:-10737418240}
+      TelephonyGateway__MaxBodyBytes: ${TELEPHONY_GATEWAY_MAX_BODY_BYTES:-110100480}
+      TelephonyGateway__MaxDeliveryAttempts: ${TELEPHONY_GATEWAY_MAX_DELIVERY_ATTEMPTS:-20}
+    depends_on:
+      - api
+    ports:
+      - "8082:8080"
+    volumes:
+      - orbita_telephony_queue:/app/Data/queue
+
+  asterisk:
+    profiles: ["telephony-media"]
+    build:
+      context: ../..
+      dockerfile: deploy/control-panel/Dockerfile.asterisk
+    restart: unless-stopped
+    environment:
+      ASTERISK_EXTERNAL_ADDRESS: ${ASTERISK_EXTERNAL_ADDRESS:-}
+      ASTERISK_LOCAL_NET: ${ASTERISK_LOCAL_NET:-172.16.0.0/12}
+      ASTERISK_SIP_SERVER: ${ASTERISK_SIP_SERVER:-}
+      ASTERISK_SIP_PORT: ${ASTERISK_SIP_PORT:-5060}
+      ASTERISK_SIP_TRANSPORT: ${ASTERISK_SIP_TRANSPORT:-tcp}
+      ASTERISK_SIP_LOGIN: ${ASTERISK_SIP_LOGIN:-}
+      ASTERISK_SIP_AUTH_LOGIN: ${ASTERISK_SIP_AUTH_LOGIN:-}
+      ASTERISK_SIP_PASSWORD: ${ASTERISK_SIP_PASSWORD:-}
+      ASTERISK_OUTBOUND_PROVIDER: ${ASTERISK_OUTBOUND_PROVIDER:-primary}
+      BEELINE_SIP_ENABLED: ${BEELINE_SIP_ENABLED:-false}
+      BEELINE_SIP_SERVER: ${BEELINE_SIP_SERVER:-}
+      BEELINE_SIP_PORT: ${BEELINE_SIP_PORT:-5060}
+      BEELINE_SIP_TRANSPORT: ${BEELINE_SIP_TRANSPORT:-udp}
+      BEELINE_SIP_LOGIN: ${BEELINE_SIP_LOGIN:-}
+      BEELINE_SIP_AUTH_LOGIN: ${BEELINE_SIP_AUTH_LOGIN:-}
+      BEELINE_SIP_PASSWORD: ${BEELINE_SIP_PASSWORD:-}
+      ASTERISK_DEFAULT_EXTENSION: ${ASTERISK_DEFAULT_EXTENSION:-}
+      ASTERISK_PUBLIC_ID: ${ASTERISK_PUBLIC_ID:-}
+      ASTERISK_WEBHOOK_SECRET: ${ASTERISK_WEBHOOK_SECRET:-}
+      ASTERISK_WEBRTC_ENABLED: ${TELEPHONY_WEBRTC_ENABLED:-false}
+      ASTERISK_WEBRTC_EXTENSION: ${ASTERISK_WEBRTC_EXTENSION:-}
+      ASTERISK_WEBRTC_AUTH_USERNAME: ${ASTERISK_WEBRTC_AUTH_USERNAME:-}
+      ASTERISK_WEBRTC_PASSWORD: ${ASTERISK_WEBRTC_PASSWORD:-}
+      # One shared PBX serves every office. This UUID is used only by the
+      # legacy/default trunk; office-specific runtime trunks carry their own ID.
+      ASTERISK_DEFAULT_OFFICE_ID: ${ASTERISK_DEFAULT_OFFICE_ID:-11111111-1111-1111-1111-111111111111}
+      ASTERISK_OFFICE_ID: ${ASTERISK_OFFICE_ID:-}
+      ASTERISK_RUNTIME_CONFIG_DIR: /var/lib/orbita/telephony-runtime
+      TELEPHONY_GATEWAY_INTERNAL_URL: http://telephony-gateway:8080
+    depends_on:
+      - telephony-gateway
+    ports:
+      - "${ASTERISK_BIND_IP:-127.0.0.1}:5060:5060/udp"
+      - "${ASTERISK_BIND_IP:-127.0.0.1}:5060:5060/tcp"
+      - "${ASTERISK_WEBRTC_BIND_IP:-127.0.0.1}:8088:8088/tcp"
+      - "${ASTERISK_BIND_IP:-127.0.0.1}:10000-10100:10000-10100/udp"
+    volumes:
+      - orbita_asterisk_recordings:/var/spool/asterisk/recording
+      - orbita_telephony_runtime:/var/lib/orbita/telephony-runtime
+      - ${ASTERISK_ENDPOINTS_FILE:-./telephony/asterisk/config/pjsip.endpoints.conf.example}:/etc/asterisk/orbita/pjsip.endpoints.conf:ro
+    healthcheck:
+      test: ["CMD", "/opt/orbita-asterisk/healthcheck.sh"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
 volumes:
   orbita_pg:
   orbita_logs:
   orbita_dataprotection:
   orbita_dataprotection_api:
+  orbita_telephony_queue:
+  orbita_crm_call_recordings:
+  orbita_asterisk_recordings:
+  orbita_telephony_runtime:

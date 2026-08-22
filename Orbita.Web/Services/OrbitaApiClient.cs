@@ -2383,6 +2383,32 @@ public sealed class OrbitaApiClient(
         return (stream, fileName, contentType, error);
     }
 
+    public async Task<(Stream? Stream, string? FileName, string? ContentType, string? Error)> OpenCrmCallRecordingAsync(
+        Guid callId,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return (null, null, null, "Запись звонка недоступна в режиме предпросмотра.");
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"api/v1/crm/calls/{callId:D}/recording");
+        using var response = await SendAuthenticatedAsync(request, ct, HttpCompletionOption.ResponseHeadersRead);
+        if (response is null)
+        {
+            return (null, null, null, InvalidApiSessionError);
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            return (null, null, null, await ReadApiErrorAsync(response, ct));
+        }
+
+        var contentType = response.Content.Headers.ContentType?.MediaType ?? "audio/wav";
+        var (stream, fileName, error) = await MaterializeDownloadResponseAsync(response, $"Звонок-{callId:N}.wav", ct);
+        return (stream, fileName, contentType, error);
+    }
+
     public Task<(bool Success, string? Error)> StartCrmShiftAsync(CancellationToken ct = default) =>
         _preview.Enabled
             ? Task.FromResult(DesignPreviewData.StartCrmShift())
@@ -2842,23 +2868,33 @@ public sealed class OrbitaApiClient(
 
     public Task<CrmTelephonySettingsDto?> GetCrmTelephonySettingsAsync(
         Guid officeId,
-        CancellationToken ct = default) =>
+        CancellationToken ct = default,
+        string provider = CrmTelephonyProviders.Sipout) =>
         _preview.Enabled
             ? Task.FromResult<CrmTelephonySettingsDto?>(new CrmTelephonySettingsDto(
-                officeId, CrmTelephonyProviders.Sipout, false, false, null, []))
-            : GetAsync<CrmTelephonySettingsDto>($"api/v1/crm/telephony/offices/{officeId:D}/sipout", ct);
+                officeId, provider, false, false, null, []))
+            : GetAsync<CrmTelephonySettingsDto>($"api/v1/crm/telephony/offices/{officeId:D}/{Uri.EscapeDataString(provider)}", ct);
+
+    public Task<CrmTelephonyWebRtcConfigDto?> GetCrmTelephonyWebRtcConfigAsync(
+        CancellationToken ct = default) =>
+        _preview.Enabled
+            ? Task.FromResult<CrmTelephonyWebRtcConfigDto?>(null)
+            : GetAsync<CrmTelephonyWebRtcConfigDto>(
+                WithOfficeQuery("api/v1/crm/telephony/webrtc/config"),
+                ct);
 
     public async Task<(CrmTelephonyReceiverDto? Receiver, string? Error)> RotateCrmTelephonyReceiverAsync(
         Guid officeId,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        string provider = CrmTelephonyProviders.Sipout)
     {
         if (_preview.Enabled)
         {
-            return (null, "Настройка SIPOUT недоступна в режиме предпросмотра.");
+            return (null, "Настройка телефонии недоступна в режиме предпросмотра.");
         }
         using var request = new HttpRequestMessage(
             HttpMethod.Post,
-            $"api/v1/crm/telephony/offices/{officeId:D}/sipout/receiver");
+            $"api/v1/crm/telephony/offices/{officeId:D}/{Uri.EscapeDataString(provider)}/receiver");
         using var response = await SendAuthenticatedAsync(request, ct);
         if (response is null) return (null, InvalidApiSessionError);
         if (!response.IsSuccessStatusCode) return (null, await ReadApiErrorAsync(response, ct));
@@ -2868,13 +2904,54 @@ public sealed class OrbitaApiClient(
     public async Task<(bool Success, string? Error)> SetCrmTelephonyEnabledAsync(
         Guid officeId,
         bool enabled,
+        CancellationToken ct = default,
+        string provider = CrmTelephonyProviders.Sipout)
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Put,
+            $"api/v1/crm/telephony/offices/{officeId:D}/{Uri.EscapeDataString(provider)}/enabled")
+        {
+            Content = JsonContent.Create(new UpdateCrmTelephonyEnabledRequest(enabled))
+        };
+        using var response = await SendAuthenticatedAsync(request, ct);
+        return response is null
+            ? (false, InvalidApiSessionError)
+            : response.IsSuccessStatusCode
+                ? (true, null)
+                : (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    public async Task<(bool Success, string? Error)> SetPlusofonCredentialsAsync(
+        Guid officeId,
+        string clientId,
+        string accessToken,
         CancellationToken ct = default)
     {
         using var request = new HttpRequestMessage(
             HttpMethod.Put,
-            $"api/v1/crm/telephony/offices/{officeId:D}/sipout/enabled")
+            $"api/v1/crm/telephony/offices/{officeId:D}/{CrmTelephonyProviders.Plusofon}/credentials")
         {
-            Content = JsonContent.Create(new UpdateCrmTelephonyEnabledRequest(enabled))
+            Content = JsonContent.Create(new UpdatePlusofonCredentialsRequest(clientId, accessToken))
+        };
+        using var response = await SendAuthenticatedAsync(request, ct);
+        return response is null
+            ? (false, InvalidApiSessionError)
+            : response.IsSuccessStatusCode
+                ? (true, null)
+                : (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    public async Task<(bool Success, string? Error)> SetSipProviderAccountAsync(
+        Guid officeId,
+        string provider,
+        UpdateSipProviderAccountRequest account,
+        CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Put,
+            $"api/v1/crm/telephony/offices/{officeId:D}/{Uri.EscapeDataString(provider)}/sip-account")
+        {
+            Content = JsonContent.Create(account)
         };
         using var response = await SendAuthenticatedAsync(request, ct);
         return response is null
@@ -2888,13 +2965,15 @@ public sealed class OrbitaApiClient(
         Guid officeId,
         string userId,
         string providerUserKey,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        string provider = CrmTelephonyProviders.Sipout,
+        string? outboundProvider = null)
     {
         using var request = new HttpRequestMessage(
             HttpMethod.Put,
-            $"api/v1/crm/telephony/offices/{officeId:D}/sipout/bindings")
+            $"api/v1/crm/telephony/offices/{officeId:D}/{Uri.EscapeDataString(provider)}/bindings")
         {
-            Content = JsonContent.Create(new UpdateCrmTelephonyBindingRequest(userId, providerUserKey))
+            Content = JsonContent.Create(new UpdateCrmTelephonyBindingRequest(userId, providerUserKey, outboundProvider))
         };
         using var response = await SendAuthenticatedAsync(request, ct);
         if (response is null) return (null, InvalidApiSessionError);
@@ -2905,11 +2984,12 @@ public sealed class OrbitaApiClient(
     public async Task<(bool Success, string? Error)> RemoveCrmTelephonyBindingAsync(
         Guid officeId,
         string userId,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        string provider = CrmTelephonyProviders.Sipout)
     {
         using var request = new HttpRequestMessage(
             HttpMethod.Delete,
-            $"api/v1/crm/telephony/offices/{officeId:D}/sipout/bindings/{Uri.EscapeDataString(userId)}");
+            $"api/v1/crm/telephony/offices/{officeId:D}/{Uri.EscapeDataString(provider)}/bindings/{Uri.EscapeDataString(userId)}");
         using var response = await SendAuthenticatedAsync(request, ct);
         return response is null
             ? (false, InvalidApiSessionError)

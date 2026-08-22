@@ -579,6 +579,7 @@ public sealed record CrmActivityItemDto(
     string? CallDirection = null,
     int? CallDurationSeconds = null,
     string? CallRecordingUrl = null,
+    bool CallRecordingStored = false,
     string? CallClientPhone = null);
 
 public static class CrmActivityDetails

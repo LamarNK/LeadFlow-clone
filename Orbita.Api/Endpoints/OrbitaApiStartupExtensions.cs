@@ -257,11 +257,15 @@ public static class OrbitaApiStartupExtensions
         builder.Services.Configure<WorkerReleaseOptions>(builder.Configuration.GetSection(WorkerReleaseOptions.SectionName));
         builder.Services.Configure<WorkerDiagnosticsOptions>(builder.Configuration.GetSection(WorkerDiagnosticsOptions.SectionName));
         builder.Services.Configure<CrmTaskAttachmentOptions>(builder.Configuration.GetSection(CrmTaskAttachmentOptions.SectionName));
+        builder.Services.Configure<CrmCallRecordingOptions>(builder.Configuration.GetSection(CrmCallRecordingOptions.SectionName));
+        builder.Services.Configure<CrmTelephonyWebRtcOptions>(builder.Configuration.GetSection(CrmTelephonyWebRtcOptions.SectionName));
+        builder.Services.Configure<CrmSipRuntimeOptions>(builder.Configuration.GetSection(CrmSipRuntimeOptions.SectionName));
         builder.Services.Configure<CrmDeadlineNotificationOptions>(builder.Configuration.GetSection(CrmDeadlineNotificationOptions.SectionName));
         builder.Services.Configure<ServiceLogsOptions>(builder.Configuration.GetSection(ServiceLogsOptions.SectionName));
         builder.Services.AddSingleton<WorkerReleaseService>();
         builder.Services.AddScoped<WorkerDiagnosticsService>();
         builder.Services.AddScoped<CrmTaskAttachmentStorageService>();
+        builder.Services.AddScoped<CrmCallRecordingStorageService>();
         builder.Services.AddHostedService<WorkerDiagnosticsCleanupService>();
         builder.Services.AddSingleton<WorkerLogFileArchive>();
         builder.Services.AddScoped<WorkerLogArchiveService>();
@@ -275,6 +279,10 @@ public static class OrbitaApiStartupExtensions
         builder.Services.AddScoped<CrmLeadDistributionService>();
         builder.Services.AddScoped<CrmWorkspaceService>();
         builder.Services.AddScoped<CrmTelephonyService>();
+        builder.Services.AddScoped<CrmTelephonyCredentialProtector>();
+        builder.Services.AddSingleton<CrmSipRuntimeConfigWriter>();
+        builder.Services.AddScoped<PlusofonRecordingSyncService>();
+        builder.Services.AddSingleton<IPlusofonApiClient, PlusofonApiClient>();
         builder.Services.AddScoped<CrmDeadlineNotificationService>();
         builder.Services.AddSingleton<ICrmNotificationRealtimeNotifier, CrmNotificationRealtimeNotifier>();
         builder.Services.AddScoped<CrmAnalyticsQueryService>();
@@ -315,6 +323,8 @@ public static class OrbitaApiStartupExtensions
         builder.Services.Configure<OrbitaBitrixSettings>(builder.Configuration.GetSection("Bitrix"));
         builder.Services.Configure<BitrixWorkforceOptions>(
             builder.Configuration.GetSection(BitrixWorkforceOptions.SectionName));
+        builder.Services.Configure<TelephonyGatewayPublicOptions>(
+            builder.Configuration.GetSection(TelephonyGatewayPublicOptions.SectionName));
         builder.Services.AddScoped<PasswordPolicyService>();
         builder.Services.AddScoped<ServiceLogsQueryService>();
         builder.Services.AddHostedService<ServiceLogsCleanupService>();
@@ -322,6 +332,7 @@ public static class OrbitaApiStartupExtensions
         builder.Services.AddHostedService<CrmDeadlineNotificationHostedService>();
         builder.Services.AddHostedService<CrmShiftSweeperService>();
         builder.Services.AddHostedService<CrmDailyDistributionHostedService>();
+        builder.Services.AddHostedService<PlusofonRecordingHostedService>();
         builder.Services.AddHostedService<BitrixWorkforceHostedService>();
         builder.Services.AddScoped<WebhookSecretProtector>();
         builder.Services.AddScoped<AvitoAccountSecretProtector>();
@@ -365,6 +376,16 @@ public static class OrbitaApiStartupExtensions
         builder.Services.AddHttpClient(nameof(BitrixCrmImportClient), client =>
             {
                 client.Timeout = TimeSpan.FromMinutes(5);
+            })
+            .RemoveAllLoggers();
+        builder.Services.AddHttpClient(PlusofonApiClient.HttpClientName, client =>
+            {
+                client.BaseAddress = new Uri("https://restapi.plusofon.ru/");
+                client.Timeout = TimeSpan.FromSeconds(15);
+            })
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+            {
+                AllowAutoRedirect = false
             })
             .RemoveAllLoggers();
 

@@ -62,6 +62,7 @@ BenchmarkDotNet.Artifacts/
 project.lock.json
 project.fragment.lock.json
 artifacts/
+.tools/
 
 # ASP.NET Scaffolding
 ScaffoldingReadMe.txt
@@ -398,6 +399,7 @@ Desktop.ini
 # Локальные копии настроек с секретами (если появятся)
 **/appsettings.Development.Local.json
 deploy/**/.env
+deploy/control-panel/telephony/asterisk/config/pjsip.endpoints.conf
 
 # Source datasets used to regenerate compact embedded dictionaries
 .local-data/

@@ -408,9 +408,24 @@ public sealed class SettingsController(
     public async Task<IActionResult> Telephony(
         Guid officeId,
         [FromServices] OrbitaApiClient api,
+        string provider = CrmTelephonyProviders.Sipout,
         CancellationToken ct = default)
     {
-        var settings = await api.GetCrmTelephonySettingsAsync(officeId, ct);
+        if (!CrmTelephonyProviders.IsSupported(provider)) return BadRequest();
+        provider = CrmTelephonyProviders.Normalize(provider);
+        var sipoutSettingsTask = api.GetCrmTelephonySettingsAsync(officeId, ct, CrmTelephonyProviders.Sipout);
+        var plusofonSettingsTask = api.GetCrmTelephonySettingsAsync(officeId, ct, CrmTelephonyProviders.Plusofon);
+        var asteriskSettingsTask = api.GetCrmTelephonySettingsAsync(officeId, ct, CrmTelephonyProviders.Asterisk);
+        var beelineSettingsTask = api.GetCrmTelephonySettingsAsync(officeId, ct, CrmTelephonyProviders.Beeline);
+        await Task.WhenAll(sipoutSettingsTask, plusofonSettingsTask, asteriskSettingsTask, beelineSettingsTask);
+        var providerSettings = new Dictionary<string, CrmTelephonySettingsDto?>(StringComparer.OrdinalIgnoreCase)
+        {
+            [CrmTelephonyProviders.Sipout] = await sipoutSettingsTask,
+            [CrmTelephonyProviders.Plusofon] = await plusofonSettingsTask,
+            [CrmTelephonyProviders.Asterisk] = await asteriskSettingsTask,
+            [CrmTelephonyProviders.Beeline] = await beelineSettingsTask
+        };
+        var settings = providerSettings[provider];
         var offices = await api.GetOfficesAsync(ct) ?? [];
         var office = offices.FirstOrDefault(x => x.Id == officeId);
         if (settings is null || office is null)
@@ -428,30 +443,74 @@ public sealed class SettingsController(
             OfficeName = office.Name,
             Settings = settings,
             OfficeUsers = users,
-            SipoutWebRequestUrl = TempData["SipoutWebRequestUrl"] as string,
+            ProviderSummaries =
+            [
+                ToTelephonyProviderSummary(
+                    providerSettings[CrmTelephonyProviders.Asterisk],
+                    "SIP-сервер",
+                    "Звонки из браузера через линии Плюсофон и Билайн",
+                    "fa-server"),
+                ToTelephonyProviderSummary(
+                    providerSettings[CrmTelephonyProviders.Sipout],
+                    "SIPOUT",
+                    "События и записи из существующей браузерной звонилки",
+                    "fa-phone-volume"),
+                ToTelephonyProviderSummary(
+                    providerSettings[CrmTelephonyProviders.Plusofon],
+                    "Плюсофон API",
+                    "Синхронизация завершённых звонков и аудиозаписей",
+                    "fa-cloud-arrow-down"),
+                ToTelephonyProviderSummary(
+                    providerSettings[CrmTelephonyProviders.Beeline],
+                    "Билайн SIP",
+                    "Транк Билайна для исходящих и входящих звонков",
+                    "fa-tower-cell")
+            ],
+            Provider = provider,
+            ProviderSetupUrl = TempData["TelephonyProviderSetupUrl"] as string,
+            WebhookSecret = TempData["TelephonyWebhookSecret"] as string,
+            WebhookSecretHeader = TempData["TelephonyWebhookSecretHeader"] as string,
             StatusMessage = TempData["SettingsStatus"] as string,
             ErrorMessage = TempData["SettingsError"] as string
         });
     }
 
+    private static CrmTelephonyProviderSummaryViewModel ToTelephonyProviderSummary(
+        CrmTelephonySettingsDto? settings,
+        string name,
+        string description,
+        string icon) => new(
+        settings?.Provider ?? string.Empty,
+        name,
+        description,
+        icon,
+        settings?.IsConfigured == true,
+        settings?.IsEnabled == true,
+        settings?.UserBindings.Count ?? 0);
+
     [HttpPost]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> RotateTelephonyReceiver(
         Guid officeId,
+        string provider,
         [FromServices] OrbitaApiClient api,
         CancellationToken ct = default)
     {
-        var (receiver, error) = await api.RotateCrmTelephonyReceiverAsync(officeId, ct);
+        if (!CrmTelephonyProviders.IsSupported(provider)) return BadRequest();
+        provider = CrmTelephonyProviders.Normalize(provider);
+        var (receiver, error) = await api.RotateCrmTelephonyReceiverAsync(officeId, ct, provider);
         if (receiver is null)
         {
             TempData["SettingsError"] = error;
         }
         else
         {
-            TempData["SettingsStatus"] = "Новый защищённый адрес SIPOUT создан. Скопируйте его сейчас: секрет повторно не показывается.";
-            TempData["SipoutWebRequestUrl"] = receiver.SipoutWebRequestUrl;
+            TempData["SettingsStatus"] = $"Новый защищённый приёмник {provider.ToUpperInvariant()} создан. Скопируйте данные сейчас: секрет повторно не показывается.";
+            TempData["TelephonyProviderSetupUrl"] = receiver.SipoutWebRequestUrl;
+            TempData["TelephonyWebhookSecret"] = receiver.WebhookSecret;
+            TempData["TelephonyWebhookSecretHeader"] = receiver.WebhookSecretHeader;
         }
-        return RedirectToAction(nameof(Telephony), new { officeId });
+        return RedirectToAction(nameof(Telephony), new { officeId, provider });
     }
 
     [HttpPost]
@@ -459,14 +518,75 @@ public sealed class SettingsController(
     public async Task<IActionResult> SetTelephonyEnabled(
         Guid officeId,
         bool enabled,
+        string provider,
         [FromServices] OrbitaApiClient api,
         CancellationToken ct = default)
     {
-        var (success, error) = await api.SetCrmTelephonyEnabledAsync(officeId, enabled, ct);
+        if (!CrmTelephonyProviders.IsSupported(provider)) return BadRequest();
+        provider = CrmTelephonyProviders.Normalize(provider);
+        var (success, error) = await api.SetCrmTelephonyEnabledAsync(officeId, enabled, ct, provider);
         TempData[success ? "SettingsStatus" : "SettingsError"] = success
-            ? enabled ? "Приём звонков SIPOUT включён." : "Приём звонков SIPOUT приостановлен."
+            ? enabled ? "Приём звонков включён." : "Приём звонков приостановлен."
             : error;
-        return RedirectToAction(nameof(Telephony), new { officeId });
+        return RedirectToAction(nameof(Telephony), new { officeId, provider });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> SavePlusofonCredentials(
+        Guid officeId,
+        string clientId,
+        string accessToken,
+        [FromServices] OrbitaApiClient api,
+        CancellationToken ct = default)
+    {
+        var (success, error) = await api.SetPlusofonCredentialsAsync(
+            officeId,
+            clientId,
+            accessToken,
+            ct);
+        TempData[success ? "SettingsStatus" : "SettingsError"] = success
+            ? "Реквизиты API Плюсофона сохранены в защищённом виде. Орбита будет забирать записи завершённых звонков автоматически."
+            : error;
+        return RedirectToAction(nameof(Telephony), new
+        {
+            officeId,
+            provider = CrmTelephonyProviders.Plusofon
+        });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> SaveSipProviderAccount(
+        SaveSipProviderAccountFormModel model,
+        [FromServices] OrbitaApiClient api,
+        CancellationToken ct = default)
+    {
+        if (!string.Equals(model.Provider, CrmTelephonyProviders.Beeline, StringComparison.OrdinalIgnoreCase))
+        {
+            return BadRequest();
+        }
+        var (success, error) = await api.SetSipProviderAccountAsync(
+            model.OfficeId,
+            CrmTelephonyProviders.Beeline,
+            new UpdateSipProviderAccountRequest(
+                model.Server,
+                model.Domain,
+                model.Port,
+                model.Transport,
+                model.SipLogin,
+                model.AuthorizationLogin,
+                model.Password,
+                model.UseForOutbound),
+            ct);
+        TempData[success ? "SettingsStatus" : "SettingsError"] = success
+            ? "SIP-аккаунт Билайна сохранён и передан Asterisk. Статус регистрации обновится в течение нескольких секунд."
+            : error;
+        return RedirectToAction(nameof(Telephony), new
+        {
+            officeId = model.OfficeId,
+            provider = CrmTelephonyProviders.Beeline
+        });
     }
 
     [HttpPost]
@@ -476,12 +596,14 @@ public sealed class SettingsController(
         [FromServices] OrbitaApiClient api,
         CancellationToken ct = default)
     {
+        if (!CrmTelephonyProviders.IsSupported(model.Provider)) return BadRequest();
+        var provider = CrmTelephonyProviders.Normalize(model.Provider);
         var (binding, error) = await api.SetCrmTelephonyBindingAsync(
-            model.OfficeId, model.UserId, model.ProviderUserKey, ct);
+            model.OfficeId, model.UserId, model.ProviderUserKey, ct, provider);
         TempData[binding is null ? "SettingsError" : "SettingsStatus"] = binding is null
             ? error
-            : $"SIPOUT {binding.ProviderUserKey} привязан к сотруднику {binding.UserName}.";
-        return RedirectToAction(nameof(Telephony), new { officeId = model.OfficeId });
+            : $"{provider.ToUpperInvariant()} {binding.ProviderUserKey} привязан к сотруднику {binding.UserName}.";
+        return RedirectToAction(nameof(Telephony), new { officeId = model.OfficeId, provider });
     }
 
     [HttpPost]
@@ -489,14 +611,17 @@ public sealed class SettingsController(
     public async Task<IActionResult> DeleteTelephonyBinding(
         Guid officeId,
         string userId,
+        string provider,
         [FromServices] OrbitaApiClient api,
         CancellationToken ct = default)
     {
-        var (success, error) = await api.RemoveCrmTelephonyBindingAsync(officeId, userId, ct);
+        if (!CrmTelephonyProviders.IsSupported(provider)) return BadRequest();
+        provider = CrmTelephonyProviders.Normalize(provider);
+        var (success, error) = await api.RemoveCrmTelephonyBindingAsync(officeId, userId, ct, provider);
         TempData[success ? "SettingsStatus" : "SettingsError"] = success
-            ? "Привязка SIPOUT удалена."
+            ? "Привязка телефонии удалена."
             : error;
-        return RedirectToAction(nameof(Telephony), new { officeId });
+        return RedirectToAction(nameof(Telephony), new { officeId, provider });
     }
 
     [HttpGet]

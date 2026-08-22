@@ -74,6 +74,8 @@ builder.Services.AddAuthorization(options =>
 {
     options.AddPolicy(OrbitaRoles.Admin, policy =>
         policy.RequireClaim(PanelPermissions.ClaimType, PanelPermissions.Administration));
+    options.AddPolicy("OfficeStaff", policy =>
+        policy.RequireRole(PanelRoles.Admin, PanelRoles.OfficeLead));
     foreach (var permission in PanelPermissions.All)
     {
         options.AddPolicy(permission.Id, policy =>

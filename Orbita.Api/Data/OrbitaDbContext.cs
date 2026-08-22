@@ -345,6 +345,8 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
             entity.HasIndex(x => new { x.OfficeId, x.Provider }).IsUnique();
             entity.Property(x => x.Provider).HasMaxLength(32);
             entity.Property(x => x.SecretHash).HasMaxLength(128);
+            entity.Property(x => x.ProviderClientId).HasMaxLength(128);
+            entity.Property(x => x.ProviderAccessTokenProtected).HasMaxLength(8192);
             entity.HasOne<OfficeEntity>()
                 .WithMany()
                 .HasForeignKey(x => x.OfficeId)
@@ -358,6 +360,7 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
             entity.HasIndex(x => new { x.OfficeId, x.Provider, x.UserId }).IsUnique();
             entity.Property(x => x.Provider).HasMaxLength(32);
             entity.Property(x => x.ProviderUserKey).HasMaxLength(128);
+            entity.Property(x => x.OutboundProvider).HasMaxLength(32);
             entity.Property(x => x.UserId).HasMaxLength(128);
             entity.HasOne<OfficeEntity>()
                 .WithMany()
@@ -371,6 +374,7 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
             entity.HasIndex(x => new { x.OfficeId, x.Provider, x.ExternalCallId }).IsUnique();
             entity.HasIndex(x => new { x.CardId, x.StartedAtUtc });
             entity.HasIndex(x => new { x.OfficeId, x.ClientPhoneNormalized, x.StartedAtUtc });
+            entity.HasIndex(x => new { x.Provider, x.NextRecordingFetchAtUtc });
             entity.Property(x => x.Provider).HasMaxLength(32);
             entity.Property(x => x.ExternalCallId).HasMaxLength(128);
             entity.Property(x => x.Direction).HasMaxLength(32);
@@ -380,6 +384,9 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
             entity.Property(x => x.ProviderUserKey).HasMaxLength(128);
             entity.Property(x => x.ManagerUserId).HasMaxLength(128);
             entity.Property(x => x.RecordingUrl).HasMaxLength(2048);
+            entity.Property(x => x.RecordingStoragePath).HasMaxLength(512);
+            entity.Property(x => x.RecordingContentType).HasMaxLength(128);
+            entity.Property(x => x.RecordingFileName).HasMaxLength(256);
             entity.HasOne<OfficeEntity>()
                 .WithMany()
                 .HasForeignKey(x => x.OfficeId)

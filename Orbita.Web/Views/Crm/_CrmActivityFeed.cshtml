@@ -125,6 +125,12 @@
                 }
                 else if (item.Kind == "call")
                 {
+                    var storedRecordingUrl = item.CallRecordingStored && item.CallId is Guid callId
+                        ? Url.Action("CallRecording", "Crm", new { callId })
+                        : null;
+                    var recordingUrl = !string.IsNullOrWhiteSpace(storedRecordingUrl)
+                        ? storedRecordingUrl
+                        : item.CallRecordingUrl;
                     <div class="crm-feed-item__call-details">
                         @if (!string.IsNullOrWhiteSpace(item.CallClientPhone))
                         {
@@ -132,13 +138,13 @@
                         }
                         <span><small>Длительность</small>@(TimeSpan.FromSeconds(item.CallDurationSeconds ?? 0).ToString(@"mm\:ss"))</span>
                     </div>
-                    @if (!string.IsNullOrWhiteSpace(item.CallRecordingUrl))
+                    @if (!string.IsNullOrWhiteSpace(recordingUrl))
                     {
                         <audio class="crm-feed-item__call-player" controls preload="none">
-                            <source src="@item.CallRecordingUrl" />
+                            <source src="@recordingUrl" />
                             Ваш браузер не поддерживает прослушивание записи.
                         </audio>
-                        <a class="crm-feed-item__call-link" href="@item.CallRecordingUrl" target="_blank" rel="noopener noreferrer">
+                        <a class="crm-feed-item__call-link" href="@recordingUrl" target="_blank" rel="noopener noreferrer">
                             <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i>Открыть запись
                         </a>
                     }

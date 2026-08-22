@@ -23,6 +23,7 @@
     <ProjectReference Include="..\LeadFlow.Core\LeadFlow.Core.csproj" />
     <ProjectReference Include="..\Orbita.Api\Orbita.Api.csproj" />
     <ProjectReference Include="..\Orbita.Contracts\Orbita.Contracts.csproj" />
+    <ProjectReference Include="..\Orbita.TelephonyGateway\Orbita.TelephonyGateway.csproj" />
     <ProjectReference Include="..\Orbita.Web\Orbita.Web.csproj" />
   </ItemGroup>
 

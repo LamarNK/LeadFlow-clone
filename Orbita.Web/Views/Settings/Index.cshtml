@@ -167,12 +167,12 @@
                             <div class="settings-office-section-head">
                                 <div>
                                     <h3 class="settings-office-section-title">IP-телефония</h3>
-                                    <p class="settings-office-section-hint">Приём завершённых звонков и записей SIPOUT в ленту карточки кандидата.</p>
+                                    <p class="settings-office-section-hint">Общие линии офиса, внутренние номера сотрудников, исходящие звонки и записи разговоров.</p>
                                 </div>
                             </div>
                             <a class="settings-primary-btn settings-primary-btn--compact"
-                               href="@Url.Action("Telephony", "Settings", new { officeId = selected.Id })">
-                                Настроить SIPOUT
+                               href="@Url.Action("Telephony", "TelephonySettings", new { officeId = selected.Id })">
+                                Открыть телефонию
                             </a>
                         </section>
 

@@ -224,6 +224,17 @@ public sealed class CrmController(
         return View(card);
     }
 
+    [HttpGet]
+    [Authorize(Policy = PanelPermissions.CrmBoard)]
+    [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+    public async Task<IActionResult> WebRtcConfig(CancellationToken ct = default)
+    {
+        var config = await api.GetCrmTelephonyWebRtcConfigAsync(ct);
+        return config is null
+            ? NotFound(new { error = "Для текущего сотрудника браузерная телефония не настроена." })
+            : Json(config);
+    }
+
     [HttpGet("/Crm/Cards/{id:guid}/Avatar")]
     [Authorize(Policy = PanelPermissions.CrmBoard)]
     public async Task<IActionResult> Avatar(Guid id, CancellationToken ct = default)
@@ -1092,6 +1103,22 @@ public sealed class CrmController(
                 result.Stream,
                 result.ContentType ?? "application/octet-stream",
                 result.FileName ?? "Вложение");
+    }
+
+    [HttpGet]
+    [Authorize(Policy = PanelPermissions.CrmBoard)]
+    public async Task<IActionResult> CallRecording(Guid callId, CancellationToken ct = default)
+    {
+        var result = await api.OpenCrmCallRecordingAsync(callId, ct);
+        if (result.Stream is null)
+        {
+            return NotFound();
+        }
+
+        return new FileStreamResult(result.Stream, result.ContentType ?? "audio/wav")
+        {
+            EnableRangeProcessing = true
+        };
     }
 
     private Guid? ResolveOfficeId(Guid? officeId) =>

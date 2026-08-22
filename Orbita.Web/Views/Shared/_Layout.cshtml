@@ -9,6 +9,11 @@
     // A fragment is requested only by the in-app navigation script. Query parameters must
     // still render a complete document when they are opened directly in a browser.
     var contentOnly = Context.Request.Headers.ContainsKey("X-Orbita-Content-Only");
+    // Fast navigation keeps the outer shell (including the sidebar) alive between pages.
+    // The assembly MVID changes on every build and lets the client detect that the shell
+    // was rendered by an older deployment and must be refreshed as a complete document.
+    var shellVersion = typeof(Orbita.Web.Controllers.AccountController)
+        .Assembly.ManifestModule.ModuleVersionId.ToString("N");
 }
 @if (contentOnly)
 {
@@ -17,6 +22,7 @@
     <div class="orbita-page-meta"
          data-orbita-page-title="@((ViewData["Title"] as string ?? "") + " — Орбита")"
          data-orbita-controller="@(ViewContext.RouteData.Values["controller"]?.ToString() ?? "")"
+         data-orbita-shell-version="@shellVersion"
          style="display:none"></div>
     @if (PreviewOptions.Value.Enabled)
     {
@@ -65,7 +71,8 @@ else
     <link rel="stylesheet" href="~/css/orbita-mobile.css" asp-append-version="true" />
     @await RenderSectionAsync("Styles", required: false)
 </head>
-<body data-orbita-selected-office="@(OfficeContext.EffectiveOfficeId?.ToString("D") ?? "")">
+<body data-orbita-selected-office="@(OfficeContext.EffectiveOfficeId?.ToString("D") ?? "")"
+      data-orbita-shell-version="@shellVersion">
 <div class="orbita-app">
     <aside class="orbita-sidebar" id="orbitaPrimaryNavigation">
         <div class="orbita-sidebar-header">
@@ -134,6 +141,14 @@ else
             {
                 <a class="nav-item @(ctrl == "MySettings" ? "active" : "")" href="@Url.Action("Index", "MySettings")" title="Настройки"><i class="fa-solid fa-gear" aria-hidden="true"></i><span class="nav-item-label">Настройки</span></a>
             }
+            @* Старые браузерные сессии могут содержать актуальные разрешения, но не содержать
+               role claim. Для администратора ориентируемся на то же разрешение, по которому
+               показывается раздел «Администрирование»; роль руководителя оставляем отдельным
+               условием, поскольку у неё этого разрешения намеренно нет. *@
+            @if (can(PanelPermissions.Administration) || User.IsInRole(PanelRoles.OfficeLead))
+            {
+                <a class="nav-item @(ctrl == "TelephonySettings" ? "active" : "")" href="@Url.Action("Telephony", "TelephonySettings")" title="Телефония"><i class="fa-solid fa-phone-volume" aria-hidden="true"></i><span class="nav-item-label">Телефония</span></a>
+            }
             @if (can(PanelPermissions.Administration))
             {
                 <a class="nav-item @(ctrl == "Settings" ? "active" : "")" href="@Url.Action("Index", "Settings")" title="Администрирование"><i class="fa-solid fa-user-shield" aria-hidden="true"></i><span class="nav-item-label">Администрирование</span></a>
@@ -159,6 +174,28 @@ else
     </div>
     <div class="orbita-sidebar-backdrop" data-orbita-sidebar-backdrop hidden></div>
     <div class="orbita-toast-host" data-orbita-toast-host aria-live="polite" aria-atomic="true"></div>
+    <div class="orbita-softphone" data-orbita-softphone hidden>
+        <div class="orbita-softphone__backdrop"></div>
+        <section class="orbita-softphone__panel" role="dialog" aria-modal="true" aria-labelledby="orbitaSoftphoneTitle">
+            <div class="orbita-softphone__icon" aria-hidden="true"><i class="fa-solid fa-phone-volume"></i></div>
+            <div class="orbita-softphone__copy">
+                <span class="orbita-softphone__eyebrow">Звонок из Орбиты</span>
+                <h2 id="orbitaSoftphoneTitle" data-orbita-softphone-target>Подключение…</h2>
+                <p data-orbita-softphone-status aria-live="polite">Подготавливаем защищённую SIP-линию</p>
+            </div>
+            <div class="orbita-softphone__actions">
+                <button type="button" class="orbita-softphone__answer" data-orbita-softphone-answer hidden>
+                    <i class="fa-solid fa-phone" aria-hidden="true"></i>
+                    Ответить
+                </button>
+                <button type="button" class="orbita-softphone__hangup" data-orbita-softphone-hangup disabled>
+                    <i class="fa-solid fa-phone-slash" aria-hidden="true"></i>
+                    <span data-orbita-softphone-hangup-label>Завершить</span>
+                </button>
+            </div>
+        </section>
+    </div>
+    <audio data-orbita-softphone-audio autoplay playsinline hidden></audio>
     <div class="orbita-confirm" id="orbitaConfirmDialog" hidden>
         <div class="orbita-confirm__backdrop" data-orbita-confirm-cancel></div>
         <div class="orbita-confirm__dialog" role="alertdialog" aria-modal="true" aria-labelledby="orbitaConfirmTitle" aria-describedby="orbitaConfirmMessage">
@@ -248,6 +285,9 @@ else
 <script src="~/js/orbita-browser-frame.js" asp-append-version="true"></script>
 <script src="~/js/orbita-captcha-solver.js" asp-append-version="true"></script>
 <script src="~/js/orbita-search.js" asp-append-version="true"></script>
+<script src="~/lib/jssip/jssip.min.js" asp-append-version="true"></script>
+<script src="~/js/orbita-crm-softphone.js" asp-append-version="true"></script>
+<script src="~/js/orbita-telephony-settings.js" asp-append-version="true"></script>
 @await RenderSectionAsync("Scripts", required: false)
 </body>
 </html>

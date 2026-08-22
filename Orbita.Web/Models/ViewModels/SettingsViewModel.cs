@@ -27,17 +27,48 @@ public sealed class CrmTelephonyPageViewModel
     public Guid OfficeId { get; init; }
     public string OfficeName { get; init; } = string.Empty;
     public required CrmTelephonySettingsDto Settings { get; init; }
+    public IReadOnlyList<CrmTelephonyUserBindingDto> PhoneUsers { get; init; } = [];
     public IReadOnlyList<PanelUserDto> OfficeUsers { get; init; } = [];
-    public string? SipoutWebRequestUrl { get; init; }
+    public IReadOnlyList<CrmTelephonyProviderSummaryViewModel> ProviderSummaries { get; init; } = [];
+    public string Provider { get; init; } = CrmTelephonyProviders.Sipout;
+    public bool CanManage { get; init; }
+    public string? ProviderSetupUrl { get; init; }
+    public string? WebhookSecret { get; init; }
+    public string? WebhookSecretHeader { get; init; }
     public string? StatusMessage { get; init; }
     public string? ErrorMessage { get; init; }
 }
 
+public sealed record CrmTelephonyProviderSummaryViewModel(
+    string Provider,
+    string Name,
+    string Description,
+    string Icon,
+    bool IsConfigured,
+    bool IsEnabled,
+    int BoundUsersCount);
+
 public sealed class SaveCrmTelephonyBindingFormModel
 {
     public Guid OfficeId { get; set; }
+    public string Provider { get; set; } = CrmTelephonyProviders.Sipout;
     public string UserId { get; set; } = string.Empty;
     public string ProviderUserKey { get; set; } = string.Empty;
+    public string? OutboundProvider { get; set; }
+}
+
+public sealed class SaveSipProviderAccountFormModel
+{
+    public Guid OfficeId { get; set; }
+    public string Provider { get; set; } = CrmTelephonyProviders.Beeline;
+    public string Server { get; set; } = string.Empty;
+    public string? Domain { get; set; }
+    public int Port { get; set; } = 5060;
+    public string Transport { get; set; } = "udp";
+    public string SipLogin { get; set; } = string.Empty;
+    public string AuthorizationLogin { get; set; } = string.Empty;
+    public string? Password { get; set; }
+    public bool UseForOutbound { get; set; }
 }
 
 public sealed class SettingsTabViewModel
