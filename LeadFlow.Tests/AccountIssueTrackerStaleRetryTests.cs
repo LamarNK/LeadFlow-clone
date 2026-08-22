@@ -9,6 +9,37 @@ public sealed class AccountIssueTrackerStaleRetryTests
     private static readonly DateTime Now = new(2026, 7, 2, 12, 0, 0, DateTimeKind.Utc);
 
     [Fact]
+    public void RefreshAccountIssueMessage_CaptchaOnSubProfile_DoesNotLockAccount()
+    {
+        var account = new AvitoAccount
+        {
+            DisplayName = "Cabinet",
+            Status = AvitoAccountStatus.Authorized
+        };
+        var sub = new AvitoSubProfile { Id = "sp-1", Name = "Sub A" };
+        account.SetSubProfiles([sub]);
+        AccountIssueTracker.ApplySubProfileIssue(account, sub, AvitoSubProfileIssueKind.Captcha, "нужна проверка");
+
+        Assert.Equal(AvitoAccountStatus.Authorized, account.Status);
+        Assert.True(account.HasSubProfileIssues);
+    }
+
+    [Fact]
+    public void RefreshAccountIssueMessage_IpBlockOnSubProfile_LocksAccount()
+    {
+        var account = new AvitoAccount
+        {
+            DisplayName = "Cabinet",
+            Status = AvitoAccountStatus.Authorized
+        };
+        var sub = new AvitoSubProfile { Id = "sp-1", Name = "Sub A" };
+        account.SetSubProfiles([sub]);
+        AccountIssueTracker.ApplySubProfileIssue(account, sub, AvitoSubProfileIssueKind.IpBlock, "блок IP");
+
+        Assert.Equal(AvitoAccountStatus.RequiresManualAction, account.Status);
+    }
+
+    [Fact]
     public void TryClearStaleBlockingState_FreshCaptchaIssue_StaysBlocked()
     {
         var account = BuildCaptchaAccount(Now.AddHours(-2));

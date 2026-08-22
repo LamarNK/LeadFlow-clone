@@ -3,7 +3,7 @@ namespace LeadFlow.Core.Services.Avito;
 /// <summary>
 /// Avito показал капчу/firewall на странице во время автоматизации. Бросается из CDP-загрузчиков
 /// (<see cref="LeadFlow.Services.AdsPower.IAdsPowerAvitoAutomationService"/>) и из источников откликов;
-/// мониторинг ловит и переводит аккаунт в <c>RequiresManualAction</c>, чтобы не долбить сайт.
+/// мониторинг ловит: блок IP — <c>RequiresManualAction</c>, обычная капча — только текущий субпрофиль.
 /// </summary>
 public sealed class AvitoCaptchaDetectedException : Exception
 {

@@ -1,5 +1,6 @@
 using System.Text.Json;
 using LeadFlow.Core.Models;
+using LeadFlow.Core.Services;
 
 namespace LeadFlow.Core.Services.Avito;
 
@@ -107,9 +108,7 @@ public static class AvitoAutomationFailureFormatter
         };
 
     public static bool IsAccountBlockingIssue(string kind) =>
-        kind is AvitoSubProfileIssueKind.AuthRequired
-            or AvitoSubProfileIssueKind.Captcha
-            or AvitoSubProfileIssueKind.IpBlock;
+        MonitoringPassFailurePolicy.IsAccountBlockingIssueKind(kind);
 
     private static string FormatAttempts(IReadOnlyList<string>? recoveryAttempts) =>
         recoveryAttempts is { Count: > 0 }

@@ -862,8 +862,12 @@ public sealed class MonitoringService(
         AvitoCaptchaDetectedException captchaEx,
         CancellationToken ct)
     {
-        account.Status = AvitoAccountStatus.RequiresManualAction;
         var issueKind = AvitoSubProfileIssueKind.FromCaptchaKind(captchaEx.Kind);
+        if (MonitoringPassFailurePolicy.AccountStatusForIssueKind(issueKind) is { } blockingStatus)
+        {
+            account.Status = blockingStatus;
+        }
+
         var detail = issueKind == AvitoSubProfileIssueKind.IpBlock
             ? "Avito ограничил доступ из-за IP. Откройте браузер и дождитесь разблокировки или смените IP."
             : $"Avito показал капчу ({captchaEx.Kind}). Откройте браузер и пройдите проверку.";
@@ -900,7 +904,11 @@ public sealed class MonitoringService(
                 DeskLinkAuditLogLevel.Error);
         }
 
-        UpdateStatus(MonitoringStatus.RequiresManualAction, account.LastErrorMessage);
+        UpdateStatus(
+            issueKind == AvitoSubProfileIssueKind.IpBlock
+                ? MonitoringStatus.RequiresManualAction
+                : MonitoringStatus.Running,
+            account.LastErrorMessage);
 
         _ = GlobalLogger.Instance.LogAsync(
             $"Avito {(issueKind == AvitoSubProfileIssueKind.IpBlock ? "IP block" : "captcha")} detected for account {account.DisplayName} (kind={captchaEx.Kind}, url={captchaEx.Url ?? "<unknown>"}).",
@@ -1013,7 +1021,6 @@ public sealed class MonitoringService(
         AdsPowerProxyFailureException proxyEx,
         CancellationToken ct)
     {
-        account.Status = AvitoAccountStatus.RequiresManualAction;
         account.LastErrorMessage = AccountIssueFormatting.FormatIssue(
             account,
             null,
@@ -1038,7 +1045,7 @@ public sealed class MonitoringService(
                 DeskLinkAuditLogLevel.Error);
         }
 
-        UpdateStatus(MonitoringStatus.RequiresManualAction, account.LastErrorMessage);
+        UpdateStatus(MonitoringStatus.Running, account.LastErrorMessage);
 
         _ = GlobalLogger.Instance.LogAsync(
             $"AdsPower proxy failure for account {account.DisplayName}: {proxyEx.Message}",

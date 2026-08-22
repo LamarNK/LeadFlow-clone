@@ -1312,6 +1312,7 @@ public sealed class WorkerMonitoringService(
             ProfileResult? statsAggregate = collectStats
                 ? new ProfileResult { ParseSuccess = false, PageLoadedSuccessfully = true, ActiveTabCounterResolved = true }
                 : null;
+            var consecutiveCaptchaFails = 0;
 
             for (var i = 0; i < subProfiles.Count; i++)
             {
@@ -1474,6 +1475,7 @@ public sealed class WorkerMonitoringService(
                         captcha.Seen,
                         captcha.Solved);
                     subProfilesProcessed++;
+                    consecutiveCaptchaFails = 0;
 
                     if (collectStats && statsAggregate is not null)
                     {
@@ -1496,21 +1498,38 @@ public sealed class WorkerMonitoringService(
                         }
                     }
                 }
-                catch (AvitoCaptchaDetectedException)
+                catch (AvitoCaptchaDetectedException captchaEx)
                 {
                     var captcha = TakeCaptchaSnapshot(captchaCounters, unsolvedFallback: true);
+                    var issueKind = AvitoSubProfileIssueKind.FromCaptchaKind(captchaEx.Kind);
                     _cycleJournal.FailSubProfile(
                         cycleId,
                         subRunId,
-                        "captcha",
-                        "капча",
+                        issueKind == AvitoSubProfileIssueKind.IpBlock ? "ip-block" : "captcha",
+                        issueKind == AvitoSubProfileIssueKind.IpBlock ? "блок IP" : "капча",
                         subFoundCount,
                         subPublishedCount,
                         subCollectedCount,
                         captcha.Seen,
                         captcha.Solved);
-                    aborted = true;
-                    throw;
+                    consecutiveCaptchaFails++;
+                    await HandleCaptchaForAccountAsync(
+                            account,
+                            new AvitoCaptchaDetectedException(
+                                captchaEx.Kind,
+                                captchaEx.Url,
+                                captchaEx.HtmlPreview,
+                                captchaEx.ScreenshotPng,
+                                sub.Id,
+                                sub.Name),
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                    if (issueKind == AvitoSubProfileIssueKind.IpBlock
+                        || MonitoringPassFailurePolicy.ShouldStopRemainingAfterCaptcha(consecutiveCaptchaFails))
+                    {
+                        aborted = true;
+                        break;
+                    }
                 }
                 catch (AvitoLoginRequiredException loginEx)
                 {
@@ -1526,12 +1545,35 @@ public sealed class WorkerMonitoringService(
                         captcha.Seen,
                         captcha.Solved);
                     aborted = true;
-                    throw new AvitoLoginRequiredException(
-                        loginEx.Url,
-                        loginEx.Title,
-                        loginEx.ScreenshotPng,
-                        sub.Id,
-                        sub.Name);
+                    await HandleLoginRequiredForAccountAsync(
+                            account,
+                            new AvitoLoginRequiredException(
+                                loginEx.Url,
+                                loginEx.Title,
+                                loginEx.ScreenshotPng,
+                                sub.Id,
+                                sub.Name),
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                    break;
+                }
+                catch (AdsPowerProxyFailureException proxyEx)
+                {
+                    var captcha = TakeCaptchaSnapshot(captchaCounters);
+                    _cycleJournal.FailSubProfile(
+                        cycleId,
+                        subRunId,
+                        "proxy",
+                        proxyEx.UserMessage,
+                        subFoundCount,
+                        subPublishedCount,
+                        subCollectedCount,
+                        captcha.Seen,
+                        captcha.Solved);
+                    aborted = true;
+                    await HandleAdsPowerProxyFailureForAccountAsync(account, proxyEx, cancellationToken)
+                        .ConfigureAwait(false);
+                    break;
                 }
                 catch (Exception ex) when (ShouldHandleAsSubProfileAutomationFailure(ex))
                 {
@@ -2169,9 +2211,17 @@ public sealed class WorkerMonitoringService(
         AvitoCaptchaDetectedException captchaEx,
         CancellationToken ct)
     {
-        account.Status = AvitoAccountStatus.RequiresManualAction;
         var sub = FindSubProfile(account, captchaEx.SubProfileId);
         var issueKind = AvitoSubProfileIssueKind.FromCaptchaKind(captchaEx.Kind);
+        if (MonitoringPassFailurePolicy.AccountStatusForIssueKind(issueKind) is { } blockingStatus)
+        {
+            account.Status = blockingStatus;
+        }
+        else if (account.Status == AvitoAccountStatus.Monitoring)
+        {
+            account.Status = AvitoAccountStatus.Authorized;
+        }
+
         account.LastErrorMessage = sub is not null
             ? AccountIssueFormatting.FormatIssue(
                 account,
@@ -2183,6 +2233,17 @@ public sealed class WorkerMonitoringService(
             : issueKind == AvitoSubProfileIssueKind.IpBlock
                 ? $"Avito ограничил доступ из-за IP ({captchaEx.Kind}). Откройте браузер и дождитесь разблокировки или смените IP."
                 : $"Avito показал капчу ({captchaEx.Kind}). Откройте браузер и пройдите проверку.";
+        if (sub is not null)
+        {
+            AccountIssueTracker.ApplySubProfileIssue(
+                account,
+                sub,
+                issueKind,
+                issueKind == AvitoSubProfileIssueKind.IpBlock
+                    ? "доступ ограничен: проблема с IP. Откройте браузер AdsPower и дождитесь разблокировки или смените IP."
+                    : "нужна проверка на странице откликов.");
+        }
+
         await repository.SaveAccountAsync(account, ct).ConfigureAwait(false);
 
         var diagnostic = await WorkerDiagnosticEventDetailsBuilder.BuildAsync(
@@ -2312,7 +2373,6 @@ public sealed class WorkerMonitoringService(
         AdsPowerProxyFailureException proxyEx,
         CancellationToken ct)
     {
-        account.Status = AvitoAccountStatus.RequiresManualAction;
         account.LastErrorMessage = AccountIssueFormatting.FormatIssue(
             account,
             null,
