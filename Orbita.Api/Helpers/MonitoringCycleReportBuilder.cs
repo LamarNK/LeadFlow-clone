@@ -117,11 +117,14 @@ internal static partial class MonitoringCycleReportBuilder
         DateTime endLocal,
         IReadOnlySet<string>? allowedAccountNames = null,
         IReadOnlyList<MonitoringCycleSentResponse>? sentResponses = null,
-        IReadOnlyDictionary<string, IReadOnlyList<MonitoringAccountSubProfileCatalogEntry>>? accountCatalog = null)
+        IReadOnlyDictionary<string, IReadOnlyList<MonitoringAccountSubProfileCatalogEntry>>? accountCatalog = null,
+        IReadOnlyDictionary<string, string?>? accountLastErrors = null)
     {
         const bool isDetailed = true;
         var catalog = accountCatalog
             ?? new Dictionary<string, IReadOnlyList<MonitoringAccountSubProfileCatalogEntry>>(StringComparer.OrdinalIgnoreCase);
+        var lastErrors = accountLastErrors
+            ?? new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase);
         var filteredCycles = cycles
             .Where(c => allowedAccountNames is null || allowedAccountNames.Contains(c.AccountName))
             .Where(c =>
@@ -194,6 +197,11 @@ internal static partial class MonitoringCycleReportBuilder
                     var runsByRow = new Dictionary<int, MonitoringSubProfileRunSnapshot>();
                     foreach (var sp in cycle.SubProfiles.OrderBy(x => x.StartedAtUtc))
                     {
+                        if (IsCycleLevelRun(sp))
+                        {
+                            continue;
+                        }
+
                         var rowPos = MatchRunToRowPosition(sp, rowsMeta);
                         if (rowPos is null)
                         {
@@ -210,11 +218,9 @@ internal static partial class MonitoringCycleReportBuilder
                         {
                             posTimes[position].Add(null);
                             posResponses[position].Add(null);
-                            // A subprofile is "not started" only when the last interrupted
-                            // cycle never reached it. A failed run still counts as started.
-                            if (cycleInterrupted
-                                && !posHadRun[position]
-                                && runsByRow.Count > 0)
+                            // A subprofile is "not started" when the last interrupted cycle
+                            // never reached it — including cycles that died before any sub.
+                            if (cycleInterrupted && !posHadRun[position])
                             {
                                 posExplicitNotStarted.Add(position);
                             }
@@ -317,6 +323,7 @@ internal static partial class MonitoringCycleReportBuilder
                     leadParts));
                 reportCaptcha += accountCaptcha;
                 reportCaptchaSolved += accountCaptchaSolved;
+                lastErrors.TryGetValue(accountName, out var accountError);
 
                 var tableRows = posToName.Keys
                     .OrderBy(x => x)
@@ -339,7 +346,12 @@ internal static partial class MonitoringCycleReportBuilder
                             .Select(g => g.First())
                             .OrderBy(p => p.TimestampUtc)
                             .ToList();
-                        var skipInfo = InferNotStarted(accountCycles, position, rowsMeta, posHadRun[position]);
+                        var skipInfo = InferNotStarted(
+                            accountCycles,
+                            position,
+                            rowsMeta,
+                            posHadRun[position],
+                            accountError);
                         return new MonitoringCycleSubProfileRowDto(
                             position,
                             totalPositions,
@@ -754,6 +766,11 @@ internal static partial class MonitoringCycleReportBuilder
         {
             foreach (var sp in cycle.SubProfiles.OrderBy(x => x.Position).ThenBy(x => x.StartedAtUtc))
             {
+                if (IsCycleLevelRun(sp))
+                {
+                    continue;
+                }
+
                 var id = sp.SubProfileId?.Trim() ?? string.Empty;
                 var name = string.IsNullOrWhiteSpace(sp.SubProfileName) ? "—" : sp.SubProfileName.Trim();
                 if ((!string.IsNullOrWhiteSpace(id) && usedIds.Contains(id))
@@ -969,7 +986,8 @@ internal static partial class MonitoringCycleReportBuilder
         IReadOnlyList<MonitoringCycleRunSnapshot> accountCycles,
         int position,
         IReadOnlyList<AccountDayRow> rowsMeta,
-        bool wasStarted)
+        bool wasStarted,
+        string? accountLastError = null)
     {
         if (wasStarted)
         {
@@ -979,13 +997,9 @@ internal static partial class MonitoringCycleReportBuilder
         MonitoringCycleRunSnapshot? lastMiss = null;
         foreach (var cycle in accountCycles)
         {
-            if (cycle.SubProfiles.Count == 0)
-            {
-                continue;
-            }
-
             var reached = cycle.SubProfiles.Any(sp =>
-                sp.Outcome != MonitoringSubProfileRunOutcomes.Skipped
+                !IsCycleLevelRun(sp)
+                && sp.Outcome != MonitoringSubProfileRunOutcomes.Skipped
                 && MatchRunToRowPosition(sp, rowsMeta) == position);
             if (!reached)
             {
@@ -999,6 +1013,12 @@ internal static partial class MonitoringCycleReportBuilder
         }
 
         var at = CycleStopTimestamp(lastMiss);
+        var diedBeforeQueue = !lastMiss.SubProfiles.Any(sp => !IsCycleLevelRun(sp));
+        if (diedBeforeQueue)
+        {
+            return new NotStartedInfo(DescribeEmptyCycleStop(lastMiss, accountLastError), at);
+        }
+
         var interrupted = lastMiss.Status is MonitoringCycleRunStatuses.Aborted
             or MonitoringCycleRunStatuses.Failed
             or MonitoringCycleRunStatuses.Running;
@@ -1008,6 +1028,62 @@ internal static partial class MonitoringCycleReportBuilder
         }
 
         return new NotStartedInfo("не попал в проходы за день", at);
+    }
+
+    private static bool IsCycleLevelRun(MonitoringSubProfileRunSnapshot run) =>
+        string.IsNullOrWhiteSpace(run.SubProfileId)
+        && (string.IsNullOrWhiteSpace(run.SubProfileName) || run.SubProfileName.Trim() == "—");
+
+    private static string DescribeEmptyCycleStop(MonitoringCycleRunSnapshot cycle, string? accountLastError)
+    {
+        var fromRun = cycle.SubProfiles
+            .Where(IsCycleLevelRun)
+            .Select(sp => HumanizeCycleStartError(sp.ErrorMessage ?? sp.ErrorType))
+            .FirstOrDefault(text => !string.IsNullOrWhiteSpace(text));
+        if (!string.IsNullOrWhiteSpace(fromRun))
+        {
+            return fromRun!;
+        }
+
+        var fromAccount = HumanizeCycleStartError(accountLastError);
+        if (!string.IsNullOrWhiteSpace(fromAccount)
+            && cycle.Status is MonitoringCycleRunStatuses.Aborted
+                or MonitoringCycleRunStatuses.Failed
+                or MonitoringCycleRunStatuses.Running)
+        {
+            return fromAccount;
+        }
+
+        return cycle.Status switch
+        {
+            MonitoringCycleRunStatuses.Running => "браузер не открылся — цикл завис",
+            MonitoringCycleRunStatuses.Failed => "ошибка до первого субпрофиля",
+            _ => "цикл прерван до первого субпрофиля"
+        };
+    }
+
+    private static string? HumanizeCycleStartError(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return null;
+        }
+
+        if (raw.Contains("Session closed", StringComparison.OrdinalIgnoreCase)
+            || raw.Contains("Page has been closed", StringComparison.OrdinalIgnoreCase)
+            || raw.Contains("Target.detachedFromTarget", StringComparison.OrdinalIgnoreCase))
+        {
+            return "браузер закрыл страницу";
+        }
+
+        if (raw.Contains("profile is in use", StringComparison.OrdinalIgnoreCase)
+            || raw.Contains("Profile is in use", StringComparison.OrdinalIgnoreCase)
+            || raw.Contains("уже запущен", StringComparison.OrdinalIgnoreCase))
+        {
+            return "профиль AdsPower уже занят";
+        }
+
+        return TrimDetail(raw);
     }
 
     private static string DescribeCycleStop(MonitoringCycleRunSnapshot cycle)

@@ -102,7 +102,9 @@ public sealed class OfficeStatisticsQueryService(
                 a.IsEnabledInPanel,
                 a.TotalBalance,
                 a.SubProfilesJson,
-                a.SubProfilesDisabledIdsJson))
+                a.SubProfilesDisabledIdsJson,
+                a.LastErrorMessage,
+                a.LastMonitoringAt))
             .ToListAsync(ct);
 
         if (accountFilterSet is not null)
@@ -284,6 +286,7 @@ public sealed class OfficeStatisticsQueryService(
         if (journalCycles.Count > 0)
         {
             var accountCatalog = BuildMonitoringAccountCatalog(accountRows);
+            var accountLastErrors = BuildMonitoringAccountLastErrors(accountRows);
             var collected = await LoadMonitoringCollectedResponsesAsync(
                 workerIds,
                 utcStart,
@@ -296,7 +299,8 @@ public sealed class OfficeStatisticsQueryService(
                 endLocal,
                 allowedAccountNames,
                 collected,
-                accountCatalog);
+                accountCatalog,
+                accountLastErrors);
         }
 
         // Monitoring activity is recorded only by the typed journal. File logs are
@@ -1053,6 +1057,31 @@ public sealed class OfficeStatisticsQueryService(
         return map;
     }
 
+    private static IReadOnlyDictionary<string, string?> BuildMonitoringAccountLastErrors(
+        IReadOnlyList<AccountProjection> accountRows)
+    {
+        var map = new Dictionary<string, (DateTime? At, string? Error)>(StringComparer.OrdinalIgnoreCase);
+        foreach (var account in accountRows)
+        {
+            var name = account.DisplayName.Trim();
+            if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(account.LastErrorMessage))
+            {
+                continue;
+            }
+
+            if (!map.TryGetValue(name, out var existing)
+                || (account.LastMonitoringAt is DateTime at && (existing.At is null || at > existing.At)))
+            {
+                map[name] = (account.LastMonitoringAt, account.LastErrorMessage);
+            }
+        }
+
+        return map.ToDictionary(
+            kv => kv.Key,
+            kv => kv.Value.Error,
+            StringComparer.OrdinalIgnoreCase);
+    }
+
     private sealed record AccountProjection(
         Guid WorkerId,
         Guid AccountId,
@@ -1061,7 +1090,9 @@ public sealed class OfficeStatisticsQueryService(
         bool IsEnabledInPanel,
         decimal TotalBalance,
         string SubProfilesJson,
-        string SubProfilesDisabledIdsJson);
+        string SubProfilesDisabledIdsJson,
+        string? LastErrorMessage = null,
+        DateTime? LastMonitoringAt = null);
 
     private sealed class DailyCounters
     {
