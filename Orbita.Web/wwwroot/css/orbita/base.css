@@ -700,6 +700,7 @@ html.sidebar-collapsed .logout-form {
     color: #344054;
     font-size: 13px;
     font-family: inherit;
+    cursor: pointer;
 }
 
 .orbita-period-input:focus {
@@ -793,4 +794,3 @@ html.sidebar-collapsed .logout-form {
     background: var(--bg-card);
     border-color: var(--border);
 }
-

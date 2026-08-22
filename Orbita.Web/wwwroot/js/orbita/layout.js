@@ -60,6 +60,48 @@
             var toInput = menu.querySelector('[data-period-to]');
             if (!trigger || !dropdown) return;
 
+            // Keep the period popover open while its controls are used. Without
+            // this, the document-level click handler closes it as soon as the
+            // user clicks the date text (the native calendar icon happens to
+            // mask the problem in some browsers).
+            dropdown.addEventListener('click', function (e) {
+                e.stopPropagation();
+            });
+
+            function bindDateInput(input) {
+                if (!input) return;
+                var dispatchingFallbackClick = false;
+
+                input.addEventListener('click', function (e) {
+                    e.stopPropagation();
+
+                    // Chrome on Windows normally opens the picker only from its
+                    // calendar glyph, while Safari may not render that glyph at
+                    // all. showPicker() makes the whole date field the trigger.
+                    if (typeof input.showPicker === 'function') {
+                        try {
+                            input.showPicker();
+                        } catch (_) {
+                            // Preserve the browser's native input behaviour when
+                            // a picker cannot be opened programmatically.
+                        }
+                        return;
+                    }
+
+                    // Older WebKit versions have no showPicker(), but do open a
+                    // date control from its programmatic activation. Guard the
+                    // synthetic click so it cannot recurse through this handler.
+                    if (e.isTrusted && !dispatchingFallbackClick) {
+                        dispatchingFallbackClick = true;
+                        input.click();
+                        dispatchingFallbackClick = false;
+                    }
+                });
+            }
+
+            bindDateInput(fromInput);
+            bindDateInput(toInput);
+
             trigger.addEventListener('click', function (e) {
                 e.stopPropagation();
                 var open = dropdown.hasAttribute('hidden');
