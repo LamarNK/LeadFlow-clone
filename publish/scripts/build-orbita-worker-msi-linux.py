@@ -80,7 +80,7 @@ def generate(publish_dir: Path, output: Path, version: str) -> None:
         '  <Product Id="*" Name="Orbita Worker" Language="1049"',
         f'           Version="{xml(version)}" Manufacturer="Orbita" UpgradeCode="{UPGRADE_CODE}">',
         '    <Package InstallerVersion="200" Compressed="yes" InstallScope="perUser" />',
-        '    <MajorUpgrade AllowSameVersionUpgrades="yes" Schedule="afterInstallInitialize"',
+        '    <MajorUpgrade AllowSameVersionUpgrades="yes"',
         '                  DowngradeErrorMessage="A newer version of Orbita Worker is already installed." />',
         '    <MediaTemplate EmbedCab="yes" />',
         '    <Directory Id="TARGETDIR" Name="SourceDir">',
@@ -97,18 +97,25 @@ def generate(publish_dir: Path, output: Path, version: str) -> None:
     ])
 
     component_ids: list[str] = []
+    worker_executable_id: str | None = None
     for index, file in enumerate(files, start=1):
         relative = file.relative_to(publish_dir)
         component_id = f"FileComponent_{index}"
+        file_id = f"File_{index}"
         component_ids.append(component_id)
+        if relative.as_posix().lower() == "orbita.worker.exe":
+            worker_executable_id = file_id
         parent_id = directory_id(relative.parent)
         lines.extend([
             f'    <DirectoryRef Id="{parent_id}">',
             f'      <Component Id="{component_id}" Guid="{component_guid(version, relative.as_posix())}">',
-            f'        <File Id="File_{index}" Source="{xml(str(file.resolve()))}" KeyPath="yes" />',
+            f'        <File Id="{file_id}" Source="{xml(str(file.resolve()))}" KeyPath="yes" />',
             '      </Component>',
             '    </DirectoryRef>',
         ])
+
+    if worker_executable_id is None:
+        raise RuntimeError("Orbita.Worker.exe is missing from the publish directory")
 
     lines.extend([
         '    <DirectoryRef Id="INSTALLFOLDER">',
@@ -143,19 +150,15 @@ def generate(publish_dir: Path, output: Path, version: str) -> None:
         '    <CustomAction Id="StopWorkerBeforeUpgrade" Property="StopWorkerCommand"',
         '                  ExeCommand="/d /c taskkill /IM Orbita.Worker.exe /T &gt;nul 2&gt;&amp;1"',
         '                  Execute="immediate" Return="ignore" Impersonate="yes" />',
-        '    <CustomAction Id="SetLaunchWorkerCommand" Property="LaunchWorkerCommand"',
-        '                  Value="[SystemFolder]cmd.exe" Execute="immediate" />',
-        '    <CustomAction Id="LaunchWorkerAfterInstall" Property="LaunchWorkerCommand"',
-        '                  ExeCommand="/d /c start &quot;&quot; /D &quot;[INSTALLFOLDER]&quot; &quot;[INSTALLFOLDER]Orbita.Worker.exe&quot; --update-restart" Execute="immediate"',
+        f'    <CustomAction Id="LaunchWorkerAfterInstall" FileKey="{worker_executable_id}"',
+        '                  ExeCommand="" Execute="immediate"',
         '                  Return="asyncNoWait" Impersonate="yes" />',
         '    <InstallExecuteSequence>',
+        '      <RemoveExistingProducts Before="InstallInitialize" />',
         '      <Custom Action="SetStopWorkerCommand" Before="StopWorkerBeforeUpgrade">',
         '        NOT REMOVE~=&quot;ALL&quot;',
         '      </Custom>',
-        '      <Custom Action="StopWorkerBeforeUpgrade" Before="InstallFiles">',
-        '        NOT REMOVE~=&quot;ALL&quot;',
-        '      </Custom>',
-        '      <Custom Action="SetLaunchWorkerCommand" Before="LaunchWorkerAfterInstall">',
+        '      <Custom Action="StopWorkerBeforeUpgrade" Before="RemoveExistingProducts">',
         '        NOT REMOVE~=&quot;ALL&quot;',
         '      </Custom>',
         '      <Custom Action="LaunchWorkerAfterInstall" After="InstallFinalize">',

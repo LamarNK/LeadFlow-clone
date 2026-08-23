@@ -88,24 +88,23 @@ if ! msiinfo export "$msi_path" CustomAction | grep '^SetStopWorkerCommand' | gr
   echo "MSI does not resolve the command interpreter for StopWorkerBeforeUpgrade." >&2
   exit 1
 fi
-if ! msiinfo export "$msi_path" InstallExecuteSequence | grep '^StopWorkerBeforeUpgrade' | grep -Fq 'NOT REMOVE~="ALL"'; then
-  echo "MSI does not stop Orbita Worker before replacing its files." >&2
+if ! msiinfo export "$msi_path" InstallExecuteSequence | awk -F '\t' '$1 == "StopWorkerBeforeUpgrade" { print $3; exit }' | grep -Eq '^[0-9]+$'; then
+  echo "MSI does not schedule StopWorkerBeforeUpgrade." >&2
   exit 1
 fi
-if ! msiinfo export "$msi_path" CustomAction | grep '^LaunchWorkerAfterInstall' | grep -Fq 'start "" /D "[INSTALLFOLDER]"'; then
-  echo "MSI does not start Orbita Worker from its installation folder." >&2
+stop_worker_sequence="$(msiinfo export "$msi_path" InstallExecuteSequence | awk -F '\t' '$1 == "StopWorkerBeforeUpgrade" { print $3; exit }')"
+if [[ ! "$stop_worker_sequence" =~ ^[0-9]+$ ]] || (( stop_worker_sequence >= remove_existing_sequence )); then
+  echo "MSI must stop Orbita Worker before removing the previous release." >&2
   exit 1
 fi
-if ! msiinfo export "$msi_path" CustomAction | grep '^SetLaunchWorkerCommand' | grep -Fq '[SystemFolder]cmd.exe'; then
-  echo "MSI does not resolve the command interpreter for LaunchWorkerAfterInstall." >&2
+if ! msiinfo export "$msi_path" CustomAction | awk -F '\t' '$1 == "LaunchWorkerAfterInstall" && $2 == "210" && $3 ~ /^File_/ { found = 1 } END { exit !found }'; then
+  echo "MSI does not launch Orbita Worker using its installed FileKey." >&2
   exit 1
 fi
-if ! msiinfo export "$msi_path" InstallExecuteSequence | grep -q '^LaunchWorkerAfterInstall'; then
-  echo "MSI does not schedule LaunchWorkerAfterInstall after installation." >&2
-  exit 1
-fi
-if ! msiinfo export "$msi_path" InstallExecuteSequence | grep '^LaunchWorkerAfterInstall' | grep -Fq 'NOT REMOVE~="ALL"'; then
-  echo "MSI does not launch Orbita Worker after an upgrade." >&2
+launch_worker_sequence="$(msiinfo export "$msi_path" InstallExecuteSequence | awk -F '\t' '$1 == "LaunchWorkerAfterInstall" { print $3; exit }')"
+install_finalize_sequence="$(msiinfo export "$msi_path" InstallExecuteSequence | awk -F '\t' '$1 == "InstallFinalize" { print $3; exit }')"
+if [[ ! "$launch_worker_sequence" =~ ^[0-9]+$ ]] || [[ ! "$install_finalize_sequence" =~ ^[0-9]+$ ]] || (( launch_worker_sequence <= install_finalize_sequence )); then
+  echo "MSI must launch Orbita Worker after InstallFinalize." >&2
   exit 1
 fi
 
