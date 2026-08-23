@@ -70,6 +70,14 @@ if ! msiinfo tables "$msi_path" | grep -qx 'File'; then
   echo "wixl did not produce a valid MSI database: $msi_path" >&2
   exit 1
 fi
+if ! msiinfo export "$msi_path" CustomAction | grep -q '^LaunchWorkerAfterInstall'; then
+  echo "MSI does not contain the required LaunchWorkerAfterInstall action." >&2
+  exit 1
+fi
+if ! msiinfo export "$msi_path" InstallExecuteSequence | grep -q '^LaunchWorkerAfterInstall'; then
+  echo "MSI does not schedule LaunchWorkerAfterInstall after installation." >&2
+  exit 1
+fi
 
 sha256="$(sha256sum "$msi_path" | awk '{print $1}')"
 python3 - "$manifest_path" "$version" "$msi_path" "$sha256" <<'PY'
