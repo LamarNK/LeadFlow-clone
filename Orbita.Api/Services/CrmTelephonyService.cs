@@ -620,7 +620,7 @@ public sealed class CrmTelephonyService(
         return true;
     }
 
-    public async Task<(CrmAsteriskWebRtcEndpoint? Endpoint, string? Error)> GetWebRtcEndpointAsync(
+    public async Task<(CrmAsteriskWebRtcEndpoint? Endpoint, string? Error)> GetOrProvisionWebRtcEndpointAsync(
         Guid officeId,
         string userId,
         CancellationToken ct = default)
@@ -644,8 +644,8 @@ public sealed class CrmTelephonyService(
         {
             binding.UpdatedAtUtc = timeProvider.GetUtcNow().UtcDateTime;
             await db.SaveChangesAsync(ct);
+            await PublishWebRtcEndpointsAsync(officeId, ct);
         }
-        await PublishWebRtcEndpointsAsync(officeId, ct);
         return (endpoint, null);
     }
 

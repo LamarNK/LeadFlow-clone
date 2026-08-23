@@ -371,6 +371,10 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
         {
             entity.HasKey(x => x.Id);
             entity.HasIndex(x => new { x.OfficeId, x.Provider, x.ProviderUserKey }).IsUnique();
+            entity.HasIndex(x => new { x.Provider, x.ProviderUserKey })
+                .HasDatabaseName("IX_CrmTelephonyUserBindings_Asterisk_ProviderUserKey")
+                .HasFilter($"\"{nameof(CrmTelephonyUserBindingEntity.Provider)}\" = '{CrmTelephonyProviders.Asterisk}'")
+                .IsUnique();
             entity.HasIndex(x => new { x.OfficeId, x.Provider, x.UserId }).IsUnique();
             entity.Property(x => x.Provider).HasMaxLength(32);
             entity.Property(x => x.ProviderUserKey).HasMaxLength(128);

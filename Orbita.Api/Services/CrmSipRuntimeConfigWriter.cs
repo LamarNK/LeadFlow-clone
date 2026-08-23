@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Text;
 using Microsoft.Extensions.Options;
 using Orbita.Api.Options;
@@ -29,6 +30,8 @@ public sealed record CrmAsteriskWebRtcEndpoint(
 public sealed class CrmSipRuntimeConfigWriter(IOptions<CrmSipRuntimeOptions> configuredOptions)
 {
     private readonly CrmSipRuntimeOptions _options = configuredOptions.Value;
+    private readonly ConcurrentDictionary<string, SemaphoreSlim> _writeLocks =
+        new(StringComparer.Ordinal);
 
     public bool IsAvailable => !string.IsNullOrWhiteSpace(_options.ConfigPath);
 
@@ -330,10 +333,35 @@ public sealed class CrmSipRuntimeConfigWriter(IOptions<CrmSipRuntimeOptions> con
     private static bool ContainsAsteriskControlCharacter(string value) =>
         value.IndexOfAny(['\r', '\n', ';', '[', ']']) >= 0;
 
-    private static async Task WriteAtomicallyAsync(string path, string content, CancellationToken ct)
+    private async Task WriteAtomicallyAsync(string path, string content, CancellationToken ct)
     {
-        var tempPath = path + ".tmp";
-        await File.WriteAllTextAsync(tempPath, content, new UTF8Encoding(false), ct);
-        File.Move(tempPath, path, true);
+        var directory = Path.GetDirectoryName(path);
+        if (string.IsNullOrWhiteSpace(directory))
+        {
+            throw new InvalidOperationException("The runtime configuration path must include a directory.");
+        }
+
+        Directory.CreateDirectory(directory);
+        var writeLock = _writeLocks.GetOrAdd(path, _ => new SemaphoreSlim(1, 1));
+        await writeLock.WaitAsync(ct);
+        var tempPath = Path.Combine(
+            directory,
+            $".{Path.GetFileName(path)}.{Guid.NewGuid():N}.tmp");
+        try
+        {
+            await File.WriteAllTextAsync(tempPath, content, new UTF8Encoding(false), ct);
+            File.Move(tempPath, path, true);
+        }
+        finally
+        {
+            try
+            {
+                File.Delete(tempPath);
+            }
+            finally
+            {
+                writeLock.Release();
+            }
+        }
     }
 }

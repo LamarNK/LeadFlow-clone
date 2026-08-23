@@ -8,6 +8,8 @@ $ErrorActionPreference = "Stop"
 $items = @(
     [pscustomobject]@{ Type = "all"; Value = "all"; Label = "Publish all server targets" },
     [pscustomobject]@{ Type = "target"; Value = "orbita-api"; Label = "Orbita API" },
+    [pscustomobject]@{ Type = "target"; Value = "orbita-telephony-gateway"; Label = "Orbita Telephony gateway" },
+    [pscustomobject]@{ Type = "target"; Value = "orbita-asterisk"; Label = "Orbita Asterisk" },
     [pscustomobject]@{ Type = "target"; Value = "orbita-web"; Label = "Orbita Web" },
     [pscustomobject]@{ Type = "target"; Value = "notifybot"; Label = "NotifyBot" },
     [pscustomobject]@{ Type = "target"; Value = "config"; Label = "Server config (compose + Caddy)" },

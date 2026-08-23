@@ -6,7 +6,8 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY deploy/control-panel/telephony/asterisk /opt/orbita-asterisk
-RUN bash -n /opt/orbita-asterisk/*.sh \
+RUN sed -i 's/\r$//' /opt/orbita-asterisk/*.sh \
+    && bash -n /opt/orbita-asterisk/*.sh \
     && chmod 0755 /opt/orbita-asterisk/*.sh \
     && mkdir -p /var/spool/asterisk/recording /etc/asterisk/orbita \
     && chown -R asterisk:asterisk /var/spool/asterisk/recording /etc/asterisk/orbita

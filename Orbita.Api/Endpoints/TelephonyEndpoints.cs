@@ -225,7 +225,7 @@ public static class TelephonyEndpoints
                     return Results.Forbid();
                 }
 
-                var (endpoint, endpointError) = await telephony.GetWebRtcEndpointAsync(
+                var (endpoint, endpointError) = await telephony.GetOrProvisionWebRtcEndpointAsync(
                     resolvedOfficeId,
                     userId,
                     ct);

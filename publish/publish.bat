@@ -177,6 +177,14 @@ if /i "!selection!"=="all" (
     call :publish_target orbita-api
     if errorlevel 1 exit /b 1
     echo.
+    echo [publish] orbita-telephony-gateway
+    call :publish_target orbita-telephony-gateway
+    if errorlevel 1 exit /b 1
+    echo.
+    echo [publish] orbita-asterisk
+    call :publish_target orbita-asterisk
+    if errorlevel 1 exit /b 1
+    echo.
     echo [publish] orbita-web
     call :publish_target orbita-web
     if errorlevel 1 exit /b 1
@@ -402,6 +410,20 @@ if /i "%~1"=="orbita-api" (
     set "IMAGE_TAG=orbita-api:prod"
     set "COMPOSE_SERVICE=api"
     set "CONTEXT_ITEMS=Orbita.Contracts Orbita.Logging Orbita.Api deploy\control-panel\Dockerfile.api deploy\control-panel\docker-compose.images.yml"
+)
+
+if /i "%~1"=="orbita-asterisk" (
+    set "DOCKERFILE=deploy/control-panel/Dockerfile.asterisk"
+    set "IMAGE_TAG=orbita-asterisk:prod"
+    set "COMPOSE_SERVICE=asterisk"
+    set "CONTEXT_ITEMS=deploy\control-panel\Dockerfile.asterisk deploy\control-panel\telephony\asterisk deploy\control-panel\docker-compose.images.yml"
+)
+
+if /i "%~1"=="orbita-telephony-gateway" (
+    set "DOCKERFILE=deploy/control-panel/Dockerfile.telephony-gateway"
+    set "IMAGE_TAG=orbita-telephony-gateway:prod"
+    set "COMPOSE_SERVICE=telephony-gateway"
+    set "CONTEXT_ITEMS=Orbita.TelephonyGateway deploy\control-panel\Dockerfile.telephony-gateway deploy\control-panel\docker-compose.images.yml"
 )
 
 if /i "%~1"=="orbita-web" (

@@ -68,7 +68,7 @@ public sealed class CrmTelephonyServiceTests
             Assert.NotNull(binding);
             Assert.Null(bindingError);
 
-            var (endpoint, endpointError) = await sut.GetWebRtcEndpointAsync(officeId, userId);
+            var (endpoint, endpointError) = await sut.GetOrProvisionWebRtcEndpointAsync(officeId, userId);
             Assert.NotNull(endpoint);
             Assert.Null(endpointError);
             Assert.Equal("201", endpoint.Extension);
@@ -88,7 +88,7 @@ public sealed class CrmTelephonyServiceTests
             Assert.Contains($"password={endpoint.Password}", runtimeConfig, StringComparison.Ordinal);
             Assert.Contains("callerid=201 <201>", runtimeConfig, StringComparison.Ordinal);
 
-            var (sameEndpoint, sameEndpointError) = await sut.GetWebRtcEndpointAsync(officeId, userId);
+            var (sameEndpoint, sameEndpointError) = await sut.GetOrProvisionWebRtcEndpointAsync(officeId, userId);
             Assert.NotNull(sameEndpoint);
             Assert.Null(sameEndpointError);
             Assert.Equal(endpoint.Password, sameEndpoint.Password);
@@ -106,6 +106,39 @@ public sealed class CrmTelephonyServiceTests
             if (Directory.Exists(runtimePath))
             {
                 Directory.Delete(runtimePath, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task SipRuntimeWriter_AllowsConcurrentWebRtcEndpointPublications()
+    {
+        var runtimePath = Path.Combine(Path.GetTempPath(), "orbita-webrtc-runtime-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var writer = new CrmSipRuntimeConfigWriter(Options.Create(new CrmSipRuntimeOptions
+            {
+                ConfigPath = runtimePath
+            }));
+            var officeId = Guid.NewGuid();
+            var endpoints = new[]
+            {
+                new CrmAsteriskWebRtcEndpoint("201", "201-webrtc", "0123456789abcdef0123456789abcdef")
+            };
+
+            var publications = Enumerable.Range(0, 32)
+                .Select(_ => writer.WriteWebRtcEndpointsAsync(officeId, endpoints));
+            var results = await Task.WhenAll(publications);
+
+            Assert.All(results, result => Assert.True(result.Success, result.Error));
+            var config = await File.ReadAllTextAsync(Path.Combine(runtimePath, $"webrtc.{officeId:D}.conf"));
+            Assert.Contains("[201-webrtc]", config, StringComparison.Ordinal);
+        }
+        finally
+        {
+            if (Directory.Exists(runtimePath))
+            {
+                Directory.Delete(runtimePath, true);
             }
         }
     }
