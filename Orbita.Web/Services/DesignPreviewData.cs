@@ -196,6 +196,22 @@ internal static class DesignPreviewData
                 cards = cards.Where(c => c.Vacancy.Contains(query.Vacancy, StringComparison.OrdinalIgnoreCase));
             }
 
+            var selectedStage = string.IsNullOrWhiteSpace(query.Stage) ? null : query.Stage.Trim();
+            if (selectedStage is not null)
+            {
+                cards = cards.Where(c => string.Equals(c.Stage, selectedStage, StringComparison.Ordinal));
+            }
+
+            if (query.CreatedFromUtc is DateTime createdFromUtc)
+            {
+                cards = cards.Where(c => c.CreatedAtUtc >= createdFromUtc);
+            }
+
+            if (query.CreatedToUtc is DateTime createdToUtc)
+            {
+                cards = cards.Where(c => c.CreatedAtUtc < createdToUtc);
+            }
+
             if (query.ActiveLoadOnly)
             {
                 cards = cards.Where(c => c.IsInActiveLoad);
@@ -335,7 +351,10 @@ internal static class DesignPreviewData
                 totalItems,
                 sort,
                 sortDir,
-                boardView == CrmBoardViews.List ? list.Select(ToPreviewCrmCard).ToList() : null);
+                boardView == CrmBoardViews.List ? list.Select(ToPreviewCrmCard).ToList() : null,
+                selectedStage,
+                query.CreatedFrom,
+                query.CreatedTo);
         }
     }
 

@@ -199,6 +199,24 @@ public sealed class CrmWorkspaceService(
             cardsQuery = cardsQuery.Where(x => x.Response.Vacancy.ToLower().Contains(vacancy));
         }
 
+        var selectedStage = string.IsNullOrWhiteSpace(query.Stage) ? null : query.Stage.Trim();
+        if (selectedStage is not null)
+        {
+            cardsQuery = cardsQuery.Where(x => x.Stage == selectedStage);
+        }
+
+        var createdFromUtc = DateTimeUtcHelper.EnsureUtc(query.CreatedFromUtc);
+        var createdToUtc = DateTimeUtcHelper.EnsureUtc(query.CreatedToUtc);
+        if (createdFromUtc is not null)
+        {
+            cardsQuery = cardsQuery.Where(x => x.CreatedAtUtc >= createdFromUtc.Value);
+        }
+
+        if (createdToUtc is not null)
+        {
+            cardsQuery = cardsQuery.Where(x => x.CreatedAtUtc < createdToUtc.Value);
+        }
+
         var selectedCloseReason = scope == CrmBoardScopes.Closed
                                   && CrmCloseReasons.IsValid(query.CloseReason)
             ? query.CloseReason!.Trim()
@@ -380,7 +398,10 @@ public sealed class CrmWorkspaceService(
             totalItems,
             sort,
             sortDir,
-            boardView == CrmBoardViews.List ? cards.Select(MapCard).ToList() : null);
+            boardView == CrmBoardViews.List ? cards.Select(MapCard).ToList() : null,
+            selectedStage,
+            query.CreatedFrom,
+            query.CreatedTo);
     }
 
     public async Task<bool> StartShiftAsync(Guid officeId, string userId, CancellationToken ct = default)

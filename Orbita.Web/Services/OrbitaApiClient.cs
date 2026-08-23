@@ -2172,6 +2172,11 @@ public sealed class OrbitaApiClient(
         url = AppendQuery(url, "city", query.City);
         url = AppendQuery(url, "vacancy", query.Vacancy);
         url = AppendQuery(url, "closeReason", query.CloseReason);
+        url = AppendQuery(url, "stage", query.Stage);
+        url = AppendQuery(url, "createdFromUtc", query.CreatedFromUtc?.ToString("O"));
+        url = AppendQuery(url, "createdToUtc", query.CreatedToUtc?.ToString("O"));
+        url = AppendQuery(url, "createdFrom", query.CreatedFrom);
+        url = AppendQuery(url, "createdTo", query.CreatedTo);
         url = AppendQuery(url, "view", query.View);
         url = AppendQuery(url, "page", CrmBoardListOptions.NormalizePage(query.Page).ToString());
         url = AppendQuery(url, "pageSize", CrmBoardListOptions.NormalizePageSize(query.PageSize).ToString());

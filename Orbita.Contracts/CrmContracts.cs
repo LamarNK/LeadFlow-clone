@@ -288,7 +288,12 @@ public sealed record CrmBoardQuery(
     int Page = 1,
     int PageSize = CrmBoardListOptions.DefaultPageSize,
     string? Sort = null,
-    string? SortDir = null);
+    string? SortDir = null,
+    string? Stage = null,
+    DateTime? CreatedFromUtc = null,
+    DateTime? CreatedToUtc = null,
+    string? CreatedFrom = null,
+    string? CreatedTo = null);
 
 /// <summary>
 /// CRM analytics filter. The period is a half-open UTC interval: [FromUtc, ToUtc).
@@ -394,7 +399,10 @@ public sealed record CrmBoardDto(
     int TotalItems = 0,
     string Sort = CrmBoardSorts.Created,
     string SortDir = "desc",
-    IReadOnlyList<CrmCandidateCardDto>? ListCards = null);
+    IReadOnlyList<CrmCandidateCardDto>? ListCards = null,
+    string? Stage = null,
+    string? CreatedFrom = null,
+    string? CreatedTo = null);
 
 public sealed record CrmStageDto(string Name, IReadOnlyList<CrmCandidateCardDto> Cards, int TotalCount);
 

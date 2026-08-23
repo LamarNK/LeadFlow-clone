@@ -80,6 +80,9 @@ public sealed class CrmController(
         string? vacancy,
         string? managerUserId = null,
         string? closeReason = null,
+        string? stageFilter = null,
+        string? createdFrom = null,
+        string? createdTo = null,
         string? view = null,
         int page = 1,
         int pageSize = CrmBoardListOptions.DefaultPageSize,
@@ -99,6 +102,7 @@ public sealed class CrmController(
         }
 
         var effectiveScope = ResolveBoardScope(scope, managerUserId);
+        var createdPeriod = ResolveCreatedPeriod(createdFrom, createdTo);
         var (board, errorCode) = await api.GetCrmBoardResultAsync(
             officeId,
             new CrmBoardQuery(
@@ -115,7 +119,12 @@ public sealed class CrmController(
                 page,
                 pageSize,
                 sort,
-                dir),
+                dir,
+                stageFilter,
+                createdPeriod.FromUtc,
+                createdPeriod.ToUtc,
+                createdPeriod.From,
+                createdPeriod.To),
             ct);
         if (board is null)
         {
@@ -153,6 +162,9 @@ public sealed class CrmController(
         string? vacancy,
         string? managerUserId = null,
         string? closeReason = null,
+        string? stageFilter = null,
+        string? createdFrom = null,
+        string? createdTo = null,
         string? view = null,
         int page = 1,
         int pageSize = CrmBoardListOptions.DefaultPageSize,
@@ -170,6 +182,7 @@ public sealed class CrmController(
         }
 
         var effectiveScope = ResolveBoardScope(scope, managerUserId);
+        var createdPeriod = ResolveCreatedPeriod(createdFrom, createdTo);
         var (board, errorCode) = await api.GetCrmBoardResultAsync(
             officeId,
             new CrmBoardQuery(
@@ -186,7 +199,12 @@ public sealed class CrmController(
                 page,
                 pageSize,
                 sort,
-                dir),
+                dir,
+                stageFilter,
+                createdPeriod.FromUtc,
+                createdPeriod.ToUtc,
+                createdPeriod.From,
+                createdPeriod.To),
             ct);
         ViewData["CurrentCrmUserId"] = User.FindFirstValue(ClaimTypes.NameIdentifier);
         return board is null ? NoContent() : PartialView("_CrmWorkspace", board);
@@ -1150,6 +1168,21 @@ public sealed class CrmController(
                && int.TryParse(raw, out var offset)
             ? Math.Clamp(offset, -14 * 60, 14 * 60)
             : 0;
+    }
+
+    private (string? From, string? To, DateTime? FromUtc, DateTime? ToUtc) ResolveCreatedPeriod(
+        string? createdFrom,
+        string? createdTo)
+    {
+        if (string.IsNullOrWhiteSpace(createdFrom) && string.IsNullOrWhiteSpace(createdTo))
+        {
+            return (null, null, null, null);
+        }
+
+        var from = string.IsNullOrWhiteSpace(createdFrom) ? createdTo : createdFrom;
+        var to = string.IsNullOrWhiteSpace(createdTo) ? createdFrom : createdTo;
+        var period = DashboardPeriod.Parse(from, to, BrowserTimeZone.Resolve(HttpContext));
+        return (period.FromIso, period.ToIso, period.FromUtc, period.ToUtcExclusive);
     }
 
     private IActionResult RedirectAfterCardMutation(string? returnUrl, string fallbackAction, object fallbackRouteValues)

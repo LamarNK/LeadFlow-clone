@@ -918,6 +918,15 @@
         select.addEventListener('change', () => form.requestSubmit());
     };
 
+    const initCrmDateFilter = (input) => {
+        if (input.dataset.crmDateFilterReady === 'true') return;
+        input.dataset.crmDateFilterReady = 'true';
+        input.addEventListener('click', () => {
+            if (typeof input.showPicker !== 'function') return;
+            try { input.showPicker(); } catch { /* preserve native date input behaviour */ }
+        });
+    };
+
     const initCrmFunnelEditor = (form) => {
         if (form.dataset.crmFunnelReady === 'true') return;
 
@@ -1253,6 +1262,7 @@
         document.querySelectorAll('[data-crm-board-carousel]').forEach(initBoardNavigation);
         document.querySelectorAll('[data-crm-bulk-board="true"]').forEach(initCrmBulkActions);
         document.querySelectorAll('[data-crm-page-size-form]').forEach(initCrmListControls);
+        document.querySelectorAll('[data-crm-date-filter]').forEach(initCrmDateFilter);
         document.querySelectorAll('[data-crm-funnel-editor]').forEach(initCrmFunnelEditor);
         initClosedArchiveNavigation();
         initResponsibleAutoFilter();

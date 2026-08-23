@@ -42,6 +42,11 @@ public static class CrmEndpoints
             string? city = null,
             string? vacancy = null,
             string? closeReason = null,
+            string? stage = null,
+            DateTime? createdFromUtc = null,
+            DateTime? createdToUtc = null,
+            string? createdFrom = null,
+            string? createdTo = null,
             string? view = null,
             int page = 1,
             int pageSize = CrmBoardListOptions.DefaultPageSize,
@@ -107,7 +112,12 @@ public static class CrmEndpoints
                     page,
                     pageSize,
                     sort,
-                    sortDir),
+                    sortDir,
+                    stage,
+                    createdFromUtc,
+                    createdToUtc,
+                    createdFrom,
+                    createdTo),
                 ct);
             return board is null
                 ? Results.NotFound(new { error = "Офис не найден." })

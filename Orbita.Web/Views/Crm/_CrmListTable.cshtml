@@ -20,6 +20,9 @@
         overdueOnly = Model.OverdueOnly,
         activeLoadOnly = Model.ActiveLoadOnly,
         includeClosed = Model.IncludeClosed,
+        stageFilter = Model.Stage,
+        createdFrom = Model.CreatedFrom,
+        createdTo = Model.CreatedTo,
         view = CrmBoardViews.List,
         pageSize = Model.PageSize,
         sort = Model.Sort,
@@ -39,7 +42,7 @@
     <header class="crm-closed__header crm-candidate-list__header">
         <div>
             <h2>Список кандидатов</h2>
-            <p>Отсортируйте карточки по дате и обработайте текущую страницу одним действием.</p>
+            <p>Отфильтруйте карточки по этапу и дате, затем выберите нужные на текущей странице.</p>
         </div>
         <div class="crm-candidate-list__header-actions">
             <span class="crm-closed__count" title="Всего карточек">@Model.TotalItems</span>
@@ -53,6 +56,9 @@
                 <input type="hidden" name="overdueOnly" value="@Model.OverdueOnly.ToString().ToLowerInvariant()" />
                 <input type="hidden" name="activeLoadOnly" value="@Model.ActiveLoadOnly.ToString().ToLowerInvariant()" />
                 <input type="hidden" name="includeClosed" value="@Model.IncludeClosed.ToString().ToLowerInvariant()" />
+                <input type="hidden" name="stageFilter" value="@Model.Stage" />
+                <input type="hidden" name="createdFrom" value="@Model.CreatedFrom" />
+                <input type="hidden" name="createdTo" value="@Model.CreatedTo" />
                 <input type="hidden" name="view" value="@CrmBoardViews.List" />
                 <input type="hidden" name="page" value="1" />
                 <input type="hidden" name="sort" value="@Model.Sort" />
