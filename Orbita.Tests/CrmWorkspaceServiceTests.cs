@@ -864,6 +864,99 @@ public sealed class CrmWorkspaceServiceTests
     }
 
     [Fact]
+    public async Task GetBoard_ListView_PaginatesCurrentPageAndKeepsDateOrder()
+    {
+        await using var harness = await Harness.CreateAsync();
+        SeedOffice(harness.Db, crmEnabled: true);
+        var manager = await harness.CreateManagerAsync("list-page@test.local", capacity: 50, onShift: true);
+        var start = DateTime.UtcNow.AddDays(-2);
+        var expectedByCreated = new List<CrmCandidateCardEntity>();
+
+        for (var index = 0; index < 25; index++)
+        {
+            var response = await SeedResponseAsync(harness.Db, $"list-page-{index}");
+            var card = NewCard(response.Id, manager.Id);
+            card.CreatedAtUtc = start.AddMinutes(index);
+            card.UpdatedAtUtc = card.CreatedAtUtc;
+            card.StageChangedAtUtc = card.CreatedAtUtc;
+            expectedByCreated.Add(card);
+            harness.Db.CrmCandidateCards.Add(card);
+        }
+
+        await harness.Db.SaveChangesAsync();
+
+        var board = await harness.Sut.GetBoardAsync(
+            OfficeId,
+            manager.Id,
+            isAdmin: false,
+            new CrmBoardQuery(
+                Scope: CrmBoardScopes.Mine,
+                View: CrmBoardViews.List,
+                Page: 2,
+                PageSize: 20,
+                Sort: CrmBoardSorts.Created,
+                SortDir: "desc"));
+
+        Assert.NotNull(board);
+        Assert.Equal(CrmBoardViews.List, board.View);
+        Assert.Equal(2, board.Page);
+        Assert.Equal(20, board.PageSize);
+        Assert.Equal(25, board.TotalItems);
+        Assert.NotNull(board.ListCards);
+        Assert.Equal(
+            expectedByCreated.OrderByDescending(card => card.CreatedAtUtc).Skip(20).Select(card => card.Id),
+            board.ListCards.Select(card => card.Id));
+    }
+
+    [Fact]
+    public async Task GetBoard_ListView_FiltersByStageAndCreatedPeriodBeforePaging()
+    {
+        await using var harness = await Harness.CreateAsync();
+        SeedOffice(harness.Db, crmEnabled: true);
+        var manager = await harness.CreateManagerAsync("list-filter@test.local", capacity: 10, onShift: true);
+        var utcStart = new DateTime(2026, 8, 10, 19, 0, 0, DateTimeKind.Utc);
+        var utcEnd = utcStart.AddDays(1);
+
+        var matchingResponse = await SeedResponseAsync(harness.Db, "list-filter-match");
+        var matchingCard = NewCard(matchingResponse.Id, manager.Id);
+        matchingCard.Stage = CrmStages.Lead;
+        matchingCard.CreatedAtUtc = utcStart.AddHours(2);
+
+        var wrongStageResponse = await SeedResponseAsync(harness.Db, "list-filter-stage");
+        var wrongStageCard = NewCard(wrongStageResponse.Id, manager.Id);
+        wrongStageCard.Stage = CrmStages.Ndz73;
+        wrongStageCard.CreatedAtUtc = utcStart.AddHours(3);
+
+        var wrongDateResponse = await SeedResponseAsync(harness.Db, "list-filter-date");
+        var wrongDateCard = NewCard(wrongDateResponse.Id, manager.Id);
+        wrongDateCard.Stage = CrmStages.Lead;
+        wrongDateCard.CreatedAtUtc = utcEnd.AddMinutes(1);
+
+        harness.Db.CrmCandidateCards.AddRange(matchingCard, wrongStageCard, wrongDateCard);
+        await harness.Db.SaveChangesAsync();
+
+        var board = await harness.Sut.GetBoardAsync(
+            OfficeId,
+            manager.Id,
+            isAdmin: true,
+            new CrmBoardQuery(
+                Scope: CrmBoardScopes.Team,
+                View: CrmBoardViews.List,
+                Stage: CrmStages.Lead,
+                CreatedFromUtc: utcStart,
+                CreatedToUtc: utcEnd,
+                CreatedFrom: "2026-08-11",
+                CreatedTo: "2026-08-11"));
+
+        Assert.NotNull(board);
+        Assert.Equal(1, board.TotalItems);
+        Assert.Equal(matchingCard.Id, Assert.Single(board.ListCards!).Id);
+        Assert.Equal(CrmStages.Lead, board.Stage);
+        Assert.Equal("2026-08-11", board.CreatedFrom);
+        Assert.Equal("2026-08-11", board.CreatedTo);
+    }
+
+    [Fact]
     public async Task GetBoard_CityAndVacancyFilters_AreCaseInsensitive()
     {
         await using var harness = await Harness.CreateAsync();

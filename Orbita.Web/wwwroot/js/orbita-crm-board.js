@@ -8,6 +8,7 @@
     const cardTaskReturnKey = 'orbita.crm.card.taskReturn.v1';
     const cardOpenAtTopKey = 'orbita.crm.card.openAtTop.v1';
     const responsibleFilterScrollKey = 'orbita.crm.responsibleFilter.scroll.v1';
+    const bulkSelectionKey = 'orbita.crm.bulkSelection.v1';
 
     const normalizeBoardPath = (pathname) => {
         const normalized = (pathname || '').replace(/\/+$/, '').toLowerCase();
@@ -735,7 +736,13 @@
         const checkboxes = Array.from(root.querySelectorAll('[data-crm-card-select]'));
         const forms = Array.from(root.querySelectorAll('[data-crm-bulk-form]'));
         const modal = root.querySelector('[data-crm-bulk-modal]');
+        const selectVisible = root.querySelector('[data-crm-select-visible]');
         if (!toolbar || checkboxes.length === 0 || !modal) return;
+
+        // CRM POST navigation swaps only .orbita-content. If a previous bulk
+        // modal was replaced while open, its body scroll lock can survive the
+        // swap even though the new modal starts hidden.
+        if (modal.hidden) document.body.classList.remove('orbita-modal-open');
 
         root.dataset.crmBulkReady = 'true';
         const countLabels = Array.from(root.querySelectorAll('[data-crm-bulk-count], [data-crm-bulk-modal-count]'));
@@ -751,6 +758,37 @@
         const comment = modal.querySelector('[data-crm-bulk-comment]');
         const submit = modal.querySelector('[data-crm-bulk-submit]');
         const reasonRequired = root.dataset.crmBulkReasonRequired === 'true';
+        const selectionContext = normalizeBoardUrl();
+
+        const readPersistedSelection = () => {
+            try {
+                const state = JSON.parse(sessionStorage.getItem(bulkSelectionKey) || 'null');
+                if (!state || state.version !== 1 || state.context !== selectionContext || !Array.isArray(state.ids)) return [];
+                if (!Number.isFinite(state.savedAt) || Date.now() - state.savedAt > 8 * 60 * 60 * 1000) return [];
+                return state.ids.filter((id) => typeof id === 'string' && id);
+            } catch {
+                return [];
+            }
+        };
+
+        const persistSelection = (ids) => {
+            try {
+                if (ids.length === 0) {
+                    sessionStorage.removeItem(bulkSelectionKey);
+                    return;
+                }
+                sessionStorage.setItem(bulkSelectionKey, JSON.stringify({
+                    version: 1,
+                    context: selectionContext,
+                    ids,
+                    savedAt: Date.now()
+                }));
+            } catch { /* ignore */ }
+        };
+
+        const availableIds = new Set(checkboxes.map((checkbox) => checkbox.value).filter(Boolean));
+        const restoredIds = new Set(readPersistedSelection().filter((id) => availableIds.has(id)));
+        checkboxes.forEach((checkbox) => { checkbox.checked = restoredIds.has(checkbox.value); });
 
         const selectedIds = () => checkboxes
             .filter((checkbox) => checkbox.checked)
@@ -779,12 +817,18 @@
             toolbar.hidden = ids.length === 0;
             checkboxes.forEach((checkbox) => {
                 checkbox.closest('.crm-tile')?.classList.toggle('is-bulk-selected', checkbox.checked);
+                checkbox.closest('tr')?.classList.toggle('is-bulk-selected', checkbox.checked);
             });
+            if (selectVisible) {
+                selectVisible.checked = ids.length > 0 && ids.length === checkboxes.length;
+                selectVisible.indeterminate = ids.length > 0 && ids.length < checkboxes.length;
+            }
+            persistSelection(ids);
 
             if (assigneeSelect) {
                 const selectedAssignees = checkboxes
                     .filter((checkbox) => checkbox.checked)
-                    .map((checkbox) => checkbox.closest('.crm-tile')?.dataset.cardManagerUserId || '');
+                    .map((checkbox) => checkbox.closest('[data-card-manager-user-id]')?.dataset.cardManagerUserId || '');
                 const commonAssignee = selectedAssignees.length > 0
                     && selectedAssignees[0]
                     && selectedAssignees.every((userId) => userId === selectedAssignees[0])
@@ -853,6 +897,11 @@
                 event.stopPropagation();
             });
         });
+        selectVisible?.addEventListener('change', () => {
+            checkboxes.forEach((checkbox) => { checkbox.checked = selectVisible.checked; });
+            updateSelection();
+        });
+        selectVisible?.addEventListener('click', (event) => event.stopPropagation());
 
         toolbar.querySelector('[data-crm-bulk-clear]')?.addEventListener('click', () => {
             checkboxes.forEach((checkbox) => { checkbox.checked = false; });
@@ -873,15 +922,36 @@
         });
         forms.forEach((form) => {
             form.addEventListener('submit', (event) => {
-                if (syncFormCardIds().length > 0) return;
-                event.preventDefault();
-                if (window.Orbita && typeof window.Orbita.toast === 'function') {
-                    window.Orbita.toast('Выберите хотя бы одну карточку.', { variant: 'error' });
+                if (syncFormCardIds().length === 0) {
+                    event.preventDefault();
+                    if (window.Orbita && typeof window.Orbita.toast === 'function') {
+                        window.Orbita.toast('Выберите хотя бы одну карточку.', { variant: 'error' });
+                    }
+                    return;
                 }
+
+                if (form.hasAttribute('data-crm-bulk-transition-form')) closeModal();
             });
         });
 
         updateSelection();
+    };
+
+    const initCrmListControls = (form) => {
+        if (form.dataset.crmPageSizeReady === 'true') return;
+        const select = form.querySelector('[data-crm-page-size]');
+        if (!select) return;
+        form.dataset.crmPageSizeReady = 'true';
+        select.addEventListener('change', () => form.requestSubmit());
+    };
+
+    const initCrmDateFilter = (input) => {
+        if (input.dataset.crmDateFilterReady === 'true') return;
+        input.dataset.crmDateFilterReady = 'true';
+        input.addEventListener('click', () => {
+            if (typeof input.showPicker !== 'function') return;
+            try { input.showPicker(); } catch { /* preserve native date input behaviour */ }
+        });
     };
 
     const initCrmFunnelEditor = (form) => {
@@ -1098,6 +1168,20 @@
         });
     };
 
+    const initStageAutoFilter = () => {
+        document.querySelectorAll('[data-crm-stage-auto-filter]').forEach((select) => {
+            if (select.dataset.crmStageAutoFilterReady === 'true') return;
+            select.dataset.crmStageAutoFilterReady = 'true';
+
+            select.addEventListener('change', () => {
+                const form = select.closest('form');
+                if (!form) return;
+                select.setAttribute('aria-busy', 'true');
+                form.requestSubmit();
+            });
+        });
+    };
+
     const initScopeTabPositionReset = () => {
         const boardScopes = new Set(['mine', 'team', 'unassigned']);
 
@@ -1218,9 +1302,12 @@
 
         document.querySelectorAll('[data-crm-board-carousel]').forEach(initBoardNavigation);
         document.querySelectorAll('[data-crm-bulk-board="true"]').forEach(initCrmBulkActions);
+        document.querySelectorAll('[data-crm-page-size-form]').forEach(initCrmListControls);
+        document.querySelectorAll('[data-crm-date-filter]').forEach(initCrmDateFilter);
         document.querySelectorAll('[data-crm-funnel-editor]').forEach(initCrmFunnelEditor);
         initClosedArchiveNavigation();
         initResponsibleAutoFilter();
+        initStageAutoFilter();
         initScopeTabPositionReset();
         restoreResponsibleFilterScroll();
         initManualCreateModal();

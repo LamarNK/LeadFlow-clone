@@ -21,8 +21,14 @@
         overdueOnly = Model.OverdueOnly,
         activeLoadOnly = Model.ActiveLoadOnly,
         includeClosed = Model.IncludeClosed,
-        sort = Context.Request.Query["sort"].ToString(),
-        dir = Context.Request.Query["dir"].ToString()
+        stageFilter = Model.Stage,
+        createdFrom = Model.CreatedFrom,
+        createdTo = Model.CreatedTo,
+        view = Model.View,
+        page = Model.Page,
+        pageSize = Model.PageSize,
+        sort = Model.Sort,
+        dir = Model.SortDir
     })!;
 }
 <partial name="_PageHeader" model="header" />

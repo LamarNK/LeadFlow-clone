@@ -76,6 +76,27 @@ public sealed class CrmControllerPreviewTests
     }
 
     [Fact]
+    public void DesignPreviewHistory_IsIsolatedPerCard()
+    {
+        var firstCardId = Guid.Parse("90000000-0000-0000-0000-000000000001");
+        var secondCardId = Guid.Parse("90000000-0000-0000-0000-000000000002");
+        var firstMarker = $"first-{Guid.NewGuid():N}";
+        var secondMarker = $"second-{Guid.NewGuid():N}";
+
+        Assert.True(DesignPreviewData.MoveCrmCard(firstCardId, CrmStages.Ndz73, firstMarker).Success);
+        Assert.True(DesignPreviewData.MoveCrmCard(secondCardId, CrmStages.Ndz26, secondMarker).Success);
+
+        var firstCard = DesignPreviewData.GetCrmCard(firstCardId);
+        var secondCard = DesignPreviewData.GetCrmCard(secondCardId);
+        Assert.NotNull(firstCard);
+        Assert.NotNull(secondCard);
+        Assert.Contains(firstCard.History, item => item.Details?.Contains(firstMarker, StringComparison.Ordinal) == true);
+        Assert.DoesNotContain(firstCard.History, item => item.Details?.Contains(secondMarker, StringComparison.Ordinal) == true);
+        Assert.Contains(secondCard.History, item => item.Details?.Contains(secondMarker, StringComparison.Ordinal) == true);
+        Assert.DoesNotContain(secondCard.History, item => item.Details?.Contains(firstMarker, StringComparison.Ordinal) == true);
+    }
+
+    [Fact]
     public async Task Index_OutsideDesignPreview_StillRequiresOfficeForAdmin()
     {
         var (controller, _) = CreateController(previewEnabled: false);

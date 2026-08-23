@@ -232,6 +232,48 @@ public static class CrmBoardScopes
         scope is null or "" or Mine or Team or Unassigned or Closed;
 }
 
+public static class CrmBoardViews
+{
+    public const string Board = "board";
+    public const string List = "list";
+
+    public static string Normalize(string? value) =>
+        string.Equals(value, List, StringComparison.OrdinalIgnoreCase) ? List : Board;
+}
+
+public static class CrmBoardListOptions
+{
+    public const int DefaultPageSize = 20;
+    public static readonly IReadOnlyList<int> PageSizes = [20, 50, 100];
+
+    public static int NormalizePage(int page) => Math.Max(1, page);
+
+    public static int NormalizePageSize(int pageSize) =>
+        PageSizes.Contains(pageSize) ? pageSize : DefaultPageSize;
+}
+
+public static class CrmBoardSorts
+{
+    public const string Candidate = "candidate";
+    public const string Phone = "phone";
+    public const string Vacancy = "vacancy";
+    public const string Stage = "stage";
+    public const string Manager = "manager";
+    public const string Created = "created";
+    public const string Changed = "changed";
+
+    public static readonly IReadOnlyList<string> All =
+        [Candidate, Phone, Vacancy, Stage, Manager, Created, Changed];
+
+    public static string Normalize(string? value) =>
+        All.Contains(value ?? string.Empty, StringComparer.OrdinalIgnoreCase)
+            ? value!.Trim().ToLowerInvariant()
+            : Created;
+
+    public static string NormalizeDirection(string? value) =>
+        string.Equals(value, "asc", StringComparison.OrdinalIgnoreCase) ? "asc" : "desc";
+}
+
 public sealed record CrmBoardQuery(
     string? Search = null,
     string? Scope = null,
@@ -241,7 +283,17 @@ public sealed record CrmBoardQuery(
     bool ActiveLoadOnly = false,
     bool IncludeClosed = false,
     string? ManagerUserId = null,
-    string? CloseReason = null);
+    string? CloseReason = null,
+    string? View = null,
+    int Page = 1,
+    int PageSize = CrmBoardListOptions.DefaultPageSize,
+    string? Sort = null,
+    string? SortDir = null,
+    string? Stage = null,
+    DateTime? CreatedFromUtc = null,
+    DateTime? CreatedToUtc = null,
+    string? CreatedFrom = null,
+    string? CreatedTo = null);
 
 /// <summary>
 /// CRM analytics filter. The period is a half-open UTC interval: [FromUtc, ToUtc).
@@ -340,7 +392,17 @@ public sealed record CrmBoardDto(
     IReadOnlyList<string> FunnelStages,
     bool DeadlineNotificationsEnabled = false,
     string? ManagerUserId = null,
-    string? CloseReason = null);
+    string? CloseReason = null,
+    string View = CrmBoardViews.Board,
+    int Page = 1,
+    int PageSize = CrmBoardListOptions.DefaultPageSize,
+    int TotalItems = 0,
+    string Sort = CrmBoardSorts.Created,
+    string SortDir = "desc",
+    IReadOnlyList<CrmCandidateCardDto>? ListCards = null,
+    string? Stage = null,
+    string? CreatedFrom = null,
+    string? CreatedTo = null);
 
 public sealed record CrmStageDto(string Name, IReadOnlyList<CrmCandidateCardDto> Cards, int TotalCount);
 

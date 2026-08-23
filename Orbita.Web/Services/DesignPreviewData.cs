@@ -132,10 +132,14 @@ internal static class DesignPreviewData
             Now.AddHours(-1),
             Now.AddMinutes(-30))
     ];
-    private static readonly List<CrmHistoryDto> PreviewCrmHistory =
+    private static readonly List<PreviewCrmHistoryEntry> PreviewCrmHistory =
     [
-        new(Guid.Parse("93000000-0000-0000-0000-000000000001"), "Created", "Отклик из Avito", "system", "Система", Now.AddMinutes(-35)),
-        new(Guid.Parse("93000000-0000-0000-0000-000000000002"), "Assigned", "Елена Воронцова", "preview-admin", "Администратор", Now.AddMinutes(-34))
+        new(
+            Guid.Parse("90000000-0000-0000-0000-000000000001"),
+            new CrmHistoryDto(Guid.Parse("93000000-0000-0000-0000-000000000001"), "Created", "Отклик из Avito", "system", "Система", Now.AddMinutes(-35))),
+        new(
+            Guid.Parse("90000000-0000-0000-0000-000000000001"),
+            new CrmHistoryDto(Guid.Parse("93000000-0000-0000-0000-000000000002"), "Assigned", "Елена Воронцова", "preview-admin", "Администратор", Now.AddMinutes(-34)))
     ];
 
     public static CrmBoardDto GetCrmBoard(CrmBoardQuery? query = null)
@@ -144,6 +148,11 @@ internal static class DesignPreviewData
         {
             query ??= new CrmBoardQuery();
             var managers = BuildPreviewCrmManagers();
+            var boardView = CrmBoardViews.Normalize(query.View);
+            var pageSize = CrmBoardListOptions.NormalizePageSize(query.PageSize);
+            var requestedPage = CrmBoardListOptions.NormalizePage(query.Page);
+            var sort = CrmBoardSorts.Normalize(query.Sort);
+            var sortDir = CrmBoardSorts.NormalizeDirection(query.SortDir);
             var scope = query.Scope switch
             {
                 CrmBoardScopes.Mine => CrmBoardScopes.Mine,
@@ -191,6 +200,22 @@ internal static class DesignPreviewData
                 cards = cards.Where(c => c.Vacancy.Contains(query.Vacancy, StringComparison.OrdinalIgnoreCase));
             }
 
+            var selectedStage = string.IsNullOrWhiteSpace(query.Stage) ? null : query.Stage.Trim();
+            if (selectedStage is not null)
+            {
+                cards = cards.Where(c => string.Equals(c.Stage, selectedStage, StringComparison.Ordinal));
+            }
+
+            if (query.CreatedFromUtc is DateTime createdFromUtc)
+            {
+                cards = cards.Where(c => c.CreatedAtUtc >= createdFromUtc);
+            }
+
+            if (query.CreatedToUtc is DateTime createdToUtc)
+            {
+                cards = cards.Where(c => c.CreatedAtUtc < createdToUtc);
+            }
+
             if (query.ActiveLoadOnly)
             {
                 cards = cards.Where(c => c.IsInActiveLoad);
@@ -230,7 +255,42 @@ internal static class DesignPreviewData
                 cards = cards.Where(c => string.Equals(c.CloseReason, selectedCloseReason, StringComparison.Ordinal));
             }
 
-            var list = cards.ToList();
+            if (query.OverdueOnly)
+            {
+                cards = cards.Where(c =>
+                    c.NextActionAtUtc is DateTime next && next < DateTime.UtcNow
+                    || PreviewCrmTasks.Any(task =>
+                        task.CardId == c.Id
+                        && task.Status == CrmTaskStatuses.Open
+                        && task.IsOverdue));
+            }
+
+            var filtered = cards.ToList();
+            var totalItems = filtered.Count;
+            var totalPages = Math.Max(1, (int)Math.Ceiling(totalItems / (double)pageSize));
+            var page = boardView == CrmBoardViews.List
+                ? Math.Min(requestedPage, totalPages)
+                : 1;
+            IEnumerable<PreviewCrmCandidate> ordered = (sort, sortDir) switch
+            {
+                (CrmBoardSorts.Candidate, "asc") => filtered.OrderBy(c => c.FullName).ThenBy(c => c.Id),
+                (CrmBoardSorts.Candidate, _) => filtered.OrderByDescending(c => c.FullName).ThenByDescending(c => c.Id),
+                (CrmBoardSorts.Phone, "asc") => filtered.OrderBy(c => c.PhoneRaw).ThenBy(c => c.Id),
+                (CrmBoardSorts.Phone, _) => filtered.OrderByDescending(c => c.PhoneRaw).ThenByDescending(c => c.Id),
+                (CrmBoardSorts.Vacancy, "asc") => filtered.OrderBy(c => c.Vacancy).ThenBy(c => c.Id),
+                (CrmBoardSorts.Vacancy, _) => filtered.OrderByDescending(c => c.Vacancy).ThenByDescending(c => c.Id),
+                (CrmBoardSorts.Stage, "asc") => filtered.OrderBy(c => c.Stage).ThenBy(c => c.Id),
+                (CrmBoardSorts.Stage, _) => filtered.OrderByDescending(c => c.Stage).ThenByDescending(c => c.Id),
+                (CrmBoardSorts.Manager, "asc") => filtered.OrderBy(c => c.ManagerUserId).ThenBy(c => c.Id),
+                (CrmBoardSorts.Manager, _) => filtered.OrderByDescending(c => c.ManagerUserId).ThenByDescending(c => c.Id),
+                (CrmBoardSorts.Changed, "asc") => filtered.OrderBy(c => c.StageChangedAtUtc).ThenBy(c => c.Id),
+                (CrmBoardSorts.Changed, _) => filtered.OrderByDescending(c => c.StageChangedAtUtc).ThenByDescending(c => c.Id),
+                (CrmBoardSorts.Created, "asc") => filtered.OrderBy(c => c.CreatedAtUtc).ThenBy(c => c.Id),
+                _ => filtered.OrderByDescending(c => c.CreatedAtUtc).ThenByDescending(c => c.Id)
+            };
+            var list = boardView == CrmBoardViews.List
+                ? ordered.Skip((page - 1) * pageSize).Take(pageSize).ToList()
+                : filtered;
             var stages = _previewCrmStages
                 .Select(stage =>
                 {
@@ -288,7 +348,17 @@ internal static class DesignPreviewData
                 _previewCrmStages.ToList(),
                 _previewCrmDeadlineNotificationsEnabled,
                 selectedManagerUserId,
-                selectedCloseReason);
+                selectedCloseReason,
+                boardView,
+                page,
+                pageSize,
+                totalItems,
+                sort,
+                sortDir,
+                boardView == CrmBoardViews.List ? list.Select(ToPreviewCrmCard).ToList() : null,
+                selectedStage,
+                query.CreatedFrom,
+                query.CreatedTo);
         }
     }
 
@@ -547,7 +617,11 @@ internal static class DesignPreviewData
                 .SelectMany(pair => pair.Value)
                 .OrderBy(comment => comment.CreatedAtUtc)
                 .ToList();
-            var history = PreviewCrmHistory.OrderByDescending(item => item.CreatedAtUtc).ToList();
+            var history = PreviewCrmHistory
+                .Where(item => item.CardId == cardId)
+                .Select(item => item.History)
+                .OrderByDescending(item => item.CreatedAtUtc)
+                .ToList();
             var activity = notes.Select(x => new CrmActivityItemDto(
                     "note",
                     x.IsPinned
@@ -791,6 +865,7 @@ internal static class DesignPreviewData
             candidate.Stage = stage;
             candidate.StageChangedAtUtc = DateTime.UtcNow;
             AddPreviewCrmHistory(
+                cardId,
                 "StageChanged",
                 CrmActivityDetails.WithComment($"{previousStage} → {stage}", comment));
 
@@ -805,7 +880,7 @@ internal static class DesignPreviewData
             var candidate = PreviewCrmCandidates.FirstOrDefault(item => item.Id == cardId);
             if (candidate is null) return (false, "Карточка не найдена.");
             candidate.IsInActiveLoad = active;
-            AddPreviewCrmHistory(active ? "ReturnedToLoad" : "RemovedFromLoad", candidate.FullName);
+            AddPreviewCrmHistory(cardId, active ? "ReturnedToLoad" : "RemovedFromLoad", candidate.FullName);
             return (true, null);
         }
     }
@@ -820,7 +895,7 @@ internal static class DesignPreviewData
             candidate.ManagerUserId = managerUserId;
             candidate.IsClosed = false;
             candidate.CloseReason = null;
-            AddPreviewCrmHistory("Assigned", manager.DisplayName);
+            AddPreviewCrmHistory(cardId, "Assigned", manager.DisplayName);
             return (true, null);
         }
     }
@@ -834,7 +909,7 @@ internal static class DesignPreviewData
             if (string.IsNullOrWhiteSpace(request.FullName)) return (false, "Укажите ФИО кандидата.");
             if (string.IsNullOrWhiteSpace(request.PhoneRaw)) return (false, "Укажите корректный телефон.");
             // Preview model fields are mostly immutable; accept edit for UI smoke only.
-            AddPreviewCrmHistory("CardUpdated", "поля карточки");
+            AddPreviewCrmHistory(cardId, "CardUpdated", "поля карточки");
             return (true, null);
         }
     }
@@ -849,7 +924,7 @@ internal static class DesignPreviewData
             candidate.IsClosed = true;
             candidate.CloseReason = reason;
             candidate.IsInActiveLoad = false;
-            AddPreviewCrmHistory("Closed", CrmActivityDetails.WithComment(reason, comment));
+            AddPreviewCrmHistory(cardId, "Closed", CrmActivityDetails.WithComment(reason, comment));
             return (true, null);
         }
     }
@@ -863,7 +938,7 @@ internal static class DesignPreviewData
             candidate.IsClosed = false;
             candidate.CloseReason = null;
             candidate.IsInActiveLoad = true;
-            AddPreviewCrmHistory("Reopened", candidate.FullName);
+            AddPreviewCrmHistory(cardId, "Reopened", candidate.FullName);
             return (true, null);
         }
     }
@@ -879,7 +954,7 @@ internal static class DesignPreviewData
                 PreviewCrmNotes[cardId] = notes;
             }
             notes.Add(new CrmNoteDto(Guid.NewGuid(), "preview-admin", "Администратор", text.Trim(), DateTime.UtcNow, CanEdit: true, CanDelete: true, CanPin: true));
-            AddPreviewCrmHistory("Note", text.Trim());
+            AddPreviewCrmHistory(cardId, "Note", text.Trim());
             return (true, null);
         }
     }
@@ -897,7 +972,7 @@ internal static class DesignPreviewData
             var index = notes.FindIndex(note => note.Id == noteId);
             if (index < 0) return (false, "Комментарий не найден.");
             notes[index] = notes[index] with { Text = text.Trim(), UpdatedAtUtc = DateTime.UtcNow };
-            AddPreviewCrmHistory("NoteUpdated", text.Trim());
+            AddPreviewCrmHistory(cardId, "NoteUpdated", text.Trim());
             return (true, null);
         }
     }
@@ -914,7 +989,7 @@ internal static class DesignPreviewData
             var index = notes.FindIndex(note => note.Id == noteId);
             if (index < 0) return (false, "Комментарий не найден.");
             notes.RemoveAt(index);
-            AddPreviewCrmHistory("NoteDeleted", noteId.ToString("D"));
+            AddPreviewCrmHistory(cardId, "NoteDeleted", noteId.ToString("D"));
             return (true, null);
         }
     }
@@ -931,7 +1006,7 @@ internal static class DesignPreviewData
             var index = notes.FindIndex(note => note.Id == noteId);
             if (index < 0) return (false, "Комментарий не найден.");
             notes[index] = notes[index] with { IsPinned = isPinned, CanEdit = true, CanDelete = true, CanPin = true };
-            AddPreviewCrmHistory(isPinned ? "NotePinned" : "NoteUnpinned", notes[index].Text);
+            AddPreviewCrmHistory(cardId, isPinned ? "NotePinned" : "NoteUnpinned", notes[index].Text);
             return (true, null);
         }
     }
@@ -954,7 +1029,7 @@ internal static class DesignPreviewData
             var due = request.DueAtUtc;
             var task = new CrmTaskDto(Guid.NewGuid(), request.CardId, candidateName, request.Title.Trim(), request.Description?.Trim(), assignee.UserId, assignee.DisplayName, "preview-admin", "Администратор", due, CrmTaskStatuses.Open, DateTime.UtcNow, null, due is DateTime d && d < DateTime.UtcNow, request.Importance, request.TaskType);
             PreviewCrmTasks.Add(task);
-            AddPreviewCrmHistory("TaskCreated", task.Title);
+            AddPreviewCrmHistory(task.CardId, "TaskCreated", task.Title);
             return (task, null);
         }
     }
@@ -1003,7 +1078,7 @@ internal static class DesignPreviewData
                 completedAt,
                 CanEdit: true,
                 CanDelete: true));
-            AddPreviewCrmHistory("TaskCompleted", task.Title);
+            AddPreviewCrmHistory(task.CardId, "TaskCompleted", task.Title);
             return (true, null);
         }
     }
@@ -1038,7 +1113,7 @@ internal static class DesignPreviewData
                 UpdatedAtUtc = DateTime.UtcNow,
                 IsOverdue = update.DueAtUtc is DateTime due && due < DateTime.UtcNow
             };
-            AddPreviewCrmHistory("TaskUpdated", update.Title.Trim());
+            AddPreviewCrmHistory(task.CardId, "TaskUpdated", update.Title.Trim());
             return (true, null);
         }
     }
@@ -1057,7 +1132,7 @@ internal static class DesignPreviewData
                 CompletedAtUtc = DateTime.UtcNow,
                 IsOverdue = false
             };
-            AddPreviewCrmHistory("TaskCancelled", task.Title);
+            AddPreviewCrmHistory(task.CardId, "TaskCancelled", task.Title);
             return (true, null);
         }
     }
@@ -1075,7 +1150,7 @@ internal static class DesignPreviewData
                 CompletedAtUtc = null,
                 IsOverdue = task.DueAtUtc is DateTime due && due < DateTime.UtcNow
             };
-            AddPreviewCrmHistory("TaskReopened", task.Title);
+            AddPreviewCrmHistory(task.CardId, "TaskReopened", task.Title);
             return (true, null);
         }
     }
@@ -1096,7 +1171,7 @@ internal static class DesignPreviewData
                     PreviewCrmTaskAttachmentContent.Remove(attachment.Id);
                 }
             }
-            AddPreviewCrmHistory("TaskDeleted", task.Title);
+            AddPreviewCrmHistory(task.CardId, "TaskDeleted", task.Title);
             return (true, null);
         }
     }
@@ -1331,8 +1406,15 @@ internal static class DesignPreviewData
             Citizenship: candidate.Citizenship);
     }
 
-    private static void AddPreviewCrmHistory(string action, string details) =>
-        PreviewCrmHistory.Add(new CrmHistoryDto(Guid.NewGuid(), action, details, "preview-admin", "Администратор", DateTime.UtcNow));
+    private static void AddPreviewCrmHistory(Guid? cardId, string action, string details)
+    {
+        if (cardId is not Guid id) return;
+        PreviewCrmHistory.Add(new PreviewCrmHistoryEntry(
+            id,
+            new CrmHistoryDto(Guid.NewGuid(), action, details, "preview-admin", "Администратор", DateTime.UtcNow)));
+    }
+
+    private sealed record PreviewCrmHistoryEntry(Guid CardId, CrmHistoryDto History);
 
     private sealed class PreviewCrmCandidate(Guid id, string fullName, int? age, string phoneRaw, string city, string vacancy, string stage, string? managerUserId, bool isInActiveLoad, int minutesAgo)
     {

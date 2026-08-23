@@ -15,16 +15,22 @@
                                    currentUserId,
                                    StringComparison.Ordinal));
     var isResponsibleFilterScope = Model.Scope is CrmBoardScopes.Mine or CrmBoardScopes.Team or CrmBoardScopes.Closed;
+    var isListView = Model.View == CrmBoardViews.List;
+    var hasCreatedPeriod = !string.IsNullOrWhiteSpace(Model.CreatedFrom)
+                           || !string.IsNullOrWhiteSpace(Model.CreatedTo);
     var activeAdvancedFilters = new[]
     {
         !string.IsNullOrWhiteSpace(Model.City),
         !string.IsNullOrWhiteSpace(Model.Vacancy),
+        isListView && !string.IsNullOrWhiteSpace(Model.Stage),
+        isListView && hasCreatedPeriod,
         Model.Scope == CrmBoardScopes.Closed && !string.IsNullOrWhiteSpace(Model.CloseReason),
         Model.OverdueOnly,
         Model.ActiveLoadOnly,
         Model.IncludeClosed
     }.Count(x => x);
     var advancedFilterBadge = activeAdvancedFilters > 0 ? activeAdvancedFilters.ToString() : string.Empty;
+    var supportsViewSwitch = Model.Scope is CrmBoardScopes.Mine or CrmBoardScopes.Team;
     string ScopeUrl(string scope) => Url.Action("Index", new
     {
         scope,
@@ -35,8 +41,33 @@
         overdueOnly = Model.OverdueOnly,
         activeLoadOnly = Model.ActiveLoadOnly,
         includeClosed = Model.IncludeClosed,
-        sort = Context.Request.Query["sort"].ToString(),
-        dir = Context.Request.Query["dir"].ToString()
+        stageFilter = isListView ? Model.Stage : null,
+        createdFrom = isListView ? Model.CreatedFrom : null,
+        createdTo = isListView ? Model.CreatedTo : null,
+        view = scope is CrmBoardScopes.Mine or CrmBoardScopes.Team ? Model.View : CrmBoardViews.Board,
+        pageSize = Model.PageSize,
+        sort = Model.Sort,
+        dir = Model.SortDir
+    })!;
+    string ViewUrl(string view) => Url.Action("Index", new
+    {
+        scope = Model.Scope,
+        managerUserId = Model.ManagerUserId,
+        search = Model.Search,
+        city = Model.City,
+        vacancy = Model.Vacancy,
+        closeReason = Model.CloseReason,
+        overdueOnly = Model.OverdueOnly,
+        activeLoadOnly = Model.ActiveLoadOnly,
+        includeClosed = Model.IncludeClosed,
+        stageFilter = view == CrmBoardViews.List ? Model.Stage : null,
+        createdFrom = view == CrmBoardViews.List ? Model.CreatedFrom : null,
+        createdTo = view == CrmBoardViews.List ? Model.CreatedTo : null,
+        view,
+        page = 1,
+        pageSize = Model.PageSize,
+        sort = Model.Sort,
+        dir = Model.SortDir
     })!;
 }
 @if (TempData["CrmError"] is string error)
@@ -145,7 +176,21 @@
                     <a class="@(Model.Scope == CrmBoardScopes.Closed ? "is-active" : "")" href="@ScopeUrl(CrmBoardScopes.Closed)">Мои закрытые</a>
                 }
             </div>
+            @if (supportsViewSwitch)
+            {
+                <div class="crm-view-switch" role="group" aria-label="Вид CRM">
+                    <a class="@(Model.View == CrmBoardViews.Board ? "is-active" : "")" href="@ViewUrl(CrmBoardViews.Board)" title="Канбан"><i class="fa-solid fa-table-columns" aria-hidden="true"></i><span>Канбан</span></a>
+                    <a class="@(Model.View == CrmBoardViews.List ? "is-active" : "")" href="@ViewUrl(CrmBoardViews.List)" title="Список"><i class="fa-solid fa-list" aria-hidden="true"></i><span>Список</span></a>
+                </div>
+            }
             <input type="hidden" name="scope" value="@Model.Scope" />
+            @if (supportsViewSwitch)
+            {
+                <input type="hidden" name="view" value="@Model.View" />
+                <input type="hidden" name="pageSize" value="@Model.PageSize" />
+                <input type="hidden" name="sort" value="@Model.Sort" />
+                <input type="hidden" name="dir" value="@Model.SortDir" />
+            }
             @if (Model.IsAdmin
                  && canFilterResponsible
                  && isResponsibleFilterScope)
@@ -180,13 +225,41 @@
             }
             <input type="search" name="search" value="@Model.Search" placeholder="ФИО, телефон, город…" aria-label="Поиск кандидата" />
             <button class="settings-primary-btn" type="submit">Найти</button>
-            <a class="settings-secondary-btn" asp-action="Index" asp-route-scope="@Model.Scope">Сброс</a>
+            <a class="settings-secondary-btn" asp-action="Index" asp-route-scope="@Model.Scope" asp-route-view="@(supportsViewSwitch ? Model.View : null)" asp-route-pageSize="@(supportsViewSwitch ? Model.PageSize : null)">Сброс</a>
         </div>
         <details class="crm-filter-details" @(activeAdvancedFilters > 0 ? "open" : null)>
             <summary><i class="fa-solid fa-sliders" aria-hidden="true"></i>Дополнительные фильтры<span class="crm-filter-details__count @(activeAdvancedFilters == 0 ? "is-empty" : "")">@advancedFilterBadge</span></summary>
             <div class="crm-filter-details__body">
                 <input type="text" name="city" value="@Model.City" placeholder="Город" />
                 <input type="text" name="vacancy" value="@Model.Vacancy" placeholder="Вакансия" />
+                @if (isListView)
+                {
+                    <label class="crm-filter-field">
+                        <span>Этап</span>
+                        <select name="stageFilter" aria-label="Фильтр по этапу" data-crm-stage-auto-filter>
+                            <option value="">Все этапы</option>
+                            @foreach (var funnelStage in Model.FunnelStages)
+                            {
+                                if (string.Equals(funnelStage, Model.Stage, StringComparison.Ordinal))
+                                {
+                                    <option value="@funnelStage" selected>@funnelStage</option>
+                                }
+                                else
+                                {
+                                    <option value="@funnelStage">@funnelStage</option>
+                                }
+                            }
+                        </select>
+                    </label>
+                    <label class="crm-filter-field">
+                        <span>Создано с</span>
+                        <input type="date" name="createdFrom" value="@Model.CreatedFrom" aria-label="Дата создания с" data-crm-date-filter />
+                    </label>
+                    <label class="crm-filter-field">
+                        <span>по</span>
+                        <input type="date" name="createdTo" value="@Model.CreatedTo" aria-label="Дата создания по" data-crm-date-filter />
+                    </label>
+                }
                 @if (Model.Scope == CrmBoardScopes.Closed)
                 {
                     <select name="closeReason" aria-label="Фильтр по типу закрытия">
@@ -260,5 +333,12 @@ else if (Model.Scope == CrmBoardScopes.Unassigned)
 }
 else
 {
-    <partial name="_CrmBoard" model="Model" />
+    if (Model.View == CrmBoardViews.List)
+    {
+        <partial name="_CrmListTable" model="Model" />
+    }
+    else
+    {
+        <partial name="_CrmBoard" model="Model" />
+    }
 }
