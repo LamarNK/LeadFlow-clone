@@ -23,7 +23,6 @@ public static class OrbitaEndpointMappings
 {
     public static void MapOrbitaEndpoints(this WebApplication app)
     {
-        WorkerReleasePublishEndpoints.Map(app);
         WorkerEndpoints.Map(app);
         DashboardEndpoints.Map(app);
         AdminEndpoints.Map(app);

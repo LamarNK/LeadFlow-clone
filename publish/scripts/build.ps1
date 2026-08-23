@@ -6,7 +6,6 @@ param(
     [ValidateSet("auto", "revision", "build", "minor", "major")]
     [string]$VersionBump = "auto",
     [int]$MaxAutoRevision = 99,
-    [string]$StateRoot,
     [switch]$Clean
 )
 
@@ -17,12 +16,7 @@ $ErrorActionPreference = "Stop"
 $publishRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
 $repoRoot = Resolve-Path (Join-Path $publishRoot "..")
 $outRoot = Join-Path $publishRoot "out"
-$stateRoot = if ([string]::IsNullOrWhiteSpace($StateRoot)) {
-    Join-Path $publishRoot "state"
-}
-else {
-    $StateRoot
-}
+$stateRoot = Join-Path $publishRoot "state"
 $workRoot = Join-Path $publishRoot "tmp\build"
 
 New-Item -Path $outRoot -ItemType Directory -Force | Out-Null
