@@ -3146,3 +3146,324 @@ body.telephony-modal-open { overflow: hidden; }
         justify-self: start;
     }
 }
+
+/* Telephony page */
+.telephony-settings-page {
+    display: block;
+}
+
+.telephony-settings-nav {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    min-height: 28px;
+    margin: 0 0 28px;
+    padding: 0;
+}
+
+.telephony-back-link,
+.telephony-edit-office-link {
+    color: #2563eb;
+    font-size: 14px;
+    font-weight: 600;
+    text-decoration: none;
+}
+
+.telephony-back-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.telephony-back-link:hover,
+.telephony-edit-office-link:hover {
+    color: #1d4ed8;
+    text-decoration: underline;
+    text-underline-offset: 3px;
+}
+
+.telephony-access-note {
+    color: var(--text-secondary, #64748b);
+    font-size: 13px;
+}
+
+.telephony-layout {
+    display: grid;
+    grid-template-columns: minmax(220px, 242px) minmax(0, 1fr);
+    gap: 28px;
+    align-items: start;
+}
+
+.telephony-provider-directory {
+    position: sticky;
+    top: 24px;
+    display: grid;
+    gap: 14px;
+    padding: 24px 16px 18px;
+    border: 1px solid var(--border, #e2e8f0);
+    border-radius: 14px;
+    background: var(--bg-card, #fff);
+}
+
+.telephony-provider-directory > h2 {
+    margin: 0 8px;
+    color: var(--text-primary, #0f172a);
+    font-size: 18px;
+    font-weight: 600;
+    letter-spacing: -.015em;
+}
+
+.telephony-provider-directory__list {
+    display: grid;
+    gap: 6px;
+}
+
+.telephony-provider-directory__item {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    align-items: start;
+    gap: 7px;
+    min-height: 76px;
+    padding: 13px 8px;
+    border-radius: 8px;
+    color: var(--text-primary, #0f172a);
+    text-decoration: none;
+    transition: background-color .16s ease, color .16s ease;
+}
+
+.telephony-provider-directory__item:hover {
+    background: rgba(37, 99, 235, .055);
+    color: #1d4ed8;
+}
+
+.telephony-provider-directory__item--active {
+    padding: 16px 8px;
+    background: rgba(37, 99, 235, .09);
+    color: #2563eb;
+}
+
+.telephony-provider-directory__item strong {
+    font-size: 15px;
+    font-weight: 650;
+    line-height: 1.2;
+}
+
+.telephony-provider-directory__item small {
+    color: var(--text-secondary, #64748b);
+    font-size: 13px;
+    line-height: 1.45;
+}
+
+.telephony-content {
+    display: grid;
+    gap: 16px;
+    min-width: 0;
+}
+
+.telephony-provider-context {
+    display: block;
+    padding: 0;
+    overflow: hidden;
+}
+
+.telephony-provider-context__header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 24px;
+    padding: 26px 26px 24px;
+}
+
+.telephony-provider-context__header h2 {
+    margin: 0;
+    color: var(--text-primary, #0f172a);
+    font-size: 26px;
+    font-weight: 700;
+    letter-spacing: -.03em;
+    line-height: 1.15;
+}
+
+.telephony-provider-context__header p {
+    margin: 8px 0 0;
+    color: var(--text-secondary, #64748b);
+    font-size: 15px;
+    line-height: 1.45;
+}
+
+.telephony-provider-facts {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    margin: 0;
+    border-top: 1px solid var(--border, #e2e8f0);
+}
+
+.telephony-provider-facts > div {
+    min-width: 0;
+    padding: 28px 26px 30px;
+}
+
+.telephony-provider-facts > div + div {
+    border-left: 1px solid var(--border, #e2e8f0);
+}
+
+.telephony-provider-facts dt {
+    color: var(--text-secondary, #64748b);
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.telephony-provider-facts dd {
+    margin: 10px 0 0;
+    color: var(--text-primary, #0f172a);
+    font-size: 15px;
+    font-weight: 700;
+    line-height: 1.3;
+}
+
+.telephony-provider-facts .telephony-provider-facts__state--ready { color: #067647; }
+.telephony-provider-facts .telephony-provider-facts__state--pending { color: #dc2626; }
+
+.telephony-card {
+    margin: 0;
+    padding: 26px;
+    box-shadow: none;
+}
+
+.telephony-card .card-header {
+    margin-bottom: 26px;
+}
+
+.telephony-card .settings-card-title {
+    font-size: 18px;
+    font-weight: 600;
+}
+
+.telephony-card .settings-card-subtitle {
+    margin-top: 8px;
+    font-size: 14px;
+    line-height: 1.45;
+}
+
+.telephony-add-user-btn {
+    min-width: 214px;
+    border-color: rgba(37, 99, 235, .16);
+    color: #2563eb;
+}
+
+.telephony-add-user-btn:hover {
+    border-color: rgba(37, 99, 235, .3);
+    background: rgba(37, 99, 235, .05);
+    color: #1d4ed8;
+}
+
+.telephony-binding-guide {
+    display: block;
+    margin: 0 0 28px;
+    padding: 0;
+    border: 0;
+    border-radius: 0;
+    background: transparent;
+}
+
+.telephony-binding-guide__icon {
+    display: none;
+}
+
+.telephony-binding-guide strong {
+    margin: 0;
+    color: var(--text-primary, #0f172a);
+    font-size: 14px;
+    font-weight: 600;
+}
+
+.telephony-binding-guide p {
+    max-width: none;
+    margin: 12px 0 0;
+    color: var(--text-secondary, #64748b);
+    font-size: 14px;
+    line-height: 1.65;
+}
+
+.telephony-office-users-guide {
+    min-height: 0;
+}
+
+.telephony-staff-empty {
+    display: block;
+    padding: 28px 0 16px;
+    border-top: 1px solid var(--border, #e2e8f0);
+}
+
+.telephony-staff-empty > i {
+    display: none;
+}
+
+.telephony-staff-empty strong {
+    font-size: 16px;
+    font-weight: 600;
+}
+
+.telephony-staff-empty p {
+    margin-top: 8px;
+    font-size: 14px;
+}
+
+.telephony-office-users-card {
+    margin-top: 0;
+}
+
+.telephony-staff-card .card-body {
+    overflow-x: auto;
+}
+
+.telephony-settings-grid {
+    display: contents;
+}
+
+@media (max-width: 980px) {
+    .telephony-layout {
+        grid-template-columns: 1fr;
+    }
+
+    .telephony-provider-directory {
+        position: static;
+    }
+
+    .telephony-provider-directory__list {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 640px) {
+    .telephony-settings-nav {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 12px;
+        margin-bottom: 20px;
+    }
+
+    .telephony-provider-directory__list,
+    .telephony-provider-facts {
+        grid-template-columns: 1fr;
+    }
+
+    .telephony-provider-facts > div + div {
+        border-top: 1px solid var(--border, #e2e8f0);
+        border-left: 0;
+    }
+
+    .telephony-provider-context__header,
+    .telephony-card {
+        padding-right: 20px;
+        padding-left: 20px;
+    }
+
+    .telephony-provider-context__header {
+        flex-direction: column;
+    }
+
+    .telephony-add-user-btn {
+        min-width: 0;
+    }
+}

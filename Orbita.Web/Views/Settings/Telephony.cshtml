@@ -30,6 +30,14 @@
             _ => "Номер по умолчанию"
         };
     }
+    string ProviderDirectoryDescription(string provider) => provider switch
+    {
+        CrmTelephonyProviders.Asterisk => "Настройте для звонков через Плюсофон или Билайн",
+        CrmTelephonyProviders.Sipout => "Номера исходящих звонков",
+        CrmTelephonyProviders.Plusofon => "Интеграция и автоматизация",
+        CrmTelephonyProviders.Beeline => "SIP-транк для звонков",
+        _ => string.Empty
+    };
     ViewData["Title"] = "Телефония";
 }
 <partial name="_PageHeader" model="@(new PageHeaderViewModel
@@ -40,58 +48,6 @@
 })" />
 
 <div class="orbita-main settings-page telephony-settings-page">
-    <div class="telephony-settings-nav">
-        <a class="settings-link-btn" href="@Url.Action("Index", "Settings", new { tab = "offices", officeId = Model.OfficeId })">
-            <i class="fa-solid fa-arrow-left" aria-hidden="true"></i> К офису
-        </a>
-        <span class="telephony-access-note">
-            <i class="fa-solid fa-shield-halved" aria-hidden="true"></i>
-            @(Model.CanManage ? "Вы можете изменять телефонию офиса" : "Просмотр без права изменения")
-        </span>
-    </div>
-
-    <section class="telephony-provider-overview" aria-label="Подключения телефонии">
-        @foreach (var summary in Model.ProviderSummaries)
-        {
-            var selected = string.Equals(summary.Provider, Model.Provider, StringComparison.OrdinalIgnoreCase);
-            var statusLabel = summary.IsEnabled ? "Работает" : summary.IsConfigured ? "Приостановлен" : "Не настроен";
-            <a class="telephony-provider-card @(selected ? "telephony-provider-card--selected" : null)"
-               href="@Url.Action("Telephony", "TelephonySettings", new { officeId = Model.OfficeId, provider = summary.Provider })"
-               aria-current="@(selected ? "page" : null)">
-                <span class="telephony-provider-card__icon"><i class="fa-solid @summary.Icon" aria-hidden="true"></i></span>
-                <span class="telephony-provider-card__body">
-                    <strong>@summary.Name</strong>
-                    <small>@summary.Description</small>
-                    <span class="telephony-provider-card__meta">@summary.BoundUsersCount сотрудников подключено</span>
-                </span>
-                <span class="settings-status-pill @(summary.IsEnabled ? "settings-status-pill--online" : summary.IsConfigured ? "settings-status-pill--warning" : "settings-status-pill--disabled")">
-                    @statusLabel
-                </span>
-            </a>
-        }
-    </section>
-
-    <section class="telephony-provider-context" aria-label="Состояние выбранного подключения">
-        <div class="telephony-provider-context__copy">
-            <h2>@providerLabel</h2>
-            <p>@(selectedProvider?.Description ?? "Настройте подключение и свяжите линии с сотрудниками офиса.")</p>
-        </div>
-        <dl class="telephony-provider-context__facts">
-            <div>
-                <dt>Сотрудники</dt>
-                <dd>@(selectedProvider?.BoundUsersCount ?? 0) подключено</dd>
-            </div>
-            <div>
-                <dt>Приём событий</dt>
-                <dd class="@(Model.Settings.IsEnabled ? "telephony-provider-context__state--ready" : "telephony-provider-context__state--pending")">@receiverStatusLabel</dd>
-            </div>
-            <div>
-                <dt>Доступ</dt>
-                <dd>@(Model.CanManage ? "Управление доступно" : "Только просмотр")</dd>
-            </div>
-        </dl>
-    </section>
-
     @if (!string.IsNullOrWhiteSpace(Model.StatusMessage))
     {
         <div class="settings-alert settings-alert--success" role="status">@Model.StatusMessage</div>
@@ -101,9 +57,65 @@
         <div class="settings-alert settings-alert--error" role="alert">@Model.ErrorMessage</div>
     }
 
+    <div class="telephony-settings-nav">
+        <a class="telephony-back-link" href="@Url.Action("Index", "Settings", new { tab = "offices", officeId = Model.OfficeId })">
+            <i class="fa-solid fa-arrow-left" aria-hidden="true"></i> К офису
+        </a>
+        @if (Model.CanManage)
+        {
+            <a class="telephony-edit-office-link" href="#telephonyReceiver">Изменить телефон офиса</a>
+        }
+        else
+        {
+            <span class="telephony-access-note">Просмотр без права изменения</span>
+        }
+    </div>
+
+    <div class="telephony-layout">
+        <aside class="telephony-provider-directory" aria-labelledby="telephonyProviderDirectoryTitle">
+            <h2 id="telephonyProviderDirectoryTitle">Подключения</h2>
+            <nav class="telephony-provider-directory__list" aria-label="Провайдеры телефонии">
+                @foreach (var summary in Model.ProviderSummaries)
+                {
+                    var selected = string.Equals(summary.Provider, Model.Provider, StringComparison.OrdinalIgnoreCase);
+                    <a class="telephony-provider-directory__item @(selected ? "telephony-provider-directory__item--active" : null)"
+                       href="@Url.Action("Telephony", "TelephonySettings", new { officeId = Model.OfficeId, provider = summary.Provider })"
+                       aria-current="@(selected ? "page" : null)">
+                        <strong>@summary.Name</strong>
+                        <small>@ProviderDirectoryDescription(summary.Provider)</small>
+                    </a>
+                }
+            </nav>
+        </aside>
+
+        <div class="telephony-content">
+        <section class="card telephony-provider-context" aria-labelledby="telephonyProviderTitle">
+            <header class="telephony-provider-context__header">
+                <div>
+                    <h2 id="telephonyProviderTitle">@providerLabel</h2>
+                    <p>@(selectedProvider?.Description ?? "Настройте подключение и свяжите линии с сотрудниками офиса.")</p>
+                </div>
+                <span class="settings-status-pill @(Model.Settings.IsEnabled ? "settings-status-pill--online" : Model.Settings.IsConfigured ? "settings-status-pill--warning" : "settings-status-pill--disabled")">@receiverStatusLabel</span>
+            </header>
+            <dl class="telephony-provider-facts" aria-label="Сводка по выбранному подключению">
+                <div>
+                    <dt>Сотрудники</dt>
+                    <dd>@(selectedProvider?.BoundUsersCount ?? 0) подключено</dd>
+                </div>
+                <div>
+                    <dt>Приём событий</dt>
+                    <dd class="@(Model.Settings.IsEnabled ? "telephony-provider-facts__state--ready" : "telephony-provider-facts__state--pending")">@(Model.Settings.IsEnabled ? "Настроен" : "Не настроен")</dd>
+                </div>
+                <div>
+                    <dt>Доступ</dt>
+                    <dd>@(Model.CanManage ? "Управление доступно" : "Только просмотр")</dd>
+                </div>
+            </dl>
+        </section>
+
     @if (!string.IsNullOrWhiteSpace(Model.ProviderSetupUrl))
     {
-        <section class="card telephony-secret-card">
+        <section class="card telephony-card telephony-secret-card">
             <div class="card-header settings-card-header">
                 <div>
                     <h2 class="settings-card-title">Данные webhook для @providerLabel</h2>
@@ -152,7 +164,7 @@
 
     @if (isPlusofon)
     {
-        <section class="card">
+        <section class="card telephony-card">
             <div class="card-header settings-card-header">
                 <div>
                     <h2 class="settings-card-title">API для записей звонков</h2>
@@ -190,7 +202,7 @@
 
     @if (isBeeline)
     {
-        <section class="card telephony-sip-lines-card">
+        <section class="card telephony-card telephony-sip-lines-card">
             <div class="card-header settings-card-header">
                 <div>
                     <h2 class="settings-card-title">Линии Билайна</h2>
@@ -354,7 +366,7 @@
 
     @if (isAsterisk || isBeeline)
     {
-        <section class="card telephony-staff-card telephony-office-users-card">
+        <section class="card telephony-card telephony-staff-card telephony-office-users-card">
             <div class="card-header settings-card-header">
                 <div>
                     <h2 class="settings-card-title">Пользователи телефонии</h2>
@@ -363,17 +375,15 @@
                 @if (Model.CanManage && Model.OfficeUsers.Count > 0)
                 {
                     <button type="button"
-                            class="settings-primary-btn settings-primary-btn--compact"
+                            class="settings-secondary-btn telephony-add-user-btn"
                             data-telephony-open-user>
-                        <i class="fa-solid fa-user-plus" aria-hidden="true"></i>
-                        Подключить сотрудника
+                        Добавить сотрудника
                     </button>
                 }
                 else if (Model.CanManage)
                 {
-                    <a class="settings-secondary-btn telephony-edit-btn"
+                    <a class="settings-secondary-btn telephony-add-user-btn"
                        href="@Url.Action("Index", "Settings", new { tab = "offices", officeId = Model.OfficeId })">
-                        <i class="fa-solid fa-user-plus" aria-hidden="true"></i>
                         Добавить сотрудника
                     </a>
                 }
@@ -382,7 +392,7 @@
                 <span class="telephony-binding-guide__icon"><i class="fa-solid fa-circle-info" aria-hidden="true"></i></span>
                 <div>
                     <strong>Внутренний номер и исходящая линия</strong>
-                    <p>Общую линию можно назначить нескольким сотрудникам. Персональная линия доступна только одному; Орбита не даст случайно привязать её повторно.</p>
+                    <p>Назначьте одним или нескольким сотрудникам.<br />Персональная линия доступна только одному. Повторное назначение невозможно.</p>
                 </div>
             </div>
             <div class="card-body telephony-staff-body">
@@ -458,7 +468,7 @@
     @if (!isBeeline)
     {
     <div class="telephony-settings-grid">
-        <section class="card telephony-receiver-card">
+        <section class="card telephony-card telephony-receiver-card" id="telephonyReceiver">
             <div class="card-header settings-card-header">
                 <div>
                     <h2 class="settings-card-title">Приём звонков</h2>
@@ -509,7 +519,7 @@
 
         @if (!isAsterisk)
         {
-        <section class="card telephony-staff-card">
+        <section class="card telephony-card telephony-staff-card">
             <div class="card-header settings-card-header">
                 <div>
                     <h2 class="settings-card-title">Линии сотрудников</h2>
@@ -588,6 +598,8 @@
         }
     </div>
     }
+        </div>
+    </div>
 </div>
 
 @if ((isAsterisk || isBeeline) && Model.CanManage)
