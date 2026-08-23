@@ -29,6 +29,7 @@ command -v dotnet >/dev/null || { echo "dotnet SDK is required." >&2; exit 1; }
 command -v python3 >/dev/null || { echo "python3 is required." >&2; exit 1; }
 command -v wixl >/dev/null || { echo "wixl is required (Ubuntu: apt-get install wixl)." >&2; exit 1; }
 command -v msiinfo >/dev/null || { echo "msiinfo is required (Ubuntu: apt-get install msitools)." >&2; exit 1; }
+command -v wrestool >/dev/null || { echo "wrestool is required (Ubuntu: apt-get install icoutils)." >&2; exit 1; }
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd -- "$script_dir/../.." && pwd)"
@@ -50,9 +51,15 @@ dotnet publish "$repo_root/Orbita.Worker/Orbita.Worker.csproj" \
   -p:FileVersion="$version" \
   -p:InformationalVersion="$version" \
   -p:IncludeSourceRevisionInInformationalVersion=false \
+  -t:Rebuild \
   -o "$publish_dir"
 
 find "$publish_dir" -type f -name '*.pdb' -delete
+exe_version="$(wrestool -x --raw -t 16 "$publish_dir/Orbita.Worker.exe" | strings -el | awk 'previous == "FileVersion" { print; exit } { previous = $0 }')"
+if [[ "$exe_version" != "$version" ]]; then
+  echo "Orbita.Worker.exe FileVersion is '$exe_version', expected '$version'." >&2
+  exit 1
+fi
 python3 "$script_dir/build-orbita-worker-msi-linux.py" \
   --publish-dir "$publish_dir" \
   --output "$wxs_path" \

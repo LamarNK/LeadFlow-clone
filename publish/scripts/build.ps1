@@ -49,7 +49,8 @@ function Invoke-DotnetPublish {
         [string]$RuntimeName,
         [string]$Config,
         [string]$VersionText,
-        [bool]$SelfContained = $false
+        [bool]$SelfContained = $false,
+        [bool]$Rebuild = $false
     )
 
     if ($Clean -and (Test-Path $OutputPath)) {
@@ -70,6 +71,12 @@ function Invoke-DotnetPublish {
         "-p:IncludeSourceRevisionInInformationalVersion=false",
         "-o", $OutputPath
     )
+
+    if ($Rebuild) {
+        # Version properties alone are not inputs of CoreCompile. Without a rebuild,
+        # MSBuild can reuse a previous Orbita.Worker.exe with an old FileVersion.
+        $args += "-t:Rebuild"
+    }
 
     & dotnet @args
     if ($LASTEXITCODE -ne 0) {
@@ -319,11 +326,16 @@ function Build-OrbitaWorkerMsi {
         Remove-Item -LiteralPath $localWixRoot -Recurse -Force -ErrorAction SilentlyContinue
     }
 
-    Invoke-DotnetPublish -ProjectPath $projectPath -OutputPath $workRootPublish -RuntimeName $targetRuntime -Config $Configuration -VersionText $VersionText -SelfContained $true
+    Invoke-DotnetPublish -ProjectPath $projectPath -OutputPath $workRootPublish -RuntimeName $targetRuntime -Config $Configuration -VersionText $VersionText -SelfContained $true -Rebuild $true
 
     $exePath = Join-Path $workRootPublish "Orbita.Worker.exe"
     if (-not (Test-Path $exePath)) {
         throw "Orbita.Worker.exe was not produced in $workRootPublish"
+    }
+
+    $fileVersion = (Get-Item -LiteralPath $exePath).VersionInfo.FileVersion
+    if ($fileVersion -ne $VersionText) {
+        throw "Orbita.Worker.exe FileVersion is '$fileVersion', expected '$VersionText'."
     }
 
     Stop-OrbitaWorkerForPackaging
