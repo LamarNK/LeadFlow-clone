@@ -87,6 +87,43 @@ public sealed class OrbitaCandidateDuplicateRepository(
         return existing;
     }
 
+    public async Task<IReadOnlyList<WorkerKnownSourceResponseDto>> GetExistingSourceResponsesAsync(
+        Guid accountId,
+        IEnumerable<string> sourceResponseIds,
+        CancellationToken cancellationToken)
+    {
+        var ids = sourceResponseIds
+            .Where(static x => !string.IsNullOrWhiteSpace(x))
+            .Select(static x => x.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (ids.Length == 0)
+        {
+            return [];
+        }
+
+        try
+        {
+            var result = await apiClient.LookupCandidatesAsync(
+                    new WorkerCandidateLookupRequest(
+                        accountId,
+                        DuplicateScope.PerAvitoAccount.ToString(),
+                        ids,
+                        [],
+                        IncludeSourceResponseMetadata: true),
+                    cancellationToken)
+                .ConfigureAwait(false);
+            return (result?.ExistingSourceResponses ?? [])
+                .OrderByDescending(static x => x.CollectedAt)
+                .ToArray();
+        }
+        catch
+        {
+            // Метаданные phone-watch есть только у Orbita; локальный dedup-кеш не заменяет их.
+            return [];
+        }
+    }
+
     public async Task<HashSet<string>> GetExistingCardFingerprintsAsync(
         IEnumerable<string> cardFingerprintCandidates,
         DuplicateScope scope,

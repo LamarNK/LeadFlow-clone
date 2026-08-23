@@ -111,6 +111,35 @@ public sealed class CandidateLookupServiceTests
     }
 
     [Fact]
+    public async Task LookupAsync_SourceResponseMetadata_ReturnsNewestPhoneWatchFirst()
+    {
+        await using var db = CreateDb();
+        SeedWorker(db);
+        var older = DateTime.UtcNow.AddDays(-2);
+        var newer = DateTime.UtcNow.AddHours(-3);
+        db.CandidateResponses.AddRange(
+            NewResponse("79007770001", "sub-a", sourceResponseId: "phone-watch:older", createdAt: older),
+            NewResponse("79007770002", "sub-a", sourceResponseId: "phone-watch:newer", createdAt: newer));
+        await db.SaveChangesAsync();
+
+        var sut = CreateSut(db);
+        var result = await sut.LookupAsync(
+            WorkerId,
+            new WorkerCandidateLookupRequest(
+                AccountId,
+                "PerAvitoAccount",
+                ["phone-watch:older", "phone-watch:newer"],
+                [],
+                IncludeSourceResponseMetadata: true));
+
+        Assert.NotNull(result);
+        Assert.Equal(
+            ["phone-watch:newer", "phone-watch:older"],
+            result!.ExistingSourceResponses.Select(static x => x.SourceResponseId).ToArray());
+        Assert.Equal([newer, older], result.ExistingSourceResponses.Select(static x => x.CollectedAt).ToArray());
+    }
+
+    [Fact]
     public async Task LookupAsync_CardFingerprints_MatchesStoredFingerprint()
     {
         await using var db = CreateDb();

@@ -417,6 +417,34 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         return matched;
     }
 
+    public async Task<IReadOnlyList<WorkerKnownSourceResponseDto>> GetExistingSourceResponsesAsync(
+        Guid accountId,
+        IEnumerable<string> sourceResponseIds,
+        CancellationToken cancellationToken)
+    {
+        var normalizedIds = sourceResponseIds
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Select(x => x.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        if (normalizedIds.Length == 0)
+        {
+            return [];
+        }
+
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+        return await db.CandidateResponses
+            .AsNoTracking()
+            .Where(x => x.AccountId == accountId && normalizedIds.Contains(x.SourceResponseId))
+            .OrderByDescending(x => x.CollectedAt)
+            .Select(x => new WorkerKnownSourceResponseDto(
+                x.SourceResponseId,
+                x.CollectedAt,
+                x.PhoneRaw,
+                x.PhoneNormalized))
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<HashSet<string>> GetExistingCardFingerprintsAsync(
         IEnumerable<string> cardFingerprintCandidates,
         DuplicateScope scope,

@@ -165,13 +165,29 @@ public sealed record WorkerCandidateLookupRequest(
     bool IncludeAllKnownPhones = false,
     string? AvitoSubProfileId = null,
     IReadOnlyList<string>? CardFingerprints = null,
-    IReadOnlyList<CandidateLookupProfileDto>? Profiles = null);
+    IReadOnlyList<CandidateLookupProfileDto>? Profiles = null,
+    /// <summary>
+    /// Вернуть метаданные совпавших SourceResponseId. Нужны для восстановления phone-watch
+    /// из Orbita после переустановки или очистки локального состояния воркера.
+    /// </summary>
+    bool IncludeSourceResponseMetadata = false);
+
+/// <summary>
+/// Сохранённый в Orbita отклик, совпавший по SourceResponseId. Список возвращается свежими
+/// первыми по времени добавления отклика в Orbita.
+/// </summary>
+public sealed record WorkerKnownSourceResponseDto(
+    string SourceResponseId,
+    DateTime CollectedAt,
+    string PhoneRaw,
+    string PhoneNormalized);
 
 public sealed record WorkerCandidateLookupResponse(
     IReadOnlyList<string> ExistingSourceResponseIds,
     IReadOnlyList<string> ExistingPhones,
     IReadOnlyList<string> ExistingCardFingerprints,
-    IReadOnlyList<int> MatchedProfileIndexes);
+    IReadOnlyList<int> MatchedProfileIndexes,
+    IReadOnlyList<WorkerKnownSourceResponseDto>? ExistingSourceResponses = null);
 
 public sealed record WorkerPendingChatMessageDto(
     Guid Id,

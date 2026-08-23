@@ -1,4 +1,5 @@
 using LeadFlow.Core.Services.Worker;
+using Orbita.Contracts;
 using Xunit;
 
 namespace LeadFlow.Tests;
@@ -67,5 +68,50 @@ public sealed class ResponsePhoneWatchChatRefreshTests
             watchingOpen: true,
             ResponsePhoneWatchAction.PublishPhoneChanged,
             chatMessagesJson: """[{"text":"привет"}]"""));
+    }
+
+    [Fact]
+    public void RestoreFromOrbita_RecreatesOpenWatchFromStoredPhoneWatch()
+    {
+        var now = new DateTime(2026, 8, 23, 10, 0, 0, DateTimeKind.Utc);
+        var stored = new WorkerKnownSourceResponseDto(
+            "phone-watch:1a2b3c4d",
+            now.AddHours(-4),
+            "+7 933 401-04-97",
+            "79334010497");
+
+        var restored = ResponsePhoneWatchOrbitaState.RestoreObservation(
+            stored,
+            "sub-1",
+            "автономов никита андреевич",
+            phoneWatchHours: 120,
+            now);
+
+        Assert.NotNull(restored);
+        Assert.False(restored!.ClosedAfterStableSend);
+        Assert.Equal("79334010497", restored.LastPublishedPhoneNormalized);
+        Assert.Equal("phone-watch:1a2b3c4d", restored.PublishedSourceResponseId);
+    }
+
+    [Fact]
+    public void OrderByOrbitaAddedAt_PrioritizesNewestKnownPhoneWatch()
+    {
+        var newer = new CandidateResponse { FullName = "Новый Кандидат", AvitoSubProfileId = "sub-1" };
+        var older = new CandidateResponse { FullName = "Старый Кандидат", AvitoSubProfileId = "sub-1" };
+        var now = new DateTime(2026, 8, 23, 10, 0, 0, DateTimeKind.Utc);
+        var known = new[]
+        {
+            new WorkerKnownSourceResponseDto(
+                ResponsePhoneWatchEvaluator.BuildPublishedSourceResponseId("sub-1", "старый кандидат"),
+                now.AddDays(-2), "", ""),
+            new WorkerKnownSourceResponseDto(
+                ResponsePhoneWatchEvaluator.BuildPublishedSourceResponseId("sub-1", "новый кандидат"),
+                now.AddHours(-2), "", "")
+        };
+
+        var ordered = ResponsePhoneWatchOrbitaState.OrderByAddedAt([older, newer], known);
+
+        Assert.Same(newer, ordered[0]);
+        Assert.Same(older, ordered[1]);
     }
 }

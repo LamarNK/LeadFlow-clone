@@ -9,6 +9,7 @@ using LeadFlow.Core.Services;
 using LeadFlow.Core.Services.Avito;
 using LeadFlow.Core.Services.Browser;
 using LeadFlow.Core.Services.Captcha;
+using LeadFlow.Core.Services.Worker;
 using Orbita.Contracts;
 using PuppeteerSharp;
 
@@ -2856,7 +2857,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
             return rawJson;
         }
 
-        HashSet<string>? existingSourceIdsFromDb = null;
+        IReadOnlyDictionary<string, WorkerKnownSourceResponseDto>? existingSourceResponsesFromOrbita = null;
         if (enrichmentHints is not null)
         {
             var sourceIdsToQuery = new List<string>();
@@ -2873,16 +2874,31 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 {
                     sourceIdsToQuery.Add(sourceResponseId.Trim());
                 }
+
+                var fullNameKey = ResponsePhoneWatchEvaluator.BuildFullNameKey(
+                    o["fullName"]?.GetValue<string>());
+                if (!string.IsNullOrWhiteSpace(fullNameKey))
+                {
+                    sourceIdsToQuery.Add(ResponsePhoneWatchEvaluator.BuildPublishedSourceResponseId(
+                        enrichmentHints.AvitoSubProfileId,
+                        fullNameKey));
+                }
             }
 
             if (sourceIdsToQuery.Count > 0)
             {
-                existingSourceIdsFromDb = await duplicateRepository
-                    .GetExistingSourceResponseIdsAsync(
+                var knownResponses = await duplicateRepository
+                    .GetExistingSourceResponsesAsync(
                         enrichmentHints.AccountId,
                         sourceIdsToQuery,
                         cancellationToken)
                     .ConfigureAwait(false);
+                existingSourceResponsesFromOrbita = knownResponses
+                    .GroupBy(static x => x.SourceResponseId, StringComparer.OrdinalIgnoreCase)
+                    .ToDictionary(
+                        static group => group.Key,
+                        static group => group.OrderByDescending(x => x.CollectedAt).First(),
+                        StringComparer.OrdinalIgnoreCase);
             }
         }
 
@@ -2905,7 +2921,28 @@ public sealed partial class AdsPowerAvitoAutomationService(
         var autoRepliesSent = 0;
 
         const int maxEnrich = 80;
-        for (var i = 0; i < candidates.Count && i < maxEnrich; i++)
+        var candidateIndexes = Enumerable.Range(0, candidates.Count)
+            .OrderByDescending(index =>
+            {
+                var item = candidates[index]?.AsObject();
+                var fullNameKey = ResponsePhoneWatchEvaluator.BuildFullNameKey(
+                    item?["fullName"]?.GetValue<string>());
+                if (string.IsNullOrWhiteSpace(fullNameKey)
+                    || existingSourceResponsesFromOrbita is null)
+                {
+                    return DateTime.MinValue;
+                }
+
+                var sourceId = ResponsePhoneWatchEvaluator.BuildPublishedSourceResponseId(
+                    enrichmentHints?.AvitoSubProfileId,
+                    fullNameKey);
+                return existingSourceResponsesFromOrbita.TryGetValue(sourceId, out var stored)
+                    ? stored.CollectedAt
+                    : DateTime.MinValue;
+            })
+            .ThenBy(static index => index)
+            .Take(maxEnrich);
+        foreach (var i in candidateIndexes)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -2916,18 +2953,41 @@ public sealed partial class AdsPowerAvitoAutomationService(
             }
 
             var domIndex = ReadCandidateDomIndex(item, i);
-            var sourceResponseIdForSkip = item["sourceResponseId"]?.GetValue<string>() ?? string.Empty;
             var fullNameForWatch = item["fullName"]?.GetValue<string>() ?? string.Empty;
-            var isKnownSourceId = existingSourceIdsFromDb is not null
+            var fullNameKeyForWatch = ResponsePhoneWatchEvaluator.BuildFullNameKey(fullNameForWatch);
+            var phoneWatchSourceId = string.IsNullOrWhiteSpace(fullNameKeyForWatch)
+                ? string.Empty
+                : ResponsePhoneWatchEvaluator.BuildPublishedSourceResponseId(
+                    enrichmentHints?.AvitoSubProfileId,
+                    fullNameKeyForWatch);
+            WorkerKnownSourceResponseDto? storedPhoneWatch = null;
+            if (existingSourceResponsesFromOrbita is not null)
+            {
+                existingSourceResponsesFromOrbita.TryGetValue(phoneWatchSourceId, out storedPhoneWatch);
+            }
+            if (storedPhoneWatch is not null)
+            {
+                item["sourceResponseId"] = storedPhoneWatch.SourceResponseId;
+            }
+
+            var sourceResponseIdForSkip = item["sourceResponseId"]?.GetValue<string>() ?? string.Empty;
+            var isKnownSourceId = existingSourceResponsesFromOrbita is not null
                 && !string.IsNullOrWhiteSpace(sourceResponseIdForSkip)
-                && existingSourceIdsFromDb.Contains(sourceResponseIdForSkip.Trim());
+                && existingSourceResponsesFromOrbita.ContainsKey(sourceResponseIdForSkip.Trim());
             var pendingForCandidate = ResolvePendingForCandidate(
                 enrichmentHints?.PendingBySourceResponseId,
                 sourceResponseIdForSkip);
             var hasCompletePhone = CandidateJsonHasCompletePhone(item);
             var hasPendingOutbound = pendingForCandidate.Count > 0;
-            var openPhoneWatch = false;
+            var restoredPhoneWatch = ResponsePhoneWatchOrbitaState.RestoreObservation(
+                storedPhoneWatch,
+                enrichmentHints?.AvitoSubProfileId,
+                fullNameKeyForWatch,
+                enrichmentHints?.PhoneWatchHours ?? ResponsePhoneWatchRules.DefaultUnchangedHours,
+                DateTime.UtcNow);
+            var openPhoneWatch = ResponsePhoneObservationWatch.IsOpen(restoredPhoneWatch);
             if (!hasPendingOutbound
+                && !openPhoneWatch
                 && enrichmentHints?.IsOpenPhoneWatchAsync is not null
                 && !string.IsNullOrWhiteSpace(fullNameForWatch)
                 && (isKnownSourceId || !hasCompletePhone))

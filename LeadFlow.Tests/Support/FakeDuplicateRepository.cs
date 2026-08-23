@@ -55,6 +55,21 @@ internal sealed class FakeDuplicateRepository : ICandidateDuplicateRepository
         CancellationToken cancellationToken) =>
         Task.FromResult(new HashSet<string>(StringComparer.Ordinal));
 
+    public IReadOnlyList<WorkerKnownSourceResponseDto> ExistingSourceResponses { get; set; } = [];
+
+    public Task<IReadOnlyList<WorkerKnownSourceResponseDto>> GetExistingSourceResponsesAsync(
+        Guid accountId,
+        IEnumerable<string> sourceResponseIds,
+        CancellationToken cancellationToken)
+    {
+        var requested = sourceResponseIds.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        IReadOnlyList<WorkerKnownSourceResponseDto> result = ExistingSourceResponses
+            .Where(x => requested.Contains(x.SourceResponseId))
+            .OrderByDescending(static x => x.CollectedAt)
+            .ToArray();
+        return Task.FromResult(result);
+    }
+
     public Task<HashSet<string>> GetExistingCardFingerprintsAsync(
         IEnumerable<string> cardFingerprintCandidates,
         DuplicateScope scope,

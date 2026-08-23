@@ -29,6 +29,15 @@ public interface ICandidateDuplicateRepository
         CancellationToken cancellationToken);
 
     /// <summary>
+    /// Сохранённые отклики по точному SourceResponseId, в порядке добавления в Orbita (сначала свежие).
+    /// Используется для восстановления состояния phone-watch без зависимости от локального файла воркера.
+    /// </summary>
+    Task<IReadOnlyList<WorkerKnownSourceResponseDto>> GetExistingSourceResponsesAsync(
+        Guid accountId,
+        IEnumerable<string> sourceResponseIds,
+        CancellationToken cancellationToken);
+
+    /// <summary>
     /// Какие из ключей карточек Avito (без телефона) уже есть в локальной базе для аккаунта / суб-профиля.
     /// </summary>
     Task<HashSet<string>> GetExistingCardFingerprintsAsync(

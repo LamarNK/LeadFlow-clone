@@ -911,6 +911,28 @@ public sealed class WorkerMonitoringService(
                 return CandidateBatchPublishResult.Empty;
             }
 
+            // phone-watch уже опубликован в Orbita под стабильным ключом sub+ФИО.
+            // Не полагаемся на локальный phone-watch.db: после переустановки воркера
+            // восстанавливаем состояние по данным Orbita и берём свежие записи первыми.
+            var phoneWatchSourceIds = readyCandidates
+                .Select(ResponsePhoneWatchOrbitaState.BuildSourceResponseId)
+                .Where(static sourceId => !string.IsNullOrWhiteSpace(sourceId))
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToArray();
+            var storedPhoneWatches = await duplicateRepository
+                .GetExistingSourceResponsesAsync(account.Id, phoneWatchSourceIds, cancellationToken)
+                .ConfigureAwait(false);
+            var storedPhoneWatchesBySourceId = storedPhoneWatches
+                .Where(static x => x.SourceResponseId.StartsWith("phone-watch:", StringComparison.OrdinalIgnoreCase))
+                .GroupBy(static x => x.SourceResponseId, StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(
+                    static group => group.Key,
+                    static group => group.OrderByDescending(x => x.CollectedAt).First(),
+                    StringComparer.OrdinalIgnoreCase);
+            readyCandidates = ResponsePhoneWatchOrbitaState
+                .OrderByAddedAt(readyCandidates, storedPhoneWatches)
+                .ToList();
+
             // Уже известные в Орбите кандидаты (FIO/телефон) — не слать повторно как новый отклик.
             // Смену номера по phone-watch пропускаем отдельно (см. ниже).
             var profiles = readyCandidates
@@ -941,6 +963,13 @@ public sealed class WorkerMonitoringService(
                 }
 
                 var candidate = readyCandidates[i];
+                var phoneWatchSourceId = ResponsePhoneWatchOrbitaState.BuildSourceResponseId(candidate);
+                storedPhoneWatchesBySourceId.TryGetValue(phoneWatchSourceId, out var storedPhoneWatch);
+                if (storedPhoneWatch is not null)
+                {
+                    // Точный ключ существующей записи гарантирует обновление чата, а не новый отклик.
+                    candidate.SourceResponseId = storedPhoneWatch.SourceResponseId;
+                }
                 var genderResolution = CandidateGenderResolver.Resolve(
                     candidate.FullName,
                     candidate.Gender,
@@ -1004,10 +1033,17 @@ public sealed class WorkerMonitoringService(
                     continue;
                 }
 
-                var existingObs = await _phoneObservationStore
+                var localObservation = await _phoneObservationStore
                     .GetAsync(candidate.AvitoSubProfileId, fullNameKey, cancellationToken)
                     .ConfigureAwait(false);
-                var alreadyInOrbit = matchedProfiles.Contains(i);
+                var existingObs = ResponsePhoneWatchOrbitaState.RestoreObservation(
+                        storedPhoneWatch,
+                        candidate.AvitoSubProfileId,
+                        fullNameKey,
+                        phoneWatchHours,
+                        utcNow)
+                    ?? localObservation;
+                var alreadyInOrbit = matchedProfiles.Contains(i) || storedPhoneWatch is not null;
                 var watchingOpen = ResponsePhoneObservationWatch.IsOpen(existingObs);
 
                 // Проверка давности отклика (пропускать старше N дней).
@@ -1311,7 +1347,8 @@ public sealed class WorkerMonitoringService(
                         ct),
                     PendingBySourceResponseId: singlePending,
                     ClaimOutboundChatForDeliveryAsync: _outboundChat.ClaimForDeliveryAsync,
-                    AckOutboundChatSentAsync: _outboundChat.AckSentAsync);
+                    AckOutboundChatSentAsync: _outboundChat.AckSentAsync,
+                    PhoneWatchHours: phoneWatchHours);
                 var rawJson = await session
                     .ExtractCandidatesJsonAsync(singleProfileHints, cancellationToken)
                     .ConfigureAwait(false);
@@ -1554,7 +1591,8 @@ public sealed class WorkerMonitoringService(
                             ct),
                         PendingBySourceResponseId: pendingForSub,
                         ClaimOutboundChatForDeliveryAsync: _outboundChat.ClaimForDeliveryAsync,
-                        AckOutboundChatSentAsync: _outboundChat.AckSentAsync);
+                        AckOutboundChatSentAsync: _outboundChat.AckSentAsync,
+                        PhoneWatchHours: phoneWatchHours);
                     var rawJson = await session
                         .ExtractCandidatesJsonAsync(messengerHints, cancellationToken)
                         .ConfigureAwait(false);

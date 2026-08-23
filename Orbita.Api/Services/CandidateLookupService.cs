@@ -43,6 +43,7 @@ public sealed class CandidateLookupService(
         var duplicateCutoffUtc = CandidateDuplicateLookback.GetCutoffUtc(DateTime.UtcNow);
 
         var existingSourceIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        IReadOnlyList<WorkerKnownSourceResponseDto> existingSourceResponses = [];
         if (sourceIds.Length > 0)
         {
             var matched = await db.CandidateResponses
@@ -51,11 +52,21 @@ public sealed class CandidateLookupService(
                             && x.AccountId == request.AccountId
                             && x.CreatedAt >= duplicateCutoffUtc
                             && sourceIds.Contains(x.SourceResponseId))
-                .Select(x => x.SourceResponseId)
+                .OrderByDescending(x => x.CollectedAt)
+                .Select(x => new WorkerKnownSourceResponseDto(
+                    x.SourceResponseId,
+                    x.CollectedAt,
+                    x.PhoneRaw,
+                    x.PhoneNormalized))
                 .ToListAsync(ct);
-            foreach (var id in matched)
+            foreach (var response in matched)
             {
-                existingSourceIds.Add(id);
+                existingSourceIds.Add(response.SourceResponseId);
+            }
+
+            if (request.IncludeSourceResponseMetadata)
+            {
+                existingSourceResponses = matched;
             }
         }
 
@@ -181,6 +192,7 @@ public sealed class CandidateLookupService(
             existingSourceIds.ToList(),
             existingPhones.ToList(),
             existingCardFingerprints.ToList(),
-            matchedProfileIndexes);
+            matchedProfileIndexes,
+            existingSourceResponses);
     }
 }
