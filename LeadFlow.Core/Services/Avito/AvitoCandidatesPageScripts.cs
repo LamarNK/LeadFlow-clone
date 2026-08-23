@@ -1437,11 +1437,50 @@ public static class AvitoCandidatesPageScripts
             || /\/profile\/messenger\/channel\//i.test(window.location.href)
         """;
 
+    /// <summary>В оболочке мини-чата уже есть хотя бы одно <c>data-marker=message</c>.</summary>
+    public static string BuildMessengerMessagesPresentExpression() =>
+        """
+        () => {
+            const hasMessage = (root) => !!root?.querySelector("[data-marker='message']");
+            const links = Array.from(document.querySelectorAll("a[data-marker='mini-messenger/messenger-page-link']"));
+            for (const link of links) {
+                const miniRoot = link.closest("[class*='channel-module-root']")
+                    || link.closest("[data-marker='messagesHistory']");
+                if (hasMessage(miniRoot)) {
+                    return true;
+                }
+            }
+
+            for (const history of document.querySelectorAll("[data-marker='messagesHistory']")) {
+                if (hasMessage(history)) {
+                    return true;
+                }
+            }
+
+            return hasMessage(document);
+        }
+        """;
+
     /// <summary>URL канала: из шапки мини-чата или из адреса полноэкранного мессенджера.</summary>
     public static string BuildResolveMessengerChannelUrlExpression() =>
         """
         (() => {
-            const mini = document.querySelector("a[data-marker='mini-messenger/messenger-page-link']");
+            const isVisible = (element) => {
+                if (!element) {
+                    return false;
+                }
+
+                const style = window.getComputedStyle(element);
+                if (style.display === "none" || style.visibility === "hidden") {
+                    return false;
+                }
+
+                const rect = element.getBoundingClientRect();
+                return rect.width > 0 && rect.height > 0;
+            };
+
+            const links = Array.from(document.querySelectorAll("a[data-marker='mini-messenger/messenger-page-link']"));
+            const mini = links.find(isVisible) || links[0];
             const miniHref = (mini?.href ?? "").trim();
             if (miniHref && /\/profile\/messenger\//i.test(miniHref)) {
                 return miniHref;
@@ -1456,51 +1495,114 @@ public static class AvitoCandidatesPageScripts
         })()
         """;
 
-    /// <summary>Прокрутка истории мини-чата и сбор сообщений (после клика «Перейти в чат»).</summary>
+    /// <summary>
+    /// Прокрутка истории мини-чата и сбор сообщений (после клика «Перейти в чат»).
+    /// На странице откликов в DOM часто два списка: пустой глобальный виджет и оверлей кандидата —
+    /// берём корень с <c>mini-messenger/messenger-page-link</c>, а не первый <c>messagesHistory/list</c>.
+    /// </summary>
     public static string BuildScrollAndCollectMiniMessengerMessagesScript() =>
         """
         (() => {
             const normalize = (text) => (text ?? "").replace(/\s+/g, " ").trim();
-            const list = document.querySelector("[data-marker='messagesHistory/list']");
-            if (!list) {
-                return JSON.stringify({ ok: false, reason: "no_messages_list", messages: [] });
-            }
-
-            const step = Math.max(Math.floor(list.clientHeight * 0.65), 180);
-            try {
-                list.scrollBy({ top: -step, left: 0, behavior: "smooth" });
-            } catch {
-                list.scrollTop = Math.max(0, list.scrollTop - step);
-            }
-
-            const readText = (message) => {
-                const direct = message.querySelector("[data-marker='messageText']");
-                if (direct) {
-                    return normalize(direct.innerText ?? direct.textContent ?? "");
+            const isVisible = (element) => {
+                if (!element) {
+                    return false;
                 }
 
-                const platform = message.querySelector("[data-marker='platformMessage/text']");
-                if (platform) {
-                    return normalize(platform.innerText ?? platform.textContent ?? "");
+                const style = window.getComputedStyle(element);
+                if (style.display === "none" || style.visibility === "hidden") {
+                    return false;
+                }
+
+                const rect = element.getBoundingClientRect();
+                return rect.width > 0 && rect.height > 0;
+            };
+
+            const readNodeText = (node) => {
+                if (!node) {
+                    return "";
+                }
+
+                return normalize((node.textContent ?? "") || (node.innerText ?? ""));
+            };
+
+            const readText = (message) => {
+                const selectors = [
+                    "[data-marker='messageText']",
+                    "[data-marker='platformMessage/text']",
+                    "[data-marker='messageChunk']"
+                ];
+                for (const selector of selectors) {
+                    const text = readNodeText(message.querySelector(selector));
+                    if (text) {
+                        return text;
+                    }
                 }
 
                 return "";
             };
 
-            const messages = [];
-            for (const message of list.querySelectorAll("[data-marker='message']")) {
-                const text = readText(message);
-                if (!text) {
-                    continue;
+            const collectFrom = (root) => {
+                const messages = [];
+                if (!root) {
+                    return messages;
                 }
 
-                const className = message.className ?? "";
-                const side = className.includes("message-base-module-right") ? "right" : "left";
-                const isPlatform = !!message.querySelector("[data-marker='platformMessage/text']");
-                const timeEl = message.querySelector("time[datetime]");
-                const at = timeEl?.getAttribute("datetime") ?? "";
+                for (const message of root.querySelectorAll("[data-marker='message']")) {
+                    const text = readText(message);
+                    if (!text) {
+                        continue;
+                    }
 
-                messages.push({ text, at, side, isPlatform });
+                    const className = String(message.className ?? "");
+                    const side = /message-base-module-right/i.test(className) ? "right" : "left";
+                    const isPlatform = !!message.querySelector("[data-marker='platformMessage/text']");
+                    const timeEl = message.querySelector("time[datetime]");
+                    const at = timeEl?.getAttribute("datetime") ?? "";
+                    messages.push({ text, at, side, isPlatform });
+                }
+
+                return messages;
+            };
+
+            const links = Array.from(document.querySelectorAll("a[data-marker='mini-messenger/messenger-page-link']"));
+            const miniLink = links.find(isVisible) || links[0];
+            const miniRoot = miniLink?.closest("[class*='channel-module-root']")
+                || miniLink?.closest("[data-marker='messagesHistory']")
+                || null;
+
+            const histories = Array.from(document.querySelectorAll("[data-marker='messagesHistory']"));
+            let bestRoot = miniRoot;
+            let messages = collectFrom(miniRoot);
+
+            if (messages.length === 0) {
+                for (const history of histories) {
+                    const candidate = collectFrom(history);
+                    if (candidate.length > messages.length) {
+                        messages = candidate;
+                        bestRoot = history;
+                    }
+                }
+            }
+
+            if (messages.length === 0) {
+                messages = collectFrom(document);
+                bestRoot = bestRoot || document;
+            }
+
+            const list = (bestRoot || document).querySelector("[data-marker='messagesHistory/list']")
+                || document.querySelector("[data-marker='messagesHistory/list']");
+            if (!list && messages.length === 0) {
+                return JSON.stringify({ ok: false, reason: "no_messages_list", messages: [] });
+            }
+
+            if (list) {
+                const step = Math.max(Math.floor(list.clientHeight * 0.65), 180);
+                try {
+                    list.scrollBy({ top: -step, left: 0, behavior: "auto" });
+                } catch {
+                    list.scrollTop = Math.max(0, list.scrollTop - step);
+                }
             }
 
             return JSON.stringify({ ok: true, messages, count: messages.length });

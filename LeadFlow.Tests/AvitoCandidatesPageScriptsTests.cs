@@ -52,6 +52,43 @@ public sealed class AvitoCandidatesPageScriptsTests
     }
 
     [Fact]
+    public void BuildScrollAndCollectMiniMessengerMessagesScript_PrefersOverlayRootOverFirstList()
+    {
+        var script = AvitoCandidatesPageScripts.BuildScrollAndCollectMiniMessengerMessagesScript();
+
+        Assert.Contains("mini-messenger/messenger-page-link", script, StringComparison.Ordinal);
+        Assert.Contains("channel-module-root", script, StringComparison.Ordinal);
+        Assert.Contains("querySelectorAll(\"[data-marker='messagesHistory']\")", script, StringComparison.Ordinal);
+        Assert.Contains("[data-marker='platformMessage/text']", script, StringComparison.Ordinal);
+        Assert.Contains("[data-marker='messageChunk']", script, StringComparison.Ordinal);
+        Assert.Contains("textContent", script, StringComparison.Ordinal);
+        Assert.Contains("collectFrom", script, StringComparison.Ordinal);
+        Assert.Contains("behavior: \"auto\"", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("behavior: \"smooth\"", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildMessengerMessagesPresentExpression_LooksInsideMiniRoot()
+    {
+        var script = AvitoCandidatesPageScripts.BuildMessengerMessagesPresentExpression();
+
+        Assert.Contains("[data-marker='message']", script, StringComparison.Ordinal);
+        Assert.Contains("mini-messenger/messenger-page-link", script, StringComparison.Ordinal);
+        Assert.Contains("channel-module-root", script, StringComparison.Ordinal);
+        Assert.Contains("[data-marker='messagesHistory']", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildResolveMessengerChannelUrlExpression_PrefersVisibleMiniLink()
+    {
+        var script = AvitoCandidatesPageScripts.BuildResolveMessengerChannelUrlExpression();
+
+        Assert.Contains("querySelectorAll(\"a[data-marker='mini-messenger/messenger-page-link']\")", script, StringComparison.Ordinal);
+        Assert.Contains("links.find(isVisible)", script, StringComparison.Ordinal);
+        Assert.Contains("/\\/profile\\/messenger\\/channel\\/", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void BuildIsJobCrmResponsesPageScript_DetectsCrmMarkers()
     {
         var script = AvitoCandidatesPageScripts.BuildIsJobCrmResponsesPageScript();

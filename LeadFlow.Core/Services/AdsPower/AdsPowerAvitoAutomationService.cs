@@ -3430,7 +3430,20 @@ public sealed partial class AdsPowerAvitoAutomationService(
         IPage page,
         CancellationToken cancellationToken)
     {
-        for (var round = 0; round < 4; round++)
+        try
+        {
+            await page.WaitForFunctionAsync(
+                    AvitoCandidatesPageScripts.BuildMessengerMessagesPresentExpression(),
+                    new WaitForFunctionOptions { Timeout = 8_000, PollingInterval = 250 })
+                .ConfigureAwait(false);
+        }
+        catch
+        {
+            // Оболочка мини-чата может появиться раньше сообщений; ниже ещё несколько опросов.
+        }
+
+        JsonArray? richest = null;
+        for (var round = 0; round < 6; round++)
         {
             cancellationToken.ThrowIfCancellationRequested();
             await HumanDelay.DelayAsync(round == 0 ? 400 : 280, round == 0 ? 900 : 650, cancellationToken)
@@ -3442,13 +3455,21 @@ public sealed partial class AdsPowerAvitoAutomationService(
                     cancellationToken)
                 .ConfigureAwait(false);
             var parsed = TryParseMiniMessengerMessages(messagesRaw);
-            if (parsed.Count > 0)
+            if (parsed.Count == 0)
             {
-                return parsed;
+                continue;
             }
+
+            if (richest is null || parsed.Count > richest.Count)
+            {
+                richest = parsed;
+                continue;
+            }
+
+            return richest;
         }
 
-        return new JsonArray();
+        return richest ?? new JsonArray();
     }
 
     private static IReadOnlyList<AvitoChatMessage> ParseMiniMessengerMessages(JsonArray chatMessages) =>
