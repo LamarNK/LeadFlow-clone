@@ -70,8 +70,16 @@ if ! msiinfo tables "$msi_path" | grep -qx 'File'; then
   echo "wixl did not produce a valid MSI database: $msi_path" >&2
   exit 1
 fi
-if ! msiinfo export "$msi_path" CustomAction | grep -q '^LaunchWorkerAfterInstall'; then
-  echo "MSI does not contain the required LaunchWorkerAfterInstall action." >&2
+if ! msiinfo export "$msi_path" CustomAction | grep -q '^StopWorkerBeforeUpgrade'; then
+  echo "MSI does not contain the required StopWorkerBeforeUpgrade action." >&2
+  exit 1
+fi
+if ! msiinfo export "$msi_path" InstallExecuteSequence | grep '^StopWorkerBeforeUpgrade' | grep -Fq 'NOT REMOVE~="ALL"'; then
+  echo "MSI does not stop Orbita Worker before replacing its files." >&2
+  exit 1
+fi
+if ! msiinfo export "$msi_path" CustomAction | grep '^LaunchWorkerAfterInstall' | grep -Fq 'start "" /D "[INSTALLFOLDER]"'; then
+  echo "MSI does not start Orbita Worker from its installation folder." >&2
   exit 1
 fi
 if ! msiinfo export "$msi_path" InstallExecuteSequence | grep -q '^LaunchWorkerAfterInstall'; then
