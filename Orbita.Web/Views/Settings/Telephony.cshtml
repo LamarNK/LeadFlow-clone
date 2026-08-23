@@ -1,1 +1,34 @@
-PLACEHOLDER
+@model CrmTelephonyPageViewModel
+@{
+    var isPlusofon = Model.Provider == CrmTelephonyProviders.Plusofon;
+    var isAsterisk = Model.Provider == CrmTelephonyProviders.Asterisk;
+    var isBeeline = Model.Provider == CrmTelephonyProviders.Beeline;
+    var providerLabel = isPlusofon ? "Плюсофон" : isAsterisk ? "SIP-сервер" : isBeeline ? "Билайн SIP" : "SIPOUT";
+    var bindingsByUser = Model.Settings.UserBindings.ToDictionary(x => x.UserId, StringComparer.Ordinal);
+    var phoneUsersByUser = Model.PhoneUsers.ToDictionary(x => x.UserId, StringComparer.Ordinal);
+    var beelineAccounts = Model.Settings.SipAccounts?.ToList()
+        ?? (Model.Settings.SipAccount is null ? [] : [Model.Settings.SipAccount]);
+    var selectedProvider = Model.ProviderSummaries.FirstOrDefault(summary =>
+        string.Equals(summary.Provider, Model.Provider, StringComparison.OrdinalIgnoreCase));
+    var receiverStatusLabel = Model.Settings.IsEnabled
+        ? "Приём событий включён"
+        : Model.Settings.IsConfigured
+            ? "Приём событий приостановлен"
+            : "Приём событий не настроен";
+    string OutboundLineLabel(string? provider)
+    {
+        if (CrmTelephonyOutboundProviders.TryGetBeelineLineKey(provider, out var accountKey))
+        {
+            return beelineAccounts.FirstOrDefault(account =>
+                string.Equals(account.AccountKey, accountKey, StringComparison.OrdinalIgnoreCase))?.Name
+                ?? "Линия Билайна";
+        }
+        return provider switch
+        {
+            CrmTelephonyProviders.Beeline => beelineAccounts.FirstOrDefault(account => account.UseForOutbound)?.Name ?? "Билайн",
+            CrmTelephonyProviders.Plusofon => "Плюсофон",
+            _ => "Номер по умолчанию"
+        };
+    }
+    ViewData["Title"] = "Телефония";
+}
