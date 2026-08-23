@@ -345,10 +345,12 @@ public sealed class WorkerMonitoringService(
                     var polled = false;
                     var backlog = false;
                     var passCompleted = false;
+                    TimeSpan? retryAfter = null;
                     try
                     {
                         var outcome = await job.Task.ConfigureAwait(false);
                         passCompleted = outcome.PassCompleted;
+                        retryAfter = outcome.RetryAfter;
                         if (outcome.PolledSource)
                         {
                             polled = true;
@@ -388,7 +390,13 @@ public sealed class WorkerMonitoringService(
                         .GetHistoricalResponseIngestHeatScoreAsync(DateTime.UtcNow, cancellationToken)
                         .ConfigureAwait(false);
                     TimeSpan personalDelay;
-                    if (polled)
+                    if (retryAfter is { } requestedRetry)
+                    {
+                        // CDP оборвался при нормальной видимой вкладке. Это не «тихий» проход,
+                        // поэтому не ждём обычные 3–20 минут до следующего запуска профиля.
+                        personalDelay = requestedRetry;
+                    }
+                    else if (polled)
                     {
                         personalDelay = MonitoringCycleDelay.GetDelayAfterCycle(
                             newResponses,
@@ -618,7 +626,8 @@ public sealed class WorkerMonitoringService(
         bool PolledSource,
         bool HasUndischargedBacklog,
         string? NotPolledReason = null,
-        bool PassCompleted = false);
+        bool PassCompleted = false,
+        TimeSpan? RetryAfter = null);
 
     private async Task<AccountCycleOutcome> RunAccountInCycleSlotAsync(
         AvitoAccount account,
@@ -806,7 +815,13 @@ public sealed class WorkerMonitoringService(
             cycleTerminal = true;
             await HandleSessionDiagnosticForAccountAsync(account, diagnosticEx, cancellationToken).ConfigureAwait(false);
             await _cycleJournal.FlushAsync(cancellationToken).ConfigureAwait(false);
-            return new AccountCycleOutcome(0, true, false);
+            return new AccountCycleOutcome(
+                0,
+                true,
+                false,
+                RetryAfter: FindAdsPowerCdpTimeout(diagnosticEx) is null
+                    ? null
+                    : TimeSpan.FromMinutes(1));
         }
         catch (OperationCanceledException)
         {
@@ -838,7 +853,13 @@ public sealed class WorkerMonitoringService(
             _cycleJournal.FailCycle(cycleId, "automation", ex.Message);
             cycleTerminal = true;
             await _cycleJournal.FlushAsync(cancellationToken).ConfigureAwait(false);
-            return new AccountCycleOutcome(0, true, false);
+            return new AccountCycleOutcome(
+                0,
+                true,
+                false,
+                RetryAfter: FindAdsPowerCdpTimeout(ex) is null
+                    ? null
+                    : TimeSpan.FromMinutes(1));
         }
         finally
         {
@@ -1911,6 +1932,20 @@ public sealed class WorkerMonitoringService(
                 $"AdsPower не открыл сессию: последний этап «{lastStage}», прошло {startupStopwatch.Elapsed.TotalSeconds:F0} с. {ex.Message}",
                 ex);
         }
+    }
+
+    private static TimeoutException? FindAdsPowerCdpTimeout(Exception exception)
+    {
+        for (Exception? current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is TimeoutException timeout
+                && timeout.Message.StartsWith("AdsPower CDP:", StringComparison.Ordinal))
+            {
+                return timeout;
+            }
+        }
+
+        return null;
     }
 
     private async Task PublishCandidateAsync(CandidateResponse response, CancellationToken cancellationToken)

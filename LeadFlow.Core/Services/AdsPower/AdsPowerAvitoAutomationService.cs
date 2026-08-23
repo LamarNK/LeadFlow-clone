@@ -27,6 +27,11 @@ public sealed partial class AdsPowerAvitoAutomationService(
     IAvitoGeeTestSolver? geeTestSolver = null) : IAdsPowerAvitoAutomationService
 {
     private static readonly TimeSpan CdpConnectTimeout = TimeSpan.FromSeconds(15);
+    // Видимая вкладка может оставаться исправной, когда отдельная CDP-команда уже не отвечает.
+    // Эти операции нужны только для выбора/проверки вкладки, поэтому не должны удерживать слот
+    // мониторинга минутами.
+    private static readonly TimeSpan CdpPageDiscoveryTimeout = TimeSpan.FromSeconds(8);
+    private static readonly TimeSpan CdpPageReadTimeout = TimeSpan.FromSeconds(5);
 
     private const string CandidatesPageUrl = AvitoCandidatesPageUrls.LegacyCandidates;
     private const string JobResponsesPageUrl = AvitoCandidatesPageUrls.JobResponsesCrm;
@@ -1718,7 +1723,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
 
     private static Task<AvitoPageState?> ProbePageStateAsync(IPage page, CancellationToken cancellationToken) =>
         AvitoPageStateProbe.TryProbeAsync(
-            (script, ct) => EvaluateWithRetryAsync<string>(page, script, ct),
+            (script, ct) => EvaluateWithRetryAsync<string>(page, script, ct, CdpPageReadTimeout),
             cancellationToken);
 
     private static async Task<bool> TryRecoverAvitoLoginAsync(IPage page, CancellationToken cancellationToken)
@@ -1999,7 +2004,11 @@ public sealed partial class AdsPowerAvitoAutomationService(
         }
 
         var targetKind = ClassifyAutomationPageKind(preferredUrl);
-        var existingPages = (await browser.PagesAsync().ConfigureAwait(false)).ToList();
+        var existingPages = (await GetBrowserPagesAsync(
+                browser,
+                "выбор рабочей вкладки",
+                cancellationToken)
+            .ConfigureAwait(false)).ToList();
         var existingWorkerPageIndex = SelectExistingAutomationPageIndex(
             existingPages.Select(static page => page.Url).ToArray(),
             preferredUrl);
@@ -2054,7 +2063,11 @@ public sealed partial class AdsPowerAvitoAutomationService(
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var urls = (await browser.PagesAsync().ConfigureAwait(false))
+            var urls = (await GetBrowserPagesAsync(
+                    browser,
+                    "ожидание стартовой навигации",
+                    cancellationToken)
+                .ConfigureAwait(false))
                 .Select(static page => page.Url)
                 .ToArray();
 
@@ -2094,13 +2107,17 @@ public sealed partial class AdsPowerAvitoAutomationService(
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var pages = (await browser.PagesAsync().ConfigureAwait(false)).ToList();
+            var pages = (await GetBrowserPagesAsync(
+                    browser,
+                    "проверка стартовой вкладки",
+                    cancellationToken)
+                .ConfigureAwait(false)).ToList();
             var urls = new List<string>(pages.Count);
             IPage? startPage = null;
 
             foreach (var page in pages)
             {
-                var url = await ReadPageUrlAsync(page).ConfigureAwait(false);
+                var url = await ReadPageUrlAsync(page, cancellationToken).ConfigureAwait(false);
                 urls.Add(url);
                 if (startPage is null && AdsPowerStartPage.IsUrl(url))
                 {
@@ -2171,12 +2188,20 @@ public sealed partial class AdsPowerAvitoAutomationService(
     {
         try
         {
-            var html = await page.GetContentAsync().ConfigureAwait(false);
+            var html = await page.GetContentAsync()
+                .WaitAsync(CdpPageReadTimeout, cancellationToken)
+                .ConfigureAwait(false);
             var fromHtml = AdsPowerStartPage.Parse(html);
             if (fromHtml != AdsPowerStartPageProxyStatus.Unknown)
             {
                 return fromHtml;
             }
+        }
+        catch (TimeoutException ex)
+        {
+            throw new TimeoutException(
+                $"AdsPower CDP: не прочитал стартовую вкладку за {CdpPageReadTimeout.TotalSeconds:0} с.",
+                ex);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -2190,8 +2215,15 @@ public sealed partial class AdsPowerAvitoAutomationService(
         {
             var text = await page.EvaluateExpressionAsync<string>(
                     "(() => (document.body && document.body.innerText) || '')()")
+                .WaitAsync(CdpPageReadTimeout, cancellationToken)
                 .ConfigureAwait(false);
             return AdsPowerStartPage.Parse(text);
+        }
+        catch (TimeoutException ex)
+        {
+            throw new TimeoutException(
+                $"AdsPower CDP: не прочитал текст стартовой вкладки за {CdpPageReadTimeout.TotalSeconds:0} с.",
+                ex);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -2245,13 +2277,13 @@ public sealed partial class AdsPowerAvitoAutomationService(
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var avito = await FindUsableAvitoPageAsync(current.Browser).ConfigureAwait(false);
+            var avito = await FindUsableAvitoPageAsync(current.Browser, cancellationToken).ConfigureAwait(false);
             if (avito is not null)
             {
                 return avito;
             }
 
-            var currentUrl = await ReadPageUrlAsync(current).ConfigureAwait(false);
+            var currentUrl = await ReadPageUrlAsync(current, cancellationToken).ConfigureAwait(false);
             var next = NextStartupNavigationStep(currentUrl, lastAttempt);
             if (next == AdsPowerStartupNavigationStep.Done)
             {
@@ -2367,13 +2399,13 @@ public sealed partial class AdsPowerAvitoAutomationService(
         while (elapsed < timeout)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var avito = await FindUsableAvitoPageAsync(page.Browser).ConfigureAwait(false);
+            var avito = await FindUsableAvitoPageAsync(page.Browser, cancellationToken).ConfigureAwait(false);
             if (avito is not null)
             {
                 return avito;
             }
 
-            if (IsUsableWorkerPageUrl(await ReadPageUrlAsync(page).ConfigureAwait(false)))
+            if (IsUsableWorkerPageUrl(await ReadPageUrlAsync(page, cancellationToken).ConfigureAwait(false)))
             {
                 return page;
             }
@@ -2382,7 +2414,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
             elapsed += poll;
         }
 
-        return await FindUsableAvitoPageAsync(page.Browser).ConfigureAwait(false) ?? page;
+        return await FindUsableAvitoPageAsync(page.Browser, cancellationToken).ConfigureAwait(false) ?? page;
     }
 
     private static async Task<IPage> PollUntilAvitoPageAsync(
@@ -2395,13 +2427,13 @@ public sealed partial class AdsPowerAvitoAutomationService(
         while (elapsed < timeout)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var avito = await FindUsableAvitoPageAsync(page.Browser).ConfigureAwait(false);
+            var avito = await FindUsableAvitoPageAsync(page.Browser, cancellationToken).ConfigureAwait(false);
             if (avito is not null)
             {
                 return avito;
             }
 
-            if (IsUsableAvitoPageUrl(await ReadPageUrlAsync(page).ConfigureAwait(false)))
+            if (IsUsableAvitoPageUrl(await ReadPageUrlAsync(page, cancellationToken).ConfigureAwait(false)))
             {
                 return page;
             }
@@ -2410,12 +2442,17 @@ public sealed partial class AdsPowerAvitoAutomationService(
             elapsed += poll;
         }
 
-        return await FindUsableAvitoPageAsync(page.Browser).ConfigureAwait(false) ?? page;
+        return await FindUsableAvitoPageAsync(page.Browser, cancellationToken).ConfigureAwait(false) ?? page;
     }
 
-    private static async Task<IPage?> FindUsableAvitoPageAsync(IBrowser browser)
+    private static async Task<IPage?> FindUsableAvitoPageAsync(
+        IBrowser browser,
+        CancellationToken cancellationToken)
     {
-        foreach (var candidate in await browser.PagesAsync().ConfigureAwait(false))
+        foreach (var candidate in await GetBrowserPagesAsync(
+                     browser,
+                     "поиск вкладки Avito",
+                     cancellationToken).ConfigureAwait(false))
         {
             if (IsUsableAvitoPageUrl(candidate.Url))
             {
@@ -2424,7 +2461,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
 
             if (IsReusableStartupPlaceholderUrl(candidate.Url) || !IsUsableWorkerPageUrl(candidate.Url))
             {
-                if (IsUsableAvitoPageUrl(await ReadPageUrlAsync(candidate).ConfigureAwait(false)))
+                if (IsUsableAvitoPageUrl(await ReadPageUrlAsync(candidate, cancellationToken).ConfigureAwait(false)))
                 {
                     return candidate;
                 }
@@ -2434,22 +2471,61 @@ public sealed partial class AdsPowerAvitoAutomationService(
         return null;
     }
 
-    private static async Task<string> ReadPageUrlAsync(IPage page)
+    internal static async Task<IReadOnlyList<IPage>> GetBrowserPagesAsync(
+        IBrowser browser,
+        string operation,
+        CancellationToken cancellationToken)
     {
         try
         {
-            var href = await page.EvaluateExpressionAsync<string>("window.location.href").ConfigureAwait(false);
+            return await browser.PagesAsync()
+                .WaitAsync(CdpPageDiscoveryTimeout, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (TimeoutException ex)
+        {
+            throw new TimeoutException(
+                $"AdsPower CDP: {operation} не получил список вкладок за {CdpPageDiscoveryTimeout.TotalSeconds:0} с.",
+                ex);
+        }
+    }
+
+    private static async Task<string> ReadPageUrlAsync(IPage page, CancellationToken cancellationToken)
+    {
+        // Page.Url приходит из target metadata и не требует выполнения JavaScript в вкладке.
+        // Для исправной вкладки это сразу даёт настоящий URL, в том числе Avito Pro.
+        var cdpUrl = page.Url;
+        if (!string.IsNullOrWhiteSpace(cdpUrl))
+        {
+            return cdpUrl;
+        }
+
+        try
+        {
+            var href = await page.EvaluateExpressionAsync<string>("window.location.href")
+                .WaitAsync(CdpPageReadTimeout, cancellationToken)
+                .ConfigureAwait(false);
             if (!string.IsNullOrWhiteSpace(href))
             {
                 return href;
             }
+        }
+        catch (TimeoutException ex)
+        {
+            throw new TimeoutException(
+                $"AdsPower CDP: не прочитал адрес вкладки за {CdpPageReadTimeout.TotalSeconds:0} с.",
+                ex);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch
         {
             // нет JS-контекста — берём URL из CDP
         }
 
-        return page.Url ?? string.Empty;
+        return string.Empty;
     }
 
     internal static bool ShouldKeepWaitingForStartupNavigation(
@@ -4140,16 +4216,50 @@ public sealed partial class AdsPowerAvitoAutomationService(
         }
     }
 
-    private static async Task<T> EvaluateWithRetryAsync<T>(IPage page, string expression, CancellationToken cancellationToken)
+    private static Task<T> EvaluateWithRetryAsync<T>(
+        IPage page,
+        string expression,
+        CancellationToken cancellationToken) =>
+        EvaluateWithRetryAsync<T>(page, expression, cancellationToken, timeout: null);
+
+    private static async Task<T> EvaluateWithRetryAsync<T>(
+        IPage page,
+        string expression,
+        CancellationToken cancellationToken,
+        TimeSpan? timeout)
     {
         try
         {
-            return await page.EvaluateExpressionAsync<T>(expression).ConfigureAwait(false);
+            return await EvaluateAsync<T>(page, expression, cancellationToken, timeout).ConfigureAwait(false);
         }
         catch (Exception ex) when (IsRecoverableNavigationError(ex))
         {
             await Task.Delay(1400, cancellationToken).ConfigureAwait(false);
-            return await page.EvaluateExpressionAsync<T>(expression).ConfigureAwait(false);
+            return await EvaluateAsync<T>(page, expression, cancellationToken, timeout).ConfigureAwait(false);
+        }
+    }
+
+    private static async Task<T> EvaluateAsync<T>(
+        IPage page,
+        string expression,
+        CancellationToken cancellationToken,
+        TimeSpan? timeout)
+    {
+        var evaluation = page.EvaluateExpressionAsync<T>(expression);
+        if (timeout is null)
+        {
+            return await evaluation.ConfigureAwait(false);
+        }
+
+        try
+        {
+            return await evaluation.WaitAsync(timeout.Value, cancellationToken).ConfigureAwait(false);
+        }
+        catch (TimeoutException ex)
+        {
+            throw new TimeoutException(
+                $"AdsPower CDP: JavaScript-проверка страницы не ответила за {timeout.Value.TotalSeconds:0} с.",
+                ex);
         }
     }
 

@@ -239,7 +239,7 @@ public sealed partial class AdsPowerAvitoAutomationService
             // не критично
         }
 
-        var currentUrl = await ReadPageUrlAsync(page).ConfigureAwait(false);
+        var currentUrl = await ReadPageUrlAsync(page, cancellationToken).ConfigureAwait(false);
         if (IsReusableStartupPlaceholderUrl(currentUrl) || !IsUsableWorkerPageUrl(currentUrl))
         {
             page = await NavigateOffStartupPlaceholderAsync(
@@ -248,14 +248,14 @@ public sealed partial class AdsPowerAvitoAutomationService
                     nameof(WarmUpSessionPageAsync),
                     cancellationToken)
                 .ConfigureAwait(false);
-            currentUrl = await ReadPageUrlAsync(page).ConfigureAwait(false);
+            currentUrl = await ReadPageUrlAsync(page, cancellationToken).ConfigureAwait(false);
         }
 
         if (!IsAvitoProfileAutomationTab(currentUrl))
         {
             await TryCdpPageNavigateAsync(page, ProfileItemsPageUrl, cancellationToken).ConfigureAwait(false);
             page = await PollUntilAvitoPageAsync(page, cancellationToken).ConfigureAwait(false);
-            currentUrl = await ReadPageUrlAsync(page).ConfigureAwait(false);
+            currentUrl = await ReadPageUrlAsync(page, cancellationToken).ConfigureAwait(false);
         }
 
         if (IsReusableStartupPlaceholderUrl(currentUrl) || !IsUsableWorkerPageUrl(currentUrl))

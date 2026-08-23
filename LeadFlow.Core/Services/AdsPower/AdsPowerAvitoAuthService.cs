@@ -334,7 +334,11 @@ public sealed class AdsPowerAvitoAuthService(
             .EnsureAdsPowerProxyReadyAsync(browser, nameof(GetOrCreateAvitoPageAsync), cancellationToken)
             .ConfigureAwait(false);
 
-        var existingPages = (await browser.PagesAsync().ConfigureAwait(false)).ToList();
+        var existingPages = (await AdsPowerAvitoAutomationService.GetBrowserPagesAsync(
+                browser,
+                "auth: выбор рабочей вкладки",
+                cancellationToken)
+            .ConfigureAwait(false)).ToList();
         var selectedIndex = AdsPowerAvitoAutomationService.SelectExistingAutomationPageIndex(
             existingPages.Select(static page => page.Url).ToArray(),
             AvitoProfileUrl);
