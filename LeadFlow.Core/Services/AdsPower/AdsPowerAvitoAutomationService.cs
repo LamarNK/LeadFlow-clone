@@ -3186,6 +3186,19 @@ public sealed partial class AdsPowerAvitoAutomationService(
     {
         var autoReplySent = false;
         await CloseMiniMessengerPanelIfOpenAsync(page, cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await EvaluateWithRetryAsync<string>(
+                    page,
+                    AvitoCandidatesPageScripts.BuildMarkMessengerRootsBeforeOpenScript(),
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch
+        {
+            // Без метки сбор всё ещё умеет работать с полноэкранным каналом, но не должен ломать проход.
+        }
+
         await HumanDelay.BeforeCandidateClickAsync(cancellationToken).ConfigureAwait(false);
 
         var clickedViaPointer = await TryClickCandidateChatWithPointerAsync(page, candidateIndex, cancellationToken)
