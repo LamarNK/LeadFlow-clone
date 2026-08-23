@@ -321,6 +321,7 @@ public sealed partial class AdsPowerAvitoAutomationService
     private async Task<SubProfileSwitchResult> SwitchSubProfileOnPageAsync(
         IPage page,
         string subProfileId,
+        string adsPowerUserId,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(subProfileId))
@@ -334,7 +335,7 @@ public sealed partial class AdsPowerAvitoAutomationService
         SubProfileSwitchResult last = new(SubProfileSwitchStatus.Unknown);
         for (var attempt = 1; attempt <= MonitoringTiming.SubProfileSwitchMaxAttempts; attempt++)
         {
-            last = await TrySwitchSubProfileOnPageOnceAsync(page, subProfileId, cancellationToken)
+            last = await TrySwitchSubProfileOnPageOnceAsync(page, subProfileId, adsPowerUserId, cancellationToken)
                 .ConfigureAwait(false);
             if (last.Ok)
             {
@@ -371,6 +372,7 @@ public sealed partial class AdsPowerAvitoAutomationService
                 {
                     ["step"] = "switch_retry",
                     ["attempt"] = attempt,
+                    ["adsPower.userId"] = adsPowerUserId,
                     ["avito.subProfileId"] = subProfileId,
                     ["switch.status"] = last.Status.ToString(),
                     ["page.url"] = page.Url
@@ -510,6 +512,7 @@ public sealed partial class AdsPowerAvitoAutomationService
     private async Task<SubProfileSwitchResult> TrySwitchSubProfileOnPageOnceAsync(
         IPage page,
         string subProfileId,
+        string adsPowerUserId,
         CancellationToken cancellationToken)
     {
         _ = GlobalLogger.Instance.LogAsync(
@@ -519,6 +522,7 @@ public sealed partial class AdsPowerAvitoAutomationService
             properties: new Dictionary<string, object?>
             {
                 ["step"] = "start",
+                ["adsPower.userId"] = adsPowerUserId,
                 ["avito.subProfileId"] = subProfileId,
                 ["page.url"] = page.Url
             });
@@ -530,7 +534,16 @@ public sealed partial class AdsPowerAvitoAutomationService
 
         try
         {
-            await page.BringToFrontAsync().ConfigureAwait(false);
+            await AdsPowerCdpGuard.WaitAsync(
+                    page.BringToFrontAsync(),
+                    CdpSwitchActionTimeout,
+                    "BringToFront вкладки Avito",
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (TimeoutException)
+        {
+            throw;
         }
         catch
         {
@@ -626,7 +639,7 @@ public sealed partial class AdsPowerAvitoAutomationService
             return new SubProfileSwitchResult(SubProfileSwitchStatus.ModalNotReady);
         }
 
-        if (await IsTargetSubProfileAlreadyCurrentAsync(page, subProfileId).ConfigureAwait(false))
+        if (await IsTargetSubProfileAlreadyCurrentAsync(page, subProfileId, cancellationToken).ConfigureAwait(false))
         {
             await DismissProfileSwitchModalAsync(page, cancellationToken).ConfigureAwait(false);
             _ = GlobalLogger.Instance.LogAsync(
@@ -636,12 +649,13 @@ public sealed partial class AdsPowerAvitoAutomationService
                 properties: new Dictionary<string, object?>
                 {
                     ["step"] = "already_current",
+                    ["adsPower.userId"] = adsPowerUserId,
                     ["avito.subProfileId"] = subProfileId
                 });
             return SubProfileSwitchResult.Succeeded;
         }
 
-        var switched = await TryClickSubProfileCardAndWaitCloseAsync(page, subProfileId, cancellationToken)
+        var switched = await TryClickSubProfileCardAndWaitCloseAsync(page, subProfileId, adsPowerUserId, cancellationToken)
             .ConfigureAwait(false);
         if (!switched)
         {
@@ -685,7 +699,7 @@ public sealed partial class AdsPowerAvitoAutomationService
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            if (await IsTargetSubProfileAlreadyCurrentAsync(page, subProfileId).ConfigureAwait(false))
+            if (await IsTargetSubProfileAlreadyCurrentAsync(page, subProfileId, cancellationToken).ConfigureAwait(false))
             {
                 await DismissProfileSwitchModalAsync(page, cancellationToken).ConfigureAwait(false);
                 _ = GlobalLogger.Instance.LogAsync(
@@ -1116,7 +1130,7 @@ public sealed partial class AdsPowerAvitoAutomationService
         public async Task<SubProfileSwitchResult> SwitchSubProfileAsync(string subProfileId, CancellationToken cancellationToken = default)
         {
             using var _ = AvitoCaptchaTaskContext.Use(captchaOptions);
-            return await owner.SwitchSubProfileOnPageAsync(page, subProfileId, cancellationToken).ConfigureAwait(false);
+            return await owner.SwitchSubProfileOnPageAsync(page, subProfileId, AdsPowerUserId, cancellationToken).ConfigureAwait(false);
         }
 
         public async Task<bool> VerifyActiveSubProfileAsync(string subProfileId, CancellationToken cancellationToken = default)

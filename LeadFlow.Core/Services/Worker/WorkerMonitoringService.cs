@@ -841,7 +841,9 @@ public sealed class WorkerMonitoringService(
         catch (Exception ex)
         {
             account.LastErrorMessage = ex.Message;
-            account.Status = AvitoAccountStatus.Error;
+            account.Status = FindAdsPowerCdpTimeout(ex) is null
+                ? AvitoAccountStatus.Error
+                : AvitoAccountStatus.Authorized;
             await repository.SaveAccountAsync(account, cancellationToken).ConfigureAwait(false);
             WorkerMonitoringLogger.AccountFailed(account, "мониторинг", ex.Message);
             await PublishAccountEventAsync(
@@ -1934,19 +1936,8 @@ public sealed class WorkerMonitoringService(
         }
     }
 
-    private static TimeoutException? FindAdsPowerCdpTimeout(Exception exception)
-    {
-        for (Exception? current = exception; current is not null; current = current.InnerException)
-        {
-            if (current is TimeoutException timeout
-                && timeout.Message.StartsWith("AdsPower CDP:", StringComparison.Ordinal))
-            {
-                return timeout;
-            }
-        }
-
-        return null;
-    }
+    private static TimeoutException? FindAdsPowerCdpTimeout(Exception exception) =>
+        AdsPowerCdpGuard.FindCdpTimeout(exception);
 
     private async Task PublishCandidateAsync(CandidateResponse response, CancellationToken cancellationToken)
     {
@@ -2609,6 +2600,7 @@ public sealed class WorkerMonitoringService(
         CancellationToken ct)
     {
         var inner = diagnosticEx.InnerException ?? diagnosticEx;
+        var cdpTimeout = FindAdsPowerCdpTimeout(diagnosticEx);
         var sub = FindSubProfile(account, diagnosticEx.SubProfileId);
         AvitoPageState? pageState = null;
         var formatted = AvitoAutomationFailureFormatter.Format(
@@ -2619,7 +2611,8 @@ public sealed class WorkerMonitoringService(
         account.LastErrorMessage = sub is not null
             ? AccountIssueFormatting.FormatIssue(account, sub, diagnosticEx.DiagnosticKind, formatted)
             : formatted;
-        account.Status = AvitoAccountStatus.Error;
+        // CDP-таймаут — переходный сбой сессии, не блокирующая Error: слот освобождается и цикл повторит аккаунт.
+        account.Status = cdpTimeout is null ? AvitoAccountStatus.Error : AvitoAccountStatus.Authorized;
         await repository.SaveAccountAsync(account, ct).ConfigureAwait(false);
         WorkerMonitoringLogger.AccountFailed(
             account,
@@ -2640,8 +2633,10 @@ public sealed class WorkerMonitoringService(
         await repository.SaveAccountAsync(account, ct).ConfigureAwait(false);
         await PublishAccountEventAsync(
             account,
-            "Error",
-            $"Ошибка аккаунта {account.DisplayName}: {account.LastErrorMessage}",
+            cdpTimeout is null ? "Error" : "Warning",
+            cdpTimeout is null
+                ? $"Ошибка аккаунта {account.DisplayName}: {account.LastErrorMessage}"
+                : $"CDP завис на аккаунте {account.DisplayName}, браузер закрыт, повтор через ~1 мин: {account.LastErrorMessage}",
             diagnostic.Details,
             ct).ConfigureAwait(false);
     }
@@ -2997,23 +2992,26 @@ public sealed class WorkerMonitoringService(
         CancellationToken ct)
     {
         byte[]? screenshot = null;
-        try
-        {
-            screenshot = await session.CapturePageScreenshotAsync(ct).ConfigureAwait(false);
-        }
-        catch
-        {
-            // Screenshot is best-effort diagnostics.
-        }
-
         AvitoPageState? pageState = null;
-        try
+        if (!AdsPowerCdpGuard.IsCdpTimeout(ex))
         {
-            pageState = await session.GetPageStateAsync(ct).ConfigureAwait(false);
-        }
-        catch
-        {
-            // best effort
+            try
+            {
+                screenshot = await session.CapturePageScreenshotAsync(ct).ConfigureAwait(false);
+            }
+            catch
+            {
+                // Screenshot is best-effort diagnostics.
+            }
+
+            try
+            {
+                pageState = await session.GetPageStateAsync(ct).ConfigureAwait(false);
+            }
+            catch
+            {
+                // best effort
+            }
         }
 
         var pageUrl = pageState?.Url ?? session.CurrentPageUrl;
@@ -3031,9 +3029,11 @@ public sealed class WorkerMonitoringService(
                 subProfileName ?? captchaEx.SubProfileName);
         }
 
-        var kind = ex is AvitoCaptchaDetectedException captcha
-            ? captcha.Kind
-            : AvitoAutomationFailureFormatter.MapDiagnosticKind(pageState, ex);
+        var kind = AdsPowerCdpGuard.IsCdpTimeout(ex)
+            ? "cdp-timeout"
+            : ex is AvitoCaptchaDetectedException captcha
+                ? captcha.Kind
+                : AvitoAutomationFailureFormatter.MapDiagnosticKind(pageState, ex);
 
         throw new SessionDiagnosticException(ex, kind, screenshot, pageUrl, subProfileId, subProfileName);
     }
