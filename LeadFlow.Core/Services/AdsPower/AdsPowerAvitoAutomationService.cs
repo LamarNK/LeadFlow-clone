@@ -3057,7 +3057,8 @@ public sealed partial class AdsPowerAvitoAutomationService(
                         ["candidate.domIndex"] = domIndex,
                         ["page.url"] = page.Url,
                         ["page.innerWidth"] = await TryReadInnerWidthAsync(page).ConfigureAwait(false),
-                        ["page.innerHeight"] = await TryReadInnerHeightAsync(page).ConfigureAwait(false)
+                        ["page.innerHeight"] = await TryReadInnerHeightAsync(page).ConfigureAwait(false),
+                        ["messenger.uiConfirmed"] = enrichment.UiConfirmed
                     });
                 continue;
             }
@@ -3127,6 +3128,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
     private sealed record MessengerCardEnrichmentResult(
         string? ChannelUrl,
         JsonArray ChatMessages,
+        bool UiConfirmed = false,
         bool AutoReplySent = false);
 
     private static async Task<bool> TryReadCandidateChatUnreadAsync(
@@ -3220,21 +3222,23 @@ public sealed partial class AdsPowerAvitoAutomationService(
                     });
             }
 
-            return new MessengerCardEnrichmentResult(null, new JsonArray(), AutoReplySent: false);
+            return new MessengerCardEnrichmentResult(null, new JsonArray(), UiConfirmed: false, AutoReplySent: false);
         }
 
         await HumanDelay.AfterCandidateClickAsync(cancellationToken).ConfigureAwait(false);
 
+        var messengerUiConfirmed = false;
         try
         {
             await page.WaitForFunctionAsync(
                     AvitoCandidatesPageScripts.BuildMessengerUiVisibleExpression(),
                     new WaitForFunctionOptions { Timeout = 12_000, PollingInterval = 250 })
                 .ConfigureAwait(false);
+            messengerUiConfirmed = true;
         }
         catch
         {
-            // На узком окне мини-чат может не появиться; полноэкранный канал тоже ждём ниже при сборе.
+            // Оверлей кандидата мог быть открыт, но его разметка ещё не смонтирована; ниже всё равно опрашиваем его.
         }
 
         string? channelUrl = null;
@@ -3358,7 +3362,11 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 .ConfigureAwait(false);
         }
 
-        return new MessengerCardEnrichmentResult(channelUrl, chatMessages, autoReplySent);
+        return new MessengerCardEnrichmentResult(
+            channelUrl,
+            chatMessages,
+            UiConfirmed: messengerUiConfirmed || !string.IsNullOrWhiteSpace(channelUrl) || chatMessages.Count > 0,
+            AutoReplySent: autoReplySent);
     }
 
     /// <summary>

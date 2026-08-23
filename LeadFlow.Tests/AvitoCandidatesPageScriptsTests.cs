@@ -58,13 +58,25 @@ public sealed class AvitoCandidatesPageScriptsTests
 
         Assert.Contains("mini-messenger/messenger-page-link", script, StringComparison.Ordinal);
         Assert.Contains("channel-module-root", script, StringComparison.Ordinal);
-        Assert.Contains("querySelectorAll(\"[data-marker='messagesHistory']\")", script, StringComparison.Ordinal);
+        Assert.Contains("no_active_candidate_messenger", script, StringComparison.Ordinal);
         Assert.Contains("[data-marker='platformMessage/text']", script, StringComparison.Ordinal);
         Assert.Contains("[data-marker='messageChunk']", script, StringComparison.Ordinal);
         Assert.Contains("textContent", script, StringComparison.Ordinal);
         Assert.Contains("collectFrom", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("collectFrom(document)", script, StringComparison.Ordinal);
         Assert.Contains("behavior: \"auto\"", script, StringComparison.Ordinal);
         Assert.DoesNotContain("behavior: \"smooth\"", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildMessengerUiVisibleExpression_WaitsForCandidateOverlayInsteadOfGlobalHistory()
+    {
+        var script = AvitoCandidatesPageScripts.BuildMessengerUiVisibleExpression();
+
+        Assert.Contains("mini-messenger/messenger-page-link", script, StringComparison.Ordinal);
+        Assert.Contains("channel-module-root", script, StringComparison.Ordinal);
+        Assert.Contains("isVisible", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("!!document.querySelector(\"[data-marker='messagesHistory/list']\")", script, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -76,6 +88,7 @@ public sealed class AvitoCandidatesPageScriptsTests
         Assert.Contains("mini-messenger/messenger-page-link", script, StringComparison.Ordinal);
         Assert.Contains("channel-module-root", script, StringComparison.Ordinal);
         Assert.Contains("[data-marker='messagesHistory']", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("return hasMessage(document);", script, StringComparison.Ordinal);
     }
 
     [Fact]

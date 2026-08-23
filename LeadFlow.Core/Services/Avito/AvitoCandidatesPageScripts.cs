@@ -1432,9 +1432,30 @@ public static class AvitoCandidatesPageScripts
     /// <summary>Мини-панель в углу или полноэкранный канал после клика «Перейти в чат».</summary>
     public static string BuildMessengerUiVisibleExpression() =>
         """
-        () => !!document.querySelector("[data-marker='messagesHistory/list']")
-            || !!document.querySelector("a[data-marker='mini-messenger/messenger-page-link']")
-            || /\/profile\/messenger\/channel\//i.test(window.location.href)
+        () => {
+            if (/\/profile\/messenger\/channel\//i.test(window.location.href)) {
+                return true;
+            }
+
+            const isVisible = (element) => {
+                if (!element) {
+                    return false;
+                }
+
+                const style = window.getComputedStyle(element);
+                if (style.display === "none" || style.visibility === "hidden") {
+                    return false;
+                }
+
+                const rect = element.getBoundingClientRect();
+                return rect.width > 0 && rect.height > 0;
+            };
+
+            return Array.from(document.querySelectorAll("a[data-marker='mini-messenger/messenger-page-link']"))
+                .some((link) => isVisible(link)
+                    && !!(link.closest("[class*='channel-module-root']")
+                        || link.closest("[data-marker='messagesHistory']")));
+        }
         """;
 
     /// <summary>В оболочке мини-чата уже есть хотя бы одно <c>data-marker=message</c>.</summary>
@@ -1442,8 +1463,25 @@ public static class AvitoCandidatesPageScripts
         """
         () => {
             const hasMessage = (root) => !!root?.querySelector("[data-marker='message']");
+            const isVisible = (element) => {
+                if (!element) {
+                    return false;
+                }
+
+                const style = window.getComputedStyle(element);
+                if (style.display === "none" || style.visibility === "hidden") {
+                    return false;
+                }
+
+                const rect = element.getBoundingClientRect();
+                return rect.width > 0 && rect.height > 0;
+            };
             const links = Array.from(document.querySelectorAll("a[data-marker='mini-messenger/messenger-page-link']"));
             for (const link of links) {
+                if (!isVisible(link)) {
+                    continue;
+                }
+
                 const miniRoot = link.closest("[class*='channel-module-root']")
                     || link.closest("[data-marker='messagesHistory']");
                 if (hasMessage(miniRoot)) {
@@ -1451,13 +1489,12 @@ public static class AvitoCandidatesPageScripts
                 }
             }
 
-            for (const history of document.querySelectorAll("[data-marker='messagesHistory']")) {
-                if (hasMessage(history)) {
-                    return true;
-                }
+            if (/\/profile\/messenger\/channel\//i.test(window.location.href)) {
+                const history = document.querySelector("[data-marker='messagesHistory']");
+                return hasMessage(history || document);
             }
 
-            return hasMessage(document);
+            return false;
         }
         """;
 
@@ -1566,32 +1603,23 @@ public static class AvitoCandidatesPageScripts
             };
 
             const links = Array.from(document.querySelectorAll("a[data-marker='mini-messenger/messenger-page-link']"));
-            const miniLink = links.find(isVisible) || links[0];
+            const miniLink = links.find((link) => isVisible(link)
+                && !!(link.closest("[class*='channel-module-root']")
+                    || link.closest("[data-marker='messagesHistory']")));
             const miniRoot = miniLink?.closest("[class*='channel-module-root']")
                 || miniLink?.closest("[data-marker='messagesHistory']")
                 || null;
-
-            const histories = Array.from(document.querySelectorAll("[data-marker='messagesHistory']"));
-            let bestRoot = miniRoot;
-            let messages = collectFrom(miniRoot);
-
-            if (messages.length === 0) {
-                for (const history of histories) {
-                    const candidate = collectFrom(history);
-                    if (candidate.length > messages.length) {
-                        messages = candidate;
-                        bestRoot = history;
-                    }
-                }
+            const isChannelPage = /\/profile\/messenger\/channel\//i.test(window.location.href);
+            const root = miniRoot
+                || (isChannelPage
+                    ? document.querySelector("[data-marker='messagesHistory']") || document
+                    : null);
+            if (!root) {
+                return JSON.stringify({ ok: false, reason: "no_active_candidate_messenger", messages: [] });
             }
 
-            if (messages.length === 0) {
-                messages = collectFrom(document);
-                bestRoot = bestRoot || document;
-            }
-
-            const list = (bestRoot || document).querySelector("[data-marker='messagesHistory/list']")
-                || document.querySelector("[data-marker='messagesHistory/list']");
+            const messages = collectFrom(root);
+            const list = root.querySelector("[data-marker='messagesHistory/list']");
             if (!list && messages.length === 0) {
                 return JSON.stringify({ ok: false, reason: "no_messages_list", messages: [] });
             }
