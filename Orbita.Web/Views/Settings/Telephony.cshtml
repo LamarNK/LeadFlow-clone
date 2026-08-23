@@ -260,6 +260,14 @@
                                 <span class="settings-status-pill @registrationTone">@registrationLabel</span>
                             </span>
                         </div>
+                        @if (account.RegistrationStatus == "rejected"
+                            && !string.IsNullOrWhiteSpace(account.RegistrationDetail))
+                        {
+                            <p class="telephony-sip-line__registration-detail">
+                                <i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i>
+                                Ошибка регистрации: @account.RegistrationDetail
+                            </p>
+                        }
                         @if (Model.CanManage)
                         {
                             <details class="telephony-sip-line__editor">

@@ -102,6 +102,7 @@ public sealed record CrmSipProviderAccountDto(
     bool UseForOutbound,
     string RegistrationStatus,
     DateTime? StatusCheckedAtUtc,
+    string? RegistrationDetail = null,
     string AccountKey = "default",
     string Name = "Основная линия",
     string Mode = CrmSipAccountModes.Shared,

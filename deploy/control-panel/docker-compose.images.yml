@@ -123,14 +123,9 @@ services:
       ASTERISK_SIP_LOGIN: ${ASTERISK_SIP_LOGIN:-}
       ASTERISK_SIP_AUTH_LOGIN: ${ASTERISK_SIP_AUTH_LOGIN:-}
       ASTERISK_SIP_PASSWORD: ${ASTERISK_SIP_PASSWORD:-}
-      ASTERISK_OUTBOUND_PROVIDER: ${ASTERISK_OUTBOUND_PROVIDER:-primary}
-      BEELINE_SIP_ENABLED: ${BEELINE_SIP_ENABLED:-false}
-      BEELINE_SIP_SERVER: ${BEELINE_SIP_SERVER:-}
-      BEELINE_SIP_PORT: ${BEELINE_SIP_PORT:-5060}
-      BEELINE_SIP_TRANSPORT: ${BEELINE_SIP_TRANSPORT:-udp}
-      BEELINE_SIP_LOGIN: ${BEELINE_SIP_LOGIN:-}
-      BEELINE_SIP_AUTH_LOGIN: ${BEELINE_SIP_AUTH_LOGIN:-}
-      BEELINE_SIP_PASSWORD: ${BEELINE_SIP_PASSWORD:-}
+      # Keep false when all provider lines are configured in Orbita settings.
+      # The optional static trunk is only for a separate legacy provider.
+      ASTERISK_PRIMARY_TRUNK_ENABLED: ${ASTERISK_PRIMARY_TRUNK_ENABLED:-false}
       ASTERISK_DEFAULT_EXTENSION: ${ASTERISK_DEFAULT_EXTENSION:-}
       ASTERISK_PUBLIC_ID: ${ASTERISK_PUBLIC_ID:-}
       ASTERISK_WEBHOOK_SECRET: ${ASTERISK_WEBHOOK_SECRET:-}
@@ -151,8 +146,8 @@ services:
     volumes:
       - orbita_asterisk_recordings:/var/spool/asterisk/recording
       - orbita_telephony_runtime:/var/lib/orbita/telephony-runtime
-      # The example keeps ordinary deployments valid while this profile is off.
-      # Set ASTERISK_ENDPOINTS_FILE to the server-local file before enabling telephony-media.
+      # Optional legacy desk-phone endpoints. Browser SIP users come from the
+      # database-backed runtime configuration.
       - ${ASTERISK_ENDPOINTS_FILE:-./telephony/asterisk/config/pjsip.endpoints.conf.example}:/etc/asterisk/orbita/pjsip.endpoints.conf:ro
     healthcheck:
       test: ["CMD", "/opt/orbita-asterisk/healthcheck.sh"]

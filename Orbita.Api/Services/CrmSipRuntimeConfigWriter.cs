@@ -18,7 +18,10 @@ public sealed record CrmSipRuntimeAccount(
     string Name = "Основная линия",
     string Mode = "shared");
 
-public sealed record CrmSipRuntimeStatus(string Status, DateTime? CheckedAtUtc);
+public sealed record CrmSipRuntimeStatus(
+    string Status,
+    DateTime? CheckedAtUtc,
+    string? Detail = null);
 
 public sealed record CrmAsteriskRuntimeReceiver(Guid PublicId, string Secret);
 
@@ -195,6 +198,15 @@ public sealed class CrmSipRuntimeConfigWriter(IOptions<CrmSipRuntimeOptions> con
             var status = statusLine is null
                 ? "pending"
                 : statusLine[(statusLine.IndexOf('=') + 1)..].Trim().ToLowerInvariant();
+            var detailLine = lines.FirstOrDefault(line => line.StartsWith(
+                $"{accountKey}.detail=", StringComparison.OrdinalIgnoreCase));
+            var detail = detailLine is null
+                ? null
+                : detailLine[(detailLine.IndexOf('=') + 1)..].Trim();
+            if (string.IsNullOrWhiteSpace(detail) || detail.Length > 128)
+            {
+                detail = null;
+            }
             var checkedAtLine = lines.LastOrDefault();
             var checkedAt = lines.Length > 1 && DateTime.TryParse(
                 checkedAtLine,
@@ -205,7 +217,8 @@ public sealed class CrmSipRuntimeConfigWriter(IOptions<CrmSipRuntimeOptions> con
                 : (DateTime?)null;
             return new CrmSipRuntimeStatus(
                 string.IsNullOrWhiteSpace(status) ? "unknown" : status,
-                checkedAt);
+                checkedAt,
+                detail);
         }
         catch (IOException)
         {

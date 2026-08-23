@@ -93,6 +93,7 @@ public sealed class CrmTelephonyService(
                         payload.UseForOutbound,
                         runtimeStatus.Status,
                         runtimeStatus.CheckedAtUtc,
+                        runtimeStatus.Detail,
                         payload.AccountKey,
                         payload.Name,
                         payload.Mode,

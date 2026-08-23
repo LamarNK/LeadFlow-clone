@@ -476,6 +476,19 @@
     gap: 10px;
     min-width: 0;
 }
+.telephony-sip-line__registration-detail {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: -4px 16px 13px;
+    padding: 9px 11px;
+    border: 1px solid #fecdd3;
+    border-radius: 9px;
+    background: #fff1f2;
+    color: #be123c;
+    font-size: 12px;
+    font-weight: 600;
+}
 .telephony-sip-line__editor {
     border-top: 1px solid var(--border, #dbe3ef);
 }

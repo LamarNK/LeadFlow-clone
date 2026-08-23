@@ -144,6 +144,37 @@ public sealed class CrmTelephonyServiceTests
     }
 
     [Fact]
+    public async Task SipRuntimeWriter_ReadsProviderRejectionDetail()
+    {
+        var runtimePath = Path.Combine(Path.GetTempPath(), "orbita-sip-runtime-status-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var officeId = Guid.NewGuid();
+            Directory.CreateDirectory(runtimePath);
+            await File.WriteAllTextAsync(
+                Path.Combine(runtimePath, $"beeline.{officeId:D}.status"),
+                "shared=rejected\nshared.detail=403 Forbidden\n2026-08-23T10:00:00Z\n");
+            var writer = new CrmSipRuntimeConfigWriter(Options.Create(new CrmSipRuntimeOptions
+            {
+                ConfigPath = runtimePath
+            }));
+
+            var status = await writer.ReadBeelineStatusAsync(officeId, "shared");
+
+            Assert.Equal("rejected", status.Status);
+            Assert.Equal("403 Forbidden", status.Detail);
+            Assert.Equal(new DateTime(2026, 8, 23, 10, 0, 0, DateTimeKind.Utc), status.CheckedAtUtc);
+        }
+        finally
+        {
+            if (Directory.Exists(runtimePath))
+            {
+                Directory.Delete(runtimePath, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public async Task BeelineSipAccount_IsEncrypted_AndWrittenToRuntimeWithoutLosingPassword()
     {
         var runtimePath = Path.Combine(Path.GetTempPath(), "orbita-sip-runtime-tests", Guid.NewGuid().ToString("N"));

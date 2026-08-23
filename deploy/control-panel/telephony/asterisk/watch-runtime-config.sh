@@ -59,6 +59,32 @@ hash_files() {
   sha256sum "${matches[@]}" | sha256sum | awk '{print $1}'
 }
 
+all_beeline_auths_loaded() {
+  local auth_name output
+  while IFS= read -r auth_name; do
+    [[ "${auth_name}" =~ ^beeline-[0-9a-f]{32}(-[a-z0-9_-]{1,16})?-auth$ ]] || continue
+    output="$(/usr/sbin/asterisk -rx "pjsip show auth ${auth_name}" 2>/dev/null || true)"
+    # Do not print `pjsip show auth`: depending on the Asterisk version it can
+    # expose credential metadata. The object name is enough to verify reload.
+    if ! grep -Fq "${auth_name}/" <<< "${output}"; then
+      return 1
+    fi
+  done < <(sed -nE 's/^\[([^]]+-auth)\]$/\1/p' "${asterisk_beeline_config}")
+  return 0
+}
+
+registration_detail() {
+  local output="$1" client_uri latest
+  client_uri="$(sed -nE 's/^[[:space:]]*client_uri[[:space:]]*:[[:space:]]*(.*)$/\1/p' <<< "${output}" | head -n 1)"
+  [[ -n "${client_uri}" && -f /var/log/asterisk/messages.log ]] || return 0
+  latest="$(grep -F "registration attempt to '${client_uri}'" /var/log/asterisk/messages.log 2>/dev/null | tail -n 1 || true)"
+  case "${latest}" in
+    *'403 Forbidden'*|*"Fatal response '403'"*) printf '403 Forbidden' ;;
+    *'401 Unauthorized'*|*"Fatal response '401'"*) printf '401 Unauthorized' ;;
+    *'408 Request Timeout'*|*"Fatal response '408'"*) printf '408 Request Timeout' ;;
+  esac
+}
+
 apply_configs_if_changed() {
   local beeline_config_hash webrtc_config_hash
   beeline_config_hash="$(hash_files 'beeline.*.conf')"
@@ -99,7 +125,7 @@ apply_configs_if_changed() {
   install -o asterisk -g asterisk -m 0600 "${beeline_temporary}" "${asterisk_beeline_config}"
   install -o asterisk -g asterisk -m 0600 "${webrtc_temporary}" "${asterisk_webrtc_config}"
   rm -f "${beeline_temporary}" "${webrtc_temporary}"
-  if /usr/sbin/asterisk -rx 'pjsip reload' >/dev/null 2>&1; then
+  if /usr/sbin/asterisk -rx 'pjsip reload' >/dev/null 2>&1 && all_beeline_auths_loaded; then
     last_beeline_config_hash="${beeline_config_hash}"
     last_webrtc_config_hash="${webrtc_config_hash}"
     while IFS= read -r -d '' file; do
@@ -187,18 +213,21 @@ update_registration_statuses() {
     while IFS='=' read -r account_key registration_name; do
       [[ "${account_key}" =~ ^[a-z0-9_-]{1,16}$ ]] || continue
       [[ "${registration_name}" =~ ^beeline-[0-9a-f]{32}(-[a-z0-9_-]{1,16})?-registration$ ]] || continue
-      local output status
+      local output status detail
       output="$(/usr/sbin/asterisk -rx "pjsip show registration ${registration_name}" 2>/dev/null || true)"
+      detail=""
       if grep -qiE '(^|[[:space:]])Registered([[:space:]]|$)' <<< "${output}"; then
         status="registered"
       elif grep -qiE 'Rejected|Forbidden|Auth\. Sent' <<< "${output}"; then
         status="rejected"
+        detail="$(registration_detail "${output}")"
       elif grep -qiE 'Unregistered|Stopped' <<< "${output}"; then
         status="unregistered"
       else
         status="pending"
       fi
       printf '%s=%s\n' "${account_key}" "${status}" >> "${temporary}"
+      [[ -z "${detail}" ]] || printf '%s.detail=%s\n' "${account_key}" "${detail}" >> "${temporary}"
     done < "${file}"
     printf '%s\n' "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "${temporary}"
     mv -f "${temporary}" "${status_path}"

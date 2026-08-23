@@ -104,12 +104,8 @@ The PBX is disabled during a regular deploy and belongs to the separate
    receiver and put its Public ID and one-time secret into the protected server
    The API writes the one-time receiver credentials to the shared runtime volume
    as `receiver.<office-id>.conf`. Do not copy one office secret over another.
-2. Obtain the SIP registrar/server, port, login and password from the provider.
-3. Set the PBX public/NAT address and a default manager extension.
-4. Copy `telephony/asterisk/config/pjsip.endpoints.conf.example` to a file outside
-   Git. Create one endpoint per manager with a unique strong password, then set
-   `ASTERISK_ENDPOINTS_FILE` to that server-local file.
-5. Bind each internal extension to the matching Orbita user on the same settings
+2. Set the PBX public/NAT address and a default manager extension.
+3. Bind each internal extension to the matching Orbita user on the same settings
    page.
 
 Required server `.env` values:
@@ -118,21 +114,27 @@ Required server `.env` values:
 ASTERISK_BIND_IP=PUBLIC_SERVER_IP
 ASTERISK_EXTERNAL_ADDRESS=PUBLIC_SERVER_IP
 ASTERISK_LOCAL_NET=172.16.0.0/12
-ASTERISK_SIP_SERVER=provider.example
-ASTERISK_SIP_PORT=5060
-ASTERISK_SIP_TRANSPORT=tcp
-ASTERISK_SIP_LOGIN=provider-login
-# Optional separate authentication ID used by providers such as Plusofon.
-# If omitted, ASTERISK_SIP_LOGIN is used for authentication too.
-ASTERISK_SIP_AUTH_LOGIN=provider-auth-login
-ASTERISK_SIP_PASSWORD=provider-password
 ASTERISK_DEFAULT_EXTENSION=201
-ASTERISK_DEFAULT_OFFICE_ID=fallback-office-guid
-# Legacy fallback only. New offices receive their own runtime credentials.
-ASTERISK_PUBLIC_ID=
-ASTERISK_WEBHOOK_SECRET=
-ASTERISK_ENDPOINTS_FILE=/opt/orbita/secrets/pjsip.endpoints.conf
+# All office SIP lines are configured in Orbita, not here.
+ASTERISK_PRIMARY_TRUNK_ENABLED=false
 ```
+
+Create and edit each Beeline line in **Settings → Telephony**. Orbita encrypts
+the SIP password in its database, publishes an office-specific runtime config
+to the shared volume, and Asterisk reloads it automatically. No office SIP
+login, password, proxy or registrar belongs in the server `.env`.
+
+`ASTERISK_PRIMARY_TRUNK_ENABLED=true` is a compatibility option for one
+separate, non-office legacy provider. Only in that case also set
+`ASTERISK_SIP_SERVER`, `ASTERISK_SIP_PORT`, `ASTERISK_SIP_TRANSPORT`,
+`ASTERISK_SIP_LOGIN`, optional `ASTERISK_SIP_AUTH_LOGIN`,
+`ASTERISK_SIP_PASSWORD`, and `ASTERISK_DEFAULT_OFFICE_ID`. Never duplicate an
+office-managed Beeline account in those variables: two registrations of the
+same account cause provider rejections.
+
+Browser SIP endpoints are also generated per employee from the settings page.
+`ASTERISK_ENDPOINTS_FILE` is optional and is only for physical desk phones or
+other legacy SIP clients that cannot use the browser endpoint.
 
 Start the source deployment only after those values are ready:
 
@@ -148,8 +150,9 @@ production images first.
 
 Open UDP 5060 for approved manager endpoints, TCP or UDP 5060 for the selected
 provider transport, and UDP 10000–10100 for RTP only after restricting the
-firewall to provider and approved manager networks. Do not publish AMI/ARI. SIP
-passwords must exist only in `.env` or in the server-local endpoints file.
+firewall to provider and approved manager networks. Do not publish AMI/ARI.
+Office SIP passwords are encrypted in Orbita and copied only to Asterisk's
+private generated runtime config; browser clients never receive them.
 
 The container listens for manager endpoints on UDP 5060 and can register the
 upstream provider by either TCP or UDP. For the current Plusofon pilot use TCP,
