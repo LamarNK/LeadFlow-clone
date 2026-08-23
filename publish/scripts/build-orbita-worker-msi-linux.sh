@@ -55,7 +55,7 @@ dotnet publish "$repo_root/Orbita.Worker/Orbita.Worker.csproj" \
   -o "$publish_dir"
 
 find "$publish_dir" -type f -name '*.pdb' -delete
-exe_version="$(wrestool -x --raw -t 16 "$publish_dir/Orbita.Worker.exe" | strings -el | awk 'previous == "FileVersion" { print; exit } { previous = $0 }')"
+exe_version="$(wrestool -x --raw -t 16 "$publish_dir/Orbita.Worker.exe" | strings -el | awk 'previous == "FileVersion" && !printed { print; printed = 1 } { previous = $0 }')"
 if [[ "$exe_version" != "$version" ]]; then
   echo "Orbita.Worker.exe FileVersion is '$exe_version', expected '$version'." >&2
   exit 1
