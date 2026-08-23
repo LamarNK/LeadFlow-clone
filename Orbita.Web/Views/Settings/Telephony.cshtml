@@ -200,8 +200,8 @@
                     @beelineAccounts.Count @(beelineAccounts.Count == 1 ? "линия" : beelineAccounts.Count is >= 2 and <= 4 ? "линии" : "линий")
                 </span>
             </div>
-            <div class="telephony-binding-guide telephony-sip-lines-guide">
-                <span class="telephony-binding-guide__icon"><i class="fa-solid fa-circle-info" aria-hidden="true"></i></span>
+            <div class="telephony-note">
+                <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
                 <div>
                     <strong>Как выбрать тип линии</strong>
                     <p><strong>Общая</strong> назначается любому количеству сотрудников. <strong>Персональная</strong> закрепляется только за одним сотрудником и не может быть общей линией офиса.</p>
@@ -341,8 +341,8 @@
                         </form>
                     </details>
                 }
-                <div class="telephony-binding-guide telephony-sip-account-help">
-                    <span class="telephony-binding-guide__icon"><i class="fa-solid fa-link" aria-hidden="true"></i></span>
+                <div class="telephony-note telephony-note--muted">
+                    <i class="fa-solid fa-link" aria-hidden="true"></i>
                     <div>
                         <strong>Следующий шаг</strong>
                         <p>После подключения линии выберите её у нужных сотрудников ниже. Внутренний номер остаётся уникальным и определяет автора звонка.</p>
@@ -378,8 +378,8 @@
                     </a>
                 }
             </div>
-            <div class="telephony-binding-guide telephony-office-users-guide">
-                <span class="telephony-binding-guide__icon"><i class="fa-solid fa-circle-info" aria-hidden="true"></i></span>
+            <div class="telephony-note">
+                <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
                 <div>
                     <strong>Внутренний номер и исходящая линия</strong>
                     <p>Общую линию можно назначить нескольким сотрудникам. Персональная линия доступна только одному; Орбита не даст случайно привязать её повторно.</p>
@@ -525,8 +525,8 @@
                     </button>
                 }
             </div>
-            <div class="telephony-binding-guide">
-                <span class="telephony-binding-guide__icon"><i class="fa-solid fa-circle-info" aria-hidden="true"></i></span>
+            <div class="telephony-note">
+                <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
                 <div>
                     <strong>Как это работает</strong>
                     <p>Сначала линия или внутренний номер создаётся на SIP-сервере либо у провайдера. Здесь Орбита только связывает уже существующий номер с сотрудником, чтобы определить автора звонка и записать разговор в карточку клиента.</p>
