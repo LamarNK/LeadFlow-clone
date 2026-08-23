@@ -6,8 +6,8 @@
     letter-spacing: -0.02em;
 }
 
-/* SIPOUT telephony configuration */
-.telephony-settings-page { display: grid; gap: 16px; }
+/* Telephony workspace */
+.telephony-settings-page { display: grid; gap: 20px; }
 .telephony-settings-nav {
     display: flex;
     align-items: center;
@@ -24,52 +24,56 @@
 .telephony-access-note i { color: #2563eb; }
 .telephony-provider-overview {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 14px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 4px;
+    padding: 6px;
+    border: 1px solid var(--border, #dbe3ef);
+    border-radius: 16px;
+    background: var(--surface-soft, #f6f8fc);
 }
 .telephony-provider-card {
     display: grid;
-    grid-template-columns: 44px minmax(0, 1fr) auto;
+    grid-template-columns: 36px minmax(0, 1fr) auto;
     align-items: start;
-    gap: 12px;
+    gap: 10px;
     min-width: 0;
-    padding: 18px;
-    border: 1px solid var(--border, #dbe3ef);
-    border-radius: 16px;
-    background: var(--bg-card, #fff);
+    min-height: 82px;
+    padding: 12px;
+    border: 0;
+    border-radius: 12px;
+    background: transparent;
     color: var(--text-primary, #0f172a);
     text-decoration: none;
-    box-shadow: 0 10px 28px rgba(15, 23, 42, .04);
-    transition: border-color .18s ease, box-shadow .18s ease, transform .18s ease;
+    transition: background-color .18s ease, box-shadow .18s ease, color .18s ease;
 }
 .telephony-provider-card:hover {
-    border-color: rgba(37, 99, 235, .45);
-    box-shadow: 0 14px 34px rgba(37, 99, 235, .09);
-    transform: translateY(-1px);
+    background: rgba(37, 99, 235, .06);
+    color: #1d4ed8;
 }
 .telephony-provider-card--selected {
-    border-color: #2563eb;
-    box-shadow: 0 0 0 3px rgba(37, 99, 235, .10), 0 14px 34px rgba(37, 99, 235, .08);
+    background: var(--bg-card, #fff);
+    box-shadow: 0 4px 12px rgba(15, 23, 42, .08);
 }
 .telephony-provider-card__icon {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 44px;
-    height: 44px;
-    border-radius: 13px;
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
     background: rgba(37, 99, 235, .1);
     color: #2563eb;
     font-size: 18px;
 }
 .telephony-provider-card__body { display: grid; gap: 4px; min-width: 0; }
-.telephony-provider-card__body strong { font-size: 15px; }
+.telephony-provider-card__body strong { font-size: 13px; }
 .telephony-provider-card__body small {
     color: var(--text-secondary, #64748b);
+    font-size: 12px;
     line-height: 1.35;
 }
 .telephony-provider-card__meta {
-    margin-top: 6px;
+    margin-top: 2px;
     color: var(--text-muted, #94a3b8);
     font-size: 11px;
 }
@@ -77,9 +81,57 @@
     background: rgba(245, 158, 11, .12);
     color: #b45309;
 }
+.telephony-provider-context {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 28px;
+    padding: 22px 24px;
+    border: 1px solid var(--border, #dbe3ef);
+    border-radius: 16px;
+    background: var(--bg-card, #fff);
+}
+.telephony-provider-context__copy h2 {
+    margin: 0;
+    color: var(--text-primary, #0f172a);
+    font-size: 22px;
+    letter-spacing: -.025em;
+}
+.telephony-provider-context__copy p {
+    max-width: 58ch;
+    margin: 6px 0 0;
+    color: var(--text-secondary, #64748b);
+    font-size: 13px;
+    line-height: 1.5;
+}
+.telephony-provider-context__facts {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(112px, 1fr));
+    margin: 0;
+}
+.telephony-provider-context__facts > div {
+    min-width: 0;
+    padding: 2px 16px;
+}
+.telephony-provider-context__facts > div + div {
+    border-left: 1px solid var(--border, #e2e8f0);
+}
+.telephony-provider-context__facts dt {
+    color: var(--text-muted, #94a3b8);
+    font-size: 11px;
+    font-weight: 700;
+}
+.telephony-provider-context__facts dd {
+    margin: 6px 0 0;
+    color: var(--text-primary, #0f172a);
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1.35;
+}
+.telephony-provider-context__facts .telephony-provider-context__state--ready { color: #067647; }
+.telephony-provider-context__facts .telephony-provider-context__state--pending { color: #b54708; }
 .telephony-settings-grid {
     display: grid;
-    grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr);
+    grid-template-columns: minmax(0, 1fr);
     gap: 16px;
     align-items: start;
 }
@@ -127,6 +179,25 @@
 .telephony-binding-row span { color: var(--text-muted, #64748b); font-size: 12px; }
 .telephony-staff-card { grid-column: 1 / -1; }
 .telephony-staff-body { padding: 0 !important; overflow: hidden; }
+.telephony-staff-empty {
+    display: grid;
+    grid-template-columns: 36px minmax(0, 1fr);
+    align-items: start;
+    gap: 12px;
+    padding: 28px 24px;
+}
+.telephony-staff-empty > i {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    background: rgba(37, 99, 235, .1);
+    color: #2563eb;
+}
+.telephony-staff-empty strong { display: block; color: var(--text-primary, #0f172a); font-size: 14px; }
+.telephony-staff-empty p { margin: 4px 0 0; color: var(--text-secondary, #64748b); font-size: 13px; line-height: 1.5; }
 .telephony-staff-table { min-width: 880px; }
 .telephony-staff-card .card-body { overflow-x: auto; }
 .telephony-staff-table__head,
@@ -541,7 +612,7 @@ body.telephony-modal-open { overflow: hidden; }
     .telephony-sip-account-grid { grid-template-columns: 1fr; }
     .telephony-sip-outbound-option,
     .telephony-sip-account-grid__actions { grid-column: auto; }
-    .telephony-provider-overview { grid-template-columns: 1fr; }
+    .telephony-provider-context { grid-template-columns: 1fr; gap: 18px; }
     .telephony-copy-row { grid-template-columns: 1fr; }
     .telephony-sip-line__summary {
         grid-template-areas:
@@ -556,8 +627,15 @@ body.telephony-modal-open { overflow: hidden; }
 }
 @media (max-width: 640px) {
     .telephony-settings-nav { align-items: flex-start; flex-direction: column; }
-    .telephony-provider-card { grid-template-columns: 42px minmax(0, 1fr); }
+    .telephony-provider-overview { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .telephony-provider-card { grid-template-columns: 32px minmax(0, 1fr); min-height: 0; }
     .telephony-provider-card > .settings-status-pill { grid-column: 2; justify-self: start; }
+    .telephony-provider-context { padding: 20px; }
+    .telephony-provider-context__facts { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .telephony-provider-context__facts > div { padding: 10px 0 0; }
+    .telephony-provider-context__facts > div + div { border-left: 0; }
+    .telephony-provider-context__facts > div:nth-child(even) { padding-left: 14px; border-left: 1px solid var(--border, #e2e8f0); }
+    .telephony-provider-context__facts > div:nth-child(3) { grid-column: 1 / -1; }
     .telephony-modal { padding: 10px; }
     .telephony-modal__dialog { max-height: calc(100vh - 20px); border-radius: 16px; }
     .telephony-modal__form { grid-template-columns: 1fr; padding: 20px; }

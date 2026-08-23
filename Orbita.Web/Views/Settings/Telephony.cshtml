@@ -8,6 +8,13 @@
     var phoneUsersByUser = Model.PhoneUsers.ToDictionary(x => x.UserId, StringComparer.Ordinal);
     var beelineAccounts = Model.Settings.SipAccounts?.ToList()
         ?? (Model.Settings.SipAccount is null ? [] : [Model.Settings.SipAccount]);
+    var selectedProvider = Model.ProviderSummaries.FirstOrDefault(summary =>
+        string.Equals(summary.Provider, Model.Provider, StringComparison.OrdinalIgnoreCase));
+    var receiverStatusLabel = Model.Settings.IsEnabled
+        ? "Приём событий включён"
+        : Model.Settings.IsConfigured
+            ? "Приём событий приостановлен"
+            : "Приём событий не настроен";
     string OutboundLineLabel(string? provider)
     {
         if (CrmTelephonyOutboundProviders.TryGetBeelineLineKey(provider, out var accountKey))
@@ -62,6 +69,27 @@
                 </span>
             </a>
         }
+    </section>
+
+    <section class="telephony-provider-context" aria-label="Состояние выбранного подключения">
+        <div class="telephony-provider-context__copy">
+            <h2>@providerLabel</h2>
+            <p>@(selectedProvider?.Description ?? "Настройте подключение и свяжите линии с сотрудниками офиса.")</p>
+        </div>
+        <dl class="telephony-provider-context__facts">
+            <div>
+                <dt>Сотрудники</dt>
+                <dd>@(selectedProvider?.BoundUsersCount ?? 0) подключено</dd>
+            </div>
+            <div>
+                <dt>Приём событий</dt>
+                <dd class="@(Model.Settings.IsEnabled ? "telephony-provider-context__state--ready" : "telephony-provider-context__state--pending")">@receiverStatusLabel</dd>
+            </div>
+            <div>
+                <dt>Доступ</dt>
+                <dd>@(Model.CanManage ? "Управление доступно" : "Только просмотр")</dd>
+            </div>
+        </dl>
     </section>
 
     @if (!string.IsNullOrWhiteSpace(Model.StatusMessage))
@@ -324,7 +352,7 @@
                     <h2 class="settings-card-title">Пользователи телефонии</h2>
                     <p class="settings-card-subtitle">Внутренний номер и линия исходящих звонков — как в привычных настройках Bitrix24</p>
                 </div>
-                @if (Model.CanManage)
+                @if (Model.CanManage && Model.OfficeUsers.Count > 0)
                 {
                     <button type="button"
                             class="settings-primary-btn settings-primary-btn--compact"
@@ -332,6 +360,14 @@
                         <i class="fa-solid fa-user-plus" aria-hidden="true"></i>
                         Подключить сотрудника
                     </button>
+                }
+                else if (Model.CanManage)
+                {
+                    <a class="settings-secondary-btn telephony-edit-btn"
+                       href="@Url.Action("Index", "Settings", new { tab = "offices", officeId = Model.OfficeId })">
+                        <i class="fa-solid fa-user-plus" aria-hidden="true"></i>
+                        Добавить сотрудника
+                    </a>
                 }
             </div>
             <div class="telephony-binding-guide telephony-office-users-guide">
@@ -342,6 +378,18 @@
                 </div>
             </div>
             <div class="card-body telephony-staff-body">
+                @if (Model.OfficeUsers.Count == 0)
+                {
+                    <div class="telephony-staff-empty">
+                        <i class="fa-solid fa-users" aria-hidden="true"></i>
+                        <div>
+                            <strong>В офисе пока нет сотрудников</strong>
+                            <p>Добавьте сотрудников в офис, чтобы назначить внутренние номера и линии исходящих звонков.</p>
+                        </div>
+                    </div>
+                }
+                else
+                {
                 <div class="telephony-staff-table telephony-staff-table--bitrix" role="table" aria-label="Пользователи телефонии">
                     <div class="telephony-staff-table__head" role="row">
                         <span>Пользователь</span>
@@ -394,6 +442,7 @@
                         </div>
                     }
                 </div>
+                }
             </div>
         </section>
     }
@@ -401,7 +450,7 @@
     @if (!isBeeline)
     {
     <div class="telephony-settings-grid">
-        <section class="card">
+        <section class="card telephony-receiver-card">
             <div class="card-header settings-card-header">
                 <div>
                     <h2 class="settings-card-title">Приём звонков</h2>
