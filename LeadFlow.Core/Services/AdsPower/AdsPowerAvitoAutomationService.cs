@@ -3070,7 +3070,14 @@ public sealed partial class AdsPowerAvitoAutomationService(
             {
                 var collection = enrichment.Collection ?? MiniMessengerCollectionResult.NotCollected;
                 _ = GlobalLogger.Instance.LogAsync(
-                    $"AdsPower messenger enrich: no chat messages for candidate index {domIndex}.",
+                    $"AdsPower messenger enrich: no chat messages for candidate index {domIndex}; " +
+                    $"click={enrichment.ClickMethod}; uiConfirmed={enrichment.UiConfirmed}; " +
+                    $"channelUrlFound={!string.IsNullOrWhiteSpace(enrichment.ChannelUrl)}; " +
+                    $"waitConfirmed={collection.WaitConfirmed}; attempts={collection.Attempts}; " +
+                    $"reason={collection.Reason}; miniLink={collection.HasMiniLink}; miniRoot={collection.HasMiniRoot}; " +
+                    $"markedHistoryFallback={collection.UsedMarkedHistoryFallback}; channelPage={collection.IsChannelPage}; " +
+                    $"histories={collection.HistoryCount}; visibleHistories={collection.VisibleHistoryCount}; " +
+                    $"messageNodes={collection.RootMessageNodeCount}; messagesList={collection.HasMessagesList}.",
                     DeskLinkAuditLogLevel.Warning,
                     memberName: nameof(TryEnrichCandidatesJsonMessengerUrlsAsync),
                     properties: new Dictionary<string, object?>
