@@ -64,6 +64,10 @@ python3 "$script_dir/build-orbita-worker-msi-linux.py" \
   --publish-dir "$publish_dir" \
   --output "$wxs_path" \
   --version "$version"
+if grep -Fq 'Guid="*"' "$wxs_path"; then
+  echo "Generated WiX source reuses automatic component GUIDs across releases." >&2
+  exit 1
+fi
 wixl -a x64 -o "$msi_path" "$wxs_path"
 
 if ! msiinfo tables "$msi_path" | grep -qx 'File'; then

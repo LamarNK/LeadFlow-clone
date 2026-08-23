@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import uuid
 from pathlib import Path
 from xml.sax.saxutils import escape
 
@@ -24,6 +25,16 @@ def xml(value: str) -> str:
 def wix_id(prefix: str, value: str) -> str:
     digest = hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
     return f"{prefix}_{digest}"
+
+
+def component_guid(version: str, identity: str) -> str:
+    """Return a stable component GUID that changes for every release.
+
+    A major upgrade built by wixl must not reuse component codes from the
+    package it removes. Otherwise MSI can decide a file is already present,
+    then RemoveExistingProducts deletes that very file from the old package.
+    """
+    return str(uuid.uuid5(uuid.NAMESPACE_URL, f"orbita-worker/{version}/{identity}")).upper()
 
 
 def directory_tree(parent: str, children: dict[str, dict]) -> list[str]:
@@ -93,7 +104,7 @@ def generate(publish_dir: Path, output: Path, version: str) -> None:
         parent_id = directory_id(relative.parent)
         lines.extend([
             f'    <DirectoryRef Id="{parent_id}">',
-            f'      <Component Id="{component_id}" Guid="*">',
+            f'      <Component Id="{component_id}" Guid="{component_guid(version, relative.as_posix())}">',
             f'        <File Id="File_{index}" Source="{xml(str(file.resolve()))}" KeyPath="yes" />',
             '      </Component>',
             '    </DirectoryRef>',
@@ -101,19 +112,19 @@ def generate(publish_dir: Path, output: Path, version: str) -> None:
 
     lines.extend([
         '    <DirectoryRef Id="INSTALLFOLDER">',
-        '      <Component Id="AutoStartComponent" Guid="*">',
+        f'      <Component Id="AutoStartComponent" Guid="{component_guid(version, "auto-start")}">',
         '        <RegistryValue Root="HKCU" Key="Software\\Microsoft\\Windows\\CurrentVersion\\Run"',
         '                       Name="OrbitaWorker" Type="string"',
         '                       Value="&quot;[INSTALLFOLDER]Orbita.Worker.exe&quot;" KeyPath="yes" />',
         '      </Component>',
-        '      <Component Id="CleanupInstallFolder" Guid="*">',
+        f'      <Component Id="CleanupInstallFolder" Guid="{component_guid(version, "cleanup-install-folder")}">',
         '        <RemoveFolder Id="RemoveInstallFolder" On="uninstall" />',
         '        <RegistryValue Root="HKCU" Key="Software\\Orbita\\Worker" Name="InstallFolder"',
         '                       Type="string" Value="1" KeyPath="yes" />',
         '      </Component>',
         '    </DirectoryRef>',
         '    <DirectoryRef Id="CompanyFolder">',
-        '      <Component Id="CleanupCompanyFolder" Guid="*">',
+        f'      <Component Id="CleanupCompanyFolder" Guid="{component_guid(version, "cleanup-company-folder")}">',
         '        <RemoveFolder Id="RemoveCompanyFolder" On="uninstall" />',
         '        <RegistryValue Root="HKCU" Key="Software\\Orbita" Name="WorkerRoot"',
         '                       Type="string" Value="1" KeyPath="yes" />',
