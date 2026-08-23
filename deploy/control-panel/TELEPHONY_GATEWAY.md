@@ -198,19 +198,18 @@ Local pilot values:
 TELEPHONY_WEBRTC_ENABLED=true
 TELEPHONY_WEBRTC_WS_URL=ws://127.0.0.1:8088/ws
 TELEPHONY_WEBRTC_SIP_DOMAIN=127.0.0.1
-ASTERISK_WEBRTC_EXTENSION=201
-ASTERISK_WEBRTC_AUTH_USERNAME=201-webrtc
-ASTERISK_WEBRTC_PASSWORD=unique-strong-password
 ```
 
-Bind `ASTERISK_WEBRTC_EXTENSION` to the matching Orbita user in the office
-telephony settings. The API resolves that binding against the current JWT user;
-another employee cannot request these credentials by changing a query string.
+Bind an internal number to the matching employee in the office telephony
+settings. Orbita generates a unique WebRTC login and password, encrypts the
+password in its database, and publishes the endpoint to the shared Asterisk
+runtime configuration. The API resolves that binding against the current JWT
+user; another employee cannot request these credentials by changing a query
+string. Per-employee credentials do not belong in `.env`.
 
 For production, do not expose plain `ws://` or Asterisk HTTP directly. Terminate
-TLS at the existing reverse proxy, publish a dedicated `wss://` endpoint, limit
-the SIP/RTP firewall rules, and issue a unique WebRTC endpoint and password per
-employee. The page itself must also be served over HTTPS so that browsers allow
+TLS at the existing reverse proxy, publish a dedicated `wss://` endpoint, and
+limit the SIP/RTP firewall rules. The page itself must also be served over HTTPS so that browsers allow
 microphone access. Test one internal employee and one controlled phone number
 before enabling the action for the whole office.
 

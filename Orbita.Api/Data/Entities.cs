@@ -898,6 +898,8 @@ public sealed class CrmTelephonyUserBindingEntity
     public string Provider { get; set; } = string.Empty;
     public string ProviderUserKey { get; set; } = string.Empty;
     public string OutboundProvider { get; set; } = CrmTelephonyOutboundProviders.Default;
+    public string? WebRtcAuthorizationUsername { get; set; }
+    public string? WebRtcPasswordProtected { get; set; }
     public string UserId { get; set; } = string.Empty;
     public DateTime CreatedAtUtc { get; set; }
     public DateTime UpdatedAtUtc { get; set; }

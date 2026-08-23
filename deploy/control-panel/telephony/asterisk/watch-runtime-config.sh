@@ -2,8 +2,10 @@
 set -euo pipefail
 
 runtime_dir="${ASTERISK_RUNTIME_CONFIG_DIR:-/var/lib/orbita/telephony-runtime}"
-asterisk_config="/etc/asterisk/orbita/pjsip.beeline.conf"
-last_config_hash=""
+asterisk_beeline_config="/etc/asterisk/orbita/pjsip.beeline.conf"
+asterisk_webrtc_config="/etc/asterisk/orbita/pjsip.webrtc.conf"
+last_beeline_config_hash=""
+last_webrtc_config_hash=""
 last_routes_hash=""
 
 mkdir -p "${runtime_dir}"
@@ -58,26 +60,48 @@ hash_files() {
 }
 
 apply_configs_if_changed() {
-  local config_hash
-  config_hash="$(hash_files 'beeline.*.conf')"
-  if [[ "${config_hash}" == "${last_config_hash}" ]]; then
+  local beeline_config_hash webrtc_config_hash
+  beeline_config_hash="$(hash_files 'beeline.*.conf')"
+  if [[ "${ASTERISK_WEBRTC_ENABLED:-false}" == "true" ]]; then
+    webrtc_config_hash="$(hash_files 'webrtc.*.conf')"
+  else
+    webrtc_config_hash="disabled"
+  fi
+  if [[ "${beeline_config_hash}" == "${last_beeline_config_hash}" \
+        && "${webrtc_config_hash}" == "${last_webrtc_config_hash}" ]]; then
     return 0
   fi
 
-  local temporary="${asterisk_config}.tmp"
-  printf '; Generated from all configured Orbita offices.\n' > "${temporary}"
+  local beeline_temporary="${asterisk_beeline_config}.tmp"
+  local webrtc_temporary="${asterisk_webrtc_config}.tmp"
+  printf '; Generated from all configured Orbita offices.\n' > "${beeline_temporary}"
   while IFS= read -r -d '' file; do
     local office_id
     office_id="$(office_from_file "${file}" 'beeline.' '.conf')"
     [[ -n "${office_id}" ]] || continue
-    printf '\n; Office %s\n' "${office_id}" >> "${temporary}"
-    cat "${file}" >> "${temporary}"
+    printf '\n; Office %s\n' "${office_id}" >> "${beeline_temporary}"
+    cat "${file}" >> "${beeline_temporary}"
   done < <(find "${runtime_dir}" -maxdepth 1 -type f -name 'beeline.*.conf' -print0 | sort -z)
 
-  install -o asterisk -g asterisk -m 0600 "${temporary}" "${asterisk_config}"
-  rm -f "${temporary}"
+  if [[ "${ASTERISK_WEBRTC_ENABLED:-false}" == "true" ]]; then
+    printf '; Generated browser endpoints from all configured Orbita offices.\n' > "${webrtc_temporary}"
+    while IFS= read -r -d '' file; do
+      local office_id
+      office_id="$(office_from_file "${file}" 'webrtc.' '.conf')"
+      [[ -n "${office_id}" ]] || continue
+      printf '\n; Office %s\n' "${office_id}" >> "${webrtc_temporary}"
+      cat "${file}" >> "${webrtc_temporary}"
+    done < <(find "${runtime_dir}" -maxdepth 1 -type f -name 'webrtc.*.conf' -print0 | sort -z)
+  else
+    printf '; Browser WebRTC endpoints are disabled.\n' > "${webrtc_temporary}"
+  fi
+
+  install -o asterisk -g asterisk -m 0600 "${beeline_temporary}" "${asterisk_beeline_config}"
+  install -o asterisk -g asterisk -m 0600 "${webrtc_temporary}" "${asterisk_webrtc_config}"
+  rm -f "${beeline_temporary}" "${webrtc_temporary}"
   if /usr/sbin/asterisk -rx 'pjsip reload' >/dev/null 2>&1; then
-    last_config_hash="${config_hash}"
+    last_beeline_config_hash="${beeline_config_hash}"
+    last_webrtc_config_hash="${webrtc_config_hash}"
     while IFS= read -r -d '' file; do
       local office_id
       office_id="$(office_from_file "${file}" 'beeline.' '.conf')"

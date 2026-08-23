@@ -12,6 +12,105 @@ namespace Orbita.Tests;
 public sealed class CrmTelephonyServiceTests
 {
     [Fact]
+    public async Task AsteriskBinding_GeneratesEncryptedWebRtcCredentials_AndPublishesRuntimeEndpoint()
+    {
+        var runtimePath = Path.Combine(Path.GetTempPath(), "orbita-webrtc-runtime-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var options = new DbContextOptionsBuilder<OrbitaDbContext>()
+                .UseInMemoryDatabase($"crm-telephony-webrtc-{Guid.NewGuid():N}")
+                .Options;
+            await using var db = new OrbitaDbContext(options);
+            var officeId = Guid.NewGuid();
+            const string userId = "webrtc-manager";
+            db.Offices.Add(new OfficeEntity
+            {
+                Id = officeId,
+                Name = "WebRTC office",
+                RegistrationSecretHash = "hash",
+                IsEnabled = true,
+                CrmEnabled = true,
+                CreatedAtUtc = DateTime.UtcNow
+            });
+            db.Users.Add(new IdentityUser
+            {
+                Id = userId,
+                UserName = "webrtc-manager@orbita.local",
+                NormalizedUserName = "WEBRTC-MANAGER@ORBITA.LOCAL",
+                Email = "webrtc-manager@orbita.local",
+                NormalizedEmail = "WEBRTC-MANAGER@ORBITA.LOCAL"
+            });
+            db.PanelUserProfiles.Add(new PanelUserProfileEntity
+            {
+                UserId = userId,
+                OfficeId = officeId,
+                FullName = "WebRTC manager"
+            });
+            await db.SaveChangesAsync();
+
+            var protector = new CrmTelephonyCredentialProtector(new EphemeralDataProtectionProvider());
+            var writer = new CrmSipRuntimeConfigWriter(Options.Create(new CrmSipRuntimeOptions
+            {
+                ConfigPath = runtimePath
+            }));
+            var sut = new CrmTelephonyService(
+                db,
+                new PhoneNormalizer(),
+                TimeProvider.System,
+                credentialProtector: protector,
+                sipRuntimeConfigWriter: writer);
+
+            var (binding, bindingError) = await sut.SetBindingAsync(
+                officeId,
+                userId,
+                "201",
+                provider: CrmTelephonyProviders.Asterisk);
+            Assert.NotNull(binding);
+            Assert.Null(bindingError);
+
+            var (endpoint, endpointError) = await sut.GetWebRtcEndpointAsync(officeId, userId);
+            Assert.NotNull(endpoint);
+            Assert.Null(endpointError);
+            Assert.Equal("201", endpoint.Extension);
+            Assert.Equal("201-webrtc", endpoint.AuthorizationUsername);
+            Assert.True(endpoint.Password.Length >= 16);
+
+            var stored = await db.CrmTelephonyUserBindings.SingleAsync();
+            Assert.Equal("201-webrtc", stored.WebRtcAuthorizationUsername);
+            Assert.NotNull(stored.WebRtcPasswordProtected);
+            Assert.DoesNotContain(endpoint.Password, stored.WebRtcPasswordProtected, StringComparison.Ordinal);
+            Assert.Equal(endpoint.Password, protector.Unprotect(stored.WebRtcPasswordProtected));
+
+            var runtimeConfig = await File.ReadAllTextAsync(
+                Path.Combine(runtimePath, $"webrtc.{officeId:D}.conf"));
+            Assert.Contains("[201-webrtc]", runtimeConfig, StringComparison.Ordinal);
+            Assert.Contains("username=201-webrtc", runtimeConfig, StringComparison.Ordinal);
+            Assert.Contains($"password={endpoint.Password}", runtimeConfig, StringComparison.Ordinal);
+            Assert.Contains("callerid=201 <201>", runtimeConfig, StringComparison.Ordinal);
+
+            var (sameEndpoint, sameEndpointError) = await sut.GetWebRtcEndpointAsync(officeId, userId);
+            Assert.NotNull(sameEndpoint);
+            Assert.Null(sameEndpointError);
+            Assert.Equal(endpoint.Password, sameEndpoint.Password);
+
+            Assert.True(await sut.RemoveBindingAsync(
+                officeId,
+                userId,
+                provider: CrmTelephonyProviders.Asterisk));
+            runtimeConfig = await File.ReadAllTextAsync(
+                Path.Combine(runtimePath, $"webrtc.{officeId:D}.conf"));
+            Assert.DoesNotContain("[201-webrtc]", runtimeConfig, StringComparison.Ordinal);
+        }
+        finally
+        {
+            if (Directory.Exists(runtimePath))
+            {
+                Directory.Delete(runtimePath, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public async Task BeelineSipAccount_IsEncrypted_AndWrittenToRuntimeWithoutLosingPassword()
     {
         var runtimePath = Path.Combine(Path.GetTempPath(), "orbita-sip-runtime-tests", Guid.NewGuid().ToString("N"));

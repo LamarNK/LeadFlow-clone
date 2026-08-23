@@ -334,6 +334,7 @@ public static class OrbitaApiStartupExtensions
         builder.Services.AddHostedService<CrmDailyDistributionHostedService>();
         builder.Services.AddHostedService<PlusofonRecordingHostedService>();
         builder.Services.AddHostedService<BitrixWorkforceHostedService>();
+        builder.Services.AddHostedService<CrmTelephonyRuntimeSyncHostedService>();
         builder.Services.AddScoped<WebhookSecretProtector>();
         builder.Services.AddScoped<AvitoAccountSecretProtector>();
         builder.Services.AddScoped<BitrixWebhookValidator>();

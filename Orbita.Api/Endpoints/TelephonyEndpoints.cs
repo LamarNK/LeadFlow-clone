@@ -199,8 +199,8 @@ public static class TelephonyEndpoints
                 Guid? officeId,
                 ClaimsPrincipal principal,
                 HttpResponse response,
-                OrbitaDbContext db,
                 OfficeScopeService officeScope,
+                CrmTelephonyService telephony,
                 IOptions<CrmTelephonyWebRtcOptions> configuredOptions,
                 CancellationToken ct) =>
             {
@@ -225,25 +225,18 @@ public static class TelephonyEndpoints
                     return Results.Forbid();
                 }
 
-                var extension = await db.CrmTelephonyUserBindings
-                    .AsNoTracking()
-                    .Where(x => x.OfficeId == resolvedOfficeId
-                                && x.Provider == CrmTelephonyProviders.Asterisk
-                                && x.UserId == userId)
-                    .Select(x => x.ProviderUserKey)
-                    .SingleOrDefaultAsync(ct);
-                extension = extension?.Trim();
-                var endpoint = string.IsNullOrWhiteSpace(extension)
-                    ? null
-                    : options.ResolveEndpoint(extension);
-                if (string.IsNullOrWhiteSpace(extension)
-                    || endpoint is null
-                    || string.IsNullOrWhiteSpace(endpoint.AuthorizationUsername)
-                    || string.IsNullOrWhiteSpace(endpoint.Password)
+                var (endpoint, endpointError) = await telephony.GetWebRtcEndpointAsync(
+                    resolvedOfficeId,
+                    userId,
+                    ct);
+                if (endpoint is null
                     || string.IsNullOrWhiteSpace(options.WebSocketUrl)
                     || string.IsNullOrWhiteSpace(options.SipDomain))
                 {
-                    return Results.NotFound(new { error = "Для сотрудника не настроена браузерная SIP-линия." });
+                    return Results.NotFound(new
+                    {
+                        error = endpointError ?? "Для сотрудника не настроена браузерная SIP-линия."
+                    });
                 }
 
                 if (!Uri.TryCreate(options.WebSocketUrl, UriKind.Absolute, out var socketUri)
@@ -260,7 +253,7 @@ public static class TelephonyEndpoints
                     options.WebSocketUrl.Trim(),
                     $"sip:{endpoint.AuthorizationUsername.Trim()}@{options.SipDomain.Trim()}",
                     options.SipDomain.Trim(),
-                    extension,
+                    endpoint.Extension,
                     endpoint.AuthorizationUsername.Trim(),
                     endpoint.Password));
             })

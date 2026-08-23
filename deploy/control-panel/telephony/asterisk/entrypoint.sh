@@ -78,22 +78,10 @@ install -m 0644 /opt/orbita-asterisk/rtp.conf /etc/asterisk/rtp.conf
 install -m 0644 /opt/orbita-asterisk/modules.conf /etc/asterisk/modules.conf
 
 if [[ "${ASTERISK_WEBRTC_ENABLED}" == "true" ]]; then
-  webrtc_required=(
-    ASTERISK_WEBRTC_EXTENSION
-    ASTERISK_WEBRTC_AUTH_USERNAME
-    ASTERISK_WEBRTC_PASSWORD
-  )
-  for name in "${webrtc_required[@]}"; do
-    if [[ -z "${!name:-}" ]]; then
-      echo "WebRTC is enabled but required environment variable is missing: ${name}" >&2
-      exit 1
-    fi
-  done
-  envsubst '${ASTERISK_WEBRTC_EXTENSION} ${ASTERISK_WEBRTC_AUTH_USERNAME} ${ASTERISK_WEBRTC_PASSWORD}' \
-    < /opt/orbita-asterisk/pjsip.webrtc.conf.template \
+  printf '; Browser WebRTC endpoints are loaded from the Orbita runtime config.\n' \
     > /etc/asterisk/orbita/pjsip.webrtc.conf
 else
-  printf '; Browser WebRTC endpoint is disabled.\n' > /etc/asterisk/orbita/pjsip.webrtc.conf
+  printf '; Browser WebRTC endpoints are disabled.\n' > /etc/asterisk/orbita/pjsip.webrtc.conf
 fi
 
 if [[ "${BEELINE_SIP_ENABLED}" == "true" ]]; then

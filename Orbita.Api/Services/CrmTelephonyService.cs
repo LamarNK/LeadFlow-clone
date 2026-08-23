@@ -582,10 +582,14 @@ public sealed class CrmTelephonyService(
             ? normalizedOutboundProvider
             : CrmTelephonyOutboundProviders.Default;
         binding.UpdatedAtUtc = now;
+        if (provider == CrmTelephonyProviders.Asterisk && credentialProtector is not null)
+        {
+            EnsureWebRtcCredentials(binding);
+        }
         await db.SaveChangesAsync(ct);
         if (provider == CrmTelephonyProviders.Asterisk)
         {
-            await PublishUserOutboundRoutesAsync(officeId, ct);
+            await PublishAsteriskRuntimeAsync(officeId, ct);
         }
         var userName = string.IsNullOrWhiteSpace(user.Profile.FullName)
             ? user.Email ?? userId
@@ -611,9 +615,79 @@ public sealed class CrmTelephonyService(
         await db.SaveChangesAsync(ct);
         if (provider == CrmTelephonyProviders.Asterisk)
         {
-            await PublishUserOutboundRoutesAsync(officeId, ct);
+            await PublishAsteriskRuntimeAsync(officeId, ct);
         }
         return true;
+    }
+
+    public async Task<(CrmAsteriskWebRtcEndpoint? Endpoint, string? Error)> GetWebRtcEndpointAsync(
+        Guid officeId,
+        string userId,
+        CancellationToken ct = default)
+    {
+        if (credentialProtector is null)
+        {
+            return (null, "Хранилище реквизитов браузерной телефонии недоступно.");
+        }
+
+        var binding = await db.CrmTelephonyUserBindings.FirstOrDefaultAsync(x =>
+            x.OfficeId == officeId
+            && x.Provider == CrmTelephonyProviders.Asterisk
+            && x.UserId == userId, ct);
+        if (binding is null)
+        {
+            return (null, "Для сотрудника не настроен внутренний номер.");
+        }
+
+        var (endpoint, changed) = EnsureWebRtcCredentials(binding);
+        if (changed)
+        {
+            binding.UpdatedAtUtc = timeProvider.GetUtcNow().UtcDateTime;
+            await db.SaveChangesAsync(ct);
+        }
+        await PublishWebRtcEndpointsAsync(officeId, ct);
+        return (endpoint, null);
+    }
+
+    public async Task<int> SynchronizeAsteriskWebRtcAsync(CancellationToken ct = default)
+    {
+        if (credentialProtector is null
+            || sipRuntimeConfigWriter is null
+            || !sipRuntimeConfigWriter.IsAvailable)
+        {
+            return 0;
+        }
+
+        var bindings = await db.CrmTelephonyUserBindings
+            .Where(x => x.Provider == CrmTelephonyProviders.Asterisk)
+            .ToListAsync(ct);
+        var changed = false;
+        foreach (var binding in bindings)
+        {
+            var (_, bindingChanged) = EnsureWebRtcCredentials(binding);
+            if (!bindingChanged)
+            {
+                continue;
+            }
+            binding.UpdatedAtUtc = timeProvider.GetUtcNow().UtcDateTime;
+            changed = true;
+        }
+        if (changed)
+        {
+            await db.SaveChangesAsync(ct);
+        }
+
+        foreach (var officeId in bindings.Select(x => x.OfficeId).Distinct())
+        {
+            await PublishAsteriskRuntimeAsync(officeId, ct);
+        }
+        return bindings.Count;
+    }
+
+    private async Task PublishAsteriskRuntimeAsync(Guid officeId, CancellationToken ct)
+    {
+        await PublishUserOutboundRoutesAsync(officeId, ct);
+        await PublishWebRtcEndpointsAsync(officeId, ct);
     }
 
     private async Task PublishUserOutboundRoutesAsync(Guid officeId, CancellationToken ct)
@@ -628,6 +702,42 @@ public sealed class CrmTelephonyService(
             .Where(x => x.OfficeId == officeId && x.Provider == CrmTelephonyProviders.Asterisk)
             .ToDictionaryAsync(x => x.ProviderUserKey, x => x.OutboundProvider, ct);
         await sipRuntimeConfigWriter.WriteUserOutboundRoutesAsync(officeId, routes, ct);
+    }
+
+    private async Task PublishWebRtcEndpointsAsync(Guid officeId, CancellationToken ct)
+    {
+        if (credentialProtector is null
+            || sipRuntimeConfigWriter is null
+            || !sipRuntimeConfigWriter.IsAvailable)
+        {
+            return;
+        }
+
+        var bindings = await db.CrmTelephonyUserBindings.AsNoTracking()
+            .Where(x => x.OfficeId == officeId && x.Provider == CrmTelephonyProviders.Asterisk)
+            .OrderBy(x => x.ProviderUserKey)
+            .ToListAsync(ct);
+        var endpoints = new List<CrmAsteriskWebRtcEndpoint>(bindings.Count);
+        foreach (var binding in bindings)
+        {
+            if (string.IsNullOrWhiteSpace(binding.WebRtcAuthorizationUsername)
+                || string.IsNullOrWhiteSpace(binding.WebRtcPasswordProtected))
+            {
+                continue;
+            }
+            try
+            {
+                endpoints.Add(new CrmAsteriskWebRtcEndpoint(
+                    binding.ProviderUserKey,
+                    binding.WebRtcAuthorizationUsername,
+                    credentialProtector.Unprotect(binding.WebRtcPasswordProtected)));
+            }
+            catch (CryptographicException)
+            {
+                // A subsequent synchronization regenerates an unreadable secret.
+            }
+        }
+        await sipRuntimeConfigWriter.WriteWebRtcEndpointsAsync(officeId, endpoints, ct);
     }
 
     public Task<SipoutCallReceiveResult> ReceiveSipoutCallAsync(
@@ -1057,6 +1167,49 @@ public sealed class CrmTelephonyService(
             && candidate.All(character => char.IsAsciiLetterOrDigit(character) || character is '-' or '_')
                 ? candidate
                 : null;
+    }
+
+    private (CrmAsteriskWebRtcEndpoint Endpoint, bool Changed) EnsureWebRtcCredentials(
+        CrmTelephonyUserBindingEntity binding)
+    {
+        if (credentialProtector is null)
+        {
+            throw new InvalidOperationException("Telephony credential protection is unavailable.");
+        }
+
+        var extension = binding.ProviderUserKey.Trim();
+        var expectedAuthorizationUsername = $"{extension}-webrtc";
+        if (string.Equals(
+                binding.WebRtcAuthorizationUsername,
+                expectedAuthorizationUsername,
+                StringComparison.Ordinal)
+            && !string.IsNullOrWhiteSpace(binding.WebRtcPasswordProtected))
+        {
+            try
+            {
+                var existingPassword = credentialProtector.Unprotect(binding.WebRtcPasswordProtected);
+                if (existingPassword.Length is >= 16 and <= 512)
+                {
+                    return (new CrmAsteriskWebRtcEndpoint(
+                        extension,
+                        expectedAuthorizationUsername,
+                        existingPassword), false);
+                }
+            }
+            catch (CryptographicException)
+            {
+                // The Data Protection key may have changed. Replace only this
+                // browser credential and publish the new endpoint to Asterisk.
+            }
+        }
+
+        var password = Convert.ToHexString(RandomNumberGenerator.GetBytes(24)).ToLowerInvariant();
+        binding.WebRtcAuthorizationUsername = expectedAuthorizationUsername;
+        binding.WebRtcPasswordProtected = credentialProtector.Protect(password);
+        return (new CrmAsteriskWebRtcEndpoint(
+            extension,
+            expectedAuthorizationUsername,
+            password), true);
     }
 
     private static string NormalizeProvider(string provider)

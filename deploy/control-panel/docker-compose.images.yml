@@ -48,9 +48,6 @@ services:
       TelephonyWebRtc__Enabled: ${TELEPHONY_WEBRTC_ENABLED:-false}
       TelephonyWebRtc__WebSocketUrl: ${TELEPHONY_WEBRTC_WS_URL:-}
       TelephonyWebRtc__SipDomain: ${TELEPHONY_WEBRTC_SIP_DOMAIN:-}
-      TelephonyWebRtc__Extension: ${ASTERISK_WEBRTC_EXTENSION:-}
-      TelephonyWebRtc__AuthorizationUsername: ${ASTERISK_WEBRTC_AUTH_USERNAME:-}
-      TelephonyWebRtc__Password: ${ASTERISK_WEBRTC_PASSWORD:-}
     depends_on:
       postgres:
         condition: service_healthy
@@ -138,9 +135,6 @@ services:
       ASTERISK_PUBLIC_ID: ${ASTERISK_PUBLIC_ID:-}
       ASTERISK_WEBHOOK_SECRET: ${ASTERISK_WEBHOOK_SECRET:-}
       ASTERISK_WEBRTC_ENABLED: ${TELEPHONY_WEBRTC_ENABLED:-false}
-      ASTERISK_WEBRTC_EXTENSION: ${ASTERISK_WEBRTC_EXTENSION:-}
-      ASTERISK_WEBRTC_AUTH_USERNAME: ${ASTERISK_WEBRTC_AUTH_USERNAME:-}
-      ASTERISK_WEBRTC_PASSWORD: ${ASTERISK_WEBRTC_PASSWORD:-}
       # Fallback for the legacy/default trunk. Dynamic trunks and receivers are
       # isolated by office in the shared runtime volume.
       ASTERISK_DEFAULT_OFFICE_ID: ${ASTERISK_DEFAULT_OFFICE_ID:-}

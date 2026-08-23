@@ -33,11 +33,6 @@ services:
       TelephonyWebRtc__Enabled: ${TELEPHONY_WEBRTC_ENABLED:-false}
       TelephonyWebRtc__WebSocketUrl: ${TELEPHONY_WEBRTC_WS_URL:-}
       TelephonyWebRtc__SipDomain: ${TELEPHONY_WEBRTC_SIP_DOMAIN:-}
-      TelephonyWebRtc__Extension: ${ASTERISK_WEBRTC_EXTENSION:-}
-      TelephonyWebRtc__AuthorizationUsername: ${ASTERISK_WEBRTC_AUTH_USERNAME:-}
-      TelephonyWebRtc__Password: ${ASTERISK_WEBRTC_PASSWORD:-}
-      TelephonyWebRtc__Endpoints__202__AuthorizationUsername: ${ASTERISK_WEBRTC_202_AUTH_USERNAME:-}
-      TelephonyWebRtc__Endpoints__202__Password: ${ASTERISK_WEBRTC_202_PASSWORD:-}
     depends_on:
       - postgres
     ports:
@@ -116,9 +111,6 @@ services:
       ASTERISK_PUBLIC_ID: ${ASTERISK_PUBLIC_ID:-}
       ASTERISK_WEBHOOK_SECRET: ${ASTERISK_WEBHOOK_SECRET:-}
       ASTERISK_WEBRTC_ENABLED: ${TELEPHONY_WEBRTC_ENABLED:-false}
-      ASTERISK_WEBRTC_EXTENSION: ${ASTERISK_WEBRTC_EXTENSION:-}
-      ASTERISK_WEBRTC_AUTH_USERNAME: ${ASTERISK_WEBRTC_AUTH_USERNAME:-}
-      ASTERISK_WEBRTC_PASSWORD: ${ASTERISK_WEBRTC_PASSWORD:-}
       # One shared PBX serves every office. This UUID is used only by the
       # legacy/default trunk; office-specific runtime trunks carry their own ID.
       ASTERISK_DEFAULT_OFFICE_ID: ${ASTERISK_DEFAULT_OFFICE_ID:-11111111-1111-1111-1111-111111111111}
