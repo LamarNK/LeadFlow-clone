@@ -223,6 +223,21 @@ public static class OrbitaApiStartupExtensions
         {
             options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
             options.AddPolicy(
+                WorkerReleasePublishEndpoints.RateLimitPolicyName,
+                context =>
+                {
+                    var remoteIp = context.Connection.RemoteIpAddress?.ToString() ?? "unknown";
+                    return RateLimitPartition.GetFixedWindowLimiter(
+                        remoteIp,
+                        _ => new FixedWindowRateLimiterOptions
+                        {
+                            PermitLimit = 10,
+                            Window = TimeSpan.FromMinutes(1),
+                            QueueLimit = 0,
+                            AutoReplenishment = true
+                        });
+                });
+            options.AddPolicy(
                 BitrixWorkforceEndpoints.RateLimitPolicyName,
                 context =>
                 {

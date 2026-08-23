@@ -37,6 +37,7 @@ services:
       Kestrel__Limits__MinRequestBodyDataRate__BytesPerSecond: "100"
       Kestrel__Limits__MinRequestBodyDataRate__GracePeriod: "00:10:00"
       WorkerReleases__MaxUploadBytes: "536870912"
+      WorkerReleases__PublishToken: ${WORKER_RELEASE_PUBLISH_TOKEN:-}
       DataProtection__KeysPath: /app/Data/dataprotection-api
       CrmCallRecordings__DataPath: /app/Data/crm/call-recordings
       CrmSipRuntime__ConfigPath: /app/Data/telephony-runtime
