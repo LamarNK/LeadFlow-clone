@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Runtime.ExceptionServices;
 using System.Text;
 using System.Text.Json;
@@ -32,6 +33,10 @@ public sealed partial class AdsPowerAvitoAutomationService(
     // мониторинга минутами.
     private static readonly TimeSpan CdpPageDiscoveryTimeout = TimeSpan.FromSeconds(8);
     private static readonly TimeSpan CdpPageReadTimeout = TimeSpan.FromSeconds(5);
+    private static readonly TimeSpan CdpSwitchActionTimeout = TimeSpan.FromSeconds(8);
+    private static readonly TimeSpan CdpSwitchEffectTimeout = TimeSpan.FromSeconds(20);
+    private static readonly TimeSpan CdpNavigationGuardTimeout = TimeSpan.FromSeconds(50);
+    private static readonly TimeSpan CdpEvaluateHangTimeout = TimeSpan.FromSeconds(30);
 
     private const string CandidatesPageUrl = AvitoCandidatesPageUrls.LegacyCandidates;
     private const string JobResponsesPageUrl = AvitoCandidatesPageUrls.JobResponsesCrm;
@@ -639,7 +644,16 @@ public sealed partial class AdsPowerAvitoAutomationService(
         string? html = null;
         try
         {
-            html = await page.GetContentAsync().ConfigureAwait(false);
+            html = await AdsPowerCdpGuard.WaitAsync(
+                    page.GetContentAsync(),
+                    CdpEvaluateHangTimeout,
+                    "чтение HTML для капчи",
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (TimeoutException)
+        {
+            throw;
         }
         catch
         {
@@ -857,7 +871,8 @@ public sealed partial class AdsPowerAvitoAutomationService(
             var html = await EvaluateWithRetryAsync<string>(
                     page,
                     "(() => document.documentElement?.outerHTML || '')()",
-                    cancellationToken)
+                    cancellationToken,
+                    TimeSpan.FromSeconds(15))
                 .ConfigureAwait(false);
 
             if (string.IsNullOrWhiteSpace(html))
@@ -970,7 +985,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 return false;
             }
 
-            if (await IsTargetSubProfileAlreadyCurrentAsync(page, subProfileId).ConfigureAwait(false))
+            if (await IsTargetSubProfileAlreadyCurrentAsync(page, subProfileId, cancellationToken).ConfigureAwait(false))
             {
                 await DismissProfileSwitchModalAsync(page, cancellationToken).ConfigureAwait(false);
                 _ = GlobalLogger.Instance.LogAsync(
@@ -981,13 +996,14 @@ public sealed partial class AdsPowerAvitoAutomationService(
                     properties: new Dictionary<string, object?>
                     {
                         ["step"] = "already_current",
+                        ["adsPower.userId"] = adsPowerUserId,
                         ["avito.subProfileId"] = subProfileId
                     });
                 result = true;
                 return result;
             }
 
-            result = await TryClickSubProfileCardAndWaitCloseAsync(page, subProfileId, cancellationToken)
+            result = await TryClickSubProfileCardAndWaitCloseAsync(page, subProfileId, adsPowerUserId, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (Exception ex)
@@ -1012,13 +1028,66 @@ public sealed partial class AdsPowerAvitoAutomationService(
         return result;
     }
 
-    private static Task<bool> IsTargetSubProfileAlreadyCurrentAsync(IPage page, string subProfileId) =>
-        PuppeteerJsonEvaluator.EvaluateBoolAsync(
-            page,
-            $@"(() => {{
-                const el = document.querySelector('[data-marker=""component-profile-switch/profile-{Escape(subProfileId)}""]');
-                return !!el && /isCurrent/i.test(el.className || '');
-            }})()");
+    private static async Task<bool> IsTargetSubProfileAlreadyCurrentAsync(
+        IPage page,
+        string subProfileId,
+        CancellationToken cancellationToken)
+    {
+        var snapshot = await ProbeSwitchSnapshotAsync(page, subProfileId, cancellationToken).ConfigureAwait(false);
+        return AvitoSubProfileSwitchEffect.IsAlreadyCurrent(snapshot, subProfileId);
+    }
+
+    private static async Task<AvitoSubProfileSwitchSnapshot> ProbeSwitchSnapshotAsync(
+        IPage page,
+        string subProfileId,
+        CancellationToken cancellationToken)
+    {
+        var raw = await EvaluateWithRetryAsync<string>(
+                page,
+                AvitoSubProfileSwitchEffect.BuildSnapshotScript(subProfileId),
+                cancellationToken,
+                CdpPageReadTimeout)
+            .ConfigureAwait(false);
+        return AvitoSubProfileSwitchEffect.ParseSnapshot(raw) ?? AvitoSubProfileSwitchSnapshot.Empty;
+    }
+
+    private static void LogSwitchTrace(
+        string message,
+        DeskLinkAuditLogLevel level,
+        string memberName,
+        string? adsPowerUserId,
+        string subProfileId,
+        AvitoSubProfileSwitchSnapshot? before,
+        AvitoSubProfileSwitchSnapshot? after,
+        string step,
+        bool? pointerClick = null,
+        bool? domClick = null,
+        long? elapsedMs = null,
+        string? exception = null)
+    {
+        _ = GlobalLogger.Instance.LogAsync(
+            message,
+            level,
+            memberName: memberName,
+            properties: new Dictionary<string, object?>
+            {
+                ["step"] = step,
+                ["adsPower.userId"] = adsPowerUserId,
+                ["avito.subProfileId"] = subProfileId,
+                ["avito.subProfileName"] = after?.CurrentSubProfileName ?? before?.CurrentSubProfileName,
+                ["page.url"] = after?.Url ?? before?.Url,
+                ["switch.cardsCount"] = after?.CardsCount ?? before?.CardsCount,
+                ["switch.targetFound"] = after?.TargetCardFound ?? before?.TargetCardFound,
+                ["switch.currentIdBefore"] = before?.CurrentSubProfileId,
+                ["switch.currentIdAfter"] = after?.CurrentSubProfileId,
+                ["switch.modalBefore"] = before?.ModalOpen,
+                ["switch.modalAfter"] = after?.ModalOpen,
+                ["switch.pointerClick"] = pointerClick,
+                ["switch.domClick"] = domClick,
+                ["switch.elapsedMs"] = elapsedMs,
+                ["error"] = exception
+            });
+    }
 
     /// <summary>
     /// Закрывает всплывающие окна Avito (настройка звонков, промо и т.п.), которые перекрывают навигацию и модалку субпрофилей.
@@ -1039,6 +1108,10 @@ public sealed partial class AdsPowerAvitoAutomationService(
               const containers = Array.from(document.querySelectorAll(
                 '[role="dialog"], [class*="modal" i], [class*="Modal"], [class*="popup" i], [class*="Popup"]'));
               for (const box of containers) {
+                if (box.closest("[data-marker='component-profile-switch/root']")
+                    || box.matches("[data-marker='component-profile-switch/root']")) {
+                  continue;
+                }
                 const close = Array.from(box.querySelectorAll("button")).find(isCloseButton)
                   || box.querySelector('[data-marker*="close" i]');
                 if (tryClick(close)) return true;
@@ -1059,15 +1132,39 @@ public sealed partial class AdsPowerAvitoAutomationService(
         for (var i = 0; i < 2; i++)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            if (await PuppeteerJsonEvaluator.EvaluateBoolAsync(page, dismissScript, cancellationToken)
+            if (await PuppeteerJsonEvaluator.EvaluateBoolAsync(
+                        page,
+                        dismissScript,
+                        cancellationToken,
+                        CdpSwitchActionTimeout)
                     .ConfigureAwait(false))
             {
                 await Task.Delay(450, cancellationToken).ConfigureAwait(false);
             }
 
+            var switchModalOpen = await PuppeteerJsonEvaluator.EvaluateBoolAsync(
+                    page,
+                    "(!!document.querySelector(\"[data-marker='component-profile-switch/root']\"))",
+                    cancellationToken,
+                    CdpPageReadTimeout)
+                .ConfigureAwait(false);
+            if (switchModalOpen)
+            {
+                return;
+            }
+
             try
             {
-                await page.Keyboard.PressAsync("Escape").ConfigureAwait(false);
+                await AdsPowerCdpGuard.WaitAsync(
+                        page.Keyboard.PressAsync("Escape"),
+                        CdpSwitchActionTimeout,
+                        "Escape для оверлея Avito",
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (TimeoutException)
+            {
+                throw;
             }
             catch
             {
@@ -1084,8 +1181,10 @@ public sealed partial class AdsPowerAvitoAutomationService(
         for (var i = 0; i < 3; i++)
         {
             var open = await PuppeteerJsonEvaluator.EvaluateBoolAsync(
-                page,
-                "(!!document.querySelector(\"[data-marker='component-profile-switch/root']\"))")
+                    page,
+                    "(!!document.querySelector(\"[data-marker='component-profile-switch/root']\"))",
+                    cancellationToken,
+                    CdpPageReadTimeout)
                 .ConfigureAwait(false);
             if (!open)
             {
@@ -1094,7 +1193,16 @@ public sealed partial class AdsPowerAvitoAutomationService(
 
             try
             {
-                await page.Keyboard.PressAsync("Escape").ConfigureAwait(false);
+                await AdsPowerCdpGuard.WaitAsync(
+                        page.Keyboard.PressAsync("Escape"),
+                        CdpSwitchActionTimeout,
+                        "Escape для модалки субпрофилей",
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (TimeoutException)
+            {
+                throw;
             }
             catch (Exception ex)
             {
@@ -1108,8 +1216,10 @@ public sealed partial class AdsPowerAvitoAutomationService(
         }
 
         var stillOpen = await PuppeteerJsonEvaluator.EvaluateBoolAsync(
-            page,
-            "(!!document.querySelector(\"[data-marker='component-profile-switch/root']\"))")
+                page,
+                "(!!document.querySelector(\"[data-marker='component-profile-switch/root']\"))",
+                cancellationToken,
+                CdpPageReadTimeout)
             .ConfigureAwait(false);
         if (!stillOpen)
         {
@@ -1118,11 +1228,20 @@ public sealed partial class AdsPowerAvitoAutomationService(
 
         try
         {
-            await page.GoToAsync(ProfileItemsPageUrl, new NavigationOptions
-            {
-                Timeout = 45_000,
-                WaitUntil = [WaitUntilNavigation.DOMContentLoaded]
-            }).ConfigureAwait(false);
+            await AdsPowerCdpGuard.WaitAsync(
+                    page.GoToAsync(ProfileItemsPageUrl, new NavigationOptions
+                    {
+                        Timeout = 45_000,
+                        WaitUntil = [WaitUntilNavigation.DOMContentLoaded]
+                    }),
+                    CdpNavigationGuardTimeout,
+                    "уход с модалки субпрофилей на объявления",
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (TimeoutException)
+        {
+            throw;
         }
         catch (Exception ex) when (IsRecoverableNavigationError(ex))
         {
@@ -1140,169 +1259,231 @@ public sealed partial class AdsPowerAvitoAutomationService(
     private static async Task<bool> TryClickSubProfileCardAndWaitCloseAsync(
         IPage page,
         string subProfileId,
+        string? adsPowerUserId,
         CancellationToken cancellationToken)
     {
-        try
-        {
-            await page.WaitForSelectorAsync(
-                    $"[data-marker='component-profile-switch/profile-{Escape(subProfileId)}']",
-                    new WaitForSelectorOptions { Timeout = 20_000 })
-                .ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            _ = GlobalLogger.Instance.LogAsync(
-                $"AdsPower profile-switch: target card not found in time: {ex.Message}",
-                DeskLinkAuditLogLevel.Warning,
-                memberName: nameof(TryClickSubProfileCardAndWaitCloseAsync),
-                
-                properties: new Dictionary<string, object?>
-                {
-                    ["step"] = "card_timeout",
-                    ["avito.subProfileId"] = subProfileId
-                });
-            await DismissProfileSwitchModalAsync(page, cancellationToken).ConfigureAwait(false);
-            return false;
-        }
+        var started = Stopwatch.StartNew();
+        var before = await ProbeSwitchSnapshotAsync(page, subProfileId, cancellationToken).ConfigureAwait(false);
+        LogSwitchTrace(
+            $"AdsPower profile-switch: snapshot before click subProfile={subProfileId}, cards={before.CardsCount}, current={before.CurrentSubProfileId}, targetFound={before.TargetCardFound}.",
+            DeskLinkAuditLogLevel.Info,
+            nameof(TryClickSubProfileCardAndWaitCloseAsync),
+            adsPowerUserId,
+            subProfileId,
+            before,
+            after: null,
+            step: "switch_snapshot_before");
 
-        var clicked = await PuppeteerJsonEvaluator.EvaluateBoolAsync(
-                page,
-                BuildClickSubProfileJs(subProfileId))
-            .ConfigureAwait(false);
-
-        if (!clicked)
+        if (!before.TargetCardFound)
         {
-            await DismissProfileSwitchModalAsync(page, cancellationToken).ConfigureAwait(false);
-            return false;
-        }
-
-        try
-        {
-            await page.WaitForFunctionAsync(
-                    "() => !document.querySelector(\"[data-marker='component-profile-switch/root']\") || !document.querySelector(\"[role='dialog']\")",
-                    new WaitForFunctionOptions { Timeout = 30_000, PollingInterval = 650 })
-                .ConfigureAwait(false);
-        }
-        catch (Exception ex) when (!cancellationToken.IsCancellationRequested)
-        {
-            _ = GlobalLogger.Instance.LogAsync(
-                $"AdsPower profile-switch: modal-close wait timed out: {ex.Message}",
-                DeskLinkAuditLogLevel.Warning,
-                memberName: nameof(TryClickSubProfileCardAndWaitCloseAsync),
-                
-                properties: new Dictionary<string, object?>
-                {
-                    ["step"] = "modal_close_timeout",
-                    ["avito.subProfileId"] = subProfileId
-                });
-
-            var modalClosed = false;
+            var selector = AvitoSubProfileSwitchEffect.BuildCardSelector(subProfileId);
             try
             {
-                var modalStillOpen = await PuppeteerJsonEvaluator.EvaluateBoolAsync(
-                    page,
-                    "(!!document.querySelector(\"[data-marker='component-profile-switch/root']\"))").ConfigureAwait(false);
-                if (!modalStillOpen)
-                {
-                    modalClosed = true;
-                }
-                else
-                {
-                    for (var retry = 1; retry <= 3; retry++)
-                    {
-                        _ = GlobalLogger.Instance.LogAsync(
-                            $"AdsPower profile-switch: retry {retry}/3 click for subProfile {subProfileId}...",
-                            DeskLinkAuditLogLevel.Info,
-                            memberName: nameof(TryClickSubProfileCardAndWaitCloseAsync),
-                            
-                            properties: new Dictionary<string, object?>
-                            {
-                                ["step"] = "retry_click",
-                                ["retry"] = retry,
-                                ["avito.subProfileId"] = subProfileId
-                            });
-
-                        var elementClicked = await PuppeteerJsonEvaluator.EvaluateBoolAsync(
-                            page,
-                            BuildClickSubProfileJs(subProfileId)).ConfigureAwait(false);
-
-                        if (!elementClicked)
-                        {
-                            _ = GlobalLogger.Instance.LogAsync(
-                                $"AdsPower profile-switch: retry {retry}/3 — subProfile card element not found in DOM for {subProfileId}.",
-                                DeskLinkAuditLogLevel.Warning,
-                                memberName: nameof(TryClickSubProfileCardAndWaitCloseAsync),
-                                properties: new Dictionary<string, object?>
-                                {
-                                    ["step"] = "retry_element_not_found",
-                                    ["retry"] = retry,
-                                    ["avito.subProfileId"] = subProfileId
-                                });
-                            await Task.Delay(retry * 2000, cancellationToken).ConfigureAwait(false);
-                            continue;
-                        }
-
-                        try
-                        {
-                            await page.WaitForFunctionAsync(
-                                    "() => !document.querySelector(\"[data-marker='component-profile-switch/root']\") || !document.querySelector(\"[role='dialog']\")",
-                                    new WaitForFunctionOptions { Timeout = 15_000, PollingInterval = 400 })
-                                .ConfigureAwait(false);
-                            modalClosed = true;
-                            break;
-                        }
-                        catch
-                        {
-                            // still open after this retry, continue loop
-                        }
-                    }
-
-                    if (!modalClosed)
-                    {
-                        _ = GlobalLogger.Instance.LogAsync(
-                            $"AdsPower profile-switch: all retries failed for subProfile {subProfileId}, skipping.",
-                            DeskLinkAuditLogLevel.Warning,
-                            memberName: nameof(TryClickSubProfileCardAndWaitCloseAsync),
-                            
-                            properties: new Dictionary<string, object?>
-                            {
-                                ["step"] = "retry_failed",
-                                ["avito.subProfileId"] = subProfileId
-                            });
-                    }
-                }
+                await AdsPowerCdpGuard.WaitAsync(
+                        page.WaitForSelectorAsync(
+                            selector,
+                            new WaitForSelectorOptions { Timeout = 12_000 }),
+                        TimeSpan.FromSeconds(14),
+                        "ожидание карточки субпрофиля",
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                before = await ProbeSwitchSnapshotAsync(page, subProfileId, cancellationToken).ConfigureAwait(false);
             }
-            catch (Exception innerEx)
+            catch (TimeoutException ex) when (AdsPowerCdpGuard.IsCdpTimeout(ex))
             {
-                _ = GlobalLogger.Instance.LogAsync(
-                    $"AdsPower profile-switch: retry logic threw for subProfile {subProfileId}: {innerEx.Message}",
-                    DeskLinkAuditLogLevel.Error,
-                            memberName: nameof(TryClickSubProfileCardAndWaitCloseAsync),
-                            properties: new Dictionary<string, object?>
-                    {
-                        ["step"] = "retry_internal_error",
-                        ["avito.subProfileId"] = subProfileId
-                    });
+                LogSwitchTrace(
+                    $"AdsPower profile-switch: CDP hung waiting for target card {subProfileId}: {ex.Message}",
+                    DeskLinkAuditLogLevel.Warning,
+                    nameof(TryClickSubProfileCardAndWaitCloseAsync),
+                    adsPowerUserId,
+                    subProfileId,
+                    before,
+                    after: null,
+                    step: "card_cdp_timeout",
+                    elapsedMs: started.ElapsedMilliseconds,
+                    exception: ex.Message);
+                throw;
             }
-
-            if (!modalClosed)
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
+                LogSwitchTrace(
+                    $"AdsPower profile-switch: target card not found in time: {ex.Message}",
+                    DeskLinkAuditLogLevel.Warning,
+                    nameof(TryClickSubProfileCardAndWaitCloseAsync),
+                    adsPowerUserId,
+                    subProfileId,
+                    before,
+                    after: null,
+                    step: "card_timeout",
+                    elapsedMs: started.ElapsedMilliseconds,
+                    exception: ex.Message);
+                await DismissProfileSwitchModalAsync(page, cancellationToken).ConfigureAwait(false);
                 return false;
             }
         }
 
+        if (!before.TargetCardFound)
+        {
+            LogSwitchTrace(
+                $"AdsPower profile-switch: target selector missing for subProfile {subProfileId}.",
+                DeskLinkAuditLogLevel.Warning,
+                nameof(TryClickSubProfileCardAndWaitCloseAsync),
+                adsPowerUserId,
+                subProfileId,
+                before,
+                after: null,
+                step: "card_missing",
+                elapsedMs: started.ElapsedMilliseconds);
+            await DismissProfileSwitchModalAsync(page, cancellationToken).ConfigureAwait(false);
+            return false;
+        }
+
+        var selectorToClick = AvitoSubProfileSwitchEffect.BuildCardSelector(subProfileId);
+        var pointerClick = false;
+        var domClick = false;
+        try
+        {
+            pointerClick = await AdsPowerCdpGuard.WaitAsync(
+                    AvitoHumanPointer.TryClickSelectorAsync(page, selectorToClick, cancellationToken),
+                    CdpSwitchActionTimeout,
+                    "pointer-click по карточке субпрофиля",
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (TimeoutException)
+        {
+            throw;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            LogSwitchTrace(
+                $"AdsPower profile-switch: pointer-click threw for {subProfileId}: {ex.Message}",
+                DeskLinkAuditLogLevel.Warning,
+                nameof(TryClickSubProfileCardAndWaitCloseAsync),
+                adsPowerUserId,
+                subProfileId,
+                before,
+                after: null,
+                step: "pointer_click_error",
+                pointerClick: false,
+                elapsedMs: started.ElapsedMilliseconds,
+                exception: ex.Message);
+        }
+
+        if (!pointerClick)
+        {
+            domClick = await PuppeteerJsonEvaluator.EvaluateBoolAsync(
+                    page,
+                    BuildClickSubProfileJs(subProfileId),
+                    cancellationToken,
+                    CdpSwitchActionTimeout)
+                .ConfigureAwait(false);
+        }
+
+        LogSwitchTrace(
+            $"AdsPower profile-switch: click result pointer={pointerClick}, dom={domClick} for subProfile {subProfileId}.",
+            DeskLinkAuditLogLevel.Info,
+            nameof(TryClickSubProfileCardAndWaitCloseAsync),
+            adsPowerUserId,
+            subProfileId,
+            before,
+            after: null,
+            step: "click_result",
+            pointerClick: pointerClick,
+            domClick: domClick,
+            elapsedMs: started.ElapsedMilliseconds);
+
+        if (!pointerClick && !domClick)
+        {
+            await DismissProfileSwitchModalAsync(page, cancellationToken).ConfigureAwait(false);
+            return false;
+        }
+
+        var deadline = DateTime.UtcNow + CdpSwitchEffectTimeout;
+        AvitoSubProfileSwitchSnapshot after = before;
+        while (DateTime.UtcNow < deadline)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            after = await ProbeSwitchSnapshotAsync(page, subProfileId, cancellationToken).ConfigureAwait(false);
+            if (AvitoSubProfileSwitchEffect.IsSuccessfulSwitch(after, subProfileId))
+            {
+                break;
+            }
+
+            if (AvitoSubProfileSwitchEffect.TargetBecameCurrent(after, subProfileId) && after.ModalOpen)
+            {
+                await DismissProfileSwitchModalAsync(page, cancellationToken).ConfigureAwait(false);
+                after = await ProbeSwitchSnapshotAsync(page, subProfileId, cancellationToken).ConfigureAwait(false);
+                if (AvitoSubProfileSwitchEffect.IsSuccessfulSwitch(after, subProfileId)
+                    || AvitoSubProfileSwitchEffect.TargetBecameCurrent(after, subProfileId))
+                {
+                    break;
+                }
+            }
+
+            await Task.Delay(400, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (!AvitoSubProfileSwitchEffect.IsSuccessfulSwitch(after, subProfileId)
+            && AvitoSubProfileSwitchEffect.TargetBecameCurrent(after, subProfileId))
+        {
+            await DismissProfileSwitchModalAsync(page, cancellationToken).ConfigureAwait(false);
+            after = await ProbeSwitchSnapshotAsync(page, subProfileId, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (!AvitoSubProfileSwitchEffect.IsSuccessfulSwitch(after, subProfileId)
+            && !AvitoSubProfileSwitchEffect.TargetBecameCurrent(after, subProfileId))
+        {
+            if (AvitoSubProfileSwitchEffect.ClickReportedSuccessWithoutDomChange(
+                    before, after, subProfileId, pointerClick || domClick))
+            {
+                LogSwitchTrace(
+                    $"AdsPower profile-switch: click reported success but DOM did not change for subProfile {subProfileId}.",
+                    DeskLinkAuditLogLevel.Warning,
+                    nameof(TryClickSubProfileCardAndWaitCloseAsync),
+                    adsPowerUserId,
+                    subProfileId,
+                    before,
+                    after,
+                    step: "click_no_dom_change",
+                    pointerClick: pointerClick,
+                    domClick: domClick,
+                    elapsedMs: started.ElapsedMilliseconds);
+            }
+            else
+            {
+                LogSwitchTrace(
+                    $"AdsPower profile-switch: effect wait timed out for subProfile {subProfileId}.",
+                    DeskLinkAuditLogLevel.Warning,
+                    nameof(TryClickSubProfileCardAndWaitCloseAsync),
+                    adsPowerUserId,
+                    subProfileId,
+                    before,
+                    after,
+                    step: "modal_close_timeout",
+                    pointerClick: pointerClick,
+                    domClick: domClick,
+                    elapsedMs: started.ElapsedMilliseconds);
+            }
+
+            await DismissProfileSwitchModalAsync(page, cancellationToken).ConfigureAwait(false);
+            return false;
+        }
+
         await HumanDelay.AfterProfileSwitchAsync(cancellationToken).ConfigureAwait(false);
 
-        _ = GlobalLogger.Instance.LogAsync(
+        LogSwitchTrace(
             $"AdsPower profile-switch: subProfile {subProfileId} activated.",
             DeskLinkAuditLogLevel.Info,
-            memberName: nameof(TryClickSubProfileCardAndWaitCloseAsync),
-            
-            properties: new Dictionary<string, object?>
-            {
-                ["step"] = "switched",
-                ["avito.subProfileId"] = subProfileId
-            });
+            nameof(TryClickSubProfileCardAndWaitCloseAsync),
+            adsPowerUserId,
+            subProfileId,
+            before,
+            after,
+            step: "switched",
+            pointerClick: pointerClick,
+            domClick: domClick,
+            elapsedMs: started.ElapsedMilliseconds);
 
         return true;
     }
@@ -1441,6 +1622,23 @@ public sealed partial class AdsPowerAvitoAutomationService(
         CancellationToken cancellationToken,
         string callerMemberName = nameof(EnsureSwitchModalAsync))
     {
+        var alreadyOpen = await ProbePageStateAsync(page, cancellationToken).ConfigureAwait(false);
+        if (alreadyOpen is { ProfileSwitchModalOpen: true, ProfileCardsCount: > 0 })
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                "AdsPower profile-switch: modal already open with cards, skip navigation.",
+                DeskLinkAuditLogLevel.Info,
+                memberName: callerMemberName,
+                properties: new Dictionary<string, object?>
+                {
+                    ["step"] = "switch_modal_already_open",
+                    ["page.url"] = page.Url,
+                    ["switch.cardsCount"] = alreadyOpen.ProfileCardsCount,
+                    ["switch.currentId"] = alreadyOpen.CurrentSubProfileId
+                });
+            return;
+        }
+
         if (IsOnProfileSwitchPage(page.Url))
         {
             await BounceToDashboardBeforeSwitchAsync(page, cancellationToken, callerMemberName)
@@ -1451,11 +1649,16 @@ public sealed partial class AdsPowerAvitoAutomationService(
         {
             try
             {
-                await page.GoToAsync(ProfileSwitchPageUrl, new NavigationOptions
-                {
-                    Timeout = 45_000,
-                    WaitUntil = [WaitUntilNavigation.DOMContentLoaded]
-                }).ConfigureAwait(false);
+                await AdsPowerCdpGuard.WaitAsync(
+                        page.GoToAsync(ProfileSwitchPageUrl, new NavigationOptions
+                        {
+                            Timeout = 45_000,
+                            WaitUntil = [WaitUntilNavigation.DOMContentLoaded]
+                        }),
+                        CdpNavigationGuardTimeout,
+                        "навигация на dashboard#profile/switch",
+                        cancellationToken)
+                    .ConfigureAwait(false);
 
                 _ = GlobalLogger.Instance.LogAsync(
                     "AdsPower profile-switch: switch page navigation completed.",
@@ -1524,7 +1727,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
         }
 
         throw new TimeoutException(
-            "Не удалось открыть страницу переключения суб-профилей Avito (навигация на dashboard#profile/switch).");
+            $"{AdsPowerCdpGuard.TimeoutPrefix} не удалось открыть страницу переключения суб-профилей Avito (навигация на dashboard#profile/switch).");
     }
 
     private static bool IsOnProfileSwitchPage(string? url) =>
@@ -1552,20 +1755,34 @@ public sealed partial class AdsPowerAvitoAutomationService(
 
         try
         {
-            await page.GoToAsync(ProfileDashboardPageUrl, new NavigationOptions
-            {
-                Timeout = 45_000,
-                WaitUntil = [WaitUntilNavigation.DOMContentLoaded]
-            }).ConfigureAwait(false);
+            await AdsPowerCdpGuard.WaitAsync(
+                    page.GoToAsync(ProfileDashboardPageUrl, new NavigationOptions
+                    {
+                        Timeout = 45_000,
+                        WaitUntil = [WaitUntilNavigation.DOMContentLoaded]
+                    }),
+                    CdpNavigationGuardTimeout,
+                    "bounce на dashboard перед модалкой субпрофилей",
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (TimeoutException)
+        {
+            throw;
         }
         catch (Exception ex) when (IsRecoverableNavigationError(ex))
         {
             await Task.Delay(1400, cancellationToken).ConfigureAwait(false);
-            await page.GoToAsync(ProfileDashboardPageUrl, new NavigationOptions
-            {
-                Timeout = 45_000,
-                WaitUntil = [WaitUntilNavigation.DOMContentLoaded]
-            }).ConfigureAwait(false);
+            await AdsPowerCdpGuard.WaitAsync(
+                    page.GoToAsync(ProfileDashboardPageUrl, new NavigationOptions
+                    {
+                        Timeout = 45_000,
+                        WaitUntil = [WaitUntilNavigation.DOMContentLoaded]
+                    }),
+                    CdpNavigationGuardTimeout,
+                    "повторный bounce на dashboard",
+                    cancellationToken)
+                .ConfigureAwait(false);
         }
 
         await Task.Delay(500, cancellationToken).ConfigureAwait(false);
@@ -1619,7 +1836,14 @@ public sealed partial class AdsPowerAvitoAutomationService(
         string callerMemberName)
     {
         await ThrowIfCaptchaOnPageAsync(page, cancellationToken).ConfigureAwait(false);
-        if (!IsOnProfileSwitchPage(page.Url))
+        var probe = await ProbePageStateAsync(page, cancellationToken).ConfigureAwait(false);
+        if (probe is { ProfileSwitchModalOpen: true, ProfileCardsCount: > 0 })
+        {
+            await HumanDelay.AfterSwitchModalAsync(cancellationToken).ConfigureAwait(false);
+            return true;
+        }
+
+        if (!IsOnProfileSwitchPage(page.Url) && probe?.ProfileSwitchModalOpen != true)
         {
             return false;
         }
@@ -1627,11 +1851,19 @@ public sealed partial class AdsPowerAvitoAutomationService(
         var modalReady = false;
         try
         {
-            await page.WaitForSelectorAsync(
-                    "[data-marker='component-profile-switch/root']",
-                    new WaitForSelectorOptions { Timeout = 18_000 })
+            await AdsPowerCdpGuard.WaitAsync(
+                    page.WaitForSelectorAsync(
+                        "[data-marker='component-profile-switch/root']",
+                        new WaitForSelectorOptions { Timeout = 18_000 }),
+                    TimeSpan.FromSeconds(20),
+                    "ожидание корня модалки субпрофилей",
+                    cancellationToken)
                 .ConfigureAwait(false);
             modalReady = true;
+        }
+        catch (TimeoutException ex) when (AdsPowerCdpGuard.IsCdpTimeout(ex))
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -1654,10 +1886,18 @@ public sealed partial class AdsPowerAvitoAutomationService(
 
         try
         {
-            await page.WaitForFunctionAsync(
-                    "() => !!document.querySelector(\"[data-marker^='component-profile-switch/profile-']\")",
-                    new WaitForFunctionOptions { Timeout = 12_000, PollingInterval = 650 })
+            await AdsPowerCdpGuard.WaitAsync(
+                    page.WaitForFunctionAsync(
+                        "() => !!document.querySelector(\"[data-marker^='component-profile-switch/profile-']\")",
+                        new WaitForFunctionOptions { Timeout = 12_000, PollingInterval = 650 }),
+                    TimeSpan.FromSeconds(14),
+                    "ожидание карточек субпрофилей",
+                    cancellationToken)
                 .ConfigureAwait(false);
+        }
+        catch (TimeoutException ex) when (AdsPowerCdpGuard.IsCdpTimeout(ex))
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -4246,21 +4486,12 @@ public sealed partial class AdsPowerAvitoAutomationService(
         TimeSpan? timeout)
     {
         var evaluation = page.EvaluateExpressionAsync<T>(expression);
-        if (timeout is null)
-        {
-            return await evaluation.ConfigureAwait(false);
-        }
-
-        try
-        {
-            return await evaluation.WaitAsync(timeout.Value, cancellationToken).ConfigureAwait(false);
-        }
-        catch (TimeoutException ex)
-        {
-            throw new TimeoutException(
-                $"AdsPower CDP: JavaScript-проверка страницы не ответила за {timeout.Value.TotalSeconds:0} с.",
-                ex);
-        }
+        return await AdsPowerCdpGuard.WaitAsync(
+                evaluation,
+                timeout ?? CdpEvaluateHangTimeout,
+                "JavaScript-проверка страницы",
+                cancellationToken)
+            .ConfigureAwait(false);
     }
 
     private static readonly string ExtractionScript =
