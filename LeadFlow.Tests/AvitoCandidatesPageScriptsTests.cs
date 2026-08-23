@@ -27,6 +27,8 @@ public sealed class AvitoCandidatesPageScriptsTests
         Assert.Contains("[data-marker='job-application/item']", script, StringComparison.Ordinal);
         Assert.Contains("[data-marker='job-application/link/to-chat']", script, StringComparison.Ordinal);
         Assert.Contains("const idx = 2;", script, StringComparison.Ordinal);
+        Assert.Contains("element.click", script, StringComparison.Ordinal);
+        Assert.Contains("button, a, [role='button']", script, StringComparison.Ordinal);
         Assert.DoesNotContain("job-application/phone", script, StringComparison.Ordinal);
     }
 
