@@ -35,7 +35,45 @@ done
 
 expected_sha="$(sha256sum "$msi_path" | awk '{print $1}')"
 build_number="${BUILD_NUMBER:-manual}"
+script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+repo_root="$(cd -- "$script_dir/../.." && pwd)"
+source_commit=""
+source_subject=""
+if git -C "$repo_root" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  source_commit="$(git -C "$repo_root" rev-parse --short=7 HEAD)"
+  source_subject="$(git -C "$repo_root" log -1 --format=%s HEAD)"
+fi
+
+if [[ -n "$source_commit" && -n "$source_subject" ]]; then
+  release_notes="$source_commit · $source_subject · Jenkins build #$build_number"
+else
+  release_notes="Jenkins build #$build_number"
+fi
+
+release_metadata="$(mktemp)"
+RELEASE_VERSION="$version" \
+RELEASE_NOTES="$release_notes" \
+RELEASE_SIZE="$(stat -c %s "$msi_path")" \
+RELEASE_SHA256="$expected_sha" \
+RELEASE_UPLOADED_AT="$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)" \
+python3 - "$release_metadata" <<'PY'
+import json
+import os
+import sys
+
+with open(sys.argv[1], "w", encoding="utf-8") as file:
+    json.dump({
+        "version": os.environ["RELEASE_VERSION"],
+        "releaseNotes": os.environ["RELEASE_NOTES"],
+        "fileSize": int(os.environ["RELEASE_SIZE"]),
+        "sha256": os.environ["RELEASE_SHA256"],
+        "uploadedAtUtc": os.environ["RELEASE_UPLOADED_AT"],
+    }, file, ensure_ascii=False, indent=2)
+    file.write("\n")
+PY
+
 remote_path="/tmp/orbita-worker-${version//./-}-${RANDOM}.msi"
+remote_metadata="${remote_path%.msi}.json"
 ssh_options=(
   -o BatchMode=yes
   -o StrictHostKeyChecking=yes
@@ -52,13 +90,15 @@ scp_options=(
 )
 
 cleanup_remote() {
-  ssh "${ssh_options[@]}" "$ORBITA_USER@$ORBITA_HOST" "rm -f -- '$remote_path'" >/dev/null 2>&1 || true
+  rm -f -- "$release_metadata"
+  ssh "${ssh_options[@]}" "$ORBITA_USER@$ORBITA_HOST" "rm -f -- '$remote_path' '$remote_metadata'" >/dev/null 2>&1 || true
 }
 trap cleanup_remote EXIT
 
 scp "${scp_options[@]}" "$msi_path" "$ORBITA_USER@$ORBITA_HOST:$remote_path"
+scp "${scp_options[@]}" "$release_metadata" "$ORBITA_USER@$ORBITA_HOST:$remote_metadata"
 ssh "${ssh_options[@]}" "$ORBITA_USER@$ORBITA_HOST" \
-  "VERSION='$version' EXPECTED_SHA='$expected_sha' BUILD_NUMBER='$build_number' REMOTE_PATH='$remote_path' bash -s" <<'REMOTE'
+  "VERSION='$version' EXPECTED_SHA='$expected_sha' REMOTE_PATH='$remote_path' REMOTE_METADATA='$remote_metadata' bash -s" <<'REMOTE'
 set -euo pipefail
 
 container="$(docker ps --filter 'name=^/orbita-api-1$' --format '{{.Names}}')"
@@ -71,15 +111,13 @@ docker exec -e VERSION -e EXPECTED_SHA -e BUILD_NUMBER -e REMOTE_PATH "$containe
   rm -f "$package_path"
 '
 docker cp "$REMOTE_PATH" "$container:/app/Data/releases/worker/v$VERSION/update.msi"
+docker cp "$REMOTE_METADATA" "$container:/app/Data/releases/worker/v$VERSION/version.json"
 
-docker exec -e VERSION -e EXPECTED_SHA -e BUILD_NUMBER "$container" sh -ec '
+docker exec -e VERSION -e EXPECTED_SHA "$container" sh -ec '
   release_dir="/app/Data/releases/worker/v$VERSION"
   package_path="$release_dir/update.msi"
   actual_sha="$(sha256sum "$package_path" | awk "{print \$1}")"
   test "$actual_sha" = "$EXPECTED_SHA"
-  size="$(stat -c %s "$package_path")"
-  uploaded="$(date -u +%Y-%m-%dT%H:%M:%S.%NZ)"
-  printf "{\n  \"version\": \"%s\",\n  \"releaseNotes\": \"Jenkins build #%s\",\n  \"fileSize\": %s,\n  \"sha256\": \"%s\",\n  \"uploadedAtUtc\": \"%s\"\n}\n" "$VERSION" "$BUILD_NUMBER" "$size" "$actual_sha" "$uploaded" > "$release_dir/version.json"
   cp "$release_dir/version.json" /app/Data/releases/worker/latest.json
 '
 REMOTE
