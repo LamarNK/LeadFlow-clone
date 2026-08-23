@@ -46,6 +46,7 @@ public sealed class CrmTelephonyService(
             .ToListAsync(ct);
 
         CrmSipProviderAccountDto? sipAccount = null;
+        IReadOnlyList<CrmSipProviderAccountDto>? sipAccounts = null;
         if (provider == CrmTelephonyProviders.Beeline
             && receiver is not null
             && credentialProtector is not null
@@ -53,14 +54,35 @@ public sealed class CrmTelephonyService(
         {
             try
             {
-                var protectedPayload = credentialProtector.Unprotect(receiver.ProviderAccessTokenProtected);
-                var payload = JsonSerializer.Deserialize<SipProviderCredentialPayload>(protectedPayload);
-                if (payload is not null)
+                var accounts = ReadBeelineAccounts(receiver);
+                var phoneBindings = await (
+                    from binding in db.CrmTelephonyUserBindings.AsNoTracking()
+                    join profile in db.PanelUserProfiles.AsNoTracking() on binding.UserId equals profile.UserId
+                    join user in db.Users.AsNoTracking() on binding.UserId equals user.Id
+                    where binding.OfficeId == officeId && binding.Provider == CrmTelephonyProviders.Asterisk
+                    select new CrmTelephonyUserBindingDto(
+                        binding.UserId,
+                        string.IsNullOrWhiteSpace(profile.FullName) ? user.Email ?? binding.UserId : profile.FullName,
+                        binding.ProviderUserKey,
+                        binding.OutboundProvider))
+                    .ToListAsync(ct);
+                var assignedUsers = phoneBindings
+                    .Select(binding => new
+                    {
+                        Binding = binding,
+                        AccountKey = ResolveBeelineAccountKey(binding.OutboundProvider, accounts)
+                    })
+                    .Where(item => item.AccountKey is not null)
+                    .GroupBy(item => item.AccountKey!, StringComparer.OrdinalIgnoreCase)
+                    .ToDictionary(group => group.Key, group => group.First().Binding, StringComparer.OrdinalIgnoreCase);
+                var accountDtos = new List<CrmSipProviderAccountDto>(accounts.Count);
+                foreach (var payload in accounts)
                 {
                     var runtimeStatus = sipRuntimeConfigWriter is null
                         ? new CrmSipRuntimeStatus("runtime-unavailable", null)
-                        : await sipRuntimeConfigWriter.ReadBeelineStatusAsync(officeId, ct);
-                    sipAccount = new CrmSipProviderAccountDto(
+                        : await sipRuntimeConfigWriter.ReadBeelineStatusAsync(officeId, payload.AccountKey, ct);
+                    assignedUsers.TryGetValue(payload.AccountKey, out var assignedUser);
+                    accountDtos.Add(new CrmSipProviderAccountDto(
                         payload.Server,
                         payload.Domain,
                         payload.Port,
@@ -70,8 +92,17 @@ public sealed class CrmTelephonyService(
                         !string.IsNullOrWhiteSpace(payload.Password),
                         payload.UseForOutbound,
                         runtimeStatus.Status,
-                        runtimeStatus.CheckedAtUtc);
+                        runtimeStatus.CheckedAtUtc,
+                        payload.AccountKey,
+                        payload.Name,
+                        payload.Mode,
+                        assignedUser?.UserId,
+                        assignedUser?.UserName));
                 }
+                sipAccounts = accountDtos;
+                sipAccount = accountDtos.FirstOrDefault(account => account.UseForOutbound)
+                    ?? accountDtos.FirstOrDefault(account => account.AccountKey == "default")
+                    ?? accountDtos.FirstOrDefault();
             }
             catch (Exception ex) when (ex is CryptographicException or JsonException)
             {
@@ -95,7 +126,8 @@ public sealed class CrmTelephonyService(
             receiver?.PublicId,
             bindings,
             credentialsConfigured,
-            sipAccount);
+            sipAccount,
+            sipAccounts);
     }
 
     public async Task<(bool Success, string? Error)> SetPlusofonCredentialsAsync(
@@ -135,17 +167,51 @@ public sealed class CrmTelephonyService(
         UpdateSipProviderAccountRequest request,
         CancellationToken ct = default)
     {
+        var (success, error, _) = await UpsertBeelineSipAccountAsync(officeId, "default", request, ct);
+        return (success, error);
+    }
+
+    public async Task<(bool Success, string? Error, string? AccountKey)> UpsertBeelineSipAccountAsync(
+        Guid officeId,
+        string? accountKey,
+        UpdateSipProviderAccountRequest request,
+        CancellationToken ct = default)
+    {
         if (credentialProtector is null)
         {
-            return (false, "Защита реквизитов телефонии недоступна.");
+            return (false, "Защита реквизитов телефонии недоступна.", null);
         }
         if (sipRuntimeConfigWriter is null || !sipRuntimeConfigWriter.IsAvailable)
         {
-            return (false, "Общий runtime-каталог API и SIP-сервера не настроен.");
+            return (false, "Общий runtime-каталог API и SIP-сервера не настроен.", null);
         }
         if (!await db.Offices.AnyAsync(x => x.Id == officeId, ct))
         {
-            return (false, "Офис не найден.");
+            return (false, "Офис не найден.", null);
+        }
+
+        accountKey = NormalizeSipAccountKey(accountKey);
+        if (accountKey is null)
+        {
+            return (false, "Некорректный идентификатор SIP-линии.", null);
+        }
+        var name = string.IsNullOrWhiteSpace(request.Name)
+            ? accountKey == "default" ? "Общая линия Билайна" : "Линия Билайна"
+            : request.Name.Trim();
+        var mode = CrmSipAccountModes.IsSupported(request.Mode)
+            ? CrmSipAccountModes.Normalize(request.Mode)
+            : string.Empty;
+        if (name.Length is 0 or > 100 || ContainsControlCharacters(name))
+        {
+            return (false, "Название линии должно содержать от 1 до 100 символов.", null);
+        }
+        if (!CrmSipAccountModes.IsSupported(mode))
+        {
+            return (false, "Выберите общую или персональную SIP-линию.", null);
+        }
+        if (mode == CrmSipAccountModes.Personal && request.UseForOutbound)
+        {
+            return (false, "Персональную линию нельзя сделать общей линией офиса по умолчанию.", null);
         }
 
         var server = request.Server.Trim().ToLowerInvariant();
@@ -157,40 +223,40 @@ public sealed class CrmTelephonyService(
         var authorizationLogin = request.AuthorizationLogin.Trim();
         if (!IsValidSipHost(server) || !IsValidSipHost(domain))
         {
-            return (false, "Укажите корректные SIP proxy и домен без протокола sip://.");
+            return (false, "Укажите корректные SIP proxy и домен без протокола sip://.", null);
         }
         if (request.Port is <= 0 or > 65535 || transport is not ("udp" or "tcp"))
         {
-            return (false, "Порт должен быть от 1 до 65535, транспорт — UDP или TCP.");
+            return (false, "Порт должен быть от 1 до 65535, транспорт — UDP или TCP.", null);
         }
         if (sipLogin.Length is 0 or > 128 || authorizationLogin.Length is 0 or > 256
             || ContainsControlCharacters(sipLogin) || ContainsControlCharacters(authorizationLogin))
         {
-            return (false, "Укажите корректные SIP User ID и Authorization User ID.");
+            return (false, "Укажите корректные SIP User ID и Authorization User ID.", null);
         }
 
         var now = timeProvider.GetUtcNow().UtcDateTime;
         var receiver = await db.CrmTelephonyWebhooks
             .FirstOrDefaultAsync(x => x.OfficeId == officeId
                 && x.Provider == CrmTelephonyProviders.Beeline, ct);
-        SipProviderCredentialPayload? previous = null;
+        var accounts = new List<SipProviderCredentialPayload>();
         if (receiver is not null && !string.IsNullOrWhiteSpace(receiver.ProviderAccessTokenProtected))
         {
             try
             {
-                previous = JsonSerializer.Deserialize<SipProviderCredentialPayload>(
-                    credentialProtector.Unprotect(receiver.ProviderAccessTokenProtected));
+                accounts.AddRange(ReadBeelineAccounts(receiver));
             }
             catch (Exception ex) when (ex is CryptographicException or JsonException)
             {
-                return (false, "Сохранённые реквизиты Билайна повреждены. Укажите пароль заново.");
+                return (false, "Сохранённые реквизиты Билайна повреждены. Укажите пароль заново.", null);
             }
         }
 
+        var previous = accounts.FirstOrDefault(x => string.Equals(x.AccountKey, accountKey, StringComparison.OrdinalIgnoreCase));
         var password = string.IsNullOrEmpty(request.Password) ? previous?.Password ?? string.Empty : request.Password;
         if (password.Length is 0 or > 4096 || ContainsControlCharacters(password))
         {
-            return (false, "Укажите корректный SIP-пароль. При первой настройке он обязателен.");
+            return (false, "Укажите корректный SIP-пароль. При первой настройке он обязателен.", null);
         }
 
         var payload = new SipProviderCredentialPayload(
@@ -201,7 +267,29 @@ public sealed class CrmTelephonyService(
             sipLogin,
             authorizationLogin,
             password,
-            request.UseForOutbound);
+            request.UseForOutbound,
+            accountKey,
+            name,
+            mode);
+        accounts.RemoveAll(x => string.Equals(x.AccountKey, accountKey, StringComparison.OrdinalIgnoreCase));
+        if (payload.UseForOutbound)
+        {
+            accounts = accounts.Select(x => x with { UseForOutbound = false }).ToList();
+        }
+        accounts.Add(payload);
+        if (payload.Mode == CrmSipAccountModes.Personal)
+        {
+            var outboundValue = CrmTelephonyOutboundProviders.ForBeelineLine(accountKey);
+            var assignedUsersCount = await db.CrmTelephonyUserBindings.AsNoTracking().CountAsync(x =>
+                x.OfficeId == officeId
+                && x.Provider == CrmTelephonyProviders.Asterisk
+                && (x.OutboundProvider == outboundValue
+                    || (accountKey == "default" && x.OutboundProvider == CrmTelephonyProviders.Beeline)), ct);
+            if (assignedUsersCount > 1)
+            {
+                return (false, "Эта линия назначена нескольким сотрудникам. Сначала оставьте одного сотрудника, затем смените тип на персональный.", null);
+            }
+        }
         if (receiver is null)
         {
             receiver = new CrmTelephonyWebhookEntity
@@ -216,27 +304,81 @@ public sealed class CrmTelephonyService(
             db.CrmTelephonyWebhooks.Add(receiver);
         }
 
-        receiver.ProviderClientId = sipLogin;
-        receiver.ProviderAccessTokenProtected = credentialProtector.Protect(JsonSerializer.Serialize(payload));
+        receiver.ProviderClientId = accounts.FirstOrDefault(x => x.UseForOutbound)?.SipLogin ?? accounts[0].SipLogin;
+        receiver.ProviderAccessTokenProtected = ProtectBeelineAccounts(accounts);
         receiver.IsEnabled = true;
         receiver.UpdatedAtUtc = now;
         await db.SaveChangesAsync(ct);
 
-        var (applied, applyError) = await sipRuntimeConfigWriter.WriteBeelineAsync(
+        var (applied, applyError) = await sipRuntimeConfigWriter.WriteBeelineAccountsAsync(
             officeId,
-            new CrmSipRuntimeAccount(
-                payload.Server,
-                payload.Domain,
-                payload.Port,
-                payload.Transport,
-                payload.SipLogin,
-                payload.AuthorizationLogin,
-                payload.Password,
-                payload.UseForOutbound),
+            accounts.Select(ToRuntimeAccount).ToList(),
             ct);
         return applied
-            ? (true, null)
-            : (false, $"Реквизиты сохранены, но SIP-сервер не применил конфигурацию: {applyError}");
+            ? (true, null, accountKey)
+            : (false, $"Реквизиты сохранены, но SIP-сервер не применил конфигурацию: {applyError}", accountKey);
+    }
+
+    public async Task<(bool Success, string? Error)> DeleteBeelineSipAccountAsync(
+        Guid officeId,
+        string accountKey,
+        CancellationToken ct = default)
+    {
+        if (credentialProtector is null || sipRuntimeConfigWriter is null || !sipRuntimeConfigWriter.IsAvailable)
+        {
+            return (false, "Настройка SIP-сервера недоступна.");
+        }
+        accountKey = NormalizeSipAccountKey(accountKey) ?? string.Empty;
+        if (accountKey.Length == 0)
+        {
+            return (false, "Некорректный идентификатор SIP-линии.");
+        }
+        var receiver = await db.CrmTelephonyWebhooks.FirstOrDefaultAsync(x =>
+            x.OfficeId == officeId && x.Provider == CrmTelephonyProviders.Beeline, ct);
+        if (receiver is null)
+        {
+            return (false, "SIP-линия не найдена.");
+        }
+
+        List<SipProviderCredentialPayload> accounts;
+        try
+        {
+            accounts = ReadBeelineAccounts(receiver).ToList();
+        }
+        catch (Exception ex) when (ex is CryptographicException or JsonException)
+        {
+            return (false, "Сохранённые реквизиты Билайна повреждены.");
+        }
+        var accountToRemove = accounts.FirstOrDefault(x =>
+            string.Equals(x.AccountKey, accountKey, StringComparison.OrdinalIgnoreCase));
+        if (accountToRemove is null)
+        {
+            return (false, "SIP-линия не найдена.");
+        }
+
+        var outboundProviders = await db.CrmTelephonyUserBindings.AsNoTracking()
+            .Where(x => x.OfficeId == officeId && x.Provider == CrmTelephonyProviders.Asterisk)
+            .Select(x => x.OutboundProvider)
+            .ToListAsync(ct);
+        var isAssigned = outboundProviders.Any(outboundProvider => string.Equals(
+            ResolveBeelineAccountKey(outboundProvider, accounts),
+            accountKey,
+            StringComparison.OrdinalIgnoreCase));
+        if (isAssigned)
+        {
+            return (false, "Сначала назначьте сотрудникам другую исходящую линию.");
+        }
+
+        accounts.Remove(accountToRemove);
+
+        receiver.ProviderClientId = accounts.FirstOrDefault(x => x.UseForOutbound)?.SipLogin
+            ?? accounts.FirstOrDefault()?.SipLogin;
+        receiver.ProviderAccessTokenProtected = accounts.Count == 0 ? null : ProtectBeelineAccounts(accounts);
+        receiver.UpdatedAtUtc = timeProvider.GetUtcNow().UtcDateTime;
+        await db.SaveChangesAsync(ct);
+        var (applied, applyError) = await sipRuntimeConfigWriter.WriteBeelineAccountsAsync(
+            officeId, accounts.Select(ToRuntimeAccount).ToList(), ct);
+        return applied ? (true, null) : (false, $"Линия удалена, но SIP-сервер не применил конфигурацию: {applyError}");
     }
 
     public async Task<(CrmTelephonyReceiverDto? Receiver, string? Error)> RotateReceiverAsync(
@@ -263,6 +405,7 @@ public sealed class CrmTelephonyService(
                 Id = Guid.NewGuid(),
                 OfficeId = officeId,
                 Provider = provider,
+                IsEnabled = false,
                 CreatedAtUtc = now
             };
             db.CrmTelephonyWebhooks.Add(receiver);
@@ -270,7 +413,6 @@ public sealed class CrmTelephonyService(
 
         receiver.PublicId = publicId;
         receiver.SecretHash = HashSecret(secret);
-        receiver.IsEnabled = true;
         receiver.UpdatedAtUtc = now;
         await db.SaveChangesAsync(ct);
 
@@ -354,6 +496,46 @@ public sealed class CrmTelephonyService(
             return (null, "Выбрана неизвестная линия для исходящих звонков.");
         }
 
+        SipProviderCredentialPayload? selectedBeelineAccount = null;
+        var normalizedOutboundProvider = CrmTelephonyOutboundProviders.Normalize(outboundProvider);
+        if (provider == CrmTelephonyProviders.Asterisk
+            && CrmTelephonyOutboundProviders.TryGetBeelineLineKey(normalizedOutboundProvider, out var beelineAccountKey))
+        {
+            var beelineReceiver = await db.CrmTelephonyWebhooks.AsNoTracking().FirstOrDefaultAsync(x =>
+                x.OfficeId == officeId && x.Provider == CrmTelephonyProviders.Beeline, ct);
+            if (beelineReceiver is null || credentialProtector is null)
+            {
+                return (null, "Выбранная линия Билайна не настроена в этом офисе.");
+            }
+            try
+            {
+                selectedBeelineAccount = ReadBeelineAccounts(beelineReceiver).FirstOrDefault(x =>
+                    string.Equals(x.AccountKey, beelineAccountKey, StringComparison.OrdinalIgnoreCase));
+            }
+            catch (Exception ex) when (ex is CryptographicException or JsonException)
+            {
+                return (null, "Не удалось прочитать настройки выбранной линии Билайна.");
+            }
+            if (selectedBeelineAccount is null)
+            {
+                return (null, "Выбранная линия Билайна не найдена.");
+            }
+            if (selectedBeelineAccount.Mode == CrmSipAccountModes.Personal)
+            {
+                var personalLineBusy = await db.CrmTelephonyUserBindings.AsNoTracking().AnyAsync(x =>
+                    x.OfficeId == officeId
+                    && x.Provider == CrmTelephonyProviders.Asterisk
+                    && x.UserId != userId
+                    && (x.OutboundProvider == normalizedOutboundProvider
+                        || (beelineAccountKey == "default"
+                            && x.OutboundProvider == CrmTelephonyProviders.Beeline)), ct);
+                if (personalLineBusy)
+                {
+                    return (null, "Персональная линия Билайна уже назначена другому сотруднику.");
+                }
+            }
+        }
+
         var user = await (
             from profile in db.PanelUserProfiles
             join identity in db.Users on profile.UserId equals identity.Id
@@ -397,7 +579,7 @@ public sealed class CrmTelephonyService(
 
         binding.ProviderUserKey = normalizedKey;
         binding.OutboundProvider = provider == CrmTelephonyProviders.Asterisk
-            ? CrmTelephonyOutboundProviders.Normalize(outboundProvider)
+            ? normalizedOutboundProvider
             : CrmTelephonyOutboundProviders.Default;
         binding.UpdatedAtUtc = now;
         await db.SaveChangesAsync(ct);
@@ -784,6 +966,99 @@ public sealed class CrmTelephonyService(
     private static bool ContainsControlCharacters(string value) =>
         value.Any(char.IsControl) || value.IndexOfAny([';', '[', ']']) >= 0;
 
+    private IReadOnlyList<SipProviderCredentialPayload> ReadBeelineAccounts(CrmTelephonyWebhookEntity receiver)
+    {
+        if (credentialProtector is null || string.IsNullOrWhiteSpace(receiver.ProviderAccessTokenProtected))
+        {
+            return [];
+        }
+
+        var json = credentialProtector.Unprotect(receiver.ProviderAccessTokenProtected);
+        using var document = JsonDocument.Parse(json);
+        if (document.RootElement.TryGetProperty("Accounts", out _)
+            || document.RootElement.TryGetProperty("accounts", out _))
+        {
+            var envelope = JsonSerializer.Deserialize<SipProviderCredentialEnvelope>(json);
+            return envelope?.Accounts?
+                .Where(account => NormalizeSipAccountKey(account.AccountKey, generateWhenEmpty: false) is not null)
+                .Select(NormalizeStoredAccount)
+                .ToList() ?? [];
+        }
+
+        // Compatibility with the single-account format already stored in production.
+        var legacy = JsonSerializer.Deserialize<SipProviderCredentialPayload>(json);
+        return legacy is null ? [] : [NormalizeStoredAccount(legacy with
+        {
+            AccountKey = "default",
+            Name = string.IsNullOrWhiteSpace(legacy.Name) ? "Общая линия Билайна" : legacy.Name,
+            Mode = CrmSipAccountModes.Shared
+        })];
+    }
+
+    private string ProtectBeelineAccounts(IReadOnlyCollection<SipProviderCredentialPayload> accounts)
+    {
+        if (credentialProtector is null)
+        {
+            throw new InvalidOperationException("Telephony credential protection is unavailable.");
+        }
+        var normalized = accounts.Select(NormalizeStoredAccount).OrderBy(x => x.AccountKey, StringComparer.Ordinal).ToList();
+        return credentialProtector.Protect(JsonSerializer.Serialize(new SipProviderCredentialEnvelope(2, normalized)));
+    }
+
+    private static SipProviderCredentialPayload NormalizeStoredAccount(SipProviderCredentialPayload account) => account with
+    {
+        AccountKey = NormalizeSipAccountKey(account.AccountKey, generateWhenEmpty: false) ?? "default",
+        Name = string.IsNullOrWhiteSpace(account.Name) ? "Линия Билайна" : account.Name.Trim(),
+        Mode = CrmSipAccountModes.IsSupported(account.Mode)
+            ? CrmSipAccountModes.Normalize(account.Mode)
+            : CrmSipAccountModes.Shared,
+        Transport = account.Transport.Trim().ToLowerInvariant()
+    };
+
+    private static string? ResolveBeelineAccountKey(
+        string? outboundProvider,
+        IReadOnlyList<SipProviderCredentialPayload> accounts)
+    {
+        if (CrmTelephonyOutboundProviders.TryGetBeelineLineKey(outboundProvider, out var accountKey))
+        {
+            return accounts.Any(x => string.Equals(x.AccountKey, accountKey, StringComparison.OrdinalIgnoreCase))
+                ? accountKey
+                : null;
+        }
+        if (string.Equals(outboundProvider, CrmTelephonyProviders.Beeline, StringComparison.OrdinalIgnoreCase))
+        {
+            return accounts.FirstOrDefault(x => x.UseForOutbound)?.AccountKey
+                ?? accounts.FirstOrDefault(x => x.AccountKey == "default")?.AccountKey;
+        }
+        return null;
+    }
+
+    private static CrmSipRuntimeAccount ToRuntimeAccount(SipProviderCredentialPayload account) => new(
+        account.Server,
+        account.Domain,
+        account.Port,
+        account.Transport,
+        account.SipLogin,
+        account.AuthorizationLogin,
+        account.Password,
+        account.UseForOutbound,
+        account.AccountKey,
+        account.Name,
+        account.Mode);
+
+    private static string? NormalizeSipAccountKey(string? value, bool generateWhenEmpty = true)
+    {
+        var candidate = value?.Trim().ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(candidate))
+        {
+            return generateWhenEmpty ? Convert.ToHexString(RandomNumberGenerator.GetBytes(6)).ToLowerInvariant() : null;
+        }
+        return candidate.Length <= 16
+            && candidate.All(character => char.IsAsciiLetterOrDigit(character) || character is '-' or '_')
+                ? candidate
+                : null;
+    }
+
     private static string NormalizeProvider(string provider)
     {
         if (!CrmTelephonyProviders.IsSupported(provider))
@@ -815,7 +1090,14 @@ public sealed class CrmTelephonyService(
         string SipLogin,
         string AuthorizationLogin,
         string Password,
-        bool UseForOutbound);
+        bool UseForOutbound,
+        string AccountKey = "default",
+        string Name = "Общая линия Билайна",
+        string Mode = CrmSipAccountModes.Shared);
+
+    private sealed record SipProviderCredentialEnvelope(
+        int Version,
+        IReadOnlyList<SipProviderCredentialPayload> Accounts);
 
     private static string NormalizeDirection(
         string? callType,

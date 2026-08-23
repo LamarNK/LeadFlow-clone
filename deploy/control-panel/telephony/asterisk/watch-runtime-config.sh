@@ -121,7 +121,13 @@ apply_routes_if_changed() {
       seen_extensions["${extension}"]="${office_id}"
 
       local endpoint
-      [[ "${provider}" == "beeline" ]] && endpoint="beeline-${office_key}" || endpoint="orbita-provider"
+      if [[ "${provider}" == "beeline" ]]; then
+        endpoint="beeline-${office_key}"
+      elif [[ "${provider}" =~ ^beeline-[0-9a-f]{32}-[a-z0-9_-]{1,16}$ ]]; then
+        endpoint="${provider}"
+      else
+        endpoint="orbita-provider"
+      fi
       /usr/sbin/asterisk -rx "database put orbita_user outbound_endpoint/${extension} ${endpoint}" >/dev/null
       /usr/sbin/asterisk -rx "database put orbita_user office_id/${extension} ${office_id}" >/dev/null
     done < "${file}"
@@ -133,7 +139,13 @@ apply_routes_if_changed() {
     [[ -n "${office_id}" ]] || continue
     office_key="$(endpoint_key "${office_id}")"
     outbound="$(tr -d '\r\n ' < "${file}")"
-    [[ "${outbound}" == "beeline" ]] && endpoint="beeline-${office_key}" || endpoint="orbita-provider"
+    if [[ "${outbound}" == "beeline" ]]; then
+      endpoint="beeline-${office_key}"
+    elif [[ "${outbound}" =~ ^beeline-[0-9a-f]{32}-[a-z0-9_-]{1,16}$ ]]; then
+      endpoint="${outbound}"
+    else
+      endpoint="orbita-provider"
+    fi
     /usr/sbin/asterisk -rx "database put orbita_office outbound_endpoint/${office_id} ${endpoint}" >/dev/null
   done < <(find "${runtime_dir}" -maxdepth 1 -type f -name 'beeline.*.outbound' -print0 | sort -z)
 
@@ -142,22 +154,31 @@ apply_routes_if_changed() {
 
 update_registration_statuses() {
   while IFS= read -r -d '' file; do
-    local office_id office_key output status
-    office_id="$(office_from_file "${file}" 'beeline.' '.conf')"
+    local office_id status_path temporary
+    office_id="$(office_from_file "${file}" 'beeline.' '.accounts')"
     [[ -n "${office_id}" ]] || continue
-    office_key="$(endpoint_key "${office_id}")"
-    output="$(/usr/sbin/asterisk -rx "pjsip show registration beeline-${office_key}-registration" 2>/dev/null || true)"
-    if grep -qiE '(^|[[:space:]])Registered([[:space:]]|$)' <<< "${output}"; then
-      status="registered"
-    elif grep -qiE 'Rejected|Forbidden|Auth\. Sent' <<< "${output}"; then
-      status="rejected"
-    elif grep -qiE 'Unregistered|Stopped' <<< "${output}"; then
-      status="unregistered"
-    else
-      status="pending"
-    fi
-    write_status "${office_id}" "${status}"
-  done < <(find "${runtime_dir}" -maxdepth 1 -type f -name 'beeline.*.conf' -print0 | sort -z)
+    status_path="${runtime_dir}/beeline.${office_id}.status"
+    temporary="${status_path}.tmp"
+    : > "${temporary}"
+    while IFS='=' read -r account_key registration_name; do
+      [[ "${account_key}" =~ ^[a-z0-9_-]{1,16}$ ]] || continue
+      [[ "${registration_name}" =~ ^beeline-[0-9a-f]{32}(-[a-z0-9_-]{1,16})?-registration$ ]] || continue
+      local output status
+      output="$(/usr/sbin/asterisk -rx "pjsip show registration ${registration_name}" 2>/dev/null || true)"
+      if grep -qiE '(^|[[:space:]])Registered([[:space:]]|$)' <<< "${output}"; then
+        status="registered"
+      elif grep -qiE 'Rejected|Forbidden|Auth\. Sent' <<< "${output}"; then
+        status="rejected"
+      elif grep -qiE 'Unregistered|Stopped' <<< "${output}"; then
+        status="unregistered"
+      else
+        status="pending"
+      fi
+      printf '%s=%s\n' "${account_key}" "${status}" >> "${temporary}"
+    done < "${file}"
+    printf '%s\n' "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "${temporary}"
+    mv -f "${temporary}" "${status_path}"
+  done < <(find "${runtime_dir}" -maxdepth 1 -type f -name 'beeline.*.accounts' -print0 | sort -z)
 }
 
 wait_for_asterisk

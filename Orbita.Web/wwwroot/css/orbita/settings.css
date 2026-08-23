@@ -209,6 +209,26 @@
 }
 .telephony-binding-guide strong { display: block; margin-bottom: 3px; font-size: 13px; }
 .telephony-binding-guide p { margin: 0; color: var(--text-secondary, #64748b); font-size: 12px; line-height: 1.45; }
+.telephony-office-users-guide {
+    display: grid;
+    grid-template-columns: 30px minmax(0, 1fr);
+    align-items: center;
+    margin: 0 0 18px;
+    min-height: 68px;
+}
+.telephony-office-users-guide > div {
+    display: grid;
+    align-content: center;
+    gap: 4px;
+    min-width: 0;
+}
+.telephony-office-users-guide strong {
+    margin: 0;
+    line-height: 1.25;
+}
+.telephony-office-users-guide p {
+    line-height: 1.4;
+}
 .telephony-modal[hidden] { display: none; }
 .telephony-modal {
     position: fixed;
@@ -282,6 +302,147 @@
 .telephony-sip-account-card .card-body {
     display: grid;
     gap: 18px;
+}
+.telephony-sip-lines-card {
+    overflow: hidden;
+}
+.telephony-sip-lines-guide {
+    margin: 0 0 16px;
+}
+.telephony-sip-lines-guide p strong {
+    display: inline;
+    margin: 0;
+    font-size: inherit;
+}
+.telephony-sip-lines-body {
+    display: grid;
+    gap: 16px;
+}
+.telephony-empty-lines {
+    display: grid;
+    justify-items: center;
+    gap: 6px;
+    padding: 28px 20px;
+    border: 1px dashed var(--border, #dbe3ef);
+    border-radius: 14px;
+    background: var(--surface-soft, #f8fafc);
+    color: var(--text-secondary, #64748b);
+    text-align: center;
+}
+.telephony-empty-lines i {
+    margin-bottom: 4px;
+    color: #3b82f6;
+    font-size: 24px;
+}
+.telephony-empty-lines strong { color: var(--text-primary, #0f172a); }
+.telephony-empty-lines span { font-size: 12px; }
+.telephony-sip-lines-list {
+    display: grid;
+    gap: 12px;
+}
+.telephony-sip-line {
+    border: 1px solid var(--border, #dbe3ef);
+    border-radius: 14px;
+    background: var(--bg-card, #fff);
+}
+.telephony-sip-line__summary {
+    display: grid;
+    grid-template-areas: "icon identity technical assignment statuses";
+    grid-template-columns: 42px minmax(240px, 1.2fr) minmax(220px, .9fr) 84px 220px;
+    align-items: center;
+    gap: 14px;
+    min-height: 78px;
+    padding: 14px 16px;
+}
+.telephony-sip-line__icon {
+    grid-area: icon;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 42px;
+    height: 42px;
+    border-radius: 12px;
+    background: rgba(37, 99, 235, .1);
+    color: #2563eb;
+}
+.telephony-sip-line__identity,
+.telephony-sip-line__technical,
+.telephony-sip-line__assignment {
+    display: grid;
+    gap: 4px;
+    min-width: 0;
+}
+.telephony-sip-line__identity { grid-area: identity; }
+.telephony-sip-line__technical { grid-area: technical; }
+.telephony-sip-line__assignment { grid-area: assignment; }
+.telephony-sip-line__identity strong,
+.telephony-sip-line__technical strong {
+    overflow: hidden;
+    color: var(--text-primary, #0f172a);
+    font-size: 13px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.telephony-sip-line__identity small,
+.telephony-sip-line__technical small,
+.telephony-sip-line__assignment small {
+    color: var(--text-muted, #64748b);
+    font-size: 11px;
+}
+.telephony-sip-line__assignment {
+    justify-items: center;
+    min-width: 72px;
+}
+.telephony-sip-line__assignment strong {
+    color: var(--text-primary, #0f172a);
+    font-size: 18px;
+}
+.telephony-sip-line__statuses {
+    grid-area: statuses;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 10px;
+    min-width: 0;
+}
+.telephony-sip-line__editor {
+    border-top: 1px solid var(--border, #dbe3ef);
+}
+.telephony-sip-line__editor > summary,
+.telephony-sip-line--new > summary {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0;
+    padding: 13px 16px;
+    color: #2563eb;
+    font-size: 12px;
+    font-weight: 700;
+    list-style: none;
+    cursor: pointer;
+}
+.telephony-sip-line__editor > summary::-webkit-details-marker,
+.telephony-sip-line--new > summary::-webkit-details-marker { display: none; }
+.telephony-sip-line__editor[open] > summary,
+.telephony-sip-line--new[open] > summary { color: #1d4ed8; }
+.telephony-sip-line__editor .telephony-sip-account-grid,
+.telephony-sip-line--new .telephony-sip-account-grid {
+    padding: 4px 16px 18px;
+}
+.telephony-sip-line__delete {
+    display: flex;
+    justify-content: flex-end;
+    padding: 0 16px 18px;
+}
+.telephony-sip-line--new {
+    border-style: dashed;
+    background: var(--surface-soft, #f8fafc);
+}
+.telephony-sip-line--new > summary {
+    width: 100%;
+    min-height: 52px;
+    justify-content: center;
+    box-sizing: border-box;
 }
 .telephony-sip-account-grid {
     display: grid;
@@ -382,6 +543,16 @@ body.telephony-modal-open { overflow: hidden; }
     .telephony-sip-account-grid__actions { grid-column: auto; }
     .telephony-provider-overview { grid-template-columns: 1fr; }
     .telephony-copy-row { grid-template-columns: 1fr; }
+    .telephony-sip-line__summary {
+        grid-template-areas:
+            "icon identity assignment statuses"
+            ". technical technical technical";
+        grid-template-columns: 42px minmax(0, 1fr) 84px 220px;
+    }
+    .telephony-sip-line__technical {
+        padding-top: 10px;
+        border-top: 1px solid var(--border, #dbe3ef);
+    }
 }
 @media (max-width: 640px) {
     .telephony-settings-nav { align-items: flex-start; flex-direction: column; }
@@ -393,6 +564,18 @@ body.telephony-modal-open { overflow: hidden; }
     .telephony-modal__wide { grid-column: auto; }
     .telephony-sip-account-grid__pair { grid-template-columns: 1fr; }
     .telephony-sip-account-grid__actions { align-items: stretch; flex-direction: column; }
+    .telephony-sip-lines-guide { margin: 0 0 14px; }
+    .telephony-sip-line__summary {
+        grid-template-areas:
+            "icon identity"
+            ". technical"
+            ". assignment"
+            ". statuses";
+        grid-template-columns: 42px minmax(0, 1fr);
+        gap: 10px;
+    }
+    .telephony-sip-line__assignment { justify-items: start; }
+    .telephony-sip-line__statuses { justify-content: flex-start; }
 }
 
 .settings-page-subtitle {

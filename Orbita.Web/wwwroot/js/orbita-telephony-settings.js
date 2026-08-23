@@ -9,6 +9,32 @@
         }
     };
 
+    const syncPersonalLineAvailability = modal => {
+        const userSelect = modal?.querySelector('[data-telephony-phone-user-select]');
+        const outboundProvider = modal?.querySelector('[data-telephony-outbound-provider]');
+        if (!userSelect || !outboundProvider) return;
+
+        const selectedUserId = userSelect.value;
+        outboundProvider.querySelectorAll('[data-beeline-account]').forEach(option => {
+            const assignedUserId = option.dataset.assignedUserId || '';
+            const isPersonal = option.dataset.accountMode === 'personal';
+            option.disabled = isPersonal && assignedUserId !== '' && assignedUserId !== selectedUserId;
+            option.title = option.disabled ? 'Персональная линия уже назначена другому сотруднику' : '';
+        });
+        if (outboundProvider.selectedOptions[0]?.disabled) {
+            outboundProvider.value = 'default';
+        }
+    };
+
+    const syncSipAccountMode = form => {
+        const mode = form?.querySelector('select[name="Mode"]');
+        const officeDefault = form?.querySelector('input[name="UseForOutbound"]');
+        if (!mode || !officeDefault) return;
+        const personal = mode.value === 'personal';
+        if (personal) officeDefault.checked = false;
+        officeDefault.disabled = personal;
+    };
+
     const openUserModal = button => {
         const modal = document.querySelector('[data-telephony-user-modal]');
         const userSelect = modal?.querySelector('[data-telephony-phone-user-select]');
@@ -18,7 +44,14 @@
 
         userSelect.value = button.dataset.userId || '';
         extension.value = button.dataset.providerKey || '';
-        outboundProvider.value = button.dataset.outboundProvider || 'default';
+        const requestedProvider = button.dataset.outboundProvider || 'default';
+        if (requestedProvider === 'beeline') {
+            outboundProvider.value = outboundProvider.querySelector('[data-office-default="true"]')?.value || 'default';
+        } else {
+            outboundProvider.value = requestedProvider;
+        }
+        if (!outboundProvider.value) outboundProvider.value = 'default';
+        syncPersonalLineAvailability(modal);
         modal.hidden = false;
         document.body.classList.add('telephony-modal-open');
         window.setTimeout(() => (button.dataset.userId ? extension : userSelect).focus(), 0);
@@ -75,6 +108,19 @@
             closeModal(closeBindingButton.closest('[data-telephony-binding-modal]'));
         }
     });
+
+    document.addEventListener('change', event => {
+        const target = elementFromEvent(event);
+        if (!target) return;
+        if (target.matches('[data-telephony-phone-user-select]')) {
+            syncPersonalLineAvailability(target.closest('[data-telephony-user-modal]'));
+        }
+        if (target.matches('.telephony-sip-account-grid select[name="Mode"]')) {
+            syncSipAccountMode(target.closest('.telephony-sip-account-grid'));
+        }
+    });
+
+    document.querySelectorAll('.telephony-sip-account-grid').forEach(syncSipAccountMode);
 
     document.addEventListener('keydown', event => {
         if (event.key !== 'Escape') return;

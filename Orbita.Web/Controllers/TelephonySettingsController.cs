@@ -186,10 +186,7 @@ public sealed class TelephonySettingsController(OrbitaApiClient api) : Controlle
             return BadRequest();
         }
 
-        var (success, error) = await api.SetSipProviderAccountAsync(
-            model.OfficeId,
-            CrmTelephonyProviders.Beeline,
-            new UpdateSipProviderAccountRequest(
+        var request = new UpdateSipProviderAccountRequest(
                 model.Server,
                 model.Domain,
                 model.Port,
@@ -197,12 +194,31 @@ public sealed class TelephonySettingsController(OrbitaApiClient api) : Controlle
                 model.SipLogin,
                 model.AuthorizationLogin,
                 model.Password,
-                model.UseForOutbound),
-            ct);
+                model.UseForOutbound,
+                model.Name,
+                model.Mode);
+        var (success, error) = string.IsNullOrWhiteSpace(model.AccountKey)
+            ? await api.AddSipProviderAccountAsync(model.OfficeId, CrmTelephonyProviders.Beeline, request, ct)
+            : await api.UpdateSipProviderAccountAsync(model.OfficeId, CrmTelephonyProviders.Beeline, model.AccountKey, request, ct);
         TempData[success ? "SettingsStatus" : "SettingsError"] = success
-            ? "SIP-аккаунт Билайна сохранён и передан Asterisk. Статус регистрации обновится в течение нескольких секунд."
+            ? "Линия Билайна сохранена и передана Asterisk. Статус регистрации обновится в течение нескольких секунд."
             : error;
         return RedirectToAction(nameof(Telephony), new { officeId = model.OfficeId, provider = CrmTelephonyProviders.Beeline });
+    }
+
+    [HttpPost("Telephony/SipAccount/Delete")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> DeleteSipProviderAccount(
+        Guid officeId,
+        string accountKey,
+        CancellationToken ct = default)
+    {
+        var (success, error) = await api.DeleteSipProviderAccountAsync(
+            officeId, CrmTelephonyProviders.Beeline, accountKey, ct);
+        TempData[success ? "SettingsStatus" : "SettingsError"] = success
+            ? "Линия Билайна удалена."
+            : error;
+        return RedirectToAction(nameof(Telephony), new { officeId, provider = CrmTelephonyProviders.Beeline });
     }
 
     [HttpPost("Telephony/Binding")]

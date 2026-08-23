@@ -64,6 +64,9 @@ public sealed class CrmTelephonyServiceTests
             var endpointKey = officeId.ToString("N");
             Assert.Contains($"[beeline-{endpointKey}]", runtimeConfig, StringComparison.Ordinal);
             Assert.Contains($"[beeline-{endpointKey}-registration]", runtimeConfig, StringComparison.Ordinal);
+            Assert.Contains("line=yes", runtimeConfig, StringComparison.Ordinal);
+            Assert.Contains($"endpoint=beeline-{endpointKey}", runtimeConfig, StringComparison.Ordinal);
+            Assert.DoesNotContain($"[beeline-{endpointKey}-identify]", runtimeConfig, StringComparison.Ordinal);
             Assert.Contains($"set_var=ORBITA_OFFICE_ID={officeId:D}", runtimeConfig, StringComparison.Ordinal);
             Assert.Contains("username=auth-user@beeline.test", runtimeConfig, StringComparison.Ordinal);
             Assert.Contains("password=test-secret", runtimeConfig, StringComparison.Ordinal);
@@ -75,6 +78,16 @@ public sealed class CrmTelephonyServiceTests
                 runtimeConfig.Split("outbound_proxy=sip:sip.beeline.test:5060\\;lr", StringSplitOptions.None).Length - 1);
             Assert.DoesNotContain("server_uri=sip:sip.beeline.test:5060", runtimeConfig, StringComparison.Ordinal);
             Assert.Equal("beeline\n", await File.ReadAllTextAsync(Path.Combine(runtimePath, $"beeline.{officeId:D}.outbound")));
+
+            await writer.WriteUserOutboundRoutesAsync(
+                officeId,
+                new Dictionary<string, string>
+                {
+                    ["201"] = CrmTelephonyOutboundProviders.ForBeelineLine("default")
+                });
+            Assert.Equal(
+                "201=beeline\n",
+                (await File.ReadAllTextAsync(Path.Combine(runtimePath, $"routes.{officeId:D}.conf"))).Replace("\r\n", "\n"));
 
             var update = await sut.SetBeelineSipAccountAsync(
                 officeId,
@@ -98,6 +111,111 @@ public sealed class CrmTelephonyServiceTests
             Assert.NotNull(settings?.SipAccount);
             Assert.True(settings.SipAccount.PasswordConfigured);
             Assert.Equal("new-sip.beeline.test", settings.SipAccount.Server);
+        }
+        finally
+        {
+            if (Directory.Exists(runtimePath))
+            {
+                Directory.Delete(runtimePath, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task BeelineSipAccounts_SupportSharedAndPersonalLines_AndPersonalLineHasOneOwner()
+    {
+        var runtimePath = Path.Combine(Path.GetTempPath(), "orbita-sip-runtime-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var options = new DbContextOptionsBuilder<OrbitaDbContext>()
+                .UseInMemoryDatabase($"crm-telephony-beeline-lines-{Guid.NewGuid():N}")
+                .Options;
+            await using var db = new OrbitaDbContext(options);
+            var officeId = Guid.NewGuid();
+            db.Offices.Add(new OfficeEntity
+            {
+                Id = officeId,
+                Name = "Beeline lines office",
+                RegistrationSecretHash = "hash",
+                IsEnabled = true,
+                CrmEnabled = true,
+                CreatedAtUtc = DateTime.UtcNow
+            });
+            foreach (var (userId, name) in new[] { ("manager-one", "Менеджер Один"), ("manager-two", "Менеджер Два") })
+            {
+                db.Users.Add(new IdentityUser
+                {
+                    Id = userId,
+                    UserName = $"{userId}@orbita.local",
+                    NormalizedUserName = $"{userId}@orbita.local".ToUpperInvariant(),
+                    Email = $"{userId}@orbita.local",
+                    NormalizedEmail = $"{userId}@orbita.local".ToUpperInvariant()
+                });
+                db.PanelUserProfiles.Add(new PanelUserProfileEntity
+                {
+                    UserId = userId,
+                    OfficeId = officeId,
+                    FullName = name
+                });
+            }
+            await db.SaveChangesAsync();
+
+            var protector = new CrmTelephonyCredentialProtector(new EphemeralDataProtectionProvider());
+            var writer = new CrmSipRuntimeConfigWriter(Options.Create(new CrmSipRuntimeOptions
+            {
+                ConfigPath = runtimePath
+            }));
+            var sut = new CrmTelephonyService(
+                db,
+                new PhoneNormalizer(),
+                TimeProvider.System,
+                credentialProtector: protector,
+                sipRuntimeConfigWriter: writer);
+
+            var shared = await sut.UpsertBeelineSipAccountAsync(
+                officeId,
+                "shared",
+                new UpdateSipProviderAccountRequest(
+                    "shared.proxy.test", "beeline.test", 5060, "udp", "shared-user", "shared-auth",
+                    "shared-password", true, "Общая многоканальная", CrmSipAccountModes.Shared));
+            var personal = await sut.UpsertBeelineSipAccountAsync(
+                officeId,
+                "personal1",
+                new UpdateSipProviderAccountRequest(
+                    "personal.proxy.test", "beeline.test", 5060, "udp", "personal-user", "personal-auth",
+                    "personal-password", false, "Личная линия", CrmSipAccountModes.Personal));
+            Assert.True(shared.Success, shared.Error);
+            Assert.True(personal.Success, personal.Error);
+
+            var personalProvider = CrmTelephonyOutboundProviders.ForBeelineLine("personal1");
+            var (firstBinding, firstError) = await sut.SetBindingAsync(
+                officeId, "manager-one", "201", provider: CrmTelephonyProviders.Asterisk,
+                outboundProvider: personalProvider);
+            Assert.NotNull(firstBinding);
+            Assert.Null(firstError);
+
+            var (secondBinding, secondError) = await sut.SetBindingAsync(
+                officeId, "manager-two", "202", provider: CrmTelephonyProviders.Asterisk,
+                outboundProvider: personalProvider);
+            Assert.Null(secondBinding);
+            Assert.Equal("Персональная линия Билайна уже назначена другому сотруднику.", secondError);
+
+            var settings = await sut.GetSettingsAsync(officeId, provider: CrmTelephonyProviders.Beeline);
+            Assert.NotNull(settings);
+            Assert.Equal(2, settings.SipAccounts?.Count);
+            var personalDto = Assert.Single(settings.SipAccounts!, account => account.AccountKey == "personal1");
+            Assert.Equal("manager-one", personalDto.AssignedUserId);
+            Assert.Equal("Менеджер Один", personalDto.AssignedUserName);
+
+            var runtimeConfig = await File.ReadAllTextAsync(Path.Combine(runtimePath, $"beeline.{officeId:D}.conf"));
+            Assert.Contains($"[beeline-{officeId:N}-shared]", runtimeConfig, StringComparison.Ordinal);
+            Assert.Contains($"[beeline-{officeId:N}-personal1]", runtimeConfig, StringComparison.Ordinal);
+            Assert.Equal(
+                $"personal1=beeline-{officeId:N}-personal1-registration\nshared=beeline-{officeId:N}-shared-registration\n",
+                (await File.ReadAllTextAsync(Path.Combine(runtimePath, $"beeline.{officeId:D}.accounts"))).Replace("\r\n", "\n"));
+            Assert.Equal(
+                $"beeline-{officeId:N}-shared\n",
+                (await File.ReadAllTextAsync(Path.Combine(runtimePath, $"beeline.{officeId:D}.outbound"))).Replace("\r\n", "\n"));
         }
         finally
         {
@@ -244,6 +362,70 @@ public sealed class CrmTelephonyServiceTests
                 Directory.Delete(runtimePath, recursive: true);
             }
         }
+    }
+
+    [Fact]
+    public async Task Receiver_IsDisabledByDefault_AndEnabledStateIsIsolatedByOffice()
+    {
+        await using var harness = await Harness.CreateAsync();
+        var secondOfficeId = Guid.NewGuid();
+        harness.Db.Offices.Add(new OfficeEntity
+        {
+            Id = secondOfficeId,
+            Name = "Second SIPOUT office",
+            RegistrationSecretHash = "hash",
+            IsEnabled = true,
+            CrmEnabled = true,
+            CreatedAtUtc = harness.Now.UtcDateTime
+        });
+        await harness.Db.SaveChangesAsync();
+
+        var (firstReceiver, firstError) = await harness.Sut.RotateReceiverAsync(
+            harness.OfficeId,
+            "https://orbita.test");
+        var (secondReceiver, secondError) = await harness.Sut.RotateReceiverAsync(
+            secondOfficeId,
+            "https://orbita.test");
+
+        Assert.Null(firstError);
+        Assert.NotNull(firstReceiver);
+        Assert.Null(secondError);
+        Assert.NotNull(secondReceiver);
+        Assert.All(await harness.Db.CrmTelephonyWebhooks.ToListAsync(), receiver => Assert.False(receiver.IsEnabled));
+
+        Assert.True(await harness.Sut.SetEnabledAsync(harness.OfficeId, true));
+        var receivers = await harness.Db.CrmTelephonyWebhooks
+            .OrderBy(x => x.OfficeId)
+            .ToListAsync();
+        Assert.True(receivers.Single(x => x.OfficeId == harness.OfficeId).IsEnabled);
+        Assert.False(receivers.Single(x => x.OfficeId == secondOfficeId).IsEnabled);
+    }
+
+    [Fact]
+    public async Task RotateReceiver_PreservesExistingEnabledState()
+    {
+        await using var harness = await Harness.CreateAsync();
+        var (original, originalError) = await harness.Sut.RotateReceiverAsync(
+            harness.OfficeId,
+            "https://orbita.test");
+        Assert.Null(originalError);
+        Assert.NotNull(original);
+        Assert.True(await harness.Sut.SetEnabledAsync(harness.OfficeId, true));
+
+        var (rotatedWhileEnabled, enabledError) = await harness.Sut.RotateReceiverAsync(
+            harness.OfficeId,
+            "https://orbita.test");
+        Assert.Null(enabledError);
+        Assert.NotNull(rotatedWhileEnabled);
+        Assert.NotEqual(original.PublicId, rotatedWhileEnabled.PublicId);
+        Assert.True((await harness.Db.CrmTelephonyWebhooks.SingleAsync()).IsEnabled);
+
+        Assert.True(await harness.Sut.SetEnabledAsync(harness.OfficeId, false));
+        var (_, disabledError) = await harness.Sut.RotateReceiverAsync(
+            harness.OfficeId,
+            "https://orbita.test");
+        Assert.Null(disabledError);
+        Assert.False((await harness.Db.CrmTelephonyWebhooks.SingleAsync()).IsEnabled);
     }
 
     [Fact]
@@ -676,6 +858,7 @@ public sealed class CrmTelephonyServiceTests
                 provider: provider);
             Assert.Null(error);
             Assert.NotNull(receiver);
+            Assert.True(await Sut.SetEnabledAsync(OfficeId, true, provider: provider));
             string secret;
             if (provider is CrmTelephonyProviders.Plusofon or CrmTelephonyProviders.Asterisk)
             {

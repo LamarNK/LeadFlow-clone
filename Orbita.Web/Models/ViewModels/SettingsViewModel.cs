@@ -62,6 +62,9 @@ public sealed class SaveSipProviderAccountFormModel
 {
     public Guid OfficeId { get; set; }
     public string Provider { get; set; } = CrmTelephonyProviders.Beeline;
+    public string? AccountKey { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string Mode { get; set; } = CrmSipAccountModes.Shared;
     public string Server { get; set; } = string.Empty;
     public string? Domain { get; set; }
     public int Port { get; set; } = 5060;

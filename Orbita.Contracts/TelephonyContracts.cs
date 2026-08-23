@@ -19,16 +19,52 @@ public static class CrmTelephonyProviders
 public static class CrmTelephonyOutboundProviders
 {
     public const string Default = "default";
+    public const string BeelineLinePrefix = "beeline:";
 
     public static bool IsSupported(string? provider) =>
         string.IsNullOrWhiteSpace(provider)
         || string.Equals(provider, Default, StringComparison.OrdinalIgnoreCase)
         || string.Equals(provider, CrmTelephonyProviders.Plusofon, StringComparison.OrdinalIgnoreCase)
-        || string.Equals(provider, CrmTelephonyProviders.Beeline, StringComparison.OrdinalIgnoreCase);
+        || string.Equals(provider, CrmTelephonyProviders.Beeline, StringComparison.OrdinalIgnoreCase)
+        || TryGetBeelineLineKey(provider, out _);
 
     public static string Normalize(string? provider) => string.IsNullOrWhiteSpace(provider)
         ? Default
         : provider.Trim().ToLowerInvariant();
+
+    public static string ForBeelineLine(string accountKey) =>
+        $"{BeelineLinePrefix}{accountKey.Trim().ToLowerInvariant()}";
+
+    public static bool TryGetBeelineLineKey(string? provider, out string accountKey)
+    {
+        accountKey = string.Empty;
+        if (string.IsNullOrWhiteSpace(provider)
+            || !provider.StartsWith(BeelineLinePrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        var candidate = provider[BeelineLinePrefix.Length..].Trim().ToLowerInvariant();
+        if (candidate.Length is 0 or > 16 || !candidate.All(character => char.IsAsciiLetterOrDigit(character) || character is '-' or '_'))
+        {
+            return false;
+        }
+
+        accountKey = candidate;
+        return true;
+    }
+}
+
+public static class CrmSipAccountModes
+{
+    public const string Shared = "shared";
+    public const string Personal = "personal";
+
+    public static bool IsSupported(string? mode) =>
+        string.Equals(mode, Shared, StringComparison.OrdinalIgnoreCase)
+        || string.Equals(mode, Personal, StringComparison.OrdinalIgnoreCase);
+
+    public static string Normalize(string mode) => mode.Trim().ToLowerInvariant();
 }
 
 public static class CrmCallDirections
@@ -52,7 +88,8 @@ public sealed record CrmTelephonySettingsDto(
     Guid? PublicId,
     IReadOnlyList<CrmTelephonyUserBindingDto> UserBindings,
     bool ProviderCredentialsConfigured = false,
-    CrmSipProviderAccountDto? SipAccount = null);
+    CrmSipProviderAccountDto? SipAccount = null,
+    IReadOnlyList<CrmSipProviderAccountDto>? SipAccounts = null);
 
 public sealed record CrmSipProviderAccountDto(
     string Server,
@@ -64,7 +101,12 @@ public sealed record CrmSipProviderAccountDto(
     bool PasswordConfigured,
     bool UseForOutbound,
     string RegistrationStatus,
-    DateTime? StatusCheckedAtUtc);
+    DateTime? StatusCheckedAtUtc,
+    string AccountKey = "default",
+    string Name = "Основная линия",
+    string Mode = CrmSipAccountModes.Shared,
+    string? AssignedUserId = null,
+    string? AssignedUserName = null);
 
 public sealed record CrmTelephonyReceiverDto(
     Guid OfficeId,
@@ -106,7 +148,9 @@ public sealed record UpdateSipProviderAccountRequest(
     string SipLogin,
     string AuthorizationLogin,
     string? Password,
-    bool UseForOutbound);
+    bool UseForOutbound,
+    string? Name = null,
+    string Mode = CrmSipAccountModes.Shared);
 
 public sealed record SipoutCallWebhookPayload(
     string ExternalCallId,

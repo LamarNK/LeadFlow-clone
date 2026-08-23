@@ -6,12 +6,23 @@
     var providerLabel = isPlusofon ? "Плюсофон" : isAsterisk ? "SIP-сервер" : isBeeline ? "Билайн SIP" : "SIPOUT";
     var bindingsByUser = Model.Settings.UserBindings.ToDictionary(x => x.UserId, StringComparer.Ordinal);
     var phoneUsersByUser = Model.PhoneUsers.ToDictionary(x => x.UserId, StringComparer.Ordinal);
-    static string OutboundLineLabel(string? provider) => provider switch
+    var beelineAccounts = Model.Settings.SipAccounts?.ToList()
+        ?? (Model.Settings.SipAccount is null ? [] : [Model.Settings.SipAccount]);
+    string OutboundLineLabel(string? provider)
     {
-        CrmTelephonyProviders.Beeline => "Билайн",
-        CrmTelephonyProviders.Plusofon => "Плюсофон",
-        _ => "Номер по умолчанию"
-    };
+        if (CrmTelephonyOutboundProviders.TryGetBeelineLineKey(provider, out var accountKey))
+        {
+            return beelineAccounts.FirstOrDefault(account =>
+                string.Equals(account.AccountKey, accountKey, StringComparison.OrdinalIgnoreCase))?.Name
+                ?? "Линия Билайна";
+        }
+        return provider switch
+        {
+            CrmTelephonyProviders.Beeline => beelineAccounts.FirstOrDefault(account => account.UseForOutbound)?.Name ?? "Билайн",
+            CrmTelephonyProviders.Plusofon => "Плюсофон",
+            _ => "Номер по умолчанию"
+        };
+    }
     ViewData["Title"] = "Телефония";
 }
 <partial name="_PageHeader" model="@(new PageHeaderViewModel
@@ -151,89 +162,154 @@
 
     @if (isBeeline)
     {
-        var account = Model.Settings.SipAccount;
-        var registrationTone = account?.RegistrationStatus == "registered"
-            ? "settings-status-pill--online"
-            : account?.RegistrationStatus == "rejected"
-                ? "settings-status-pill--danger"
-                : "settings-status-pill--warning";
-        var registrationLabel = account?.RegistrationStatus switch
-        {
-            "registered" => "Зарегистрирован",
-            "rejected" => "Отклонён провайдером",
-            "unregistered" => "Не зарегистрирован",
-            "runtime-unavailable" => "SIP-сервер недоступен",
-            _ => Model.Settings.ProviderCredentialsConfigured ? "Проверяется" : "Не настроен"
-        };
-        <section class="card telephony-sip-account-card">
+        <section class="card telephony-sip-lines-card">
             <div class="card-header settings-card-header">
                 <div>
-                    <h2 class="settings-card-title">SIP-аккаунт Билайна</h2>
-                    <p class="settings-card-subtitle">Линия офиса, через которую Asterisk совершает и принимает звонки</p>
+                    <h2 class="settings-card-title">Линии Билайна</h2>
+                    <p class="settings-card-subtitle">Общий многоканальный транк или отдельные одноканальные SIP-аккаунты сотрудников</p>
                 </div>
-                <span class="settings-status-pill @registrationTone">@registrationLabel</span>
+                <span class="settings-status-pill @(beelineAccounts.Count > 0 ? "settings-status-pill--online" : "settings-status-pill--disabled")">
+                    @beelineAccounts.Count @(beelineAccounts.Count == 1 ? "линия" : beelineAccounts.Count is >= 2 and <= 4 ? "линии" : "линий")
+                </span>
             </div>
-            <div class="card-body">
-                <form asp-controller="TelephonySettings" asp-action="SaveSipProviderAccount" method="post" class="telephony-sip-account-grid" autocomplete="off">
-                    @Html.AntiForgeryToken()
-                    <input type="hidden" name="OfficeId" value="@Model.OfficeId" />
-                    <input type="hidden" name="Provider" value="@CrmTelephonyProviders.Beeline" />
-                    <label class="settings-field">
-                        <span class="settings-field-label">SIP proxy</span>
-                        <input type="text" name="Server" value="@account?.Server" required maxlength="253" placeholder="ekt.ip.beeline.ru" autocomplete="off" />
-                    </label>
-                    <label class="settings-field">
-                        <span class="settings-field-label">Domain</span>
-                        <input type="text" name="Domain" value="@account?.Domain" maxlength="253" placeholder="ip.beeline.ru" autocomplete="off" />
-                    </label>
-                    <label class="settings-field">
-                        <span class="settings-field-label">SIP User ID</span>
-                        <input type="text" name="SipLogin" value="@account?.SipLogin" required maxlength="128" autocomplete="off" />
-                    </label>
-                    <label class="settings-field">
-                        <span class="settings-field-label">Authorization User ID</span>
-                        <input type="text" name="AuthorizationLogin" value="@account?.AuthorizationLogin" required maxlength="256" autocomplete="off" />
-                    </label>
-                    <label class="settings-field">
-                        <span class="settings-field-label">SIP-пароль</span>
-                        <input type="password" name="Password" maxlength="4096" autocomplete="new-password"
-                               placeholder="@(account?.PasswordConfigured == true ? "Оставьте пустым, чтобы не менять" : "Обязательно при первой настройке")" />
-                    </label>
-                    <div class="telephony-sip-account-grid__pair">
-                        <label class="settings-field">
-                            <span class="settings-field-label">Порт</span>
-                            <input type="number" name="Port" value="@(account?.Port ?? 5060)" min="1" max="65535" required />
-                        </label>
-                        <label class="settings-field">
-                            <span class="settings-field-label">Транспорт</span>
-                            <select name="Transport" required>
-                                <option value="udp" selected="@(account?.Transport != "tcp")">UDP</option>
-                                <option value="tcp" selected="@(account?.Transport == "tcp")">TCP</option>
-                            </select>
-                        </label>
+            <div class="telephony-binding-guide telephony-sip-lines-guide">
+                <span class="telephony-binding-guide__icon"><i class="fa-solid fa-circle-info" aria-hidden="true"></i></span>
+                <div>
+                    <strong>Как выбрать тип линии</strong>
+                    <p><strong>Общая</strong> назначается любому количеству сотрудников. <strong>Персональная</strong> закрепляется только за одним сотрудником и не может быть общей линией офиса.</p>
+                </div>
+            </div>
+            <div class="card-body telephony-sip-lines-body">
+                @if (beelineAccounts.Count == 0)
+                {
+                    <div class="telephony-empty-lines">
+                        <i class="fa-solid fa-tower-broadcast" aria-hidden="true"></i>
+                        <strong>Линии Билайна ещё не подключены</strong>
+                        <span>Добавьте общий транк или персональный SIP-аккаунт.</span>
                     </div>
-                    <label class="telephony-sip-outbound-option">
-                        <input type="checkbox" name="UseForOutbound" value="true" checked="@(account?.UseForOutbound == true)" />
-                        <span>
-                            <strong>Использовать Билайн для исходящих звонков</strong>
-                            <small>Новые звонки из карточки будут направляться через этот аккаунт.</small>
-                        </span>
-                    </label>
-                    <div class="telephony-sip-account-grid__actions">
+                }
+                <div class="telephony-sip-lines-list">
+                @foreach (var account in beelineAccounts)
+                {
+                    var outboundValue = CrmTelephonyOutboundProviders.ForBeelineLine(account.AccountKey);
+                    var assignedCount = Model.PhoneUsers.Count(binding =>
+                        string.Equals(binding.OutboundProvider, outboundValue, StringComparison.OrdinalIgnoreCase)
+                        || (account.AccountKey == "default"
+                            && string.Equals(binding.OutboundProvider, CrmTelephonyProviders.Beeline, StringComparison.OrdinalIgnoreCase)));
+                    var registrationTone = account.RegistrationStatus == "registered"
+                        ? "settings-status-pill--online"
+                        : account.RegistrationStatus == "rejected"
+                            ? "settings-status-pill--danger"
+                            : "settings-status-pill--warning";
+                    var registrationLabel = account.RegistrationStatus switch
+                    {
+                        "registered" => "Зарегистрирована",
+                        "rejected" => "Отклонена провайдером",
+                        "unregistered" => "Не зарегистрирована",
+                        "runtime-unavailable" => "SIP-сервер недоступен",
+                        _ => "Проверяется"
+                    };
+                    <article class="telephony-sip-line">
+                        <div class="telephony-sip-line__summary">
+                            <span class="telephony-sip-line__icon"><i class="fa-solid @(account.Mode == CrmSipAccountModes.Personal ? "fa-user" : "fa-users")" aria-hidden="true"></i></span>
+                            <span class="telephony-sip-line__identity">
+                                <strong>@account.Name</strong>
+                                <small>@(account.Mode == CrmSipAccountModes.Personal ? "Персональная · 1 сотрудник" : "Общая многоканальная")</small>
+                            </span>
+                            <span class="telephony-sip-line__technical">
+                                <strong>@account.SipLogin</strong>
+                                <small>@account.Server:@account.Port · @account.Transport.ToUpperInvariant()</small>
+                            </span>
+                            <span class="telephony-sip-line__assignment">
+                                <strong>@assignedCount</strong>
+                                <small>сотрудников</small>
+                            </span>
+                            <span class="telephony-sip-line__statuses">
+                                @if (account.UseForOutbound)
+                                {
+                                    <span class="settings-status-pill settings-status-pill--online">Линия офиса</span>
+                                }
+                                <span class="settings-status-pill @registrationTone">@registrationLabel</span>
+                            </span>
+                        </div>
                         @if (Model.CanManage)
                         {
-                            <button type="submit" class="settings-primary-btn">
-                                @(Model.Settings.ProviderCredentialsConfigured ? "Сохранить и переподключить" : "Подключить аккаунт")
-                            </button>
+                            <details class="telephony-sip-line__editor">
+                                <summary><i class="fa-solid fa-pen" aria-hidden="true"></i> Изменить</summary>
+                                <form asp-controller="TelephonySettings" asp-action="SaveSipProviderAccount" method="post" class="telephony-sip-account-grid" autocomplete="off">
+                                    @Html.AntiForgeryToken()
+                                    <input type="hidden" name="OfficeId" value="@Model.OfficeId" />
+                                    <input type="hidden" name="Provider" value="@CrmTelephonyProviders.Beeline" />
+                                    <input type="hidden" name="AccountKey" value="@account.AccountKey" />
+                                    <label class="settings-field">
+                                        <span class="settings-field-label">Название линии</span>
+                                        <input type="text" name="Name" value="@account.Name" required maxlength="100" />
+                                    </label>
+                                    <label class="settings-field">
+                                        <span class="settings-field-label">Тип линии</span>
+                                        <select name="Mode" required>
+                                            <option value="shared" selected="@(account.Mode == CrmSipAccountModes.Shared)">Общая многоканальная</option>
+                                            <option value="personal" selected="@(account.Mode == CrmSipAccountModes.Personal)">Персональная одноканальная</option>
+                                        </select>
+                                    </label>
+                                    <label class="settings-field"><span class="settings-field-label">SIP proxy</span><input type="text" name="Server" value="@account.Server" required maxlength="253" /></label>
+                                    <label class="settings-field"><span class="settings-field-label">Domain</span><input type="text" name="Domain" value="@account.Domain" maxlength="253" /></label>
+                                    <label class="settings-field"><span class="settings-field-label">SIP User ID</span><input type="text" name="SipLogin" value="@account.SipLogin" required maxlength="128" /></label>
+                                    <label class="settings-field"><span class="settings-field-label">Authorization User ID</span><input type="text" name="AuthorizationLogin" value="@account.AuthorizationLogin" required maxlength="256" /></label>
+                                    <label class="settings-field"><span class="settings-field-label">SIP-пароль</span><input type="password" name="Password" maxlength="4096" autocomplete="new-password" placeholder="Оставьте пустым, чтобы не менять" /></label>
+                                    <div class="telephony-sip-account-grid__pair">
+                                        <label class="settings-field"><span class="settings-field-label">Порт</span><input type="number" name="Port" value="@account.Port" min="1" max="65535" required /></label>
+                                        <label class="settings-field"><span class="settings-field-label">Транспорт (обычно UDP)</span><select name="Transport" required><option value="udp" selected="@(account.Transport != "tcp")">UDP</option><option value="tcp" selected="@(account.Transport == "tcp")">TCP</option></select></label>
+                                    </div>
+                                    <label class="telephony-sip-outbound-option">
+                                        <input type="checkbox" name="UseForOutbound" value="true" checked="@account.UseForOutbound" disabled="@(account.Mode == CrmSipAccountModes.Personal)" />
+                                        <span><strong>Линия офиса по умолчанию</strong><small>Доступно только для общей линии.</small></span>
+                                    </label>
+                                    <div class="telephony-sip-account-grid__actions">
+                                        <button type="submit" class="settings-primary-btn">Сохранить и переподключить</button>
+                                        <span>Пароль хранится в зашифрованном виде.</span>
+                                    </div>
+                                </form>
+                                <form asp-controller="TelephonySettings" asp-action="DeleteSipProviderAccount" method="post" class="telephony-sip-line__delete" onsubmit="return confirm('Удалить линию Билайна?');">
+                                    @Html.AntiForgeryToken()
+                                    <input type="hidden" name="officeId" value="@Model.OfficeId" />
+                                    <input type="hidden" name="accountKey" value="@account.AccountKey" />
+                                    <button type="submit" class="settings-danger-btn"><i class="fa-solid fa-trash" aria-hidden="true"></i> Удалить линию</button>
+                                </form>
+                            </details>
                         }
-                        <span>Пароль шифруется в БД и никогда не возвращается в браузер.</span>
-                    </div>
-                </form>
+                    </article>
+                }
+                </div>
+                @if (Model.CanManage)
+                {
+                    <details class="telephony-sip-line telephony-sip-line--new">
+                        <summary><i class="fa-solid fa-plus" aria-hidden="true"></i> Добавить линию Билайна</summary>
+                        <form asp-controller="TelephonySettings" asp-action="SaveSipProviderAccount" method="post" class="telephony-sip-account-grid" autocomplete="off">
+                            @Html.AntiForgeryToken()
+                            <input type="hidden" name="OfficeId" value="@Model.OfficeId" />
+                            <input type="hidden" name="Provider" value="@CrmTelephonyProviders.Beeline" />
+                            <label class="settings-field"><span class="settings-field-label">Название линии</span><input type="text" name="Name" required maxlength="100" placeholder="Например, Общий номер офиса" /></label>
+                            <label class="settings-field"><span class="settings-field-label">Тип линии</span><select name="Mode" required><option value="shared">Общая многоканальная</option><option value="personal">Персональная одноканальная</option></select></label>
+                            <label class="settings-field"><span class="settings-field-label">SIP proxy</span><input type="text" name="Server" required maxlength="253" placeholder="ekt.ip.beeline.ru" /></label>
+                            <label class="settings-field"><span class="settings-field-label">Domain</span><input type="text" name="Domain" maxlength="253" placeholder="ip.beeline.ru" /></label>
+                            <label class="settings-field"><span class="settings-field-label">SIP User ID</span><input type="text" name="SipLogin" required maxlength="128" /></label>
+                            <label class="settings-field"><span class="settings-field-label">Authorization User ID</span><input type="text" name="AuthorizationLogin" required maxlength="256" /></label>
+                            <label class="settings-field"><span class="settings-field-label">SIP-пароль</span><input type="password" name="Password" required maxlength="4096" autocomplete="new-password" /></label>
+                            <div class="telephony-sip-account-grid__pair">
+                                <label class="settings-field"><span class="settings-field-label">Порт</span><input type="number" name="Port" value="5060" min="1" max="65535" required /></label>
+                                <label class="settings-field"><span class="settings-field-label">Транспорт (обычно UDP)</span><select name="Transport" required><option value="udp">UDP</option><option value="tcp">TCP</option></select></label>
+                            </div>
+                            <label class="telephony-sip-outbound-option"><input type="checkbox" name="UseForOutbound" value="true" /><span><strong>Линия офиса по умолчанию</strong><small>Для персональной линии этот флаг не используется.</small></span></label>
+                            <div class="telephony-sip-account-grid__actions"><button type="submit" class="settings-primary-btn">Подключить линию</button><span>После сохранения линия автоматически передаётся Asterisk.</span></div>
+                        </form>
+                    </details>
+                }
                 <div class="telephony-binding-guide telephony-sip-account-help">
                     <span class="telephony-binding-guide__icon"><i class="fa-solid fa-link" aria-hidden="true"></i></span>
                     <div>
-                        <strong>Что привязывается к сотруднику</strong>
-                        <p>Этот аккаунт — общий транк офиса. Тестовому менеджеру отдельно оставьте внутренний номер <strong>201</strong> в разделе «SIP-сервер»: так Орбита определит автора звонка и положит запись в его карточку.</p>
+                        <strong>Следующий шаг</strong>
+                        <p>После подключения линии выберите её у нужных сотрудников ниже. Внутренний номер остаётся уникальным и определяет автора звонка.</p>
                     </div>
                 </div>
             </div>
@@ -258,11 +334,11 @@
                     </button>
                 }
             </div>
-            <div class="telephony-binding-guide">
+            <div class="telephony-binding-guide telephony-office-users-guide">
                 <span class="telephony-binding-guide__icon"><i class="fa-solid fa-circle-info" aria-hidden="true"></i></span>
                 <div>
-                    <strong>Одна настройка вместо отдельных аккаунтов</strong>
-                    <p>Плюсофон и Билайн подключаются один раз на офис. Для сотрудника здесь задаётся только его внутренний номер и линия, через которую пойдут исходящие звонки.</p>
+                    <strong>Внутренний номер и исходящая линия</strong>
+                    <p>Общую линию можно назначить нескольким сотрудникам. Персональная линия доступна только одному; Орбита не даст случайно привязать её повторно.</p>
                 </div>
             </div>
             <div class="card-body telephony-staff-body">
@@ -495,7 +571,21 @@
                 <select name="OutboundProvider" data-telephony-outbound-provider>
                     <option value="@CrmTelephonyOutboundProviders.Default">Номер по умолчанию (Плюсофон)</option>
                     <option value="@CrmTelephonyProviders.Plusofon">Плюсофон</option>
-                    <option value="@CrmTelephonyProviders.Beeline">Билайн</option>
+                    @foreach (var account in beelineAccounts)
+                    {
+                        var accountOutboundValue = CrmTelephonyOutboundProviders.ForBeelineLine(account.AccountKey);
+                        var assignedPhoneUser = Model.PhoneUsers.FirstOrDefault(binding =>
+                            string.Equals(binding.OutboundProvider, accountOutboundValue, StringComparison.OrdinalIgnoreCase)
+                            || (account.AccountKey == "default"
+                                && string.Equals(binding.OutboundProvider, CrmTelephonyProviders.Beeline, StringComparison.OrdinalIgnoreCase)));
+                        <option value="@accountOutboundValue"
+                                data-beeline-account
+                                data-account-mode="@account.Mode"
+                                data-assigned-user-id="@assignedPhoneUser?.UserId"
+                                data-office-default="@account.UseForOutbound.ToString().ToLowerInvariant()">
+                            @account.Name · @(account.Mode == CrmSipAccountModes.Personal ? "персональная" : "общая")
+                        </option>
+                    }
                 </select>
             </label>
             <div class="telephony-provider-note telephony-modal__wide">

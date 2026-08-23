@@ -377,6 +377,70 @@ public static class TelephonyEndpoints
             return success ? Results.NoContent() : Results.BadRequest(new { error });
         });
 
+        admin.MapPost("/offices/{officeId:guid}/{provider}/sip-accounts", async (
+            Guid officeId,
+            string provider,
+            UpdateSipProviderAccountRequest request,
+            CrmTelephonyService telephony,
+            OfficeScopeService officeScope,
+            ClaimsPrincipal principal,
+            CancellationToken ct) =>
+        {
+            if (!await CanManageTelephonyAsync(officeId, officeScope, principal, ct))
+            {
+                return Results.Forbid();
+            }
+            if (!string.Equals(provider, CrmTelephonyProviders.Beeline, StringComparison.OrdinalIgnoreCase))
+            {
+                return Results.BadRequest(new { error = "Несколько SIP-линий пока поддерживаются только для Билайна." });
+            }
+            var (success, error, accountKey) = await telephony.UpsertBeelineSipAccountAsync(officeId, null, request, ct);
+            return success ? Results.Ok(new { accountKey }) : Results.BadRequest(new { error });
+        });
+
+        admin.MapPut("/offices/{officeId:guid}/{provider}/sip-accounts/{accountKey}", async (
+            Guid officeId,
+            string provider,
+            string accountKey,
+            UpdateSipProviderAccountRequest request,
+            CrmTelephonyService telephony,
+            OfficeScopeService officeScope,
+            ClaimsPrincipal principal,
+            CancellationToken ct) =>
+        {
+            if (!await CanManageTelephonyAsync(officeId, officeScope, principal, ct))
+            {
+                return Results.Forbid();
+            }
+            if (!string.Equals(provider, CrmTelephonyProviders.Beeline, StringComparison.OrdinalIgnoreCase))
+            {
+                return Results.BadRequest(new { error = "Несколько SIP-линий пока поддерживаются только для Билайна." });
+            }
+            var (success, error, _) = await telephony.UpsertBeelineSipAccountAsync(officeId, accountKey, request, ct);
+            return success ? Results.NoContent() : Results.BadRequest(new { error });
+        });
+
+        admin.MapDelete("/offices/{officeId:guid}/{provider}/sip-accounts/{accountKey}", async (
+            Guid officeId,
+            string provider,
+            string accountKey,
+            CrmTelephonyService telephony,
+            OfficeScopeService officeScope,
+            ClaimsPrincipal principal,
+            CancellationToken ct) =>
+        {
+            if (!await CanManageTelephonyAsync(officeId, officeScope, principal, ct))
+            {
+                return Results.Forbid();
+            }
+            if (!string.Equals(provider, CrmTelephonyProviders.Beeline, StringComparison.OrdinalIgnoreCase))
+            {
+                return Results.BadRequest();
+            }
+            var (success, error) = await telephony.DeleteBeelineSipAccountAsync(officeId, accountKey, ct);
+            return success ? Results.NoContent() : Results.BadRequest(new { error });
+        });
+
         admin.MapPut("/offices/{officeId:guid}/{provider}/bindings", async (
             Guid officeId,
             string provider,

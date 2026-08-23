@@ -3030,6 +3030,64 @@ public sealed class OrbitaApiClient(
                 : (false, await ReadApiErrorAsync(response, ct));
     }
 
+    public async Task<(bool Success, string? Error)> AddSipProviderAccountAsync(
+        Guid officeId,
+        string provider,
+        UpdateSipProviderAccountRequest account,
+        CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"api/v1/crm/telephony/offices/{officeId:D}/{Uri.EscapeDataString(provider)}/sip-accounts")
+        {
+            Content = JsonContent.Create(account)
+        };
+        using var response = await SendAuthenticatedAsync(request, ct);
+        return response is null
+            ? (false, InvalidApiSessionError)
+            : response.IsSuccessStatusCode
+                ? (true, null)
+                : (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    public async Task<(bool Success, string? Error)> UpdateSipProviderAccountAsync(
+        Guid officeId,
+        string provider,
+        string accountKey,
+        UpdateSipProviderAccountRequest account,
+        CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Put,
+            $"api/v1/crm/telephony/offices/{officeId:D}/{Uri.EscapeDataString(provider)}/sip-accounts/{Uri.EscapeDataString(accountKey)}")
+        {
+            Content = JsonContent.Create(account)
+        };
+        using var response = await SendAuthenticatedAsync(request, ct);
+        return response is null
+            ? (false, InvalidApiSessionError)
+            : response.IsSuccessStatusCode
+                ? (true, null)
+                : (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    public async Task<(bool Success, string? Error)> DeleteSipProviderAccountAsync(
+        Guid officeId,
+        string provider,
+        string accountKey,
+        CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Delete,
+            $"api/v1/crm/telephony/offices/{officeId:D}/{Uri.EscapeDataString(provider)}/sip-accounts/{Uri.EscapeDataString(accountKey)}");
+        using var response = await SendAuthenticatedAsync(request, ct);
+        return response is null
+            ? (false, InvalidApiSessionError)
+            : response.IsSuccessStatusCode
+                ? (true, null)
+                : (false, await ReadApiErrorAsync(response, ct));
+    }
+
     public async Task<(CrmTelephonyUserBindingDto? Binding, string? Error)> SetCrmTelephonyBindingAsync(
         Guid officeId,
         string userId,
