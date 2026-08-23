@@ -78,6 +78,10 @@ if ! msiinfo export "$msi_path" InstallExecuteSequence | grep -q '^LaunchWorkerA
   echo "MSI does not schedule LaunchWorkerAfterInstall after installation." >&2
   exit 1
 fi
+if ! msiinfo export "$msi_path" InstallExecuteSequence | grep '^LaunchWorkerAfterInstall' | grep -Fq 'NOT REMOVE~="ALL"'; then
+  echo "MSI does not launch Orbita Worker after an upgrade." >&2
+  exit 1
+fi
 
 sha256="$(sha256sum "$msi_path" | awk '{print $1}')"
 python3 - "$manifest_path" "$version" "$msi_path" "$sha256" <<'PY'

@@ -94,7 +94,7 @@
       <Custom
         Action="LaunchWorkerAfterInstall"
         After="InstallFinalize"
-        Condition="(NOT Installed) AND NOT REMOVE~=&quot;ALL&quot;" />
+        Condition="NOT REMOVE~=&quot;ALL&quot;" />
     </InstallExecuteSequence>
   </Package>
 </Wix>

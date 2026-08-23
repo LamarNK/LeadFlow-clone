@@ -134,7 +134,7 @@ def generate(publish_dir: Path, output: Path, version: str) -> None:
         '                  Return="asyncNoWait" Impersonate="yes" />',
         '    <InstallExecuteSequence>',
         '      <Custom Action="LaunchWorkerAfterInstall" After="InstallFinalize">',
-        '        (NOT Installed) AND NOT REMOVE~=&quot;ALL&quot;',
+        '        NOT REMOVE~=&quot;ALL&quot;',
         '      </Custom>',
         '    </InstallExecuteSequence>',
         '  </Product>',
