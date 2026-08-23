@@ -144,6 +144,11 @@ internal static class DesignPreviewData
         {
             query ??= new CrmBoardQuery();
             var managers = BuildPreviewCrmManagers();
+            var boardView = CrmBoardViews.Normalize(query.View);
+            var pageSize = CrmBoardListOptions.NormalizePageSize(query.PageSize);
+            var requestedPage = CrmBoardListOptions.NormalizePage(query.Page);
+            var sort = CrmBoardSorts.Normalize(query.Sort);
+            var sortDir = CrmBoardSorts.NormalizeDirection(query.SortDir);
             var scope = query.Scope switch
             {
                 CrmBoardScopes.Mine => CrmBoardScopes.Mine,
@@ -230,7 +235,42 @@ internal static class DesignPreviewData
                 cards = cards.Where(c => string.Equals(c.CloseReason, selectedCloseReason, StringComparison.Ordinal));
             }
 
-            var list = cards.ToList();
+            if (query.OverdueOnly)
+            {
+                cards = cards.Where(c =>
+                    c.NextActionAtUtc is DateTime next && next < DateTime.UtcNow
+                    || PreviewCrmTasks.Any(task =>
+                        task.CardId == c.Id
+                        && task.Status == CrmTaskStatuses.Open
+                        && task.IsOverdue));
+            }
+
+            var filtered = cards.ToList();
+            var totalItems = filtered.Count;
+            var totalPages = Math.Max(1, (int)Math.Ceiling(totalItems / (double)pageSize));
+            var page = boardView == CrmBoardViews.List
+                ? Math.Min(requestedPage, totalPages)
+                : 1;
+            IEnumerable<PreviewCrmCandidate> ordered = (sort, sortDir) switch
+            {
+                (CrmBoardSorts.Candidate, "asc") => filtered.OrderBy(c => c.FullName).ThenBy(c => c.Id),
+                (CrmBoardSorts.Candidate, _) => filtered.OrderByDescending(c => c.FullName).ThenByDescending(c => c.Id),
+                (CrmBoardSorts.Phone, "asc") => filtered.OrderBy(c => c.PhoneRaw).ThenBy(c => c.Id),
+                (CrmBoardSorts.Phone, _) => filtered.OrderByDescending(c => c.PhoneRaw).ThenByDescending(c => c.Id),
+                (CrmBoardSorts.Vacancy, "asc") => filtered.OrderBy(c => c.Vacancy).ThenBy(c => c.Id),
+                (CrmBoardSorts.Vacancy, _) => filtered.OrderByDescending(c => c.Vacancy).ThenByDescending(c => c.Id),
+                (CrmBoardSorts.Stage, "asc") => filtered.OrderBy(c => c.Stage).ThenBy(c => c.Id),
+                (CrmBoardSorts.Stage, _) => filtered.OrderByDescending(c => c.Stage).ThenByDescending(c => c.Id),
+                (CrmBoardSorts.Manager, "asc") => filtered.OrderBy(c => c.ManagerUserId).ThenBy(c => c.Id),
+                (CrmBoardSorts.Manager, _) => filtered.OrderByDescending(c => c.ManagerUserId).ThenByDescending(c => c.Id),
+                (CrmBoardSorts.Changed, "asc") => filtered.OrderBy(c => c.StageChangedAtUtc).ThenBy(c => c.Id),
+                (CrmBoardSorts.Changed, _) => filtered.OrderByDescending(c => c.StageChangedAtUtc).ThenByDescending(c => c.Id),
+                (CrmBoardSorts.Created, "asc") => filtered.OrderBy(c => c.CreatedAtUtc).ThenBy(c => c.Id),
+                _ => filtered.OrderByDescending(c => c.CreatedAtUtc).ThenByDescending(c => c.Id)
+            };
+            var list = boardView == CrmBoardViews.List
+                ? ordered.Skip((page - 1) * pageSize).Take(pageSize).ToList()
+                : filtered;
             var stages = _previewCrmStages
                 .Select(stage =>
                 {
@@ -288,7 +328,14 @@ internal static class DesignPreviewData
                 _previewCrmStages.ToList(),
                 _previewCrmDeadlineNotificationsEnabled,
                 selectedManagerUserId,
-                selectedCloseReason);
+                selectedCloseReason,
+                boardView,
+                page,
+                pageSize,
+                totalItems,
+                sort,
+                sortDir,
+                boardView == CrmBoardViews.List ? list.Select(ToPreviewCrmCard).ToList() : null);
         }
     }
 

@@ -42,6 +42,11 @@ public static class CrmEndpoints
             string? city = null,
             string? vacancy = null,
             string? closeReason = null,
+            string? view = null,
+            int page = 1,
+            int pageSize = CrmBoardListOptions.DefaultPageSize,
+            string? sort = null,
+            string? sortDir = null,
             // Defaults: missing non-nullable bool query params otherwise → HTTP 400.
             bool overdueOnly = false,
             bool activeLoadOnly = false,
@@ -97,7 +102,12 @@ public static class CrmEndpoints
                     activeLoadOnly,
                     includeClosed,
                     managerUserId,
-                    closeReason),
+                    closeReason,
+                    view,
+                    page,
+                    pageSize,
+                    sort,
+                    sortDir),
                 ct);
             return board is null
                 ? Results.NotFound(new { error = "Офис не найден." })

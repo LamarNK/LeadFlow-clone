@@ -119,6 +119,11 @@ public sealed class CrmWorkspaceService(
         query ??= new CrmBoardQuery();
         // isAdmin here means elevated office access (Admin / OfficeLead / SeniorManager), not only global admin.
         var scope = NormalizeScope(query.Scope);
+        var boardView = CrmBoardViews.Normalize(query.View);
+        var pageSize = CrmBoardListOptions.NormalizePageSize(query.PageSize);
+        var requestedPage = CrmBoardListOptions.NormalizePage(query.Page);
+        var sort = CrmBoardSorts.Normalize(query.Sort);
+        var sortDir = CrmBoardSorts.NormalizeDirection(query.SortDir);
         if (!isAdmin && scope is CrmBoardScopes.Team or CrmBoardScopes.Unassigned)
         {
             // Manager: only own leads — force Mine (Team / queue are elevated-only).
@@ -208,10 +213,44 @@ public sealed class CrmWorkspaceService(
             cardsQuery = cardsQuery.Where(x => x.IsInActiveLoad);
         }
 
-        var cards = await cardsQuery
-            .OrderByDescending(x => x.CreatedAtUtc)
-            .Take(500)
-            .ToListAsync(ct);
+        if (query.OverdueOnly)
+        {
+            cardsQuery = cardsQuery.Where(x =>
+                (x.NextActionAtUtc != null && x.NextActionAtUtc < now)
+                || db.CrmTasks.Any(task =>
+                    task.CardId == x.Id
+                    && task.Status == CrmTaskStatuses.Open
+                    && task.DueAtUtc != null
+                    && task.DueAtUtc < now));
+        }
+
+        var totalItems = await cardsQuery.CountAsync(ct);
+        var totalPages = Math.Max(1, (int)Math.Ceiling(totalItems / (double)pageSize));
+        var page = boardView == CrmBoardViews.List
+            ? Math.Min(requestedPage, totalPages)
+            : 1;
+
+        IOrderedQueryable<CrmCandidateCardEntity> orderedCards = (sort, sortDir) switch
+        {
+            (CrmBoardSorts.Candidate, "asc") => cardsQuery.OrderBy(x => x.Response.FullName).ThenBy(x => x.Id),
+            (CrmBoardSorts.Candidate, _) => cardsQuery.OrderByDescending(x => x.Response.FullName).ThenByDescending(x => x.Id),
+            (CrmBoardSorts.Phone, "asc") => cardsQuery.OrderBy(x => x.Response.PhoneNormalized).ThenBy(x => x.Id),
+            (CrmBoardSorts.Phone, _) => cardsQuery.OrderByDescending(x => x.Response.PhoneNormalized).ThenByDescending(x => x.Id),
+            (CrmBoardSorts.Vacancy, "asc") => cardsQuery.OrderBy(x => x.Response.Vacancy).ThenBy(x => x.Id),
+            (CrmBoardSorts.Vacancy, _) => cardsQuery.OrderByDescending(x => x.Response.Vacancy).ThenByDescending(x => x.Id),
+            (CrmBoardSorts.Stage, "asc") => cardsQuery.OrderBy(x => x.Stage).ThenBy(x => x.Id),
+            (CrmBoardSorts.Stage, _) => cardsQuery.OrderByDescending(x => x.Stage).ThenByDescending(x => x.Id),
+            (CrmBoardSorts.Manager, "asc") => cardsQuery.OrderBy(x => x.ManagerUserId).ThenBy(x => x.Id),
+            (CrmBoardSorts.Manager, _) => cardsQuery.OrderByDescending(x => x.ManagerUserId).ThenByDescending(x => x.Id),
+            (CrmBoardSorts.Changed, "asc") => cardsQuery.OrderBy(x => x.StageChangedAtUtc).ThenBy(x => x.Id),
+            (CrmBoardSorts.Changed, _) => cardsQuery.OrderByDescending(x => x.StageChangedAtUtc).ThenByDescending(x => x.Id),
+            (CrmBoardSorts.Created, "asc") => cardsQuery.OrderBy(x => x.CreatedAtUtc).ThenBy(x => x.Id),
+            _ => cardsQuery.OrderByDescending(x => x.CreatedAtUtc).ThenByDescending(x => x.Id)
+        };
+
+        var cards = boardView == CrmBoardViews.List
+            ? await orderedCards.Skip((page - 1) * pageSize).Take(pageSize).ToListAsync(ct)
+            : await orderedCards.Take(500).ToListAsync(ct);
 
         var cardIds = cards.Select(x => x.Id).ToList();
         var openTasks = await db.CrmTasks.AsNoTracking()
@@ -225,12 +264,6 @@ public sealed class CrmWorkspaceService(
                 g => (Count: g.Count(), Overdue: g.Any(t => t.DueAtUtc is DateTime due && due < now)));
 
         var chatUnreadByCard = await LoadChatUnreadCountsAsync(cardIds, userId, cards, ct);
-
-        if (query.OverdueOnly)
-        {
-            cards = cards.Where(x => taskStats.GetValueOrDefault(x.Id).Overdue
-                || (x.NextActionAtUtc is DateTime next && next < now)).ToList();
-        }
 
         CrmCandidateCardDto MapCard(CrmCandidateCardEntity x)
         {
@@ -340,7 +373,14 @@ public sealed class CrmWorkspaceService(
             officeStages,
             office.CrmDeadlineNotificationsEnabled,
             selectedManagerUserId,
-            selectedCloseReason);
+            selectedCloseReason,
+            boardView,
+            page,
+            pageSize,
+            totalItems,
+            sort,
+            sortDir,
+            boardView == CrmBoardViews.List ? cards.Select(MapCard).ToList() : null);
     }
 
     public async Task<bool> StartShiftAsync(Guid officeId, string userId, CancellationToken ct = default)

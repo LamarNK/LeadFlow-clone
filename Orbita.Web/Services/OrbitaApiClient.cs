@@ -2172,6 +2172,11 @@ public sealed class OrbitaApiClient(
         url = AppendQuery(url, "city", query.City);
         url = AppendQuery(url, "vacancy", query.Vacancy);
         url = AppendQuery(url, "closeReason", query.CloseReason);
+        url = AppendQuery(url, "view", query.View);
+        url = AppendQuery(url, "page", CrmBoardListOptions.NormalizePage(query.Page).ToString());
+        url = AppendQuery(url, "pageSize", CrmBoardListOptions.NormalizePageSize(query.PageSize).ToString());
+        url = AppendQuery(url, "sort", query.Sort);
+        url = AppendQuery(url, "sortDir", query.SortDir);
         // Always send bools — older API builds rejected missing non-nullable query bools with 400.
         url = AppendQuery(url, "overdueOnly", query.OverdueOnly ? "true" : "false");
         url = AppendQuery(url, "activeLoadOnly", query.ActiveLoadOnly ? "true" : "false");

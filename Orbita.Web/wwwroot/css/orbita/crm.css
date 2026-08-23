@@ -209,6 +209,10 @@
 .crm-scope-tabs a { display: inline-flex; align-items: center; gap: 6px; min-height: 30px; padding: 0 10px; border-radius: 8px; color: #667085; font-size: 12px; font-weight: 650; }
 .crm-scope-tabs a.is-active { background: #fff; color: #101828; box-shadow: 0 1px 2px rgba(16,24,40,.08); }
 .crm-scope-tabs span { min-width: 18px; padding: 0 5px; border-radius: 999px; background: #e8f0ff; color: #3538cd; font-size: 10px; text-align: center; }
+.crm-view-switch { display: inline-flex; gap: 2px; padding: 3px; border: 1px solid #e4e7ec; border-radius: 9px; background: #fff; }
+.crm-view-switch a { display: inline-flex; align-items: center; gap: 5px; min-height: 28px; padding: 0 9px; border-radius: 6px; color: #667085; font-size: 11px; font-weight: 650; text-decoration: none; }
+.crm-view-switch a:hover { background: #f7f9fc; color: #344054; }
+.crm-view-switch a.is-active { background: #eef4ff; color: #315cde; }
 .crm-check { display: inline-flex; align-items: center; gap: 6px; color: #475467; font-size: 12px; white-space: nowrap; }
 .crm-filter-details { border-top: 1px solid #eef2f7; }
 .crm-filter-details summary { display: inline-flex; align-items: center; gap: 7px; min-height: 31px; color: #667085; font-size: 12px; font-weight: 650; cursor: pointer; list-style: none; }
@@ -270,6 +274,23 @@
 .crm-table-list__table td { padding: 12px 14px; border-bottom: 1px solid #edf1f5; color: #46566e; font-size: 12px; vertical-align: middle; }
 .crm-table-list__table tbody tr:last-child td { border-bottom: 0; }
 .crm-table-list__table tbody tr:hover { background: #fafcff; }
+.crm-candidate-list__header-actions { display: flex; align-items: center; gap: 12px; }
+.crm-candidate-list__page-size { display: flex; align-items: center; gap: 7px; margin: 0; }
+.crm-candidate-list__page-size label { display: flex; align-items: center; gap: 6px; color: #667085; font-size: 11px; white-space: nowrap; }
+.crm-candidate-list__page-size select { height: 31px; padding: 0 28px 0 9px; border: 1px solid #d0d5dd; border-radius: 7px; background: #fff; color: #344054; font: inherit; font-weight: 700; }
+.crm-candidate-list__page-size button { height: 31px; padding: 0 10px; border: 1px solid #d0d5dd; border-radius: 7px; background: #fff; color: #475467; font: inherit; font-size: 10px; cursor: pointer; }
+.crm-candidate-list__table { min-width: 940px; }
+.crm-candidate-list__table .crm-table-list__candidate-col { width: 220px; }
+.crm-candidate-list__table .crm-table-list__contact-col { width: 155px; }
+.crm-candidate-list__table .crm-table-list__vacancy-col { width: 185px; }
+.crm-candidate-list__table .crm-table-list__stage-col { width: 115px; }
+.crm-candidate-list__table .crm-table-list__manager-col { width: 135px; }
+.crm-candidate-list__table .crm-table-list__date-col { width: 130px; }
+.crm-candidate-list__select-col { width: 48px; }
+.crm-candidate-list__select { width: 48px; padding-right: 8px !important; padding-left: 14px !important; text-align: center !important; }
+.crm-candidate-list__select input { width: 17px; height: 17px; margin: 0; accent-color: #315cde; cursor: pointer; }
+.crm-candidate-list__table tbody tr.is-bulk-selected { background: #f1f5ff; box-shadow: inset 3px 0 0 #5b7cf2; }
+.crm-candidate-list > .orbita-pagination { margin: 0; padding: 14px 18px; border-top: 1px solid #e8edf4; }
 .crm-table-candidate__identity { display: flex; align-items: center; gap: 11px; min-width: 0; color: #26364e; text-decoration: none; }
 .crm-table-candidate__identity:hover { color: #2563eb; }
 .crm-table-candidate__avatar { position: relative; display: inline-grid; flex: 0 0 auto; width: 42px; height: 42px; overflow: hidden; border-radius: 50%; place-items: center; background: linear-gradient(145deg, #edf2f8, #e1e9f5); color: #526784; font-size: 12px; font-weight: 750; }
@@ -472,8 +493,13 @@
 [data-theme="dark"] .crm-bulk-modal__header p, [data-theme="dark"] .crm-bulk-modal__form > label { color: var(--text-secondary); }
 [data-theme="dark"] .crm-bulk-modal__x { border-color: var(--border); background: color-mix(in srgb, var(--bg-card) 88%, #000); color: var(--text-secondary); }
 [data-theme="dark"] .crm-bulk-modal__hint { background: color-mix(in srgb, var(--bg-card) 82%, #000); color: var(--text-secondary); }
+[data-theme="dark"] .crm-view-switch, [data-theme="dark"] .crm-candidate-list__page-size select, [data-theme="dark"] .crm-candidate-list__page-size button { border-color: var(--border); background: var(--bg-card); color: var(--text-primary); }
+[data-theme="dark"] .crm-view-switch a { color: var(--text-secondary); }
+[data-theme="dark"] .crm-view-switch a.is-active { background: rgba(91,124,242,.2); color: #a8bbff; }
+[data-theme="dark"] .crm-candidate-list__table tbody tr.is-bulk-selected { background: rgba(91,124,242,.14); }
 @media (max-width: 1050px) { .crm-bulk-actions { align-items: stretch; flex-wrap: wrap; }.crm-bulk-actions__selection { width: 100%; }.crm-bulk-actions__controls { width: auto; max-width: 100%; }.crm-bulk-actions__transitions { margin-left: 0; } }
 @media (max-width: 680px) { .crm-bulk-actions { top: 6px; margin: 8px; padding: 10px; }.crm-bulk-actions__selection { width: 100%; }.crm-bulk-actions__controls { display: grid; grid-template-columns: 1fr; width: 100%; }.crm-bulk-actions__assign { display: grid; grid-template-columns: minmax(0, 1fr) auto; }.crm-bulk-actions__assign label, .crm-bulk-actions__stage { width: 100%; min-width: 0; }.crm-bulk-actions__transitions { display: grid; width: 100%; margin-left: 0; }.crm-bulk-actions__transitions button { width: 100%; }.crm-bulk-modal { padding: 10px; }.crm-bulk-modal__header, .crm-bulk-modal__form { padding-right: 16px; padding-left: 16px; } }
+@media (max-width: 760px) { .crm-view-switch { flex: 1 1 auto; }.crm-view-switch a { flex: 1 1 0; justify-content: center; }.crm-candidate-list__header { align-items: stretch; flex-direction: column; }.crm-candidate-list__header-actions { justify-content: space-between; flex-wrap: wrap; }.crm-candidate-list__page-size button { display: none; } }
 .crm-vacancy-link, .crm-field-link { color: inherit; text-decoration: none; border-bottom: 1px dashed color-mix(in srgb, var(--accent) 55%, transparent); transition: color .16s ease, border-color .16s ease; }
 .crm-vacancy-link:hover, .crm-field-link:hover { color: var(--accent); border-bottom-color: currentColor; }
 .crm-vacancy-link i, .crm-field-link i { margin-left: 4px; font-size: .72em; }

@@ -80,6 +80,11 @@ public sealed class CrmController(
         string? vacancy,
         string? managerUserId = null,
         string? closeReason = null,
+        string? view = null,
+        int page = 1,
+        int pageSize = CrmBoardListOptions.DefaultPageSize,
+        string? sort = null,
+        string? dir = null,
         bool overdueOnly = false,
         bool activeLoadOnly = false,
         bool includeClosed = false,
@@ -105,7 +110,12 @@ public sealed class CrmController(
                 activeLoadOnly,
                 includeClosed,
                 managerUserId,
-                closeReason),
+                closeReason,
+                view,
+                page,
+                pageSize,
+                sort,
+                dir),
             ct);
         if (board is null)
         {
@@ -143,6 +153,11 @@ public sealed class CrmController(
         string? vacancy,
         string? managerUserId = null,
         string? closeReason = null,
+        string? view = null,
+        int page = 1,
+        int pageSize = CrmBoardListOptions.DefaultPageSize,
+        string? sort = null,
+        string? dir = null,
         bool overdueOnly = false,
         bool activeLoadOnly = false,
         bool includeClosed = false,
@@ -166,7 +181,12 @@ public sealed class CrmController(
                 activeLoadOnly,
                 includeClosed,
                 managerUserId,
-                closeReason),
+                closeReason,
+                view,
+                page,
+                pageSize,
+                sort,
+                dir),
             ct);
         ViewData["CurrentCrmUserId"] = User.FindFirstValue(ClaimTypes.NameIdentifier);
         return board is null ? NoContent() : PartialView("_CrmWorkspace", board);

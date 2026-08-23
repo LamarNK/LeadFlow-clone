@@ -1,0 +1,248 @@
+@model Orbita.Contracts.CrmBoardDto
+@using Orbita.Contracts
+@using Orbita.Web.Models.ViewModels
+@{
+    var cards = Model.ListCards ?? [];
+    var canUseBulkActions = Model.IsAdmin;
+    var listReturnUrl = $"{Context.Request.Path}{Context.Request.QueryString}";
+    var bulkReasonRequired = User.IsInRole(PanelRoles.SeniorManager)
+                             && !User.IsInRole(PanelRoles.OfficeLead)
+                             && !User.IsInRole(PanelRoles.Admin);
+    var sort = TableSortState.Create(Model.Sort, Model.SortDir == "desc");
+    var route = new
+    {
+        scope = Model.Scope,
+        managerUserId = Model.ManagerUserId,
+        search = Model.Search,
+        city = Model.City,
+        vacancy = Model.Vacancy,
+        closeReason = Model.CloseReason,
+        overdueOnly = Model.OverdueOnly,
+        activeLoadOnly = Model.ActiveLoadOnly,
+        includeClosed = Model.IncludeClosed,
+        view = CrmBoardViews.List,
+        pageSize = Model.PageSize,
+        sort = Model.Sort,
+        dir = Model.SortDir
+    };
+    var pagination = new PaginationViewModel
+    {
+        Page = Model.Page,
+        PageSize = Model.PageSize,
+        TotalItems = Model.TotalItems
+    };
+}
+<section class="crm-closed crm-table-list crm-candidate-list card"
+         aria-label="Список кандидатов"
+         data-crm-bulk-board="@(canUseBulkActions ? "true" : "false")"
+         data-crm-bulk-reason-required="@(bulkReasonRequired ? "true" : "false")">
+    <header class="crm-closed__header crm-candidate-list__header">
+        <div>
+            <h2>Список кандидатов</h2>
+            <p>Отсортируйте карточки по дате и обработайте текущую страницу одним действием.</p>
+        </div>
+        <div class="crm-candidate-list__header-actions">
+            <span class="crm-closed__count" title="Всего карточек">@Model.TotalItems</span>
+            <form method="get" asp-action="Index" class="crm-candidate-list__page-size" data-crm-page-size-form>
+                <input type="hidden" name="scope" value="@Model.Scope" />
+                <input type="hidden" name="managerUserId" value="@Model.ManagerUserId" />
+                <input type="hidden" name="search" value="@Model.Search" />
+                <input type="hidden" name="city" value="@Model.City" />
+                <input type="hidden" name="vacancy" value="@Model.Vacancy" />
+                <input type="hidden" name="closeReason" value="@Model.CloseReason" />
+                <input type="hidden" name="overdueOnly" value="@Model.OverdueOnly.ToString().ToLowerInvariant()" />
+                <input type="hidden" name="activeLoadOnly" value="@Model.ActiveLoadOnly.ToString().ToLowerInvariant()" />
+                <input type="hidden" name="includeClosed" value="@Model.IncludeClosed.ToString().ToLowerInvariant()" />
+                <input type="hidden" name="view" value="@CrmBoardViews.List" />
+                <input type="hidden" name="page" value="1" />
+                <input type="hidden" name="sort" value="@Model.Sort" />
+                <input type="hidden" name="dir" value="@Model.SortDir" />
+                <label>Показывать
+                    <select name="pageSize" data-crm-page-size aria-label="Карточек на странице">
+                        @foreach (var size in CrmBoardListOptions.PageSizes)
+                        {
+                            if (size == Model.PageSize)
+                            {
+                                <option value="@size" selected>@size</option>
+                            }
+                            else
+                            {
+                                <option value="@size">@size</option>
+                            }
+                        }
+                    </select>
+                </label>
+                <button type="submit">Применить</button>
+            </form>
+        </div>
+    </header>
+
+    @if (canUseBulkActions)
+    {
+        <div class="crm-bulk-actions" data-crm-bulk-actions hidden>
+            <div class="crm-bulk-actions__selection">
+                <span class="crm-bulk-actions__icon"><i class="fa-solid fa-check-double" aria-hidden="true"></i></span>
+                <span><strong data-crm-bulk-count>0</strong> выбрано на странице</span>
+                <button type="button" class="crm-bulk-actions__clear" data-crm-bulk-clear>Снять выбор</button>
+            </div>
+            <div class="crm-bulk-actions__controls">
+                <form asp-action="BulkAssign" method="post" class="crm-bulk-actions__assign" data-crm-bulk-form>
+                    <input type="hidden" name="returnUrl" value="@listReturnUrl" />
+                    <span data-crm-bulk-card-fields></span>
+                    <label>
+                        <span>Новый ответственный</span>
+                        <select name="managerUserId" required data-crm-bulk-assignee>
+                            <option value="" selected disabled>Выберите сотрудника</option>
+                            @foreach (var manager in Model.Managers.OrderBy(x => x.DisplayName, StringComparer.CurrentCultureIgnoreCase))
+                            {
+                                <option value="@manager.UserId">@manager.DisplayName</option>
+                            }
+                        </select>
+                    </label>
+                    <button type="submit" class="settings-primary-btn"><i class="fa-solid fa-user-check" aria-hidden="true"></i>Назначить</button>
+                </form>
+                <label class="crm-bulk-actions__stage">
+                    <span>Новая стадия</span>
+                    <select data-crm-bulk-stage-trigger aria-label="Новая стадия для отмеченных карточек">
+                        <option value="" selected>Выберите стадию</option>
+                        @foreach (var stage in Model.FunnelStages)
+                        {
+                            <option value="@stage">@stage</option>
+                        }
+                    </select>
+                </label>
+            </div>
+            <div class="crm-bulk-actions__transitions">
+                <button type="button" class="crm-bulk-actions__close" data-crm-bulk-transition-open="close"><i class="fa-solid fa-box-archive" aria-hidden="true"></i>Закрыть карточки</button>
+            </div>
+        </div>
+
+        <div class="crm-bulk-modal" data-crm-bulk-modal hidden>
+            <button type="button" class="crm-bulk-modal__backdrop" data-crm-bulk-modal-close tabindex="-1" aria-label="Закрыть окно"></button>
+            <section class="crm-bulk-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="crm-list-bulk-modal-title" tabindex="-1">
+                <header class="crm-bulk-modal__header">
+                    <div>
+                        <h2 id="crm-list-bulk-modal-title" data-crm-bulk-modal-title>Массовое изменение</h2>
+                        <p><strong data-crm-bulk-modal-count>0</strong> карточек будет изменено одновременно.</p>
+                    </div>
+                    <button type="button" class="crm-bulk-modal__x" data-crm-bulk-modal-close aria-label="Закрыть"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+                </header>
+                <form asp-action="BulkTransition" method="post" class="crm-bulk-modal__form" data-crm-bulk-form data-crm-bulk-transition-form>
+                    <input type="hidden" name="returnUrl" value="@listReturnUrl" />
+                    <input type="hidden" name="operation" value="move" data-crm-bulk-operation />
+                    <span data-crm-bulk-card-fields></span>
+                    <label data-crm-bulk-stage-field>
+                        <span>Новый этап</span>
+                        <select name="stage" data-crm-bulk-stage-select>
+                            <option value="" selected disabled>Выберите этап</option>
+                            @foreach (var stage in Model.FunnelStages)
+                            {
+                                <option value="@stage">@stage</option>
+                            }
+                        </select>
+                    </label>
+                    <label data-crm-bulk-close-field hidden>
+                        <span>Тип закрытия</span>
+                        <select name="closeReason" data-crm-bulk-close-select>
+                            <option value="" selected disabled>Выберите тип закрытия</option>
+                            @foreach (var reason in CrmCloseReasons.All)
+                            {
+                                <option value="@reason">@reason</option>
+                            }
+                        </select>
+                    </label>
+                    <label class="crm-bulk-modal__comment">
+                        <span data-crm-bulk-comment-label>Причина смены этапа@(bulkReasonRequired ? " *" : "")</span>
+                        <textarea name="comment" rows="4" maxlength="2000"
+                                  placeholder="@(bulkReasonRequired ? "Обязательно укажите причину" : "Можно оставить пустым")"
+                                  @(bulkReasonRequired ? "required" : null)
+                                  data-crm-bulk-comment></textarea>
+                    </label>
+                    <p class="crm-bulk-modal__hint"><i class="fa-solid fa-circle-info" aria-hidden="true"></i>Действие сохранится в истории каждой выбранной карточки.</p>
+                    <footer class="crm-bulk-modal__footer">
+                        <button type="button" class="settings-secondary-btn" data-crm-bulk-modal-close>Отмена</button>
+                        <button type="submit" class="settings-primary-btn" data-crm-bulk-submit><i class="fa-solid fa-check" aria-hidden="true"></i>Применить</button>
+                    </footer>
+                </form>
+            </section>
+        </div>
+    }
+
+    @if (cards.Count == 0)
+    {
+        <div class="crm-closed__empty">
+            <i class="fa-solid fa-list" aria-hidden="true"></i>
+            <strong>Карточек нет</strong>
+            <span>Измените фильтры или выберите другой раздел.</span>
+        </div>
+    }
+    else
+    {
+        <div class="crm-closed__table-wrap">
+            <table class="data-table data-table--cards crm-closed__table crm-table-list__table crm-candidate-list__table">
+                <colgroup>
+                    @if (canUseBulkActions) { <col class="crm-candidate-list__select-col" /> }
+                    <col class="crm-table-list__candidate-col" />
+                    <col class="crm-table-list__contact-col" />
+                    <col class="crm-table-list__vacancy-col" />
+                    <col class="crm-table-list__stage-col" />
+                    <col class="crm-table-list__manager-col" />
+                    <col class="crm-table-list__date-col" />
+                </colgroup>
+                <thead>
+                    <tr>
+                        @if (canUseBulkActions)
+                        {
+                            <th class="crm-candidate-list__select" scope="col">
+                                <input type="checkbox" data-crm-select-visible aria-label="Выбрать все карточки на текущей странице" title="Выбрать все карточки на странице" />
+                            </th>
+                        }
+                        <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Кандидат", Column = CrmBoardSorts.Candidate, Sort = sort, Controller = "Crm", Action = "Index", RouteValues = route })" />
+                        <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Контакты", Column = CrmBoardSorts.Phone, Sort = sort, Controller = "Crm", Action = "Index", RouteValues = route })" />
+                        <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Вакансия", Column = CrmBoardSorts.Vacancy, Sort = sort, Controller = "Crm", Action = "Index", RouteValues = route })" />
+                        <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Этап", Column = CrmBoardSorts.Stage, Sort = sort, Controller = "Crm", Action = "Index", RouteValues = route })" />
+                        <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Ответственный", Column = CrmBoardSorts.Manager, Sort = sort, Controller = "Crm", Action = "Index", RouteValues = route })" />
+                        <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Создано", Column = CrmBoardSorts.Created, Sort = sort, Controller = "Crm", Action = "Index", RouteValues = route })" />
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var card in cards)
+                    {
+                        var initials = string.Concat(card.FullName.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2).Select(part => char.ToUpperInvariant(part[0])));
+                        var avatarUrl = Url.Action("Avatar", "Crm", new { id = card.Id });
+                        <tr data-card-manager-user-id="@card.ManagerUserId">
+                            @if (canUseBulkActions)
+                            {
+                                <td class="crm-candidate-list__select" data-label="Выбор">
+                                    @if (!card.IsClosed)
+                                    {
+                                        <input type="checkbox" value="@card.Id" data-crm-card-select aria-label="Выбрать карточку @card.FullName" />
+                                    }
+                                </td>
+                            }
+                            <td class="crm-table-candidate" data-label="Кандидат">
+                                <a asp-action="Card" asp-route-id="@card.Id" class="crm-table-candidate__identity">
+                                    <span class="crm-table-candidate__avatar">@(string.IsNullOrWhiteSpace(initials) ? "?" : initials)<img src="@avatarUrl" alt="" loading="lazy" onerror="this.remove()" /></span>
+                                    <span class="crm-table-candidate__copy"><strong title="@card.FullName">@card.FullName</strong><small>@(card.Age?.ToString() ?? "—") лет</small></span>
+                                </a>
+                            </td>
+                            <td class="crm-table-contact" data-label="Контакты"><a href="tel:@card.PhoneRaw">@card.PhoneRaw</a><span>@card.City</span></td>
+                            <td class="crm-table-vacancy" data-label="Вакансия"><strong title="@card.Vacancy">@card.Vacancy</strong>@if (!string.IsNullOrWhiteSpace(card.AccountName)) { <span>@card.AccountName</span> }</td>
+                            <td data-label="Этап"><span class="crm-queue-list__stage">@card.Stage</span></td>
+                            <td class="crm-table-manager" data-label="Ответственный">@(card.ManagerName ?? "Не назначен")</td>
+                            <td class="crm-table-time" data-label="Создано"><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(card.CreatedAtUtc, "datetime"))" /></td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
+
+    <partial name="_Pagination" model="@(new PaginationPartialViewModel
+    {
+        Pagination = pagination,
+        Controller = "Crm",
+        Action = "Index",
+        RouteValues = route
+    })" />
+</section>
