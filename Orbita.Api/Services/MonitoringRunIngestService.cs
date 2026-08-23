@@ -103,7 +103,11 @@ public sealed class MonitoringRunIngestService(OrbitaDbContext db)
                         "FinishedAtUtc" = COALESCE(EXCLUDED."FinishedAtUtc", "MonitoringCycleRuns"."FinishedAtUtc"),
                         "Status" = EXCLUDED."Status",
                         "UpdatedAtUtc" = EXCLUDED."UpdatedAtUtc"
+                    -- Журнал отправляется асинхронно: старый батч Running может
+                    -- прийти после финального Aborted/Failed/Completed. Терминальный
+                    -- цикл нельзя снова открыть запоздавшим снимком состояния.
                     WHERE "MonitoringCycleRuns"."WorkerId" = EXCLUDED."WorkerId"
+                      AND "MonitoringCycleRuns"."Status" = {MonitoringCycleRunStatuses.Running}
                     """, ct).ConfigureAwait(false);
 
                 if (cycleRows <= 0)
@@ -166,9 +170,12 @@ public sealed class MonitoringRunIngestService(OrbitaDbContext db)
                             "DeferredCount" = EXCLUDED."DeferredCount",
                             "SkippedDuplicateCount" = EXCLUDED."SkippedDuplicateCount",
                             "CollectedCount" = EXCLUDED."CollectedCount",
-                            "CaptchaCount" = EXCLUDED."CaptchaCount",
-                            "CaptchaSolvedCount" = EXCLUDED."CaptchaSolvedCount"
-                        """, ct).ConfigureAwait(false);
+                        "CaptchaCount" = EXCLUDED."CaptchaCount",
+                        "CaptchaSolvedCount" = EXCLUDED."CaptchaSolvedCount"
+                    -- То же правило для под-профиля: Started не должен затереть
+                    -- уже зафиксированный результат прохода.
+                    WHERE "MonitoringSubProfileRuns"."Outcome" = {MonitoringSubProfileRunOutcomes.Started}
+                    """, ct).ConfigureAwait(false);
                 }
 
                 accepted++;
@@ -264,6 +271,13 @@ public sealed class MonitoringRunIngestService(OrbitaDbContext db)
             else
             {
                 if (existing.WorkerId != workerId)
+                {
+                    continue;
+                }
+
+                // Фоновый flush может доставить устаревший Running после terminal
+                // snapshot. Состояние завершённого цикла намеренно неизменно.
+                if (existing.Status != MonitoringCycleRunStatuses.Running)
                 {
                     continue;
                 }

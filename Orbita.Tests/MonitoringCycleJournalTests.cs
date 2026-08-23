@@ -901,6 +901,101 @@ public sealed class MonitoringCycleJournalTests
     }
 
     [Fact]
+    public async Task IngestBatch_LateRunningUpdate_DoesNotReopenTerminalCycle()
+    {
+        await using var db = CreateDb();
+        var officeId = Guid.NewGuid();
+        var workerId = Guid.NewGuid();
+        var accountId = Guid.NewGuid();
+        var cycleId = Guid.NewGuid();
+        var subProfileRunId = Guid.NewGuid();
+        var startedAtUtc = DateTime.UtcNow.AddMinutes(-2);
+        var finishedAtUtc = DateTime.UtcNow.AddMinutes(-1);
+
+        db.Offices.Add(new OfficeEntity
+        {
+            Id = officeId,
+            Name = "O",
+            RegistrationSecretHash = "h",
+            CreatedAtUtc = DateTime.UtcNow,
+            IsEnabled = true
+        });
+        db.Workers.Add(new WorkerEntity
+        {
+            Id = workerId,
+            OfficeId = officeId,
+            DisplayName = "w",
+            MachineName = "m",
+            ApiKeyHash = "h",
+            AppVersion = "1",
+            MonitoringStatus = "Running",
+            CreatedAtUtc = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var sut = new MonitoringRunIngestService(db);
+        await sut.IngestBatchAsync(workerId, new MonitoringRunBatchRequest(
+            workerId,
+            [
+                new MonitoringCycleRunUploadDto(
+                    cycleId,
+                    accountId,
+                    "Авито 63",
+                    startedAtUtc,
+                    finishedAtUtc,
+                    MonitoringCycleRunStatuses.Aborted,
+                    [
+                        new MonitoringSubProfileRunUploadDto(
+                            subProfileRunId,
+                            string.Empty,
+                            "—",
+                            1,
+                            1,
+                            startedAtUtc,
+                            finishedAtUtc,
+                            MonitoringSubProfileRunOutcomes.Failed,
+                            "worker-stopped",
+                            "Мониторинг остановлен до завершения прохода.")
+                    ])
+            ]));
+
+        await sut.IngestBatchAsync(workerId, new MonitoringRunBatchRequest(
+            workerId,
+            [
+                new MonitoringCycleRunUploadDto(
+                    cycleId,
+                    accountId,
+                    "Авито 63",
+                    startedAtUtc,
+                    null,
+                    MonitoringCycleRunStatuses.Running,
+                    [
+                        new MonitoringSubProfileRunUploadDto(
+                            subProfileRunId,
+                            string.Empty,
+                            "—",
+                            1,
+                            1,
+                            startedAtUtc,
+                            null,
+                            MonitoringSubProfileRunOutcomes.Started,
+                            null,
+                            null)
+                    ])
+            ]));
+
+        var cycle = await db.MonitoringCycleRuns
+            .Include(x => x.SubProfileRuns)
+            .SingleAsync(x => x.Id == cycleId);
+
+        Assert.Equal(MonitoringCycleRunStatuses.Aborted, cycle.Status);
+        Assert.Equal(finishedAtUtc, cycle.FinishedAtUtc);
+        var subProfile = Assert.Single(cycle.SubProfileRuns);
+        Assert.Equal(MonitoringSubProfileRunOutcomes.Failed, subProfile.Outcome);
+        Assert.Equal(finishedAtUtc, subProfile.CompletedAtUtc);
+    }
+
+    [Fact]
     public async Task GetStatisticsAsync_UsesJournalForWeekWithoutLogs()
     {
         await using var db = CreateDb();

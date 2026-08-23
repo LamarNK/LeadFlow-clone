@@ -128,6 +128,23 @@ public sealed class WorkerMonitoringService(
         }
 
         _cts.Cancel();
+        _cycleJournal.AbortOpenCycles(
+            "worker-stopped",
+            "Мониторинг остановлен до завершения прохода.");
+        try
+        {
+            await _cycleJournal
+                .FlushAsync(CancellationToken.None)
+                .WaitAsync(TimeSpan.FromSeconds(10))
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                $"Worker: не удалось отправить прерванные циклы при остановке: {ex.Message}",
+                DeskLinkAuditLogLevel.Warning);
+        }
+
         if (_loopTask is not null)
         {
             await _loopTask.ConfigureAwait(false);
@@ -1233,8 +1250,10 @@ public sealed class WorkerMonitoringService(
             captchaCounters);
         try
         {
-            await using var session = await adsPowerAvitoAutomationService
-                .OpenAccountSessionAsync(adsOptions, account.AdsPowerProfileId!, cancellationToken)
+            await using var session = await OpenAccountSessionWithDiagnosticsAsync(
+                    account,
+                    adsOptions,
+                    cancellationToken)
                 .ConfigureAwait(false);
             browserOpened = true;
             WorkerMonitoringLogger.BrowserOpened(account);
@@ -1852,6 +1871,45 @@ public sealed class WorkerMonitoringService(
                     WorkerMonitoringLogger.BrowserClosed(account);
                 }
             }
+        }
+    }
+
+    private async Task<IAdsPowerAccountSession> OpenAccountSessionWithDiagnosticsAsync(
+        AvitoAccount account,
+        AdsPowerConnectionOptions adsOptions,
+        CancellationToken cancellationToken)
+    {
+        var startupStopwatch = Stopwatch.StartNew();
+        var lastStage = "ожидание запуска";
+
+        void ReportStage(string stage, TimeSpan elapsed)
+        {
+            lastStage = stage;
+            activityReporter.ReportAccount(
+                account.Id,
+                account.DisplayName,
+                $"Запуск AdsPower: {stage} · {elapsed.TotalSeconds:F0} с");
+        }
+
+        try
+        {
+            return await adsPowerAvitoAutomationService
+                .OpenAccountSessionAsync(
+                    adsOptions,
+                    account.AdsPowerProfileId!,
+                    ReportStage,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException(
+                $"AdsPower не открыл сессию: последний этап «{lastStage}», прошло {startupStopwatch.Elapsed.TotalSeconds:F0} с. {ex.Message}",
+                ex);
         }
     }
 

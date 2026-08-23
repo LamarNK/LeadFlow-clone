@@ -206,6 +206,14 @@ public sealed class MonitoringCycleJournalSink(
     public void FailCycle(Guid cycleId, string? errorType = null, string? errorMessage = null) =>
         FinishCycle(cycleId, MonitoringCycleRunStatuses.Failed, errorType, errorMessage);
 
+    public void AbortOpenCycles(string? errorType = null, string? errorMessage = null)
+    {
+        foreach (var cycle in _cycles.Values.Where(c => c.Status == MonitoringCycleRunStatuses.Running))
+        {
+            FinishCycle(cycle.Id, MonitoringCycleRunStatuses.Aborted, errorType, errorMessage);
+        }
+    }
+
     public Task FlushAsync(CancellationToken cancellationToken = default) =>
         FlushInternalAsync(cancellationToken);
 

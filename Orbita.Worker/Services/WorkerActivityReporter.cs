@@ -83,7 +83,16 @@ public sealed class WorkerActivityReporter(
         lock (_sync)
         {
             _global = new WorkerActivityGlobalState(phase, message, nextCycleAtUtc);
-            _activeAccounts.Clear();
+            // ReportCycleProgress вызывается во время работы аккаунтов. Очищать
+            // их здесь нельзя: панель перестаёт показывать зависший старт и
+            // оператор видит лишь случайно успевшие обновиться слоты.
+            if (phase is WorkerActivityPhases.Waiting
+                or WorkerActivityPhases.Stopped
+                or WorkerActivityPhases.Idle
+                or WorkerActivityPhases.Error)
+            {
+                _activeAccounts.Clear();
+            }
         }
 
         updateGate.SetPhase(phase);

@@ -62,5 +62,9 @@ public sealed class NullMonitoringCycleJournal : IMonitoringCycleJournal
     {
     }
 
+    public void AbortOpenCycles(string? errorType = null, string? errorMessage = null)
+    {
+    }
+
     public Task FlushAsync(CancellationToken cancellationToken = default) => Task.CompletedTask;
 }

@@ -60,5 +60,8 @@ public interface IMonitoringCycleJournal
     /// <summary>Цикл завершился фатальной ошибкой аккаунта.</summary>
     void FailCycle(Guid cycleId, string? errorType = null, string? errorMessage = null);
 
+    /// <summary>Прервать все ещё открытые циклы (например, при остановке воркера).</summary>
+    void AbortOpenCycles(string? errorType = null, string? errorMessage = null);
+
     Task FlushAsync(CancellationToken cancellationToken = default);
 }
