@@ -80,7 +80,7 @@ def generate(publish_dir: Path, output: Path, version: str) -> None:
         '  <Product Id="*" Name="Orbita Worker" Language="1049"',
         f'           Version="{xml(version)}" Manufacturer="Orbita" UpgradeCode="{UPGRADE_CODE}">',
         '    <Package InstallerVersion="200" Compressed="yes" InstallScope="perUser" />',
-        '    <MajorUpgrade AllowSameVersionUpgrades="yes"',
+        '    <MajorUpgrade AllowSameVersionUpgrades="yes" Schedule="afterInstallInitialize"',
         '                  DowngradeErrorMessage="A newer version of Orbita Worker is already installed." />',
         '    <MediaTemplate EmbedCab="yes" />',
         '    <Directory Id="TARGETDIR" Name="SourceDir">',

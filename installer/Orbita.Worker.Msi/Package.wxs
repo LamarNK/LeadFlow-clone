@@ -12,6 +12,7 @@
 
     <MajorUpgrade
       AllowSameVersionUpgrades="yes"
+      Schedule="afterInstallInitialize"
       DowngradeErrorMessage="A newer version of Orbita Worker is already installed." />
 
     <util:CloseApplication

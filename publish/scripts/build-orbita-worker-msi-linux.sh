@@ -74,6 +74,12 @@ if ! msiinfo tables "$msi_path" | grep -qx 'File'; then
   echo "wixl did not produce a valid MSI database: $msi_path" >&2
   exit 1
 fi
+remove_existing_sequence="$(msiinfo export "$msi_path" InstallExecuteSequence | awk -F '\t' '$1 == "RemoveExistingProducts" { print $3; exit }')"
+install_files_sequence="$(msiinfo export "$msi_path" InstallExecuteSequence | awk -F '\t' '$1 == "InstallFiles" { print $3; exit }')"
+if [[ ! "$remove_existing_sequence" =~ ^[0-9]+$ ]] || [[ ! "$install_files_sequence" =~ ^[0-9]+$ ]] || (( remove_existing_sequence >= install_files_sequence )); then
+  echo "MSI must remove the previous Worker release before installing new files." >&2
+  exit 1
+fi
 if ! msiinfo export "$msi_path" CustomAction | grep -q '^StopWorkerBeforeUpgrade'; then
   echo "MSI does not contain the required StopWorkerBeforeUpgrade action." >&2
   exit 1
