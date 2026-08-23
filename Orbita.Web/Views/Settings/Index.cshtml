@@ -47,76 +47,87 @@
         }
 
         <div class="settings-grid settings-grid--offices">
-            <div class="card card--settings-offices-list">
-                <div class="card-header settings-card-header">
+            <aside class="settings-office-directory" aria-labelledby="officeDirectoryTitle">
+                <header class="settings-office-directory__head">
                     <div>
-                        <h2 class="settings-card-title">Офисы</h2>
-                        <p class="settings-card-subtitle">Изоляция данных: воркеры, мониторинг и события внутри офиса</p>
+                        <h2 class="settings-card-title" id="officeDirectoryTitle">Офисы</h2>
+                        <p class="settings-card-subtitle">Каждый офис хранит свои данные, сотрудников и подключения.</p>
                     </div>
-                    <span class="settings-office-count">@officesTab.Rows.Count</span>
-                </div>
-                <div class="card-body card-body-table settings-table-wrap">
-                    <table class="data-table data-table--settings-offices data-table--cards">
-                        <thead>
-                        <tr>
-                            <th>Название</th>
-                            <th>Воркеры</th>
-                            <th>Операторы</th>
-                            <th>Статус</th>
-                        </tr>
-                        </thead>
-                        <tbody>
-                        @if (officesTab.Rows.Count == 0)
+                    <span class="settings-office-count" aria-label="Всего офисов: @officesTab.Rows.Count">@officesTab.Rows.Count</span>
+                </header>
+
+                @if (officesTab.Rows.Count == 0)
+                {
+                    <p class="settings-office-directory__empty">Офисов пока нет. Создайте первый, чтобы подключить сотрудников и воркеры.</p>
+                }
+                else
+                {
+                    <nav class="settings-office-directory__list" aria-label="Выбор офиса">
+                        @foreach (var office in officesTab.Rows)
                         {
-                            <tr>
-                                <td colspan="4" class="settings-empty-cell">Офисов пока нет — создайте первый в форме ниже.</td>
-                            </tr>
+                            var isSelected = selectedOffice?.Id == office.Id;
+                            <a class="settings-office-directory__item @(isSelected ? "settings-office-directory__item--active" : null)"
+                               href="@Url.Action("Index", new { tab = "offices", officeId = office.Id })"
+                               aria-current="@(isSelected ? "page" : null)">
+                                <span class="settings-office-directory__icon" aria-hidden="true"><i class="fa-solid fa-building"></i></span>
+                                <span class="settings-office-directory__copy">
+                                    <strong>@office.Name</strong>
+                                    <small>@office.UserCount @(office.UserCount == 1 ? "сотрудник" : "сотрудников") · @office.WorkerCount @(office.WorkerCount == 1 ? "воркер" : "воркеров")</small>
+                                </span>
+                                <span class="settings-office-directory__state @(office.IsEnabled ? "settings-office-directory__state--online" : null)" aria-label="@(office.IsEnabled ? "Активен" : "Отключён")"></span>
+                            </a>
                         }
-                        else
-                        {
-                            @foreach (var office in officesTab.Rows)
-                            {
-                                var isSelected = selectedOffice?.Id == office.Id;
-                                <tr class="@(isSelected ? "settings-office-row--selected" : null)">
-                                    <td class="cell-name" data-label="Название">
-                                        <a class="settings-office-link @(isSelected ? "settings-office-link--active" : null)"
-                                           href="@Url.Action("Index", new { tab = "offices", officeId = office.Id })"
-                                           aria-current="@(isSelected ? "page" : null)">@office.Name</a>
-                                    </td>
-                                    <td data-label="Воркеры">@office.WorkerCount</td>
-                                    <td data-label="Операторы">@office.UserCount</td>
-                                    <td data-label="Статус">
-                                        @if (office.IsEnabled)
-                                        {
-                                            <span class="settings-status-pill settings-status-pill--online">Активен</span>
-                                        }
-                                        else
-                                        {
-                                            <span class="settings-status-pill settings-status-pill--disabled">Отключён</span>
-                                        }
-                                    </td>
-                                </tr>
-                            }
-                        }
-                        </tbody>
-                    </table>
-                </div>
-            </div>
+                    </nav>
+                }
+
+                <a class="settings-office-directory__create" href="@Url.Action("Index", new { tab = "offices" })">
+                    <i class="fa-solid fa-plus" aria-hidden="true"></i>
+                    <span>Новый офис</span>
+                </a>
+            </aside>
 
             @if (selectedOffice is not null)
             {
                 var selected = selectedOffice;
-                <div class="card card--settings-office-detail">
-                    <div class="card-header settings-card-header">
+                var selectedRow = officesTab.Rows.FirstOrDefault(row => row.Id == selected.Id);
+                <section class="settings-office-workspace" aria-labelledby="selectedOfficeTitle">
+                    <header class="settings-office-workspace__head">
                         <div>
-                            <h2 class="settings-card-title">@selected.Name</h2>
-                            <p class="settings-card-subtitle">Параметры офиса и регистрация воркеров</p>
-                            <a class="settings-link-btn settings-office-create-link" href="@Url.Action("Index", new { tab = "offices" })">Создать другой офис</a>
+                            <h2 class="settings-office-workspace__title" id="selectedOfficeTitle">@selected.Name</h2>
+                            <p class="settings-office-workspace__subtitle">Управляйте базовыми параметрами, подключениями и безопасностью в одном контексте.</p>
                         </div>
-                    </div>
-                    <div class="card-body settings-office-detail-body">
-                        <section class="settings-office-section">
-                            <h3 class="settings-office-section-title">Основные параметры</h3>
+                        <span class="settings-status-pill @(selected.IsEnabled ? "settings-status-pill--online" : "settings-status-pill--disabled")">
+                            @(selected.IsEnabled ? "Офис активен" : "Офис отключён")
+                        </span>
+                    </header>
+
+                    <dl class="settings-office-pulse" aria-label="Сводка по офису">
+                        <div>
+                            <dt>Сотрудники</dt>
+                            <dd>@(selectedRow?.UserCount ?? 0)</dd>
+                        </div>
+                        <div>
+                            <dt>Воркеры</dt>
+                            <dd>@(selectedRow?.WorkerCount ?? 0)</dd>
+                        </div>
+                        <div>
+                            <dt>Приём откликов</dt>
+                            <dd class="settings-office-pulse__state @(selected.CrmEnabled ? "settings-office-pulse__state--good" : null)">@(selected.CrmEnabled ? "Включён" : "Выключен")</dd>
+                        </div>
+                        <div>
+                            <dt>Регистрация воркеров</dt>
+                            <dd class="settings-office-pulse__state @(selected.RegistrationConfigured ? "settings-office-pulse__state--good" : "settings-office-pulse__state--warn")">@(selected.RegistrationConfigured ? "Готова" : "Не настроена")</dd>
+                        </div>
+                    </dl>
+
+                    <div class="settings-office-workspace__body">
+                        <section class="settings-office-section settings-office-section--primary">
+                            <div class="settings-office-section-head">
+                                <div>
+                                    <h3 class="settings-office-section-title">Основное</h3>
+                                    <p class="settings-office-section-hint">Название и доступность офиса для работы в панели.</p>
+                                </div>
+                            </div>
                             <form asp-action="UpdateOffice" method="post" class="settings-create-form settings-office-form">
                                 @Html.AntiForgeryToken()
                                 <input type="hidden" name="OfficeId" value="@selected.Id" />
@@ -146,41 +157,46 @@
                                         </label>
                                     </div>
                                 </div>
-                                <button type="submit" class="settings-primary-btn">Сохранить</button>
+                                <div class="settings-office-form-actions">
+                                    <button type="submit" class="settings-primary-btn">Сохранить изменения</button>
+                                </div>
                             </form>
                         </section>
 
-                        <section class="settings-office-section settings-office-section--bitrix">
+                        <section class="settings-office-section settings-office-section--connections">
                             <div class="settings-office-section-head">
                                 <div>
-                                    <h3 class="settings-office-section-title">Bitrix24</h3>
-                                    <p class="settings-office-section-hint">Вебхуки и схема распределения настраиваются на вкладке «Битриксы и связи».</p>
+                                    <h3 class="settings-office-section-title">Подключения</h3>
+                                    <p class="settings-office-section-hint">Сервисы, которые работают в контексте этого офиса.</p>
                                 </div>
                             </div>
-                            <a class="settings-primary-btn settings-primary-btn--compact"
-                               href="@Url.Action(nameof(Index), new { tab = "bitrix", officeId = selected.Id })">
-                                Открыть «Битриксы и связи»
-                            </a>
-                        </section>
-
-                        <section class="settings-office-section">
-                            <div class="settings-office-section-head">
-                                <div>
-                                    <h3 class="settings-office-section-title">IP-телефония</h3>
-                                    <p class="settings-office-section-hint">Общие линии офиса, внутренние номера сотрудников, исходящие звонки и записи разговоров.</p>
+                            <div class="settings-office-connections">
+                                <div class="settings-office-connection">
+                                    <span class="settings-office-connection__icon settings-office-connection__icon--bitrix" aria-hidden="true"><i class="fa-solid fa-diagram-project"></i></span>
+                                    <div class="settings-office-connection__copy">
+                                        <strong>Bitrix24</strong>
+                                        <span>@selected.BitrixValidationStatusLabel@(string.IsNullOrWhiteSpace(selected.BitrixPortalHost) ? string.Empty : $" · {selected.BitrixPortalHost}")</span>
+                                    </div>
+                                    <a class="settings-secondary-btn settings-secondary-btn--compact"
+                                       href="@Url.Action(nameof(Index), new { tab = "bitrix", officeId = selected.Id })">Открыть</a>
+                                </div>
+                                <div class="settings-office-connection">
+                                    <span class="settings-office-connection__icon settings-office-connection__icon--telephony" aria-hidden="true"><i class="fa-solid fa-phone-volume"></i></span>
+                                    <div class="settings-office-connection__copy">
+                                        <strong>Телефония</strong>
+                                        <span>Линии, внутренние номера, звонки и записи сотрудников.</span>
+                                    </div>
+                                    <a class="settings-secondary-btn settings-secondary-btn--compact"
+                                       href="@Url.Action("Telephony", "TelephonySettings", new { officeId = selected.Id })">Открыть</a>
                                 </div>
                             </div>
-                            <a class="settings-primary-btn settings-primary-btn--compact"
-                               href="@Url.Action("Telephony", "TelephonySettings", new { officeId = selected.Id })">
-                                Открыть телефонию
-                            </a>
                         </section>
 
-                        <section class="settings-office-section settings-office-section--secret">
+                        <section class="settings-office-section settings-office-section--security">
                             <div class="settings-office-section-head">
                                 <div>
-                                    <h3 class="settings-office-section-title">Секрет регистрации воркеров</h3>
-                                    <p class="settings-office-section-hint">Укажите этот секрет при установке Orbita.Worker на ПК офиса. После перевыпуска старый секрет перестаёт работать.</p>
+                                    <h3 class="settings-office-section-title">Безопасность и регистрация</h3>
+                                    <p class="settings-office-section-hint">Секрет нужен только при установке Orbita.Worker на компьютеры этого офиса.</p>
                                 </div>
                                 <span class="settings-registration-status @(selected.RegistrationConfigured ? "settings-registration-status--ok" : "settings-registration-status--warn")">
                                     @(selected.RegistrationConfigured ? "Настроен" : "Не настроен")
@@ -196,16 +212,12 @@
                             </div>
                         </section>
 
-                        <section class="settings-office-section settings-office-section--danger">
-                            <div class="settings-office-section-head">
-                                <div>
-                                    <h3 class="settings-office-section-title">Удаление офиса</h3>
-                                    <p class="settings-office-section-hint">
-                                        Удаляет офис и связанные настройки (Bitrix, схема распределения, CRM-карточки).
-                                        Операторы отвязываются от офиса. Удаление недоступно, если есть привязанные воркеры или это последний офис.
-                                    </p>
-                                </div>
-                            </div>
+                        <details class="settings-office-danger-zone">
+                            <summary>Опасные действия</summary>
+                            <p>
+                                Удаление сотрёт связанные настройки Bitrix и CRM-карточки, а сотрудников отвяжет от офиса.
+                                Оно недоступно, пока есть привязанные воркеры или это последний офис.
+                            </p>
                             <form asp-action="DeleteOffice"
                                   method="post"
                                   class="settings-office-delete-form"
@@ -215,30 +227,28 @@
                                 <input type="hidden" name="officeId" value="@selected.Id" />
                                 <button type="submit" class="settings-danger-btn">Удалить офис</button>
                             </form>
-                        </section>
+                        </details>
                     </div>
-                </div>
+                </section>
             }
             else
             {
-                <div class="card card--settings-create card--settings-office-create">
-                    <div class="card-header settings-card-header">
+                <section class="settings-office-empty-state" aria-labelledby="newOfficeTitle">
+                    <div class="settings-office-empty-state__head">
                         <div>
-                            <h2 class="settings-card-title">Новый офис</h2>
-                            <p class="settings-card-subtitle">Выберите офис в списке слева или создайте новый</p>
+                            <h2 class="settings-office-workspace__title" id="newOfficeTitle">Создайте офис</h2>
+                            <p class="settings-office-workspace__subtitle">Офис изолирует сотрудников, воркеры, интеграции и события от остальных команд.</p>
                         </div>
                     </div>
-                    <div class="card-body">
-                        <form asp-action="CreateOffice" method="post" class="settings-create-form">
-                            @Html.AntiForgeryToken()
-                            <label class="settings-field">
-                                <span class="settings-field-label">Название</span>
-                                <input type="text" name="Name" required maxlength="200" placeholder="Москва" />
-                            </label>
-                            <button type="submit" class="settings-primary-btn">Создать офис</button>
-                        </form>
-                    </div>
-                </div>
+                    <form asp-action="CreateOffice" method="post" class="settings-create-form settings-office-empty-state__form">
+                        @Html.AntiForgeryToken()
+                        <label class="settings-field">
+                            <span class="settings-field-label">Название</span>
+                            <input type="text" name="Name" required maxlength="200" placeholder="Например, Екатеринбург" />
+                        </label>
+                        <button type="submit" class="settings-primary-btn">Создать офис</button>
+                    </form>
+                </section>
             }
         </div>
     }
