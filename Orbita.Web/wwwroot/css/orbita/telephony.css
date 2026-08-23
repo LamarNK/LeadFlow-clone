@@ -1,0 +1,6 @@
+/* Quiet telephony page — reuse office settings chrome, drop the oversized cards. */
+
+.telephony-settings-page {
+    display: grid;
+    gap: 16px;
+}
