@@ -74,12 +74,20 @@ if ! msiinfo export "$msi_path" CustomAction | grep -q '^StopWorkerBeforeUpgrade
   echo "MSI does not contain the required StopWorkerBeforeUpgrade action." >&2
   exit 1
 fi
+if ! msiinfo export "$msi_path" CustomAction | grep '^SetStopWorkerCommand' | grep -Fq '[SystemFolder]cmd.exe'; then
+  echo "MSI does not resolve the command interpreter for StopWorkerBeforeUpgrade." >&2
+  exit 1
+fi
 if ! msiinfo export "$msi_path" InstallExecuteSequence | grep '^StopWorkerBeforeUpgrade' | grep -Fq 'NOT REMOVE~="ALL"'; then
   echo "MSI does not stop Orbita Worker before replacing its files." >&2
   exit 1
 fi
 if ! msiinfo export "$msi_path" CustomAction | grep '^LaunchWorkerAfterInstall' | grep -Fq 'start "" /D "[INSTALLFOLDER]"'; then
   echo "MSI does not start Orbita Worker from its installation folder." >&2
+  exit 1
+fi
+if ! msiinfo export "$msi_path" CustomAction | grep '^SetLaunchWorkerCommand' | grep -Fq '[SystemFolder]cmd.exe'; then
+  echo "MSI does not resolve the command interpreter for LaunchWorkerAfterInstall." >&2
   exit 1
 fi
 if ! msiinfo export "$msi_path" InstallExecuteSequence | grep -q '^LaunchWorkerAfterInstall'; then
