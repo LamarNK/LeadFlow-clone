@@ -62,6 +62,8 @@ public sealed class AvitoCandidatesPageScriptsTests
         Assert.Contains("__leadflowMessengerBeforeMarker", script, StringComparison.Ordinal);
         Assert.Contains("[data-marker='platformMessage/text']", script, StringComparison.Ordinal);
         Assert.Contains("[data-marker='messageChunk']", script, StringComparison.Ordinal);
+        Assert.Contains("const root = miniRoot", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("(!marker ? miniRoot : null)", script, StringComparison.Ordinal);
         Assert.Contains("textContent", script, StringComparison.Ordinal);
         Assert.Contains("collectFrom", script, StringComparison.Ordinal);
         Assert.DoesNotContain("collectFrom(document)", script, StringComparison.Ordinal);
@@ -76,6 +78,8 @@ public sealed class AvitoCandidatesPageScriptsTests
 
         Assert.Contains("__leadflowMessengerBeforeMarker", script, StringComparison.Ordinal);
         Assert.Contains("data-leadflow-messenger-before", script, StringComparison.Ordinal);
+        Assert.Contains("mini-messenger/messenger-page-link", script, StringComparison.Ordinal);
+        Assert.Contains("channel-module-root", script, StringComparison.Ordinal);
         Assert.Contains("[data-marker='messagesHistory']", script, StringComparison.Ordinal);
         Assert.Contains("isVisible", script, StringComparison.Ordinal);
         Assert.DoesNotContain("!!document.querySelector(\"[data-marker='messagesHistory/list']\")", script, StringComparison.Ordinal);
@@ -100,6 +104,8 @@ public sealed class AvitoCandidatesPageScriptsTests
         Assert.Contains("[data-marker='message']", script, StringComparison.Ordinal);
         Assert.Contains("__leadflowMessengerBeforeMarker", script, StringComparison.Ordinal);
         Assert.Contains("data-leadflow-messenger-before", script, StringComparison.Ordinal);
+        Assert.Contains("mini-messenger/messenger-page-link", script, StringComparison.Ordinal);
+        Assert.Contains("channel-module-root", script, StringComparison.Ordinal);
         Assert.Contains("[data-marker='messagesHistory']", script, StringComparison.Ordinal);
         Assert.DoesNotContain("return hasMessage(document);", script, StringComparison.Ordinal);
     }
@@ -110,8 +116,9 @@ public sealed class AvitoCandidatesPageScriptsTests
         var script = AvitoCandidatesPageScripts.BuildResolveMessengerChannelUrlExpression();
 
         Assert.Contains("querySelectorAll(\"a[data-marker='mini-messenger/messenger-page-link']\")", script, StringComparison.Ordinal);
-        Assert.Contains("__leadflowMessengerBeforeMarker", script, StringComparison.Ordinal);
-        Assert.Contains("openedHistory.contains(link)", script, StringComparison.Ordinal);
+        Assert.Contains("channel-module-root", script, StringComparison.Ordinal);
+        Assert.Contains("[data-marker='messagesHistory']", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("openedHistory.contains(link)", script, StringComparison.Ordinal);
         Assert.Contains("/\\/profile\\/messenger\\/channel\\/", script, StringComparison.Ordinal);
     }
 

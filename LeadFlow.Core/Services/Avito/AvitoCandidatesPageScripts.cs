@@ -1490,6 +1490,16 @@ public static class AvitoCandidatesPageScripts
                 return rect.width > 0 && rect.height > 0;
             };
 
+            // В разметке Avito ссылка «Открыть сообщения во весь экран» и messagesHistory —
+            // соседи внутри channel-module-root. Сам контейнер истории может переиспользоваться
+            // между карточками, поэтому его метка до клика не является признаком старого чата.
+            const activeMiniRoot = Array.from(document.querySelectorAll("a[data-marker='mini-messenger/messenger-page-link']"))
+                .map((link) => isVisible(link) ? link.closest("[class*='channel-module-root']") : null)
+                .find((root) => isVisible(root) && !!root.querySelector("[data-marker='messagesHistory']"));
+            if (activeMiniRoot) {
+                return true;
+            }
+
             const marker = String(window.__leadflowMessengerBeforeMarker ?? "");
             if (!marker) {
                 return false;
@@ -1520,6 +1530,13 @@ public static class AvitoCandidatesPageScripts
                 const rect = element.getBoundingClientRect();
                 return rect.width > 0 && rect.height > 0;
             };
+            const activeMiniRoot = Array.from(document.querySelectorAll("a[data-marker='mini-messenger/messenger-page-link']"))
+                .map((link) => isVisible(link) ? link.closest("[class*='channel-module-root']") : null)
+                .find((root) => isVisible(root) && !!root.querySelector("[data-marker='messagesHistory']"));
+            if (hasMessage(activeMiniRoot)) {
+                return true;
+            }
+
             const marker = String(window.__leadflowMessengerBeforeMarker ?? "");
             const openedHistory = marker
                 ? Array.from(document.querySelectorAll("[data-marker='messagesHistory']"))
@@ -1558,19 +1575,17 @@ public static class AvitoCandidatesPageScripts
                 return rect.width > 0 && rect.height > 0;
             };
 
-            const links = Array.from(document.querySelectorAll("a[data-marker='mini-messenger/messenger-page-link']"));
-            const marker = String(window.__leadflowMessengerBeforeMarker ?? "");
-            const openedHistory = marker
-                ? Array.from(document.querySelectorAll("[data-marker='messagesHistory']"))
-                    .find((history) => (isVisible(history)
-                            || isVisible(history.querySelector("[data-marker='messagesHistory/list']")))
-                        && history.getAttribute("data-leadflow-messenger-before") !== marker)
-                : null;
-            const mini = openedHistory
-                ? links.find((link) => isVisible(link) && openedHistory.contains(link))
-                : marker
-                    ? null
-                    : links.find(isVisible);
+            // У Avito ссылка канала находится в шапке, а messagesHistory — в соседнем блоке.
+            // Нельзя искать ссылку как потомка истории: в таком случае URL всегда пустой.
+            const mini = Array.from(document.querySelectorAll("a[data-marker='mini-messenger/messenger-page-link']"))
+                .find((link) => {
+                    if (!isVisible(link)) {
+                        return false;
+                    }
+
+                    const root = link.closest("[class*='channel-module-root']");
+                    return isVisible(root) && !!root.querySelector("[data-marker='messagesHistory']");
+                });
             const miniHref = (mini?.href ?? "").trim();
             if (miniHref && /\/profile\/messenger\//i.test(miniHref)) {
                 return miniHref;
@@ -1588,7 +1603,8 @@ public static class AvitoCandidatesPageScripts
     /// <summary>
     /// Прокрутка истории мини-чата и сбор сообщений (после клика «Перейти в чат»).
     /// На странице откликов в DOM часто два списка: пустой глобальный виджет и оверлей кандидата —
-    /// берём историю, появившуюся после клика по карточке, а не первый <c>messagesHistory/list</c>.
+    /// выбираем корень по видимой ссылке канала. История может не пересоздаваться при переходе
+    /// между карточками, поэтому метка до клика служит только резервным вариантом.
     /// </summary>
     public static string BuildScrollAndCollectMiniMessengerMessagesScript() =>
         """
@@ -1656,12 +1672,15 @@ public static class AvitoCandidatesPageScripts
             };
 
             const links = Array.from(document.querySelectorAll("a[data-marker='mini-messenger/messenger-page-link']"));
-            const miniLink = links.find((link) => isVisible(link)
-                && !!(link.closest("[class*='channel-module-root']")
-                    || link.closest("[data-marker='messagesHistory']")));
-            const miniRoot = miniLink?.closest("[class*='channel-module-root']")
-                || miniLink?.closest("[data-marker='messagesHistory']")
-                || null;
+            const miniLink = links.find((link) => {
+                if (!isVisible(link)) {
+                    return false;
+                }
+
+                const root = link.closest("[class*='channel-module-root']");
+                return isVisible(root) && !!root.querySelector("[data-marker='messagesHistory']");
+            });
+            const miniRoot = miniLink?.closest("[class*='channel-module-root']") || null;
             const marker = String(window.__leadflowMessengerBeforeMarker ?? "");
             const openedHistory = marker
                 ? Array.from(document.querySelectorAll("[data-marker='messagesHistory']"))
@@ -1670,8 +1689,8 @@ public static class AvitoCandidatesPageScripts
                         && history.getAttribute("data-leadflow-messenger-before") !== marker)
                 : null;
             const isChannelPage = /\/profile\/messenger\/channel\//i.test(window.location.href);
-            const root = openedHistory
-                || (!marker ? miniRoot : null)
+            const root = miniRoot
+                || openedHistory
                 || (isChannelPage
                     ? document.querySelector("[data-marker='messagesHistory']") || document
                     : null);
