@@ -433,7 +433,7 @@
                             @Html.AntiForgeryToken()
                             <input type="hidden" name="officeId" value="@Model.OfficeId" />
                             <input type="hidden" name="provider" value="@Model.Provider" />
-                            <input type="hidden" name="enabled" value="@(!Model.Settings.IsEnabled)" />
+                            <input type="hidden" name="enabled" value="@(Model.Settings.IsEnabled ? "false" : "true")" />
                             <button type="submit" class="settings-secondary-btn">
                                 @(Model.Settings.IsEnabled ? "Приостановить" : "Включить")
                             </button>
