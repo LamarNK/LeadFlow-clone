@@ -3594,20 +3594,33 @@ public sealed partial class AdsPowerAvitoAutomationService(
 
         await HumanDelay.BeforeCandidateClickAsync(cancellationToken).ConfigureAwait(false);
 
+        try
+        {
+            await page.BringToFrontAsync().ConfigureAwait(false);
+        }
+        catch
+        {
+            // Вкладка AdsPower могла уже быть спереди — клик всё равно пробуем.
+        }
+
+        var clickMethod = "failed";
         var clickedViaPointer = await TryClickCandidateChatWithPointerAsync(page, candidateIndex, cancellationToken)
             .ConfigureAwait(false);
         string? clickReason = null;
         var clicked = clickedViaPointer;
-        if (!clicked)
+        if (clicked)
         {
-            var clickRaw = await EvaluateWithRetryAsync<string>(
-                    page,
-                    AvitoCandidatesPageScripts.BuildClickCandidateChatByIndexScript(candidateIndex),
-                    cancellationToken)
+            clickMethod = "pointer";
+        }
+        else
+        {
+            var domClick = await TryClickCandidateChatByDomAsync(page, candidateIndex, cancellationToken)
                 .ConfigureAwait(false);
-            if (!TryParseMessengerChatClickStep(clickRaw, out clicked, out clickReason) || !clicked)
+            clicked = domClick.Ok;
+            clickReason = domClick.Reason;
+            if (clicked)
             {
-                clicked = false;
+                clickMethod = "dom";
             }
         }
 
@@ -3639,18 +3652,35 @@ public sealed partial class AdsPowerAvitoAutomationService(
 
         await HumanDelay.AfterCandidateClickAsync(cancellationToken).ConfigureAwait(false);
 
-        var messengerUiConfirmed = false;
-        try
+        var messengerUiConfirmed = await TryWaitForMessengerUiAsync(page, 12_000).ConfigureAwait(false);
+
+        // Pointer/CDP mouse returns true as soon as the event is dispatched. Overlays, wander
+        // tooltips and AdsPower hit-testing can swallow it — the existing DOM fallback never
+        // ran on this path, so the mini-chat stayed closed (click=pointer, uiConfirmed=false,
+        // reason=no_active_candidate_messenger).
+        if (!messengerUiConfirmed)
         {
-            await page.WaitForFunctionAsync(
-                    AvitoCandidatesPageScripts.BuildMessengerUiVisibleExpression(),
-                    new WaitForFunctionOptions { Timeout = 12_000, PollingInterval = 250 })
+            try
+            {
+                await EvaluateWithRetryAsync<string>(
+                        page,
+                        AvitoCandidatesPageScripts.BuildDismissCandidateDetailPanelScript(),
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch
+            {
+                // Best-effort: popup/panel over the chat button.
+            }
+
+            var retry = await TryClickCandidateChatByDomAsync(page, candidateIndex, cancellationToken)
                 .ConfigureAwait(false);
-            messengerUiConfirmed = true;
-        }
-        catch
-        {
-            // Оверлей кандидата мог быть открыт, но его разметка ещё не смонтирована; ниже всё равно опрашиваем его.
+            if (retry.Ok)
+            {
+                clickMethod = clickedViaPointer ? "pointer_then_dom" : "dom_retry";
+                await HumanDelay.AfterCandidateClickAsync(cancellationToken).ConfigureAwait(false);
+                messengerUiConfirmed = await TryWaitForMessengerUiAsync(page, 8_000).ConfigureAwait(false);
+            }
         }
 
         string? channelUrl = null;
@@ -3782,7 +3812,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
             chatMessages,
             UiConfirmed: messengerUiConfirmed || !string.IsNullOrWhiteSpace(channelUrl) || chatMessages.Count > 0,
             AutoReplySent: autoReplySent,
-            ClickMethod: clickedViaPointer ? "pointer" : "dom",
+            ClickMethod: clickMethod,
             Collection: collection);
     }
 
@@ -4130,12 +4160,48 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 return false;
             }
 
-            return await AvitoHumanPointer.TryClickHandleAsync(page, chat, cancellationToken).ConfigureAwait(false);
+            var inner = await chat.QuerySelectorAsync("button, a, [role='button']").ConfigureAwait(false);
+            return await AvitoHumanPointer.TryClickHandleAsync(page, inner ?? chat, cancellationToken)
+                .ConfigureAwait(false);
         }
         catch
         {
             return false;
         }
+    }
+
+    private static async Task<bool> TryWaitForMessengerUiAsync(IPage page, int timeoutMs)
+    {
+        try
+        {
+            await page.WaitForFunctionAsync(
+                    AvitoCandidatesPageScripts.BuildMessengerUiVisibleExpression(),
+                    new WaitForFunctionOptions { Timeout = timeoutMs, PollingInterval = 250 })
+                .ConfigureAwait(false);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static async Task<(bool Ok, string? Reason)> TryClickCandidateChatByDomAsync(
+        IPage page,
+        int candidateIndex,
+        CancellationToken cancellationToken)
+    {
+        var clickRaw = await EvaluateWithRetryAsync<string>(
+                page,
+                AvitoCandidatesPageScripts.BuildClickCandidateChatByIndexScript(candidateIndex),
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (!TryParseMessengerChatClickStep(clickRaw, out var clicked, out var reason) || !clicked)
+        {
+            return (false, reason);
+        }
+
+        return (true, null);
     }
 
     private static readonly string[] MiniMessengerSendSelectors =

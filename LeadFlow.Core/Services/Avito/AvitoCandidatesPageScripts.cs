@@ -875,7 +875,12 @@ public static class AvitoCandidatesPageScripts
                 }
 
                 element.dispatchEvent(new MouseEvent("mouseup", { ...base, buttons: 0 }));
-                element.dispatchEvent(new MouseEvent("click", { ...base, buttons: 0 }));
+                // Native click() runs <a href> default action; dispatchEvent(click) does not.
+                if (typeof element.click === "function") {
+                    element.click();
+                } else {
+                    element.dispatchEvent(new MouseEvent("click", { ...base, buttons: 0 }));
+                }
                 return true;
             };
 
@@ -895,8 +900,9 @@ public static class AvitoCandidatesPageScripts
                 return JSON.stringify({ ok: false, reason: "chat_button_hidden", index: idx, items: items.length });
             }
 
+            const target = chat.querySelector("button, a, [role='button']") || chat;
             try {
-                humanClick(chat);
+                humanClick(target);
                 return JSON.stringify({ ok: true, index: idx, items: items.length });
             } catch (error) {
                 return JSON.stringify({ ok: false, reason: String(error), index: idx, items: items.length });
