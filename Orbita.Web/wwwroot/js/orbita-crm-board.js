@@ -1150,6 +1150,20 @@
         });
     };
 
+    const initStageAutoFilter = () => {
+        document.querySelectorAll('[data-crm-stage-auto-filter]').forEach((select) => {
+            if (select.dataset.crmStageAutoFilterReady === 'true') return;
+            select.dataset.crmStageAutoFilterReady = 'true';
+
+            select.addEventListener('change', () => {
+                const form = select.closest('form');
+                if (!form) return;
+                select.setAttribute('aria-busy', 'true');
+                form.requestSubmit();
+            });
+        });
+    };
+
     const initScopeTabPositionReset = () => {
         const boardScopes = new Set(['mine', 'team', 'unassigned']);
 
@@ -1275,6 +1289,7 @@
         document.querySelectorAll('[data-crm-funnel-editor]').forEach(initCrmFunnelEditor);
         initClosedArchiveNavigation();
         initResponsibleAutoFilter();
+        initStageAutoFilter();
         initScopeTabPositionReset();
         restoreResponsibleFilterScroll();
         initManualCreateModal();

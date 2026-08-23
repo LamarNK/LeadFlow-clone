@@ -236,7 +236,7 @@
                 {
                     <label class="crm-filter-field">
                         <span>Этап</span>
-                        <select name="stageFilter" aria-label="Фильтр по этапу">
+                        <select name="stageFilter" aria-label="Фильтр по этапу" data-crm-stage-auto-filter>
                             <option value="">Все этапы</option>
                             @foreach (var funnelStage in Model.FunnelStages)
                             {
