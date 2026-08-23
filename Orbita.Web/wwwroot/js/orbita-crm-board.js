@@ -721,6 +721,11 @@
         const selectVisible = root.querySelector('[data-crm-select-visible]');
         if (!toolbar || checkboxes.length === 0 || !modal) return;
 
+        // CRM POST navigation swaps only .orbita-content. If a previous bulk
+        // modal was replaced while open, its body scroll lock can survive the
+        // swap even though the new modal starts hidden.
+        if (modal.hidden) document.body.classList.remove('orbita-modal-open');
+
         root.dataset.crmBulkReady = 'true';
         const countLabels = Array.from(root.querySelectorAll('[data-crm-bulk-count], [data-crm-bulk-modal-count]'));
         const operationField = modal.querySelector('[data-crm-bulk-operation]');
@@ -899,11 +904,15 @@
         });
         forms.forEach((form) => {
             form.addEventListener('submit', (event) => {
-                if (syncFormCardIds().length > 0) return;
-                event.preventDefault();
-                if (window.Orbita && typeof window.Orbita.toast === 'function') {
-                    window.Orbita.toast('Выберите хотя бы одну карточку.', { variant: 'error' });
+                if (syncFormCardIds().length === 0) {
+                    event.preventDefault();
+                    if (window.Orbita && typeof window.Orbita.toast === 'function') {
+                        window.Orbita.toast('Выберите хотя бы одну карточку.', { variant: 'error' });
+                    }
+                    return;
                 }
+
+                if (form.hasAttribute('data-crm-bulk-transition-form')) closeModal();
             });
         });
 
