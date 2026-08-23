@@ -900,22 +900,19 @@
         }
     }
 
+    var snapshotFetcher = shared && shared.createSnapshotFetcher
+        ? shared.createSnapshotFetcher('statistics', applySnapshot, { errorName: 'Statistics' })
+        : null;
+
     function fetchSnapshot() {
-        var root = getLiveRoot();
-        if (!root) return Promise.resolve();
-
-        var url = root.getAttribute('data-orbita-snapshot');
-        if (!url) return Promise.resolve();
-
-        return fetch(url, { credentials: 'same-origin' })
-            .then(function (res) {
-                if (!res.ok) throw new Error('Statistics snapshot failed: ' + res.status);
-                return res.json();
-            })
-            .then(applySnapshot);
+        return snapshotFetcher ? snapshotFetcher.fetchSnapshot() : Promise.resolve();
     }
 
     function initLiveRefresh() {
+        if (shared && shared.registerLivePage) {
+            shared.registerLivePage('statistics', snapshotFetcher);
+            return;
+        }
         if (!getLiveRoot()) return;
         if (window.OrbitaLive && typeof window.OrbitaLive.register === 'function') {
             window.OrbitaLive.register('statistics', { fetchSnapshot: fetchSnapshot });

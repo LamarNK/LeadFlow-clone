@@ -29,6 +29,29 @@ api.orbitsu.ru {
 	}
 }
 
+telephony.orbitsu.ru {
+	request_body {
+		max_size 512MB
+	}
+
+	reverse_proxy 127.0.0.1:8084 {
+		transport http {
+			read_timeout 30m
+			write_timeout 30m
+		}
+	}
+}
+
+sip.orbitsu.ru {
+	reverse_proxy 127.0.0.1:8088 {
+		header_up Host {host}
+		transport http {
+			read_timeout 1h
+			write_timeout 1h
+		}
+	}
+}
+
 # Fallback по IP, пока DNS не распространился
 http://163.5.153.207 {
 	request_body {

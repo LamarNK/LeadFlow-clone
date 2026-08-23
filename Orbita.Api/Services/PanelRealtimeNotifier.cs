@@ -24,6 +24,9 @@ public sealed class PanelRealtimeNotifier(IHubContext<PanelHub> hub) : IPanelRea
             return;
         }
 
+        // Drop aggregates before the SignalR flush so the client refresh reads fresh data.
+        PanelAggregateCache.Invalidate(kinds);
+
         lock (_sync)
         {
             var key = officeId?.ToString("D") ?? "none";

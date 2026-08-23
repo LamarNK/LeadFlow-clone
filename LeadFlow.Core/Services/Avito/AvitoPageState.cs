@@ -12,21 +12,31 @@ public sealed record AvitoPageState(
     int CandidatesItemCount,
     bool HasLoginForm,
     bool HasCaptcha,
-    bool HasFirewallIp = false)
+    bool HasFirewallIp = false,
+    bool HasInsufficientAdvance = false,
+    bool HasEmailConfirmationRequired = false,
+    bool HasTransientError = false)
 {
     public bool IsOnCandidates =>
         PageKind == AvitoPageKind.Candidates
         && !ProfileSwitchModalOpen;
 
+    public bool IsTransientPageError =>
+        HasTransientError || PageKind == AvitoPageKind.TransientError;
+
     public string DescribeKindRu() => PageKind switch
     {
+        _ when HasTransientError || PageKind == AvitoPageKind.TransientError => "ошибка загрузки страницы Avito (прокси мог подвиснуть)",
+        _ when HasInsufficientAdvance && HasEmailConfirmationRequired => "объявления скрыты: недостаточно денег на авансе; требуется подтверждение почты",
+        _ when HasInsufficientAdvance => "объявления скрыты: недостаточно денег на авансе",
+        _ when HasEmailConfirmationRequired => "требуется подтверждение почты",
         AvitoPageKind.Candidates => "страница откликов",
         AvitoPageKind.Dashboard => "главная панель Avito Pro",
         AvitoPageKind.ProfileItems => "раздел «Мои объявления»",
         AvitoPageKind.ProfileSwitchModal => "модалка «Выбор профиля»",
         AvitoPageKind.Login => "форма входа",
         AvitoPageKind.Captcha when HasFirewallIp => "блок IP Avito",
-        AvitoPageKind.Captcha => "капча / блок IP",
+        AvitoPageKind.Captcha => "капча",
         _ => "неизвестная страница"
     };
 

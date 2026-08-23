@@ -294,6 +294,10 @@
     };
 
     const refreshBoard = () => {
+        var fetcher = window.OrbitaLiveShared;
+        if (fetcher && fetcher.createSnapshotFetcher && crmSnapshotFetcher) {
+            return crmSnapshotFetcher.fetchSnapshot();
+        }
         var root = document.querySelector('[data-orbita-live]');
         var liveWorkspace = document.querySelector('[data-crm-live-workspace]');
         if (!root || !liveWorkspace) return Promise.resolve();
@@ -307,10 +311,24 @@
             })
             .then(function (html) {
                 if (!html || !html.trim()) return;
-                liveWorkspace.innerHTML = html;
-                initCrmBoardPage();
+                applyCrmBoardHtml(html);
             });
     };
+
+    const applyCrmBoardHtml = (html) => {
+        var liveWorkspace = document.querySelector('[data-crm-live-workspace]');
+        if (!liveWorkspace || !html || !String(html).trim()) return;
+        liveWorkspace.innerHTML = html;
+        initCrmBoardPage();
+    };
+
+    var crmSnapshotFetcher = window.OrbitaLiveShared && window.OrbitaLiveShared.createSnapshotFetcher
+        ? window.OrbitaLiveShared.createSnapshotFetcher('crm', applyCrmBoardHtml, {
+            errorName: 'Crm board',
+            asText: true,
+            headers: { 'X-Orbita-Content-Only': '1' }
+        })
+        : null;
 
     const initBoardNavigation = (root) => {
         if (root.dataset.navigationReady === 'true') return;
@@ -1296,7 +1314,9 @@
         initCrmCardPage();
         restoreBoardBackLinks();
 
-        if (window.OrbitaLive && typeof window.OrbitaLive.register === 'function'
+        if (window.OrbitaLiveShared && window.OrbitaLiveShared.registerLivePage) {
+            window.OrbitaLiveShared.registerLivePage('crm', crmSnapshotFetcher);
+        } else if (window.OrbitaLive && typeof window.OrbitaLive.register === 'function'
             && document.querySelector('[data-orbita-live][data-orbita-live-page="crm"]')) {
             window.OrbitaLive.register('crm', { fetchSnapshot: refreshBoard });
         }

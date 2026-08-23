@@ -46,6 +46,8 @@ public sealed class PanelUserProfileEntity
     public string UserId { get; set; } = string.Empty;
     public string? FullName { get; set; }
     public Guid? OfficeId { get; set; }
+    /// <summary>UTC-момент последней активности пользователя в веб-панели.</summary>
+    public DateTime? LastSeenAtUtc { get; set; }
     public int CrmCapacity { get; set; } = 300;
     public bool CrmShiftActive { get; set; }
 
@@ -58,6 +60,16 @@ public sealed class PanelUserProfileEntity
     public DateTime? CrmLastAutoAssignmentAtUtc { get; set; }
 
     public OfficeEntity? Office { get; set; }
+}
+
+/// <summary>
+/// Час, в котором пользователь панели был онлайн (UTC, усечённый до часа).
+/// Одна строка на пару пользователь+час — для графика пиковой активности.
+/// </summary>
+public sealed class PanelUserPresenceHourEntity
+{
+    public string UserId { get; set; } = string.Empty;
+    public DateTime HourUtc { get; set; }
 }
 
 /// <summary>
@@ -205,6 +217,13 @@ public sealed class WorkerEntity
     public long? LastRamTotalMb { get; set; }
     public string? AdsPowerApiBaseUrl { get; set; }
     public string? AdsPowerApiKey { get; set; }
+    /// <summary>Ключ RuCaptcha для автопрохождения GeeTest v4 на Avito.</summary>
+    public string? RuCaptchaApiKey { get; set; }
+    /// <summary>ID группы AdsPower; null — синхронизировать все профили.</summary>
+    public string? AdsPowerGroupId { get; set; }
+    public string? AdsPowerGroupName { get; set; }
+    /// <summary>JSON-список групп AdsPower, последний раз полученный с воркера.</summary>
+    public string? AdsPowerGroupsJson { get; set; }
     public string? LastUpdateVersion { get; set; }
     public bool? LastUpdateSuccess { get; set; }
     public string? LastUpdateMessage { get; set; }
@@ -251,6 +270,8 @@ public sealed class WorkerAccountEntity
     public Guid WorkerId { get; set; }
     public Guid AccountId { get; set; }
     public string AdsPowerProfileId { get; set; } = string.Empty;
+    public string? AdsPowerGroupId { get; set; }
+    public string? AdsPowerGroupName { get; set; }
     public string DisplayName { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
     public bool IsEnabled { get; set; }
@@ -338,6 +359,10 @@ public sealed class MonitoringSubProfileRunEntity
     public int PublishedCount { get; set; }
     public int DeferredCount { get; set; }
     public int SkippedDuplicateCount { get; set; }
+    /// <summary>Новые отклики, впервые собранные в этом проходе (без повторных публикаций).</summary>
+    public int CollectedCount { get; set; }
+    public int CaptchaCount { get; set; }
+    public int CaptchaSolvedCount { get; set; }
 
     public MonitoringCycleRunEntity CycleRun { get; set; } = null!;
 }
@@ -848,6 +873,60 @@ public sealed class CrmCandidateHistoryEntity
     public string ActorUserId { get; set; } = string.Empty;
     public string ActorName { get; set; } = string.Empty;
     public DateTime CreatedAtUtc { get; set; }
+}
+
+/// <summary>Provider callback configuration for an office telephony integration.</summary>
+public sealed class CrmTelephonyWebhookEntity
+{
+    public Guid Id { get; set; }
+    public Guid OfficeId { get; set; }
+    public string Provider { get; set; } = string.Empty;
+    public Guid PublicId { get; set; }
+    public string SecretHash { get; set; } = string.Empty;
+    public string? ProviderClientId { get; set; }
+    public string? ProviderAccessTokenProtected { get; set; }
+    public bool IsEnabled { get; set; } = true;
+    public DateTime CreatedAtUtc { get; set; }
+    public DateTime UpdatedAtUtc { get; set; }
+}
+
+/// <summary>Maps a provider-side SIP identity (for example extension 201) to an Orbita user.</summary>
+public sealed class CrmTelephonyUserBindingEntity
+{
+    public Guid Id { get; set; }
+    public Guid OfficeId { get; set; }
+    public string Provider { get; set; } = string.Empty;
+    public string ProviderUserKey { get; set; } = string.Empty;
+    public string OutboundProvider { get; set; } = CrmTelephonyOutboundProviders.Default;
+    public string UserId { get; set; } = string.Empty;
+    public DateTime CreatedAtUtc { get; set; }
+    public DateTime UpdatedAtUtc { get; set; }
+}
+
+/// <summary>A completed provider call attached to a CRM card by normalized client phone.</summary>
+public sealed class CrmCallEntity
+{
+    public Guid Id { get; set; }
+    public Guid OfficeId { get; set; }
+    public Guid? CardId { get; set; }
+    public string Provider { get; set; } = string.Empty;
+    public string ExternalCallId { get; set; } = string.Empty;
+    public string Direction { get; set; } = string.Empty;
+    public string CallerPhone { get; set; } = string.Empty;
+    public string CalledPhone { get; set; } = string.Empty;
+    public string ClientPhoneNormalized { get; set; } = string.Empty;
+    public string? ProviderUserKey { get; set; }
+    public string? ManagerUserId { get; set; }
+    public DateTime StartedAtUtc { get; set; }
+    public int DurationSeconds { get; set; }
+    public string? RecordingUrl { get; set; }
+    public string? RecordingStoragePath { get; set; }
+    public string? RecordingContentType { get; set; }
+    public string? RecordingFileName { get; set; }
+    public int RecordingFetchAttempts { get; set; }
+    public DateTime? NextRecordingFetchAtUtc { get; set; }
+    public DateTime ReceivedAtUtc { get; set; }
+    public DateTime UpdatedAtUtc { get; set; }
 }
 
 /// <summary>Additional active contact phones for a candidate person (beyond primary on response).</summary>

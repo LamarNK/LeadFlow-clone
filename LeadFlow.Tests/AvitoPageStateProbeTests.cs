@@ -6,6 +6,17 @@ namespace LeadFlow.Tests;
 public sealed class AvitoPageStateProbeTests
 {
     [Fact]
+    public void BuildProbeScript_SeparatesIpBlockFromCaptcha()
+    {
+        var script = AvitoPageStateScripts.BuildProbeScript();
+
+        Assert.Contains("const hasIpBlock", script, StringComparison.Ordinal);
+        Assert.Contains("const hasCaptchaChallenge", script, StringComparison.Ordinal);
+        Assert.Contains("!hasCaptchaChallenge && (hasIpText || hasStaticIpBlock)", script, StringComparison.Ordinal);
+        Assert.Contains("const hasFirewallIp = hasIpBlock", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void TryParse_ProfileSwitchModalOpen_DetectsModal()
     {
         const string json = """
@@ -144,6 +155,106 @@ public sealed class AvitoPageStateProbeTests
         Assert.Equal(AvitoPageKind.Captcha, state!.PageKind);
         Assert.True(state.HasFirewallIp);
         Assert.Contains("блок IP", state.DescribeKindRu(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void TryParse_InsufficientAdvance_DetectsHiddenAdsBanner()
+    {
+        const string json = """
+            {
+              "pageKind":"profileItems",
+              "url":"https://www.avito.ru/profile/pro/items",
+              "title":"Мои объявления",
+              "profileSwitchModalOpen":false,
+              "profileCardsCount":0,
+              "candidatesItemCount":0,
+              "hasLoginForm":false,
+              "hasCaptcha":false,
+              "hasInsufficientAdvance":true
+            }
+            """;
+
+        var state = AvitoPageStateProbe.TryParse(json);
+
+        Assert.NotNull(state);
+        Assert.True(state!.HasInsufficientAdvance);
+        Assert.Contains("недостаточно денег", state.DescribeKindRu(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void TryParse_EmailConfirmationRequired_DetectsConfirmationBanner()
+    {
+        const string json = """
+            {
+              "pageKind":"profileItems",
+              "url":"https://www.avito.ru/profile/pro/items",
+              "title":"Мои объявления",
+              "profileSwitchModalOpen":false,
+              "profileCardsCount":0,
+              "candidatesItemCount":0,
+              "hasLoginForm":false,
+              "hasCaptcha":false,
+              "hasEmailConfirmationRequired":true
+            }
+            """;
+
+        var state = AvitoPageStateProbe.TryParse(json);
+
+        Assert.NotNull(state);
+        Assert.True(state!.HasEmailConfirmationRequired);
+        Assert.Contains("почт", state.DescribeKindRu(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void BuildProbeScript_DetectsTransientErrorPageBeforeProfileItemsUrl()
+    {
+        var script = AvitoPageStateScripts.BuildProbeScript();
+
+        Assert.Contains("const hasTransientError", script, StringComparison.Ordinal);
+        Assert.Contains(@"Попробуйте\s+обновить\s+страницу\s+или\s+загляните\s+позже", script, StringComparison.Ordinal);
+        Assert.Contains(@"обязательно\s+всё\s+починим", script, StringComparison.Ordinal);
+        Assert.Contains("pageKind = \"transientError\"", script, StringComparison.Ordinal);
+
+        var transientKindIndex = script.IndexOf("pageKind = \"transientError\"", StringComparison.Ordinal);
+        var profileItemsKindIndex = script.IndexOf("pageKind = \"profileItems\"", StringComparison.Ordinal);
+        Assert.True(transientKindIndex > 0 && profileItemsKindIndex > transientKindIndex);
+    }
+
+    [Fact]
+    public void TryParse_TransientErrorOnProfileItemsUrl_IsTransientPageError()
+    {
+        const string json = """
+            {
+              "pageKind":"transientError",
+              "url":"https://www.avito.ru/profile/pro/items",
+              "title":"Мои объявления",
+              "profileSwitchModalOpen":false,
+              "profileCardsCount":0,
+              "candidatesItemCount":0,
+              "hasLoginForm":false,
+              "hasCaptcha":false,
+              "hasTransientError":true
+            }
+            """;
+
+        var state = AvitoPageStateProbe.TryParse(json);
+
+        Assert.NotNull(state);
+        Assert.Equal(AvitoPageKind.TransientError, state!.PageKind);
+        Assert.True(state.HasTransientError);
+        Assert.True(state.IsTransientPageError);
+        Assert.Contains("прокси", state.DescribeKindRu(), StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("Мои объявления", state.DescribeKindRu(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void BuildClickRefreshOnTransientErrorScript_RequiresErrorTextAndExactButton()
+    {
+        var script = AvitoPageStateScripts.BuildClickRefreshOnTransientErrorScript();
+
+        Assert.Contains(@"Попробуйте\s+обновить\s+страницу", script, StringComparison.Ordinal);
+        Assert.Contains("Обновить", script, StringComparison.Ordinal);
+        Assert.Contains("btn.click()", script, StringComparison.Ordinal);
     }
 
     [Fact]

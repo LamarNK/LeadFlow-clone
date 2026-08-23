@@ -51,6 +51,12 @@ public static class MonitoringTiming
     public const int AdsPowerForcedNavigationMaxWaitMs = 8_000;
 
     /// <summary>
+    /// Сколько ждать результат проверки прокси на стартовой странице AdsPower
+    /// (<c>start.adspower.net</c>). IP-checker может идти несколько секунд.
+    /// </summary>
+    public const int AdsPowerStartPageProxyCheckMaxWaitMs = 20_000;
+
+    /// <summary>
     /// После стольких полных циклов мониторинга (с browser/start…browser/stop)
     /// воркер принудительно закрывает все известные браузеры AdsPower —
     /// чтобы окна, открытые оператором «посмотреть», не висели бесконечно.
@@ -78,6 +84,53 @@ public static class MonitoringTiming
     /// <summary>Как часто воркер перечитывает модалку «Выбор профиля» Avito Pro (часы).</summary>
     public const int SubProfilesRefreshIntervalHours = 24;
 
+    /// <summary>Максимум кликов «показать номер» на один субпрофиль за проход (Avito отдельно считает этот API).</summary>
+    public const int MaxPhoneRevealsPerSubProfilePerCycle = 10;
+
+    /// <summary>Нижняя граница бюджета раскрытия номеров за проход (рандом в [min..max]).</summary>
+    public const int MinPhoneRevealsPerSubProfilePerCycle = 6;
+
+    /// <summary>Максимум шаблонных автоответов в чат на один субпрофиль за проход.</summary>
+    public const int MaxMessengerAutoRepliesPerSubProfilePerCycle = 3;
+
+    /// <summary>Нижняя граница бюджета автоответов за проход.</summary>
+    public const int MinMessengerAutoRepliesPerSubProfilePerCycle = 1;
+
+    /// <summary>Вероятность (‰) пропустить чтение баланса в этом проходе субпрофиля.</summary>
+    public const int SkipBalanceChancePermille = 250;
+
+    /// <summary>Вероятность (‰) коротко прокрутить список назад, как при перечитывании.</summary>
+    public const int ScrollBackChancePermille = 200;
+
+    /// <summary>Вероятность (‰) задержаться на «Мои объявления» перед откликами.</summary>
+    public const int ItemsLingerChancePermille = 400;
+
+    /// <summary>Вероятность (‰) лишнего движения мыши перед кликом.</summary>
+    public const int MouseWanderChancePermille = 350;
+
+    /// <summary>Вероятность (‰) дополнительной паузы между субпрофилями.</summary>
+    public const int ExtraSubProfilePauseChancePermille = 300;
+
+    /// <summary>Пауза «смотрю список» после загрузки откликов.</summary>
+    public const int HumanDelayAfterListReadyMinMs = 1800;
+    public const int HumanDelayAfterListReadyMaxMs = 6500;
+
+    /// <summary>Пауза на объявлениях, если решили задержаться.</summary>
+    public const int HumanDelayItemsLingerMinMs = 2500;
+    public const int HumanDelayItemsLingerMaxMs = 9000;
+
+    /// <summary>Ночная тишина по Москве: с этого часа включительно.</summary>
+    public const int NightQuietStartHourInclusive = 23;
+
+    /// <summary>Ночная тишина по Москве: до этого часа (не включая).</summary>
+    public const int NightQuietEndHourExclusive = 7;
+
+    /// <summary>Нижняя граница паузы между циклами ночью (минуты).</summary>
+    public const int NightQuietDelayMinMinutes = 45;
+
+    /// <summary>Верхняя граница паузы между циклами ночью (минуты).</summary>
+    public const int NightQuietDelayMaxMinutes = 90;
+
     // ---- «Человеческие» рандомные паузы ----
     // Идея: после открытия страницы / переключения профиля / обработки отклика
     // имитируем чтение пользователем, чтобы не палить ботскую частоту запросов.
@@ -102,13 +155,48 @@ public static class MonitoringTiming
     public const int HumanDelayBetweenSubProfilesMinMs = 8000;
     public const int HumanDelayBetweenSubProfilesMaxMs = 18000;
 
-    /// <summary>Перед кликом по карточке отклика (панель «Данные», чат) — короткий jitter, без долгих пауз.</summary>
-    public const int HumanDelayBeforeCandidateClickMinMs = 450;
-    public const int HumanDelayBeforeCandidateClickMaxMs = 950;
+    /// <summary>Перед кликом по карточке отклика (панель «Данные», чат).</summary>
+    public const int HumanDelayBeforeCandidateClickMinMs = 650;
+    public const int HumanDelayBeforeCandidateClickMaxMs = 1600;
 
     /// <summary>После клика по карточке до чтения панели или мини-чата.</summary>
-    public const int HumanDelayAfterCandidateClickMinMs = 520;
-    public const int HumanDelayAfterCandidateClickMaxMs = 1100;
+    public const int HumanDelayAfterCandidateClickMinMs = 800;
+    public const int HumanDelayAfterCandidateClickMaxMs = 2000;
+
+    /// <summary>После чтения панели «Данные» — имитация просмотра, до следующей карточки.</summary>
+    public const int HumanDelayAfterDetailPanelReadMinMs = 350;
+    public const int HumanDelayAfterDetailPanelReadMaxMs = 950;
+
+    /// <summary>После шага прокрутки списка откликов (подгрузка + «почитать»).</summary>
+    public const int HumanDelayAfterListScrollMinMs = 650;
+    public const int HumanDelayAfterListScrollMaxMs = 1500;
+
+    /// <summary>После клика «показать номер» до опроса popup / inline.</summary>
+    public const int HumanDelayAfterPhoneRevealClickMinMs = 700;
+    public const int HumanDelayAfterPhoneRevealClickMaxMs = 1700;
+
+    /// <summary>После успешного раскрытия номера — не сразу к следующей карточке.</summary>
+    public const int HumanDelayAfterPhoneRevealSuccessMinMs = 900;
+    public const int HumanDelayAfterPhoneRevealSuccessMaxMs = 2200;
+
+    /// <summary>Если popup не отдал номер — короткая пауза перед ретраем.</summary>
+    public const int HumanDelayAfterPhoneRevealMissMinMs = 500;
+    public const int HumanDelayAfterPhoneRevealMissMaxMs = 1100;
+
+    /// <summary>Опрос DOM popup контактов (мс).</summary>
+    public const int ContactsPopupPollMinMs = 220;
+    public const int ContactsPopupPollMaxMs = 420;
+
+    /// <summary>Максимум ожидания номера в popup после клика (мс).</summary>
+    public const int ContactsPopupMaxWaitMs = 5_500;
+
+    /// <summary>После закрытия мини-чата / сбора переписки — «прочитал и закрыл».</summary>
+    public const int HumanDelayAfterMessengerCardMinMs = 2400;
+    public const int HumanDelayAfterMessengerCardMaxMs = 6500;
+
+    /// <summary>Пауза между символами при наборе (логин, чат).</summary>
+    public const int HumanTypeCharDelayMinMs = 38;
+    public const int HumanTypeCharDelayMaxMs = 95;
 
     // ---- Ожидание готовности страницы откликов (сигналы DOM, не только таймер) ----
 
@@ -129,6 +217,18 @@ public static class MonitoringTiming
 
     /// <summary>Сколько раз повторять переключение субпрофиля с восстановлением страницы между попытками.</summary>
     public const int SubProfileSwitchMaxAttempts = 3;
+
+    /// <summary>
+    /// Сколько раз обновлять вкладку, если Avito показал заглушку «Ошибка / обновите страницу»
+    /// (часто из-за зависшего прокси).
+    /// </summary>
+    public const int TransientErrorReloadMaxAttempts = 2;
+
+    /// <summary>Пауза после обновления заглушки Avito перед повторной проверкой DOM (мс).</summary>
+    public const int TransientErrorReloadSettleMs = 1800;
+
+    /// <summary>Таймаут Reload на заглушке Avito (мс).</summary>
+    public const int TransientErrorReloadTimeoutMs = 45_000;
 
     /// <summary>Максимум ожидания подтверждения активного суб-профиля после switch (мс).</summary>
     public const int VerifySubProfileMaxWaitMs = 20_000;
@@ -171,11 +271,11 @@ public static class MonitoringTiming
     /// <summary>Интервал опроса после submit (мс).</summary>
     public const int AutoLoginPostSubmitPollMs = 650;
 
-    /// <summary>Пауза после ввода текста в мини-чат перед отправкой (мс).</summary>
-    public const int MessengerAutoReplyAfterTypeMinMs = 350;
+    /// <summary>Пауза после набора текста в мини-чат перед отправкой (мс).</summary>
+    public const int MessengerAutoReplyAfterTypeMinMs = 800;
 
-    /// <summary>Пауза после ввода текста в мини-чат перед отправкой (мс).</summary>
-    public const int MessengerAutoReplyAfterTypeMaxMs = 900;
+    /// <summary>Пауза после набора текста в мини-чат перед отправкой (мс).</summary>
+    public const int MessengerAutoReplyAfterTypeMaxMs = 1800;
 
     /// <summary>Ожидание появления отправленного сообщения в истории чата (мс).</summary>
     public const int MessengerAutoReplyPostSendMaxWaitMs = 8_000;

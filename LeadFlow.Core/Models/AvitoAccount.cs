@@ -18,6 +18,11 @@ public sealed partial class AvitoAccount : ObservableObject
     [ObservableProperty] private AvitoAccountStatus status = AvitoAccountStatus.NotConfigured;
     [ObservableProperty] private DateTime? lastAuthCheckAt;
     [ObservableProperty] private DateTime? lastMonitoringAt;
+    /// <summary>Когда можно снова проходить аккаунт (UTC). Пишется локально на воркере, переживает рестарт.</summary>
+    [ObservableProperty] private DateTime? nextMonitoringAtUtc;
+    public DateTime? MonitoringPassStartedAtUtc { get; set; }
+    public DateTime? MonitoringPassFinishedAtUtc { get; set; }
+    public HashSet<string> MonitoringPassCompletedSubIds { get; set; } = new(StringComparer.Ordinal);
     [ObservableProperty] private string lastErrorMessage = string.Empty;
 
     [ObservableProperty] private string? assignedUserAgent;

@@ -182,17 +182,21 @@ public sealed class AvitoResponseSource(
 
         if (hasCaptcha)
         {
-            account.Status = AvitoAccountStatus.RequiresManualAction;
             var rawHtml = root.TryGetProperty("html", out var htmlProp) ? htmlProp.GetString() : null;
             var kind = AvitoCaptchaDetector.Classify(rawHtml) ?? "captcha";
+            var issueKind = AvitoSubProfileIssueKind.FromCaptchaKind(kind);
             const string captchaDetail = "нужна проверка на странице откликов.";
             if (activeSubProfile is not null)
             {
                 AccountIssueTracker.ApplySubProfileIssue(
                     account,
                     activeSubProfile,
-                    AvitoSubProfileIssueKind.Captcha,
+                    issueKind,
                     captchaDetail);
+            }
+            else if (MonitoringPassFailurePolicy.AccountStatusForIssueKind(issueKind) is { } blockingStatus)
+            {
+                account.Status = blockingStatus;
             }
 
             throw new AvitoCaptchaDetectedException(

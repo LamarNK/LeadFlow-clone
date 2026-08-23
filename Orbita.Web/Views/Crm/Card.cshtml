@@ -123,7 +123,7 @@
                         <summary class="settings-secondary-btn" aria-label="Действия с номером @card.PhoneRaw"><i class="fa-solid fa-phone" aria-hidden="true"></i>@card.PhoneRaw<i class="fa-solid fa-chevron-down crm-phone-actions__caret" aria-hidden="true"></i></summary>
                         <div class="crm-phone-actions__menu">
                             <span class="crm-phone-actions__title">Связаться с кандидатом</span>
-                            <a href="tel:@card.PhoneRaw"><i class="fa-solid fa-phone" aria-hidden="true"></i>Позвонить</a>
+                            <button type="button" data-orbita-call data-phone="@card.PhoneRaw"><i class="fa-solid fa-phone" aria-hidden="true"></i>Позвонить в Орбите</button>
                             @if (!string.IsNullOrWhiteSpace(messengerPhone))
                             {
                                 <a href="https://wa.me/@messengerPhone" target="_blank" rel="noopener"><i class="fa-brands fa-whatsapp" aria-hidden="true"></i>WhatsApp</a>

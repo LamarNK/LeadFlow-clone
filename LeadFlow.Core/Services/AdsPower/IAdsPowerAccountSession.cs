@@ -10,7 +10,7 @@ public interface IAdsPowerAccountSession : IAsyncDisposable
 {
     string AdsPowerUserId { get; }
 
-    Task<bool> SwitchSubProfileAsync(string subProfileId, CancellationToken cancellationToken = default);
+    Task<SubProfileSwitchResult> SwitchSubProfileAsync(string subProfileId, CancellationToken cancellationToken = default);
 
     Task<bool> VerifyActiveSubProfileAsync(string subProfileId, CancellationToken cancellationToken = default);
 

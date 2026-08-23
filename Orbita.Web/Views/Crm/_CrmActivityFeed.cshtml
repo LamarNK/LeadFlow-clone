@@ -42,18 +42,20 @@
         var feedTone = item.Kind switch
         {
             "note" => "note",
+            "call" => "call",
             "task-done" => "completed",
             "task" when isOpenTask && feedTask?.IsOverdue == true => "task-overdue",
             "task" when isOpenTask => "task-active",
             "task" => "completed",
             _ => "system"
         };
-        var showFeedIcon = feedTone is "note" or "task-active" or "task-overdue";
+        var showFeedIcon = feedTone is "note" or "call" or "task-active" or "task-overdue";
         var feedIcon = item.IsPinned
             ? "fa-thumbtack"
             : feedTone switch
             {
                 "note" => "fa-comment-dots",
+                "call" => item.CallDirection == CrmCallDirections.Incoming ? "fa-phone-volume" : "fa-phone",
                 "task-overdue" => "fa-calendar-xmark",
                 _ => "fa-calendar-check"
             };
@@ -119,6 +121,36 @@
                     @if (!string.IsNullOrWhiteSpace(item.CompletionReason))
                     {
                         <p class="crm-feed-item__task-result"><strong>Причина закрытия:</strong> @item.CompletionReason</p>
+                    }
+                }
+                else if (item.Kind == "call")
+                {
+                    var storedRecordingUrl = item.CallRecordingStored && item.CallId is Guid callId
+                        ? Url.Action("CallRecording", "Crm", new { callId })
+                        : null;
+                    var recordingUrl = !string.IsNullOrWhiteSpace(storedRecordingUrl)
+                        ? storedRecordingUrl
+                        : item.CallRecordingUrl;
+                    <div class="crm-feed-item__call-details">
+                        @if (!string.IsNullOrWhiteSpace(item.CallClientPhone))
+                        {
+                            <span><small>Клиент</small>+@item.CallClientPhone</span>
+                        }
+                        <span><small>Длительность</small>@(TimeSpan.FromSeconds(item.CallDurationSeconds ?? 0).ToString(@"mm\:ss"))</span>
+                    </div>
+                    @if (!string.IsNullOrWhiteSpace(recordingUrl))
+                    {
+                        <audio class="crm-feed-item__call-player" controls preload="none">
+                            <source src="@recordingUrl" />
+                            Ваш браузер не поддерживает прослушивание записи.
+                        </audio>
+                        <a class="crm-feed-item__call-link" href="@recordingUrl" target="_blank" rel="noopener noreferrer">
+                            <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i>Открыть запись
+                        </a>
+                    }
+                    else
+                    {
+                        <p class="crm-feed-item__call-pending">Запись ещё не получена от SIPOUT.</p>
                     }
                 }
                 else if (!string.IsNullOrWhiteSpace(item.ActionComment))

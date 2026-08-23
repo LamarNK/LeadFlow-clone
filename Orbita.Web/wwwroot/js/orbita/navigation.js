@@ -266,14 +266,35 @@
         }
     }
 
-    runtime.navigateTo = async function navigateTo(targetPath, push) {
-        push = push !== false;
-        var content = document.querySelector('.orbita-content');
-        if (!content) {
-            window.location.href = targetPath;
-            return;
-        }
+    var NAV_STALE_MS = 5000;
+    var navGeneration = 0;
+    var lastAppliedPath = null;
+    var lastAppliedHtml = null;
+    var pageCache = new Map();
+    var inFlightContent = new Map();
 
+    function normalizeNavPath(targetPath) {
+        try {
+            var u = new URL(targetPath, window.location.origin);
+            return u.pathname + u.search;
+        } catch (e) {
+            return targetPath || '/';
+        }
+    }
+
+    function shouldPrefetch() {
+        try {
+            if (navigator.connection && navigator.connection.saveData) return false;
+        } catch (e) { }
+        return true;
+    }
+
+    function getActiveLivePage() {
+        var root = document.querySelector('[data-orbita-live]');
+        return root ? root.getAttribute('data-orbita-live-page') : null;
+    }
+
+    function destroyLeavingPage() {
         if (window.OrbitaDashboard && typeof window.OrbitaDashboard.destroyCharts === 'function') {
             try { window.OrbitaDashboard.destroyCharts(); } catch (e) { }
         }
@@ -286,133 +307,205 @@
         if (window.OrbitaLive && typeof window.OrbitaLive.unregister === 'function') {
             try { window.OrbitaLive.unregister(getActiveLivePage()); } catch (e) { }
         }
+    }
 
-        function getActiveLivePage() {
-            var root = document.querySelector('[data-orbita-live]');
-            return root ? root.getAttribute('data-orbita-live-page') : null;
-        }
+    function cacheEntryIsFresh(entry) {
+        return !!(entry
+            && !entry.invalidated
+            && (Date.now() - entry.fetchedAt) < NAV_STALE_MS);
+    }
 
-        // Show spinner immediately
-        runtime.showPageLoading();
+    function fetchContent(targetPath) {
+        var key = normalizeNavPath(targetPath);
+        var existing = inFlightContent.get(key);
+        if (existing) return existing;
 
-        // Ensure the browser actually paints the spinner before we start fetching
-        // (important for very fast demo responses)
-        await new Promise(function (resolve) {
-            requestAnimationFrame(function () {
-                requestAnimationFrame(resolve);
-            });
+        var request = fetch(key, {
+            method: 'GET',
+            credentials: 'same-origin',
+            headers: { 'X-Orbita-Content-Only': '1' }
+        }).then(function (res) {
+            if (!res.ok) {
+                var error = new Error('Orbita content fetch failed: ' + res.status);
+                error.status = res.status;
+                throw error;
+            }
+            return res.text();
+        }).then(function (html) {
+            pageCache.set(key, { html: html, fetchedAt: Date.now(), invalidated: false });
+            return html;
+        }).finally(function () {
+            if (inFlightContent.get(key) === request) {
+                inFlightContent.delete(key);
+            }
         });
 
-        var fetchStart = Date.now();
+        inFlightContent.set(key, request);
+        return request;
+    }
 
-        try {
-            var res = await fetch(targetPath, {
-                method: 'GET',
-                credentials: 'same-origin',
-                headers: { 'X-Orbita-Content-Only': '1' }
-            });
+    function extractPageMeta(content, targetPath) {
+        var meta = content.querySelector('.orbita-page-meta');
+        var pageTitle = null;
+        var pageKey = null;
+        var nextShellVersion = null;
+        if (meta) {
+            pageTitle = meta.getAttribute('data-orbita-page-title');
+            pageKey = meta.getAttribute('data-orbita-controller');
+            nextShellVersion = meta.getAttribute('data-orbita-shell-version');
+            meta.parentNode.removeChild(meta);
+        }
+        var currentShellVersion = document.body.getAttribute('data-orbita-shell-version');
+        if (nextShellVersion && currentShellVersion !== nextShellVersion) {
+            window.location.href = targetPath;
+            return { pageKey: pageKey, reload: true };
+        }
+        if (pageTitle) {
+            document.title = pageTitle;
+        }
+        return { pageKey: pageKey, reload: false };
+    }
 
-            if (!res.ok) {
-                runtime.hidePageLoading();
-                window.location.href = targetPath;
-                return;
-            }
-
-            var html = await res.text();
-
-            // Make sure the loading spinner is visible for at least this long
-            // even in super-fast demo mode. This is why you asked for a spinner.
-            var MIN_LOADING_MS = 300;
-            var elapsed = Date.now() - fetchStart;
-            var remaining = Math.max(0, MIN_LOADING_MS - elapsed);
-
-            if (remaining > 0) {
-                await new Promise(function (r) { setTimeout(r, remaining); });
-            }
-
-            runtime.hidePageLoading();
-
-            // Swap content first, then run inits — must complete before page scripts / events
-            content.style.transition = 'opacity 0.15s ease';
-            content.style.opacity = '0.15';
-
-            await new Promise(function (resolve) {
-                requestAnimationFrame(function () {
-                    content.innerHTML = html;
-                    content.style.opacity = '1';
-                    setTimeout(function () {
-                        content.style.transition = '';
-                    }, 200);
-                    resolve();
-                });
-            });
-
-            // meta for title + controller (read from new content)
-            var meta = content.querySelector('.orbita-page-meta');
-            var pageTitle = null;
-            var pageKey = null;
-            if (meta) {
-                pageTitle = meta.getAttribute('data-orbita-page-title');
-                pageKey = meta.getAttribute('data-orbita-controller');
-                meta.parentNode.removeChild(meta);
-            }
-            if (pageTitle) {
-                document.title = pageTitle;
-            }
-
-            // A forward transition from task/team lists into a candidate card or
-            // standalone task detail must start at the top. Back navigation keeps
-            // push=false, allowing the dedicated list-state restorers to return the
-            // user to the exact previous scroll position.
-            if (push && content.querySelector('.crm-card-page, .crm-task-detail-page')) {
-                var scrollDetailToTop = function () {
-                    window.scrollTo({ left: 0, top: 0, behavior: 'auto' });
-                };
-                scrollDetailToTop();
-                window.requestAnimationFrame(function () {
-                    scrollDetailToTop();
-                    window.requestAnimationFrame(scrollDetailToTop);
-                });
-            }
-
+    async function applyPageHtml(content, html, targetPath, push, generation) {
+        if (generation !== navGeneration) return null;
+        if (lastAppliedPath === targetPath && lastAppliedHtml === html) {
             if (push) {
                 try { history.pushState({ orbitaNav: true }, '', targetPath); } catch (e) { }
             }
-
             runtime.updateActiveNav(targetPath);
+            return runtime.getNavKey(targetPath);
+        }
+
+        destroyLeavingPage();
+        content.style.transition = '';
+        content.style.opacity = '1';
+        content.innerHTML = html;
+        lastAppliedPath = targetPath;
+        lastAppliedHtml = html;
+
+        var pageMeta = extractPageMeta(content, targetPath);
+        if (pageMeta.reload) return null;
+        var pageKey = pageMeta.pageKey;
+
+        if (push && content.querySelector('.crm-card-page, .crm-task-detail-page')) {
+            var scrollDetailToTop = function () {
+                window.scrollTo({ left: 0, top: 0, behavior: 'auto' });
+            };
+            scrollDetailToTop();
+            window.requestAnimationFrame(function () {
+                scrollDetailToTop();
+                window.requestAnimationFrame(scrollDetailToTop);
+            });
+        }
+
+        if (push) {
+            try { history.pushState({ orbitaNav: true }, '', targetPath); } catch (e) { }
+        }
+
+        runtime.updateActiveNav(targetPath);
+        runtime.reinitAfterContentSwap();
+        runtime.restoreSearchFocus();
+        await ensurePageScripts(targetPath, pageKey);
+        if (generation !== navGeneration) return pageKey;
+
+        document.dispatchEvent(new CustomEvent('orbita:content-updated', {
+            detail: { path: targetPath, key: pageKey, skipLiveRefresh: true }
+        }));
+        runtime.restoreSearchFocus();
+
+        if (pageKey && pageKey.toLowerCase() === 'dashboard'
+            && window.OrbitaDashboard
+            && typeof window.OrbitaDashboard.reinit === 'function') {
+            window.OrbitaDashboard.reinit();
+        }
+        if (pageKey && pageKey.toLowerCase() === 'statistics'
+            && window.OrbitaStatistics
+            && typeof window.OrbitaStatistics.reinit === 'function') {
+            window.OrbitaStatistics.reinit();
+        }
+        if (pageKey && pageKey.toLowerCase() === 'crm'
+            && window.OrbitaCrmBoard
+            && typeof window.OrbitaCrmBoard.init === 'function') {
+            window.OrbitaCrmBoard.init();
+        }
+        return pageKey;
+    }
+
+    runtime.prefetch = function prefetch(targetPath) {
+        if (!shouldPrefetch() || !targetPath) return Promise.resolve();
+        var key = normalizeNavPath(targetPath);
+        var entry = pageCache.get(key);
+        if (cacheEntryIsFresh(entry)) return Promise.resolve();
+        var scripts = runtime.getScriptsForPath(key, runtime.getNavKey(key));
+        scripts.forEach(function (src) { runtime.loadScriptOnce(src).catch(function () { }); });
+        return fetchContent(key).catch(function () { });
+    };
+
+    runtime.invalidateNavCacheForKinds = function invalidateNavCacheForKinds(kinds) {
+        var keys = {};
+        (kinds || []).forEach(function (kind) {
+            if (kind === 'Accounts' || kind === 'Workers') keys.accounts = true;
+            if (kind === 'Dashboard') keys.dashboard = true;
+            if (kind === 'Workers') keys.workers = true;
+            if (kind === 'Events') keys.events = true;
+            if (kind === 'Errors') {
+                keys.errors = true;
+                keys.events = true;
+            }
+            if (kind === 'Responses') keys.responses = true;
+            if (kind === 'Statistics') keys.statistics = true;
+            if (kind === 'Crm') keys.crm = true;
+        });
+        pageCache.forEach(function (entry, path) {
+            if (keys[runtime.getNavKey(path)]) {
+                entry.invalidated = true;
+            }
+        });
+    };
+
+    runtime.navigateTo = async function navigateTo(targetPath, push) {
+        push = push !== false;
+        var content = document.querySelector('.orbita-content');
+        if (!content) {
+            window.location.href = targetPath;
+            return;
+        }
+
+        var generation = ++navGeneration;
+        var key = normalizeNavPath(targetPath);
+        var cached = pageCache.get(key);
+        var shownFromCache = false;
+
+        try {
+            if (cached && cached.html) {
+                await applyPageHtml(content, cached.html, key, push, generation);
+                shownFromCache = true;
+                runtime.hidePageLoading();
+                push = false;
+                if (generation !== navGeneration) return;
+                if (cacheEntryIsFresh(cached)) return;
+            } else {
+                runtime.showPageLoading();
+            }
+
+            var html = await fetchContent(key);
+            if (generation !== navGeneration) return;
             runtime.hidePageLoading();
-            runtime.reinitAfterContentSwap();
-            runtime.restoreSearchFocus();
-
-            await ensurePageScripts(targetPath, pageKey);
-
-            // Let page-specific scripts re-init their elements (they listen to this)
-            document.dispatchEvent(new CustomEvent('orbita:content-updated', {
-                detail: { path: targetPath, key: pageKey }
-            }));
-            runtime.restoreSearchFocus();
-
-            if (pageKey && pageKey.toLowerCase() === 'dashboard'
-                && window.OrbitaDashboard
-                && typeof window.OrbitaDashboard.reinit === 'function') {
-                window.OrbitaDashboard.reinit();
-            }
-            if (pageKey && pageKey.toLowerCase() === 'statistics'
-                && window.OrbitaStatistics
-                && typeof window.OrbitaStatistics.reinit === 'function') {
-                window.OrbitaStatistics.reinit();
-            }
-            if (pageKey && pageKey.toLowerCase() === 'crm'
-                && window.OrbitaCrmBoard
-                && typeof window.OrbitaCrmBoard.init === 'function') {
-                window.OrbitaCrmBoard.init();
-            }
+            await applyPageHtml(content, html, key, push, generation);
         } catch (err) {
-            console.warn('Orbita fast nav failed, falling back', err);
+            if (generation !== navGeneration) return;
             runtime.hidePageLoading();
+            if (shownFromCache) {
+                console.warn('Orbita background revalidation failed', err);
+                if (window.Orbita && typeof window.Orbita.toast === 'function') {
+                    window.Orbita.toast('Не удалось обновить данные. Показаны сохранённые.', { variant: 'warning' });
+                }
+                return;
+            }
+            console.warn('Orbita fast nav failed, falling back', err);
             window.location.href = targetPath;
         }
-    }
+    };
 
     runtime.initClientNavigation = function initClientNavigation() {
         var nav = document.querySelector('.orbita-nav');
@@ -494,7 +587,7 @@
         // Intercept GET forms (search + filters) → fast nav + spinner instead of full reload
         document.addEventListener('submit', function (e) {
             var form = e.target.closest('form');
-            if (!form || !form.closest('.orbita-content')) return;
+            if (!form || !form.closest('.orbita-content') || form.hasAttribute('data-orbita-full-submit')) return;
 
             var method = (form.getAttribute('method') || 'get').toLowerCase();
             if (method !== 'get') return;
@@ -591,7 +684,13 @@
                 var meta = content.querySelector('.orbita-page-meta');
                 var pageTitle = meta && meta.getAttribute('data-orbita-page-title');
                 var pageKey = meta && meta.getAttribute('data-orbita-controller');
+                var nextShellVersion = meta && meta.getAttribute('data-orbita-shell-version');
                 if (meta) meta.remove();
+                var currentShellVersion = document.body.getAttribute('data-orbita-shell-version');
+                if (nextShellVersion && currentShellVersion !== nextShellVersion) {
+                    window.location.href = recoveryPath;
+                    return;
+                }
                 if (pageTitle) document.title = pageTitle;
 
                 var finalPath = finalUrl.pathname + finalUrl.search;
@@ -618,5 +717,40 @@
     runtime.initClientNavigation();
     runtime.initGeneralInternalNav();
 
-    // Prefetch on hover for snappier feel (optional, light)
+    function idlePrefetchLikelyPages() {
+        if (!shouldPrefetch()) return;
+        var current = runtime.getNavKey(window.location.pathname);
+        var preferred = ['accounts', 'workers', 'responses', 'dashboard', 'crm', 'statistics', 'events'];
+        var byKey = {};
+        document.querySelectorAll('.orbita-nav a.nav-item[href]').forEach(function (link) {
+            try {
+                var u = new URL(link.getAttribute('href'), window.location.origin);
+                if (u.origin !== window.location.origin) return;
+                var key = runtime.getNavKey(u.pathname);
+                if (!key || key === current || key === 'account') return;
+                if (!byKey[key]) byKey[key] = u.pathname + u.search;
+            } catch (e) { }
+        });
+        var likely = [];
+        preferred.forEach(function (key) {
+            if (byKey[key] && likely.length < 3) likely.push(byKey[key]);
+        });
+        var index = 0;
+        function next() {
+            if (index >= likely.length) return;
+            var path = likely[index++];
+            runtime.prefetch(path).then(function () {
+                window.setTimeout(next, 120);
+            });
+        }
+        next();
+    }
+
+    if (shouldPrefetch()) {
+        if (typeof window.requestIdleCallback === 'function') {
+            window.requestIdleCallback(idlePrefetchLikelyPages, { timeout: 2500 });
+        } else {
+            window.setTimeout(idlePrefetchLikelyPages, 800);
+        }
+    }
 })(window.OrbitaRuntime = window.OrbitaRuntime || {});

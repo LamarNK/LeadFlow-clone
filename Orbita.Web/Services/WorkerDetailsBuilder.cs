@@ -12,7 +12,9 @@ internal static class WorkerDetailsBuilder
         IReadOnlyList<DashboardEventRowViewModel> events,
         WorkerExtraInfoViewModel? extra = null,
         WorkerRowViewModel? summary = null,
-        TableSortState? sort = null)
+        TableSortState? sort = null,
+        string? accountSearchQuery = null,
+        string? accountGroupId = null)
     {
         extra ??= new WorkerExtraInfoViewModel();
         var stats = worker.LatestStats;
@@ -49,6 +51,21 @@ internal static class WorkerDetailsBuilder
             ? DashboardChartsBuilder.FromHourlyActivity(stats.HourlyActivity)
             : DashboardChartsBuilder.FromHourlyActivity([]);
 
+        var groupOptions = AdsPowerAccountGroupFilter.BuildOptions(
+            accounts.Select(a => (a.AdsPowerGroupId, a.AdsPowerGroupName)),
+            worker.AdsPowerGroups);
+        var normalizedSearch = string.IsNullOrWhiteSpace(accountSearchQuery) ? null : accountSearchQuery.Trim();
+        var normalizedGroupId = AdsPowerAccountGroupFilter.Normalize(accountGroupId);
+        var tableSort = sort ?? TableSortState.Create("account", descending: false);
+        var filteredAccounts = FilterAccounts(accounts, normalizedSearch, normalizedGroupId);
+        var accountChips = FilterChipsBuilder.ForWorkerAccounts(
+            worker.Id,
+            normalizedSearch,
+            normalizedGroupId,
+            groupOptions,
+            tableSort.Column,
+            tableSort.Dir);
+
         return new WorkerDetailsViewModel
         {
             Header = PageHeaderBuilder.WorkerDetails(worker.DisplayName, worker.MachineName, DateTime.UtcNow),
@@ -69,12 +86,24 @@ internal static class WorkerDetailsBuilder
             ActivityChart = activityChart,
             Events = events,
             PeriodStats = BuildPeriodStats(stats, responses, duplicates, errors),
-            Accounts = accounts,
-            Sort = sort ?? TableSortState.Create("account", descending: false),
+            Accounts = filteredAccounts,
+            AccountSearchQuery = normalizedSearch,
+            AccountGroupId = normalizedGroupId,
+            AccountGroupOptions = groupOptions,
+            HasActiveAccountFilters = accountChips.Count > 0,
+            ActiveAccountFilterChips = accountChips,
+            Sort = tableSort,
             MaxConcurrentAccounts = effectiveParallelism,
             MaxConcurrentAccountsLimit = maxConcurrentAccountsLimit,
             AdsPowerApiBaseUrl = worker.AdsPowerApiBaseUrl,
             AdsPowerApiKey = worker.AdsPowerApiKey,
+            RuCaptchaApiKey = worker.RuCaptchaApiKey,
+            AdsPowerGroupId = worker.AdsPowerGroupId,
+            AdsPowerGroupName = worker.AdsPowerGroupName,
+            AdsPowerGroups = BuildAdsPowerGroupOptions(
+                worker.AdsPowerGroups,
+                worker.AdsPowerGroupId,
+                worker.AdsPowerGroupName),
             ResponseFilterEnabled = worker.ResponseFilterEnabled,
             ResponseFilterExcludeFemale = worker.ResponseFilterExcludeFemale,
             ResponseFilterExcludeMale = worker.ResponseFilterExcludeMale,
@@ -107,6 +136,30 @@ internal static class WorkerDetailsBuilder
                 worker.ActiveAccounts ?? worker.CurrentActivity?.ActiveAccounts,
                 worker.IsOnline)
         };
+    }
+
+    private static IReadOnlyList<WorkerAccountRowViewModel> FilterAccounts(
+        IReadOnlyList<WorkerAccountRowViewModel> accounts,
+        string? searchQuery,
+        string? groupId)
+    {
+        IEnumerable<WorkerAccountRowViewModel> query = accounts;
+        if (!string.IsNullOrWhiteSpace(searchQuery))
+        {
+            query = query.Where(a =>
+                SearchQueryNormalizer.MatchesTokens(
+                    searchQuery,
+                    a.DisplayName,
+                    a.AdsPowerProfileId,
+                    a.AdsPowerGroupName));
+        }
+
+        if (!string.IsNullOrWhiteSpace(groupId))
+        {
+            query = query.Where(a => AdsPowerAccountGroupFilter.Matches(groupId, a.AdsPowerGroupId));
+        }
+
+        return query.ToList();
     }
 
     public static WorkerAccountRowViewModel MapAccount(
@@ -149,6 +202,8 @@ internal static class WorkerDetailsBuilder
             DisplayName = account.DisplayName,
             IsEnabledInPanel = account.IsEnabledInPanel,
             AdsPowerProfileId = account.AdsPowerProfileId,
+            AdsPowerGroupId = account.AdsPowerGroupId,
+            AdsPowerGroupName = account.AdsPowerGroupName,
             HasAvitoCredentials = account.HasAvitoCredentials,
             AvitoLogin = account.AvitoLogin,
             StatusLabel = label,
@@ -175,6 +230,31 @@ internal static class WorkerDetailsBuilder
             ProcessingTone = processing.Tone,
             ProcessingSubProfileId = processing.SubProfileId
         };
+    }
+
+    private static IReadOnlyList<AdsPowerGroupDto> BuildAdsPowerGroupOptions(
+        IReadOnlyList<AdsPowerGroupDto>? groups,
+        string? selectedGroupId,
+        string? selectedGroupName)
+    {
+        var result = (groups ?? [])
+            .Where(x => !string.IsNullOrWhiteSpace(x.GroupId))
+            .GroupBy(x => x.GroupId, StringComparer.Ordinal)
+            .Select(g => g.First())
+            .OrderBy(x => x.GroupName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        if (!string.IsNullOrWhiteSpace(selectedGroupId)
+            && result.All(x => !string.Equals(x.GroupId, selectedGroupId, StringComparison.Ordinal)))
+        {
+            result.Insert(
+                0,
+                new AdsPowerGroupDto(
+                    selectedGroupId,
+                    string.IsNullOrWhiteSpace(selectedGroupName) ? selectedGroupId : selectedGroupName));
+        }
+
+        return result;
     }
 
     private static string FormatAccountBalanceText(WorkerBalanceDto balance)

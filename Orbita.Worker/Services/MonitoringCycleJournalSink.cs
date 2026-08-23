@@ -49,6 +49,9 @@ public sealed class MonitoringCycleJournalSink(
         public int PublishedCount { get; set; }
         public int DeferredCount { get; set; }
         public int SkippedDuplicateCount { get; set; }
+        public int CollectedCount { get; set; }
+        public int CaptchaCount { get; set; }
+        public int CaptchaSolvedCount { get; set; }
     }
 
     public Guid BeginCycle(Guid accountId, string accountName)
@@ -96,13 +99,49 @@ public sealed class MonitoringCycleJournalSink(
         return id;
     }
 
+    public void SkipSubProfile(
+        Guid cycleId,
+        string subProfileId,
+        string subProfileName,
+        int position,
+        int total,
+        string? errorType,
+        string? errorMessage)
+    {
+        if (!_cycles.TryGetValue(cycleId, out var cycle))
+        {
+            return;
+        }
+
+        var id = Guid.NewGuid();
+        var now = DateTime.UtcNow;
+        cycle.SubProfiles[id] = new MutableSubProfile
+        {
+            Id = id,
+            SubProfileId = subProfileId?.Trim() ?? string.Empty,
+            SubProfileName = string.IsNullOrWhiteSpace(subProfileName) ? "—" : subProfileName.Trim(),
+            Position = Math.Max(1, position),
+            Total = Math.Max(total, position),
+            StartedAtUtc = now,
+            CompletedAtUtc = now,
+            Outcome = MonitoringSubProfileRunOutcomes.Skipped,
+            ErrorType = string.IsNullOrWhiteSpace(errorType) ? "not-reached" : errorType.Trim(),
+            ErrorMessage = string.IsNullOrWhiteSpace(errorMessage) ? "очередь не дошла" : errorMessage.Trim()
+        };
+        cycle.Dirty = true;
+        _ = MaybeFlushAsync();
+    }
+
     public void CompleteSubProfile(
         Guid cycleId,
         Guid subProfileRunId,
         int foundCount,
         int publishedCount,
         int deferredCount = 0,
-        int skippedDuplicateCount = 0)
+        int skippedDuplicateCount = 0,
+        int collectedCount = 0,
+        int captchaCount = 0,
+        int captchaSolvedCount = 0)
     {
         if (!_cycles.TryGetValue(cycleId, out var cycle)
             || !cycle.SubProfiles.TryGetValue(subProfileRunId, out var sub))
@@ -112,10 +151,15 @@ public sealed class MonitoringCycleJournalSink(
 
         sub.Outcome = MonitoringSubProfileRunOutcomes.Completed;
         sub.CompletedAtUtc = DateTime.UtcNow;
-        sub.FoundCount = Math.Max(0, foundCount);
-        sub.PublishedCount = Math.Max(0, publishedCount);
-        sub.DeferredCount = Math.Max(0, deferredCount);
-        sub.SkippedDuplicateCount = Math.Max(0, skippedDuplicateCount);
+        ApplyCounts(
+            sub,
+            foundCount,
+            publishedCount,
+            deferredCount,
+            skippedDuplicateCount,
+            collectedCount,
+            captchaCount,
+            captchaSolvedCount);
         cycle.Dirty = true;
         _ = MaybeFlushAsync();
     }
@@ -124,7 +168,12 @@ public sealed class MonitoringCycleJournalSink(
         Guid cycleId,
         Guid subProfileRunId,
         string? errorType,
-        string? errorMessage)
+        string? errorMessage,
+        int foundCount = 0,
+        int publishedCount = 0,
+        int collectedCount = 0,
+        int captchaCount = 0,
+        int captchaSolvedCount = 0)
     {
         if (!_cycles.TryGetValue(cycleId, out var cycle)
             || !cycle.SubProfiles.TryGetValue(subProfileRunId, out var sub))
@@ -136,24 +185,58 @@ public sealed class MonitoringCycleJournalSink(
         sub.CompletedAtUtc = DateTime.UtcNow;
         sub.ErrorType = string.IsNullOrWhiteSpace(errorType) ? null : errorType.Trim();
         sub.ErrorMessage = string.IsNullOrWhiteSpace(errorMessage) ? null : errorMessage.Trim();
+        ApplyCounts(
+            sub,
+            foundCount,
+            publishedCount,
+            deferredCount: 0,
+            skippedDuplicateCount: 0,
+            collectedCount,
+            captchaCount,
+            captchaSolvedCount);
         cycle.Dirty = true;
         _ = MaybeFlushAsync();
     }
 
     public void CompleteCycle(Guid cycleId) => FinishCycle(cycleId, MonitoringCycleRunStatuses.Completed);
 
-    public void AbortCycle(Guid cycleId) => FinishCycle(cycleId, MonitoringCycleRunStatuses.Aborted);
+    public void AbortCycle(Guid cycleId, string? errorType = null, string? errorMessage = null) =>
+        FinishCycle(cycleId, MonitoringCycleRunStatuses.Aborted, errorType, errorMessage);
 
-    public void FailCycle(Guid cycleId) => FinishCycle(cycleId, MonitoringCycleRunStatuses.Failed);
+    public void FailCycle(Guid cycleId, string? errorType = null, string? errorMessage = null) =>
+        FinishCycle(cycleId, MonitoringCycleRunStatuses.Failed, errorType, errorMessage);
 
     public Task FlushAsync(CancellationToken cancellationToken = default) =>
         FlushInternalAsync(cancellationToken);
 
-    private void FinishCycle(Guid cycleId, string status)
+    private void FinishCycle(
+        Guid cycleId,
+        string status,
+        string? errorType = null,
+        string? errorMessage = null)
     {
         if (!_cycles.TryGetValue(cycleId, out var cycle))
         {
             return;
+        }
+
+        if (cycle.SubProfiles.Count == 0 && !string.IsNullOrWhiteSpace(errorMessage))
+        {
+            var id = Guid.NewGuid();
+            var now = DateTime.UtcNow;
+            cycle.SubProfiles[id] = new MutableSubProfile
+            {
+                Id = id,
+                SubProfileId = string.Empty,
+                SubProfileName = "—",
+                Position = 1,
+                Total = 1,
+                StartedAtUtc = cycle.StartedAtUtc,
+                CompletedAtUtc = now,
+                Outcome = MonitoringSubProfileRunOutcomes.Failed,
+                ErrorType = string.IsNullOrWhiteSpace(errorType) ? "cycle-start" : errorType.Trim(),
+                ErrorMessage = errorMessage.Trim()
+            };
         }
 
         cycle.Status = status;
@@ -295,8 +378,30 @@ public sealed class MonitoringCycleJournalSink(
                     s.FoundCount,
                     s.PublishedCount,
                     s.DeferredCount,
-                    s.SkippedDuplicateCount))
+                    s.SkippedDuplicateCount,
+                    s.CollectedCount,
+                    s.CaptchaCount,
+                    s.CaptchaSolvedCount))
                 .ToList());
+
+    private static void ApplyCounts(
+        MutableSubProfile sub,
+        int foundCount,
+        int publishedCount,
+        int deferredCount,
+        int skippedDuplicateCount,
+        int collectedCount,
+        int captchaCount,
+        int captchaSolvedCount)
+    {
+        sub.FoundCount = Math.Max(0, foundCount);
+        sub.PublishedCount = Math.Max(0, publishedCount);
+        sub.DeferredCount = Math.Max(0, deferredCount);
+        sub.SkippedDuplicateCount = Math.Max(0, skippedDuplicateCount);
+        sub.CollectedCount = Math.Max(0, collectedCount);
+        sub.CaptchaCount = Math.Max(0, captchaCount);
+        sub.CaptchaSolvedCount = Math.Min(sub.CaptchaCount, Math.Max(0, captchaSolvedCount));
+    }
 
     public async ValueTask DisposeAsync()
     {

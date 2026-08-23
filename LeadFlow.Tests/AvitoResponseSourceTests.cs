@@ -34,7 +34,7 @@ public sealed class AvitoResponseSourceTests
     }
 
     [Fact]
-    public async Task GetNewResponsesAsync_HasCaptcha_ThrowsCaptchaDetectedException_AndMarksRequiresManualAction()
+    public async Task GetNewResponsesAsync_HasCaptcha_ThrowsCaptchaDetectedException_WithoutLockingAccount()
     {
         var db = new EfInMemoryDatabase();
         var repo = new AppRepository(db.Factory);
@@ -44,14 +44,10 @@ public sealed class AvitoResponseSourceTests
 
         var sut = CreateSut(repo, automation);
 
-        // Поведение по запросу пользователя «отслеживать капчу»: источник бросает типизированное
-        // исключение, чтобы мониторинг СРАЗУ вышел из обхода аккаунта (а не пытался идти дальше).
         var ex = await Assert.ThrowsAsync<AvitoCaptchaDetectedException>(
             () => sut.GetNewResponsesAsync(account, NewSettings(), CancellationToken.None));
 
-        // Статус и сообщение проставляются ДО throw — даже если кто-то проигнорирует исключение,
-        // в БД отложится корректное состояние.
-        Assert.Equal(AvitoAccountStatus.RequiresManualAction, account.Status);
+        Assert.Equal(AvitoAccountStatus.Authorized, account.Status);
         Assert.NotEmpty(ex.Kind);
     }
 

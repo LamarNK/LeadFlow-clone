@@ -8,7 +8,7 @@ public sealed class WorkerConfigStore
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web) { WriteIndented = true };
 
-    private static string ConfigDirectory =>
+    public static string ConfigDirectory =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "OrbitaWorker");
 
     private static string ConfigPath => Path.Combine(ConfigDirectory, "config.json");

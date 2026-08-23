@@ -153,6 +153,10 @@ public sealed class WorkerDetailsViewModel
     public int MaxConcurrentAccountsLimit { get; init; } = 1;
     public string? AdsPowerApiBaseUrl { get; init; }
     public string? AdsPowerApiKey { get; init; }
+    public string? RuCaptchaApiKey { get; init; }
+    public string? AdsPowerGroupId { get; init; }
+    public string? AdsPowerGroupName { get; init; }
+    public IReadOnlyList<AdsPowerGroupDto> AdsPowerGroups { get; init; } = [];
     public bool ResponseFilterEnabled { get; init; }
     public bool ResponseFilterExcludeFemale { get; init; }
     public bool ResponseFilterExcludeMale { get; init; }
@@ -193,6 +197,12 @@ public sealed class WorkerDetailsViewModel
     public IReadOnlyList<DashboardEventRowViewModel> Events { get; init; } = [];
     public IReadOnlyList<WorkerPeriodStatViewModel> PeriodStats { get; init; } = [];
     public IReadOnlyList<WorkerAccountRowViewModel> Accounts { get; init; } = [];
+    public string? AccountSearchQuery { get; init; }
+    public string? AccountGroupId { get; init; }
+    public IReadOnlyList<EventFilterOptionViewModel> AccountGroupOptions { get; init; } = [];
+    public bool HasActiveAccountFilters { get; init; }
+    public IReadOnlyList<ActiveFilterChipViewModel> ActiveAccountFilterChips { get; init; } = [];
+    public int ActiveAccountFilterCount => ActiveAccountFilterChips.Count;
     public TableSortState Sort { get; init; } = TableSortState.Create("account", descending: false);
     public WorkerActivityViewModel CurrentActivity { get; init; } = new();
     public IReadOnlyList<WorkerActivityViewModel> ActiveAccountActivities { get; init; } = [];
@@ -232,6 +242,8 @@ public sealed class WorkerAccountRowViewModel
     public string DisplayName { get; init; } = string.Empty;
     public bool IsEnabledInPanel { get; init; }
     public string AdsPowerProfileId { get; init; } = string.Empty;
+    public string? AdsPowerGroupId { get; init; }
+    public string? AdsPowerGroupName { get; init; }
     public bool HasAvitoCredentials { get; init; }
     public string? AvitoLogin { get; init; }
     public string StatusLabel { get; init; } = string.Empty;

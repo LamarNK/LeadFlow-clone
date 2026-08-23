@@ -1,6 +1,6 @@
-using System.Globalization;
 using System.Text.Json;
 using LeadFlow.Core.Models;
+using Orbita.Contracts;
 
 namespace LeadFlow.Core.Services.Avito;
 
@@ -68,68 +68,12 @@ public static class AvitoChatMessagesJson
     }
 
     /// <summary>
-    /// Дата отклика из мини-чата: предпочитаем platform («Кандидат откликнулся…»),
-    /// иначе самое раннее сообщение с <c>at</c>.
+    /// Дата отклика из мини-чата: предпочитаем системное сообщение
+    /// «Кандидат откликнулся…», иначе самое раннее сообщение с <c>at</c>.
     /// </summary>
-    public static DateTime? TryGetResponseAtUtc(IReadOnlyList<AvitoChatMessage> messages)
-    {
-        if (messages.Count == 0)
-        {
-            return null;
-        }
+    public static DateTime? TryGetResponseAtUtc(IReadOnlyList<AvitoChatMessage> messages) =>
+        AvitoChatResponseAt.TryGetUtc(messages.Select(static message => (message.Text, message.At, message.IsPlatform)));
 
-        DateTime? earliestPlatform = null;
-        DateTime? earliestAny = null;
-
-        foreach (var message in messages)
-        {
-            if (!TryParseMessageAtUtc(message.At, out var atUtc))
-            {
-                continue;
-            }
-
-            if (earliestAny is null || atUtc < earliestAny.Value)
-            {
-                earliestAny = atUtc;
-            }
-
-            if (message.IsPlatform && (earliestPlatform is null || atUtc < earliestPlatform.Value))
-            {
-                earliestPlatform = atUtc;
-            }
-        }
-
-        return earliestPlatform ?? earliestAny;
-    }
-
-    public static bool TryParseMessageAtUtc(string? at, out DateTime utc)
-    {
-        utc = default;
-        if (string.IsNullOrWhiteSpace(at))
-        {
-            return false;
-        }
-
-        if (DateTimeOffset.TryParse(
-                at,
-                CultureInfo.InvariantCulture,
-                DateTimeStyles.RoundtripKind,
-                out var dto))
-        {
-            utc = dto.UtcDateTime;
-            return true;
-        }
-
-        if (DateTime.TryParse(
-                at,
-                CultureInfo.InvariantCulture,
-                DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal,
-                out var dt))
-        {
-            utc = DateTime.SpecifyKind(dt, DateTimeKind.Utc);
-            return true;
-        }
-
-        return false;
-    }
+    public static bool TryParseMessageAtUtc(string? at, out DateTime utc) =>
+        AvitoChatResponseAt.TryParseMessageAtUtc(at, out utc);
 }

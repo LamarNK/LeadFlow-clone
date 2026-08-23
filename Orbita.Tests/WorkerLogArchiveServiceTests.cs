@@ -42,11 +42,18 @@ public sealed class WorkerLogArchiveServiceTests
                     "[WorkerMonitoringService.RunAsync]",
                     "Profile switched",
                     "trace-worker-1",
+                    true),
+                new WorkerLogEntryUploadDto(
+                    timestamp.AddSeconds(-1),
+                    "Warning",
+                    "[WorkerMonitoringService.RunAsync]",
+                    "No matching message",
+                    "trace-worker-2",
                     true)
             ]);
 
             Assert.Null(error);
-            Assert.Equal(1, accepted);
+            Assert.Equal(2, accepted);
 
             var expectedFile = Path.Combine(
                 root,
@@ -57,10 +64,11 @@ public sealed class WorkerLogArchiveServiceTests
             Assert.True(File.Exists(expectedFile));
 
             var page = await new ServiceLogsQueryService(configuration).SearchAsync(
-                $"worker:{workerId:D}",
+                "Profile switched",
                 "Warning",
                 "Orbita.Worker",
                 timestamp.Date,
+                workerId,
                 page: 1,
                 pageSize: 50);
 

@@ -51,7 +51,10 @@ public sealed class OrbitaConfigProvider(
                     Message = _cached.MessengerAutoReplyMessage ?? AvitoMessengerAutoReplySettings.DefaultMessage
                 }
                 : null,
-            PhoneUnchangedHours = _cached.EffectivePhoneUnchangedHours
+            PhoneUnchangedHours = _cached.EffectivePhoneUnchangedHours,
+            RuCaptchaApiKey = string.IsNullOrWhiteSpace(_cached.RuCaptchaApiKey)
+                ? null
+                : _cached.RuCaptchaApiKey.Trim()
         };
     }
 

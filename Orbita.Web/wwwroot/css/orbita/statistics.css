@@ -1291,10 +1291,131 @@
 }
 
 .monitoring-col-pos { width: 72px; }
-.monitoring-col-name { width: 160px; min-width: 120px; }
-.monitoring-col-times { min-width: 220px; }
-.monitoring-col-leads { width: 120px; }
-.monitoring-col-errors { min-width: 180px; }
+.monitoring-col-name { width: 168px; min-width: 120px; }
+.monitoring-col-passes { min-width: 280px; }
+
+.monitoring-passes {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: flex-start;
+}
+
+.monitoring-pass {
+    display: inline-flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 6px 8px;
+    max-width: 100%;
+    padding: 5px 9px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    background: var(--bg-card);
+    color: var(--text-primary);
+    font-size: 12px;
+    line-height: 1.35;
+}
+
+.monitoring-pass-time {
+    font-variant-numeric: tabular-nums;
+    font-weight: 650;
+    color: var(--text-primary);
+    white-space: nowrap;
+}
+
+.monitoring-pass-leads {
+    font-variant-numeric: tabular-nums;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+
+.monitoring-pass-leads--hit {
+    color: var(--text-primary);
+    font-weight: 700;
+}
+
+.monitoring-pass-leads-unit {
+    font-weight: 500;
+    color: var(--text-secondary);
+}
+
+.monitoring-pass-flag {
+    display: inline-flex;
+    align-items: center;
+    padding: 1px 7px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--warning) 18%, var(--bg-card));
+    color: #92400e;
+    font-size: 11px;
+    font-weight: 650;
+    white-space: nowrap;
+}
+
+.monitoring-pass-flag--bad {
+    background: color-mix(in srgb, var(--danger) 16%, var(--bg-card));
+    color: #b42318;
+}
+
+.monitoring-pass-flag--pending {
+    background: color-mix(in srgb, var(--accent) 12%, var(--bg-card));
+    color: var(--accent);
+}
+
+.monitoring-pass-flag--skip {
+    background: color-mix(in srgb, var(--text-secondary) 12%, var(--bg-card));
+    color: var(--text-secondary);
+}
+
+.monitoring-pass-error {
+    color: #b42318;
+    max-width: 32ch;
+    overflow-wrap: anywhere;
+}
+
+.monitoring-pass--captcha {
+    border-color: color-mix(in srgb, var(--warning) 42%, var(--border));
+}
+
+.monitoring-pass--captcha-fail,
+.monitoring-pass--error {
+    border-color: color-mix(in srgb, var(--danger) 38%, var(--border));
+    background: color-mix(in srgb, var(--danger) 7%, var(--bg-card));
+}
+
+.monitoring-pass--pending {
+    border-style: dashed;
+    color: var(--text-secondary);
+}
+
+.monitoring-pass--skipped {
+    border-style: dashed;
+    color: var(--text-secondary);
+    background: color-mix(in srgb, var(--text-secondary) 6%, var(--bg-card));
+}
+
+.monitoring-pass-skip-reason {
+    color: var(--text-secondary);
+    max-width: 48ch;
+    overflow-wrap: anywhere;
+}
+
+.monitoring-pass-empty {
+    color: var(--text-secondary);
+}
+
+[data-theme="dark"] .monitoring-pass-flag {
+    color: #fcd34d;
+}
+
+[data-theme="dark"] .monitoring-pass-flag--bad,
+[data-theme="dark"] .monitoring-pass-error {
+    color: #fca5a5;
+}
+
+.monitoring-report-captcha-total {
+    margin: 0 0 8px;
+    font-size: 13px;
+}
 
 .monitoring-report-row--muted td {
     opacity: 0.65;

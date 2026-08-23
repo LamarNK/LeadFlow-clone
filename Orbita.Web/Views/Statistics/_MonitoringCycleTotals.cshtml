@@ -37,6 +37,12 @@ else
             <h4 class="monitoring-report-total-title">
                     ИТОГО ОТКЛИКОВ ЗА @totalsLabel: <span data-statistics-cycle-leads>@report.TotalLeads</span>
             </h4>
+            @if (report.TotalCaptcha > 0)
+            {
+                <p class="monitoring-report-captcha-total">
+                    Капча за @(periodDays == 1 ? "день" : "период"): @report.TotalCaptcha, решено @report.TotalCaptchaSolved
+                </p>
+            }
             <ul class="monitoring-report-total-list" data-statistics-cycle-leads-body>
                 @foreach (var row in report.LeadSummaries)
                 {
@@ -57,8 +63,7 @@ else
     @if (report.IsDetailed && report.AccountReports.Count > 0)
     {
         <p class="monitoring-report-hint cell-muted">
-            «Успешное завершение» — проход субпрофиля без ошибки. «Откликов» — сколько успешно обработано и передано в Орбиту в каждом таком проходе.
-            Внизу перечислены только суб-профили, которые не были запущены до прерывания цикла.
+            Каждый блок — один проход: время, новые отклики за этот проход, капча и ошибка, если они были. «Не запускался» значит, что очередь до субпрофиля не дошла — цикл прервался раньше (капча, вход, прокси).
         </p>
     }
     else if (!report.IsDetailed && report.HasData)

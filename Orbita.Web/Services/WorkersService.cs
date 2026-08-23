@@ -36,10 +36,17 @@ public sealed class WorkersService(
                 officeContext.EffectiveOfficeId,
                 officeContext.ShowOfficeColumn);
 
-        var workers = await api.GetWorkersAsync(ct) ?? [];
-        var latestRelease = await api.GetLatestWorkerReleaseAsync(ct);
         var isAdmin = httpContextAccessor.HttpContext?.User.IsInRole(PanelRoles.Admin) == true;
-        var offices = isAdmin ? await api.GetOfficesAsync(ct) ?? [] : [];
+        var workersTask = api.GetWorkersAsync(ct);
+        var latestReleaseTask = api.GetLatestWorkerReleaseAsync(ct);
+        var officesTask = isAdmin
+            ? api.GetOfficesAsync(ct)
+            : Task.FromResult<IReadOnlyList<OfficeDto>?>([]);
+        await Task.WhenAll(workersTask, latestReleaseTask, officesTask);
+
+        var workers = await workersTask ?? [];
+        var latestRelease = await latestReleaseTask;
+        var offices = await officesTask ?? [];
         var rows = workers.Select(MapRow).ToList();
 
         if (!string.IsNullOrWhiteSpace(searchQuery))
@@ -85,20 +92,32 @@ public sealed class WorkersService(
         Guid id,
         string? sort = null,
         string? sortDir = null,
+        string? accountSearchQuery = null,
+        string? accountGroupId = null,
         CancellationToken ct = default)
     {
         var tableSort = TableSort.Parse(sort, sortDir, TableSort.WorkerAccounts.Default, TableSort.WorkerAccounts.Columns);
 
         if (previewOptions.Value.Enabled)
         {
-            return DesignPreviewData.BuildWorkerDetailsViewModel(id, sort, sortDir);
+            return DesignPreviewData.BuildWorkerDetailsViewModel(
+                id,
+                sort,
+                sortDir,
+                accountSearchQuery,
+                accountGroupId);
         }
 
-        var apiWorker = await api.GetWorkerAsync(id, ct);
+        var workerTask = api.GetWorkerAsync(id, ct);
+        var accountsTask = api.GetWorkerAccountsAsync(id, ct);
+        var eventsTask = api.GetEventsAsync(workerId: id, limit: 10, ct: ct);
+        await Task.WhenAll(workerTask, accountsTask, eventsTask);
+
+        var apiWorker = await workerTask;
         if (apiWorker is null) return null;
 
-        var accounts = await api.GetWorkerAccountsAsync(id, ct) ?? [];
-        var events = await api.GetEventsAsync(workerId: id, limit: 10, ct: ct) ?? [];
+        var accounts = await accountsTask ?? [];
+        var events = await eventsTask ?? [];
         var workerEvents = events
             .Where(e => e.WorkerId == id)
             .Take(10)
@@ -129,7 +148,9 @@ public sealed class WorkersService(
                 OperatingSystem = string.IsNullOrWhiteSpace(apiWorker.OperatingSystem) ? "—" : apiWorker.OperatingSystem,
                 ConnectionCheck = apiWorker.IsOnline ? "Успешно" : "Нет связи"
             },
-            sort: tableSort);
+            sort: tableSort,
+            accountSearchQuery: accountSearchQuery,
+            accountGroupId: accountGroupId);
     }
 
     public async Task<(CreateWorkerResultViewModel? Result, string? Error)> CreateWorkerAsync(
@@ -171,6 +192,7 @@ public sealed class WorkersService(
         int maxConcurrentAccounts,
         string? adsPowerApiBaseUrl,
         string? adsPowerApiKey,
+        string? adsPowerGroupId = null,
         bool responseFilterEnabled = false,
         bool responseFilterExcludeFemale = false,
         bool responseFilterExcludeMale = false,
@@ -189,12 +211,14 @@ public sealed class WorkersService(
         bool? autoDeliverToCrm = null,
         bool? autoDeliverToBitrix = null,
         string? responseHighlightTargetsJson = null,
+        string? ruCaptchaApiKey = null,
         CancellationToken ct = default) =>
         api.UpdateWorkerSettingsAsync(
             workerId,
             maxConcurrentAccounts,
             adsPowerApiBaseUrl,
             adsPowerApiKey,
+            adsPowerGroupId,
             responseFilterEnabled,
             responseFilterExcludeFemale,
             responseFilterExcludeMale,
@@ -213,6 +237,7 @@ public sealed class WorkersService(
             autoDeliverToCrm,
             autoDeliverToBitrix,
             responseHighlightTargetsJson,
+            ruCaptchaApiKey,
             ct);
 
     public Task<(bool Success, string? Error)> UpdateWorkerAccountAsync(

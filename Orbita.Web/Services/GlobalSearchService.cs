@@ -27,7 +27,9 @@ public sealed class GlobalSearchService(OrbitaApiClient api, IOptions<DesignPrev
         var responsesTask = api.GetResponsesPageAsync(
             $"search={Uri.EscapeDataString(query)}&page=1&pageSize={perGroup}",
             ct);
-        await Task.WhenAll(workersTask, responsesTask);
+        var accountsTask = api.GetOfficeAccountsAsync(ct: ct);
+        var eventsTask = api.GetEventsAsync(limit: 200, ct: ct);
+        await Task.WhenAll(workersTask, responsesTask, accountsTask, eventsTask);
 
         var allWorkers = await workersTask ?? [];
         var workers = allWorkers
@@ -42,23 +44,18 @@ public sealed class GlobalSearchService(OrbitaApiClient api, IOptions<DesignPrev
             })
             .ToList();
 
-        var accounts = new List<SearchHitViewModel>();
-        foreach (var worker in allWorkers)
-        {
-            var workerAccounts = await api.GetWorkerAccountsAsync(worker.Id, ct) ?? [];
-            foreach (var account in workerAccounts.Where(a => SearchQueryNormalizer.MatchesTokens(query, a.DisplayName)).Take(perGroup))
+        var officeAccounts = await accountsTask ?? [];
+        var accounts = officeAccounts
+            .Where(item => SearchQueryNormalizer.MatchesTokens(query, item.Account.DisplayName))
+            .Take(perGroup)
+            .Select(item => new SearchHitViewModel
             {
-                accounts.Add(new SearchHitViewModel
-                {
-                    Title = account.DisplayName,
-                    Subtitle = worker.DisplayName,
-                    Url = $"/Accounts?q={Uri.EscapeDataString(account.DisplayName)}",
-                    IconClass = "fa-solid fa-user"
-                });
-                if (accounts.Count >= perGroup) break;
-            }
-            if (accounts.Count >= perGroup) break;
-        }
+                Title = item.Account.DisplayName,
+                Subtitle = item.WorkerDisplayName,
+                Url = $"/Accounts?q={Uri.EscapeDataString(item.Account.DisplayName)}",
+                IconClass = "fa-solid fa-user"
+            })
+            .ToList();
 
         var responses = (await responsesTask)?.Items
             .Take(perGroup)
@@ -71,7 +68,7 @@ public sealed class GlobalSearchService(OrbitaApiClient api, IOptions<DesignPrev
             })
             .ToList() ?? [];
 
-        var events = (await api.GetEventsAsync(limit: 200, ct: ct) ?? [])
+        var events = (await eventsTask ?? [])
             .Where(e => SearchQueryNormalizer.MatchesTokens(query, e.Message, e.Details, e.WorkerDisplayName))
             .Take(perGroup)
             .Select(e => new SearchHitViewModel

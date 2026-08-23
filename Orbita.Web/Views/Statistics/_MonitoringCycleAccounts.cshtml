@@ -13,6 +13,7 @@
                     <th class="cell-num">Суб-проф.</th>
                     <th class="cell-num">Циклы</th>
                     <th class="cell-num">Отклики</th>
+                    <th class="cell-num">Капча</th>
                 </tr>
             </thead>
             <tbody data-monitoring-accounts>
@@ -34,65 +35,66 @@
                         <td class="cell-num" data-label="Суб-проф.">@account.SubProfileCount</td>
                         <td class="cell-num" data-label="Циклы">@account.CycleCount</td>
                         <td class="cell-num" data-label="Отклики">@account.TotalLeads</td>
+                        <td class="cell-num" data-label="Капча">
+                            @if (account.TotalCaptcha > 0)
+                            {
+                                <span class="monitoring-pass-flag @(account.TotalCaptchaSolved < account.TotalCaptcha ? "monitoring-pass-flag--bad" : null)">@account.CaptchaText</span>
+                            }
+                            else
+                            {
+                                <span class="monitoring-pass-empty">—</span>
+                            }
+                        </td>
                     </tr>
                     <tr class="monitoring-account-detail-row" data-monitoring-account-detail="@account.AccountName" hidden>
-                        <td colspan="5">
+                        <td colspan="6">
                             <div class="monitoring-report-table-wrap">
                                 <table class="data-table monitoring-report-table">
                                     <thead>
                                         <tr>
                                             <th class="monitoring-col-pos">Позиция</th>
-                                            <th class="monitoring-col-name">Название</th>
-                                            <th class="monitoring-col-times">Успешное завершение</th>
-                                            <th class="monitoring-col-leads">Откликов</th>
-                                            <th class="monitoring-col-errors">Ошибки</th>
+                                            <th class="monitoring-col-name">Субпрофиль</th>
+                                            <th class="monitoring-col-passes">Проходы</th>
                                         </tr>
                                     </thead>
                                     <tbody>
                                         @foreach (var row in account.Rows)
                                         {
                                             <tr class="@(row.HasNotStarted ? "monitoring-report-row--muted" : null)">
-                                                <td class="monitoring-col-pos">@row.PositionText</td>
-                                                <td class="monitoring-col-name">@row.Name</td>
-                                                <td class="monitoring-col-times">
-                                                    @if (row.CompletionTimesUtc.Count == 0)
+                                                <td class="monitoring-col-pos" data-label="Позиция">@row.PositionText</td>
+                                                <td class="monitoring-col-name" data-label="Субпрофиль">@row.Name</td>
+                                                <td class="monitoring-col-passes" data-label="Проходы">
+                                                    @if (row.Passes.Count == 0)
                                                     {
-                                                        @:—
-                                                    }
-                                                    else
-                                                    {
-                                                        <span class="monitoring-times-list">
-                                                            @for (var i = 0; i < row.CompletionTimesUtc.Count; i++)
-                                                            {
-                                                                if (i > 0)
-                                                                {
-                                                                    <text>, </text>
-                                                                }
-                                                                <partial name="_UtcTime" model="@(new UtcTimeDisplayModel(row.CompletionTimesUtc[i], "time"))" />
-                                                            }
-                                                        </span>
-                                                    }
-                                                </td>
-                                                <td class="monitoring-col-leads">@row.LeadsText</td>
-                                                <td class="monitoring-col-errors @(row.HasErrors ? "cell-bad" : "cell-muted")">
-                                                    @if (row.Errors.Count == 0)
-                                                    {
-                                                        @:—
-                                                    }
-                                                    else
-                                                    {
-                                                        @for (var i = 0; i < row.Errors.Count; i++)
+                                                        @if (row.HasNotStarted)
                                                         {
-                                                            if (i > 0)
-                                                            {
-                                                                <text>; </text>
-                                                            }
-                                                            var error = row.Errors[i];
-                                                            <span class="monitoring-error-entry">
-                                                                <partial name="_UtcTime" model="@(new UtcTimeDisplayModel(error.TimestampUtc, "time"))" />
-                                                                <span> — @error.Detail</span>
+                                                            <span class="monitoring-pass monitoring-pass--skipped">
+                                                                @if (row.NotStartedAtUtc is DateTime notStartedAt)
+                                                                {
+                                                                    <span class="monitoring-pass-time">
+                                                                        <partial name="_UtcTime" model="@(new UtcTimeDisplayModel(notStartedAt, "time"))" />
+                                                                    </span>
+                                                                }
+                                                                <span class="monitoring-pass-flag monitoring-pass-flag--skip">не запускался</span>
+                                                                @if (!string.IsNullOrWhiteSpace(row.NotStartedReason))
+                                                                {
+                                                                    <span class="monitoring-pass-skip-reason">@row.NotStartedReason</span>
+                                                                }
                                                             </span>
                                                         }
+                                                        else
+                                                        {
+                                                            <span class="monitoring-pass-empty">—</span>
+                                                        }
+                                                    }
+                                                    else
+                                                    {
+                                                        <div class="monitoring-passes">
+                                                            @foreach (var pass in row.Passes)
+                                                            {
+                                                                <partial name="_MonitoringCyclePassChip" model="pass" />
+                                                            }
+                                                        </div>
                                                     }
                                                 </td>
                                             </tr>

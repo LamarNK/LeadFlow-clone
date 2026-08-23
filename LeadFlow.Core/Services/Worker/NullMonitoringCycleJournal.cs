@@ -19,7 +19,21 @@ public sealed class NullMonitoringCycleJournal : IMonitoringCycleJournal
         int foundCount,
         int publishedCount,
         int deferredCount = 0,
-        int skippedDuplicateCount = 0)
+        int skippedDuplicateCount = 0,
+        int collectedCount = 0,
+        int captchaCount = 0,
+        int captchaSolvedCount = 0)
+    {
+    }
+
+    public void SkipSubProfile(
+        Guid cycleId,
+        string subProfileId,
+        string subProfileName,
+        int position,
+        int total,
+        string? errorType,
+        string? errorMessage)
     {
     }
 
@@ -27,7 +41,12 @@ public sealed class NullMonitoringCycleJournal : IMonitoringCycleJournal
         Guid cycleId,
         Guid subProfileRunId,
         string? errorType,
-        string? errorMessage)
+        string? errorMessage,
+        int foundCount = 0,
+        int publishedCount = 0,
+        int collectedCount = 0,
+        int captchaCount = 0,
+        int captchaSolvedCount = 0)
     {
     }
 
@@ -35,11 +54,11 @@ public sealed class NullMonitoringCycleJournal : IMonitoringCycleJournal
     {
     }
 
-    public void AbortCycle(Guid cycleId)
+    public void AbortCycle(Guid cycleId, string? errorType = null, string? errorMessage = null)
     {
     }
 
-    public void FailCycle(Guid cycleId)
+    public void FailCycle(Guid cycleId, string? errorType = null, string? errorMessage = null)
     {
     }
 

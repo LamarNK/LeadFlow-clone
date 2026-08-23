@@ -17,47 +17,64 @@ public sealed class DashboardQueryService(
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
-    // Lightweight 5-8s cache for summary to reduce repeated heavy aggregates under polling
-    private static (DateTime ExpiresUtc, GlobalDashboardSummary? Value, OfficeScope Scope, Guid? OfficeFilter) _summaryCache;
-    private static readonly object _cacheLock = new();
-
     /// <summary>Test-only: static summary cache must not leak across InMemory DB fixtures.</summary>
-    internal static void ClearCacheForTests()
-    {
-        lock (_cacheLock)
-        {
-            _summaryCache = default;
-        }
-    }
+    internal static void ClearCacheForTests() => PanelAggregateCache.Clear();
 
     public async Task<GlobalDashboardSummary> GetGlobalSummaryAsync(
         OfficeScope scope,
         Guid? officeFilter = null,
         int? timeZoneOffsetMinutes = null,
+        DateTime? fromLocal = null,
+        DateTime? toLocal = null,
         CancellationToken ct = default)
     {
         var nowUtc = DateTime.UtcNow;
+        var (startLocal, endLocal, _, _) = LocalCalendarDateRange.Normalize(
+            fromLocal,
+            toLocal,
+            timeZoneOffsetMinutes,
+            nowUtc);
+        var summary = await PanelAggregateCache.GetOrCreateAsync(
+            PanelAggregateCache.SummaryKey(scope, officeFilter, timeZoneOffsetMinutes, startLocal, endLocal),
+            PanelAggregateCache.DashboardTtl,
+            () => ComputeGlobalSummaryCoreAsync(
+                scope,
+                officeFilter,
+                timeZoneOffsetMinutes,
+                startLocal,
+                endLocal,
+                ct));
+        return await RefreshOnlineWorkersAsync(summary, scope, officeFilter, ct);
+    }
 
-        // Check short TTL cache (avoids re-computing aggregates on every 10s dashboard poll)
-        lock (_cacheLock)
-        {
-            if (_summaryCache.Value is not null &&
-                _summaryCache.ExpiresUtc > nowUtc &&
-                _summaryCache.Scope.IsGlobalAdmin == scope.IsGlobalAdmin &&
-                _summaryCache.OfficeFilter == officeFilter)
-            {
-                // return a copy-ish (immutable record is fine to share)
-                return _summaryCache.Value with { AggregatedAtUtc = nowUtc };
-            }
-        }
+    public async Task<NavBadgesDto> GetNavBadgesAsync(
+        OfficeScope scope,
+        Guid? officeFilter = null,
+        int? timeZoneOffsetMinutes = null,
+        CancellationToken ct = default)
+    {
+        return await PanelAggregateCache.GetOrCreateAsync(
+            PanelAggregateCache.NavBadgesKey(scope, officeFilter, timeZoneOffsetMinutes),
+            PanelAggregateCache.NavBadgesTtl,
+            () => ComputeNavBadgesCoreAsync(scope, officeFilter, timeZoneOffsetMinutes, ct));
+    }
+
+    private async Task<GlobalDashboardSummary> ComputeGlobalSummaryCoreAsync(
+        OfficeScope scope,
+        Guid? officeFilter,
+        int? timeZoneOffsetMinutes,
+        DateTime startLocal,
+        DateTime endLocal,
+        CancellationToken ct)
+    {
+        var nowUtc = DateTime.UtcNow;
 
         var todayLocal = LocalCalendarDateRange.GetLocalCalendarDate(nowUtc, timeZoneOffsetMinutes);
         var todayStart = LocalCalendarDateRange.GetUtcRangeForLocalCalendarDay(todayLocal, timeZoneOffsetMinutes)
             .UtcStartInclusive;
-        var weeklyStartLocal = todayLocal.AddDays(-(LocalCalendarDateRange.MaxCalendarDays - 1));
-        var (_, _, weeklyUtcStart, weeklyUtcEnd) = LocalCalendarDateRange.Normalize(
-            weeklyStartLocal,
-            todayLocal,
+        var (_, _, periodUtcStart, periodUtcEnd) = LocalCalendarDateRange.Normalize(
+            startLocal,
+            endLocal,
             timeZoneOffsetMinutes,
             nowUtc);
         var workersQuery = officeScope
@@ -74,7 +91,7 @@ public sealed class DashboardQueryService(
 
         // "Sent" is counted by actual send time (CRM + Bitrix deliveries), not the response
         // collection date — a response collected yesterday but sent today counts for today.
-        var sendTimestamps = await LoadSendTimestampsAsync(workerIds, weeklyUtcStart, weeklyUtcEnd, ct);
+        var sendTimestamps = await LoadSendTimestampsAsync(workerIds, periodUtcStart, periodUtcEnd, ct);
 
         // Keep snapshot data only for account-level details (ads counts, balances) and activity charts
         var latestSnapshots = await db.WorkerSnapshots
@@ -102,7 +119,7 @@ public sealed class DashboardQueryService(
         int inProgress = responseStats.InProgress;
         int actionRequired = responseStats.ActionRequired;
 
-        var workerEventErrors = await ComputeWorkerEventErrorStatsAsync(workerIds, todayStart, ct);
+        var workerEventErrors = await ComputeWorkerEventErrorStatsAsync(workerIds, todayStart, periodUtcStart, ct);
         int errors = workerEventErrors.TodayCount;
 
         int connectedAccounts = statsList.Sum(s => s.ConnectedAccounts);
@@ -161,21 +178,76 @@ public sealed class DashboardQueryService(
             WeeklyByDayActivity: WorkerEventErrorStatsHelper.MergeDailyErrors(
                 await ComputeDailyActivityFromDbAsync(
                     workerIds,
-                    weeklyStartLocal,
-                    todayLocal,
+                    startLocal,
+                    endLocal,
                     sendTimestamps,
                     timeZoneOffsetMinutes,
                     ct),
                 workerEventErrors.Daily),
             AggregatedAtUtc: nowUtc);
 
-        // Store in short cache
-        lock (_cacheLock)
-        {
-            _summaryCache = (nowUtc.AddSeconds(7), result, scope, officeFilter);
-        }
+        PanelAggregateCache.Set(
+            PanelAggregateCache.NavBadgesKey(scope, officeFilter, timeZoneOffsetMinutes),
+            new NavBadgesDto(
+                result.Errors,
+                result.UniqueResponsesToday,
+                result.ActionRequired,
+                result.AggregatedAtUtc),
+            PanelAggregateCache.NavBadgesTtl);
 
         return result;
+    }
+
+    private async Task<NavBadgesDto> ComputeNavBadgesCoreAsync(
+        OfficeScope scope,
+        Guid? officeFilter,
+        int? timeZoneOffsetMinutes,
+        CancellationToken ct)
+    {
+        var nowUtc = DateTime.UtcNow;
+        var todayLocal = LocalCalendarDateRange.GetLocalCalendarDate(nowUtc, timeZoneOffsetMinutes);
+        var todayStart = LocalCalendarDateRange.GetUtcRangeForLocalCalendarDay(todayLocal, timeZoneOffsetMinutes)
+            .UtcStartInclusive;
+        var workerIds = await officeScope
+            .ApplyWorkerFilter(db.Workers.AsNoTracking(), scope, officeFilter)
+            .Where(x => x.MachineName != LeadFlowImportWorker.MachineName)
+            .Select(x => x.Id)
+            .ToListAsync(ct);
+        var workerIdSet = workerIds.ToHashSet();
+        if (workerIdSet.Count == 0)
+        {
+            return new NavBadgesDto(0, 0, 0, nowUtc);
+        }
+
+        var responseStats = await ComputeTodayResponseStatsAsync(workerIdSet, todayStart, ct);
+        var errorsToday = await CountTodayWorkerEventErrorsAsync(workerIdSet, todayStart, ct);
+        return new NavBadgesDto(
+            errorsToday,
+            Math.Max(0, responseStats.TotalToday - responseStats.Duplicates),
+            responseStats.ActionRequired,
+            nowUtc);
+    }
+
+    private async Task<GlobalDashboardSummary> RefreshOnlineWorkersAsync(
+        GlobalDashboardSummary summary,
+        OfficeScope scope,
+        Guid? officeFilter,
+        CancellationToken ct)
+    {
+        var nowUtc = DateTime.UtcNow;
+        var workers = await officeScope
+            .ApplyWorkerFilter(db.Workers.AsNoTracking(), scope, officeFilter)
+            .Where(x => x.MachineName != LeadFlowImportWorker.MachineName)
+            .Select(w => new { w.Id, w.LastSeenAtUtc })
+            .ToListAsync(ct);
+        var onlineWorkers = workers.Count(w =>
+            WorkerOnlineRules.IsOnline(w.LastSeenAtUtc, nowUtc, connectionRegistry.IsConnected(w.Id)));
+        return summary with
+        {
+            TotalWorkers = workers.Count,
+            OnlineWorkers = onlineWorkers,
+            AggregatedAtUtc = nowUtc
+        };
     }
 
     public async Task<IReadOnlyList<WorkerListItem>> GetWorkersAsync(
@@ -308,7 +380,11 @@ public sealed class DashboardQueryService(
 
         var todayStart = nowUtc.Date;
         var todayEndUtc = LocalCalendarDateRange.GetUtcRangeForLocalCalendarDay(DateTime.Today).UtcEndExclusive;
-        var workerEventErrors = await ComputeWorkerEventErrorStatsAsync(new HashSet<Guid> { workerId }, todayStart, ct);
+        var workerEventErrors = await ComputeWorkerEventErrorStatsAsync(
+            new HashSet<Guid> { workerId },
+            todayStart,
+            todayStart,
+            ct);
         var workerSendTimestamps = await LoadSendTimestampsAsync(
             new HashSet<Guid> { workerId },
             todayStart,
@@ -381,7 +457,11 @@ public sealed class DashboardQueryService(
             worker.AutoDeliverToBitrix,
             worker.OfficeId,
             worker.Office?.Name ?? string.Empty,
-            worker.ResponseHighlightTargetsJson);
+            worker.ResponseHighlightTargetsJson,
+            worker.AdsPowerGroupId,
+            worker.AdsPowerGroupName,
+            AdsPowerGroupsJson.Parse(worker.AdsPowerGroupsJson),
+            worker.RuCaptchaApiKey);
     }
 
     public async Task<IReadOnlyList<WorkerAccountDto>> GetWorkerAccountsAsync(
@@ -394,13 +474,135 @@ public sealed class DashboardQueryService(
             return [];
         }
 
+        var byWorker = await LoadAccountsByWorkerAsync([workerId], ct);
+        return byWorker.TryGetValue(workerId, out var accounts) ? accounts : [];
+    }
+
+    public async Task<IReadOnlyList<OfficeAccountListItem>> GetOfficeAccountsAsync(
+        OfficeScope scope,
+        Guid? officeFilter = null,
+        Guid? workerId = null,
+        CancellationToken ct = default)
+    {
+        if (workerId is Guid requestedWorkerId
+            && !await officeScope.CanAccessWorkerAsync(scope, requestedWorkerId, ct))
+        {
+            return [];
+        }
+
+        return await PanelAggregateCache.GetOrCreateAsync(
+            PanelAggregateCache.AccountsKey(scope, officeFilter, workerId),
+            PanelAggregateCache.AccountsTtl,
+            () => ComputeOfficeAccountsCoreAsync(scope, officeFilter, workerId, ct));
+    }
+
+    private async Task<IReadOnlyList<OfficeAccountListItem>> ComputeOfficeAccountsCoreAsync(
+        OfficeScope scope,
+        Guid? officeFilter,
+        Guid? workerId,
+        CancellationToken ct)
+    {
+        var nowUtc = DateTime.UtcNow;
+        var workersQuery = officeScope
+            .ApplyWorkerFilter(db.Workers.AsNoTracking(), scope, officeFilter)
+            .Where(x => x.MachineName != LeadFlowImportWorker.MachineName);
+        if (workerId is Guid requestedWorkerId)
+        {
+            workersQuery = workersQuery.Where(x => x.Id == requestedWorkerId);
+        }
+
+        var workers = await workersQuery
+            .OrderBy(x => x.DisplayName)
+            .Select(w => new
+            {
+                w.Id,
+                w.DisplayName,
+                OfficeName = w.Office.Name,
+                w.LastSeenAtUtc,
+                w.ActivityPhase,
+                w.ActivityMessage,
+                w.ActivityAccountId,
+                w.ActivityAccountName,
+                w.ActivitySubProfileId,
+                w.ActivitySubProfileName,
+                w.ActivityUpdatedAtUtc,
+                w.ActivityNextCycleAtUtc,
+                w.ActivityActiveAccountsJson
+            })
+            .ToListAsync(ct);
+
+        if (workers.Count == 0)
+        {
+            return [];
+        }
+
+        var workerIds = workers.Select(w => w.Id).ToList();
+        var accountsByWorker = await LoadAccountsByWorkerAsync(workerIds, ct);
+        var balancesByAccount = await LoadLatestBalancesForWorkersAsync(workerIds, ct);
+
+        var items = new List<OfficeAccountListItem>();
+        foreach (var worker in workers)
+        {
+            if (!accountsByWorker.TryGetValue(worker.Id, out var accounts) || accounts.Count == 0)
+            {
+                continue;
+            }
+
+            var isOnline = WorkerOnlineRules.IsOnline(
+                worker.LastSeenAtUtc,
+                nowUtc,
+                connectionRegistry.IsConnected(worker.Id));
+            var activeAccounts = WorkerActivityMapper.DeserializeActiveAccounts(worker.ActivityActiveAccountsJson);
+            var activity = WorkerActivityMapper.ToDto(
+                worker.ActivityPhase,
+                worker.ActivityMessage,
+                worker.ActivityAccountId,
+                worker.ActivityAccountName,
+                worker.ActivitySubProfileId,
+                worker.ActivitySubProfileName,
+                worker.ActivityNextCycleAtUtc,
+                worker.ActivityUpdatedAtUtc,
+                activeAccounts);
+
+            foreach (var account in accounts)
+            {
+                balancesByAccount.TryGetValue((worker.Id, account.AccountId), out var balance);
+                items.Add(new OfficeAccountListItem(
+                    worker.Id,
+                    worker.DisplayName,
+                    worker.OfficeName,
+                    isOnline,
+                    activity,
+                    activeAccounts,
+                    account,
+                    balance));
+            }
+        }
+
+        return items;
+    }
+
+    private async Task<Dictionary<Guid, IReadOnlyList<WorkerAccountDto>>> LoadAccountsByWorkerAsync(
+        IReadOnlyList<Guid> workerIds,
+        CancellationToken ct)
+    {
+        var result = workerIds.ToDictionary(
+            static id => id,
+            static _ => (IReadOnlyList<WorkerAccountDto>)[]);
+        if (workerIds.Count == 0)
+        {
+            return result;
+        }
+
+        var workerIdList = workerIds as List<Guid> ?? workerIds.ToList();
         var todayStart = DateTime.UtcNow.Date;
         var rows = await db.WorkerAccounts
             .AsNoTracking()
-            .Where(x => x.WorkerId == workerId)
+            .Where(x => workerIdList.Contains(x.WorkerId))
             .OrderBy(x => x.DisplayName)
             .Select(x => new
             {
+                x.WorkerId,
                 x.AccountId,
                 x.DisplayName,
                 x.Status,
@@ -411,119 +613,149 @@ public sealed class DashboardQueryService(
                 x.LastErrorMessage,
                 x.LastMonitoringAt,
                 x.AdsPowerProfileId,
+                x.AdsPowerGroupId,
+                x.AdsPowerGroupName,
                 x.SubProfilesJson,
                 x.SubProfilesRefreshedAtUtc,
                 x.SubProfilesRefreshRequestedAtUtc,
                 x.SubProfilesDisabledIdsJson,
                 x.AvitoLogin,
-                x.AvitoPasswordProtected
+                x.AvitoPasswordProtected,
+                x.TotalBalance
             })
             .ToListAsync(ct);
 
-        var accountIds = rows.Select(x => x.AccountId).ToList();
-        var responseStats = accountIds.Count == 0
-            ? new Dictionary<Guid, (int Total, int Duplicates)>()
-            : await db.CandidateResponses
-                .AsNoTracking()
-                .Where(x => x.WorkerId == workerId && accountIds.Contains(x.AccountId) && x.CollectedAt >= todayStart)
-                .GroupBy(x => x.AccountId)
-                .Select(g => new
-                {
-                    g.Key,
-                    Total = g.Count(),
-                    Duplicates = g.Count(x => x.Status == ResponseStatuses.Duplicate)
-                })
-                .ToDictionaryAsync(x => x.Key, x => (x.Total, x.Duplicates), ct);
+        if (rows.Count == 0)
+        {
+            return result;
+        }
 
-        var eventStats = accountIds.Count == 0
-            ? new Dictionary<Guid, int>()
-            : await db.WorkerEvents
-                .AsNoTracking()
-                .Where(x => x.WorkerId == workerId
-                    && x.AccountId != null
-                    && accountIds.Contains(x.AccountId.Value)
-                    && !x.IsDismissed
-                    && x.CreatedAtUtc >= todayStart
-                    && (x.Level == "Error" || x.Level == "Warning"))
-                .GroupBy(x => x.AccountId!.Value)
-                .Select(g => new { AccountId = g.Key, Count = g.Count() })
-                .ToDictionaryAsync(x => x.AccountId, x => x.Count, ct);
+        var accountIds = rows.Select(x => x.AccountId).Distinct().ToList();
 
-        var subProfileResponseRows = accountIds.Count == 0
-            ? []
-            : await db.CandidateResponses
-                .AsNoTracking()
-                .Where(x => x.WorkerId == workerId
-                    && accountIds.Contains(x.AccountId)
-                    && x.CollectedAt >= todayStart
-                    && x.AvitoSubProfileId != "")
-                .GroupBy(x => new { x.AccountId, x.AvitoSubProfileId })
-                .Select(g => new
-                {
-                    g.Key.AccountId,
-                    g.Key.AvitoSubProfileId,
-                    Total = g.Count(),
-                    Duplicates = g.Count(x => x.Status == ResponseStatuses.Duplicate),
-                    Errors = g.Count(x => x.Status == ResponseStatuses.Error || x.Status == ResponseStatuses.ActionRequired),
-                    LastActivity = g.Max(x => (DateTime?)x.CollectedAt)
-                })
-                .ToListAsync(ct);
+        var responseStats = (await db.CandidateResponses
+            .AsNoTracking()
+            .Where(x => x.WorkerId != null
+                && workerIdList.Contains(x.WorkerId.Value)
+                && accountIds.Contains(x.AccountId)
+                && x.CollectedAt >= todayStart)
+            .GroupBy(x => new { WorkerId = x.WorkerId!.Value, x.AccountId })
+            .Select(g => new
+            {
+                g.Key.WorkerId,
+                g.Key.AccountId,
+                Total = g.Count(),
+                Duplicates = g.Count(x => x.Status == ResponseStatuses.Duplicate)
+            })
+            .ToListAsync(ct))
+            .ToDictionary(x => (x.WorkerId, x.AccountId), x => (x.Total, x.Duplicates));
 
-        var subProfileStats = SubProfileOperationalStatsHelper.MergeResponseStats(
-            subProfileResponseRows.Select(x => (
-                x.AccountId,
-                x.AvitoSubProfileId,
-                x.Total,
-                x.Duplicates,
-                x.Errors,
-                LastActivity: (DateTime?)null)));
+        var eventStats = (await db.WorkerEvents
+            .AsNoTracking()
+            .Where(x => workerIdList.Contains(x.WorkerId)
+                && x.AccountId != null
+                && accountIds.Contains(x.AccountId.Value)
+                && !x.IsDismissed
+                && x.CreatedAtUtc >= todayStart
+                && (x.Level == "Error" || x.Level == "Warning"))
+            .GroupBy(x => new { x.WorkerId, AccountId = x.AccountId!.Value })
+            .Select(g => new { g.Key.WorkerId, g.Key.AccountId, Count = g.Count() })
+            .ToListAsync(ct))
+            .ToDictionary(x => (x.WorkerId, x.AccountId), x => x.Count);
 
-        var subProfileAllTimeActivityRows = accountIds.Count == 0
-            ? []
-            : await db.CandidateResponses
-                .AsNoTracking()
-                .Where(x => x.WorkerId == workerId
-                    && accountIds.Contains(x.AccountId)
-                    && x.AvitoSubProfileId != "")
-                .GroupBy(x => new { x.AccountId, x.AvitoSubProfileId })
-                .Select(g => new
-                {
-                    g.Key.AccountId,
-                    g.Key.AvitoSubProfileId,
-                    LastActivity = g.Max(x => (DateTime?)x.CollectedAt)
-                })
-                .ToListAsync(ct);
+        var subProfileResponseRows = await db.CandidateResponses
+            .AsNoTracking()
+            .Where(x => x.WorkerId != null
+                && workerIdList.Contains(x.WorkerId.Value)
+                && accountIds.Contains(x.AccountId)
+                && x.CollectedAt >= todayStart
+                && x.AvitoSubProfileId != "")
+            .GroupBy(x => new { WorkerId = x.WorkerId!.Value, x.AccountId, x.AvitoSubProfileId })
+            .Select(g => new
+            {
+                g.Key.WorkerId,
+                g.Key.AccountId,
+                g.Key.AvitoSubProfileId,
+                Total = g.Count(),
+                Duplicates = g.Count(x => x.Status == ResponseStatuses.Duplicate),
+                Errors = g.Count(x => x.Status == ResponseStatuses.Error || x.Status == ResponseStatuses.ActionRequired),
+                LastActivity = g.Max(x => (DateTime?)x.CollectedAt)
+            })
+            .ToListAsync(ct);
 
-        SubProfileOperationalStatsHelper.MergeAllTimeActivity(
-            subProfileStats,
-            subProfileAllTimeActivityRows.Select(x => (
-                x.AccountId,
-                x.AvitoSubProfileId,
-                x.LastActivity)));
+        var subProfileAllTimeActivityRows = await db.CandidateResponses
+            .AsNoTracking()
+            .Where(x => x.WorkerId != null
+                && workerIdList.Contains(x.WorkerId.Value)
+                && accountIds.Contains(x.AccountId)
+                && x.AvitoSubProfileId != "")
+            .GroupBy(x => new { WorkerId = x.WorkerId!.Value, x.AccountId, x.AvitoSubProfileId })
+            .Select(g => new
+            {
+                g.Key.WorkerId,
+                g.Key.AccountId,
+                g.Key.AvitoSubProfileId,
+                LastActivity = g.Max(x => (DateTime?)x.CollectedAt)
+            })
+            .ToListAsync(ct);
 
-        var subProfileNameRows = accountIds.Count == 0
-            ? []
-            : await db.CandidateResponses
-                .AsNoTracking()
-                .Where(x => x.WorkerId == workerId
-                    && accountIds.Contains(x.AccountId)
-                    && x.AvitoSubProfileId != "")
-                .GroupBy(x => new { x.AccountId, x.AvitoSubProfileId })
-                .Select(g => new
-                {
-                    g.Key.AccountId,
-                    g.Key.AvitoSubProfileId,
-                    Name = g.OrderByDescending(x => x.CreatedAt)
-                        .Select(x => x.AvitoSubProfileName)
-                        .FirstOrDefault()
-                })
-                .ToListAsync(ct);
+        var subProfileNameRows = await db.CandidateResponses
+            .AsNoTracking()
+            .Where(x => x.WorkerId != null
+                && workerIdList.Contains(x.WorkerId.Value)
+                && accountIds.Contains(x.AccountId)
+                && x.AvitoSubProfileId != "")
+            .GroupBy(x => new { WorkerId = x.WorkerId!.Value, x.AccountId, x.AvitoSubProfileId })
+            .Select(g => new
+            {
+                g.Key.WorkerId,
+                g.Key.AccountId,
+                g.Key.AvitoSubProfileId,
+                Name = g.OrderByDescending(x => x.CreatedAt)
+                    .Select(x => x.AvitoSubProfileName)
+                    .FirstOrDefault()
+            })
+            .ToListAsync(ct);
 
-        var responseNameLookup = SubProfileOperationalStatsHelper.BuildResponseNameLookup(
-            subProfileNameRows.Select(x => (x.AccountId, x.AvitoSubProfileId, (string?)x.Name)));
+        var lastEventByAccount = (await db.WorkerEvents
+            .AsNoTracking()
+            .Where(x => workerIdList.Contains(x.WorkerId)
+                && x.AccountId != null
+                && accountIds.Contains(x.AccountId.Value)
+                && !x.IsDismissed)
+            .GroupBy(x => new { x.WorkerId, AccountId = x.AccountId!.Value })
+            .Select(g => new { g.Key.WorkerId, g.Key.AccountId, LastAt = g.Max(x => x.CreatedAtUtc) })
+            .ToListAsync(ct))
+            .ToDictionary(x => (x.WorkerId, x.AccountId), x => x.LastAt);
+
+        var lastResponseByAccount = (await db.CandidateResponses
+            .AsNoTracking()
+            .Where(x => x.WorkerId != null
+                && workerIdList.Contains(x.WorkerId.Value)
+                && accountIds.Contains(x.AccountId))
+            .GroupBy(x => new { WorkerId = x.WorkerId!.Value, x.AccountId })
+            .Select(g => new { g.Key.WorkerId, g.Key.AccountId, LastAt = g.Max(x => x.CollectedAt) })
+            .ToListAsync(ct))
+            .ToDictionary(x => (x.WorkerId, x.AccountId), x => x.LastAt);
+
+        var subProfileEventRows = await db.WorkerEvents
+            .AsNoTracking()
+            .Where(x => workerIdList.Contains(x.WorkerId)
+                && x.AccountId != null
+                && accountIds.Contains(x.AccountId.Value)
+                && !x.IsDismissed)
+            .Select(x => new
+            {
+                x.WorkerId,
+                AccountId = x.AccountId!.Value,
+                x.Details,
+                x.CreatedAtUtc,
+                x.Level
+            })
+            .ToListAsync(ct);
 
         var deserializedProfiles = rows
             .Select(x => (
+                x.WorkerId,
                 x.AccountId,
                 Profiles: DeserializeSubProfiles(x.SubProfilesJson, x.SubProfilesDisabledIdsJson)))
             .ToList();
@@ -538,103 +770,107 @@ public sealed class DashboardQueryService(
                 .Select(x => x.Id)
                 .ToHashSetAsync(ct);
 
-        var lastEventByAccount = accountIds.Count == 0
-            ? new Dictionary<Guid, DateTime>()
-            : await db.WorkerEvents
-                .AsNoTracking()
-                .Where(x => x.WorkerId == workerId
-                    && x.AccountId != null
-                    && accountIds.Contains(x.AccountId.Value)
-                    && !x.IsDismissed)
-                .GroupBy(x => x.AccountId!.Value)
-                .Select(g => new { AccountId = g.Key, LastAt = g.Max(x => x.CreatedAtUtc) })
-                .ToDictionaryAsync(x => x.AccountId, x => x.LastAt, ct);
-
-        var lastResponseByAccount = accountIds.Count == 0
-            ? new Dictionary<Guid, DateTime>()
-            : await db.CandidateResponses
-                .AsNoTracking()
-                .Where(x => x.WorkerId == workerId && accountIds.Contains(x.AccountId))
-                .GroupBy(x => x.AccountId)
-                .Select(g => new { AccountId = g.Key, LastAt = g.Max(x => x.CollectedAt) })
-                .ToDictionaryAsync(x => x.AccountId, x => x.LastAt, ct);
-
-        if (accountIds.Count > 0)
+        foreach (var workerId in workerIds)
         {
-            var subProfileEventRows = await db.WorkerEvents
-                .AsNoTracking()
-                .Where(x => x.WorkerId == workerId
-                    && x.AccountId != null
-                    && accountIds.Contains(x.AccountId.Value)
-                    && !x.IsDismissed)
-                .Select(x => new
-                {
-                    AccountId = x.AccountId!.Value,
-                    x.Details,
-                    x.CreatedAtUtc,
-                    x.Level
-                })
-                .ToListAsync(ct);
+            var workerRows = rows.Where(x => x.WorkerId == workerId).ToList();
+            if (workerRows.Count == 0)
+            {
+                continue;
+            }
+
+            var workerProfiles = deserializedProfiles
+                .Where(x => x.WorkerId == workerId)
+                .Select(x => (x.AccountId, x.Profiles))
+                .ToList();
+
+            var subProfileStats = SubProfileOperationalStatsHelper.MergeResponseStats(
+                subProfileResponseRows
+                    .Where(x => x.WorkerId == workerId)
+                    .Select(x => (
+                        x.AccountId,
+                        x.AvitoSubProfileId,
+                        x.Total,
+                        x.Duplicates,
+                        x.Errors,
+                        LastActivity: (DateTime?)null)));
+
+            SubProfileOperationalStatsHelper.MergeAllTimeActivity(
+                subProfileStats,
+                subProfileAllTimeActivityRows
+                    .Where(x => x.WorkerId == workerId)
+                    .Select(x => (x.AccountId, x.AvitoSubProfileId, x.LastActivity)));
+
+            var responseNameLookup = SubProfileOperationalStatsHelper.BuildResponseNameLookup(
+                subProfileNameRows
+                    .Where(x => x.WorkerId == workerId)
+                    .Select(x => (x.AccountId, x.AvitoSubProfileId, (string?)x.Name)));
 
             SubProfileOperationalStatsHelper.ApplyEvents(
                 subProfileStats,
-                subProfileEventRows.Select(x => (x.AccountId, x.Details, x.CreatedAtUtc, x.Level)),
-                SubProfileOperationalStatsHelper.BuildNameLookup(deserializedProfiles),
+                subProfileEventRows
+                    .Where(x => x.WorkerId == workerId)
+                    .Select(x => (x.AccountId, x.Details, x.CreatedAtUtc, x.Level)),
+                SubProfileOperationalStatsHelper.BuildNameLookup(workerProfiles),
                 todayStart);
+
+            var accountDtos = workerRows
+                .Select(x =>
+                {
+                    responseStats.TryGetValue((x.WorkerId, x.AccountId), out var responses);
+                    eventStats.TryGetValue((x.WorkerId, x.AccountId), out var eventErrors);
+                    lastEventByAccount.TryGetValue((x.WorkerId, x.AccountId), out var lastEventAt);
+                    lastResponseByAccount.TryGetValue((x.WorkerId, x.AccountId), out var lastResponseAt);
+                    var subProfiles = SubProfileOperationalStatsHelper.Resolve(
+                        SubProfileIssueHelper.StripMissingAttachmentIssues(
+                            DeserializeSubProfiles(x.SubProfilesJson, x.SubProfilesDisabledIdsJson),
+                            existingAttachmentIds),
+                        x.AccountId,
+                        subProfileStats,
+                        responseNameLookup);
+                    var hasCredentials = !string.IsNullOrWhiteSpace(x.AvitoLogin)
+                        && !string.IsNullOrWhiteSpace(x.AvitoPasswordProtected);
+                    return new WorkerAccountDto(
+                        x.AccountId,
+                        x.DisplayName,
+                        x.Status,
+                        x.IsEnabledInPanel,
+                        x.ActiveAdsCount,
+                        x.BlockedCount,
+                        x.DraftsCount,
+                        x.LastErrorMessage,
+                        x.LastMonitoringAt,
+                        x.IsEnabledInPanel,
+                        x.AdsPowerProfileId,
+                        subProfiles,
+                        x.SubProfilesRefreshedAtUtc,
+                        x.SubProfilesRefreshRequestedAtUtc,
+                        responses.Total,
+                        responses.Duplicates,
+                        eventErrors,
+                        AccountLastActivityHelper.Resolve(
+                            x.LastMonitoringAt,
+                            lastEventAt,
+                            lastResponseAt),
+                        hasCredentials,
+                        string.IsNullOrWhiteSpace(x.AvitoLogin) ? null : x.AvitoLogin.Trim(),
+                        x.AdsPowerGroupId,
+                        x.AdsPowerGroupName);
+                })
+                .ToList();
+
+            await TryBackfillSubProfilesFromResponsesAsync(
+                workerId,
+                workerRows
+                    .Where(x => string.IsNullOrWhiteSpace(x.SubProfilesJson) || x.SubProfilesJson == "[]")
+                    .Select(x => x.AccountId)
+                    .ToList(),
+                accountDtos,
+                ct);
+
+            result[workerId] = accountDtos;
         }
 
-        var accountDtos = rows
-            .Select(x =>
-            {
-                responseStats.TryGetValue(x.AccountId, out var responses);
-                eventStats.TryGetValue(x.AccountId, out var eventErrors);
-                lastEventByAccount.TryGetValue(x.AccountId, out var lastEventAt);
-                lastResponseByAccount.TryGetValue(x.AccountId, out var lastResponseAt);
-                var subProfiles = SubProfileOperationalStatsHelper.Resolve(
-                    SubProfileIssueHelper.StripMissingAttachmentIssues(
-                        DeserializeSubProfiles(x.SubProfilesJson, x.SubProfilesDisabledIdsJson),
-                        existingAttachmentIds),
-                    x.AccountId,
-                    subProfileStats,
-                    responseNameLookup);
-                var hasCredentials = !string.IsNullOrWhiteSpace(x.AvitoLogin)
-                    && !string.IsNullOrWhiteSpace(x.AvitoPasswordProtected);
-                return new WorkerAccountDto(
-                    x.AccountId,
-                    x.DisplayName,
-                    x.Status,
-                    x.IsEnabledInPanel,
-                    x.ActiveAdsCount,
-                    x.BlockedCount,
-                    x.DraftsCount,
-                    x.LastErrorMessage,
-                    x.LastMonitoringAt,
-                    x.IsEnabledInPanel,
-                    x.AdsPowerProfileId,
-                    subProfiles,
-                    x.SubProfilesRefreshedAtUtc,
-                    x.SubProfilesRefreshRequestedAtUtc,
-                    responses.Total,
-                    responses.Duplicates,
-                    eventErrors,
-                    AccountLastActivityHelper.Resolve(
-                        x.LastMonitoringAt,
-                        lastEventAt,
-                        lastResponseAt),
-                    hasCredentials,
-                    string.IsNullOrWhiteSpace(x.AvitoLogin) ? null : x.AvitoLogin.Trim());
-            })
-            .ToList();
-
-        await TryBackfillSubProfilesFromResponsesAsync(
-            workerId,
-            rows.Where(x => string.IsNullOrWhiteSpace(x.SubProfilesJson) || x.SubProfilesJson == "[]")
-                .Select(x => x.AccountId)
-                .ToList(),
-            accountDtos,
-            ct);
-
-        return accountDtos;
+        return result;
     }
 
     public async Task<IReadOnlyList<WorkerEventListItem>> GetWorkerEventsAsync(
@@ -912,16 +1148,42 @@ public sealed class DashboardQueryService(
         var query = db.CandidateResponses.AsNoTracking()
             .Where(x => x.WorkerId != null && workerIds.Contains(x.WorkerId.Value) && x.CollectedAt >= todayStartUtc);
 
-        var totalToday = await query.CountAsync(ct);
-        if (totalToday == 0)
+        var statusCounts = await query
+            .GroupBy(x => x.Status)
+            .Select(g => new { Status = g.Key, Count = g.Count() })
+            .ToListAsync(ct);
+        if (statusCounts.Count == 0)
+        {
             return (0, 0, 0, 0, 0);
+        }
 
-        var duplicates = await query.CountAsync(x => x.Status == ResponseStatuses.Duplicate, ct);
-        var errors = await query.CountAsync(x => x.Status == ResponseStatuses.Error, ct);
-        var actionReq = await query.CountAsync(x => x.Status == ResponseStatuses.ActionRequired, ct);
-        var inProgress = await query.CountAsync(x => x.Status == ResponseStatuses.InProgress, ct);
+        int CountFor(string status) =>
+            statusCounts.FirstOrDefault(x => x.Status == status)?.Count ?? 0;
+
+        var totalToday = statusCounts.Sum(x => x.Count);
+        var duplicates = CountFor(ResponseStatuses.Duplicate);
+        var errors = CountFor(ResponseStatuses.Error);
+        var actionReq = CountFor(ResponseStatuses.ActionRequired);
+        var inProgress = CountFor(ResponseStatuses.InProgress);
 
         return (totalToday, duplicates, errors + actionReq, inProgress, actionReq);
+    }
+
+    private async Task<int> CountTodayWorkerEventErrorsAsync(
+        HashSet<Guid> workerIds,
+        DateTime todayStartUtc,
+        CancellationToken ct)
+    {
+        if (workerIds.Count == 0)
+        {
+            return 0;
+        }
+
+        return await db.WorkerEvents
+            .AsNoTracking()
+            .Where(x => workerIds.Contains(x.WorkerId) && !x.IsDismissed && x.CreatedAtUtc >= todayStartUtc)
+            .Where(x => x.Level == "Error" || x.Level == "Warning")
+            .CountAsync(ct);
     }
 
     // Successful sends (CRM + Bitrix) in [utcStart, utcEnd) by actual send time.
@@ -1003,12 +1265,13 @@ public sealed class DashboardQueryService(
     private async Task<WorkerEventErrorStats> ComputeWorkerEventErrorStatsAsync(
         HashSet<Guid> workerIds,
         DateTime todayStartUtc,
+        DateTime eventsFromUtc,
         CancellationToken ct)
     {
         if (workerIds.Count == 0)
             return WorkerEventErrorStats.Empty;
 
-        var rangeStart = todayStartUtc.AddDays(-WorkerEventErrorStatsHelper.DailyLookbackDays);
+        var rangeStart = eventsFromUtc < todayStartUtc ? eventsFromUtc : todayStartUtc;
         var rows = await db.WorkerEvents
             .AsNoTracking()
             .Where(x => workerIds.Contains(x.WorkerId) && !x.IsDismissed)
@@ -1051,7 +1314,11 @@ public sealed class DashboardQueryService(
         var accountCounts = BuildAccountCounts(
             accountRows.Select(x => (x.WorkerId, x.Status, x.IsEnabledInPanel)));
         var responseStats = await ComputeWorkerTodayStatsAsync(workerIds, todayStartUtc, ct);
-        var workerEventErrors = await ComputeWorkerEventErrorStatsAsync(workerIds.ToHashSet(), todayStartUtc, ct);
+        var workerEventErrors = await ComputeWorkerEventErrorStatsAsync(
+            workerIds.ToHashSet(),
+            todayStartUtc,
+            todayStartUtc,
+            ct);
 
         return WorkerOperationalStatsHelper.Merge(
             workerIds,
@@ -1122,6 +1389,73 @@ public sealed class DashboardQueryService(
             balances,
             balances,
             existingAccounts).ToList();
+    }
+
+    private async Task<Dictionary<(Guid WorkerId, Guid AccountId), WorkerBalanceDto>> LoadLatestBalancesForWorkersAsync(
+        IReadOnlyList<Guid> workerIds,
+        CancellationToken ct)
+    {
+        var result = new Dictionary<(Guid WorkerId, Guid AccountId), WorkerBalanceDto>();
+        if (workerIds.Count == 0)
+        {
+            return result;
+        }
+
+        var workerIdList = workerIds as List<Guid> ?? workerIds.ToList();
+        var snapshots = await db.WorkerSnapshots
+            .AsNoTracking()
+            .Where(x => workerIdList.Contains(x.WorkerId))
+            .GroupBy(x => x.WorkerId)
+            .Select(g => new
+            {
+                WorkerId = g.Key,
+                g.OrderByDescending(x => x.CapturedAtUtc).First().BalancesJson
+            })
+            .ToListAsync(ct);
+
+        var existingAccounts = await db.WorkerAccounts
+            .AsNoTracking()
+            .Where(x => workerIdList.Contains(x.WorkerId))
+            .ToListAsync(ct);
+
+        var accountsByWorker = existingAccounts
+            .GroupBy(x => x.WorkerId)
+            .ToDictionary(
+                static g => g.Key,
+                static g => (IReadOnlyDictionary<Guid, WorkerAccountEntity>)g.ToDictionary(a => a.AccountId));
+
+        foreach (var snapshot in snapshots)
+        {
+            var balances = JsonSerializer.Deserialize<List<WorkerBalanceDto>>(snapshot.BalancesJson, JsonOptions)
+                ?? [];
+            if (balances.Count == 0)
+            {
+                continue;
+            }
+
+            accountsByWorker.TryGetValue(snapshot.WorkerId, out var workerAccounts);
+            workerAccounts ??= new Dictionary<Guid, WorkerAccountEntity>();
+            foreach (var balance in BalanceSnapshotHelper.MergeWithPersisted(balances, balances, workerAccounts))
+            {
+                result[(snapshot.WorkerId, balance.AccountId)] = balance;
+            }
+        }
+
+        foreach (var account in existingAccounts)
+        {
+            if (result.ContainsKey((account.WorkerId, account.AccountId)))
+            {
+                continue;
+            }
+
+            var fromAccount = BalanceSnapshotHelper.FromWorkerAccount(account);
+            if (fromAccount is not null)
+            {
+                result[(account.WorkerId, account.AccountId)] = fromAccount;
+            }
+        }
+
+        return result;
     }
 
     private async Task TryBackfillSubProfilesFromResponsesAsync(

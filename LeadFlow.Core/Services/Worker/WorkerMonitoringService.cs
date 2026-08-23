@@ -7,6 +7,7 @@ using LeadFlow.Core.Logging.Audit;
 using LeadFlow.Core.Models;
 using LeadFlow.Core.Services.AdsPower;
 using LeadFlow.Core.Services.Avito;
+using LeadFlow.Core.Services.Captcha;
 using LeadFlow.Core.Services.Browser;
 using Orbita.Contracts;
 using PuppeteerSharp;
@@ -276,8 +277,8 @@ public sealed class WorkerMonitoringService(
                     var runningIds = running.Select(static j => j.Account.Id).ToHashSet();
                     var due = accounts
                         .Where(a => !runningIds.Contains(a.Id))
-                        .Where(a => GetNextEligibleUtc(a.Id) <= now)
-                        .OrderBy(a => GetNextEligibleUtc(a.Id))
+                        .Where(a => GetNextEligibleUtc(a) <= now)
+                        .OrderBy(a => GetNextEligibleUtc(a))
                         .ThenBy(a => a.DisplayName, StringComparer.OrdinalIgnoreCase)
                         .ToList();
 
@@ -297,7 +298,7 @@ public sealed class WorkerMonitoringService(
                     if (running.Count == 0)
                     {
                         var nextDue = accounts
-                            .Select(a => GetNextEligibleUtc(a.Id))
+                            .Select(GetNextEligibleUtc)
                             .DefaultIfEmpty(now.AddSeconds(30))
                             .Min();
                         var wait = nextDue - DateTime.UtcNow;
@@ -326,9 +327,11 @@ public sealed class WorkerMonitoringService(
                     var newResponses = 0;
                     var polled = false;
                     var backlog = false;
+                    var passCompleted = false;
                     try
                     {
                         var outcome = await job.Task.ConfigureAwait(false);
+                        passCompleted = outcome.PassCompleted;
                         if (outcome.PolledSource)
                         {
                             polled = true;
@@ -383,7 +386,36 @@ public sealed class WorkerMonitoringService(
                         personalDelay = TimeSpan.FromMinutes(MonitoringTiming.CycleDelayMinMinutes);
                     }
 
-                    _accountNextEligibleUtc[job.Account.Id] = DateTime.UtcNow.Add(personalDelay);
+                    personalDelay = MonitoringNightQuiet.ApplyFloor(personalDelay, DateTime.UtcNow);
+
+                    var nextEligible = DateTime.UtcNow.Add(personalDelay);
+                    _accountNextEligibleUtc[job.Account.Id] = nextEligible;
+                    job.Account.NextMonitoringAtUtc = nextEligible;
+                    if (passCompleted)
+                    {
+                        var passStarted = job.Account.MonitoringPassStartedAtUtc;
+                        var passFinished = job.Account.MonitoringPassFinishedAtUtc;
+                        var next = job.Account.NextMonitoringAtUtc;
+                        MonitoringAccountResume.FinishPass(
+                            DateTime.UtcNow,
+                            nextEligible,
+                            ref passStarted,
+                            ref passFinished,
+                            ref next,
+                            job.Account.MonitoringPassCompletedSubIds);
+                        job.Account.MonitoringPassStartedAtUtc = passStarted;
+                        job.Account.MonitoringPassFinishedAtUtc = passFinished;
+                        job.Account.NextMonitoringAtUtc = next;
+                    }
+
+                    try
+                    {
+                        await repository.SaveAccountAsync(job.Account, cancellationToken).ConfigureAwait(false);
+                    }
+                    catch
+                    {
+                        // Пауза уже в памяти процесса; файл/рантайм — best effort.
+                    }
 
                     WorkerMonitoringLogger.AccountPersonalDelay(
                         job.Account,
@@ -437,8 +469,14 @@ public sealed class WorkerMonitoringService(
         }
     }
 
-    private DateTime GetNextEligibleUtc(Guid accountId) =>
-        _accountNextEligibleUtc.TryGetValue(accountId, out var at) ? at : DateTime.MinValue;
+    private DateTime GetNextEligibleUtc(AvitoAccount account)
+    {
+        DateTime? memoryNext = _accountNextEligibleUtc.TryGetValue(account.Id, out var at) ? at : null;
+        return MonitoringAccountResume.ResolveNextEligibleUtc(
+            memoryNext,
+            account.NextMonitoringAtUtc,
+            account.LastMonitoringAt);
+    }
 
     private async Task<bool> TryRecoverLoopAsync(Exception ex, CancellationToken cancellationToken)
     {
@@ -562,7 +600,8 @@ public sealed class WorkerMonitoringService(
         int NewResponses,
         bool PolledSource,
         bool HasUndischargedBacklog,
-        string? NotPolledReason = null);
+        string? NotPolledReason = null,
+        bool PassCompleted = false);
 
     private async Task<AccountCycleOutcome> RunAccountInCycleSlotAsync(
         AvitoAccount account,
@@ -675,7 +714,14 @@ public sealed class WorkerMonitoringService(
                 subProfilesProcessed);
             if (aborted)
             {
-                _cycleJournal.AbortCycle(cycleId);
+                _cycleJournal.AbortCycle(
+                    cycleId,
+                    errorType: subProfilesProcessed == 0 ? "cycle-start" : null,
+                    errorMessage: subProfilesProcessed == 0
+                        ? (string.IsNullOrWhiteSpace(account.LastErrorMessage)
+                            ? "цикл прерван до первого субпрофиля"
+                            : account.LastErrorMessage)
+                        : null);
             }
             else
             {
@@ -684,11 +730,11 @@ public sealed class WorkerMonitoringService(
 
             cycleTerminal = true;
             await _cycleJournal.FlushAsync(cancellationToken).ConfigureAwait(false);
-            return new AccountCycleOutcome(detectedTotal, true, backlog);
+            return new AccountCycleOutcome(detectedTotal, true, backlog, PassCompleted: !aborted);
         }
         catch (AvitoCaptchaDetectedException captchaEx)
         {
-            _cycleJournal.AbortCycle(cycleId);
+            _cycleJournal.AbortCycle(cycleId, "captcha", captchaEx.Message);
             cycleTerminal = true;
             await HandleCaptchaForAccountAsync(account, captchaEx, cancellationToken).ConfigureAwait(false);
             await _cycleJournal.FlushAsync(cancellationToken).ConfigureAwait(false);
@@ -696,7 +742,7 @@ public sealed class WorkerMonitoringService(
         }
         catch (AvitoLoginRequiredException loginEx)
         {
-            _cycleJournal.AbortCycle(cycleId);
+            _cycleJournal.AbortCycle(cycleId, "auth-required", loginEx.Message);
             cycleTerminal = true;
             await HandleLoginRequiredForAccountAsync(account, loginEx, cancellationToken).ConfigureAwait(false);
             await _cycleJournal.FlushAsync(cancellationToken).ConfigureAwait(false);
@@ -704,7 +750,7 @@ public sealed class WorkerMonitoringService(
         }
         catch (AdsPowerDailyOpenLimitExceededException limitEx)
         {
-            _cycleJournal.AbortCycle(cycleId);
+            _cycleJournal.AbortCycle(cycleId, "ads-power-limit", limitEx.Message);
             cycleTerminal = true;
             await HandleAdsPowerDailyOpenLimitForAccountAsync(account, limitEx, cancellationToken).ConfigureAwait(false);
             await _cycleJournal.FlushAsync(cancellationToken).ConfigureAwait(false);
@@ -712,7 +758,7 @@ public sealed class WorkerMonitoringService(
         }
         catch (AdsPowerRateLimitExceededException rateEx)
         {
-            _cycleJournal.AbortCycle(cycleId);
+            _cycleJournal.AbortCycle(cycleId, "ads-power-rate", rateEx.Message);
             cycleTerminal = true;
             await HandleAdsPowerRateLimitForAccountAsync(account, rateEx, cancellationToken).ConfigureAwait(false);
             var reason = string.IsNullOrWhiteSpace(account.LastErrorMessage)
@@ -723,15 +769,23 @@ public sealed class WorkerMonitoringService(
         }
         catch (AdsPowerProfileInUseException profileInUseEx)
         {
-            _cycleJournal.AbortCycle(cycleId);
+            _cycleJournal.AbortCycle(cycleId, "profile-in-use", profileInUseEx.Message);
             cycleTerminal = true;
             await HandleAdsPowerProfileInUseForAccountAsync(account, profileInUseEx, cancellationToken).ConfigureAwait(false);
             await _cycleJournal.FlushAsync(cancellationToken).ConfigureAwait(false);
             return new AccountCycleOutcome(0, true, false);
         }
+        catch (AdsPowerProxyFailureException proxyEx)
+        {
+            _cycleJournal.AbortCycle(cycleId, "proxy", proxyEx.UserMessage);
+            cycleTerminal = true;
+            await HandleAdsPowerProxyFailureForAccountAsync(account, proxyEx, cancellationToken).ConfigureAwait(false);
+            await _cycleJournal.FlushAsync(cancellationToken).ConfigureAwait(false);
+            return new AccountCycleOutcome(0, true, false);
+        }
         catch (SessionDiagnosticException diagnosticEx)
         {
-            _cycleJournal.AbortCycle(cycleId);
+            _cycleJournal.AbortCycle(cycleId, "session", diagnosticEx.Message);
             cycleTerminal = true;
             await HandleSessionDiagnosticForAccountAsync(account, diagnosticEx, cancellationToken).ConfigureAwait(false);
             await _cycleJournal.FlushAsync(cancellationToken).ConfigureAwait(false);
@@ -764,7 +818,7 @@ public sealed class WorkerMonitoringService(
                 $"Ошибка аккаунта {account.DisplayName}: {ex.Message}",
                 ex.Message,
                 cancellationToken).ConfigureAwait(false);
-            _cycleJournal.FailCycle(cycleId);
+            _cycleJournal.FailCycle(cycleId, "automation", ex.Message);
             cycleTerminal = true;
             await _cycleJournal.FlushAsync(cancellationToken).ConfigureAwait(false);
             return new AccountCycleOutcome(0, true, false);
@@ -872,6 +926,7 @@ public sealed class WorkerMonitoringService(
                 .ConfigureAwait(false);
 
             var publishedCount = 0;
+            var collectedCount = 0;
             var skippedPersonDuplicates = 0;
             var filteredAge = 0;
             var filteredGender = 0;
@@ -903,11 +958,6 @@ public sealed class WorkerMonitoringService(
                     await PublishCandidateAsync(candidate, cancellationToken).ConfigureAwait(false);
                     publishedCount++;
                     publishedTotal++;
-                    if (!cancellationToken.IsCancellationRequested)
-                    {
-                        await HumanDelay.BetweenResponsesAsync(cancellationToken).ConfigureAwait(false);
-                    }
-
                     continue;
                 }
 
@@ -1018,12 +1068,6 @@ public sealed class WorkerMonitoringService(
                         await PublishCandidateAsync(candidate, cancellationToken).ConfigureAwait(false);
                         publishedCount++;
                         publishedTotal++;
-
-                        if (!cancellationToken.IsCancellationRequested)
-                        {
-                            await HumanDelay.BetweenResponsesAsync(cancellationToken).ConfigureAwait(false);
-                        }
-
                         continue;
                     }
 
@@ -1048,10 +1092,9 @@ public sealed class WorkerMonitoringService(
                 await PublishCandidateAsync(candidate, cancellationToken).ConfigureAwait(false);
                 publishedCount++;
                 publishedTotal++;
-
-                if (!cancellationToken.IsCancellationRequested)
+                if (decision.Action == ResponsePhoneWatchAction.PublishInitial)
                 {
-                    await HumanDelay.BetweenResponsesAsync(cancellationToken).ConfigureAwait(false);
+                    collectedCount++;
                 }
             }
 
@@ -1067,7 +1110,8 @@ public sealed class WorkerMonitoringService(
                 readyCandidates.Count,
                 publishedCount,
                 DeferredByCycleLimit: 0,
-                skippedPersonDuplicates);
+                skippedPersonDuplicates,
+                collectedCount);
         }
 
         if (settings.DemoModeEnabled)
@@ -1077,7 +1121,12 @@ public sealed class WorkerMonitoringService(
                 .ConfigureAwait(false);
             await ProcessBatchInlineAsync(demo).ConfigureAwait(false);
             var demoRunId = _cycleJournal.BeginSubProfile(cycleId, "demo", "demo", 1, 1);
-            _cycleJournal.CompleteSubProfile(cycleId, demoRunId, demo.Count, publishedTotal);
+            _cycleJournal.CompleteSubProfile(
+                cycleId,
+                demoRunId,
+                demo.Count,
+                publishedTotal,
+                collectedCount: publishedTotal);
             return (publishedTotal, false, 1, false);
         }
 
@@ -1092,7 +1141,12 @@ public sealed class WorkerMonitoringService(
                 .ConfigureAwait(false);
             await ProcessBatchInlineAsync(responses).ConfigureAwait(false);
             var legacyRunId = _cycleJournal.BeginSubProfile(cycleId, "legacy", "legacy", 1, 1);
-            _cycleJournal.CompleteSubProfile(cycleId, legacyRunId, responses.Count, publishedTotal);
+            _cycleJournal.CompleteSubProfile(
+                cycleId,
+                legacyRunId,
+                responses.Count,
+                publishedTotal,
+                collectedCount: publishedTotal);
             return (publishedTotal, false, 1, false);
         }
 
@@ -1100,11 +1154,47 @@ public sealed class WorkerMonitoringService(
             account.AdsPowerApiBaseUrl!,
             string.IsNullOrWhiteSpace(account.AdsPowerApiKey) ? null : account.AdsPowerApiKey);
 
+        if (account.SubProfiles.Count > 0)
+        {
+            var enabledBeforeBrowser = SubProfileEnabledFilter
+                .GetEnabled(account.SubProfiles, account.DisabledSubProfileIds)
+                .ToList();
+            var passStartedEarly = account.MonitoringPassStartedAtUtc;
+            var passFinishedEarly = account.MonitoringPassFinishedAtUtc;
+            MonitoringAccountResume.BeginOrResumePass(
+                DateTime.UtcNow,
+                ref passStartedEarly,
+                ref passFinishedEarly,
+                account.MonitoringPassCompletedSubIds);
+            account.MonitoringPassStartedAtUtc = passStartedEarly;
+            account.MonitoringPassFinishedAtUtc = passFinishedEarly;
+            var remainingBeforeBrowser = MonitoringAccountResume.RemainingSubProfiles(
+                enabledBeforeBrowser,
+                static sub => sub.Id,
+                account.MonitoringPassStartedAtUtc,
+                account.MonitoringPassFinishedAtUtc,
+                account.MonitoringPassCompletedSubIds);
+            if (enabledBeforeBrowser.Count > 0 && remainingBeforeBrowser.Count == 0)
+            {
+                await repository.SaveAccountAsync(account, cancellationToken).ConfigureAwait(false);
+                return (publishedTotal, false, 0, false);
+            }
+        }
+
         var browserOpened = false;
         BrowserMonitorScreencastCapture? monitorScreencast = null;
         var monitorContext = new BrowserMonitorRuntimeContext();
         var loginCredentials = AvitoLoginCredentials.TryCreate(account.AvitoLogin, account.AvitoPassword);
         using var loginScope = AvitoAutoLoginContext.Use(loginCredentials);
+        var captchaCounters = new AvitoCaptchaPassCounters();
+        using var captchaTaskScope = AvitoCaptchaTaskContext.Use(
+            GeeTestV4TaskOptions.FromBrowserProfile(
+                account.AssignedUserAgent,
+                account.ProxyType,
+                account.ProxyAddress,
+                account.ProxyUsername,
+                account.ProxyPassword),
+            captchaCounters);
         try
         {
             await using var session = await adsPowerAvitoAutomationService
@@ -1239,13 +1329,17 @@ public sealed class WorkerMonitoringService(
                     MonitoringTiming.MaxResponsesPerSubProfilePerCycle,
                     singlePublishResult.DeferredByCycleLimit,
                     singlePublishResult.SkippedPersonDuplicates);
+                var singleCaptcha = TakeCaptchaSnapshot(captchaCounters);
                 _cycleJournal.CompleteSubProfile(
                     cycleId,
                     singleRunId,
                     singleParse.Summary.ParsedValidCount,
                     singlePublishResult.PublishedCount,
                     singlePublishResult.DeferredByCycleLimit,
-                    singlePublishResult.SkippedPersonDuplicates);
+                    singlePublishResult.SkippedPersonDuplicates,
+                    singlePublishResult.CollectedCount,
+                    singleCaptcha.Seen,
+                    singleCaptcha.Solved);
                 if (account.Status == AvitoAccountStatus.RequiresLogin
                     || account.Status == AvitoAccountStatus.RequiresManualAction)
                 {
@@ -1266,8 +1360,38 @@ public sealed class WorkerMonitoringService(
                 return (publishedTotal, false, 1, false);
             }
 
-            var subProfiles = SubProfileEnabledFilter.GetEnabled(allSubProfiles, account.DisabledSubProfileIds);
-            if (subProfiles.Count == 0)
+            var subProfiles = SubProfileEnabledFilter
+                .GetEnabled(allSubProfiles, account.DisabledSubProfileIds)
+                .ToList();
+            var passStarted = account.MonitoringPassStartedAtUtc;
+            var passFinished = account.MonitoringPassFinishedAtUtc;
+            MonitoringAccountResume.BeginOrResumePass(
+                DateTime.UtcNow,
+                ref passStarted,
+                ref passFinished,
+                account.MonitoringPassCompletedSubIds);
+            account.MonitoringPassStartedAtUtc = passStarted;
+            account.MonitoringPassFinishedAtUtc = passFinished;
+            var beforeResumeSkip = subProfiles.Count;
+            subProfiles = MonitoringAccountResume.RemainingSubProfiles(
+                subProfiles,
+                static sub => sub.Id,
+                account.MonitoringPassStartedAtUtc,
+                account.MonitoringPassFinishedAtUtc,
+                account.MonitoringPassCompletedSubIds);
+            if (subProfiles.Count < beforeResumeSkip)
+            {
+                WorkerMonitoringLogger.AccountSkipped(
+                    account,
+                    $"повторный проход: уже собраны {beforeResumeSkip - subProfiles.Count} субпрофил(ей) в этом проходе, осталось {subProfiles.Count}");
+            }
+
+            AvitoHumanVariation.Shuffle(subProfiles);
+            await repository.SaveAccountAsync(account, cancellationToken).ConfigureAwait(false);
+            var switchQueue = subProfiles
+                .Select(static sub => (Sub: sub, Deferred: false))
+                .ToList();
+            if (beforeResumeSkip == 0)
             {
                 var skipReason = allSubProfiles.Count > 0
                     && allSubProfiles.All(static sp => string.IsNullOrWhiteSpace(sp.Id))
@@ -1281,20 +1405,36 @@ public sealed class WorkerMonitoringService(
                 return (publishedTotal, false, 0, true);
             }
 
+            if (subProfiles.Count == 0)
+            {
+                return (publishedTotal, false, 0, false);
+            }
+
             var collectStats = MonitoringTiming.CollectActiveAdsInWorkerPass && IsAdsStatsStale(account);
             ProfileResult? statsAggregate = collectStats
                 ? new ProfileResult { ParseSuccess = false, PageLoadedSuccessfully = true, ActiveTabCounterResolved = true }
                 : null;
+            var consecutiveCaptchaFails = 0;
+            var lastStartedIndex = -1;
+            string? remainingSkipReason = null;
 
-            for (var i = 0; i < subProfiles.Count; i++)
+            for (var i = 0; i < switchQueue.Count; i++)
             {
                 if (cancellationToken.IsCancellationRequested)
                 {
                     aborted = true;
+                    remainingSkipReason ??= FormatRemainingSkipReason("cancelled", subName: null);
                     break;
                 }
 
-                var sub = subProfiles[i];
+                if (aborted && switchQueue[i].Deferred)
+                {
+                    break;
+                }
+
+                var sub = switchQueue[i].Sub;
+                var deferredRetry = switchQueue[i].Deferred;
+                lastStartedIndex = i;
                 diagnosticSubProfile = sub;
                 monitorContext.SubProfileId = sub.Id;
                 monitorContext.SubProfileName = sub.Name;
@@ -1303,7 +1443,10 @@ public sealed class WorkerMonitoringService(
                     sub.Id,
                     sub.Name,
                     i + 1,
-                    subProfiles.Count);
+                    switchQueue.Count);
+                var subFoundCount = 0;
+                var subPublishedCount = 0;
+                var subCollectedCount = 0;
                 try
                 {
                     WorkerMonitoringLogger.SubProfileStep(
@@ -1319,35 +1462,66 @@ public sealed class WorkerMonitoringService(
                         sub.Name,
                         "Переключает субпрофиль");
                     var switched = await session.SwitchSubProfileAsync(sub.Id, cancellationToken).ConfigureAwait(false);
-                    if (!switched)
+                    if (!switched.Ok)
                     {
-                        if (await HandleSubProfileSwitchFailureAsync(
+                        if (switched.IsCaptcha)
+                        {
+                            throw new AvitoCaptchaDetectedException(
+                                switched.IsIpBlock ? "firewall" : "captcha",
+                                session.CurrentPageUrl,
+                                html: null,
+                                screenshotPng: null,
+                                sub.Id,
+                                sub.Name);
+                        }
+
+                        if (switched.IsLogin)
+                        {
+                            throw new AvitoLoginRequiredException(
+                                session.CurrentPageUrl,
+                                title: null,
+                                screenshotPng: null,
+                                sub.Id,
+                                sub.Name);
+                        }
+
+                        var blocking = await HandleSubProfileSwitchFailureAsync(
                                 account,
                                 session,
                                 sub,
-                                cancellationToken).ConfigureAwait(false))
+                                cancellationToken).ConfigureAwait(false);
+                        var skipCaptcha = TakeCaptchaSnapshot(captchaCounters);
+                        _cycleJournal.FailSubProfile(
+                            cycleId,
+                            subRunId,
+                            switched.JournalErrorType,
+                            switched.JournalMessage(deferredRetry),
+                            captchaCount: skipCaptcha.Seen,
+                            captchaSolvedCount: skipCaptcha.Solved);
+                        if (blocking)
                         {
                             WorkerMonitoringLogger.AccountBlockingStop(
                                 account,
                                 $"не удалось переключить субпрофиль «{sub.Name}»");
-                            _cycleJournal.FailSubProfile(
-                                cycleId,
-                                subRunId,
-                                "switch-failed",
-                                "не удалось переключить субпрофиль");
                             aborted = true;
+                            remainingSkipReason = FormatRemainingSkipReason("switch-failed", sub.Name);
                             break;
                         }
 
-                        _cycleJournal.FailSubProfile(
-                            cycleId,
-                            subRunId,
-                            "switch-failed",
-                            "не удалось переключить субпрофиль");
+                        if (switched.ShouldDeferRetry && !deferredRetry)
+                        {
+                            switchQueue.Add((sub, true));
+                        }
+
                         continue;
                     }
 
-                    await TryCaptureSubProfileBalanceAsync(sub, session, cancellationToken).ConfigureAwait(false);
+                    if (!AvitoHumanVariation.RollPermille(MonitoringTiming.SkipBalanceChancePermille))
+                    {
+                        await TryCaptureSubProfileBalanceAsync(sub, session, cancellationToken).ConfigureAwait(false);
+                        await RefreshProfileAlertsAsync(account, session, sub, cancellationToken)
+                            .ConfigureAwait(false);
+                    }
                     await PersistAccountSubProfilesAsync(account, allSubProfiles, cancellationToken)
                         .ConfigureAwait(false);
                     if (sub.Balance.HasValue || sub.Rating.HasValue || sub.ReviewsCount.HasValue)
@@ -1409,6 +1583,9 @@ public sealed class WorkerMonitoringService(
                     }
 
                     var publishResult = await ProcessBatchInlineAsync(batch, pendingForSub).ConfigureAwait(false);
+                    subFoundCount = parseResult.Summary.ParsedValidCount;
+                    subPublishedCount = publishResult.PublishedCount;
+                    subCollectedCount = publishResult.CollectedCount;
                     WorkerMonitoringLogger.ExtractionPublished(
                         account,
                         sub,
@@ -1418,18 +1595,27 @@ public sealed class WorkerMonitoringService(
                         publishResult.DeferredByCycleLimit,
                         publishResult.SkippedPersonDuplicates);
 
+                    var captcha = TakeCaptchaSnapshot(captchaCounters);
                     _cycleJournal.CompleteSubProfile(
                         cycleId,
                         subRunId,
                         parseResult.Summary.ParsedValidCount,
                         publishResult.PublishedCount,
                         publishResult.DeferredByCycleLimit,
-                        publishResult.SkippedPersonDuplicates);
+                        publishResult.SkippedPersonDuplicates,
+                        publishResult.CollectedCount,
+                        captcha.Seen,
+                        captcha.Solved);
                     subProfilesProcessed++;
+                    consecutiveCaptchaFails = 0;
+                    MonitoringAccountResume.MarkSubCompleted(account.MonitoringPassCompletedSubIds, sub.Id);
+                    await repository.SaveAccountAsync(account, cancellationToken).ConfigureAwait(false);
 
                     if (collectStats && statsAggregate is not null)
                     {
                         var part = await CollectProfileItemsFromSessionAsync(account, session, cancellationToken)
+                            .ConfigureAwait(false);
+                        await RefreshProfileAlertsAsync(account, session, sub, cancellationToken)
                             .ConfigureAwait(false);
                         if (part.ParseSuccess)
                         {
@@ -1446,22 +1632,89 @@ public sealed class WorkerMonitoringService(
                         }
                     }
                 }
-                catch (AvitoCaptchaDetectedException)
+                catch (AvitoCaptchaDetectedException captchaEx)
                 {
-                    _cycleJournal.FailSubProfile(cycleId, subRunId, "captcha", "капча");
-                    aborted = true;
-                    throw;
+                    var captcha = TakeCaptchaSnapshot(captchaCounters, unsolvedFallback: true);
+                    var issueKind = AvitoSubProfileIssueKind.FromCaptchaKind(captchaEx.Kind);
+                    _cycleJournal.FailSubProfile(
+                        cycleId,
+                        subRunId,
+                        issueKind == AvitoSubProfileIssueKind.IpBlock ? "ip-block" : "captcha",
+                        issueKind == AvitoSubProfileIssueKind.IpBlock ? "блок IP" : "капча",
+                        subFoundCount,
+                        subPublishedCount,
+                        subCollectedCount,
+                        captcha.Seen,
+                        captcha.Solved);
+                    consecutiveCaptchaFails++;
+                    await HandleCaptchaForAccountAsync(
+                            account,
+                            new AvitoCaptchaDetectedException(
+                                captchaEx.Kind,
+                                captchaEx.Url,
+                                captchaEx.HtmlPreview,
+                                captchaEx.ScreenshotPng,
+                                sub.Id,
+                                sub.Name),
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                    if (issueKind == AvitoSubProfileIssueKind.IpBlock
+                        || MonitoringPassFailurePolicy.ShouldStopRemainingAfterCaptcha(consecutiveCaptchaFails))
+                    {
+                        aborted = true;
+                        remainingSkipReason = issueKind == AvitoSubProfileIssueKind.IpBlock
+                            ? FormatRemainingSkipReason("ip-block", sub.Name)
+                            : consecutiveCaptchaFails >= MonitoringPassFailurePolicy.ConsecutiveCaptchaStopsRemaining
+                                ? FormatRemainingSkipReason("captcha-consecutive", sub.Name)
+                                : FormatRemainingSkipReason("captcha", sub.Name);
+                        break;
+                    }
                 }
                 catch (AvitoLoginRequiredException loginEx)
                 {
-                    _cycleJournal.FailSubProfile(cycleId, subRunId, "auth-required", "нужен вход");
+                    var captcha = TakeCaptchaSnapshot(captchaCounters);
+                    _cycleJournal.FailSubProfile(
+                        cycleId,
+                        subRunId,
+                        "auth-required",
+                        "нужен вход",
+                        subFoundCount,
+                        subPublishedCount,
+                        subCollectedCount,
+                        captcha.Seen,
+                        captcha.Solved);
                     aborted = true;
-                    throw new AvitoLoginRequiredException(
-                        loginEx.Url,
-                        loginEx.Title,
-                        loginEx.ScreenshotPng,
-                        sub.Id,
-                        sub.Name);
+                    remainingSkipReason = FormatRemainingSkipReason("auth-required", sub.Name);
+                    await HandleLoginRequiredForAccountAsync(
+                            account,
+                            new AvitoLoginRequiredException(
+                                loginEx.Url,
+                                loginEx.Title,
+                                loginEx.ScreenshotPng,
+                                sub.Id,
+                                sub.Name),
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                    break;
+                }
+                catch (AdsPowerProxyFailureException proxyEx)
+                {
+                    var captcha = TakeCaptchaSnapshot(captchaCounters);
+                    _cycleJournal.FailSubProfile(
+                        cycleId,
+                        subRunId,
+                        "proxy",
+                        proxyEx.UserMessage,
+                        subFoundCount,
+                        subPublishedCount,
+                        subCollectedCount,
+                        captcha.Seen,
+                        captcha.Solved);
+                    aborted = true;
+                    remainingSkipReason = FormatRemainingSkipReason("proxy", sub.Name, proxyEx.UserMessage);
+                    await HandleAdsPowerProxyFailureForAccountAsync(account, proxyEx, cancellationToken)
+                        .ConfigureAwait(false);
+                    break;
                 }
                 catch (Exception ex) when (ShouldHandleAsSubProfileAutomationFailure(ex))
                 {
@@ -1472,25 +1725,45 @@ public sealed class WorkerMonitoringService(
                         ex,
                         "сбор откликов",
                         cancellationToken).ConfigureAwait(false);
+                    var captcha = TakeCaptchaSnapshot(captchaCounters);
                     _cycleJournal.FailSubProfile(
                         cycleId,
                         subRunId,
                         "automation",
-                        ex.Message);
+                        ex.Message,
+                        subFoundCount,
+                        subPublishedCount,
+                        subCollectedCount,
+                        captcha.Seen,
+                        captcha.Solved);
                     if (blocking)
                     {
                         WorkerMonitoringLogger.AccountBlockingStop(
                             account,
                             $"проблема на субпрофиле «{sub.Name}»");
                         aborted = true;
+                        remainingSkipReason = FormatRemainingSkipReason("automation", sub.Name, ex.Message);
                         break;
                     }
                 }
 
-                if (i < subProfiles.Count - 1 && !cancellationToken.IsCancellationRequested)
+                if (i < switchQueue.Count - 1 && !cancellationToken.IsCancellationRequested)
                 {
                     await HumanDelay.BetweenSubProfilesAsync(cancellationToken).ConfigureAwait(false);
+                    if (AvitoHumanVariation.RollPermille(MonitoringTiming.ExtraSubProfilePauseChancePermille))
+                    {
+                        await HumanDelay.DelayAsync(3000, 9000, cancellationToken).ConfigureAwait(false);
+                    }
                 }
+            }
+
+            if (aborted)
+            {
+                SkipRemainingSubProfiles(
+                    cycleId,
+                    switchQueue.Select(static item => item.Sub).ToList(),
+                    lastStartedIndex,
+                    remainingSkipReason);
             }
 
             await PersistAccountSubProfilesAsync(account, allSubProfiles, cancellationToken).ConfigureAwait(false);
@@ -1561,6 +1834,69 @@ public sealed class WorkerMonitoringService(
         response.CreatedAt = response.CreatedAt == default ? response.CollectedAt : response.CreatedAt;
 
         await candidateSink.PublishAsync(response, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static (int Seen, int Solved) TakeCaptchaSnapshot(
+        AvitoCaptchaPassCounters counters,
+        bool unsolvedFallback = false)
+    {
+        var (seen, solved) = counters.SnapshotAndReset();
+        if (unsolvedFallback && seen == 0)
+        {
+            seen = 1;
+        }
+
+        return (seen, Math.Min(seen, solved));
+    }
+
+    private void SkipRemainingSubProfiles(
+        Guid cycleId,
+        IReadOnlyList<AvitoSubProfile> subProfiles,
+        int lastStartedIndex,
+        string? reason)
+    {
+        var skipReason = string.IsNullOrWhiteSpace(reason)
+            ? FormatRemainingSkipReason("aborted", subName: null)
+            : reason;
+        for (var i = lastStartedIndex + 1; i < subProfiles.Count; i++)
+        {
+            var leftover = subProfiles[i];
+            _cycleJournal.SkipSubProfile(
+                cycleId,
+                leftover.Id,
+                leftover.Name,
+                i + 1,
+                subProfiles.Count,
+                "not-reached",
+                skipReason);
+        }
+    }
+
+    private static string FormatRemainingSkipReason(string kind, string? subName, string? detail = null)
+    {
+        var who = string.IsNullOrWhiteSpace(subName) ? null : $"«{subName.Trim()}»";
+        var trimmedDetail = string.IsNullOrWhiteSpace(detail) ? null : detail.Trim();
+        if (trimmedDetail is { Length: > 80 })
+        {
+            trimmedDetail = trimmedDetail[..80];
+        }
+
+        return kind switch
+        {
+            "captcha" => $"очередь не дошла: капча на {who}",
+            "captcha-consecutive" => $"очередь не дошла: 2 капчи подряд, последняя на {who}",
+            "ip-block" => $"очередь не дошла: блок IP на {who}",
+            "auth-required" => $"очередь не дошла: нужен вход ({who})",
+            "switch-failed" => $"очередь не дошла: не удалось переключить {who}",
+            "proxy" => trimmedDetail is null
+                ? $"очередь не дошла: прокси на {who}"
+                : $"очередь не дошла: {trimmedDetail}",
+            "automation" => trimmedDetail is null
+                ? $"очередь не дошла: ошибка на {who}"
+                : $"очередь не дошла: {trimmedDetail} ({who})",
+            "cancelled" => "очередь не дошла: остановлен",
+            _ => "очередь не дошла: цикл прерван"
+        };
     }
 
     private Task<bool> IsOpenPhoneWatchForHintsAsync(
@@ -1847,6 +2183,51 @@ public sealed class WorkerMonitoringService(
         money?.ApplyTo(sub);
     }
 
+    /// <summary>
+    /// Фиксирует неблокирующие предупреждения Avito после чтения сайдбара страницы «Мои объявления».
+    /// </summary>
+    private async Task RefreshProfileAlertsAsync(
+        AvitoAccount account,
+        IAdsPowerAccountSession session,
+        AvitoSubProfile sub,
+        CancellationToken cancellationToken)
+    {
+        var state = await TryGetPageStateAsync(session, cancellationToken).ConfigureAwait(false);
+        var kind = state?.HasInsufficientAdvance == true
+            ? AvitoSubProfileIssueKind.InsufficientAdvance
+            : state?.HasEmailConfirmationRequired == true
+                ? AvitoSubProfileIssueKind.EmailConfirmationRequired
+                : null;
+        if (kind is null)
+        {
+            if (sub.LastIssueKind is AvitoSubProfileIssueKind.InsufficientAdvance
+                or AvitoSubProfileIssueKind.EmailConfirmationRequired)
+            {
+                AccountIssueTracker.ClearSubProfileIssue(sub);
+                AccountIssueTracker.RefreshAccountIssueMessage(account);
+            }
+
+            return;
+        }
+
+        if (string.Equals(sub.LastIssueKind, kind, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        var detail = AvitoAutomationFailureFormatter.Format("проверка объявлений", state);
+        await PublishSubProfileIssueWithDiagnosticAsync(
+                account,
+                session,
+                sub,
+                kind,
+                detail,
+                cancellationToken,
+                pageState: state,
+                expectedStep: "проверка объявлений")
+            .ConfigureAwait(false);
+    }
+
     private async Task TryCaptureAccountBalanceAsync(
         AvitoAccount account,
         IAdsPowerAccountSession session,
@@ -2031,15 +2412,39 @@ public sealed class WorkerMonitoringService(
         AvitoCaptchaDetectedException captchaEx,
         CancellationToken ct)
     {
-        account.Status = AvitoAccountStatus.RequiresManualAction;
         var sub = FindSubProfile(account, captchaEx.SubProfileId);
+        var issueKind = AvitoSubProfileIssueKind.FromCaptchaKind(captchaEx.Kind);
+        if (MonitoringPassFailurePolicy.AccountStatusForIssueKind(issueKind) is { } blockingStatus)
+        {
+            account.Status = blockingStatus;
+        }
+        else if (account.Status == AvitoAccountStatus.Monitoring)
+        {
+            account.Status = AvitoAccountStatus.Authorized;
+        }
+
         account.LastErrorMessage = sub is not null
             ? AccountIssueFormatting.FormatIssue(
                 account,
                 sub,
-                AvitoSubProfileIssueKind.Captcha,
-                "нужна проверка на странице откликов.")
-            : $"Avito captcha/firewall ({captchaEx.Kind}). Откройте браузер и пройдите проверку.";
+                issueKind,
+                issueKind == AvitoSubProfileIssueKind.IpBlock
+                    ? "доступ ограничен: проблема с IP. Откройте браузер AdsPower и дождитесь разблокировки или смените IP."
+                    : "нужна проверка на странице откликов.")
+            : issueKind == AvitoSubProfileIssueKind.IpBlock
+                ? $"Avito ограничил доступ из-за IP ({captchaEx.Kind}). Откройте браузер и дождитесь разблокировки или смените IP."
+                : $"Avito показал капчу ({captchaEx.Kind}). Откройте браузер и пройдите проверку.";
+        if (sub is not null)
+        {
+            AccountIssueTracker.ApplySubProfileIssue(
+                account,
+                sub,
+                issueKind,
+                issueKind == AvitoSubProfileIssueKind.IpBlock
+                    ? "доступ ограничен: проблема с IP. Откройте браузер AdsPower и дождитесь разблокировки или смените IP."
+                    : "нужна проверка на странице откликов.");
+        }
+
         await repository.SaveAccountAsync(account, ct).ConfigureAwait(false);
 
         var diagnostic = await WorkerDiagnosticEventDetailsBuilder.BuildAsync(
@@ -2054,13 +2459,15 @@ public sealed class WorkerMonitoringService(
             ct).ConfigureAwait(false);
         StoreSubProfileDiagnosticAttachment(account, sub, diagnostic.AttachmentId);
         await repository.SaveAccountAsync(account, ct).ConfigureAwait(false);
-        WorkerMonitoringLogger.AccountFailed(account, "капча / IP", account.LastErrorMessage);
+        WorkerMonitoringLogger.AccountFailed(account, issueKind == AvitoSubProfileIssueKind.IpBlock ? "блок IP" : "капча", account.LastErrorMessage);
         await PublishAccountEventAsync(
             account,
             "Warning",
             sub is not null
                 ? account.LastErrorMessage
-                : $"Капча/firewall на аккаунте {account.DisplayName}",
+                : issueKind == AvitoSubProfileIssueKind.IpBlock
+                    ? $"Блок IP на аккаунте {account.DisplayName}"
+                    : $"Капча на аккаунте {account.DisplayName}",
             diagnostic.Details,
             ct).ConfigureAwait(false);
     }
@@ -2159,6 +2566,26 @@ public sealed class WorkerMonitoringService(
             "Warning",
             $"Профиль AdsPower занят для {account.DisplayName}",
             profileInUseEx.UserMessage,
+            ct).ConfigureAwait(false);
+    }
+
+    private async Task HandleAdsPowerProxyFailureForAccountAsync(
+        AvitoAccount account,
+        AdsPowerProxyFailureException proxyEx,
+        CancellationToken ct)
+    {
+        account.LastErrorMessage = AccountIssueFormatting.FormatIssue(
+            account,
+            null,
+            AvitoSubProfileIssueKind.ProxyFailure,
+            proxyEx.UserMessage);
+        WorkerMonitoringLogger.AccountFailed(account, "AdsPower proxy", proxyEx.UserMessage);
+        await repository.SaveAccountAsync(account, ct).ConfigureAwait(false);
+        await PublishAccountEventAsync(
+            account,
+            "Warning",
+            $"Прокси AdsPower не работает для {account.DisplayName}",
+            proxyEx.Message,
             ct).ConfigureAwait(false);
     }
 
@@ -2326,14 +2753,16 @@ public sealed class WorkerMonitoringService(
         && ex is not AdsPowerRateLimitExceededException
         && ex is not AdsPowerDailyOpenLimitExceededException
         && ex is not AdsPowerProfileInUseException
+        && ex is not AdsPowerProxyFailureException
         && ex is not SessionDiagnosticException
         && !ShouldHandleAsSubProfileAutomationFailure(ex);
 
     private static bool ShouldHandleAsSubProfileAutomationFailure(Exception ex) =>
-        ex is AvitoPageMismatchException
-        or JsonException
-        or PuppeteerException
-        or InvalidOperationException;
+        ex is not AdsPowerProxyFailureException
+        && (ex is AvitoPageMismatchException
+            or JsonException
+            or PuppeteerException
+            or InvalidOperationException);
 
     private async Task<bool> HandleSubProfileSwitchFailureAsync(
         AvitoAccount account,

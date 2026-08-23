@@ -10,6 +10,7 @@ public sealed record SettingsIndexViewModel
     public required IReadOnlyList<SettingsTabViewModel> Tabs { get; init; }
     public IReadOnlyList<PanelUserRowViewModel> Users { get; init; } = [];
     public IReadOnlyList<PanelUserGroupViewModel> UserGroups { get; init; } = [];
+    public PanelUserPresenceStatsViewModel? PresenceStats { get; init; }
     public IReadOnlyList<AccessProfileRowViewModel> Profiles { get; init; } = [];
     public IReadOnlyList<EventFilterOptionViewModel> ProfileOptions { get; init; } = [];
     public WorkersSettingsViewModel? Workers { get; init; }
@@ -20,6 +21,55 @@ public sealed record SettingsIndexViewModel
     public IReadOnlyList<EventFilterOptionViewModel> OfficeOptions { get; init; } = [];
     public string? StatusMessage { get; init; }
     public string? ErrorMessage { get; init; }
+}
+
+public sealed class CrmTelephonyPageViewModel
+{
+    public Guid OfficeId { get; init; }
+    public string OfficeName { get; init; } = string.Empty;
+    public required CrmTelephonySettingsDto Settings { get; init; }
+    public IReadOnlyList<CrmTelephonyUserBindingDto> PhoneUsers { get; init; } = [];
+    public IReadOnlyList<PanelUserDto> OfficeUsers { get; init; } = [];
+    public IReadOnlyList<CrmTelephonyProviderSummaryViewModel> ProviderSummaries { get; init; } = [];
+    public string Provider { get; init; } = CrmTelephonyProviders.Sipout;
+    public bool CanManage { get; init; }
+    public string? ProviderSetupUrl { get; init; }
+    public string? WebhookSecret { get; init; }
+    public string? WebhookSecretHeader { get; init; }
+    public string? StatusMessage { get; init; }
+    public string? ErrorMessage { get; init; }
+}
+
+public sealed record CrmTelephonyProviderSummaryViewModel(
+    string Provider,
+    string Name,
+    string Description,
+    string Icon,
+    bool IsConfigured,
+    bool IsEnabled,
+    int BoundUsersCount);
+
+public sealed class SaveCrmTelephonyBindingFormModel
+{
+    public Guid OfficeId { get; set; }
+    public string Provider { get; set; } = CrmTelephonyProviders.Sipout;
+    public string UserId { get; set; } = string.Empty;
+    public string ProviderUserKey { get; set; } = string.Empty;
+    public string? OutboundProvider { get; set; }
+}
+
+public sealed class SaveSipProviderAccountFormModel
+{
+    public Guid OfficeId { get; set; }
+    public string Provider { get; set; } = CrmTelephonyProviders.Beeline;
+    public string Server { get; set; } = string.Empty;
+    public string? Domain { get; set; }
+    public int Port { get; set; } = 5060;
+    public string Transport { get; set; } = "udp";
+    public string SipLogin { get; set; } = string.Empty;
+    public string AuthorizationLogin { get; set; } = string.Empty;
+    public string? Password { get; set; }
+    public bool UseForOutbound { get; set; }
 }
 
 public sealed class SettingsTabViewModel
@@ -39,12 +89,40 @@ public sealed class PanelUserRowViewModel
     public bool IsCurrentUser { get; init; }
     public bool IsLocked { get; init; }
     public bool HasPermissionOverride { get; init; }
+    public DateTime? LastSeenAtUtc { get; init; }
+    public bool IsOnline { get; init; }
     public IReadOnlyList<string> EffectivePermissions { get; init; } = [];
     public string BitrixStatus { get; init; } = BitrixValidationStatuses.NotConfigured;
     public string BitrixStatusLabel { get; init; } = "Не настроено";
     public string BitrixStatusTone { get; init; } = "neutral";
     public Guid? OfficeId { get; init; }
     public string? OfficeName { get; init; }
+}
+
+public sealed class PanelUserPresenceStatsViewModel
+{
+    public int Total { get; init; }
+    public int Online { get; init; }
+    public int Offline { get; init; }
+    public int NeverSeen { get; init; }
+    public int CurrentHour { get; init; }
+    public string? TypicalPeakLabel { get; init; }
+    public string? TodayPeakLabel { get; init; }
+    public int TodayPeakValue { get; init; }
+    public bool HasHourlyData { get; init; }
+    public IReadOnlyList<PanelUserPresenceHourBarViewModel> Hours { get; init; } = [];
+}
+
+public sealed class PanelUserPresenceHourBarViewModel
+{
+    public int Hour { get; init; }
+    public int Typical { get; init; }
+    public int Today { get; init; }
+    public int HeightPercent { get; init; }
+    public bool IsTypicalPeak { get; init; }
+    public bool IsCurrentHour { get; init; }
+    public string AxisLabel { get; init; } = string.Empty;
+    public string Title { get; init; } = string.Empty;
 }
 
 public sealed class PanelUserGroupViewModel

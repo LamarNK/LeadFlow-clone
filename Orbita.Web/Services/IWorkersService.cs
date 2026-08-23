@@ -17,6 +17,8 @@ public interface IWorkersService
         Guid id,
         string? sort = null,
         string? sortDir = null,
+        string? accountSearchQuery = null,
+        string? accountGroupId = null,
         CancellationToken ct = default);
     Task<(CreateWorkerResultViewModel? Result, string? Error)> CreateWorkerAsync(
         string displayName,
@@ -27,6 +29,7 @@ public interface IWorkersService
         int maxConcurrentAccounts,
         string? adsPowerApiBaseUrl,
         string? adsPowerApiKey,
+        string? adsPowerGroupId = null,
         bool responseFilterEnabled = false,
         bool responseFilterExcludeFemale = false,
         bool responseFilterExcludeMale = false,
@@ -45,6 +48,7 @@ public interface IWorkersService
         bool? autoDeliverToCrm = null,
         bool? autoDeliverToBitrix = null,
         string? responseHighlightTargetsJson = null,
+        string? ruCaptchaApiKey = null,
         CancellationToken ct = default);
     Task<(bool Success, string? Error)> UpdateWorkerAccountAsync(Guid workerId, Guid accountId, bool isEnabled, CancellationToken ct = default);
     Task<(bool Success, string? Error)> UpdateWorkerAccountCredentialsAsync(

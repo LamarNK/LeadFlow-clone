@@ -303,6 +303,12 @@ public sealed class CandidateIngestionService(
             changed = true;
         }
 
+        if (TryBackfillCreatedAtFromChat(tracked, candidate, out var chatResponseAt))
+        {
+            tracked.CreatedAt = chatResponseAt;
+            changed = true;
+        }
+
         // phone-watch шлёт тот же SourceResponseId повторно. Обновляем поля Avito,
         // кроме тех, что оператор правил вручную. Пустой повторный парсинг ничего не затирает.
         var locks = tracked.OperatorLockedFields;
@@ -543,6 +549,39 @@ public sealed class CandidateIngestionService(
         entity.DuplicateBitrixInstanceId = result.DuplicateBitrixInstanceId;
         entity.DuplicateSummary = result.DuplicateSummary ?? string.Empty;
         entity.ErrorMessage = result.ErrorMessage ?? string.Empty;
+    }
+
+    // Fallback CreatedAt=CollectedAt заменяем датой из чата; известную дату отклика не трогаем.
+    private static bool TryBackfillCreatedAtFromChat(
+        CandidateResponseEntity tracked,
+        WorkerCandidateDto candidate,
+        out DateTime chatResponseAt)
+    {
+        chatResponseAt = tracked.CreatedAt;
+        if (tracked.CollectedAt == default || tracked.CreatedAt != tracked.CollectedAt)
+        {
+            return false;
+        }
+
+        var incoming = ResolveIncomingResponseAt(candidate);
+        if (incoming is null || incoming.Value >= tracked.CreatedAt)
+        {
+            return false;
+        }
+
+        chatResponseAt = incoming.Value;
+        return true;
+    }
+
+    private static DateTime? ResolveIncomingResponseAt(WorkerCandidateDto candidate)
+    {
+        if (candidate.CreatedAt != default
+            && (candidate.CollectedAt == default || candidate.CreatedAt != candidate.CollectedAt))
+        {
+            return candidate.CreatedAt;
+        }
+
+        return AvitoChatResponseAt.TryGetUtc(candidate.ChatMessagesJson);
     }
 
     private static string ResolveCardFingerprint(WorkerCandidateDto candidate)

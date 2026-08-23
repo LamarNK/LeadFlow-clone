@@ -23,4 +23,7 @@ public sealed class WorkerMonitoringConfig
     public AvitoMessengerAutoReplySettings? MessengerAutoReply { get; init; }
     /// <summary>Порог часов для метрики «номер не менялся». 0 — выкл; default 24.</summary>
     public int PhoneUnchangedHours { get; init; } = ResponsePhoneWatchRules.DefaultUnchangedHours;
+
+    /// <summary>Ключ RuCaptcha / 2captcha для автопрохождения GeeTest v4. Пусто — выкл.</summary>
+    public string? RuCaptchaApiKey { get; init; }
 }

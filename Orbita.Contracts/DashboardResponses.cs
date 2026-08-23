@@ -104,7 +104,25 @@ public sealed record WorkerDetail(
     bool AutoDeliverToBitrix = true,
     Guid OfficeId = default,
     string OfficeName = "",
-    string? ResponseHighlightTargetsJson = null);
+    string? ResponseHighlightTargetsJson = null,
+    string? AdsPowerGroupId = null,
+    string? AdsPowerGroupName = null,
+    IReadOnlyList<AdsPowerGroupDto>? AdsPowerGroups = null,
+    string? RuCaptchaApiKey = null);
+
+/// <summary>
+/// One row of the office-wide accounts page: account payload plus the worker
+/// context and latest balance so the panel does not N+1 worker detail calls.
+/// </summary>
+public sealed record OfficeAccountListItem(
+    Guid WorkerId,
+    string WorkerDisplayName,
+    string OfficeName,
+    bool WorkerIsOnline,
+    WorkerActivityDto? CurrentActivity,
+    IReadOnlyList<WorkerActiveAccountDto>? ActiveAccounts,
+    WorkerAccountDto Account,
+    WorkerBalanceDto? Balance);
 
 public sealed record WorkerEventListItem(
     Guid Id,

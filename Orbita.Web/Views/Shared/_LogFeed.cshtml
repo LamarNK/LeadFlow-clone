@@ -9,6 +9,13 @@
         <div class="service-logs-feed" role="log" aria-label="@Model.FeedAriaLabel">
             @foreach (var row in Model.Rows)
             {
+                var timelineIcon = row.LevelTone switch
+                {
+                    "success" => "fa-circle-check",
+                    "warning" => "fa-triangle-exclamation",
+                    "error" => "fa-circle-exclamation",
+                    _ => "fa-circle-info"
+                };
                 <article class="service-log-entry service-log-entry--@row.LevelTone @(row.IsTampered ? "service-log-entry--tampered" : null)"
                          data-service-log-entry
                          data-log-level="@row.Level"
@@ -16,17 +23,25 @@
                          data-log-source="@row.Source"
                          data-log-tampered="@(row.IsTampered ? "true" : "false")"
                          tabindex="0"
-                         role="group"
+                         role="button"
+                         aria-haspopup="dialog"
                          aria-label="Открыть подробности записи лога: @row.Level, @row.Source">
+                    <span class="service-log-entry__rail" aria-hidden="true">
+                        <span class="service-log-entry__level-icon">
+                            <i class="fa-solid @timelineIcon"></i>
+                        </span>
+                    </span>
                     <div class="service-log-entry__body">
                         <div class="service-log-entry__head">
-                            <partial name="_UtcTime" model="@(new UtcTimeDisplayModel(row.TimestampUtc, "datetime-seconds", "service-log-entry__time"))" />
                             <span class="event-level-badge event-level-badge--@row.LevelTone">@row.Level</span>
+                            <partial name="_UtcTime" model="@(new UtcTimeDisplayModel(row.TimestampUtc, "datetime-seconds", "service-log-entry__time"))" />
+                            <span class="service-log-entry__separator" aria-hidden="true">•</span>
+                            <code class="service-log-entry__source" title="@row.Source">@row.Source</code>
                             @if (Model.ShowServiceTag)
                             {
+                                <span class="service-log-entry__separator" aria-hidden="true">•</span>
                                 <span class="service-log-entry__tag">@row.Service</span>
                             }
-                            <code class="service-log-entry__source" title="@row.Source">@row.Source</code>
                             @if (!string.IsNullOrWhiteSpace(row.TraceId))
                             {
                                 <button type="button"
@@ -41,6 +56,9 @@
                         </div>
                         <div class="service-log-entry__message" data-service-log-message>@row.Message</div>
                     </div>
+                    <span class="service-log-entry__action" aria-hidden="true">
+                        <i class="fa-solid fa-chevron-down"></i>
+                    </span>
                 </article>
             }
         </div>

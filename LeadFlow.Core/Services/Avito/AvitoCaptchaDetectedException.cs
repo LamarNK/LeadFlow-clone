@@ -3,7 +3,7 @@ namespace LeadFlow.Core.Services.Avito;
 /// <summary>
 /// Avito показал капчу/firewall на странице во время автоматизации. Бросается из CDP-загрузчиков
 /// (<see cref="LeadFlow.Services.AdsPower.IAdsPowerAvitoAutomationService"/>) и из источников откликов;
-/// мониторинг ловит и переводит аккаунт в <c>RequiresManualAction</c>, чтобы не долбить сайт.
+/// мониторинг ловит: блок IP — <c>RequiresManualAction</c>, обычная капча — только текущий субпрофиль.
 /// </summary>
 public sealed class AvitoCaptchaDetectedException : Exception
 {
@@ -42,8 +42,13 @@ public sealed class AvitoCaptchaDetectedException : Exception
 
     public string? SubProfileName { get; }
 
-    private static string BuildMessage(string kind, string? url) =>
-        string.IsNullOrEmpty(url)
-            ? $"Avito показал капчу/блок IP ({kind})."
-            : $"Avito показал капчу/блок IP ({kind}) на странице {url}.";
+    private static string BuildMessage(string kind, string? url)
+    {
+        var subject = string.Equals(kind, "firewall", StringComparison.OrdinalIgnoreCase)
+            ? "Avito ограничил доступ из-за IP"
+            : "Avito показал капчу";
+        return string.IsNullOrEmpty(url)
+            ? $"{subject} ({kind})."
+            : $"{subject} ({kind}) на странице {url}.";
+    }
 }

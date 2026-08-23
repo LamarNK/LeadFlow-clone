@@ -417,12 +417,15 @@ internal static class FilterChipsBuilder
         IReadOnlyList<AccountTabViewModel> tabs,
         Guid? workerId,
         IReadOnlyList<EventFilterOptionViewModel> workers,
-        int pageSize)
+        int pageSize,
+        string? groupId = null,
+        IReadOnlyList<EventFilterOptionViewModel>? groups = null)
     {
         const string path = "/Accounts";
         var chips = new List<ActiveFilterChipViewModel>();
         var normalizedTab = string.IsNullOrWhiteSpace(tab) || tab == "all" ? null : tab;
         var pageSizeValue = pageSize == ListPageSizeDefaults.Accounts ? null : pageSize.ToString();
+        var normalizedGroupId = AdsPowerAccountGroupFilter.Normalize(groupId);
 
         if (!string.IsNullOrWhiteSpace(searchQuery))
         {
@@ -432,6 +435,7 @@ internal static class FilterChipsBuilder
                 RemoveUrl = BuildUrl(path,
                     ("tab", normalizedTab),
                     ("workerId", workerId?.ToString()),
+                    ("groupId", normalizedGroupId),
                     ("pageSize", pageSizeValue),
                     ("sort", null),
                     ("dir", null),
@@ -448,6 +452,7 @@ internal static class FilterChipsBuilder
                 RemoveUrl = BuildUrl(path,
                     ("q", searchQuery),
                     ("workerId", workerId?.ToString()),
+                    ("groupId", normalizedGroupId),
                     ("pageSize", pageSizeValue),
                     ("sort", null),
                     ("dir", null),
@@ -463,10 +468,66 @@ internal static class FilterChipsBuilder
                 RemoveUrl = BuildUrl(path,
                     ("q", searchQuery),
                     ("tab", normalizedTab),
+                    ("groupId", normalizedGroupId),
                     ("pageSize", pageSizeValue),
                     ("sort", null),
                     ("dir", null),
                     ("page", "1"))
+            });
+        }
+
+        if (normalizedGroupId is not null)
+        {
+            chips.Add(new ActiveFilterChipViewModel
+            {
+                Label = $"Группа: {OptionLabel(groups ?? [], normalizedGroupId) ?? normalizedGroupId}",
+                RemoveUrl = BuildUrl(path,
+                    ("q", searchQuery),
+                    ("tab", normalizedTab),
+                    ("workerId", workerId?.ToString()),
+                    ("pageSize", pageSizeValue),
+                    ("sort", null),
+                    ("dir", null),
+                    ("page", "1"))
+            });
+        }
+
+        return chips;
+    }
+
+    public static IReadOnlyList<ActiveFilterChipViewModel> ForWorkerAccounts(
+        Guid workerId,
+        string? searchQuery,
+        string? groupId,
+        IReadOnlyList<EventFilterOptionViewModel> groups,
+        string? sort,
+        string? sortDir)
+    {
+        var path = $"/Workers/Details/{workerId}";
+        var chips = new List<ActiveFilterChipViewModel>();
+        var normalizedGroupId = AdsPowerAccountGroupFilter.Normalize(groupId);
+
+        if (!string.IsNullOrWhiteSpace(searchQuery))
+        {
+            chips.Add(new ActiveFilterChipViewModel
+            {
+                Label = $"Поиск: {searchQuery}",
+                RemoveUrl = BuildUrl(path,
+                    ("groupId", normalizedGroupId),
+                    ("sort", sort),
+                    ("dir", sortDir))
+            });
+        }
+
+        if (normalizedGroupId is not null)
+        {
+            chips.Add(new ActiveFilterChipViewModel
+            {
+                Label = $"Группа: {OptionLabel(groups, normalizedGroupId) ?? normalizedGroupId}",
+                RemoveUrl = BuildUrl(path,
+                    ("q", searchQuery),
+                    ("sort", sort),
+                    ("dir", sortDir))
             });
         }
 

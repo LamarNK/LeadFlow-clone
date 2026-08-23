@@ -13,26 +13,8 @@ public sealed class OfficeStatisticsQueryService(
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
-    private static (
-        DateTime ExpiresUtc,
-        OfficeStatisticsDto? Value,
-        OfficeScope Scope,
-        Guid? OfficeFilter,
-        DateTime FromLocal,
-        DateTime ToLocal,
-        string WorkerFilterKey,
-        string AccountFilterKey,
-        string VacancyFilterKey) _cache;
-    private static readonly object CacheLock = new();
-
     /// <summary>Test-only: static statistics cache must not leak across InMemory DB fixtures.</summary>
-    internal static void ClearCacheForTests()
-    {
-        lock (CacheLock)
-        {
-            _cache = default;
-        }
-    }
+    internal static void ClearCacheForTests() => PanelAggregateCache.Clear();
 
     public async Task<OfficeStatisticsDto> GetStatisticsAsync(
         OfficeScope scope,
@@ -57,29 +39,17 @@ public sealed class OfficeStatisticsQueryService(
         var workerFilterKey = BuildFilterKey(workerFilterSet);
         var accountFilterKey = BuildFilterKey(accountFilterSet);
         var vacancyFilterKey = string.IsNullOrWhiteSpace(vacancyFilter) ? string.Empty : vacancyFilter.Trim();
+        var cacheKey = PanelAggregateCache.StatisticsKey(
+            scope,
+            officeFilter,
+            startLocal,
+            endLocal,
+            workerFilterKey,
+            accountFilterKey,
+            vacancyFilterKey);
 
-        OfficeStatisticsDto? cachedResult = null;
-        lock (CacheLock)
+        async Task<OfficeStatisticsDto> ComputeAsync()
         {
-            if (_cache.Value is not null
-                && _cache.ExpiresUtc > nowUtc
-                && _cache.Scope.IsGlobalAdmin == scope.IsGlobalAdmin
-                && _cache.OfficeFilter == officeFilter
-                && _cache.FromLocal == startLocal
-                && _cache.ToLocal == endLocal
-                && _cache.WorkerFilterKey == workerFilterKey
-                && _cache.AccountFilterKey == accountFilterKey
-                && _cache.VacancyFilterKey == vacancyFilterKey)
-            {
-                cachedResult = _cache.Value;
-            }
-        }
-
-        if (cachedResult is not null)
-        {
-            return await RefreshOnlineStatusAsync(cachedResult, ct);
-        }
-
         var workersQuery = officeScope
             .ApplyWorkerFilter(db.Workers.AsNoTracking(), scope, officeFilter)
             .Where(x => x.MachineName != LeadFlowImportWorker.MachineName);
@@ -132,7 +102,9 @@ public sealed class OfficeStatisticsQueryService(
                 a.IsEnabledInPanel,
                 a.TotalBalance,
                 a.SubProfilesJson,
-                a.SubProfilesDisabledIdsJson))
+                a.SubProfilesDisabledIdsJson,
+                a.LastErrorMessage,
+                a.LastMonitoringAt))
             .ToListAsync(ct);
 
         if (accountFilterSet is not null)
@@ -196,7 +168,7 @@ public sealed class OfficeStatisticsQueryService(
             accountRows,
             ct);
 
-        var result = new OfficeStatisticsDto(
+        return new OfficeStatisticsDto(
             balances,
             accountInfrastructure,
             workerInfrastructure,
@@ -207,12 +179,12 @@ public sealed class OfficeStatisticsQueryService(
             hrInsights,
             monitoringCycles,
             nowUtc);
-
-        lock (CacheLock)
-        {
-            _cache = (nowUtc.AddSeconds(8), result, scope, officeFilter, startLocal, endLocal, workerFilterKey, accountFilterKey, vacancyFilterKey);
         }
 
+        var result = await PanelAggregateCache.GetOrCreateAsync(
+            cacheKey,
+            PanelAggregateCache.StatisticsTtl,
+            ComputeAsync);
         return await RefreshOnlineStatusAsync(result, ct);
     }
 
@@ -314,12 +286,21 @@ public sealed class OfficeStatisticsQueryService(
         if (journalCycles.Count > 0)
         {
             var accountCatalog = BuildMonitoringAccountCatalog(accountRows);
+            var accountLastErrors = BuildMonitoringAccountLastErrors(accountRows);
+            var collected = await LoadMonitoringCollectedResponsesAsync(
+                workerIds,
+                utcStart,
+                utcEnd,
+                allowedAccountNames,
+                ct);
             return MonitoringCycleReportBuilder.BuildFromJournal(
                 journalCycles,
                 startLocal,
                 endLocal,
                 allowedAccountNames,
-                accountCatalog: accountCatalog);
+                collected,
+                accountCatalog,
+                accountLastErrors);
         }
 
         // Monitoring activity is recorded only by the typed journal. File logs are
@@ -370,7 +351,10 @@ public sealed class OfficeStatisticsQueryService(
                 x.ErrorType,
                 x.ErrorMessage,
                 x.PublishedCount,
-                x.FoundCount
+                x.FoundCount,
+                x.CollectedCount,
+                x.CaptchaCount,
+                x.CaptchaSolvedCount
             })
             .ToListAsync(ct);
 
@@ -391,7 +375,10 @@ public sealed class OfficeStatisticsQueryService(
                         s.ErrorType,
                         s.ErrorMessage,
                         s.PublishedCount,
-                        s.FoundCount))
+                        s.FoundCount,
+                        s.CollectedCount,
+                        s.CaptchaCount,
+                        s.CaptchaSolvedCount))
                     .OrderBy(s => s.Position)
                     .ThenBy(s => s.StartedAtUtc)
                     .ToList());
@@ -404,6 +391,42 @@ public sealed class OfficeStatisticsQueryService(
                 c.FinishedAtUtc,
                 c.Status,
                 subsByCycle.GetValueOrDefault(c.Id) ?? []))
+            .ToList();
+    }
+
+    /// <summary>
+    /// Newly collected responses in the monitoring window, used as the source of truth
+    /// for «откликов за проход». Republishes do not change CollectedAt.
+    /// </summary>
+    private async Task<IReadOnlyList<MonitoringCycleSentResponse>> LoadMonitoringCollectedResponsesAsync(
+        HashSet<Guid> workerIds,
+        DateTime utcStart,
+        DateTime utcEnd,
+        IReadOnlySet<string> allowedAccountNames,
+        CancellationToken ct)
+    {
+        var padStart = utcStart.AddHours(-12);
+        var padEnd = utcEnd.AddHours(12);
+        var rows = await db.CandidateResponses
+            .AsNoTracking()
+            .Where(x => x.WorkerId != null && workerIds.Contains(x.WorkerId.Value))
+            .Where(x => x.CollectedAt >= padStart && x.CollectedAt < padEnd)
+            .Select(x => new
+            {
+                x.AccountName,
+                x.AvitoSubProfileId,
+                x.AvitoSubProfileName,
+                x.CollectedAt
+            })
+            .ToListAsync(ct);
+
+        return rows
+            .Select(x => new MonitoringCycleSentResponse(
+                (x.AccountName ?? string.Empty).Trim(),
+                (x.AvitoSubProfileName ?? string.Empty).Trim(),
+                x.CollectedAt,
+                (x.AvitoSubProfileId ?? string.Empty).Trim()))
+            .Where(x => allowedAccountNames.Contains(x.AccountName))
             .ToList();
     }
 
@@ -1034,6 +1057,31 @@ public sealed class OfficeStatisticsQueryService(
         return map;
     }
 
+    private static IReadOnlyDictionary<string, string?> BuildMonitoringAccountLastErrors(
+        IReadOnlyList<AccountProjection> accountRows)
+    {
+        var map = new Dictionary<string, (DateTime? At, string? Error)>(StringComparer.OrdinalIgnoreCase);
+        foreach (var account in accountRows)
+        {
+            var name = account.DisplayName.Trim();
+            if (string.IsNullOrWhiteSpace(name) || string.IsNullOrWhiteSpace(account.LastErrorMessage))
+            {
+                continue;
+            }
+
+            if (!map.TryGetValue(name, out var existing)
+                || (account.LastMonitoringAt is DateTime at && (existing.At is null || at > existing.At)))
+            {
+                map[name] = (account.LastMonitoringAt, account.LastErrorMessage);
+            }
+        }
+
+        return map.ToDictionary(
+            kv => kv.Key,
+            kv => kv.Value.Error,
+            StringComparer.OrdinalIgnoreCase);
+    }
+
     private sealed record AccountProjection(
         Guid WorkerId,
         Guid AccountId,
@@ -1042,7 +1090,9 @@ public sealed class OfficeStatisticsQueryService(
         bool IsEnabledInPanel,
         decimal TotalBalance,
         string SubProfilesJson,
-        string SubProfilesDisabledIdsJson);
+        string SubProfilesDisabledIdsJson,
+        string? LastErrorMessage = null,
+        DateTime? LastMonitoringAt = null);
 
     private sealed class DailyCounters
     {

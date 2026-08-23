@@ -352,6 +352,66 @@ public sealed class WorkerConfigServiceTests
     }
 
     [Fact]
+    public async Task SyncAccountsAsync_PersistsAdsPowerGroupOnAccounts_AndStoresGroupCatalog()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db);
+
+        var sut = CreateService(db);
+        var synced = await sut.SyncAccountsAsync(
+            WorkerId,
+            new WorkerAccountSyncRequest(
+                [
+                    new WorkerAccountSyncItemDto("profile-1", "acc-1", "1001", "Orbita"),
+                    new WorkerAccountSyncItemDto("profile-2", "acc-2", "1002", "Other")
+                ],
+                [
+                    new AdsPowerGroupDto("0", "Ungrouped"),
+                    new AdsPowerGroupDto("1001", "Orbita"),
+                    new AdsPowerGroupDto("1002", "Other")
+                ]));
+
+        Assert.True(synced);
+        var accounts = await db.WorkerAccounts.OrderBy(x => x.DisplayName).ToListAsync();
+        Assert.Equal(2, accounts.Count);
+        Assert.Equal("1001", accounts[0].AdsPowerGroupId);
+        Assert.Equal("Orbita", accounts[0].AdsPowerGroupName);
+        Assert.Equal("1002", accounts[1].AdsPowerGroupId);
+
+        var worker = await db.Workers.SingleAsync();
+        var groups = AdsPowerGroupsJson.Parse(worker.AdsPowerGroupsJson);
+        Assert.Equal(3, groups.Count);
+        Assert.Contains(groups, g => g.GroupId == "1001" && g.GroupName == "Orbita");
+    }
+
+    [Fact]
+    public async Task UpdateSettingsAsync_PersistsAdsPowerGroupId()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db);
+        var worker = await db.Workers.SingleAsync();
+        worker.AdsPowerGroupsJson = AdsPowerGroupsJson.Serialize(
+            [new AdsPowerGroupDto("1001", "Orbita")]);
+        await db.SaveChangesAsync();
+
+        var sut = CreateService(db);
+        var (config, error) = await sut.UpdateSettingsAsync(
+            WorkerId,
+            new UpdateWorkerSettingsRequest(
+                MaxConcurrentAccounts: 1,
+                AdsPowerGroupId: "1001"),
+            OfficeScope.ForOffice(OfficeId));
+
+        Assert.Null(error);
+        Assert.NotNull(config);
+        Assert.Equal("1001", config!.AdsPowerGroupId);
+
+        worker = await db.Workers.SingleAsync();
+        Assert.Equal("1001", worker.AdsPowerGroupId);
+        Assert.Equal("Orbita", worker.AdsPowerGroupName);
+    }
+
+    [Fact]
     public async Task GetConfigForWorkerAsync_ResponseFiltersDefaultOff()
     {
         await using var db = CreateDb();
@@ -366,6 +426,29 @@ public sealed class WorkerConfigServiceTests
         Assert.False(config.ResponseFilterExcludeMale);
         Assert.Null(config.ResponseFilterMaxAgeMale);
         Assert.Null(config.ResponseFilterMaxAgeFemale);
+        Assert.Null(config.RuCaptchaApiKey);
+    }
+
+    [Fact]
+    public async Task UpdateSettingsAsync_PersistsRuCaptchaApiKey()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db);
+
+        var sut = CreateService(db);
+        var (config, error) = await sut.UpdateSettingsAsync(
+            WorkerId,
+            new UpdateWorkerSettingsRequest(
+                MaxConcurrentAccounts: 1,
+                RuCaptchaApiKey: "  rucaptcha-test-key  "),
+            OfficeScope.ForOffice(OfficeId));
+
+        Assert.Null(error);
+        Assert.NotNull(config);
+        Assert.Equal("rucaptcha-test-key", config!.RuCaptchaApiKey);
+
+        var worker = await db.Workers.SingleAsync();
+        Assert.Equal("rucaptcha-test-key", worker.RuCaptchaApiKey);
     }
 
     private static WorkerConfigService CreateService(OrbitaDbContext db, AvitoAccountSecretProtector? secrets = null)

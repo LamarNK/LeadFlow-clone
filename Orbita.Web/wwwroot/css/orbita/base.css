@@ -1,7 +1,8 @@
 :root,
 [data-theme="light"] {
-    --orbita-sidebar-width: 250px;
+    --orbita-sidebar-width: 280px;
     --orbita-sidebar-collapsed-width: 76px;
+    --orbita-sidebar-gutter: 0px;
     --bg-page: #f4f6f9;
     --bg-card: #ffffff;
     --bg-sidebar: #1a2332;
@@ -61,24 +62,28 @@ a:hover { color: var(--accent-hover); }
     z-index: 40;
     width: var(--orbita-sidebar-width);
     height: 100vh;
-    padding: 24px;
+    height: 100dvh;
+    padding: 24px 18px 20px;
     display: flex;
     flex-direction: column;
     background:
-        linear-gradient(180deg, #1f2937 0%, #182435 45%, #131d2d 100%);
-    border-right: 1px solid rgba(255, 255, 255, 0.05);
+        radial-gradient(circle at 68% 15%, rgba(72, 111, 184, 0.16), transparent 30%),
+        linear-gradient(155deg, #142135 0%, #101c2e 48%, #0e192a 100%);
+    border: 0;
+    border-radius: 0;
+    box-shadow: none;
     color: rgba(255, 255, 255, 0.85);
     overflow: hidden;
-    transition: width 0.2s ease, padding 0.2s ease;
+    transition: width 0.2s ease, padding 0.2s ease, border-radius 0.2s ease;
 }
 
 .orbita-sidebar::before {
     content: "";
     position: absolute;
     inset: 0;
-    background-image: radial-gradient(rgba(255, 255, 255, 0.04) 0.6px, transparent 0.6px);
-    background-size: 3px 3px;
-    opacity: 0.35;
+    background-image: radial-gradient(rgba(164, 191, 239, 0.08) 0.7px, transparent 0.7px);
+    background-size: 5px 5px;
+    opacity: 0.24;
     pointer-events: none;
 }
 
@@ -93,7 +98,7 @@ a:hover { color: var(--accent-hover); }
     display: flex;
     align-items: center;
     justify-content: space-between;
-    height: 40px;
+    min-height: 46px;
     flex-shrink: 0;
 }
 
@@ -106,16 +111,17 @@ a:hover { color: var(--accent-hover); }
 
 .orbita-sidebar-brand img {
     width: auto;
-    height: 44px;
-    max-width: 48px;
+    height: 42px;
+    max-width: 46px;
     object-fit: contain;
     display: block;
     flex-shrink: 0;
 }
 
 .orbita-sidebar-brand span {
-    font-size: 18px;
-    font-weight: 600;
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: -0.035em;
     color: #ffffff;
     white-space: nowrap;
 }
@@ -124,45 +130,67 @@ a:hover { color: var(--accent-hover); }
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 32px;
-    height: 32px;
+    width: 44px;
+    height: 44px;
     padding: 0;
-    border: 0;
-    border-radius: 8px;
-    background: transparent;
-    color: rgba(255, 255, 255, 0.8);
-    font-size: 20px;
+    border: 1px solid rgba(143, 180, 236, 0.1);
+    border-radius: 12px;
+    background: rgba(57, 86, 137, 0.14);
+    color: #c4d5f2;
+    font-size: 21px;
     line-height: 1;
     cursor: pointer;
     transition: background 0.2s ease, color 0.2s ease;
 }
 
 .orbita-sidebar-toggle:hover {
-    background: rgba(255, 255, 255, 0.08);
+    background: rgba(82, 121, 184, 0.23);
+    border-color: rgba(137, 178, 243, 0.2);
     color: #ffffff;
 }
 
 .orbita-nav {
     display: flex;
     flex-direction: column;
-    gap: 8px;
+    gap: 22px;
     flex: 1;
     min-height: 0;
-    margin-top: 28px;
+    margin-top: 30px;
     overflow-y: auto;
     overflow-x: hidden;
-    padding-right: 2px;
+    padding: 0 2px 6px;
+}
+
+.orbita-nav-section {
+    display: grid;
+    gap: 10px;
+    flex: 0 0 auto;
+}
+
+.orbita-nav-section-items {
+    display: grid;
+    gap: 5px;
+}
+
+.orbita-nav-section-title {
+    margin: 0 0 0 10px;
+    color: #91a7ca;
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.045em;
+    line-height: 1.2;
+    text-transform: uppercase;
 }
 
 .orbita-nav .nav-item {
     display: flex;
     align-items: center;
-    gap: 14px;
-    min-height: 48px;
+    gap: 13px;
+    min-height: 46px;
     padding: 0 14px;
     border: 1px solid transparent;
     border-radius: 12px;
-    color: rgba(255, 255, 255, 0.85);
+    color: #c8d2e5;
     font-size: 15px;
     font-weight: 500;
     text-decoration: none;
@@ -170,48 +198,63 @@ a:hover { color: var(--accent-hover); }
 }
 
 .orbita-nav .nav-item i {
-    width: 20px;
-    font-size: 20px;
+    width: 22px;
+    font-size: 19px;
     text-align: center;
-    color: rgba(255, 255, 255, 0.75);
+    color: #bdcce3;
     flex-shrink: 0;
     transition: color 0.2s ease;
 }
 
 .orbita-nav .nav-item:hover {
-    background: rgba(255, 255, 255, 0.04);
-    transform: translateX(4px);
+    background: rgba(115, 147, 199, 0.1);
+    color: #f4f7ff;
+    transform: translateX(2px);
 }
 
 .orbita-nav .nav-item:hover i {
-    color: rgba(255, 255, 255, 0.85);
+    color: #dce8ff;
 }
 
 .orbita-nav .nav-item.active {
-    min-height: 52px;
-    background: linear-gradient(180deg, rgba(96, 165, 250, 0.22), rgba(96, 165, 250, 0.18));
-    border-color: rgba(255, 255, 255, 0.06);
-    box-shadow: 0 8px 20px rgba(37, 99, 235, 0.12);
+    min-height: 50px;
+    background: linear-gradient(100deg, rgba(51, 101, 187, 0.24), rgba(66, 104, 166, 0.15));
+    border-color: rgba(60, 133, 255, 0.36);
+    box-shadow: inset 0 1px 0 rgba(138, 183, 255, 0.08), 0 10px 25px rgba(8, 45, 109, 0.12);
     color: #ffffff;
-    font-weight: 600;
+    font-weight: 650;
     transform: none;
 }
 
 .orbita-nav .nav-item.active i {
-    color: #ffffff;
+    color: #4b83ff;
 }
 
 .orbita-nav .nav-item.active:hover {
     transform: none;
-    background: linear-gradient(180deg, rgba(96, 165, 250, 0.24), rgba(96, 165, 250, 0.2));
+    background: linear-gradient(100deg, rgba(51, 101, 187, 0.28), rgba(66, 104, 166, 0.19));
+}
+
+.orbita-nav-section--crm .nav-item {
+    min-height: 46px;
+    background: linear-gradient(100deg, rgba(57, 84, 130, 0.22), rgba(58, 84, 127, 0.13));
+}
+
+.orbita-nav-section--crm .nav-item:hover {
+    background: linear-gradient(100deg, rgba(77, 111, 167, 0.25), rgba(58, 84, 127, 0.19));
+}
+
+.orbita-nav-section--crm .nav-item.active {
+    border-color: rgba(118, 159, 240, 0.1);
+    box-shadow: inset 3px 0 0 #3676ff, inset 0 1px 0 rgba(138, 183, 255, 0.06);
 }
 
 .orbita-sidebar-footer {
     margin-top: auto;
-    padding-bottom: 20px;
+    padding: 20px 2px 2px;
     display: flex;
     flex-direction: column;
-    gap: 18px;
+    gap: 10px;
     flex-shrink: 0;
 }
 
@@ -225,13 +268,13 @@ a:hover { color: var(--accent-hover); }
 .sidebar-btn {
     display: flex;
     align-items: center;
-    gap: 14px;
+    gap: 13px;
     min-height: 44px;
     padding: 0 14px;
     border: 0;
     border-radius: 12px;
     background: transparent;
-    color: rgba(255, 255, 255, 0.85);
+    color: #c8d2e5;
     font-size: 15px;
     font-weight: 500;
     font-family: inherit;
@@ -242,21 +285,25 @@ a:hover { color: var(--accent-hover); }
 }
 
 .sidebar-btn i {
-    width: 18px;
-    font-size: 18px;
+    width: 22px;
+    font-size: 19px;
     text-align: center;
     flex-shrink: 0;
 }
 
 .sidebar-btn--theme:hover {
-    background: rgba(255, 255, 255, 0.04);
-    transform: translateX(4px);
+    background: rgba(115, 147, 199, 0.1);
+    transform: translateX(2px);
 }
 
 .sidebar-btn--logout:hover {
-    background: rgba(255, 255, 255, 0.04);
+    background: rgba(115, 147, 199, 0.1);
     color: #ffffff;
-    transform: translateX(4px);
+    transform: translateX(2px);
+}
+
+.orbita-nav-section-title--footer {
+    margin-bottom: 8px;
 }
 
 .orbita-preview-banner {
@@ -273,7 +320,7 @@ a:hover { color: var(--accent-hover); }
     display: flex;
     flex-direction: column;
     min-width: 0;
-    margin-left: var(--orbita-sidebar-width);
+    margin-left: calc(var(--orbita-sidebar-width) + var(--orbita-sidebar-gutter));
     min-height: 100vh;
     transition: margin-left 0.2s ease;
 }
@@ -289,6 +336,7 @@ html.sidebar-collapsed .orbita-sidebar {
 html.sidebar-collapsed .orbita-sidebar-header {
     flex-direction: column;
     gap: 10px;
+    min-height: 0;
     height: auto;
     align-items: center;
 }
@@ -318,6 +366,24 @@ html.sidebar-collapsed .sidebar-btn {
     padding: 0;
 }
 
+html.sidebar-collapsed .orbita-nav {
+    gap: 8px;
+    margin-top: 22px;
+}
+
+html.sidebar-collapsed .orbita-nav-section {
+    gap: 8px;
+}
+
+html.sidebar-collapsed .orbita-nav-section-title {
+    display: none;
+}
+
+html.sidebar-collapsed .orbita-sidebar-footer {
+    gap: 10px;
+    padding-top: 20px;
+}
+
 html.sidebar-collapsed .orbita-nav .nav-item:hover,
 html.sidebar-collapsed .sidebar-btn--theme:hover,
 html.sidebar-collapsed .sidebar-btn--logout:hover {
@@ -331,6 +397,31 @@ html.sidebar-collapsed .orbita-nav .nav-item.active {
 
 html.sidebar-collapsed .sidebar-btn {
     min-height: 40px;
+}
+
+.orbita-nav .nav-badge {
+    top: 50%;
+    right: 16px;
+    min-width: 30px;
+    height: 26px;
+    padding: 0 8px;
+    border: 0;
+    background: linear-gradient(135deg, #ff5f65, #e7354a);
+    box-shadow: 0 6px 14px rgba(238, 59, 79, 0.22);
+    font-size: 12px;
+    line-height: 26px;
+    transform: translateY(-50%);
+}
+
+html.sidebar-collapsed .orbita-nav .nav-badge {
+    top: 4px;
+    right: 5px;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    font-size: 11px;
+    line-height: 18px;
+    transform: none;
 }
 
 html.sidebar-collapsed .theme-form,

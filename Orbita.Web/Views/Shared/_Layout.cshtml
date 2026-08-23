@@ -5,10 +5,16 @@
 @inject Orbita.Web.Services.ThemeService Theme
 @inject Orbita.Web.Services.IOfficeContext OfficeContext
 @inject IOptions<DesignPreviewOptions> PreviewOptions
+@inject Microsoft.AspNetCore.Antiforgery.IAntiforgery Antiforgery
 @{
     // A fragment is requested only by the in-app navigation script. Query parameters must
     // still render a complete document when they are opened directly in a browser.
     var contentOnly = Context.Request.Headers.ContainsKey("X-Orbita-Content-Only");
+    // Fast navigation keeps the outer shell (including the sidebar) alive between pages.
+    // The assembly MVID changes on every build and lets the client detect that the shell
+    // was rendered by an older deployment and must be refreshed as a complete document.
+    var shellVersion = typeof(Orbita.Web.Controllers.AccountController)
+        .Assembly.ManifestModule.ModuleVersionId.ToString("N");
 }
 @if (contentOnly)
 {
@@ -17,6 +23,7 @@
     <div class="orbita-page-meta"
          data-orbita-page-title="@((ViewData["Title"] as string ?? "") + " — Орбита")"
          data-orbita-controller="@(ViewContext.RouteData.Values["controller"]?.ToString() ?? "")"
+         data-orbita-shell-version="@shellVersion"
          style="display:none"></div>
     @if (PreviewOptions.Value.Enabled)
     {
@@ -31,6 +38,10 @@ else
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    @if (!PreviewOptions.Value.Enabled && User.Identity?.IsAuthenticated == true)
+    {
+        <meta name="orbita-antiforgery-token" content="@Antiforgery.GetAndStoreTokens(Context).RequestToken" />
+    }
     <title>@ViewData["Title"] — Орбита</title>
     <link rel="icon" type="image/png" sizes="48x48" href="~/images/favicon-48x48.png" asp-append-version="true" />
     <link rel="icon" type="image/png" sizes="96x96" href="~/images/favicon-96x96.png" asp-append-version="true" />
@@ -65,7 +76,8 @@ else
     <link rel="stylesheet" href="~/css/orbita-mobile.css" asp-append-version="true" />
     @await RenderSectionAsync("Styles", required: false)
 </head>
-<body data-orbita-selected-office="@(OfficeContext.EffectiveOfficeId?.ToString("D") ?? "")">
+<body data-orbita-selected-office="@(OfficeContext.EffectiveOfficeId?.ToString("D") ?? "")"
+      data-orbita-shell-version="@shellVersion">
 <div class="orbita-app">
     <aside class="orbita-sidebar" id="orbitaPrimaryNavigation">
         <div class="orbita-sidebar-header">
@@ -89,57 +101,103 @@ else
                     User.HasClaim(PanelPermissions.ClaimType, permission)
                     || (permission is PanelPermissions.CrmBoard or PanelPermissions.CrmTasks or PanelPermissions.CrmAnalytics
                         && User.HasClaim(PanelPermissions.ClaimType, PanelPermissions.Crm)));
+                var canDashboard = can(PanelPermissions.Dashboard);
+                var canWorkers = can(PanelPermissions.Workers);
+                var canAccounts = can(PanelPermissions.Accounts);
+                var canStatistics = can(PanelPermissions.Statistics);
+                var canResponses = can(PanelPermissions.Responses);
+                var canCrmBoard = can(PanelPermissions.CrmBoard);
+                var canCrmAnalytics = can(PanelPermissions.CrmAnalytics);
+                var canCrmTasks = can(PanelPermissions.CrmTasks);
+                var canCrmTeam = can(PanelPermissions.CrmTeam);
+                var canEvents = can(PanelPermissions.Events);
+                var canSettings = can(PanelPermissions.Settings);
+                var canTelephony = can(PanelPermissions.Administration) || User.IsInRole(PanelRoles.OfficeLead);
+                var canAdministration = can(PanelPermissions.Administration);
             }
-            @if (can(PanelPermissions.Dashboard))
+            @if (canDashboard || canWorkers || canAccounts || canStatistics || canResponses)
             {
-                <a class="nav-item @(ctrl == "Dashboard" ? "active" : "")" href="@Url.Action("Index", "Dashboard")" title="Панель управления"><i class="fa-solid fa-house" aria-hidden="true"></i><span class="nav-item-label">Панель управления</span></a>
+                <section class="orbita-nav-section orbita-nav-section--primary" aria-labelledby="navMainTitle">
+                    <h2 class="orbita-nav-section-title" id="navMainTitle">Основное</h2>
+                    <div class="orbita-nav-section-items">
+                        @if (canDashboard)
+                        {
+                            <a class="nav-item @(ctrl == "Dashboard" ? "active" : "")" href="@Url.Action("Index", "Dashboard")" title="Панель управления"><i class="fa-solid fa-house" aria-hidden="true"></i><span class="nav-item-label">Панель управления</span></a>
+                        }
+                        @if (canWorkers)
+                        {
+                            <a class="nav-item @(ctrl == "Workers" ? "active" : "")" href="@Url.Action("Index", "Workers")" title="Воркеры"><i class="fa-solid fa-server" aria-hidden="true"></i><span class="nav-item-label">Воркеры</span></a>
+                        }
+                        @if (canAccounts)
+                        {
+                            <a class="nav-item @(ctrl == "Accounts" ? "active" : "")" href="@Url.Action("Index", "Accounts")" title="Аккаунты"><i class="fa-solid fa-users" aria-hidden="true"></i><span class="nav-item-label">Аккаунты</span></a>
+                        }
+                        @if (canStatistics)
+                        {
+                            <a class="nav-item @(ctrl == "Statistics" ? "active" : "")" href="@Url.Action("Index", "Statistics")" title="Статистика"><i class="fa-solid fa-chart-line" aria-hidden="true"></i><span class="nav-item-label">Статистика</span></a>
+                        }
+                        @if (canResponses)
+                        {
+                            <a class="nav-item @(ctrl == "Responses" ? "active" : "")" href="@Url.Action("Index", "Responses")" title="Отклики"><i class="fa-solid fa-inbox" aria-hidden="true"></i><span class="nav-item-label">Отклики</span><span class="nav-badge" data-nav-badge="responses" hidden></span></a>
+                        }
+                    </div>
+                </section>
             }
-            @if (can(PanelPermissions.Workers))
+            @if (canCrmBoard || canCrmAnalytics || canCrmTasks || canCrmTeam)
             {
-                <a class="nav-item @(ctrl == "Workers" ? "active" : "")" href="@Url.Action("Index", "Workers")" title="Воркеры"><i class="fa-solid fa-server" aria-hidden="true"></i><span class="nav-item-label">Воркеры</span></a>
+                <section class="orbita-nav-section orbita-nav-section--crm" aria-labelledby="navCrmTitle">
+                    <h2 class="orbita-nav-section-title" id="navCrmTitle">CRM</h2>
+                    <div class="orbita-nav-section-items">
+                        @if (canCrmBoard)
+                        {
+                            <a class="nav-item @(ctrl == "Crm" && act is "Index" or "Card" or null ? "active" : "")" href="@Url.Action("Index", "Crm")" title="CRM менеджеров"><i class="fa-solid fa-columns" aria-hidden="true"></i><span class="nav-item-label">CRM</span></a>
+                        }
+                        @if (canCrmAnalytics)
+                        {
+                            <a class="nav-item @(ctrl == "Crm" && act == "Analytics" ? "active" : "")" href="@Url.Action("Analytics", "Crm")" title="Аналитика CRM"><i class="fa-solid fa-chart-column" aria-hidden="true"></i><span class="nav-item-label">Аналитика CRM</span></a>
+                        }
+                        @if (canCrmTasks)
+                        {
+                            <a class="nav-item @(ctrl == "Crm" && act is "Tasks" or "TaskDetails" ? "active" : "")" href="@Url.Action("Tasks", "Crm")" title="Мои задачи"><i class="fa-solid fa-list-check" aria-hidden="true"></i><span class="nav-item-label">Задачи</span><span class="nav-badge" data-nav-badge="crm-tasks" hidden></span></a>
+                        }
+                        @if (canCrmTeam)
+                        {
+                            <a class="nav-item @(ctrl == "Crm" && act == "Team" ? "active" : "")" href="@Url.Action("Team", "Crm")" title="Команда CRM"><i class="fa-solid fa-people-group" aria-hidden="true"></i><span class="nav-item-label">Команда CRM</span></a>
+                        }
+                    </div>
+                </section>
             }
-            @if (can(PanelPermissions.Accounts))
+            @if (canEvents || canSettings || canTelephony || canAdministration)
             {
-                <a class="nav-item @(ctrl == "Accounts" ? "active" : "")" href="@Url.Action("Index", "Accounts")" title="Аккаунты"><i class="fa-solid fa-users" aria-hidden="true"></i><span class="nav-item-label">Аккаунты</span></a>
-            }
-            @if (can(PanelPermissions.Statistics))
-            {
-                <a class="nav-item @(ctrl == "Statistics" ? "active" : "")" href="@Url.Action("Index", "Statistics")" title="Статистика"><i class="fa-solid fa-chart-line" aria-hidden="true"></i><span class="nav-item-label">Статистика</span></a>
-            }
-            @if (can(PanelPermissions.Responses))
-            {
-                <a class="nav-item @(ctrl == "Responses" ? "active" : "")" href="@Url.Action("Index", "Responses")" title="Отклики"><i class="fa-solid fa-inbox" aria-hidden="true"></i><span class="nav-item-label">Отклики</span><span class="nav-badge" data-nav-badge="responses" hidden></span></a>
-            }
-            @if (can(PanelPermissions.CrmBoard))
-            {
-                <a class="nav-item @(ctrl == "Crm" && act is "Index" or "Card" or null ? "active" : "")" href="@Url.Action("Index", "Crm")" title="CRM менеджеров"><i class="fa-solid fa-columns" aria-hidden="true"></i><span class="nav-item-label">CRM</span></a>
-            }
-            @if (can(PanelPermissions.CrmAnalytics))
-            {
-                <a class="nav-item @(ctrl == "Crm" && act == "Analytics" ? "active" : "")" href="@Url.Action("Analytics", "Crm")" title="Аналитика CRM"><i class="fa-solid fa-chart-column" aria-hidden="true"></i><span class="nav-item-label">Аналитика CRM</span></a>
-            }
-            @if (can(PanelPermissions.CrmTasks))
-            {
-                <a class="nav-item @(ctrl == "Crm" && act is "Tasks" or "TaskDetails" ? "active" : "")" href="@Url.Action("Tasks", "Crm")" title="Мои задачи"><i class="fa-solid fa-list-check" aria-hidden="true"></i><span class="nav-item-label">Задачи</span><span class="nav-badge" data-nav-badge="crm-tasks" hidden></span></a>
-            }
-            @if (can(PanelPermissions.CrmTeam))
-            {
-                <a class="nav-item @(ctrl == "Crm" && act == "Team" ? "active" : "")" href="@Url.Action("Team", "Crm")" title="Команда CRM"><i class="fa-solid fa-people-group" aria-hidden="true"></i><span class="nav-item-label">Команда CRM</span></a>
-            }
-            @if (can(PanelPermissions.Events))
-            {
-                <a class="nav-item @(ctrl is "Events" or "Errors" ? "active" : "")" href="@Url.Action("Index", "Events")" title="События"><i class="fa-regular fa-clipboard" aria-hidden="true"></i><span class="nav-item-label">События</span><span class="nav-badge" data-nav-badge="errors" hidden></span></a>
-            }
-            @if (can(PanelPermissions.Settings))
-            {
-                <a class="nav-item @(ctrl == "MySettings" ? "active" : "")" href="@Url.Action("Index", "MySettings")" title="Настройки"><i class="fa-solid fa-gear" aria-hidden="true"></i><span class="nav-item-label">Настройки</span></a>
-            }
-            @if (can(PanelPermissions.Administration))
-            {
-                <a class="nav-item @(ctrl == "Settings" ? "active" : "")" href="@Url.Action("Index", "Settings")" title="Администрирование"><i class="fa-solid fa-user-shield" aria-hidden="true"></i><span class="nav-item-label">Администрирование</span></a>
+                <section class="orbita-nav-section orbita-nav-section--other" aria-labelledby="navOtherTitle">
+                    <h2 class="orbita-nav-section-title" id="navOtherTitle">Другое</h2>
+                    <div class="orbita-nav-section-items">
+                        @if (canEvents)
+                        {
+                            <a class="nav-item @(ctrl is "Events" or "Errors" ? "active" : "")" href="@Url.Action("Index", "Events")" title="События"><i class="fa-regular fa-clipboard" aria-hidden="true"></i><span class="nav-item-label">События</span><span class="nav-badge" data-nav-badge="errors" hidden></span></a>
+                        }
+                        @if (canSettings)
+                        {
+                            <a class="nav-item @(ctrl == "MySettings" ? "active" : "")" href="@Url.Action("Index", "MySettings")" title="Настройки"><i class="fa-solid fa-gear" aria-hidden="true"></i><span class="nav-item-label">Настройки</span></a>
+                        }
+                        @* Старые браузерные сессии могут содержать актуальные разрешения, но не содержать
+                           role claim. Для администратора ориентируемся на то же разрешение, по которому
+                           показывается раздел «Администрирование»; роль руководителя оставляем отдельным
+                           условием, поскольку у неё этого разрешения намеренно нет. *@
+                        @if (canTelephony)
+                        {
+                            <a class="nav-item @(ctrl == "TelephonySettings" ? "active" : "")" href="@Url.Action("Telephony", "TelephonySettings")" title="Телефония"><i class="fa-solid fa-phone-volume" aria-hidden="true"></i><span class="nav-item-label">Телефония</span></a>
+                        }
+                        @if (canAdministration)
+                        {
+                            <a class="nav-item @(ctrl == "Settings" ? "active" : "")" href="@Url.Action("Index", "Settings")" title="Администрирование"><i class="fa-solid fa-user-shield" aria-hidden="true"></i><span class="nav-item-label">Администрирование</span></a>
+                        }
+                    </div>
+                </section>
             }
         </nav>
         <div class="orbita-sidebar-footer">
+            <span class="orbita-nav-section-title orbita-nav-section-title--footer">Прочее</span>
             <form asp-controller="Settings" asp-action="ToggleTheme" method="post" class="theme-form">
                 @Html.AntiForgeryToken()
                 <button type="submit" class="sidebar-btn sidebar-btn--theme" title="@(Theme.IsLight ? "Тёмная тема" : "Светлая тема")"><i class="@(Theme.IsLight ? "fa-regular fa-moon" : "fa-regular fa-sun")" aria-hidden="true"></i><span class="sidebar-btn-label">@(Theme.IsLight ? "Тёмная тема" : "Светлая тема")</span></button>
@@ -159,6 +217,28 @@ else
     </div>
     <div class="orbita-sidebar-backdrop" data-orbita-sidebar-backdrop hidden></div>
     <div class="orbita-toast-host" data-orbita-toast-host aria-live="polite" aria-atomic="true"></div>
+    <div class="orbita-softphone" data-orbita-softphone hidden>
+        <div class="orbita-softphone__backdrop"></div>
+        <section class="orbita-softphone__panel" role="dialog" aria-modal="true" aria-labelledby="orbitaSoftphoneTitle">
+            <div class="orbita-softphone__icon" aria-hidden="true"><i class="fa-solid fa-phone-volume"></i></div>
+            <div class="orbita-softphone__copy">
+                <span class="orbita-softphone__eyebrow">Звонок из Орбиты</span>
+                <h2 id="orbitaSoftphoneTitle" data-orbita-softphone-target>Подключение…</h2>
+                <p data-orbita-softphone-status aria-live="polite">Подготавливаем защищённую SIP-линию</p>
+            </div>
+            <div class="orbita-softphone__actions">
+                <button type="button" class="orbita-softphone__answer" data-orbita-softphone-answer hidden>
+                    <i class="fa-solid fa-phone" aria-hidden="true"></i>
+                    Ответить
+                </button>
+                <button type="button" class="orbita-softphone__hangup" data-orbita-softphone-hangup disabled>
+                    <i class="fa-solid fa-phone-slash" aria-hidden="true"></i>
+                    <span data-orbita-softphone-hangup-label>Завершить</span>
+                </button>
+            </div>
+        </section>
+    </div>
+    <audio data-orbita-softphone-audio autoplay playsinline hidden></audio>
     <div class="orbita-confirm" id="orbitaConfirmDialog" hidden>
         <div class="orbita-confirm__backdrop" data-orbita-confirm-cancel></div>
         <div class="orbita-confirm__dialog" role="alertdialog" aria-modal="true" aria-labelledby="orbitaConfirmTitle" aria-describedby="orbitaConfirmMessage">
@@ -229,6 +309,7 @@ else
     </div>
 </div>
 <script src="~/js/orbita-time.js" asp-append-version="true"></script>
+<script src="~/js/orbita-presence.js" asp-append-version="true"></script>
 <script src="~/js/orbita-crm-deadlines.js" asp-append-version="true"></script>
 <script src="~/js/orbita-live-shared.js" asp-append-version="true"></script>
 <script src="~/js/orbita/layout.js" asp-append-version="true"></script>
@@ -248,6 +329,9 @@ else
 <script src="~/js/orbita-browser-frame.js" asp-append-version="true"></script>
 <script src="~/js/orbita-captcha-solver.js" asp-append-version="true"></script>
 <script src="~/js/orbita-search.js" asp-append-version="true"></script>
+<script src="~/lib/jssip/jssip.min.js" asp-append-version="true"></script>
+<script src="~/js/orbita-crm-softphone.js" asp-append-version="true"></script>
+<script src="~/js/orbita-telephony-settings.js" asp-append-version="true"></script>
 @await RenderSectionAsync("Scripts", required: false)
 </body>
 </html>

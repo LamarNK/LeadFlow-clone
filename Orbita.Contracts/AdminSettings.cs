@@ -1,5 +1,16 @@
 namespace Orbita.Contracts;
 
+public sealed record PanelUserPresenceHourSeriesDto(
+    IReadOnlyList<int> TypicalByHour,
+    IReadOnlyList<int> TodayByHour,
+    int TypicalPeakHour,
+    int TypicalPeakValue,
+    int TodayPeakHour,
+    int TodayPeakValue,
+    int SampleDayCount,
+    int CurrentHour,
+    DateTime GeneratedAtUtc);
+
 public sealed record PanelUserDto(
     string Id,
     string Email,
@@ -9,7 +20,9 @@ public sealed record PanelUserDto(
     Guid? OfficeId = null,
     string? OfficeName = null,
     string? FullName = null,
-    IReadOnlyList<string>? PermissionOverride = null);
+    IReadOnlyList<string>? PermissionOverride = null,
+    DateTime? LastSeenAtUtc = null,
+    bool IsOnline = false);
 
 public sealed record CreatePanelUserRequest(
     string Email,

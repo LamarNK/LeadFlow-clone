@@ -16,15 +16,18 @@ public static class AvitoAutoLoginScripts
 
             const hasFirewallDom = !!document.querySelector(
                 ".firewall-container, .js-firewall-form, .firewall-title, form.js-firewall-form, h2.firewall-title"
-            );
-            const hasFirewallText = /Доступ\s+ограничен|проблема\s+с\s+IP|firewallCaptcha/i.test(probeText);
+            ) || location.hash === "#block"
+              || !!document.querySelector('a[href*="support.avito.ru/request/720"]');
+            const hasFirewallText = /Доступ\s+ограничен|проблема\s+с\s+IP|firewallCaptcha|Отключить\s+VPN|самол[её]те/i.test(probeText);
             const hasCaptchaWidget = !!(
                 document.getElementById("geetest_captcha") ||
                 document.getElementById("inner-captcha") ||
                 document.getElementById("h-captcha") ||
                 document.querySelector(".h-captcha[data-sitekey]")
             );
-            const hasCaptcha = hasFirewallDom || hasFirewallText || hasCaptchaWidget;
+            const hasIpDialog = !!document.querySelector('[role="dialog"][aria-modal="true"], [aria-modal="true"]')
+              && /Доступ\s+ограничен|проблема\s+с\s+IP/i.test(probeText);
+            const hasCaptcha = hasFirewallDom || hasFirewallText || hasCaptchaWidget || hasIpDialog;
 
             const hasLoginDom = !!(
                 document.querySelector("[data-marker='auth-app-root']") ||

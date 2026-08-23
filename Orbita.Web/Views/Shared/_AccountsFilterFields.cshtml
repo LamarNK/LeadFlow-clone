@@ -10,6 +10,15 @@
         </select>
     </label>
     <label class="orbita-filters-field accounts-filter-field">
+        <span class="orbita-filters-label accounts-filter-label">Группа AdsPower</span>
+        <select name="groupId" class="orbita-filters-select accounts-select" aria-label="Группа AdsPower">
+            @foreach (var opt in Model.Groups)
+            {
+                <option value="@opt.Value" selected="@(opt.Value == (Model.GroupId ?? ""))">@opt.Label</option>
+            }
+        </select>
+    </label>
+    <label class="orbita-filters-field accounts-filter-field">
         <span class="orbita-filters-label accounts-filter-label">Категория</span>
         <select name="tab" class="orbita-filters-select accounts-select" aria-label="Категория аккаунтов">
             @foreach (var tab in Model.Tabs)

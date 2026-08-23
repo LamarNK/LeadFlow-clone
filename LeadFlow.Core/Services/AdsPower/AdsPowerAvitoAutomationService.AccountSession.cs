@@ -3,6 +3,7 @@ using LeadFlow.Core.Logging.Audit;
 using LeadFlow.Core.Services;
 using LeadFlow.Core.Services.Avito;
 using LeadFlow.Core.Services.Browser;
+using LeadFlow.Core.Services.Captcha;
 using PuppeteerSharp;
 
 namespace LeadFlow.Core.Services.AdsPower;
@@ -72,6 +73,10 @@ public sealed partial class AdsPowerAvitoAutomationService
                 DefaultViewport = null
             }).ConfigureAwait(false);
 
+            var captchaOptions = await ResolveCaptchaTaskOptionsAsync(options, adsPowerUserId, cancellationToken)
+                .ConfigureAwait(false);
+            using var captchaScope = AvitoCaptchaTaskContext.Use(captchaOptions);
+
             var page = await AcquireAutomationPageAsync(
                     browser,
                     ProfileItemsPageUrl,
@@ -91,10 +96,11 @@ public sealed partial class AdsPowerAvitoAutomationService
                     ["step"] = "session_opened",
                     ["attempt"] = attempt,
                     ["adsPower.userId"] = adsPowerUserId,
-                    ["page.url"] = page.Url
+                    ["page.url"] = page.Url,
+                    ["captcha.proxyMode"] = captchaOptions.UsesSuppliedProxy ? "profile" : "proxyless"
                 });
 
-            return new AccountSession(this, browser, page, options, adsPowerUserId);
+            return new AccountSession(this, browser, page, adsPowerUserId, captchaOptions);
         }
         catch
         {
@@ -170,6 +176,19 @@ public sealed partial class AdsPowerAvitoAutomationService
         // вызывался только позже, при переключении субпрофиля: браузер уже
         // показывал users-list/login-form, но до этого шага поток не доходил.
         var warmupState = await ProbePageStateAsync(page, cancellationToken).ConfigureAwait(false);
+        if (CanTryClearCaptcha(warmupState)
+            && await TryClearGeeTestCaptchaAsync(page, cancellationToken).ConfigureAwait(false))
+        {
+            warmupState = await ProbePageStateAsync(page, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (warmupState?.IsTransientPageError == true)
+        {
+            await TryRecoverTransientAvitoErrorAsync(page, cancellationToken, nameof(WarmUpSessionPageAsync))
+                .ConfigureAwait(false);
+            warmupState = await ProbePageStateAsync(page, cancellationToken).ConfigureAwait(false);
+        }
+
         if (warmupState?.HasLoginForm == true
             || warmupState?.PageKind == AvitoPageKind.Login
             || AvitoAutomationFailureFormatter.SuggestsLogin(warmupState))
@@ -185,7 +204,9 @@ public sealed partial class AdsPowerAvitoAutomationService
             }
         }
 
-        if (IsOnActiveProfileItemsPage(page.Url))
+        if (IsOnActiveProfileItemsPage(page.Url)
+            && warmupState?.HasCaptcha != true
+            && warmupState?.PageKind != AvitoPageKind.Captcha)
         {
             await WaitForProfileItemsShellAsync(page, nameof(WarmUpSessionPageAsync), cancellationToken)
                 .ConfigureAwait(false);
@@ -205,31 +226,44 @@ public sealed partial class AdsPowerAvitoAutomationService
         return page;
     }
 
-    private async Task<bool> SwitchSubProfileOnPageAsync(
+    private async Task<SubProfileSwitchResult> SwitchSubProfileOnPageAsync(
         IPage page,
         string subProfileId,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(subProfileId))
         {
-            return false;
+            return new SubProfileSwitchResult(SubProfileSwitchStatus.Unknown, "empty-id");
         }
 
+        await TryRecoverTransientAvitoErrorAsync(page, cancellationToken, nameof(SwitchSubProfileOnPageAsync))
+            .ConfigureAwait(false);
+
+        SubProfileSwitchResult last = new(SubProfileSwitchStatus.Unknown);
         for (var attempt = 1; attempt <= MonitoringTiming.SubProfileSwitchMaxAttempts; attempt++)
         {
-            if (await TrySwitchSubProfileOnPageOnceAsync(page, subProfileId, cancellationToken)
-                    .ConfigureAwait(false))
+            last = await TrySwitchSubProfileOnPageOnceAsync(page, subProfileId, cancellationToken)
+                .ConfigureAwait(false);
+            if (last.Ok)
             {
-                return true;
+                return last;
             }
 
-            var postFailState = await ProbePageStateAsync(page, cancellationToken).ConfigureAwait(false);
-            if (postFailState?.HasLoginForm == true
-                || postFailState?.PageKind == AvitoPageKind.Login
-                || postFailState?.HasCaptcha == true
-                || postFailState?.PageKind == AvitoPageKind.Captcha)
+            if (last.IsCaptcha)
             {
-                return false;
+                var postFailState = await ProbePageStateAsync(page, cancellationToken).ConfigureAwait(false);
+                if (CanTryClearCaptcha(postFailState)
+                    && await TryClearGeeTestCaptchaAsync(page, cancellationToken).ConfigureAwait(false))
+                {
+                    continue;
+                }
+
+                return last;
+            }
+
+            if (last.IsLogin)
+            {
+                return last;
             }
 
             if (attempt >= MonitoringTiming.SubProfileSwitchMaxAttempts)
@@ -246,6 +280,7 @@ public sealed partial class AdsPowerAvitoAutomationService
                     ["step"] = "switch_retry",
                     ["attempt"] = attempt,
                     ["avito.subProfileId"] = subProfileId,
+                    ["switch.status"] = last.Status.ToString(),
                     ["page.url"] = page.Url
                 });
 
@@ -253,7 +288,7 @@ public sealed partial class AdsPowerAvitoAutomationService
                 .ConfigureAwait(false);
         }
 
-        return false;
+        return last;
     }
 
     private async Task RecoverPageBeforeSubProfileSwitchRetryAsync(
@@ -261,6 +296,8 @@ public sealed partial class AdsPowerAvitoAutomationService
         CancellationToken cancellationToken,
         int attempt)
     {
+        await TryRecoverTransientAvitoErrorAsync(page, cancellationToken, nameof(SwitchSubProfileOnPageAsync))
+            .ConfigureAwait(false);
         await DismissAvitoBlockingOverlaysAsync(page, cancellationToken).ConfigureAwait(false);
         await DismissProfileSwitchModalAsync(page, cancellationToken).ConfigureAwait(false);
         await BounceToDashboardBeforeSwitchAsync(page, cancellationToken, nameof(SwitchSubProfileOnPageAsync))
@@ -268,7 +305,117 @@ public sealed partial class AdsPowerAvitoAutomationService
         await Task.Delay(attempt * 1200, cancellationToken).ConfigureAwait(false);
     }
 
-    private async Task<bool> TrySwitchSubProfileOnPageOnceAsync(
+    private static bool IsTransientAvitoError(AvitoPageState? pageState) =>
+        pageState?.IsTransientPageError == true;
+
+    /// <summary>
+    /// Заглушка Avito «Ошибка / обновите страницу»: сначала клик «Обновить», затем Reload.
+    /// Прокси AdsPower часто отвисает после пары обновлений.
+    /// </summary>
+    private async Task<bool> TryRecoverTransientAvitoErrorAsync(
+        IPage page,
+        CancellationToken cancellationToken,
+        string callerMemberName)
+    {
+        var state = await ProbePageStateAsync(page, cancellationToken).ConfigureAwait(false);
+        if (!IsTransientAvitoError(state))
+        {
+            return true;
+        }
+
+        for (var attempt = 1; attempt <= MonitoringTiming.TransientErrorReloadMaxAttempts; attempt++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var clickedRefresh = false;
+            if (attempt == 1)
+            {
+                clickedRefresh = await PuppeteerJsonEvaluator.EvaluateBoolAsync(
+                        page,
+                        AvitoPageStateScripts.BuildClickRefreshOnTransientErrorScript(),
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            if (!clickedRefresh)
+            {
+                await TryReloadPageForTransientErrorAsync(page, cancellationToken).ConfigureAwait(false);
+            }
+
+            _ = GlobalLogger.Instance.LogAsync(
+                clickedRefresh
+                    ? $"AdsPower: Avito error page — clicked «Обновить» ({attempt}/{MonitoringTiming.TransientErrorReloadMaxAttempts})."
+                    : $"AdsPower: Avito error page — reloaded tab ({attempt}/{MonitoringTiming.TransientErrorReloadMaxAttempts}), proxy may be stuck.",
+                DeskLinkAuditLogLevel.Warning,
+                memberName: callerMemberName,
+                properties: new Dictionary<string, object?>
+                {
+                    ["step"] = "transient_error_reload",
+                    ["attempt"] = attempt,
+                    ["reload.clickedRefresh"] = clickedRefresh,
+                    ["page.url"] = page.Url
+                });
+
+            await Task.Delay(MonitoringTiming.TransientErrorReloadSettleMs, cancellationToken)
+                .ConfigureAwait(false);
+
+            state = await ProbePageStateAsync(page, cancellationToken).ConfigureAwait(false);
+            if (!IsTransientAvitoError(state))
+            {
+                _ = GlobalLogger.Instance.LogAsync(
+                    "AdsPower: Avito recovered after refresh of error page.",
+                    DeskLinkAuditLogLevel.Info,
+                    memberName: callerMemberName,
+                    properties: new Dictionary<string, object?>
+                    {
+                        ["step"] = "transient_error_recovered",
+                        ["attempt"] = attempt,
+                        ["page.url"] = page.Url
+                    });
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static async Task TryReloadPageForTransientErrorAsync(
+        IPage page,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await page.ReloadAsync(MonitoringTiming.TransientErrorReloadTimeoutMs).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            await Task.Delay(1400, cancellationToken).ConfigureAwait(false);
+            try
+            {
+                await page.ReloadAsync(MonitoringTiming.TransientErrorReloadTimeoutMs).ConfigureAwait(false);
+            }
+            catch (Exception retryEx) when (retryEx is not OperationCanceledException)
+            {
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"AdsPower: reload of Avito error page failed: {retryEx.Message}",
+                    DeskLinkAuditLogLevel.Warning,
+                    memberName: nameof(TryReloadPageForTransientErrorAsync),
+                    properties: new Dictionary<string, object?>
+                    {
+                        ["step"] = "transient_error_reload_failed",
+                        ["page.url"] = page.Url,
+                        ["error.type"] = retryEx.GetType().FullName,
+                        ["error.first"] = ex.Message
+                    });
+            }
+        }
+    }
+
+    private static bool CanTryClearCaptcha(AvitoPageState? pageState) =>
+        pageState?.HasFirewallIp != true
+        && (pageState?.HasCaptcha == true || pageState?.PageKind == AvitoPageKind.Captcha);
+
+    private async Task<SubProfileSwitchResult> TrySwitchSubProfileOnPageOnceAsync(
         IPage page,
         string subProfileId,
         CancellationToken cancellationToken)
@@ -329,24 +476,36 @@ public sealed partial class AdsPowerAvitoAutomationService
                         ["page.url"] = page.Url,
                         ["pageState"] = preSwitchState.DescribeForDiagnostics()
                     });
-                return false;
+                return new SubProfileSwitchResult(SubProfileSwitchStatus.Login);
             }
         }
 
         if (preSwitchState?.HasCaptcha == true || preSwitchState?.PageKind == AvitoPageKind.Captcha)
         {
-            _ = GlobalLogger.Instance.LogAsync(
-                $"AdsPower profile-switch (session): captcha/firewall detected for subProfile {subProfileId}, skipping.",
-                DeskLinkAuditLogLevel.Warning,
-                memberName: nameof(SwitchSubProfileOnPageAsync),
-                properties: new Dictionary<string, object?>
-                {
-                    ["step"] = preSwitchState.HasFirewallIp ? "firewall_ip" : "captcha",
-                    ["avito.subProfileId"] = subProfileId,
-                    ["page.url"] = page.Url,
-                    ["pageState"] = preSwitchState.DescribeForDiagnostics()
-                });
-            return false;
+            if (CanTryClearCaptcha(preSwitchState)
+                && await TryClearGeeTestCaptchaAsync(page, cancellationToken).ConfigureAwait(false))
+            {
+                preSwitchState = await ProbePageStateAsync(page, cancellationToken).ConfigureAwait(false);
+            }
+
+            if (preSwitchState?.HasCaptcha == true || preSwitchState?.PageKind == AvitoPageKind.Captcha)
+            {
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"AdsPower profile-switch (session): captcha/firewall detected for subProfile {subProfileId}, skipping.",
+                    DeskLinkAuditLogLevel.Warning,
+                    memberName: nameof(SwitchSubProfileOnPageAsync),
+                    properties: new Dictionary<string, object?>
+                    {
+                        ["step"] = preSwitchState?.HasFirewallIp == true ? "firewall_ip" : "captcha",
+                        ["avito.subProfileId"] = subProfileId,
+                        ["page.url"] = page.Url,
+                        ["pageState"] = preSwitchState?.DescribeForDiagnostics()
+                    });
+                return new SubProfileSwitchResult(
+                    preSwitchState?.HasFirewallIp == true
+                        ? SubProfileSwitchStatus.IpBlock
+                        : SubProfileSwitchStatus.Captcha);
+            }
         }
 
         if (IsOnCandidatesResponsesPage(page.Url))
@@ -360,6 +519,7 @@ public sealed partial class AdsPowerAvitoAutomationService
         if (!await AwaitProfileSwitchModalContentAsync(page, cancellationToken, nameof(SwitchSubProfileOnPageAsync))
                 .ConfigureAwait(false))
         {
+            await ThrowIfCaptchaOnPageAsync(page, cancellationToken).ConfigureAwait(false);
             await DismissProfileSwitchModalAsync(page, cancellationToken).ConfigureAwait(false);
             _ = GlobalLogger.Instance.LogAsync(
                 $"AdsPower profile-switch (session): modal not ready for subProfile {subProfileId}, skipping.",
@@ -371,7 +531,7 @@ public sealed partial class AdsPowerAvitoAutomationService
                     ["avito.subProfileId"] = subProfileId,
                     ["page.url"] = page.Url
                 });
-            return false;
+            return new SubProfileSwitchResult(SubProfileSwitchStatus.ModalNotReady);
         }
 
         if (await IsTargetSubProfileAlreadyCurrentAsync(page, subProfileId).ConfigureAwait(false))
@@ -386,7 +546,7 @@ public sealed partial class AdsPowerAvitoAutomationService
                     ["step"] = "already_current",
                     ["avito.subProfileId"] = subProfileId
                 });
-            return true;
+            return SubProfileSwitchResult.Succeeded;
         }
 
         var switched = await TryClickSubProfileCardAndWaitCloseAsync(page, subProfileId, cancellationToken)
@@ -394,9 +554,10 @@ public sealed partial class AdsPowerAvitoAutomationService
         if (!switched)
         {
             await DismissProfileSwitchModalAsync(page, cancellationToken).ConfigureAwait(false);
+            return new SubProfileSwitchResult(SubProfileSwitchStatus.ClickFailed);
         }
 
-        return switched;
+        return SubProfileSwitchResult.Succeeded;
     }
 
     private async Task<bool> VerifyActiveSubProfileOnPageAsync(
@@ -475,6 +636,12 @@ public sealed partial class AdsPowerAvitoAutomationService
             EvaluateWithRetryAsync<string>(page, script, ct);
 
         var waitSw = Stopwatch.StartNew();
+        if (IsOnActiveProfileItemsPage(page.Url)
+            && AvitoHumanVariation.RollPermille(MonitoringTiming.ItemsLingerChancePermille))
+        {
+            await HumanDelay.AfterItemsLingerAsync(cancellationToken).ConfigureAwait(false);
+        }
+
         await EnsureOnCandidatesPageAsync(page, adsPowerUserId, cancellationToken).ConfigureAwait(false);
 
         var finalSignature = await AvitoCandidatesPageWaiter
@@ -516,7 +683,9 @@ public sealed partial class AdsPowerAvitoAutomationService
             BuildResolveExistingPhonesCallback(messengerEnrichmentHints),
             BuildResolveExistingMatchedProfileIndicesCallback(messengerEnrichmentHints),
             messengerEnrichmentHints?.ResponseFilters,
-            messengerEnrichmentHints?.IsOpenPhoneWatchAsync).ConfigureAwait(false);
+            messengerEnrichmentHints?.IsOpenPhoneWatchAsync,
+            skipDetailEnrich: true,
+            CreateCaptchaSolveCallback(page)).ConfigureAwait(false);
 
         var raw = await EvaluateWithRetryAsync<string>(page, ExtractionScript, cancellationToken).ConfigureAwait(false);
         if (string.IsNullOrWhiteSpace(raw))
@@ -835,8 +1004,8 @@ public sealed partial class AdsPowerAvitoAutomationService
         AdsPowerAvitoAutomationService owner,
         IBrowser browser,
         IPage page,
-        AdsPowerConnectionOptions options,
-        string adsPowerUserId) : IAdsPowerAccountSession
+        string adsPowerUserId,
+        GeeTestV4TaskOptions captchaOptions) : IAdsPowerAccountSession
     {
         public string AdsPowerUserId { get; } = adsPowerUserId;
 
@@ -852,28 +1021,52 @@ public sealed partial class AdsPowerAvitoAutomationService
             CancellationToken cancellationToken = default) =>
             BrowserMonitorScreencastCapture.StartAsync(page, cancellationToken);
 
-        public Task<bool> SwitchSubProfileAsync(string subProfileId, CancellationToken cancellationToken = default) =>
-            owner.SwitchSubProfileOnPageAsync(page, subProfileId, cancellationToken);
+        public async Task<SubProfileSwitchResult> SwitchSubProfileAsync(string subProfileId, CancellationToken cancellationToken = default)
+        {
+            using var _ = AvitoCaptchaTaskContext.Use(captchaOptions);
+            return await owner.SwitchSubProfileOnPageAsync(page, subProfileId, cancellationToken).ConfigureAwait(false);
+        }
 
-        public Task<bool> VerifyActiveSubProfileAsync(string subProfileId, CancellationToken cancellationToken = default) =>
-            owner.VerifyActiveSubProfileOnPageAsync(page, subProfileId, cancellationToken);
+        public async Task<bool> VerifyActiveSubProfileAsync(string subProfileId, CancellationToken cancellationToken = default)
+        {
+            using var _ = AvitoCaptchaTaskContext.Use(captchaOptions);
+            return await owner.VerifyActiveSubProfileOnPageAsync(page, subProfileId, cancellationToken).ConfigureAwait(false);
+        }
 
-        public Task<string> ExtractCandidatesJsonAsync(
+        public async Task<string> ExtractCandidatesJsonAsync(
             CandidatesMessengerEnrichmentHints? messengerEnrichmentHints = null,
-            CancellationToken cancellationToken = default) =>
-            owner.ExtractCandidatesJsonOnPageAsync(page, AdsPowerUserId, messengerEnrichmentHints, cancellationToken);
+            CancellationToken cancellationToken = default)
+        {
+            using var _ = AvitoCaptchaTaskContext.Use(captchaOptions);
+            return await owner
+                .ExtractCandidatesJsonOnPageAsync(page, AdsPowerUserId, messengerEnrichmentHints, cancellationToken)
+                .ConfigureAwait(false);
+        }
 
-        public Task<string> LoadProfileItemsHtmlAsync(CancellationToken cancellationToken = default) =>
-            owner.LoadProfileItemsHtmlOnPageAsync(page, AdsPowerUserId, cancellationToken);
+        public async Task<string> LoadProfileItemsHtmlAsync(CancellationToken cancellationToken = default)
+        {
+            using var _ = AvitoCaptchaTaskContext.Use(captchaOptions);
+            return await owner.LoadProfileItemsHtmlOnPageAsync(page, AdsPowerUserId, cancellationToken).ConfigureAwait(false);
+        }
 
-        public Task<string> LoadBlockedItemsHtmlAsync(CancellationToken cancellationToken = default) =>
-            owner.LoadBlockedItemsHtmlOnPageAsync(page, AdsPowerUserId, cancellationToken);
+        public async Task<string> LoadBlockedItemsHtmlAsync(CancellationToken cancellationToken = default)
+        {
+            using var _ = AvitoCaptchaTaskContext.Use(captchaOptions);
+            return await owner.LoadBlockedItemsHtmlOnPageAsync(page, AdsPowerUserId, cancellationToken).ConfigureAwait(false);
+        }
 
-        public Task<AvitoMoneySidebar?> TryReadMoneySidebarAsync(CancellationToken cancellationToken = default) =>
-            owner.TryReadMoneySidebarOnPageAsync(page, AdsPowerUserId, cancellationToken);
+        public async Task<AvitoMoneySidebar?> TryReadMoneySidebarAsync(CancellationToken cancellationToken = default)
+        {
+            using var _ = AvitoCaptchaTaskContext.Use(captchaOptions);
+            return await owner.TryReadMoneySidebarOnPageAsync(page, AdsPowerUserId, cancellationToken).ConfigureAwait(false);
+        }
 
-        public Task<string> CaptureProfileSwitchHtmlAsync(CancellationToken cancellationToken = default) =>
-            owner.CaptureProfileSwitchHtmlInSessionAsync(page, AdsPowerUserId, cancellationToken);
+        public async Task<string> CaptureProfileSwitchHtmlAsync(CancellationToken cancellationToken = default)
+        {
+            using var _ = AvitoCaptchaTaskContext.Use(captchaOptions);
+            return await owner.CaptureProfileSwitchHtmlInSessionAsync(page, AdsPowerUserId, cancellationToken)
+                .ConfigureAwait(false);
+        }
 
         public Task<AvitoPageState?> GetPageStateAsync(CancellationToken cancellationToken = default) =>
             ProbePageStateAsync(page, cancellationToken);

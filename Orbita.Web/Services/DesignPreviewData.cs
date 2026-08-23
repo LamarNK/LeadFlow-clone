@@ -1670,7 +1670,29 @@ internal static class DesignPreviewData
                         ],
                         ["2", "0", "1"],
                         [],
-                        WasStarted: true),
+                        WasStarted: true,
+                        CaptchaPerCycle:
+                        [
+                            new MonitoringCycleCaptchaDto(
+                                previewDayUtc.AddHours(7).AddMinutes(22).AddSeconds(59),
+                                "решена")
+                        ],
+                        Passes:
+                        [
+                            new MonitoringCyclePassDto(previewDayUtc.AddHours(2).AddMinutes(3).AddSeconds(16), true, 2, true),
+                            new MonitoringCyclePassDto(previewDayUtc.AddHours(7).AddMinutes(22).AddSeconds(59), true, 0, true, "решена"),
+                            new MonitoringCyclePassDto(previewDayUtc.AddHours(15).AddMinutes(18).AddSeconds(9), true, 1, true)
+                        ]),
+                    new MonitoringCycleSubProfileRowDto(
+                        2,
+                        10,
+                        "Кадровый отдел Березники 10",
+                        [],
+                        [],
+                        [],
+                        WasStarted: false,
+                        NotStartedReason: "очередь не дошла: 2 капчи подряд, последняя на «Кадровый отдел 4»",
+                        NotStartedAtUtc: previewDayUtc.AddHours(10).AddMinutes(30).AddSeconds(33)),
                     new MonitoringCycleSubProfileRowDto(
                         10,
                         10,
@@ -1682,7 +1704,13 @@ internal static class DesignPreviewData
                         ],
                         ["0", "1", "0"],
                         [],
-                        WasStarted: true)
+                        WasStarted: true,
+                        Passes:
+                        [
+                            new MonitoringCyclePassDto(previewDayUtc.AddHours(2).AddMinutes(5).AddSeconds(50), true, 0, true),
+                            new MonitoringCyclePassDto(previewDayUtc.AddHours(10).AddMinutes(7).AddSeconds(46), true, 1, true),
+                            new MonitoringCyclePassDto(previewDayUtc.AddHours(20).AddMinutes(11).AddSeconds(35), true, 0, true)
+                        ])
                 ],
                 [])
         };
@@ -1703,7 +1731,11 @@ internal static class DesignPreviewData
                         [secondDayUtc.AddHours(11).AddMinutes(4)],
                         ["1"],
                         [],
-                        WasStarted: true)
+                        WasStarted: true,
+                        Passes:
+                        [
+                            new MonitoringCyclePassDto(secondDayUtc.AddHours(11).AddMinutes(4), true, 1, true)
+                        ])
                 ],
                 []));
         }
@@ -2189,7 +2221,9 @@ internal static class DesignPreviewData
     public static WorkerDetailsViewModel? BuildWorkerDetailsViewModel(
         Guid id,
         string? sort = null,
-        string? sortDir = null)
+        string? sortDir = null,
+        string? accountSearchQuery = null,
+        string? accountGroupId = null)
     {
         var worker = GetWorker(id);
         if (worker is null) return null;
@@ -2202,7 +2236,9 @@ internal static class DesignPreviewData
             GetWorkerEvents(id),
             GetWorkerMeta(id),
             summary,
-            sort: tableSort);
+            sort: tableSort,
+            accountSearchQuery: accountSearchQuery,
+            accountGroupId: accountGroupId);
     }
 
     private static IReadOnlyList<WorkerBalanceDto> BuildWorkerBalances(Guid workerId) =>
@@ -2422,6 +2458,36 @@ internal static class DesignPreviewData
         }
 
         return [];
+    }
+
+    public static IReadOnlyList<OfficeAccountListItem> GetOfficeAccounts(Guid? officeId, Guid? workerId = null)
+    {
+        var workers = GetWorkers(officeId);
+        if (workerId is Guid requestedWorkerId)
+        {
+            workers = workers.Where(w => w.Id == requestedWorkerId).ToList();
+        }
+
+        var items = new List<OfficeAccountListItem>();
+        foreach (var worker in workers)
+        {
+            var detail = GetWorker(worker.Id);
+            foreach (var account in GetAccounts(worker.Id))
+            {
+                var balance = detail?.Balances.FirstOrDefault(b => b.AccountId == account.AccountId);
+                items.Add(new OfficeAccountListItem(
+                    worker.Id,
+                    worker.DisplayName,
+                    worker.OfficeName,
+                    worker.IsOnline,
+                    worker.CurrentActivity,
+                    worker.ActiveAccounts ?? worker.CurrentActivity?.ActiveAccounts,
+                    account,
+                    balance));
+            }
+        }
+
+        return items;
     }
 
     public static IReadOnlyList<WorkerEventListItem> Events =>
@@ -2757,7 +2823,8 @@ internal static class DesignPreviewData
         string? sort = null,
         string? sortDir = null,
         bool showOfficeColumn = false,
-        Guid? workerId = null) =>
+        Guid? workerId = null,
+        string? groupId = null) =>
         AccountsIndexBuilder.Build(
             BuildPreviewAccountRows(),
             searchQuery,
@@ -2768,7 +2835,8 @@ internal static class DesignPreviewData
             pageSize,
             showOfficeColumn,
             workerId: workerId,
-            workers: ResponsesIndexBuilder.BuildWorkerOptions(GetWorkers(null)));
+            workers: ResponsesIndexBuilder.BuildWorkerOptions(GetWorkers(null)),
+            groupId: groupId);
 
     private static IReadOnlyList<AccountRowViewModel> BuildPreviewAccountRows()
     {
@@ -2857,13 +2925,45 @@ internal static class DesignPreviewData
         return rows;
     }
 
+    public static PanelUserPresenceHourSeriesDto UserPresenceHours
+    {
+        get
+        {
+            var typical = new[] { 0, 0, 0, 0, 0, 0, 1, 2, 4, 7, 9, 11, 8, 7, 8, 7, 6, 4, 2, 1, 1, 0, 0, 0 };
+            var today = new[] { 0, 0, 0, 0, 0, 0, 0, 1, 3, 5, 8, 10, 6, 5, 7, 6, 4, 2, 1, 0, 0, 0, 0, 0 };
+            var currentHour = TimeZoneInfo.ConvertTimeFromUtc(
+                DateTime.SpecifyKind(Now, DateTimeKind.Utc),
+                TimeZoneInfo.CreateCustomTimeZone("MSK", TimeSpan.FromHours(3), "MSK", "MSK")).Hour;
+            if (currentHour is >= 0 and < 24)
+            {
+                today[currentHour] = Math.Max(today[currentHour], 2);
+            }
+
+            return new PanelUserPresenceHourSeriesDto(
+                typical,
+                today,
+                11,
+                typical[11],
+                11,
+                today[11],
+                14,
+                currentHour,
+                Now);
+        }
+    }
+
     public static IReadOnlyList<PanelUserDto> PanelUsers =>
     [
-        new("preview-admin", "admin@orbita.local", true, PanelRoles.Admin, false, FullName: "Администратор Орбита"),
-        new("preview-office-lead", "lead@orbita.local", true, PanelRoles.OfficeLead, false, PreviewOfficeId, "Основной", "Марина Ковалёва"),
-        new(PreviewManagerElena, "elena@orbita.local", true, PanelRoles.Manager, false, PreviewOfficeId, "Основной", "Елена Воронцова"),
-        new(PreviewManagerIgor, "igor@orbita.local", true, PanelRoles.SeniorManager, false, PreviewOfficeId, "Основной", "Игорь Савельев"),
-        new("preview-operator", "operator@orbita.local", true, PanelRoles.Operator, true, PreviewOfficeId, "Основной", "Алексей Селезнёв")
+        new("preview-admin", "admin@orbita.local", true, PanelRoles.Admin, false,
+            FullName: "Администратор Орбита", LastSeenAtUtc: Now.AddMinutes(-1), IsOnline: true),
+        new("preview-office-lead", "lead@orbita.local", true, PanelRoles.OfficeLead, false,
+            PreviewOfficeId, "Основной", "Марина Ковалёва", LastSeenAtUtc: Now.AddMinutes(-14)),
+        new(PreviewManagerElena, "elena@orbita.local", true, PanelRoles.Manager, false,
+            PreviewOfficeId, "Основной", "Елена Воронцова", LastSeenAtUtc: Now.AddMinutes(-2), IsOnline: true),
+        new(PreviewManagerIgor, "igor@orbita.local", true, PanelRoles.SeniorManager, false,
+            PreviewOfficeId, "Основной", "Игорь Савельев", LastSeenAtUtc: Now.AddHours(-3)),
+        new("preview-operator", "operator@orbita.local", true, PanelRoles.Operator, true,
+            PreviewOfficeId, "Основной", "Алексей Селезнёв", LastSeenAtUtc: Now.AddDays(-1))
     ];
 
     private static readonly object OfficeStaffSync = new();

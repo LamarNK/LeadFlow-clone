@@ -636,7 +636,13 @@ public sealed record CrmActivityItemDto(
     bool CanPin = false,
     string? CompletionReason = null,
     string? ActionComment = null,
-    DateTime? UpdatedAtUtc = null);
+    DateTime? UpdatedAtUtc = null,
+    Guid? CallId = null,
+    string? CallDirection = null,
+    int? CallDurationSeconds = null,
+    string? CallRecordingUrl = null,
+    bool CallRecordingStored = false,
+    string? CallClientPhone = null);
 
 public static class CrmActivityDetails
 {

@@ -74,6 +74,8 @@ builder.Services.AddAuthorization(options =>
 {
     options.AddPolicy(OrbitaRoles.Admin, policy =>
         policy.RequireClaim(PanelPermissions.ClaimType, PanelPermissions.Administration));
+    options.AddPolicy("OfficeStaff", policy =>
+        policy.RequireRole(PanelRoles.Admin, PanelRoles.OfficeLead));
     foreach (var permission in PanelPermissions.All)
     {
         options.AddPolicy(permission.Id, policy =>
@@ -143,7 +145,17 @@ app.UseWhen(
     context => HttpMethods.IsGet(context.Request.Method)
         && context.Request.Headers.Accept.ToString().Contains("text/html", StringComparison.OrdinalIgnoreCase),
     browser => browser.UseStatusCodePagesWithReExecute("/error/{0}"));
-app.UseStaticFiles();
+app.UseStaticFiles(new StaticFileOptions
+{
+    OnPrepareResponse = ctx =>
+    {
+        // asp-append-version adds ?v=... so hashed assets can be cached for a year.
+        ctx.Context.Response.Headers.CacheControl = ctx.Context.Request.Query.ContainsKey("v")
+            ? "public,max-age=31536000,immutable"
+            : "public,max-age=86400";
+    }
+});
+app.UseMiddleware<Orbita.Web.Middleware.DynamicResponseCacheHeadersMiddleware>();
 app.UseWebSockets();
 app.UseRouting();
 app.UseMiddleware<ThemeMiddleware>();

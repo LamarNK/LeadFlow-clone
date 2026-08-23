@@ -251,6 +251,11 @@ public sealed class OfficeAdminService(OrbitaDbContext db)
             .ToListAsync(ct);
         var cardIds = cards.Select(x => x.Id).ToList();
 
+        var calls = await db.CrmCalls
+            .Where(x => x.OfficeId == officeId)
+            .ToListAsync(ct);
+        db.CrmCalls.RemoveRange(calls);
+
         if (cardIds.Count > 0)
         {
             var notes = await db.CrmCandidateNotes
@@ -299,6 +304,16 @@ public sealed class OfficeAdminService(OrbitaDbContext db)
             .Where(x => x.OfficeId == officeId)
             .ToListAsync(ct);
         db.CrmManagerShifts.RemoveRange(shifts);
+
+        var telephonyBindings = await db.CrmTelephonyUserBindings
+            .Where(x => x.OfficeId == officeId)
+            .ToListAsync(ct);
+        db.CrmTelephonyUserBindings.RemoveRange(telephonyBindings);
+
+        var telephonyWebhooks = await db.CrmTelephonyWebhooks
+            .Where(x => x.OfficeId == officeId)
+            .ToListAsync(ct);
+        db.CrmTelephonyWebhooks.RemoveRange(telephonyWebhooks);
 
         var captchas = await db.CaptchaSessions
             .Where(x => x.OfficeId == officeId)

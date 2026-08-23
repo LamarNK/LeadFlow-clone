@@ -163,6 +163,19 @@
                             </a>
                         </section>
 
+                        <section class="settings-office-section">
+                            <div class="settings-office-section-head">
+                                <div>
+                                    <h3 class="settings-office-section-title">IP-телефония</h3>
+                                    <p class="settings-office-section-hint">Общие линии офиса, внутренние номера сотрудников, исходящие звонки и записи разговоров.</p>
+                                </div>
+                            </div>
+                            <a class="settings-primary-btn settings-primary-btn--compact"
+                               href="@Url.Action("Telephony", "TelephonySettings", new { officeId = selected.Id })">
+                                Открыть телефонию
+                            </a>
+                        </section>
+
                         <section class="settings-office-section settings-office-section--secret">
                             <div class="settings-office-section-head">
                                 <div>
@@ -322,6 +335,20 @@
                                                         <span class="settings-user-person__content">
                                                             <strong class="settings-user-person__name">@displayName</strong>
                                                             <span class="settings-user-email">@user.Email</span>
+                                                            @if (user.IsOnline)
+                                                            {
+                                                                <span class="settings-user-presence settings-user-presence--online">Онлайн</span>
+                                                            }
+                                                            else if (user.LastSeenAtUtc is not null)
+                                                            {
+                                                                <span class="settings-user-presence settings-user-presence--offline">
+                                                                    Был(а) онлайн <partial name="_UtcTime" model="@(new UtcTimeDisplayModel(user.LastSeenAtUtc, "activity"))" />
+                                                                </span>
+                                                            }
+                                                            else
+                                                            {
+                                                                <span class="settings-user-presence settings-user-presence--unknown">Не входил(а)</span>
+                                                            }
                                                             <span class="settings-user-person__badges">
                                                                 @if (user.IsCurrentUser)
                                                                 {
@@ -434,6 +461,7 @@
                 </div>
             </div>
 
+            <div class="settings-users-aside">
             <div class="card card--settings-create card--settings-create-user">
                 <div class="card-header settings-card-header">
                     <div>
@@ -495,6 +523,81 @@
                         </button>
                     </form>
                 </div>
+            </div>
+            @{
+                var presence = Model.PresenceStats;
+            }
+            @if (presence is not null)
+            {
+                <section class="card card--settings-user-presence" data-settings-user-presence>
+                    <div class="card-header settings-card-header">
+                        <div>
+                            <h2 class="settings-card-title">Присутствие</h2>
+                            <p class="settings-card-subtitle">Кто в панели сейчас и в какие часы обычно пик (МСК).</p>
+                        </div>
+                    </div>
+                    <div class="card-body settings-user-presence-body">
+                        <div class="settings-presence-kpis" aria-label="Сводка по пользователям">
+                            <div class="settings-presence-kpi settings-presence-kpi--online">
+                                <strong>@presence.Online</strong>
+                                <span>Онлайн</span>
+                            </div>
+                            <div class="settings-presence-kpi">
+                                <strong>@presence.Total</strong>
+                                <span>Всего</span>
+                            </div>
+                            <div class="settings-presence-kpi">
+                                <strong>@presence.Offline</strong>
+                                <span>Офлайн</span>
+                            </div>
+                            <div class="settings-presence-kpi">
+                                <strong>@presence.NeverSeen</strong>
+                                <span>Не входили</span>
+                            </div>
+                        </div>
+                        @if (presence.TypicalPeakLabel is not null)
+                        {
+                            <p class="settings-presence-peak">
+                                Пик обычно @presence.TypicalPeakLabel
+                                @if (presence.TodayPeakLabel is not null)
+                                {
+                                    <span>· сегодня до @presence.TodayPeakValue чел. в @presence.TodayPeakLabel</span>
+                                }
+                            </p>
+                        }
+                        else
+                        {
+                            <p class="settings-presence-peak settings-presence-peak--empty">Пиковые часы появятся после работы в панели.</p>
+                        }
+                        @if (presence.HasHourlyData)
+                        {
+                            <div class="settings-presence-chart" role="img" aria-label="Активность по часам, московское время">
+                                <div class="settings-presence-chart__bars">
+                                    @foreach (var hour in presence.Hours)
+                                    {
+                                        var barClass = "settings-presence-chart__bar"
+                                            + (hour.IsTypicalPeak ? " is-peak" : "")
+                                            + (hour.IsCurrentHour ? " is-current" : "")
+                                            + (hour.HeightPercent == 0 ? " is-empty" : "");
+                                        <span class="@barClass"
+                                              style="--h:@(hour.HeightPercent)%"
+                                              title="@hour.Title"></span>
+                                    }
+                                </div>
+                                <div class="settings-presence-chart__axis" aria-hidden="true">
+                                    @foreach (var hour in presence.Hours)
+                                    {
+                                        if (hour.Hour % 6 == 0)
+                                        {
+                                            <span>@hour.Hour.ToString("00")</span>
+                                        }
+                                    }
+                                </div>
+                            </div>
+                        }
+                    </div>
+                </section>
+            }
             </div>
         </div>
     }
@@ -942,7 +1045,12 @@
         </div>
     }
     <dialog class="settings-dialog settings-dialog--user" id="editUserDialog">
-        <form asp-action="UpdateUser" method="post" class="settings-dialog-form settings-user-dialog" id="editUserForm">
+        <form asp-action="UpdateUser"
+              method="post"
+              class="settings-dialog-form settings-user-dialog"
+              id="editUserForm"
+              data-update-user-action="@Url.Action("UpdateUser", "Settings")"
+              data-orbita-full-submit>
             @Html.AntiForgeryToken()
             <input type="hidden" name="UserId" id="editUserId" />
             <input type="hidden" name="OriginalFullName" id="editUserOriginalFullName" />
@@ -1025,6 +1133,7 @@
                 </section>
             </div>
             <footer class="settings-dialog-actions">
+                <p class="settings-user-dialog__submit-error" id="editUserSubmitError" role="alert" hidden></p>
                 <button type="button" class="settings-secondary-btn" data-settings-dialog-close>Отмена</button>
                 <button type="submit" class="settings-primary-btn">Сохранить</button>
             </footer>

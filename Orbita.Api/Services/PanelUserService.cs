@@ -74,7 +74,7 @@ public sealed class PanelUserService(
         var roles = await users.GetRolesAsync(user);
         var role = roles.FirstOrDefault(r => PanelRoles.All.Contains(r, StringComparer.OrdinalIgnoreCase))
                    ?? PanelRoles.Operator;
-        var (officeId, officeName, fullName) = await GetProfileInfoAsync(userId, role, ct);
+        var (officeId, officeName, fullName, _) = await GetProfileInfoAsync(userId, role, ct);
         return new PanelProfileDto(user.Email ?? user.UserName ?? string.Empty, role, officeId, officeName, fullName);
     }
 
@@ -233,6 +233,8 @@ public sealed class PanelUserService(
             db.PanelUserProfiles.Remove(profile);
             await db.SaveChangesAsync(ct);
         }
+
+        await PanelUserPresenceStore.DeleteUserAsync(db, id, ct);
 
         var deleteResult = await users.DeleteAsync(user);
         if (!deleteResult.Succeeded)
@@ -758,6 +760,22 @@ public sealed class PanelUserService(
             .Select(x => x.OfficeId)
             .FirstOrDefaultAsync(ct);
 
+    /// <summary>Records an authenticated browser heartbeat for presence reporting.</summary>
+    public async Task RecordActivityAsync(string userId, CancellationToken ct = default)
+    {
+        var profile = await db.PanelUserProfiles
+            .FirstOrDefaultAsync(x => x.UserId == userId, ct);
+        if (profile is null)
+        {
+            return;
+        }
+
+        await PanelUserPresenceStore.TouchAsync(db, profile, DateTime.UtcNow, ct);
+    }
+
+    public Task<PanelUserPresenceHourSeriesDto> GetPresenceHourSeriesAsync(CancellationToken ct = default) =>
+        PanelUserPresenceStore.GetHourSeriesAsync(db, DateTime.UtcNow, ct);
+
     private async Task<string?> ValidateOfficeAssignmentAsync(string role, Guid? officeId, CancellationToken ct)
     {
         if (!PanelRoles.RequiresOfficeAssignment(role))
@@ -806,7 +824,7 @@ public sealed class PanelUserService(
         var roles = await users.GetRolesAsync(user);
         var role = roles.FirstOrDefault(r => PanelRoles.All.Contains(r, StringComparer.OrdinalIgnoreCase))
                    ?? PanelRoles.Operator;
-        var (officeId, officeName, fullName) = await GetProfileInfoAsync(user.Id, role, ct);
+        var (officeId, officeName, fullName, lastSeenAtUtc) = await GetProfileInfoAsync(user.Id, role, ct);
         var permissionOverride = await GetPermissionOverrideAsync(user);
         return new PanelUserDto(
             user.Id,
@@ -817,10 +835,12 @@ public sealed class PanelUserService(
             officeId,
             officeName,
             fullName,
-            permissionOverride);
+            permissionOverride,
+            lastSeenAtUtc,
+            PanelUserPresenceRules.IsOnline(lastSeenAtUtc, DateTime.UtcNow));
     }
 
-    private async Task<(Guid? OfficeId, string? OfficeName, string? FullName)> GetProfileInfoAsync(
+    private async Task<(Guid? OfficeId, string? OfficeName, string? FullName, DateTime? LastSeenAtUtc)> GetProfileInfoAsync(
         string userId,
         string role,
         CancellationToken ct)
@@ -828,13 +848,14 @@ public sealed class PanelUserService(
         var profile = await db.PanelUserProfiles
             .AsNoTracking()
             .Where(x => x.UserId == userId)
-            .Select(x => new ValueTuple<Guid?, string?, string?>(
+            .Select(x => new ValueTuple<Guid?, string?, string?, DateTime?>(
                 x.OfficeId,
                 x.Office != null ? x.Office.Name : null,
-                x.FullName))
+                x.FullName,
+                x.LastSeenAtUtc))
             .FirstOrDefaultAsync(ct);
         return PanelRoles.IsGlobalAdmin(role)
-            ? (null, null, profile.Item3)
+            ? (null, null, profile.Item3, profile.Item4)
             : profile;
     }
 

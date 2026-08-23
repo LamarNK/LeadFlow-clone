@@ -87,23 +87,48 @@ public static class AvitoPageStateScripts
 
             const hasFirewallDom = !!document.querySelector(
                 ".firewall-container, .js-firewall-form, .firewall-title, form.js-firewall-form, h2.firewall-title"
-            );
-            const hasFirewallText = /Доступ\s+ограничен|проблема\s+с\s+IP|firewallCaptcha/i.test(probeText);
-            const hasFirewallIp = hasFirewallDom || hasFirewallText;
-
+            ) || location.hash === "#block"
+              || !!document.querySelector('a[href*="support.avito.ru/request/720"]');
+            const hasFirewallText = /Доступ\s+ограничен|проблема\s+с\s+IP|firewallCaptcha|Отключить\s+VPN|самол[её]те/i.test(probeText);
+            const hasIpText = /Доступ\s+ограничен/i.test(probeText)
+              && /проблема\s+с\s+IP/i.test(probeText);
+            const hasStaticIpBlock = location.hash === "#block"
+              && !!document.querySelector('a[href*="support.avito.ru/request/720"]')
+              && /Отключить\s+VPN|самол[её]те/i.test(probeText);
             const hasCaptchaWidget = !!(
                 document.getElementById("geetest_captcha") ||
                 document.getElementById("inner-captcha") ||
                 document.getElementById("h-captcha") ||
                 document.querySelector(".h-captcha[data-sitekey]")
             );
-            const hasCaptcha = hasFirewallIp || hasCaptchaWidget;
+            const hasCaptchaContinue = /Продолжить/i.test(probeText)
+              && (/капч/i.test(probeText)
+                  || !!document.querySelector('.firewall-container, .js-firewall-form, .firewall-title, form.js-firewall-form, [role="dialog"][aria-modal="true"]'));
+            const hasCaptchaChallenge = hasCaptchaWidget
+              || /решени[еюя]\s+капч/i.test(probeText)
+              || hasCaptchaContinue;
+            const hasIpBlock = !hasCaptchaChallenge && (hasIpText || hasStaticIpBlock);
+            const hasFirewallIp = hasIpBlock;
+            const hasCaptcha = hasFirewallDom || hasFirewallText || hasCaptchaWidget || hasIpBlock || hasCaptchaChallenge;
+            // Баннер Avito Pro: скрытые объявления из-за нулевого/недостаточного аванса.
+            // Оба текста обязательны, чтобы не принять обычный блок баланса за ошибку.
+            const hasInsufficientAdvance =
+                /объявления\s+не\s+видны\s+в\s+поиске/i.test(probeText)
+                && /на\s+авансе\s+недостаточно\s+денег/i.test(probeText);
+            const hasEmailConfirmationRequired =
+                /подтвердите\s+почту\s+по\s+ссылке\s+из\s+письма/i.test(probeText);
+            // Заглушка SPA: «Ошибка / Попробуйте обновить страницу…» — URL при этом остаётся /profile/pro/items.
+            const hasTransientError =
+                /Попробуйте\s+обновить\s+страницу\s+или\s+загляните\s+позже/i.test(probeText)
+                || /обязательно\s+всё\s+починим/i.test(probeText);
 
             let pageKind = "unknown";
-            if (hasLoginForm) {
-                pageKind = "login";
-            } else if (hasCaptcha) {
+            if (hasCaptcha) {
                 pageKind = "captcha";
+            } else if (hasLoginForm) {
+                pageKind = "login";
+            } else if (hasTransientError) {
+                pageKind = "transientError";
             } else if (profileSwitchModalOpen) {
                 pageKind = "profileSwitchModal";
             } else if (
@@ -135,8 +160,27 @@ public static class AvitoPageStateScripts
                 candidatesItemCount,
                 hasLoginForm,
                 hasCaptcha,
-                hasFirewallIp
+                hasFirewallIp,
+                hasInsufficientAdvance,
+                hasEmailConfirmationRequired,
+                hasTransientError
             });
         })();
+        """;
+
+    /// <summary>Кликает кнопку «Обновить» на заглушке Avito, только если виден её текст.</summary>
+    public static string BuildClickRefreshOnTransientErrorScript() =>
+        """
+        (() => {
+            const probeText = ((document.title ?? "") + "\n" + (document.body?.innerText ?? "")).slice(0, 8000);
+            const isTransient =
+                /Попробуйте\s+обновить\s+страницу\s+или\s+загляните\s+позже/i.test(probeText)
+                || /обязательно\s+всё\s+починим/i.test(probeText);
+            if (!isTransient) return false;
+            const buttons = Array.from(document.querySelectorAll("button, a, [role='button']"));
+            const btn = buttons.find((el) => /^\s*Обновить\s*$/i.test((el.textContent || "").trim()));
+            if (!btn) return false;
+            try { btn.click(); return true; } catch { return false; }
+        })()
         """;
 }

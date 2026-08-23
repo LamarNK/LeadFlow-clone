@@ -55,8 +55,8 @@ public sealed class MonitoringCycleJournalTests
 
         var sent = new List<MonitoringCycleSentResponse>
         {
-            new("Avito 1", "профиль A", sp1Done),
-            new("Avito 1", "профиль A", sp1Done.AddSeconds(1))
+            new("Avito 1", "профиль A", cycleStart.AddMinutes(1)),
+            new("Avito 1", "профиль A", cycleStart.AddMinutes(1).AddSeconds(1), "sp-1")
         };
 
         var report = MonitoringCycleReportBuilder.BuildFromJournal(
@@ -79,6 +79,229 @@ public sealed class MonitoringCycleJournalTests
         Assert.True(report.AccountReports[0].Rows[1].WasStarted);
         Assert.DoesNotContain(report.AccountReports[0].Rows, r => r.Name.StartsWith("#", StringComparison.Ordinal));
         Assert.Empty(report.AccountReports[0].NotStartedPositions);
+    }
+
+    [Fact]
+    public void BuildFromJournal_CountsCollectedInWindow_NotPublishedCount()
+    {
+        var cycleStart = TimeZoneInfo.ConvertTimeToUtc(Day.AddHours(10), TimeZoneInfo.Local);
+        var done = cycleStart.AddMinutes(3);
+        var cycles = new List<MonitoringCycleRunSnapshot>
+        {
+            new(
+                Guid.NewGuid(),
+                "Avito 1",
+                cycleStart,
+                done,
+                MonitoringCycleRunStatuses.Completed,
+                [
+                    new MonitoringSubProfileRunSnapshot(
+                        Guid.NewGuid(),
+                        "sp-1",
+                        "профиль A",
+                        1,
+                        1,
+                        cycleStart,
+                        done,
+                        MonitoringSubProfileRunOutcomes.Completed,
+                        null,
+                        null,
+                        PublishedCount: 17,
+                        FoundCount: 40)
+                ])
+        };
+        var collected = new List<MonitoringCycleSentResponse>
+        {
+            new("Avito 1", "профиль A", cycleStart.AddMinutes(1), "sp-1"),
+            new("Avito 1", "профиль A", cycleStart.AddMinutes(2), "sp-1")
+        };
+
+        var report = MonitoringCycleReportBuilder.BuildFromJournal(
+            cycles,
+            Day,
+            Day,
+            new HashSet<string>(["Avito 1"], StringComparer.OrdinalIgnoreCase),
+            collected);
+
+        Assert.Equal(2, report.TotalLeads);
+        Assert.Equal(2, report.AccountReports[0].TotalLeads);
+        Assert.Equal(["2"], report.AccountReports[0].Rows[0].LeadsPerCycle);
+        Assert.Equal(2, report.LeadSummaries[0].TotalLeads);
+    }
+
+    [Fact]
+    public void BuildFromJournal_EmptyCollectedList_IgnoresInflatedPublishedCount()
+    {
+        var cycleStart = TimeZoneInfo.ConvertTimeToUtc(Day.AddHours(11), TimeZoneInfo.Local);
+        var cycles = new List<MonitoringCycleRunSnapshot>
+        {
+            new(
+                Guid.NewGuid(),
+                "Avito 1",
+                cycleStart,
+                cycleStart.AddMinutes(4),
+                MonitoringCycleRunStatuses.Completed,
+                [
+                    new MonitoringSubProfileRunSnapshot(
+                        Guid.NewGuid(),
+                        "sp-1",
+                        "main",
+                        1,
+                        1,
+                        cycleStart,
+                        cycleStart.AddMinutes(3),
+                        MonitoringSubProfileRunOutcomes.Completed,
+                        null,
+                        null,
+                        PublishedCount: 1782,
+                        FoundCount: 1782)
+                ])
+        };
+
+        var report = MonitoringCycleReportBuilder.BuildFromJournal(
+            cycles,
+            Day,
+            Day,
+            new HashSet<string>(["Avito 1"], StringComparer.OrdinalIgnoreCase),
+            sentResponses: []);
+
+        Assert.Equal(0, report.TotalLeads);
+        Assert.Equal(["0"], report.AccountReports[0].Rows[0].LeadsPerCycle);
+    }
+
+    [Fact]
+    public void BuildFromJournal_ShowsCaptchaSolvedAndFailed()
+    {
+        var cycleStart = TimeZoneInfo.ConvertTimeToUtc(Day.AddHours(12), TimeZoneInfo.Local);
+        var done = cycleStart.AddMinutes(5);
+        var cycles = new List<MonitoringCycleRunSnapshot>
+        {
+            new(
+                Guid.NewGuid(),
+                "Avito 1",
+                cycleStart,
+                done,
+                MonitoringCycleRunStatuses.Aborted,
+                [
+                    new MonitoringSubProfileRunSnapshot(
+                        Guid.NewGuid(),
+                        "sp-1",
+                        "main",
+                        1,
+                        2,
+                        cycleStart,
+                        cycleStart.AddMinutes(2),
+                        MonitoringSubProfileRunOutcomes.Completed,
+                        null,
+                        null,
+                        PublishedCount: 1,
+                        CaptchaCount: 1,
+                        CaptchaSolvedCount: 1),
+                    new MonitoringSubProfileRunSnapshot(
+                        Guid.NewGuid(),
+                        "sp-2",
+                        "other",
+                        2,
+                        2,
+                        cycleStart.AddMinutes(2),
+                        done,
+                        MonitoringSubProfileRunOutcomes.Failed,
+                        "captcha",
+                        "капча",
+                        PublishedCount: 0,
+                        CaptchaCount: 1,
+                        CaptchaSolvedCount: 0)
+                ])
+        };
+
+        var report = MonitoringCycleReportBuilder.BuildFromJournal(cycles, Day, Day);
+
+        Assert.Equal(2, report.TotalCaptcha);
+        Assert.Equal(1, report.TotalCaptchaSolved);
+        var solved = Assert.Single(report.AccountReports[0].Rows[0].CaptchaPerCycle!);
+        Assert.Equal("решена", solved.Status);
+        Assert.False(solved.Unsolved);
+        Assert.Equal(cycleStart.AddMinutes(2), solved.TimestampUtc);
+        var failed = Assert.Single(report.AccountReports[0].Rows[1].CaptchaPerCycle!);
+        Assert.Equal("не решена", failed.Status);
+        Assert.True(failed.Unsolved);
+        Assert.Equal(done, failed.TimestampUtc);
+        var failedPass = Assert.Single(report.AccountReports[0].Rows[1].Passes!);
+        Assert.False(failedPass.Completed);
+        Assert.Equal("не решена", failedPass.CaptchaStatus);
+        Assert.Equal("капча", failedPass.ErrorDetail);
+        Assert.Equal("решена", MonitoringCycleReportBuilder.FormatCaptchaPass(1, 1));
+        Assert.Equal("не решена", MonitoringCycleReportBuilder.FormatCaptchaPass(1, 0));
+    }
+
+    [Fact]
+    public void BuildFromJournal_CaptchaTiedToPassTimestamp()
+    {
+        var firstStart = TimeZoneInfo.ConvertTimeToUtc(Day.AddHours(10).AddMinutes(4), TimeZoneInfo.Local);
+        var firstDone = firstStart.AddMinutes(3);
+        var secondStart = TimeZoneInfo.ConvertTimeToUtc(Day.AddHours(11).AddMinutes(17), TimeZoneInfo.Local);
+        var secondDone = secondStart.AddMinutes(2);
+        var cycles = new List<MonitoringCycleRunSnapshot>
+        {
+            new(
+                Guid.NewGuid(),
+                "Avito 1",
+                firstStart,
+                firstDone,
+                MonitoringCycleRunStatuses.Completed,
+                [
+                    new MonitoringSubProfileRunSnapshot(
+                        Guid.NewGuid(),
+                        "sp-3",
+                        "Кадровый отдел3",
+                        3,
+                        10,
+                        firstStart,
+                        firstDone,
+                        MonitoringSubProfileRunOutcomes.Completed,
+                        null,
+                        null,
+                        PublishedCount: 0)
+                ]),
+            new(
+                Guid.NewGuid(),
+                "Avito 1",
+                secondStart,
+                secondDone,
+                MonitoringCycleRunStatuses.Completed,
+                [
+                    new MonitoringSubProfileRunSnapshot(
+                        Guid.NewGuid(),
+                        "sp-3",
+                        "Кадровый отдел3",
+                        3,
+                        10,
+                        secondStart,
+                        secondDone,
+                        MonitoringSubProfileRunOutcomes.Completed,
+                        null,
+                        null,
+                        PublishedCount: 0,
+                        CaptchaCount: 1,
+                        CaptchaSolvedCount: 1)
+                ])
+        };
+
+        var report = MonitoringCycleReportBuilder.BuildFromJournal(cycles, Day, Day);
+
+        var row = Assert.Single(report.AccountReports[0].Rows);
+        Assert.Equal(2, row.CompletionTimesUtc.Count);
+        Assert.Equal([firstDone, secondDone], row.CompletionTimesUtc);
+        var captcha = Assert.Single(row.CaptchaPerCycle!);
+        Assert.Equal(secondDone, captcha.TimestampUtc);
+        Assert.Equal("решена", captcha.Status);
+        Assert.False(captcha.Unsolved);
+        Assert.Equal(2, row.Passes!.Count);
+        Assert.Null(row.Passes[0].CaptchaStatus);
+        Assert.Equal(secondDone, row.Passes[1].TimestampUtc);
+        Assert.Equal("решена", row.Passes[1].CaptchaStatus);
+        Assert.True(row.Passes[0].Completed);
+        Assert.True(row.Passes[1].Completed);
     }
 
     [Fact]
@@ -139,6 +362,268 @@ public sealed class MonitoringCycleJournalTests
         // Others never started in this interrupted cycle → not started.
         Assert.True(report.AccountsWithNotStarted >= 1);
         Assert.Contains(report.AccountReports[0].NotStartedPositions, x => x.Contains("ВетерПеремен 10"));
+        var wp10 = Assert.Single(report.AccountReports[0].Rows, r => r.Name == "ВетерПеремен 10");
+        Assert.Contains("сейчас обрабатывается «Ветер3»", wp10.NotStartedReason ?? string.Empty);
+    }
+
+    [Fact]
+    public void BuildFromJournal_NotStarted_ExplainsCaptchaAbort()
+    {
+        var start = TimeZoneInfo.ConvertTimeToUtc(Day.AddHours(10), TimeZoneInfo.Local);
+        var done = start.AddMinutes(4);
+        var cycles = new List<MonitoringCycleRunSnapshot>
+        {
+            new(
+                Guid.NewGuid(),
+                "Avito 1",
+                start,
+                done,
+                MonitoringCycleRunStatuses.Aborted,
+                [
+                    Sp("a", "отдел 4", 1, 3, start, done, MonitoringSubProfileRunOutcomes.Failed, "captcha", "капча")
+                ])
+        };
+        var catalog = new Dictionary<string, IReadOnlyList<MonitoringAccountSubProfileCatalogEntry>>(
+            StringComparer.OrdinalIgnoreCase)
+        {
+            ["Avito 1"] =
+            [
+                new(1, "a", "отдел 4"),
+                new(2, "b", "Березники 10"),
+                new(3, "c", "отдел 7")
+            ]
+        };
+
+        var report = MonitoringCycleReportBuilder.BuildFromJournal(cycles, Day, Day, accountCatalog: catalog);
+
+        var skipped = Assert.Single(report.AccountReports[0].Rows, r => r.Name == "Березники 10");
+        Assert.False(skipped.WasStarted);
+        Assert.Equal("очередь не дошла: капча на «отдел 4»", skipped.NotStartedReason);
+        Assert.Equal(done, skipped.NotStartedAtUtc);
+    }
+
+    [Fact]
+    public void BuildFromJournal_NotStarted_ExplainsConsecutiveCaptcha()
+    {
+        var start = TimeZoneInfo.ConvertTimeToUtc(Day.AddHours(11), TimeZoneInfo.Local);
+        var firstFail = start.AddMinutes(3);
+        var secondFail = start.AddMinutes(6);
+        var cycles = new List<MonitoringCycleRunSnapshot>
+        {
+            new(
+                Guid.NewGuid(),
+                "Avito 1",
+                start,
+                secondFail,
+                MonitoringCycleRunStatuses.Aborted,
+                [
+                    Sp("a", "отдел 4", 1, 3, start, firstFail, MonitoringSubProfileRunOutcomes.Failed, "captcha", "капча"),
+                    Sp("c", "отдел 7", 2, 3, firstFail, secondFail, MonitoringSubProfileRunOutcomes.Failed, "captcha", "капча")
+                ])
+        };
+        var catalog = new Dictionary<string, IReadOnlyList<MonitoringAccountSubProfileCatalogEntry>>(
+            StringComparer.OrdinalIgnoreCase)
+        {
+            ["Avito 1"] =
+            [
+                new(1, "a", "отдел 4"),
+                new(2, "b", "Березники 10"),
+                new(3, "c", "отдел 7")
+            ]
+        };
+
+        var report = MonitoringCycleReportBuilder.BuildFromJournal(cycles, Day, Day, accountCatalog: catalog);
+
+        var skipped = Assert.Single(report.AccountReports[0].Rows, r => r.Name == "Березники 10");
+        Assert.False(skipped.WasStarted);
+        Assert.Equal("очередь не дошла: 2 капчи подряд, последняя на «отдел 7»", skipped.NotStartedReason);
+    }
+
+    [Fact]
+    public void BuildFromJournal_NotStarted_WhenCompletedCycleOmittedSub()
+    {
+        var start = TimeZoneInfo.ConvertTimeToUtc(Day.AddHours(9), TimeZoneInfo.Local);
+        var done = start.AddMinutes(10);
+        var cycles = new List<MonitoringCycleRunSnapshot>
+        {
+            new(
+                Guid.NewGuid(),
+                "Avito 1",
+                start,
+                done,
+                MonitoringCycleRunStatuses.Completed,
+                [
+                    Sp("a", "отдел 4", 1, 2, start, start.AddMinutes(5), MonitoringSubProfileRunOutcomes.Completed),
+                    Sp("c", "отдел 7", 2, 2, start.AddMinutes(5), done, MonitoringSubProfileRunOutcomes.Completed)
+                ])
+        };
+        var catalog = new Dictionary<string, IReadOnlyList<MonitoringAccountSubProfileCatalogEntry>>(
+            StringComparer.OrdinalIgnoreCase)
+        {
+            ["Avito 1"] =
+            [
+                new(1, "a", "отдел 4"),
+                new(2, "b", "Березники 10"),
+                new(3, "c", "отдел 7")
+            ]
+        };
+
+        var report = MonitoringCycleReportBuilder.BuildFromJournal(cycles, Day, Day, accountCatalog: catalog);
+
+        var skipped = Assert.Single(report.AccountReports[0].Rows, r => r.Name == "Березники 10");
+        Assert.False(skipped.WasStarted);
+        Assert.Equal("не попал в проходы за день", skipped.NotStartedReason);
+        Assert.Equal(done, skipped.NotStartedAtUtc);
+    }
+
+    [Fact]
+    public void BuildFromJournal_EmptyCycles_UsesAccountError_SessionClosed()
+    {
+        var start = TimeZoneInfo.ConvertTimeToUtc(Day.AddHours(10), TimeZoneInfo.Local);
+        var cycles = new List<MonitoringCycleRunSnapshot>
+        {
+            new(
+                Guid.NewGuid(),
+                "Avito 12 (2)",
+                start,
+                start.AddHours(2),
+                MonitoringCycleRunStatuses.Failed,
+                [])
+        };
+        var catalog = new Dictionary<string, IReadOnlyList<MonitoringAccountSubProfileCatalogEntry>>(
+            StringComparer.OrdinalIgnoreCase)
+        {
+            ["Avito 12 (2)"] =
+            [
+                new(1, "a", "РаботаPP 2"),
+                new(2, "b", "РаботаPP")
+            ]
+        };
+        var errors = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Avito 12 (2)"] =
+                "Protocol error (Runtime.evaluate): Session closed. Most likely the Page has been closed.Close reason: Target.detachedFromTarget"
+        };
+
+        var report = MonitoringCycleReportBuilder.BuildFromJournal(
+            cycles, Day, Day, accountCatalog: catalog, accountLastErrors: errors);
+
+        Assert.Equal(2, report.AccountReports[0].Rows.Count);
+        Assert.All(report.AccountReports[0].Rows, row =>
+        {
+            Assert.False(row.WasStarted);
+            Assert.Equal("браузер закрыл страницу", row.NotStartedReason);
+        });
+    }
+
+    [Fact]
+    public void BuildFromJournal_EmptyCycles_WithoutAccountError_SaysDiedBeforeQueue()
+    {
+        var start = TimeZoneInfo.ConvertTimeToUtc(Day.AddHours(10), TimeZoneInfo.Local);
+        var cycles = new List<MonitoringCycleRunSnapshot>
+        {
+            new(
+                Guid.NewGuid(),
+                "Avito 12 (2)",
+                start,
+                null,
+                MonitoringCycleRunStatuses.Running,
+                [])
+        };
+        var catalog = new Dictionary<string, IReadOnlyList<MonitoringAccountSubProfileCatalogEntry>>(
+            StringComparer.OrdinalIgnoreCase)
+        {
+            ["Avito 12 (2)"] = [new(1, "a", "РаботаPP")]
+        };
+
+        var report = MonitoringCycleReportBuilder.BuildFromJournal(cycles, Day, Day, accountCatalog: catalog);
+
+        var row = Assert.Single(report.AccountReports[0].Rows);
+        Assert.False(row.WasStarted);
+        Assert.Equal("браузер не открылся — цикл завис", row.NotStartedReason);
+    }
+
+    [Fact]
+    public void BuildFromJournal_CycleLevelFailRun_DoesNotAddCatalogRow()
+    {
+        var start = TimeZoneInfo.ConvertTimeToUtc(Day.AddHours(11), TimeZoneInfo.Local);
+        var done = start.AddMinutes(3);
+        var cycles = new List<MonitoringCycleRunSnapshot>
+        {
+            new(
+                Guid.NewGuid(),
+                "Avito 12 (2)",
+                start,
+                done,
+                MonitoringCycleRunStatuses.Failed,
+                [
+                    Sp(
+                        "",
+                        "—",
+                        1,
+                        1,
+                        start,
+                        done,
+                        MonitoringSubProfileRunOutcomes.Failed,
+                        "automation",
+                        "Protocol error (Runtime.evaluate): Session closed. Most likely the Page has been closed.")
+                ])
+        };
+        var catalog = new Dictionary<string, IReadOnlyList<MonitoringAccountSubProfileCatalogEntry>>(
+            StringComparer.OrdinalIgnoreCase)
+        {
+            ["Avito 12 (2)"] = [new(1, "a", "РаботаPP"), new(2, "b", "РаботаPP 2")]
+        };
+
+        var report = MonitoringCycleReportBuilder.BuildFromJournal(cycles, Day, Day, accountCatalog: catalog);
+
+        Assert.Equal(2, report.AccountReports[0].Rows.Count);
+        Assert.DoesNotContain(report.AccountReports[0].Rows, r => r.Name == "—");
+        Assert.All(report.AccountReports[0].Rows, row =>
+        {
+            Assert.False(row.WasStarted);
+            Assert.Equal("браузер закрыл страницу", row.NotStartedReason);
+        });
+    }
+
+    [Fact]
+    public void BuildFromJournal_SkippedOutcome_BecomesSkipChip_NotStarted()
+    {
+        var start = TimeZoneInfo.ConvertTimeToUtc(Day.AddHours(14), TimeZoneInfo.Local);
+        var failAt = start.AddMinutes(2);
+        var skipAt = start.AddMinutes(2).AddSeconds(1);
+        var cycles = new List<MonitoringCycleRunSnapshot>
+        {
+            new(
+                Guid.NewGuid(),
+                "Avito 1",
+                start,
+                skipAt,
+                MonitoringCycleRunStatuses.Aborted,
+                [
+                    Sp("a", "отдел 4", 1, 2, start, failAt, MonitoringSubProfileRunOutcomes.Failed, "captcha", "капча"),
+                    Sp(
+                        "b",
+                        "Березники 10",
+                        2,
+                        2,
+                        skipAt,
+                        skipAt,
+                        MonitoringSubProfileRunOutcomes.Skipped,
+                        "not-reached",
+                        "очередь не дошла: капча на «отдел 4»")
+                ])
+        };
+
+        var report = MonitoringCycleReportBuilder.BuildFromJournal(cycles, Day, Day);
+
+        var skipped = Assert.Single(report.AccountReports[0].Rows, r => r.Name == "Березники 10");
+        Assert.False(skipped.WasStarted);
+        var pass = Assert.Single(skipped.Passes!);
+        Assert.True(pass.Skipped);
+        Assert.Equal("очередь не дошла: капча на «отдел 4»", pass.ErrorDetail);
+        Assert.False(pass.InProgress);
+        Assert.Equal("очередь не дошла: капча на «отдел 4»", skipped.NotStartedReason);
     }
 
     [Fact]
@@ -319,7 +804,10 @@ public sealed class MonitoringCycleJournalTests
                             null,
                             null,
                             FoundCount: 3,
-                            PublishedCount: 2)
+                            PublishedCount: 2,
+                            CollectedCount: 1,
+                            CaptchaCount: 1,
+                            CaptchaSolvedCount: 1)
                     ])
             ]));
 
@@ -331,6 +819,9 @@ public sealed class MonitoringCycleJournalTests
         Assert.Single(cycle.SubProfileRuns);
         Assert.Equal(MonitoringSubProfileRunOutcomes.Completed, cycle.SubProfileRuns.First().Outcome);
         Assert.Equal(2, cycle.SubProfileRuns.First().PublishedCount);
+        Assert.Equal(1, cycle.SubProfileRuns.First().CollectedCount);
+        Assert.Equal(1, cycle.SubProfileRuns.First().CaptchaCount);
+        Assert.Equal(1, cycle.SubProfileRuns.First().CaptchaSolvedCount);
     }
 
     [Fact]
@@ -509,6 +1000,130 @@ public sealed class MonitoringCycleJournalTests
         Assert.True(result.MonitoringCycles.IsDetailed);
         Assert.NotEmpty(result.MonitoringCycles.AccountReports);
     }
+
+    [Fact]
+    public async Task GetStatisticsAsync_JournalLeadsUseCollectedResponses_NotPublishedCount()
+    {
+        OfficeStatisticsQueryService.ClearCacheForTests();
+        await using var db = CreateDb();
+        var officeId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+        var workerId = Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc");
+        var accountId = Guid.Parse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee");
+        var now = DateTime.UtcNow;
+
+        db.Offices.Add(new OfficeEntity
+        {
+            Id = officeId,
+            Name = "Office A",
+            RegistrationSecretHash = "hash",
+            CreatedAtUtc = now,
+            IsEnabled = true
+        });
+        db.Workers.Add(new WorkerEntity
+        {
+            Id = workerId,
+            OfficeId = officeId,
+            DisplayName = "worker-a",
+            MachineName = "pc-a",
+            ApiKeyHash = "hash",
+            AppVersion = "1.0",
+            MonitoringStatus = "Running",
+            LastSeenAtUtc = now,
+            CreatedAtUtc = now
+        });
+        db.WorkerAccounts.Add(new WorkerAccountEntity
+        {
+            WorkerId = workerId,
+            AccountId = accountId,
+            DisplayName = "Account A",
+            Status = "Active",
+            IsEnabledInPanel = true,
+            UpdatedAtUtc = now
+        });
+
+        var cycleStart = now.AddHours(-2);
+        var cycleId = Guid.NewGuid();
+        db.MonitoringCycleRuns.Add(new MonitoringCycleRunEntity
+        {
+            Id = cycleId,
+            WorkerId = workerId,
+            AccountId = accountId,
+            AccountName = "Account A",
+            StartedAtUtc = cycleStart,
+            FinishedAtUtc = cycleStart.AddMinutes(10),
+            Status = MonitoringCycleRunStatuses.Completed,
+            IngestedAtUtc = now,
+            UpdatedAtUtc = now
+        });
+        db.MonitoringSubProfileRuns.Add(new MonitoringSubProfileRunEntity
+        {
+            Id = Guid.NewGuid(),
+            CycleRunId = cycleId,
+            SubProfileId = "sp-1",
+            SubProfileName = "main",
+            Position = 1,
+            Total = 1,
+            StartedAtUtc = cycleStart,
+            CompletedAtUtc = cycleStart.AddMinutes(6),
+            Outcome = MonitoringSubProfileRunOutcomes.Completed,
+            FoundCount = 40,
+            PublishedCount = 1782,
+            CollectedCount = 0
+        });
+        db.CandidateResponses.Add(new CandidateResponseEntity
+        {
+            Id = Guid.NewGuid(),
+            OfficeId = officeId,
+            WorkerId = workerId,
+            AccountId = accountId,
+            AccountName = "Account A",
+            AvitoSubProfileId = "sp-1",
+            AvitoSubProfileName = "main",
+            Source = "Avito",
+            SourceResponseId = "r1",
+            FullName = "User",
+            PhoneRaw = "+79001111111",
+            PhoneNormalized = "79001111111",
+            Status = ResponseStatuses.InProgress,
+            CreatedAt = cycleStart.AddMinutes(2),
+            CollectedAt = cycleStart.AddMinutes(2)
+        });
+        await db.SaveChangesAsync();
+
+        var result = await new OfficeStatisticsQueryService(db, new OfficeScopeService(db), new WorkerConnectionRegistry())
+            .GetStatisticsAsync(
+                OfficeScope.ForOffice(officeId),
+                officeId,
+                DateTime.Today.AddDays(-6),
+                DateTime.Today);
+
+        Assert.Equal(1, result.MonitoringCycles.TotalLeads);
+        Assert.Equal(["1"], result.MonitoringCycles.AccountReports[0].Rows[0].LeadsPerCycle);
+        Assert.Equal(1, result.Responses.Total);
+    }
+
+    private static MonitoringSubProfileRunSnapshot Sp(
+        string id,
+        string name,
+        int position,
+        int total,
+        DateTime startedAtUtc,
+        DateTime? completedAtUtc,
+        string outcome,
+        string? errorType = null,
+        string? errorMessage = null) =>
+        new(
+            Guid.NewGuid(),
+            id,
+            name,
+            position,
+            total,
+            startedAtUtc,
+            completedAtUtc,
+            outcome,
+            errorType,
+            errorMessage,
+            PublishedCount: 0);
 
     private static OrbitaDbContext CreateDb()
     {

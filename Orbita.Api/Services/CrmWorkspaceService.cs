@@ -19,6 +19,7 @@ public sealed class CrmWorkspaceService(
     CrmLeadDistributionService leadDistribution,
     IPanelRealtimeNotifier? panelRealtime = null,
     CrmTaskAttachmentStorageService? taskAttachments = null,
+    CrmCallRecordingStorageService? callRecordings = null,
     CrmDeadlineNotificationService? deadlineNotifications = null,
     PhoneNormalizer? phoneNormalizer = null,
     CandidateParser? candidateParser = null,
@@ -770,10 +771,14 @@ public sealed class CrmWorkspaceService(
             .Where(x => x.CardId == cardId)
             .OrderByDescending(x => x.CreatedAtUtc)
             .ToListAsync(ct);
+        var calls = await db.CrmCalls.AsNoTracking()
+            .Where(x => x.CardId == cardId)
+            .OrderByDescending(x => x.StartedAtUtc)
+            .ToListAsync(ct);
         var openCount = tasks.Count(x => x.Status == CrmTaskStatuses.Open);
         var hasOverdue = tasks.Any(x => x.Status == CrmTaskStatuses.Open && x.DueAtUtc is DateTime due && due < now);
 
-        var activity = BuildActivity(notes, tasks, taskComments, history, names, userId, isAdmin, canEdit);
+        var activity = BuildActivity(notes, tasks, taskComments, history, calls, names, userId, isAdmin, canEdit);
         var avitoChat = ParseChatMessages(card.Response.ChatMessagesJson);
         var outboundChat = await LoadOutboundChatAsync(cardId, userId, isAdmin, ct);
         var chat = CrmChatThreadMerger.Merge(avitoChat, outboundChat);
@@ -2647,6 +2652,39 @@ public sealed class CrmWorkspaceService(
         return (taskAttachments.OpenRead(attachment.RelativePath), attachment.FileName, attachment.ContentType);
     }
 
+    public async Task<(Stream? Stream, string? FileName, string? ContentType)> OpenCallRecordingAsync(
+        Guid callId,
+        string userId,
+        bool isAdmin,
+        CancellationToken ct = default)
+    {
+        if (callRecordings is null)
+        {
+            return (null, null, null);
+        }
+
+        var call = await db.CrmCalls.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == callId, ct);
+        if (call?.CardId is not Guid cardId || string.IsNullOrWhiteSpace(call.RecordingStoragePath))
+        {
+            return (null, null, null);
+        }
+
+        var card = await db.CrmCandidateCards.AsNoTracking()
+            .Where(x => x.Id == cardId)
+            .Select(x => new { x.OfficeId, x.ManagerUserId })
+            .FirstOrDefaultAsync(ct);
+        if (card is null || !await CanAccessCardAsync(card.OfficeId, card.ManagerUserId, userId, isAdmin, ct))
+        {
+            return (null, null, null);
+        }
+
+        return (
+            callRecordings.OpenRead(call.RecordingStoragePath),
+            string.IsNullOrWhiteSpace(call.RecordingFileName) ? $"Звонок-{call.Id:N}.wav" : call.RecordingFileName,
+            string.IsNullOrWhiteSpace(call.RecordingContentType) ? "audio/wav" : call.RecordingContentType);
+    }
+
     public async Task<CrmTaskCommentDto?> AddTaskCommentAsync(
         Guid taskId,
         string text,
@@ -3155,6 +3193,7 @@ public sealed class CrmWorkspaceService(
         IReadOnlyList<CrmTaskEntity> tasks,
         IReadOnlyList<CrmTaskCommentEntity> taskComments,
         IReadOnlyList<CrmCandidateHistoryEntity> history,
+        IReadOnlyList<CrmCallEntity> calls,
         IReadOnlyDictionary<string, string> names,
         string userId,
         bool isAdmin,
@@ -3218,6 +3257,35 @@ public sealed class CrmWorkspaceService(
                     h.CreatedAtUtc,
                     ActionComment: activityDetails.Comment);
             }));
+        items.AddRange(calls.Select(call =>
+        {
+            var title = call.Direction switch
+            {
+                CrmCallDirections.Incoming => "Входящий звонок",
+                CrmCallDirections.Outgoing => "Исходящий звонок",
+                _ => "Телефонный звонок"
+            };
+            var actorName = string.IsNullOrWhiteSpace(call.ManagerUserId)
+                ? call.Provider switch
+                {
+                    CrmTelephonyProviders.Plusofon => "Плюсофон",
+                    CrmTelephonyProviders.Asterisk => "SIP-сервер",
+                    _ => "SIPOUT"
+                }
+                : names.GetValueOrDefault(call.ManagerUserId, call.ManagerUserId);
+            return new CrmActivityItemDto(
+                "call",
+                title,
+                null,
+                actorName,
+                call.StartedAtUtc,
+                CallId: call.Id,
+                CallDirection: call.Direction,
+                CallDurationSeconds: call.DurationSeconds,
+                CallRecordingUrl: call.RecordingUrl,
+                CallRecordingStored: !string.IsNullOrWhiteSpace(call.RecordingStoragePath),
+                CallClientPhone: call.ClientPhoneNormalized);
+        }));
         return items
             .OrderByDescending(x => x.IsPinned)
             .ThenByDescending(x => x.AtUtc)

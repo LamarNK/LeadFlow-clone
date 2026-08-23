@@ -293,6 +293,16 @@
             <header class="crm-team-panel__header"><div><h2>Настройки офиса</h2><p>Приём откликов и правила работы менеджеров.</p></div></header>
             @if (officeId is Guid oid)
             {
+                @if (OfficeStaffRules.CanManageStaff(User))
+                {
+                    <div class="crm-form-footer">
+                        <p class="crm-hint">Линии SIPOUT, Плюсофона, Билайна и привязки сотрудников настраиваются отдельно.</p>
+                        <a class="settings-primary-btn"
+                           href="@Url.Action("Telephony", "TelephonySettings", new { officeId = oid, provider = CrmTelephonyProviders.Asterisk })">
+                            <i class="fa-solid fa-phone-volume" aria-hidden="true"></i>Телефония офиса
+                        </a>
+                    </div>
+                }
                 <form asp-action="SaveOfficeSettings" method="post" class="crm-standard-form crm-office-settings-form">
                     <input type="hidden" name="officeId" value="@oid" />
                     <div class="crm-office-settings-form__options">

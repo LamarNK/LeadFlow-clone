@@ -5,7 +5,9 @@ namespace Orbita.Tests;
 public sealed class WorkerEventClassifierTests
 {
     [Theory]
+    [InlineData("капча", "captcha", "blocked")]
     [InlineData("капча / блок IP", "captcha", "blocked")]
+    [InlineData("блок IP", "ip_block", "blocked")]
     [InlineData("нужен вход", "auth", "auth")]
     [InlineData("не переключился", "switch", "automation")]
     [InlineData("ошибка парсинга", "error", "parsing")]
@@ -44,6 +46,39 @@ public sealed class WorkerEventClassifierTests
 
         Assert.True(WorkerEventClassifier.IsCaptcha("проверка", details));
         Assert.False(WorkerEventClassifier.IsNetworkFailure(details));
+    }
+
+    [Fact]
+    public void IsIpBlock_DoesNotOfferCaptchaHandling()
+    {
+        const string message = "Субпрофиль «Контракт9» · аккаунт «Avito 14» — блок IP: доступ ограничен: проблема с IP.";
+        const string details = """{"kind":"firewall","url":"https://www.avito.ru/profile/candidates"}""";
+
+        Assert.True(WorkerEventClassifier.IsIpBlock(message, details));
+        Assert.False(WorkerEventClassifier.IsCaptcha(message, details));
+    }
+
+    [Fact]
+    public void IsCaptcha_IpTitleWithCaptchaKind_IsCaptchaNotIpBlock()
+    {
+        const string message =
+            "Субпрофиль «Кадровый отдел Смоленск 2» · аккаунт «Авито 85» — капча: нужна проверка на странице откликов.";
+        const string details = """{"kind":"geetest","url":"https://www.avito.ru/profile/candidates"}""";
+
+        Assert.False(WorkerEventClassifier.IsIpBlock(message, details));
+        Assert.True(WorkerEventClassifier.IsCaptcha(message, details));
+        Assert.Equal("captcha", WorkerEventClassifier.MapIssueLabelToEventType(message));
+    }
+
+    [Fact]
+    public void IsCaptcha_IpTitleInCaptchaMessage_DoesNotBecomeIpBlock()
+    {
+        const string message =
+            "Субпрофиль «Кадровый отдел» · аккаунт «Авито 85» — капча: доступ ограничен: проблема с IP — нажмите Продолжить для решения капчи.";
+
+        Assert.False(WorkerEventClassifier.IsIpBlock(message, details: null));
+        Assert.True(WorkerEventClassifier.IsCaptcha(message, details: null));
+        Assert.Equal("captcha", WorkerEventClassifier.MapIssueLabelToEventType(message));
     }
 
     [Theory]

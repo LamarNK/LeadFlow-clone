@@ -65,8 +65,9 @@ internal static class SettingsIndexBuilder
         string? currentUserId,
         IReadOnlyList<AccessProfileDto>? accessProfiles = null,
         string? statusMessage = null,
-        string? errorMessage = null) =>
-        Build(users, offices, "users", currentUserId, statusMessage, errorMessage, accessProfiles);
+        string? errorMessage = null,
+        PanelUserPresenceHourSeriesDto? presenceHours = null) =>
+        Build(users, offices, "users", currentUserId, statusMessage, errorMessage, accessProfiles, presenceHours);
 
     public static SettingsIndexViewModel BuildProfilesTab(
         IReadOnlyList<PanelUserDto> users,
@@ -193,7 +194,8 @@ internal static class SettingsIndexBuilder
         string? currentUserId,
         string? statusMessage = null,
         string? errorMessage = null,
-        IReadOnlyList<AccessProfileDto>? accessProfiles = null)
+        IReadOnlyList<AccessProfileDto>? accessProfiles = null,
+        PanelUserPresenceHourSeriesDto? presenceHours = null)
     {
         var profiles = accessProfiles ?? DefaultAccessProfiles;
         var mappedUsers = users.Select(u => MapUser(u, offices, currentUserId, profiles)).ToList();
@@ -203,6 +205,7 @@ internal static class SettingsIndexBuilder
             Tabs = Tabs,
             Users = mappedUsers,
             UserGroups = BuildUserGroups(mappedUsers, offices),
+            PresenceStats = activeTab == "users" ? BuildPresenceStats(mappedUsers, presenceHours) : null,
             Profiles = BuildProfiles(users, profiles),
             ProfileOptions = ProfileOptions,
             OfficeOptions = offices.Select(o => new EventFilterOptionViewModel
@@ -213,6 +216,96 @@ internal static class SettingsIndexBuilder
             StatusMessage = statusMessage,
             ErrorMessage = errorMessage
         };
+    }
+
+    internal static PanelUserPresenceStatsViewModel BuildPresenceStats(
+        IReadOnlyList<PanelUserRowViewModel> users,
+        PanelUserPresenceHourSeriesDto? presenceHours,
+        DateTime? nowUtc = null)
+    {
+        var online = users.Count(x => x.IsOnline);
+        var neverSeen = users.Count(x => x.LastSeenAtUtc is null);
+        var series = presenceHours ?? new PanelUserPresenceHourSeriesDto(
+            new int[24],
+            new int[24],
+            0,
+            0,
+            0,
+            0,
+            0,
+            0,
+            nowUtc ?? DateTime.UtcNow);
+        var typical = PadHours(series.TypicalByHour);
+        var today = PadHours(series.TodayByHour);
+        var maxBar = Math.Max(1, typical.Concat(today).Max());
+        var currentHour = Math.Clamp(series.CurrentHour, 0, 23);
+
+        var hours = new List<PanelUserPresenceHourBarViewModel>(24);
+        for (var hour = 0; hour < 24; hour++)
+        {
+            var typicalValue = typical[hour];
+            var todayValue = today[hour];
+            var heightSource = Math.Max(typicalValue, todayValue);
+            hours.Add(new PanelUserPresenceHourBarViewModel
+            {
+                Hour = hour,
+                Typical = typicalValue,
+                Today = todayValue,
+                HeightPercent = heightSource == 0 ? 0 : Math.Max(8, (int)Math.Round(heightSource * 100d / maxBar)),
+                IsTypicalPeak = series.TypicalPeakValue > 0 && hour == series.TypicalPeakHour,
+                IsCurrentHour = hour == currentHour,
+                AxisLabel = hour % 6 == 0 ? hour.ToString("00") : string.Empty,
+                Title = BuildHourTooltip(hour, typicalValue, todayValue)
+            });
+        }
+
+        return new PanelUserPresenceStatsViewModel
+        {
+            Total = users.Count,
+            Online = online,
+            Offline = Math.Max(0, users.Count - online - neverSeen),
+            NeverSeen = neverSeen,
+            CurrentHour = currentHour,
+            TypicalPeakLabel = series.TypicalPeakValue > 0 ? FormatHourRange(series.TypicalPeakHour) : null,
+            TodayPeakLabel = series.TodayPeakValue > 0 ? FormatHourRange(series.TodayPeakHour) : null,
+            TodayPeakValue = series.TodayPeakValue,
+            HasHourlyData = typical.Any(v => v > 0) || today.Any(v => v > 0),
+            Hours = hours
+        };
+    }
+
+    internal static string FormatHourRange(int hour)
+    {
+        var start = ((hour % 24) + 24) % 24;
+        var end = (start + 1) % 24;
+        return $"{start:00}:00–{end:00}:00";
+    }
+
+    private static int[] PadHours(IReadOnlyList<int>? values)
+    {
+        var hours = new int[24];
+        if (values is null)
+        {
+            return hours;
+        }
+
+        for (var i = 0; i < Math.Min(24, values.Count); i++)
+        {
+            hours[i] = Math.Max(0, values[i]);
+        }
+
+        return hours;
+    }
+
+    private static string BuildHourTooltip(int hour, int typical, int today)
+    {
+        var range = FormatHourRange(hour);
+        if (typical <= 0 && today <= 0)
+        {
+            return $"{range} · нет активности";
+        }
+
+        return $"{range} · обычно {typical} чел. · сегодня {today} чел.";
     }
 
     internal static IReadOnlyList<PanelUserGroupViewModel> BuildUserGroups(
@@ -316,6 +409,8 @@ internal static class SettingsIndexBuilder
             IsCurrentUser = string.Equals(user.Id, currentUserId, StringComparison.Ordinal),
             IsLocked = user.IsLocked,
             HasPermissionOverride = user.PermissionOverride is not null,
+            LastSeenAtUtc = user.LastSeenAtUtc,
+            IsOnline = user.IsOnline,
             EffectivePermissions = user.PermissionOverride ?? profilePermissions,
             BitrixStatus = office?.BitrixValidationStatus ?? BitrixValidationStatuses.NotConfigured,
             BitrixStatusLabel = bitrixLabel,

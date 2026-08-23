@@ -23,7 +23,8 @@ public static class AvitoFirewallProbe
         Func<string, CancellationToken, Task<string>> executeScript,
         Func<CancellationToken, Task<string?>>? fetchHtmlSnapshot,
         string? pageUrl,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Func<Detection, string?, CancellationToken, Task<bool>>? trySolveAsync = null)
     {
         var detection = await TryDetectAsync(executeScript, cancellationToken).ConfigureAwait(false);
         if (detection is null)
@@ -41,6 +42,15 @@ public static class AvitoFirewallProbe
             catch
             {
                 // Достаточно kind/title из probe.
+            }
+        }
+
+        if (trySolveAsync is not null)
+        {
+            var solved = await trySolveAsync(detection, html, cancellationToken).ConfigureAwait(false);
+            if (solved)
+            {
+                return;
             }
         }
 
@@ -68,7 +78,7 @@ public static class AvitoFirewallProbe
             var kind = root.TryGetProperty("kind", out var kindProp) ? kindProp.GetString() : null;
             var url = root.TryGetProperty("url", out var urlProp) ? urlProp.GetString() : null;
             var title = root.TryGetProperty("title", out var titleProp) ? titleProp.GetString() : null;
-            return new Detection(string.IsNullOrWhiteSpace(kind) ? "firewall" : kind!, url, title);
+            return new Detection(string.IsNullOrWhiteSpace(kind) ? "captcha" : kind!, url, title);
         }
         catch
         {

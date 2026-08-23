@@ -1,17 +1,29 @@
 using System.Collections.Concurrent;
+using System.Text.Json;
 using LeadFlow.Core.Models;
 
 namespace Orbita.Worker.Services;
 
 /// <summary>
 /// In-memory runtime state for worker accounts (Orbita is long-term source; this holds the active cycle).
+/// NextMonitoringAtUtc additionally persisted so a process restart does not re-walk every account.
 /// </summary>
 public sealed class WorkerAccountRuntimeStore
 {
+    private static readonly JsonSerializerOptions ResumeJson = new(JsonSerializerDefaults.Web);
     private readonly ConcurrentDictionary<Guid, AvitoAccount> _accounts = new();
+    private readonly ConcurrentDictionary<Guid, ResumeEntry> _resume = LoadResume();
 
-    public void Upsert(AvitoAccount account) =>
+    public void Upsert(AvitoAccount account)
+    {
         _accounts[account.Id] = Clone(account);
+        var nextEntry = ResumeEntry.FromAccount(account);
+        if (!_resume.TryGetValue(account.Id, out var prev) || !prev.SameAs(nextEntry))
+        {
+            _resume[account.Id] = nextEntry;
+            SaveResume();
+        }
+    }
 
     public bool TryGet(Guid accountId, out AvitoAccount? account)
     {
@@ -34,6 +46,11 @@ public sealed class WorkerAccountRuntimeStore
         {
             ApplyRuntimeFields(target, stored);
         }
+
+        if (_resume.TryGetValue(target.Id, out var resumed))
+        {
+            resumed.ApplyTo(target);
+        }
     }
 
     private static void ApplyRuntimeFields(AvitoAccount target, AvitoAccount source)
@@ -44,6 +61,15 @@ public sealed class WorkerAccountRuntimeStore
         }
         target.LastErrorMessage = source.LastErrorMessage;
         target.LastMonitoringAt = source.LastMonitoringAt;
+        target.NextMonitoringAtUtc = source.NextMonitoringAtUtc ?? target.NextMonitoringAtUtc;
+        target.MonitoringPassStartedAtUtc = source.MonitoringPassStartedAtUtc ?? target.MonitoringPassStartedAtUtc;
+        target.MonitoringPassFinishedAtUtc = source.MonitoringPassFinishedAtUtc ?? target.MonitoringPassFinishedAtUtc;
+        if (source.MonitoringPassCompletedSubIds.Count > 0)
+        {
+            target.MonitoringPassCompletedSubIds = new HashSet<string>(
+                source.MonitoringPassCompletedSubIds,
+                StringComparer.Ordinal);
+        }
         target.LastAuthCheckAt = source.LastAuthCheckAt;
         target.ActiveAdsCount = source.ActiveAdsCount;
         target.BlockedCount = source.BlockedCount;
@@ -78,6 +104,12 @@ public sealed class WorkerAccountRuntimeStore
             Status = source.Status,
             LastErrorMessage = source.LastErrorMessage,
             LastMonitoringAt = source.LastMonitoringAt,
+            NextMonitoringAtUtc = source.NextMonitoringAtUtc,
+            MonitoringPassStartedAtUtc = source.MonitoringPassStartedAtUtc,
+            MonitoringPassFinishedAtUtc = source.MonitoringPassFinishedAtUtc,
+            MonitoringPassCompletedSubIds = new HashSet<string>(
+                source.MonitoringPassCompletedSubIds,
+                StringComparer.Ordinal),
             LastAuthCheckAt = source.LastAuthCheckAt,
             ActiveAdsCount = source.ActiveAdsCount,
             BlockedCount = source.BlockedCount,
@@ -96,5 +128,148 @@ public sealed class WorkerAccountRuntimeStore
         }
 
         return clone;
+    }
+
+    private static string ResumePath =>
+        Path.Combine(WorkerConfigStore.ConfigDirectory, "account-resume.json");
+
+    private static ConcurrentDictionary<Guid, ResumeEntry> LoadResume()
+    {
+        var map = new ConcurrentDictionary<Guid, ResumeEntry>();
+        try
+        {
+            if (!File.Exists(ResumePath))
+            {
+                return map;
+            }
+
+            var json = File.ReadAllText(ResumePath);
+            var file = JsonSerializer.Deserialize<AccountResumeFileDto>(json, ResumeJson);
+            if (file?.Accounts is { Count: > 0 })
+            {
+                foreach (var kv in file.Accounts)
+                {
+                    if (Guid.TryParse(kv.Key, out var id) && kv.Value is not null)
+                    {
+                        map[id] = ResumeEntry.FromDto(kv.Value);
+                    }
+                }
+
+                return map;
+            }
+
+            var legacy = JsonSerializer.Deserialize<Dictionary<string, DateTime>>(json, ResumeJson);
+            if (legacy is null)
+            {
+                return map;
+            }
+
+            foreach (var kv in legacy)
+            {
+                if (!Guid.TryParse(kv.Key, out var id))
+                {
+                    continue;
+                }
+
+                map[id] = new ResumeEntry { NextUtc = AsUtc(kv.Value) };
+            }
+        }
+        catch
+        {
+            // Пустой resume — проход начнётся как раньше.
+        }
+
+        return map;
+    }
+
+    private void SaveResume()
+    {
+        try
+        {
+            Directory.CreateDirectory(WorkerConfigStore.ConfigDirectory);
+            var file = new AccountResumeFileDto
+            {
+                Accounts = _resume.ToDictionary(
+                    static kv => kv.Key.ToString("D"),
+                    static kv => kv.Value.ToDto())
+            };
+            File.WriteAllText(ResumePath, JsonSerializer.Serialize(file, ResumeJson));
+        }
+        catch
+        {
+            // Пауза остаётся в памяти процесса.
+        }
+    }
+
+    private static DateTime AsUtc(DateTime value) =>
+        value.Kind == DateTimeKind.Unspecified
+            ? DateTime.SpecifyKind(value, DateTimeKind.Utc)
+            : value.ToUniversalTime();
+
+    private static DateTime? AsUtc(DateTime? value) =>
+        value is { } at ? AsUtc(at) : null;
+
+    private sealed class ResumeEntry
+    {
+        public DateTime? NextUtc { get; set; }
+        public DateTime? PassStartedAtUtc { get; set; }
+        public DateTime? PassFinishedAtUtc { get; set; }
+        public HashSet<string> CompletedSubIds { get; set; } = new(StringComparer.Ordinal);
+
+        public static ResumeEntry FromAccount(AvitoAccount account) => new()
+        {
+            NextUtc = account.NextMonitoringAtUtc,
+            PassStartedAtUtc = account.MonitoringPassStartedAtUtc,
+            PassFinishedAtUtc = account.MonitoringPassFinishedAtUtc,
+            CompletedSubIds = new HashSet<string>(account.MonitoringPassCompletedSubIds, StringComparer.Ordinal)
+        };
+
+        public static ResumeEntry FromDto(AccountResumeEntryDto dto) => new()
+        {
+            NextUtc = AsUtc(dto.NextUtc),
+            PassStartedAtUtc = AsUtc(dto.PassStartedAtUtc),
+            PassFinishedAtUtc = AsUtc(dto.PassFinishedAtUtc),
+            CompletedSubIds = new HashSet<string>(
+                dto.CompletedSubIds ?? [],
+                StringComparer.Ordinal)
+        };
+
+        public AccountResumeEntryDto ToDto() => new()
+        {
+            NextUtc = NextUtc,
+            PassStartedAtUtc = PassStartedAtUtc,
+            PassFinishedAtUtc = PassFinishedAtUtc,
+            CompletedSubIds = CompletedSubIds.Count == 0 ? null : CompletedSubIds.ToList()
+        };
+
+        public void ApplyTo(AvitoAccount target)
+        {
+            target.NextMonitoringAtUtc ??= NextUtc;
+            target.MonitoringPassStartedAtUtc ??= PassStartedAtUtc;
+            target.MonitoringPassFinishedAtUtc ??= PassFinishedAtUtc;
+            if (target.MonitoringPassCompletedSubIds.Count == 0 && CompletedSubIds.Count > 0)
+            {
+                target.MonitoringPassCompletedSubIds = new HashSet<string>(CompletedSubIds, StringComparer.Ordinal);
+            }
+        }
+
+        public bool SameAs(ResumeEntry other) =>
+            NextUtc == other.NextUtc
+            && PassStartedAtUtc == other.PassStartedAtUtc
+            && PassFinishedAtUtc == other.PassFinishedAtUtc
+            && CompletedSubIds.SetEquals(other.CompletedSubIds);
+    }
+
+    private sealed class AccountResumeFileDto
+    {
+        public Dictionary<string, AccountResumeEntryDto>? Accounts { get; set; }
+    }
+
+    private sealed class AccountResumeEntryDto
+    {
+        public DateTime? NextUtc { get; set; }
+        public DateTime? PassStartedAtUtc { get; set; }
+        public DateTime? PassFinishedAtUtc { get; set; }
+        public List<string>? CompletedSubIds { get; set; }
     }
 }
