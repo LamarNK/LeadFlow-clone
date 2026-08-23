@@ -26,6 +26,8 @@ public sealed partial class AdsPowerAvitoAutomationService(
     IPhoneNormalizer phoneNormalizer,
     IAvitoGeeTestSolver? geeTestSolver = null) : IAdsPowerAvitoAutomationService
 {
+    private static readonly TimeSpan CdpConnectTimeout = TimeSpan.FromSeconds(15);
+
     private const string CandidatesPageUrl = AvitoCandidatesPageUrls.LegacyCandidates;
     private const string JobResponsesPageUrl = AvitoCandidatesPageUrls.JobResponsesCrm;
     private const string ProfileItemsPageUrl = "https://www.avito.ru/profile/pro/items";
@@ -2523,6 +2525,25 @@ public sealed partial class AdsPowerAvitoAutomationService(
         and not AdsPowerRateLimitExceededException
         and not AdsPowerProxyFailureException;
 
+    private static async Task<IBrowser> ConnectAdsPowerBrowserAsync(
+        ConnectOptions connectOptions,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await Puppeteer
+                .ConnectAsync(connectOptions)
+                .WaitAsync(CdpConnectTimeout, cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (TimeoutException ex)
+        {
+            throw new TimeoutException(
+                $"AdsPower: CDP-подключение не открылось за {CdpConnectTimeout.TotalSeconds:0} с.",
+                ex);
+        }
+    }
+
     internal static bool IsReusableStartupPlaceholderUrl(string? url)
     {
         if (string.IsNullOrWhiteSpace(url))
@@ -3045,10 +3066,11 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 await HumanDelay.AfterCandidateClickAsync(cancellationToken).ConfigureAwait(false);
             }
 
-            if (string.IsNullOrWhiteSpace(enrichment.ChannelUrl) && enrichment.ChatMessages.Count == 0)
+            if (enrichment.ChatMessages.Count == 0)
             {
+                var collection = enrichment.Collection ?? MiniMessengerCollectionResult.NotCollected;
                 _ = GlobalLogger.Instance.LogAsync(
-                    $"AdsPower messenger enrich: no chat data for candidate index {domIndex}.",
+                    $"AdsPower messenger enrich: no chat messages for candidate index {domIndex}.",
                     DeskLinkAuditLogLevel.Warning,
                     memberName: nameof(TryEnrichCandidatesJsonMessengerUrlsAsync),
                     properties: new Dictionary<string, object?>
@@ -3058,8 +3080,25 @@ public sealed partial class AdsPowerAvitoAutomationService(
                         ["page.url"] = page.Url,
                         ["page.innerWidth"] = await TryReadInnerWidthAsync(page).ConfigureAwait(false),
                         ["page.innerHeight"] = await TryReadInnerHeightAsync(page).ConfigureAwait(false),
-                        ["messenger.uiConfirmed"] = enrichment.UiConfirmed
+                        ["messenger.clickMethod"] = enrichment.ClickMethod,
+                        ["messenger.uiConfirmed"] = enrichment.UiConfirmed,
+                        ["messenger.channelUrlFound"] = !string.IsNullOrWhiteSpace(enrichment.ChannelUrl),
+                        ["messenger.collect.waitConfirmed"] = collection.WaitConfirmed,
+                        ["messenger.collect.attempts"] = collection.Attempts,
+                        ["messenger.collect.reason"] = collection.Reason,
+                        ["messenger.collect.hasMiniLink"] = collection.HasMiniLink,
+                        ["messenger.collect.hasMiniRoot"] = collection.HasMiniRoot,
+                        ["messenger.collect.usedMarkedHistoryFallback"] = collection.UsedMarkedHistoryFallback,
+                        ["messenger.collect.isChannelPage"] = collection.IsChannelPage,
+                        ["messenger.collect.historyCount"] = collection.HistoryCount,
+                        ["messenger.collect.visibleHistoryCount"] = collection.VisibleHistoryCount,
+                        ["messenger.collect.rootMessageNodeCount"] = collection.RootMessageNodeCount,
+                        ["messenger.collect.hasMessagesList"] = collection.HasMessagesList
                     });
+            }
+
+            if (string.IsNullOrWhiteSpace(enrichment.ChannelUrl) && enrichment.ChatMessages.Count == 0)
+            {
                 continue;
             }
 
@@ -3129,7 +3168,38 @@ public sealed partial class AdsPowerAvitoAutomationService(
         string? ChannelUrl,
         JsonArray ChatMessages,
         bool UiConfirmed = false,
-        bool AutoReplySent = false);
+        bool AutoReplySent = false,
+        string ClickMethod = "not_clicked",
+        MiniMessengerCollectionResult? Collection = null);
+
+    private sealed record MiniMessengerCollectionResult(
+        JsonArray Messages,
+        string Reason,
+        bool WaitConfirmed,
+        int Attempts,
+        bool HasMiniLink,
+        bool HasMiniRoot,
+        bool UsedMarkedHistoryFallback,
+        bool IsChannelPage,
+        int HistoryCount,
+        int VisibleHistoryCount,
+        int RootMessageNodeCount,
+        bool HasMessagesList)
+    {
+        public static MiniMessengerCollectionResult NotCollected { get; } = new(
+            new JsonArray(),
+            "not_collected",
+            WaitConfirmed: false,
+            Attempts: 0,
+            HasMiniLink: false,
+            HasMiniRoot: false,
+            UsedMarkedHistoryFallback: false,
+            IsChannelPage: false,
+            HistoryCount: 0,
+            VisibleHistoryCount: 0,
+            RootMessageNodeCount: 0,
+            HasMessagesList: false);
+    }
 
     private static async Task<bool> TryReadCandidateChatUnreadAsync(
         IPage page,
@@ -3235,7 +3305,13 @@ public sealed partial class AdsPowerAvitoAutomationService(
                     });
             }
 
-            return new MessengerCardEnrichmentResult(null, new JsonArray(), UiConfirmed: false, AutoReplySent: false);
+            return new MessengerCardEnrichmentResult(
+                null,
+                new JsonArray(),
+                UiConfirmed: false,
+                AutoReplySent: false,
+                ClickMethod: "failed",
+                Collection: MiniMessengerCollectionResult.NotCollected);
         }
 
         await HumanDelay.AfterCandidateClickAsync(cancellationToken).ConfigureAwait(false);
@@ -3267,7 +3343,8 @@ public sealed partial class AdsPowerAvitoAutomationService(
             // Ссылка канала может появиться позже, чем список сообщений.
         }
 
-        var chatMessages = await CollectMiniMessengerMessagesAsync(page, cancellationToken).ConfigureAwait(false);
+        var collection = await CollectMiniMessengerMessagesAsync(page, cancellationToken).ConfigureAwait(false);
+        var chatMessages = collection.Messages;
         autoReply ??= new AvitoMessengerAutoReplySettings();
         var parsedChat = ParseMiniMessengerMessages(chatMessages);
         if (pendingOutbound.Count > 0)
@@ -3319,7 +3396,8 @@ public sealed partial class AdsPowerAvitoAutomationService(
 
             if (acked.Count > 0)
             {
-                chatMessages = await CollectMiniMessengerMessagesAsync(page, cancellationToken).ConfigureAwait(false);
+                collection = await CollectMiniMessengerMessagesAsync(page, cancellationToken).ConfigureAwait(false);
+                chatMessages = collection.Messages;
             }
         }
         else if (AvitoChatAutoReplyEvaluator.ShouldSendOnThisPass(
@@ -3334,7 +3412,8 @@ public sealed partial class AdsPowerAvitoAutomationService(
                     .ConfigureAwait(false))
             {
                 autoReplySent = true;
-                chatMessages = await CollectMiniMessengerMessagesAsync(page, cancellationToken).ConfigureAwait(false);
+                collection = await CollectMiniMessengerMessagesAsync(page, cancellationToken).ConfigureAwait(false);
+                chatMessages = collection.Messages;
             }
         }
         else if (autoReply.Enabled
@@ -3379,7 +3458,9 @@ public sealed partial class AdsPowerAvitoAutomationService(
             channelUrl,
             chatMessages,
             UiConfirmed: messengerUiConfirmed || !string.IsNullOrWhiteSpace(channelUrl) || chatMessages.Count > 0,
-            AutoReplySent: autoReplySent);
+            AutoReplySent: autoReplySent,
+            ClickMethod: clickedViaPointer ? "pointer" : "dom",
+            Collection: collection);
     }
 
     /// <summary>
@@ -3507,23 +3588,26 @@ public sealed partial class AdsPowerAvitoAutomationService(
         }
     }
 
-    private async Task<JsonArray> CollectMiniMessengerMessagesAsync(
+    private async Task<MiniMessengerCollectionResult> CollectMiniMessengerMessagesAsync(
         IPage page,
         CancellationToken cancellationToken)
     {
+        var waitConfirmed = false;
         try
         {
             await page.WaitForFunctionAsync(
                     AvitoCandidatesPageScripts.BuildMessengerMessagesPresentExpression(),
                     new WaitForFunctionOptions { Timeout = 8_000, PollingInterval = 250 })
                 .ConfigureAwait(false);
+            waitConfirmed = true;
         }
         catch
         {
             // Оболочка мини-чата может появиться раньше сообщений; ниже ещё несколько опросов.
         }
 
-        JsonArray? richest = null;
+        MiniMessengerCollectionResult? richest = null;
+        var latest = MiniMessengerCollectionResult.NotCollected with { WaitConfirmed = waitConfirmed };
         for (var round = 0; round < 6; round++)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -3535,13 +3619,18 @@ public sealed partial class AdsPowerAvitoAutomationService(
                     AvitoCandidatesPageScripts.BuildScrollAndCollectMiniMessengerMessagesScript(),
                     cancellationToken)
                 .ConfigureAwait(false);
-            var parsed = TryParseMiniMessengerMessages(messagesRaw);
-            if (parsed.Count == 0)
+            var parsed = TryParseMiniMessengerCollectionResult(messagesRaw) with
+            {
+                WaitConfirmed = waitConfirmed,
+                Attempts = round + 1
+            };
+            latest = parsed;
+            if (parsed.Messages.Count == 0)
             {
                 continue;
             }
 
-            if (richest is null || parsed.Count > richest.Count)
+            if (richest is null || parsed.Messages.Count > richest.Messages.Count)
             {
                 richest = parsed;
                 continue;
@@ -3550,7 +3639,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
             return richest;
         }
 
-        return richest ?? new JsonArray();
+        return richest ?? latest;
     }
 
     private static IReadOnlyList<AvitoChatMessage> ParseMiniMessengerMessages(JsonArray chatMessages) =>
@@ -3903,11 +3992,11 @@ public sealed partial class AdsPowerAvitoAutomationService(
         }
     }
 
-    private static JsonArray TryParseMiniMessengerMessages(string? raw)
+    private static MiniMessengerCollectionResult TryParseMiniMessengerCollectionResult(string? raw)
     {
         if (string.IsNullOrWhiteSpace(raw))
         {
-            return new JsonArray();
+            return MiniMessengerCollectionResult.NotCollected with { Reason = "empty_script_result" };
         }
 
         try
@@ -3916,7 +4005,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
             if (!doc.RootElement.TryGetProperty("messages", out var messagesElement)
                 || messagesElement.ValueKind != JsonValueKind.Array)
             {
-                return new JsonArray();
+                return MiniMessengerCollectionResult.NotCollected with { Reason = "invalid_messages_result" };
             }
 
             var result = new JsonArray();
@@ -3951,13 +4040,52 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 result.Add(node);
             }
 
-            return result;
+            var root = doc.RootElement;
+            var diagnostics = root.TryGetProperty("diagnostics", out var diagnosticsElement)
+                && diagnosticsElement.ValueKind == JsonValueKind.Object
+                ? diagnosticsElement
+                : default;
+            return new MiniMessengerCollectionResult(
+                result,
+                ReadJsonString(root, "reason") ?? (result.Count == 0 ? "no_message_text" : "collected"),
+                WaitConfirmed: false,
+                Attempts: 0,
+                HasMiniLink: ReadJsonBool(diagnostics, "hasMiniLink"),
+                HasMiniRoot: ReadJsonBool(diagnostics, "hasMiniRoot"),
+                UsedMarkedHistoryFallback: ReadJsonBool(diagnostics, "usedMarkedHistoryFallback"),
+                IsChannelPage: ReadJsonBool(diagnostics, "isChannelPage"),
+                HistoryCount: ReadJsonInt(diagnostics, "historyCount"),
+                VisibleHistoryCount: ReadJsonInt(diagnostics, "visibleHistoryCount"),
+                RootMessageNodeCount: ReadJsonInt(diagnostics, "rootMessageNodeCount"),
+                HasMessagesList: ReadJsonBool(diagnostics, "hasMessagesList"));
         }
         catch
         {
-            return new JsonArray();
+            return MiniMessengerCollectionResult.NotCollected with { Reason = "invalid_script_json" };
         }
     }
+
+    private static JsonArray TryParseMiniMessengerMessages(string? raw) =>
+        TryParseMiniMessengerCollectionResult(raw).Messages;
+
+    private static string? ReadJsonString(JsonElement element, string propertyName) =>
+        element.ValueKind == JsonValueKind.Object
+        && element.TryGetProperty(propertyName, out var property)
+        && property.ValueKind == JsonValueKind.String
+            ? property.GetString()
+            : null;
+
+    private static bool ReadJsonBool(JsonElement element, string propertyName) =>
+        element.ValueKind == JsonValueKind.Object
+        && element.TryGetProperty(propertyName, out var property)
+        && property.ValueKind == JsonValueKind.True;
+
+    private static int ReadJsonInt(JsonElement element, string propertyName) =>
+        element.ValueKind == JsonValueKind.Object
+        && element.TryGetProperty(propertyName, out var property)
+        && property.TryGetInt32(out var value)
+            ? value
+            : 0;
 
     private static string UnwrapMessengerJson(string raw)
     {

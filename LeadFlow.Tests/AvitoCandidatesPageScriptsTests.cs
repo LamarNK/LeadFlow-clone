@@ -64,6 +64,11 @@ public sealed class AvitoCandidatesPageScriptsTests
         Assert.Contains("[data-marker='messageChunk']", script, StringComparison.Ordinal);
         Assert.Contains("const root = miniRoot", script, StringComparison.Ordinal);
         Assert.DoesNotContain("(!marker ? miniRoot : null)", script, StringComparison.Ordinal);
+        Assert.Contains("const diagnostics", script, StringComparison.Ordinal);
+        Assert.Contains("hasMiniLink", script, StringComparison.Ordinal);
+        Assert.Contains("historyCount", script, StringComparison.Ordinal);
+        Assert.Contains("rootMessageNodeCount", script, StringComparison.Ordinal);
+        Assert.Contains("no_message_text", script, StringComparison.Ordinal);
         Assert.Contains("textContent", script, StringComparison.Ordinal);
         Assert.Contains("collectFrom", script, StringComparison.Ordinal);
         Assert.DoesNotContain("collectFrom(document)", script, StringComparison.Ordinal);

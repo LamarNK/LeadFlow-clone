@@ -10,9 +10,23 @@ namespace LeadFlow.Core.Services.AdsPower;
 
 public sealed partial class AdsPowerAvitoAutomationService
 {
+    // Этот лимит охватывает весь старт: Local API, CDP и прогрев вкладки.
+    // Отдельного лимита CDP недостаточно: зависание до BeginSubProfile иначе
+    // удерживает слот мониторинга бесконечно.
+    private static readonly TimeSpan AccountSessionStartupTimeout = TimeSpan.FromMinutes(3);
+    private static readonly TimeSpan BrowserStopTimeout = TimeSpan.FromSeconds(15);
+
     public async Task<IAdsPowerAccountSession> OpenAccountSessionAsync(
         AdsPowerConnectionOptions options,
         string adsPowerUserId,
+        CancellationToken cancellationToken = default) =>
+        await OpenAccountSessionAsync(options, adsPowerUserId, reportStartupStage: null, cancellationToken)
+            .ConfigureAwait(false);
+
+    public async Task<IAdsPowerAccountSession> OpenAccountSessionAsync(
+        AdsPowerConnectionOptions options,
+        string adsPowerUserId,
+        Action<string, TimeSpan>? reportStartupStage,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(adsPowerUserId);
@@ -20,10 +34,30 @@ public sealed partial class AdsPowerAvitoAutomationService
         Exception? lastError = null;
         for (var attempt = 1; attempt <= 2; attempt++)
         {
+            using var startupCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            startupCts.CancelAfter(AccountSessionStartupTimeout);
+            var startupToken = startupCts.Token;
+            var startupTask = OpenAccountSessionOnceAsync(
+                options,
+                adsPowerUserId,
+                attempt,
+                reportStartupStage,
+                startupToken);
+
             try
             {
-                return await OpenAccountSessionOnceAsync(options, adsPowerUserId, attempt, cancellationToken)
-                    .ConfigureAwait(false);
+                return await startupTask.WaitAsync(startupToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException ex)
+                when (!cancellationToken.IsCancellationRequested && startupCts.IsCancellationRequested)
+            {
+                // Некоторые вызовы PuppeteerSharp не реагируют на CancellationToken.
+                // Освобождаем слот немедленно, а результат позднего старта обязательно
+                // дочищаем в фоне, чтобы не оставить окно AdsPower открытым.
+                _ = CleanupTimedOutSessionAsync(startupTask, options, adsPowerUserId);
+                throw new TimeoutException(
+                    $"AdsPower: запуск сессии не завершился за {AccountSessionStartupTimeout.TotalMinutes:0} мин.",
+                    ex);
             }
             catch (Exception ex) when (IsRetryableAdsPowerStartupFailure(ex) && attempt < 2)
             {
@@ -50,16 +84,20 @@ public sealed partial class AdsPowerAvitoAutomationService
         AdsPowerConnectionOptions options,
         string adsPowerUserId,
         int attempt,
+        Action<string, TimeSpan>? reportStartupStage,
         CancellationToken cancellationToken)
     {
         var started = false;
         IBrowser? browser = null;
+        var startupStopwatch = Stopwatch.StartNew();
         try
         {
+            ReportStartupStage(reportStartupStage, attempt, "ожидание очереди AdsPower browser/start", startupStopwatch);
             var start = await adsPowerApiClient
                 .StartBrowserAsync(options, adsPowerUserId, ProfileItemsPageUrl, cancellationToken)
                 .ConfigureAwait(false);
             started = true;
+            ReportStartupStage(reportStartupStage, attempt, "browser/start завершён", startupStopwatch);
 
             if (string.IsNullOrWhiteSpace(start.WebSocketDebuggerUrl))
             {
@@ -67,16 +105,24 @@ public sealed partial class AdsPowerAvitoAutomationService
                     "AdsPower не вернул ws.puppeteer endpoint. Проверьте Local API и версию клиента AdsPower.");
             }
 
-            browser = await Puppeteer.ConnectAsync(new ConnectOptions
-            {
-                BrowserWSEndpoint = start.WebSocketDebuggerUrl,
-                DefaultViewport = null
-            }).ConfigureAwait(false);
+            ReportStartupStage(reportStartupStage, attempt, "подключение CDP", startupStopwatch);
+            browser = await ConnectAdsPowerBrowserAsync(
+                    new ConnectOptions
+                    {
+                        BrowserWSEndpoint = start.WebSocketDebuggerUrl,
+                        DefaultViewport = null
+                    },
+                    cancellationToken)
+                .ConfigureAwait(false);
+            ReportStartupStage(reportStartupStage, attempt, "CDP подключён", startupStopwatch);
 
+            ReportStartupStage(reportStartupStage, attempt, "чтение прокси профиля", startupStopwatch);
             var captchaOptions = await ResolveCaptchaTaskOptionsAsync(options, adsPowerUserId, cancellationToken)
                 .ConfigureAwait(false);
+            ReportStartupStage(reportStartupStage, attempt, "прокси профиля прочитан", startupStopwatch);
             using var captchaScope = AvitoCaptchaTaskContext.Use(captchaOptions);
 
+            ReportStartupStage(reportStartupStage, attempt, "поиск рабочей вкладки", startupStopwatch);
             var page = await AcquireAutomationPageAsync(
                     browser,
                     ProfileItemsPageUrl,
@@ -84,8 +130,11 @@ public sealed partial class AdsPowerAvitoAutomationService
                     cancellationToken,
                     waitForStartupNavigation: true)
                 .ConfigureAwait(false);
+            ReportStartupStage(reportStartupStage, attempt, "вкладка получена", startupStopwatch);
 
+            ReportStartupStage(reportStartupStage, attempt, "прогрев страницы Avito", startupStopwatch);
             page = await WarmUpSessionPageAsync(page, adsPowerUserId, cancellationToken).ConfigureAwait(false);
+            ReportStartupStage(reportStartupStage, attempt, "страница Avito готова", startupStopwatch);
 
             _ = GlobalLogger.Instance.LogAsync(
                 $"AdsPower account session opened for user {adsPowerUserId}.",
@@ -120,7 +169,8 @@ public sealed partial class AdsPowerAvitoAutomationService
             {
                 try
                 {
-                    await adsPowerApiClient.StopBrowserAsync(options, adsPowerUserId, cancellationToken)
+                    using var stopCts = new CancellationTokenSource(BrowserStopTimeout);
+                    await adsPowerApiClient.StopBrowserAsync(options, adsPowerUserId, stopCts.Token)
                         .ConfigureAwait(false);
                 }
                 catch
@@ -130,6 +180,48 @@ public sealed partial class AdsPowerAvitoAutomationService
             }
 
             throw;
+        }
+    }
+
+    private static void ReportStartupStage(
+        Action<string, TimeSpan>? reportStartupStage,
+        int attempt,
+        string stage,
+        Stopwatch stopwatch)
+    {
+        try
+        {
+            reportStartupStage?.Invoke($"попытка {attempt}: {stage}", stopwatch.Elapsed);
+        }
+        catch
+        {
+            // Диагностика не должна останавливать мониторинг.
+        }
+    }
+
+    private async Task CleanupTimedOutSessionAsync(
+        Task<IAdsPowerAccountSession> startupTask,
+        AdsPowerConnectionOptions options,
+        string adsPowerUserId)
+    {
+        try
+        {
+            using var stopCts = new CancellationTokenSource(BrowserStopTimeout);
+            await adsPowerApiClient.StopBrowserAsync(options, adsPowerUserId, stopCts.Token)
+                .ConfigureAwait(false);
+        }
+        catch
+        {
+            // Local API мог уже остановить окно после отмены стартовой задачи.
+        }
+
+        try
+        {
+            await using var lateSession = await startupTask.ConfigureAwait(false);
+        }
+        catch
+        {
+            // Ошибка позднего старта уже обработана основной попыткой.
         }
     }
 

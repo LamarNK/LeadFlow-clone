@@ -1682,8 +1682,11 @@ public static class AvitoCandidatesPageScripts
             });
             const miniRoot = miniLink?.closest("[class*='channel-module-root']") || null;
             const marker = String(window.__leadflowMessengerBeforeMarker ?? "");
+            const histories = Array.from(document.querySelectorAll("[data-marker='messagesHistory']"));
+            const visibleHistoryCount = histories.filter((history) => isVisible(history)
+                || isVisible(history.querySelector("[data-marker='messagesHistory/list']"))).length;
             const openedHistory = marker
-                ? Array.from(document.querySelectorAll("[data-marker='messagesHistory']"))
+                ? histories
                     .find((history) => (isVisible(history)
                             || isVisible(history.querySelector("[data-marker='messagesHistory/list']")))
                         && history.getAttribute("data-leadflow-messenger-before") !== marker)
@@ -1694,14 +1697,24 @@ public static class AvitoCandidatesPageScripts
                 || (isChannelPage
                     ? document.querySelector("[data-marker='messagesHistory']") || document
                     : null);
+            const diagnostics = {
+                hasMiniLink: !!miniLink,
+                hasMiniRoot: !!miniRoot,
+                usedMarkedHistoryFallback: !miniRoot && !!openedHistory,
+                isChannelPage,
+                historyCount: histories.length,
+                visibleHistoryCount,
+                rootMessageNodeCount: root?.querySelectorAll("[data-marker='message']").length ?? 0,
+                hasMessagesList: !!root?.querySelector("[data-marker='messagesHistory/list']")
+            };
             if (!root) {
-                return JSON.stringify({ ok: false, reason: "no_active_candidate_messenger", messages: [] });
+                return JSON.stringify({ ok: false, reason: "no_active_candidate_messenger", diagnostics, messages: [] });
             }
 
             const messages = collectFrom(root);
             const list = root.querySelector("[data-marker='messagesHistory/list']");
             if (!list && messages.length === 0) {
-                return JSON.stringify({ ok: false, reason: "no_messages_list", messages: [] });
+                return JSON.stringify({ ok: false, reason: "no_messages_list", diagnostics, messages: [] });
             }
 
             if (list) {
@@ -1713,7 +1726,13 @@ public static class AvitoCandidatesPageScripts
                 }
             }
 
-            return JSON.stringify({ ok: true, messages, count: messages.length });
+            return JSON.stringify({
+                ok: true,
+                reason: messages.length === 0 ? "no_message_text" : null,
+                diagnostics,
+                messages,
+                count: messages.length
+            });
         })();
         """;
 

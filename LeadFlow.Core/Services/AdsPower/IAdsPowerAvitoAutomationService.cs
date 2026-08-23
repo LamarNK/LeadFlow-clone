@@ -81,6 +81,17 @@ public interface IAdsPowerAvitoAutomationService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// То же, с уведомлениями о последнем этапе старта. Используется воркером,
+    /// чтобы в панели было видно, на чём именно завис аккаунт.
+    /// </summary>
+    Task<IAdsPowerAccountSession> OpenAccountSessionAsync(
+        AdsPowerConnectionOptions options,
+        string adsPowerUserId,
+        Action<string, TimeSpan>? reportStartupStage,
+        CancellationToken cancellationToken = default) =>
+        OpenAccountSessionAsync(options, adsPowerUserId, cancellationToken);
+
+    /// <summary>
     /// Закрывает браузер профиля AdsPower (один раз после полного прохода аккаунта в мониторинге).
     /// </summary>
     Task CloseBrowserAsync(
