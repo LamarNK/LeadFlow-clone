@@ -824,16 +824,19 @@ public sealed class WorkerMonitoringService(
         }
         catch (Exception ex)
         {
+            var retryAfter = WorkerAdsPowerPassRetry.FromException(ex);
             account.LastErrorMessage = ex.Message;
-            account.Status = WorkerAdsPowerPassRetry.FromException(ex) is null
+            account.Status = retryAfter is null
                 ? AvitoAccountStatus.Error
                 : AvitoAccountStatus.Authorized;
             await repository.SaveAccountAsync(account, cancellationToken).ConfigureAwait(false);
             WorkerMonitoringLogger.AccountFailed(account, "мониторинг", ex.Message);
             await PublishAccountEventAsync(
                 account,
-                "Error",
-                $"Ошибка аккаунта {account.DisplayName}: {ex.Message}",
+                WorkerAdsPowerPassRetry.EventType(ex),
+                retryAfter is null
+                    ? $"Ошибка аккаунта {account.DisplayName}: {ex.Message}"
+                    : $"AdsPower timeout на аккаунте {account.DisplayName}, браузер закрыт, повтор через ~1 мин: {ex.Message}",
                 ex.Message,
                 cancellationToken).ConfigureAwait(false);
             _cycleJournal.FailCycle(cycleId, "automation", ex.Message);

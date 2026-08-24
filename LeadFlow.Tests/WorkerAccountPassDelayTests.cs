@@ -73,5 +73,7 @@ public sealed class WorkerAccountPassDelayTests
 
         Assert.Equal(WorkerAdsPowerPassRetry.Delay, WorkerAdsPowerPassRetry.FromException(timeout));
         Assert.Null(WorkerAdsPowerPassRetry.FromException(generic));
+        Assert.Equal("Warning", WorkerAdsPowerPassRetry.EventType(timeout));
+        Assert.Equal("Error", WorkerAdsPowerPassRetry.EventType(generic));
     }
 }

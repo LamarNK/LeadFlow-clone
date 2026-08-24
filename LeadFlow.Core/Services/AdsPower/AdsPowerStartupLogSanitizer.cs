@@ -70,7 +70,7 @@ internal static class AdsPowerStartupLogSanitizer
             {
                 using var doc = JsonDocument.Parse(payload);
                 var root = doc.RootElement;
-                adsPowerCode = ReadInt(root, "code");
+                adsPowerCode = ReadNumericCode(root, "code");
                 adsPowerMessage = LimitText(ReadStringish(root, "msg") ?? ReadStringish(root, "message"));
                 if (root.TryGetProperty("data", out var data))
                 {
@@ -97,12 +97,12 @@ internal static class AdsPowerStartupLogSanitizer
 
         if (!hasWsPuppeteer)
         {
-            hasWsPuppeteer = !string.IsNullOrWhiteSpace(parsedWebSocketUrl);
+            hasWsPuppeteer = AdsPowerApiClient.TryGetUsablePuppeteerEndpoint(parsedWebSocketUrl, out _);
         }
 
         var ok = transportException is null
                  && httpStatusCode is >= 200 and < 300
-                 && (adsPowerCode is null or 0)
+                 && adsPowerCode == 0
                  && hasWsPuppeteer;
 
         return new AdsPowerLocalApiStartSnapshot(
@@ -381,22 +381,19 @@ internal static class AdsPowerStartupLogSanitizer
         }
 
         return puppeteer.ValueKind == JsonValueKind.String
-               && !string.IsNullOrWhiteSpace(puppeteer.GetString());
+               && AdsPowerApiClient.TryGetUsablePuppeteerEndpoint(puppeteer.GetString(), out _);
     }
 
-    private static int? ReadInt(JsonElement root, string name)
+    private static int? ReadNumericCode(JsonElement root, string name)
     {
-        if (!root.TryGetProperty(name, out var prop))
+        if (!root.TryGetProperty(name, out var prop)
+            || prop.ValueKind != JsonValueKind.Number
+            || !prop.TryGetInt32(out var value))
         {
             return null;
         }
 
-        return prop.ValueKind switch
-        {
-            JsonValueKind.Number when prop.TryGetInt32(out var value) => value,
-            JsonValueKind.String when int.TryParse(prop.GetString(), out var parsed) => parsed,
-            _ => null
-        };
+        return value;
     }
 
     private static string? ReadStringish(JsonElement root, string name)

@@ -484,7 +484,8 @@ public sealed class AdsPowerApiClientTests
         var client = BuildClient((request, _) =>
         {
             capturedRequest = request;
-            return Task.FromResult(StubHttpMessageHandler.Ok("""{"code":0,"data":{}}"""));
+            return Task.FromResult(StubHttpMessageHandler.Ok(
+                """{"code":0,"data":{"ws":{"puppeteer":"ws://127.0.0.1:9222/devtools/browser/abc"}}}"""));
         });
 
         await client.StartBrowserAsync(

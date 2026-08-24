@@ -301,6 +301,75 @@ public sealed class AdsPowerLocalApiThrottleTests
     }
 
     [Fact]
+    public async Task StartBrowserAsync_InvalidResponses_LogLocalApiFailure_NotSuccess()
+    {
+        await AssertLoggedLocalApiFailure(
+            """{"code":"0","msg":"ok","data":{"ws":{"puppeteer":"ws://127.0.0.1:9222/devtools/browser/abc"}}}""");
+        await AssertLoggedLocalApiFailure(
+            """{"msg":"ok","data":{"ws":{"puppeteer":"ws://127.0.0.1:9222/devtools/browser/abc"}}}""");
+        await AssertLoggedLocalApiFailure(
+            """{"code":0,"data":{"ws":{"puppeteer":"x"}}}""");
+        await AssertLoggedLocalApiFailure(
+            """{"code":0,"data":{"ws":{"puppeteer":"http://127.0.0.1:9222/devtools/browser/abc"}}}""");
+    }
+
+    [Fact]
+    public async Task StartBrowserAsync_ValidWs_LogsLocalApiSuccess()
+    {
+        using var capture = GlobalLogCapture.Start();
+        using var trace = AdsPowerStartupTrace.Begin("user-1", 1).Activate();
+        var client = BuildClient((_, _) => Task.FromResult(StubHttpMessageHandler.Ok(
+            """{"code":0,"data":{"ws":{"puppeteer":"ws://127.0.0.1:9222/devtools/browser/abc"}}}""")));
+
+        var result = await client.StartBrowserAsync(UniqueOptions(), "user-1", null, CancellationToken.None);
+
+        Assert.Equal("ws://127.0.0.1:9222/devtools/browser/abc", result.WebSocketDebuggerUrl);
+        var start = Assert.Single(
+            capture.WithCorrelation(trace.CorrelationId),
+            e => Equals(e.Properties.GetValueOrDefault("startup.event"), "browser_start"));
+        Assert.Equal(true, start.Properties["localApi.ok"]);
+        Assert.Equal(true, start.Properties["localApi.hasWsPuppeteer"]);
+        Assert.Equal(AdsPowerLocalApiCall.OperationBrowserStart, trace.LastSuccessfulLocalApiOperation);
+    }
+
+    [Fact]
+    public void SummarizeBrowserStart_StringCodeOrUnusablePuppeteer_IsNotOk()
+    {
+        var stringCode = AdsPowerStartupLogSanitizer.SummarizeBrowserStart(
+            """{"code":"0","data":{"ws":{"puppeteer":"ws://127.0.0.1:9222/devtools/browser/abc"}}}""",
+            200,
+            null,
+            TimeSpan.Zero,
+            "ws://127.0.0.1:9222/devtools/browser/abc",
+            "9222",
+            null);
+        Assert.False(stringCode.Ok);
+        Assert.Null(stringCode.AdsPowerCode);
+
+        var relative = AdsPowerStartupLogSanitizer.SummarizeBrowserStart(
+            """{"code":0,"data":{"ws":{"puppeteer":"x"}}}""",
+            200,
+            null,
+            TimeSpan.Zero,
+            "x",
+            null,
+            null);
+        Assert.False(relative.Ok);
+        Assert.False(relative.HasWsPuppeteer);
+
+        var http = AdsPowerStartupLogSanitizer.SummarizeBrowserStart(
+            """{"code":0,"data":{"ws":{"puppeteer":"http://127.0.0.1:9222/devtools/browser/abc"}}}""",
+            200,
+            null,
+            TimeSpan.Zero,
+            "http://127.0.0.1:9222/devtools/browser/abc",
+            null,
+            null);
+        Assert.False(http.Ok);
+        Assert.False(http.HasWsPuppeteer);
+    }
+
+    [Fact]
     public void TryGetUsablePuppeteerEndpoint_AcceptsAbsoluteWsAndWss()
     {
         Assert.True(AdsPowerApiClient.TryGetUsablePuppeteerEndpoint(
@@ -368,6 +437,27 @@ public sealed class AdsPowerLocalApiThrottleTests
         Assert.Equal(AdsPowerLocalApiCall.OperationUserList, log.Properties["localApi.operation"]);
         Assert.True(Convert.ToDouble(log.Properties["localApi.queueWaitMs"]) >= 0);
         Assert.Equal(200, Convert.ToInt32(log.Properties["localApi.httpStatus"]));
+    }
+
+    private static async Task AssertLoggedLocalApiFailure(string body)
+    {
+        using var capture = GlobalLogCapture.Start();
+        using var trace = AdsPowerStartupTrace.Begin("user-1", 1).Activate();
+        var client = BuildClient((_, _) => Task.FromResult(StubHttpMessageHandler.Ok(body)));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            client.StartBrowserAsync(UniqueOptions(), "user-1", null, CancellationToken.None));
+
+        var start = Assert.Single(
+            capture.WithCorrelation(trace.CorrelationId),
+            e => Equals(e.Properties.GetValueOrDefault("startup.event"), "browser_start"));
+        Assert.Equal(false, start.Properties["localApi.ok"]);
+        Assert.Null(trace.LastSuccessfulLocalApiOperation);
+        var failureProps = capture.WithCorrelation(trace.CorrelationId)
+            .Select(e => e.Properties.GetValueOrDefault("startup.lastSuccessfulLocalApi"))
+            .Where(v => v is not null)
+            .ToList();
+        Assert.Empty(failureProps);
     }
 
     private static AdsPowerConnectionOptions UniqueOptions() =>

@@ -565,6 +565,44 @@ public sealed class AdsPowerApiClient(IHttpClientFactory httpClientFactory) : IA
                 using var doc = JsonDocument.Parse(string.IsNullOrWhiteSpace(json) ? "{}" : json);
                 var root = doc.RootElement;
                 ReadBrowserStartEndpoint(root, out var webSocketDebuggerUrl, out var debugPort);
+
+                try
+                {
+                    var props = CreateProperties(
+                        baseUrl,
+                        hasApiKey: !string.IsNullOrWhiteSpace(options.ApiKey),
+                        userId: adsPowerUserId,
+                        openUrl: openUrl);
+                    AdsPowerStartupDiagnostics.TryCopyIdentity(props);
+                    EnsureApiSuccess(
+                        root,
+                        baseUrl,
+                        options,
+                        nameof(StartBrowserAsync),
+                        props,
+                        requireNumericSuccessCode: true);
+
+                    if (!TryGetUsablePuppeteerEndpoint(webSocketDebuggerUrl, out webSocketDebuggerUrl))
+                    {
+                        throw new InvalidOperationException(
+                            "AdsPower не вернул usable data.ws.puppeteer. HTTP 200 и code=0 недостаточно.");
+                    }
+                }
+                catch
+                {
+                    ObserveBrowserStart(
+                        AdsPowerStartupLogSanitizer.SummarizeBrowserStart(
+                            json,
+                            (int)response.StatusCode,
+                            transportException: null,
+                            httpWatch.Elapsed,
+                            webSocketDebuggerUrl,
+                            debugPort,
+                            openUrl),
+                        adsPowerUserId);
+                    throw;
+                }
+
                 ObserveBrowserStart(
                     AdsPowerStartupLogSanitizer.SummarizeBrowserStart(
                         json,
@@ -575,27 +613,6 @@ public sealed class AdsPowerApiClient(IHttpClientFactory httpClientFactory) : IA
                         debugPort,
                         openUrl),
                     adsPowerUserId);
-
-                var props = CreateProperties(
-                    baseUrl,
-                    hasApiKey: !string.IsNullOrWhiteSpace(options.ApiKey),
-                    userId: adsPowerUserId,
-                    openUrl: openUrl);
-                AdsPowerStartupDiagnostics.TryCopyIdentity(props);
-                EnsureApiSuccess(
-                    root,
-                    baseUrl,
-                    options,
-                    nameof(StartBrowserAsync),
-                    props,
-                    requireNumericSuccessCode: true);
-
-                ReadBrowserStartEndpoint(root, out webSocketDebuggerUrl, out debugPort);
-                if (!TryGetUsablePuppeteerEndpoint(webSocketDebuggerUrl, out webSocketDebuggerUrl))
-                {
-                    throw new InvalidOperationException(
-                        "AdsPower не вернул usable data.ws.puppeteer. HTTP 200 и code=0 недостаточно.");
-                }
 
                 return new AdsPowerBrowserStartResult(webSocketDebuggerUrl, debugPort);
             },

@@ -24,4 +24,7 @@ internal static class WorkerAdsPowerPassRetry
 
         return null;
     }
+
+    public static string EventType(Exception exception) =>
+        FromException(exception) is null ? "Error" : "Warning";
 }
