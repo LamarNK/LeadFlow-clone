@@ -12,13 +12,17 @@ public sealed class AdsPowerRateLimitExceededException : InvalidOperationExcepti
         : base(FormatMessage(apiCode, apiMessage))
     {
         ApiCode = apiCode;
-        ApiMessage = apiMessage;
+        ApiMessage = AdsPowerStartupLogSanitizer.LimitText(apiMessage);
     }
 
     public int ApiCode { get; }
 
+    /// <summary>Санитизированный текст AdsPower для логов/UI. Сырой msg используется только при классификации до throw.</summary>
     public string? ApiMessage { get; }
 
-    private static string FormatMessage(int apiCode, string? apiMessage) =>
-        $"AdsPower: {apiMessage ?? "слишком много запросов в секунду"} (code {apiCode})";
+    private static string FormatMessage(int apiCode, string? apiMessage)
+    {
+        var safe = AdsPowerStartupLogSanitizer.LimitText(apiMessage);
+        return $"AdsPower: {(string.IsNullOrEmpty(safe) ? "слишком много запросов в секунду" : safe)} (code {apiCode})";
+    }
 }

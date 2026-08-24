@@ -12,11 +12,12 @@ public sealed class AdsPowerDailyOpenLimitExceededException : InvalidOperationEx
         : base(FormatMessage(apiCode, apiMessage))
     {
         ApiCode = apiCode;
-        ApiMessage = apiMessage;
+        ApiMessage = AdsPowerStartupLogSanitizer.LimitText(apiMessage);
     }
 
     public int ApiCode { get; }
 
+    /// <summary>Санитизированный текст AdsPower для логов/UI. Сырой msg используется только в <see cref="LooksLikeDailyOpenLimit"/>.</summary>
     public string? ApiMessage { get; }
 
     /// <summary>Эвристика по коду/тексту ответа AdsPower (формулировки могут меняться между версиями).</summary>
@@ -33,6 +34,9 @@ public sealed class AdsPowerDailyOpenLimitExceededException : InvalidOperationEx
                m.Contains("Exceeding open", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static string FormatMessage(int apiCode, string? apiMessage) =>
-        $"AdsPower browser/start: {apiMessage ?? "превышен дневной лимит запусков"} (code {apiCode})";
+    private static string FormatMessage(int apiCode, string? apiMessage)
+    {
+        var safe = AdsPowerStartupLogSanitizer.LimitText(apiMessage);
+        return $"AdsPower browser/start: {(string.IsNullOrEmpty(safe) ? "превышен дневной лимит запусков" : safe)} (code {apiCode})";
+    }
 }

@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text.Json;
@@ -371,73 +372,97 @@ public sealed class AdsPowerApiClient(IHttpClientFactory httpClientFactory) : IA
                 }
 
                 var url = $"{baseUrl}/api/v1/browser/start?{q}";
+                var startProps = CreateProperties(
+                    baseUrl,
+                    hasApiKey: !string.IsNullOrWhiteSpace(options.ApiKey),
+                    userId: adsPowerUserId,
+                    openUrl: openUrl);
+                AdsPowerStartupDiagnostics.TryCopyIdentity(startProps);
                 Log(
                     $"AdsPower browser/start request started for profile {adsPowerUserId}.",
                     DeskLinkAuditLogLevel.Info,
                     nameof(StartBrowserAsync),
-                    CreateProperties(
-                        baseUrl,
-                        hasApiKey: !string.IsNullOrWhiteSpace(options.ApiKey),
-                        userId: adsPowerUserId,
-                        openUrl: openUrl));
+                    startProps);
 
-                var (response, json) = await SendGetAsync(options, url, ct).ConfigureAwait(false);
+                var httpWatch = Stopwatch.StartNew();
+                HttpResponseMessage response;
+                string json;
+                try
+                {
+                    (response, json) = await SendGetAsync(options, url, ct).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException ex) when (ct.IsCancellationRequested)
+                {
+                    ObserveBrowserStart(
+                        AdsPowerStartupLogSanitizer.SummarizeBrowserStart(
+                            payload: null,
+                            httpStatusCode: null,
+                            transportException: ex,
+                            duration: httpWatch.Elapsed,
+                            parsedWebSocketUrl: null,
+                            debugPort: null,
+                            openUrl: openUrl),
+                        adsPowerUserId);
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    ObserveBrowserStart(
+                        AdsPowerStartupLogSanitizer.SummarizeBrowserStart(
+                            payload: null,
+                            httpStatusCode: null,
+                            transportException: ex,
+                            duration: httpWatch.Elapsed,
+                            parsedWebSocketUrl: null,
+                            debugPort: null,
+                            openUrl: openUrl),
+                        adsPowerUserId);
+                    throw;
+                }
+
                 if (!response.IsSuccessStatusCode)
                 {
-                    Log(
-                        $"AdsPower browser/start failed with HTTP {(int)response.StatusCode}. Body: {Truncate(json, 500)}",
-                        DeskLinkAuditLogLevel.Error,
-                        nameof(StartBrowserAsync),
-                        CreateProperties(
-                            baseUrl,
-                            hasApiKey: !string.IsNullOrWhiteSpace(options.ApiKey),
-                            userId: adsPowerUserId,
-                            openUrl: openUrl,
-                            httpStatusCode: (int)response.StatusCode));
+                    var failed = AdsPowerStartupLogSanitizer.SummarizeBrowserStart(
+                        json,
+                        (int)response.StatusCode,
+                        transportException: null,
+                        httpWatch.Elapsed,
+                        parsedWebSocketUrl: null,
+                        debugPort: null,
+                        openUrl: openUrl);
+                    ObserveBrowserStart(failed, adsPowerUserId);
                     throw new InvalidOperationException(
-                        $"AdsPower browser/start: {(int)response.StatusCode} {Truncate(json, 500)}");
+                        $"AdsPower browser/start: {(int)response.StatusCode} {AdsPowerStartupLogSanitizer.FormatLocalApiExceptionHint(failed)}");
                 }
 
                 using var doc = JsonDocument.Parse(string.IsNullOrWhiteSpace(json) ? "{}" : json);
                 var root = doc.RootElement;
+                ReadBrowserStartEndpoint(root, out var webSocketDebuggerUrl, out var debugPort);
+                ObserveBrowserStart(
+                    AdsPowerStartupLogSanitizer.SummarizeBrowserStart(
+                        json,
+                        (int)response.StatusCode,
+                        transportException: null,
+                        httpWatch.Elapsed,
+                        webSocketDebuggerUrl,
+                        debugPort,
+                        openUrl),
+                    adsPowerUserId);
+
+                var props = CreateProperties(
+                    baseUrl,
+                    hasApiKey: !string.IsNullOrWhiteSpace(options.ApiKey),
+                    userId: adsPowerUserId,
+                    openUrl: openUrl);
+                AdsPowerStartupDiagnostics.TryCopyIdentity(props);
                 EnsureApiSuccess(
                     root,
                     baseUrl,
                     options,
                     nameof(StartBrowserAsync),
-                    CreateProperties(
-                        baseUrl,
-                        hasApiKey: !string.IsNullOrWhiteSpace(options.ApiKey),
-                        userId: adsPowerUserId,
-                        openUrl: openUrl));
+                    props);
 
-                string? webSocketDebuggerUrl = null;
-                string? debugPort = null;
-                if (root.TryGetProperty("data", out var data) && data.ValueKind == JsonValueKind.Object)
-                {
-                    if (data.TryGetProperty("debug_port", out var debugPortProp))
-                    {
-                        debugPort = debugPortProp.GetString();
-                    }
-
-                    if (data.TryGetProperty("ws", out var ws) && ws.ValueKind == JsonValueKind.Object)
-                    {
-                        if (ws.TryGetProperty("puppeteer", out var puppeteerProp))
-                        {
-                            webSocketDebuggerUrl = puppeteerProp.GetString();
-                        }
-                    }
-                }
-
-                Log(
-                    $"AdsPower browser/start completed successfully for profile {adsPowerUserId}.",
-                    DeskLinkAuditLogLevel.Info,
-                    nameof(StartBrowserAsync),
-                    CreateProperties(
-                        baseUrl,
-                        hasApiKey: !string.IsNullOrWhiteSpace(options.ApiKey),
-                        userId: adsPowerUserId,
-                        openUrl: openUrl));
+                ReadBrowserStartEndpoint(root, out webSocketDebuggerUrl, out debugPort);
                 return new AdsPowerBrowserStartResult(webSocketDebuggerUrl, debugPort);
             },
             cancellationToken);
@@ -544,17 +569,18 @@ public sealed class AdsPowerApiClient(IHttpClientFactory httpClientFactory) : IA
                 }
 
                 var delaySeconds = Math.Min(30, Math.Pow(2, attempt));
+                var retryProps = new Dictionary<string, object?>
+                {
+                    ["adsPower.apiCode"] = ex.ApiCode,
+                    ["adsPower.apiMessage"] = AdsPowerStartupLogSanitizer.LimitText(ex.ApiMessage),
+                    ["adsPower.rateLimitAttempt"] = attempt
+                };
+                AdsPowerStartupLogSanitizer.CopySafeEndpointProperties(retryProps, "adsPower.baseUrl", baseUrl);
                 Log(
-                    $"AdsPower rate limit (attempt {attempt}/{RateLimitMaxAttempts}): {ex.ApiMessage}. Повтор через {delaySeconds:F0} с.",
+                    $"AdsPower rate limit (attempt {attempt}/{RateLimitMaxAttempts}): {AdsPowerStartupLogSanitizer.LimitText(ex.ApiMessage)}. Повтор через {delaySeconds:F0} с.",
                     DeskLinkAuditLogLevel.Warning,
                     nameof(ExecuteWithRateLimitRetryAsync),
-                    new Dictionary<string, object?>
-                    {
-                        ["adsPower.baseUrl"] = baseUrl,
-                        ["adsPower.apiCode"] = ex.ApiCode,
-                        ["adsPower.apiMessage"] = ex.ApiMessage,
-                        ["adsPower.rateLimitAttempt"] = attempt
-                    },
+                    retryProps,
                     AdsPowerRateLimitExceededException.ErrorKey);
                 await Task.Delay(TimeSpan.FromSeconds(delaySeconds), cancellationToken).ConfigureAwait(false);
             }
@@ -612,7 +638,8 @@ public sealed class AdsPowerApiClient(IHttpClientFactory httpClientFactory) : IA
         }
 
         var msg = root.TryGetProperty("msg", out var m) ? m.GetString() : null;
-        props["adsPower.apiMessage"] = msg;
+        var safeMsg = AdsPowerStartupLogSanitizer.LimitText(msg);
+        props["adsPower.apiMessage"] = string.IsNullOrEmpty(safeMsg) ? null : safeMsg;
         props["adsPower.apiCode"] = code;
 
         if (AdsPowerDailyOpenLimitExceededException.LooksLikeDailyOpenLimit(code, msg))
@@ -629,7 +656,7 @@ public sealed class AdsPowerApiClient(IHttpClientFactory httpClientFactory) : IA
         if (AdsPowerApiErrorClassifier.LooksLikeRateLimit(code, msg))
         {
             Log(
-                $"AdsPower API rate limit (code {code}): {msg}.",
+                $"AdsPower API rate limit (code {code}): {safeMsg}.",
                 DeskLinkAuditLogLevel.Warning,
                 memberName,
                 props,
@@ -640,7 +667,7 @@ public sealed class AdsPowerApiClient(IHttpClientFactory httpClientFactory) : IA
         if (AdsPowerProfileInUseException.LooksLikeProfileInUse(code, msg))
         {
             Log(
-                $"AdsPower API: профиль уже используется (code {code}): {msg}.",
+                $"AdsPower API: профиль уже используется (code {code}): {safeMsg}.",
                 DeskLinkAuditLogLevel.Warning,
                 memberName,
                 props,
@@ -649,11 +676,12 @@ public sealed class AdsPowerApiClient(IHttpClientFactory httpClientFactory) : IA
         }
 
         Log(
-            $"AdsPower API error {code}: {msg ?? "ошибка"}.",
+            $"AdsPower API error {code}: {(string.IsNullOrEmpty(safeMsg) ? "ошибка" : safeMsg)}.",
             DeskLinkAuditLogLevel.Warning,
             memberName,
             props);
-        throw new InvalidOperationException($"AdsPower: {msg ?? "ошибка"} (code {code})");
+        throw new InvalidOperationException(
+            $"AdsPower: {(string.IsNullOrEmpty(safeMsg) ? "ошибка" : safeMsg)} (code {code})");
     }
 
     private static void AddAuthorizationHeader(HttpRequestMessage request, string? apiKey)
@@ -687,6 +715,62 @@ public sealed class AdsPowerApiClient(IHttpClientFactory httpClientFactory) : IA
         return s[..max] + "…";
     }
 
+    private static void ReadBrowserStartEndpoint(
+        JsonElement root,
+        out string? webSocketDebuggerUrl,
+        out string? debugPort)
+    {
+        webSocketDebuggerUrl = null;
+        debugPort = null;
+        if (!root.TryGetProperty("data", out var data) || data.ValueKind != JsonValueKind.Object)
+        {
+            return;
+        }
+
+        if (data.TryGetProperty("debug_port", out var debugPortProp))
+        {
+            debugPort = debugPortProp.ValueKind == JsonValueKind.String
+                ? debugPortProp.GetString()
+                : debugPortProp.ValueKind == JsonValueKind.Number
+                    ? debugPortProp.GetRawText()
+                    : null;
+        }
+
+        if (data.TryGetProperty("ws", out var ws) && ws.ValueKind == JsonValueKind.Object
+            && ws.TryGetProperty("puppeteer", out var puppeteerProp)
+            && puppeteerProp.ValueKind == JsonValueKind.String)
+        {
+            webSocketDebuggerUrl = puppeteerProp.GetString();
+        }
+    }
+
+    private static void ObserveBrowserStart(AdsPowerLocalApiStartSnapshot snapshot, string adsPowerUserId)
+    {
+        try
+        {
+            var evt = AdsPowerStartupTrace.Current?.RecordLocalApi(snapshot);
+            if (evt is null)
+            {
+                var properties = AdsPowerStartupLogSanitizer.ToProperties(snapshot);
+                properties["adsPower.userId"] = adsPowerUserId;
+                evt = new AdsPowerStartupDiagnosticEvent(
+                    "browser_start",
+                    "local_api",
+                    snapshot.Ok
+                        ? "AdsPower startup: Local API browser/start завершён."
+                        : "AdsPower startup: Local API browser/start ошибка.",
+                    snapshot.Ok,
+                    properties);
+            }
+
+            AdsPowerStartupDiagnostics.TryLog(evt, memberName: nameof(StartBrowserAsync));
+        }
+        catch
+        {
+            // диагностика не должна ломать browser/start
+        }
+    }
+
     private static Dictionary<string, object?> CreateProperties(
         string baseUrl,
         bool hasApiKey,
@@ -697,17 +781,20 @@ public sealed class AdsPowerApiClient(IHttpClientFactory httpClientFactory) : IA
         int? profileCount = null,
         string? groupId = null)
     {
-        return new Dictionary<string, object?>
+        var props = new Dictionary<string, object?>
         {
-            ["adsPower.baseUrl"] = baseUrl,
             ["adsPower.hasApiKey"] = hasApiKey,
             ["adsPower.userId"] = userId,
-            ["adsPower.openUrl"] = openUrl,
+            ["adsPower.openUrlClass"] = string.IsNullOrWhiteSpace(openUrl)
+                ? null
+                : AdsPowerAvitoAutomationService.ClassifyAutomationPageUrl(openUrl),
             ["adsPower.httpStatusCode"] = httpStatusCode,
             ["adsPower.apiCode"] = apiCode,
             ["adsPower.profileCount"] = profileCount,
             ["adsPower.groupId"] = groupId
         };
+        AdsPowerStartupLogSanitizer.CopySafeEndpointProperties(props, "adsPower.baseUrl", baseUrl);
+        return props;
     }
 
     private static void Log(

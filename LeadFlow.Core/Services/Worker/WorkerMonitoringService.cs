@@ -774,7 +774,7 @@ public sealed class WorkerMonitoringService(
             cycleTerminal = true;
             await HandleAdsPowerRateLimitForAccountAsync(account, rateEx, cancellationToken).ConfigureAwait(false);
             var reason = string.IsNullOrWhiteSpace(account.LastErrorMessage)
-                ? rateEx.ApiMessage ?? rateEx.Message
+                ? AdsPowerStartupLogSanitizer.ExternalDetail(rateEx.ApiMessage, rateEx.Message)
                 : account.LastErrorMessage;
             await _cycleJournal.FlushAsync(cancellationToken).ConfigureAwait(false);
             return new AccountCycleOutcome(0, false, false, $"AdsPower rate limit: {reason}");
@@ -2633,7 +2633,7 @@ public sealed class WorkerMonitoringService(
         CancellationToken ct)
     {
         account.Status = AvitoAccountStatus.RequiresManualAction;
-        account.LastErrorMessage = limitEx.ApiMessage ?? limitEx.Message;
+        account.LastErrorMessage = AdsPowerStartupLogSanitizer.ExternalDetail(limitEx.ApiMessage, limitEx.Message);
         WorkerMonitoringLogger.AccountFailed(account, "AdsPower", account.LastErrorMessage);
         await repository.SaveAccountAsync(account, ct).ConfigureAwait(false);
         await PublishAccountEventAsync(
@@ -2649,7 +2649,7 @@ public sealed class WorkerMonitoringService(
         AdsPowerRateLimitExceededException rateEx,
         CancellationToken ct)
     {
-        account.LastErrorMessage = rateEx.ApiMessage ?? rateEx.Message;
+        account.LastErrorMessage = AdsPowerStartupLogSanitizer.ExternalDetail(rateEx.ApiMessage, rateEx.Message);
         WorkerMonitoringLogger.AccountFailed(account, "AdsPower rate limit", account.LastErrorMessage);
         await repository.SaveAccountAsync(account, ct).ConfigureAwait(false);
         await PublishAccountEventAsync(
@@ -2666,18 +2666,19 @@ public sealed class WorkerMonitoringService(
         CancellationToken ct)
     {
         account.Status = AvitoAccountStatus.RequiresManualAction;
+        var safeUserMessage = AdsPowerStartupLogSanitizer.LimitText(profileInUseEx.UserMessage);
         account.LastErrorMessage = AccountIssueFormatting.FormatIssue(
             account,
             null,
             AvitoSubProfileIssueKind.ProfileInUse,
-            profileInUseEx.UserMessage);
-        WorkerMonitoringLogger.AccountFailed(account, "AdsPower", profileInUseEx.UserMessage);
+            safeUserMessage);
+        WorkerMonitoringLogger.AccountFailed(account, "AdsPower", safeUserMessage);
         await repository.SaveAccountAsync(account, ct).ConfigureAwait(false);
         await PublishAccountEventAsync(
             account,
             "Warning",
             $"Профиль AdsPower занят для {account.DisplayName}",
-            profileInUseEx.UserMessage,
+            safeUserMessage,
             ct).ConfigureAwait(false);
     }
 

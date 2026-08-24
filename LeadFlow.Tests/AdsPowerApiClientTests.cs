@@ -577,8 +577,9 @@ public sealed class AdsPowerApiClientTests
                 CancellationToken.None));
 
         Assert.Equal(-1, ex.ApiCode);
-        Assert.Contains("a.pakin797@gmail.com", ex.UserMessage);
         Assert.Contains("k1cu2550", ex.UserMessage);
+        Assert.DoesNotContain("a.pakin797@gmail.com", ex.UserMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("***@***", ex.UserMessage);
     }
 
     [Fact]
