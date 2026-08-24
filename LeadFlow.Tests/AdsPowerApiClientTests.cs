@@ -137,33 +137,38 @@ public sealed class AdsPowerApiClientTests
     [Fact]
     public async Task ResolveAutomationPageAcquisition_EmptyPages_RetriesOnceThenCdpTimeoutWithoutNewPage()
     {
-        var operations = new List<string>();
+        var events = new List<string>();
         var timestamps = new List<long>();
-        var newPageCalls = 0;
         var started = Stopwatch.StartNew();
 
         var ex = await Assert.ThrowsAsync<TimeoutException>(() =>
             AdsPowerAvitoAutomationService.ResolveAutomationPageAcquisitionAsync(
                 (operation, _) =>
                 {
-                    operations.Add(operation);
+                    events.Add($"poll:{operation}");
                     timestamps.Add(started.ElapsedMilliseconds);
                     return Task.FromResult<IReadOnlyList<string?>>([]);
                 },
                 "https://www.avito.ru/profile/pro/items",
-                CancellationToken.None));
+                CancellationToken.None,
+                onEmptyFirstPoll: urls =>
+                {
+                    Assert.Empty(urls);
+                    events.Add("log:empty_pages_retryScheduled");
+                    timestamps.Add(started.ElapsedMilliseconds);
+                }));
 
         Assert.Equal(
             [
-                AdsPowerAvitoAutomationService.PageAcquireOperation,
-                AdsPowerAvitoAutomationService.PageAcquireRetryOperation
+                $"poll:{AdsPowerAvitoAutomationService.PageAcquireOperation}",
+                "log:empty_pages_retryScheduled",
+                $"poll:{AdsPowerAvitoAutomationService.PageAcquireRetryOperation}"
             ],
-            operations);
-        Assert.Equal(2, timestamps.Count);
+            events);
+        Assert.Equal(3, timestamps.Count);
         Assert.True(
-            timestamps[1] - timestamps[0] >= MonitoringTiming.AdsPowerStartupNavigationPollMs - 30,
-            $"повторный PagesAsync слишком рано: {timestamps[1] - timestamps[0]} мс");
-        Assert.Equal(0, newPageCalls);
+            timestamps[2] - timestamps[1] >= MonitoringTiming.AdsPowerStartupNavigationPollMs - 30,
+            $"повторный PagesAsync слишком рано после лога: {timestamps[2] - timestamps[1]} мс");
         Assert.StartsWith(AdsPowerCdpGuard.TimeoutPrefix, ex.Message, StringComparison.Ordinal);
         Assert.Contains("NewPage", ex.Message, StringComparison.Ordinal);
         Assert.True(AdsPowerCdpGuard.IsCdpTimeout(ex));
@@ -188,22 +193,33 @@ public sealed class AdsPowerApiClientTests
     }
 
     [Fact]
-    public async Task ResolveAutomationPageAcquisition_EmptyThenExisting_UsesSecondPoll()
+    public async Task ResolveAutomationPageAcquisition_EmptyThenExisting_LogsEmptyPagesBeforeRetry()
     {
-        var operations = new List<string>();
+        var events = new List<string>();
         var result = await AdsPowerAvitoAutomationService.ResolveAutomationPageAcquisitionAsync(
             (operation, _) =>
             {
-                operations.Add(operation);
-                IReadOnlyList<string?> urls = operations.Count == 1
+                events.Add($"poll:{operation}");
+                IReadOnlyList<string?> urls = events.Count(static e => e.StartsWith("poll:", StringComparison.Ordinal)) == 1
                     ? []
                     : ["https://www.avito.ru/profile/pro/items"];
                 return Task.FromResult(urls);
             },
             "https://www.avito.ru/profile/pro/items",
-            CancellationToken.None);
+            CancellationToken.None,
+            onEmptyFirstPoll: urls =>
+            {
+                Assert.Empty(urls);
+                events.Add("log:empty_pages_retryScheduled");
+            });
 
-        Assert.Equal(2, operations.Count);
+        Assert.Equal(
+            [
+                $"poll:{AdsPowerAvitoAutomationService.PageAcquireOperation}",
+                "log:empty_pages_retryScheduled",
+                $"poll:{AdsPowerAvitoAutomationService.PageAcquireRetryOperation}"
+            ],
+            events);
         Assert.Equal("existing_page", result.Branch);
         Assert.Equal(0, result.SelectedIndex);
     }
@@ -220,7 +236,9 @@ public sealed class AdsPowerApiClientTests
                 return Task.FromResult<IReadOnlyList<string?>>(["about:blank"]);
             },
             "https://www.avito.ru/profile/pro/items",
-            CancellationToken.None);
+            CancellationToken.None,
+            onEmptyFirstPoll: _ => throw new InvalidOperationException(
+                "пустой PagesAsync не должен логироваться, если первая выборка уже не пустая"));
 
         Assert.Equal([AdsPowerAvitoAutomationService.PageAcquireOperation], operations);
         Assert.Equal("existing_page", result.Branch);

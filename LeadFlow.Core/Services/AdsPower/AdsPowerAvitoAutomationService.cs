@@ -2256,7 +2256,18 @@ public sealed partial class AdsPowerAvitoAutomationService(
                         return existingPages.Select(static page => (string?)page.Url).ToArray();
                     },
                     preferredUrl,
-                    cancellationToken)
+                    cancellationToken,
+                    onEmptyFirstPoll: _ => LogAutomationPageAcquisition(
+                        callerMemberName,
+                        preferredUrl,
+                        targetKind,
+                        existingPages,
+                        selectedIndex: -1,
+                        branch: "empty_pages",
+                        cdpCall: "PagesAsync",
+                        closed: 0,
+                        extraMessage: "повторный опрос",
+                        retryScheduled: true))
                 .ConfigureAwait(false);
         }
         catch (TimeoutException ex) when (AdsPowerCdpGuard.IsCdpTimeout(ex))
@@ -2335,7 +2346,8 @@ public sealed partial class AdsPowerAvitoAutomationService(
         string branch,
         string cdpCall,
         int closed,
-        string? extraMessage = null)
+        string? extraMessage = null,
+        bool retryScheduled = false)
     {
         var urls = pages.Select(static page => page.Url).ToArray();
         var suffix = string.IsNullOrWhiteSpace(extraMessage) ? string.Empty : $", {extraMessage}";
@@ -2352,6 +2364,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 ["automation.urlClasses"] = FormatAutomationPageUrlClasses(urls),
                 ["automation.selectedIndex"] = selectedIndex,
                 ["automation.cdpCall"] = cdpCall,
+                ["automation.retryScheduled"] = retryScheduled,
                 ["automation.tabsClosed"] = closed,
                 ["automation.tabsBefore"] = pages.Count
             });
@@ -2368,7 +2381,8 @@ public sealed partial class AdsPowerAvitoAutomationService(
     internal static async Task<AutomationPageAcquisition> ResolveAutomationPageAcquisitionAsync(
         Func<string, CancellationToken, Task<IReadOnlyList<string?>>> getPageUrls,
         string preferredUrl,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Action<IReadOnlyList<string?>>? onEmptyFirstPoll = null)
     {
         ArgumentNullException.ThrowIfNull(getPageUrls);
         ArgumentException.ThrowIfNullOrWhiteSpace(preferredUrl);
@@ -2377,6 +2391,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
                    ?? [];
         if (urls.Count == 0)
         {
+            onEmptyFirstPoll?.Invoke(urls);
             await Task.Delay(
                     TimeSpan.FromMilliseconds(MonitoringTiming.AdsPowerStartupNavigationPollMs),
                     cancellationToken)
