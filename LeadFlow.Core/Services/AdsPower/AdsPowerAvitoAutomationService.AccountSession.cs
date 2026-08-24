@@ -80,7 +80,7 @@ public sealed partial class AdsPowerAvitoAutomationService
                 };
                 AdsPowerStartupDiagnostics.TryCopyIdentity(retryProperties);
                 _ = GlobalLogger.Instance.LogAsync(
-                    $"AdsPower account session: попытка {attempt} не открыла Avito ({ex.Message}), перезапускаем браузер.",
+                    $"AdsPower account session: попытка {attempt} не открыла Avito ({AdsPowerStartupLogSanitizer.LimitText(ex.Message)}), перезапускаем браузер.",
                     DeskLinkAuditLogLevel.Warning,
                     memberName: nameof(OpenAccountSessionAsync),
                     properties: retryProperties);
@@ -167,10 +167,12 @@ public sealed partial class AdsPowerAvitoAutomationService
         }
         catch (Exception ex)
         {
-            AdsPowerStartupDiagnostics.TryLog(
-                trace.RecordFailure(ex),
-                memberName: nameof(OpenAccountSessionOnceAsync));
-
+            if (ex is not OperationCanceledException)
+            {
+                AdsPowerStartupDiagnostics.TryLog(
+                    trace.RecordFailure(ex),
+                    memberName: nameof(OpenAccountSessionOnceAsync));
+            }
             if (browser is not null)
             {
                 try

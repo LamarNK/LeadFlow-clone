@@ -100,7 +100,7 @@ internal sealed class AdsPowerStartupTrace : IDisposable
     {
         return SafeRecord(() =>
         {
-            if (snapshot.ApiSucceeded)
+            if (snapshot.Ok)
             {
                 LastSuccessfulLocalApiOperation = AdsPowerStartupLogSanitizer.BrowserStartOperation;
             }
@@ -162,6 +162,13 @@ internal sealed class AdsPowerStartupTrace : IDisposable
     {
         return SafeRecord(() =>
         {
+            if (exception is OperationCanceledException)
+            {
+                // Внутренняя отмена (3-мин CTS / HTTP cancel) не занимает единственный
+                // failure-event: внешний TimeoutException должен остаться в журнале.
+                return null;
+            }
+
             if (_failure is not null)
             {
                 return null;

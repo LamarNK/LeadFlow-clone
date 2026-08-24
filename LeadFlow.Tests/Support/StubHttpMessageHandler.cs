@@ -18,7 +18,7 @@ internal sealed class StubHttpMessageHandler(
             : await request.Content.ReadAsStringAsync(cancellationToken);
         var path = request.RequestUri?.AbsolutePath ?? string.Empty;
         Calls.Add((path, body));
-        return await handler(request, body);
+        return await handler(request, body).WaitAsync(cancellationToken);
     }
 
     public static HttpResponseMessage Json(HttpStatusCode status, string json) =>

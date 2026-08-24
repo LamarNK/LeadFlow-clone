@@ -18,19 +18,21 @@ internal static class AdsPowerStartupLogSanitizer
 
     internal const string BrowserStartOperation = "browser/start";
 
+    private static readonly HashSet<string> DataKeyAllowlist = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "ws",
+        "debug_port",
+        "webdriver"
+    };
+
     private static readonly Regex EmailRegex = new(
         @"[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}",
         RegexOptions.IgnoreCase | RegexOptions.Compiled,
         TimeSpan.FromMilliseconds(200));
 
-    private static readonly Regex UserInfoUrlRegex = new(
-        @"(?i)(https?|socks5?|wss?)://[^/\s]*:[^/\s]*@",
+    private static readonly Regex AnyUrlRegex = new(
+        @"(?i)(?:https?|wss?|socks5?)://[^\s<>""']+",
         RegexOptions.Compiled,
-        TimeSpan.FromMilliseconds(200));
-
-    private static readonly Regex WebSocketUrlRegex = new(
-        @"wss?://\S+",
-        RegexOptions.IgnoreCase | RegexOptions.Compiled,
         TimeSpan.FromMilliseconds(200));
 
     private static readonly Regex BearerTokenRegex = new(
@@ -75,9 +77,9 @@ internal static class AdsPowerStartupLogSanitizer
                     dataKind = DescribeValueKind(data.ValueKind);
                     if (data.ValueKind == JsonValueKind.Object)
                     {
-                        var keys = ReadObjectKeys(data);
-                        dataKeyCount = keys.Count;
-                        dataKeys = string.Join(",", keys.Take(MaxDataKeys));
+                        var (totalKeys, allowlistedKeys) = ReadAllowlistedDataKeys(data);
+                        dataKeyCount = totalKeys;
+                        dataKeys = allowlistedKeys;
                         debugPortPresent = debugPortPresent
                                            || data.TryGetProperty("debug_port", out var debugPortProp)
                                            && debugPortProp.ValueKind is not JsonValueKind.Null
@@ -173,8 +175,7 @@ internal static class AdsPowerStartupLogSanitizer
         var s = LogSanitizer.RedactSensitivePatterns(text, maxLen: Math.Max(maxLength, 256));
         try
         {
-            s = UserInfoUrlRegex.Replace(s, "$1://***:***@");
-            s = WebSocketUrlRegex.Replace(s, "ws://***");
+            s = RedactUrls(s);
             s = BearerTokenRegex.Replace(s, "Bearer ***");
             s = SessionCookieRegex.Replace(s, "$1=***");
             s = EmailRegex.Replace(s, "***@***");
@@ -302,6 +303,41 @@ internal static class AdsPowerStartupLogSanitizer
         }
     }
 
+    private static string RedactUrls(string text)
+    {
+        return AnyUrlRegex.Replace(text, match =>
+        {
+            var value = match.Value;
+            var trimmed = value.TrimEnd('.', ',', ';', ':', ')', ']', '"', '\'');
+            var suffix = value[trimmed.Length..];
+            var cls = AdsPowerAvitoAutomationService.ClassifyAutomationPageUrl(trimmed);
+            return $"<url:{cls}>{suffix}";
+        });
+    }
+
+    private static (int Total, string? Allowlisted) ReadAllowlistedDataKeys(JsonElement data)
+    {
+        if (data.ValueKind != JsonValueKind.Object)
+        {
+            return (0, null);
+        }
+
+        var total = 0;
+        var allowed = new List<string>();
+        foreach (var property in data.EnumerateObject())
+        {
+            total++;
+            if (!DataKeyAllowlist.Contains(property.Name) || allowed.Count >= MaxDataKeys)
+            {
+                continue;
+            }
+
+            allowed.Add(property.Name);
+        }
+
+        return (total, allowed.Count == 0 ? null : string.Join(",", allowed));
+    }
+
     private static bool HasWsPuppeteer(JsonElement data)
     {
         if (!data.TryGetProperty("ws", out var ws) || ws.ValueKind != JsonValueKind.Object)
@@ -316,26 +352,6 @@ internal static class AdsPowerStartupLogSanitizer
 
         return puppeteer.ValueKind == JsonValueKind.String
                && !string.IsNullOrWhiteSpace(puppeteer.GetString());
-    }
-
-    private static IReadOnlyList<string> ReadObjectKeys(JsonElement obj)
-    {
-        if (obj.ValueKind != JsonValueKind.Object)
-        {
-            return [];
-        }
-
-        var keys = new List<string>();
-        foreach (var property in obj.EnumerateObject())
-        {
-            keys.Add(property.Name);
-            if (keys.Count >= 64)
-            {
-                break;
-            }
-        }
-
-        return keys;
     }
 
     private static int? ReadInt(JsonElement root, string name)

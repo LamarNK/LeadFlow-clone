@@ -2867,6 +2867,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            ObserveCdpPages(operation, started.Elapsed, pages: null, ok: false);
             throw;
         }
         catch
@@ -3051,6 +3052,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            ObserveCdpCall("Connect", "подключение CDP", started.Elapsed, ok: false);
             throw;
         }
         catch

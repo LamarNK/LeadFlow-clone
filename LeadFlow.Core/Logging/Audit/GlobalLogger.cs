@@ -108,6 +108,12 @@ public static class GlobalLogger
     public static ILogger? AppLogger { get; private set; }
 
     /// <summary>
+    /// Тестовый sink: вызывается из <see cref="Logger.LogAsync"/> с тем же payload, что уходит в журнал.
+    /// Не используется в проде.
+    /// </summary>
+    internal static Action<DeskLinkAuditLogLevel, string, string?, string?, Dictionary<string, object?>?>? TestCapture;
+
+    /// <summary>
     /// Подключает стандартный ILogger (для app-логов), не меняя существующие вызовы GlobalLogger.Instance.LogAsync().
     /// </summary>
     public static void ConfigureAppLogger(ILogger logger)
@@ -376,6 +382,15 @@ public class Logger
     {
         if (!LogLevelConfiguration.IsEnabled(level))
             return;
+
+        try
+        {
+            GlobalLogger.TestCapture?.Invoke(level, message, memberName, errorKey, properties);
+        }
+        catch
+        {
+            // тестовый sink не должен ломать логирование
+        }
 
         // Оптимизация: кешируем вычисление prefix (особенно важно в single-file, где CallerFilePath пуст и нужен StackTrace)
         string prefixKey = string.Concat(filePath ?? string.Empty, "|", memberName ?? string.Empty);

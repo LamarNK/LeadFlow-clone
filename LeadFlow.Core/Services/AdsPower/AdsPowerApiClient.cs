@@ -372,15 +372,17 @@ public sealed class AdsPowerApiClient(IHttpClientFactory httpClientFactory) : IA
                 }
 
                 var url = $"{baseUrl}/api/v1/browser/start?{q}";
+                var startProps = CreateProperties(
+                    baseUrl,
+                    hasApiKey: !string.IsNullOrWhiteSpace(options.ApiKey),
+                    userId: adsPowerUserId,
+                    openUrl: openUrl);
+                AdsPowerStartupDiagnostics.TryCopyIdentity(startProps);
                 Log(
                     $"AdsPower browser/start request started for profile {adsPowerUserId}.",
                     DeskLinkAuditLogLevel.Info,
                     nameof(StartBrowserAsync),
-                    CreateProperties(
-                        baseUrl,
-                        hasApiKey: !string.IsNullOrWhiteSpace(options.ApiKey),
-                        userId: adsPowerUserId,
-                        openUrl: openUrl));
+                    startProps);
 
                 var httpWatch = Stopwatch.StartNew();
                 HttpResponseMessage response;
@@ -389,8 +391,18 @@ public sealed class AdsPowerApiClient(IHttpClientFactory httpClientFactory) : IA
                 {
                     (response, json) = await SendGetAsync(options, url, ct).ConfigureAwait(false);
                 }
-                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                catch (OperationCanceledException ex) when (ct.IsCancellationRequested)
                 {
+                    ObserveBrowserStart(
+                        AdsPowerStartupLogSanitizer.SummarizeBrowserStart(
+                            payload: null,
+                            httpStatusCode: null,
+                            transportException: ex,
+                            duration: httpWatch.Elapsed,
+                            parsedWebSocketUrl: null,
+                            debugPort: null,
+                            openUrl: openUrl),
+                        adsPowerUserId);
                     throw;
                 }
                 catch (Exception ex)
@@ -772,7 +784,9 @@ public sealed class AdsPowerApiClient(IHttpClientFactory httpClientFactory) : IA
             ["adsPower.baseUrl"] = baseUrl,
             ["adsPower.hasApiKey"] = hasApiKey,
             ["adsPower.userId"] = userId,
-            ["adsPower.openUrl"] = openUrl,
+            ["adsPower.openUrlClass"] = string.IsNullOrWhiteSpace(openUrl)
+                ? null
+                : AdsPowerAvitoAutomationService.ClassifyAutomationPageUrl(openUrl),
             ["adsPower.httpStatusCode"] = httpStatusCode,
             ["adsPower.apiCode"] = apiCode,
             ["adsPower.profileCount"] = profileCount,
