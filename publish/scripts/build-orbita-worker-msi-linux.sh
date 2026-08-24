@@ -32,6 +32,8 @@ command -v msiinfo >/dev/null || { echo "msiinfo is required (Ubuntu: apt-get in
 command -v wrestool >/dev/null || { echo "wrestool is required (Ubuntu: apt-get install icoutils)." >&2; exit 1; }
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+python3 "$script_dir/test_build_orbita_worker_msi_linux.py"
+
 repo_root="$(cd -- "$script_dir/../.." && pwd)"
 output_dir="${output_dir:-$repo_root/publish/out/orbita-worker/$version}"
 publish_dir="$repo_root/publish/tmp/orbita-worker-publish-linux/$version"
@@ -70,52 +72,11 @@ if grep -Fq 'Guid="*"' "$wxs_path"; then
 fi
 wixl -a x64 -o "$msi_path" "$wxs_path"
 
-msi_tables="$(msiinfo tables "$msi_path")"
-sequence_table="$(msiinfo export "$msi_path" InstallExecuteSequence)"
-custom_action_table="$(msiinfo export "$msi_path" CustomAction)"
-
-sequence_number() {
-  local action="$1"
-  awk -F '\t' -v action="$action" '
-    $1 == action && !found { value = $3; found = 1 }
-    END {
-      gsub(/\r$/, "", value)
-      if (found) print value
-    }
-  ' <<< "$sequence_table"
-}
-
-if ! grep -qx 'File' <<< "$msi_tables"; then
-  echo "wixl did not produce a valid MSI database: $msi_path" >&2
-  exit 1
-fi
-remove_existing_sequence="$(sequence_number RemoveExistingProducts)"
-install_files_sequence="$(sequence_number InstallFiles)"
-if [[ ! "$remove_existing_sequence" =~ ^[0-9]+$ ]] || [[ ! "$install_files_sequence" =~ ^[0-9]+$ ]] || (( remove_existing_sequence >= install_files_sequence )); then
-  echo "MSI must remove the previous Worker release before installing new files." >&2
-  exit 1
-fi
-if ! grep -q '^StopWorkerBeforeUpgrade' <<< "$custom_action_table"; then
-  echo "MSI does not contain the required StopWorkerBeforeUpgrade action." >&2
-  exit 1
-fi
-if ! awk -F '\t' '$1 == "SetStopWorkerCommand" && $4 == "[SystemFolder]cmd.exe" { found = 1 } END { exit !found }' <<< "$custom_action_table"; then
-  echo "MSI does not resolve the command interpreter for StopWorkerBeforeUpgrade." >&2
-  exit 1
-fi
-stop_worker_sequence="$(sequence_number StopWorkerBeforeUpgrade)"
-if [[ ! "$stop_worker_sequence" =~ ^[0-9]+$ ]] || (( stop_worker_sequence >= remove_existing_sequence )); then
-  echo "MSI must stop Orbita Worker before removing the previous release." >&2
-  exit 1
-fi
-if ! awk -F '\t' '$1 == "LaunchWorkerAfterInstall" && $2 == "210" && $3 ~ /^File_/ { found = 1 } END { exit !found }' <<< "$custom_action_table"; then
-  echo "MSI does not launch Orbita Worker using its installed FileKey." >&2
-  exit 1
-fi
-launch_worker_sequence="$(sequence_number LaunchWorkerAfterInstall)"
-install_finalize_sequence="$(sequence_number InstallFinalize)"
-if [[ ! "$launch_worker_sequence" =~ ^[0-9]+$ ]] || [[ ! "$install_finalize_sequence" =~ ^[0-9]+$ ]] || (( launch_worker_sequence <= install_finalize_sequence )); then
-  echo "MSI must launch Orbita Worker after InstallFinalize." >&2
+if ! python3 "$script_dir/test_build_orbita_worker_msi_linux.py" --msi "$msi_path"; then
+  echo "---- InstallExecuteSequence ----" >&2
+  msiinfo export "$msi_path" InstallExecuteSequence >&2 || true
+  echo "---- CustomAction ----" >&2
+  msiinfo export "$msi_path" CustomAction >&2 || true
   exit 1
 fi
 

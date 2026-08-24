@@ -10,16 +10,39 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import re
 import uuid
 from pathlib import Path
 from xml.sax.saxutils import escape
 
 
 UPGRADE_CODE = "a7c4e2f1-9b3d-4a6e-8c0f-1d2e3f4a5b6c"
+WORKER_LAUNCH_ARGUMENT = "--update-restart"
+XML_QUOT = "&" + "quot;"
+XML_GT = "&" + "gt;"
+XML_AMP = "&" + "amp;"
+
+# Explicit numbers pin wixl's topological sort. MajorUpgrade only adds a
+# dependency on InstallValidate (1400); without a number, RemoveExistingProducts
+# can land at the MSI default 6700 — after InstallFinalize and after launch.
+INSTALL_VALIDATE_SEQUENCE = 1400
+STOP_WORKER_SEQUENCE = 1448
+REMOVE_EXISTING_PRODUCTS_SEQUENCE = 1450
+INSTALL_INITIALIZE_SEQUENCE = 1500
+INSTALL_FINALIZE_SEQUENCE = 6600
+SET_LAUNCH_WORKER_SEQUENCE = 6601
+LAUNCH_WORKER_SEQUENCE = 6602
+
+# Type 50 (EXE from property) + Continue (Return=ignore).
+LAUNCH_CUSTOM_ACTION_TYPE_IGNORE = 114
+# Type 51 (set property).
+SET_PROPERTY_ACTION_TYPE = 51
+# Type 18 (EXE from File table) + asyncNoWait — the upgrade-breaking form.
+FILEKEY_LAUNCH_TYPE = 210
 
 
 def xml(value: str) -> str:
-    return escape(value, {'"': '&quot;'})
+    return escape(value, {'"': XML_QUOT})
 
 
 def wix_id(prefix: str, value: str) -> str:
@@ -61,6 +84,201 @@ def add_to_tree(tree: dict[str, dict], path: Path) -> None:
 
 def directory_id(relative_parent: Path) -> str:
     return "INSTALLFOLDER" if relative_parent == Path(".") else wix_id("Directory", relative_parent.as_posix())
+
+
+def custom_action_lines(worker_executable_id: str) -> list[str]:
+    """Custom actions that survive a silent major upgrade under wixl.
+
+    FileKey / Type 18 is the upgrade bug: Windows Installer binds that CA to
+    the File table component action. On a first install the component action
+    is InstallLocal, so CreateProcess works. On a major upgrade the nested
+    RemoveExistingProducts session plus MigrateFeatureStates leaves the new
+    File row in a state where Type 18 is skipped or resolves a stale path.
+    The launched process is also a msiexec child, so ``msiexec /qn`` can kill
+    it when the installer job object goes away.
+
+    Type 50 + ``cmd /c start`` breaks away from msiexec. ``[#FileId]`` is
+    formatted after InstallFinalize from the File table destination, so it
+    does not depend on INSTALLFOLDER surviving the nested uninstall.
+    ``--update-restart`` makes the worker retry the single-instance mutex
+    instead of exiting on the first attempt.
+    """
+    file_ref = f"[#{worker_executable_id}]"
+    stop_cmd = (
+        f"/d /c taskkill /F /IM Orbita.Worker.exe {XML_GT}nul 2{XML_GT}{XML_AMP}1 "
+        f"{XML_AMP} ping -n 3 127.0.0.1 {XML_GT}nul"
+    )
+    launch_cmd = (
+        f"/d /c start {XML_QUOT}{XML_QUOT} {XML_QUOT}{file_ref}{XML_QUOT} "
+        f"{WORKER_LAUNCH_ARGUMENT}"
+    )
+    condition = f"NOT REMOVE~={XML_QUOT}ALL{XML_QUOT}"
+    return [
+        '    <CustomAction Id="SetStopWorkerCommand" Property="StopWorkerCommand"',
+        '                  Value="[SystemFolder]cmd.exe" Execute="immediate" />',
+        '    <CustomAction Id="StopWorkerBeforeUpgrade" Property="StopWorkerCommand"',
+        f'                  ExeCommand="{stop_cmd}"',
+        '                  Execute="immediate" Return="ignore" Impersonate="yes" />',
+        '    <CustomAction Id="SetLaunchWorkerCommand" Property="LaunchWorkerCommand"',
+        '                  Value="[SystemFolder]cmd.exe" Execute="immediate" />',
+        '    <CustomAction Id="LaunchWorkerAfterInstall" Property="LaunchWorkerCommand"',
+        f'                  ExeCommand="{launch_cmd}"',
+        '                  Execute="immediate" Return="ignore" Impersonate="yes" />',
+        '    <InstallExecuteSequence>',
+        f'      <RemoveExistingProducts Sequence="{REMOVE_EXISTING_PRODUCTS_SEQUENCE}" Before="InstallInitialize" />',
+        f'      <Custom Action="SetStopWorkerCommand" Sequence="{STOP_WORKER_SEQUENCE - 1}" Before="StopWorkerBeforeUpgrade">',
+        f'        {condition}',
+        '      </Custom>',
+        f'      <Custom Action="StopWorkerBeforeUpgrade" Sequence="{STOP_WORKER_SEQUENCE}" Before="RemoveExistingProducts">',
+        f'        {condition}',
+        '      </Custom>',
+        f'      <Custom Action="SetLaunchWorkerCommand" Sequence="{SET_LAUNCH_WORKER_SEQUENCE}" After="InstallFinalize">',
+        f'        {condition}',
+        '      </Custom>',
+        f'      <Custom Action="LaunchWorkerAfterInstall" Sequence="{LAUNCH_WORKER_SEQUENCE}" After="SetLaunchWorkerCommand">',
+        f'        {condition}',
+        '      </Custom>',
+        '    </InstallExecuteSequence>',
+    ]
+
+
+def assert_wxs_upgrade_contract(text: str, worker_executable_id: str) -> None:
+    """Fail the build if the generated source regresses the upgrade launch."""
+    errors: list[str] = []
+    if 'Guid="*"' in text:
+        errors.append("component GUIDs must be unique per release, not Guid=\"*\"")
+    if "FileKey=" in text:
+        errors.append("LaunchWorkerAfterInstall must not use FileKey/Type 18")
+    if 'Property="LaunchWorkerCommand"' not in text:
+        errors.append("LaunchWorkerAfterInstall must be a Type 50 property CA")
+    if WORKER_LAUNCH_ARGUMENT not in text:
+        errors.append(f"launch command must pass {WORKER_LAUNCH_ARGUMENT}")
+    if f"start {XML_QUOT}{XML_QUOT}" not in text:
+        errors.append("launch command must use cmd start to detach from msiexec")
+    if f"[#{worker_executable_id}]" not in text:
+        errors.append("launch command must resolve the installed File table path")
+    if "taskkill /F /IM Orbita.Worker.exe" not in text:
+        errors.append("StopWorkerBeforeUpgrade must force-kill the running worker")
+    if "taskkill /IM Orbita.Worker.exe /T" in text:
+        errors.append("StopWorkerBeforeUpgrade must not use /T (it can kill msiexec)")
+    if f'Sequence="{REMOVE_EXISTING_PRODUCTS_SEQUENCE}"' not in text:
+        errors.append("RemoveExistingProducts must be pinned before InstallInitialize")
+    if f'Sequence="{LAUNCH_WORKER_SEQUENCE}"' not in text:
+        errors.append("LaunchWorkerAfterInstall must be pinned after InstallFinalize")
+    if f"NOT REMOVE~={XML_QUOT}ALL{XML_QUOT}" not in text:
+        errors.append("launch/stop conditions must run on install and major upgrade")
+    if errors:
+        raise RuntimeError("Generated WiX source fails the MSI upgrade contract: " + "; ".join(errors))
+
+
+def _tab_rows(export_text: str) -> list[list[str]]:
+    rows: list[list[str]] = []
+    for raw in export_text.splitlines():
+        line = raw.rstrip("\r")
+        if not line:
+            continue
+        rows.append(line.split("\t"))
+    return rows
+
+
+def _sequence_map(sequence_table: str) -> dict[str, tuple[str, int]]:
+    values: dict[str, tuple[str, int]] = {}
+    for fields in _tab_rows(sequence_table):
+        if len(fields) < 3:
+            continue
+        action, condition, sequence = fields[0], fields[1], fields[2]
+        try:
+            values[action] = (condition, int(sequence))
+        except ValueError:
+            continue
+    return values
+
+
+def _custom_action_map(custom_action_table: str) -> dict[str, tuple[int, str, str]]:
+    values: dict[str, tuple[int, str, str]] = {}
+    for fields in _tab_rows(custom_action_table):
+        if len(fields) < 4:
+            continue
+        action, type_text, source, target = fields[0], fields[1], fields[2], fields[3]
+        try:
+            values[action] = (int(type_text), source, target)
+        except ValueError:
+            continue
+    return values
+
+
+def validate_msi_tables(msi_tables: str, sequence_table: str, custom_action_table: str) -> None:
+    """Validate the compiled MSI tables that actually run on Windows."""
+    errors: list[str] = []
+    table_names = {line.strip() for line in msi_tables.splitlines() if line.strip()}
+    if "File" not in table_names:
+        errors.append("MSI is missing the File table")
+    if "Upgrade" not in table_names:
+        errors.append("MSI is missing the Upgrade table (MajorUpgrade was dropped by wixl)")
+
+    sequence = _sequence_map(sequence_table)
+    actions = _custom_action_map(custom_action_table)
+
+    def seq(name: str) -> int | None:
+        item = sequence.get(name)
+        return item[1] if item else None
+
+    def cond(name: str) -> str:
+        item = sequence.get(name)
+        return item[0] if item else ""
+
+    remove_existing = seq("RemoveExistingProducts")
+    install_files = seq("InstallFiles")
+    install_initialize = seq("InstallInitialize")
+    install_finalize = seq("InstallFinalize")
+    stop_worker = seq("StopWorkerBeforeUpgrade")
+    set_launch = seq("SetLaunchWorkerCommand")
+    launch_worker = seq("LaunchWorkerAfterInstall")
+
+    if remove_existing is None or install_files is None or remove_existing >= install_files:
+        errors.append("RemoveExistingProducts must run before InstallFiles")
+    if install_initialize is not None and remove_existing is not None and remove_existing >= install_initialize:
+        errors.append("RemoveExistingProducts must run before InstallInitialize so old files are gone before the new copy")
+    if stop_worker is None or remove_existing is None or stop_worker >= remove_existing:
+        errors.append("StopWorkerBeforeUpgrade must run before RemoveExistingProducts")
+    if launch_worker is None or install_finalize is None or launch_worker <= install_finalize:
+        errors.append("LaunchWorkerAfterInstall must run after InstallFinalize")
+    if set_launch is None or install_finalize is None or set_launch <= install_finalize:
+        errors.append("SetLaunchWorkerCommand must run after InstallFinalize")
+    if set_launch is not None and launch_worker is not None and set_launch >= launch_worker:
+        errors.append("SetLaunchWorkerCommand must run before LaunchWorkerAfterInstall")
+
+    if "NOT REMOVE~=\"ALL\"" not in cond("LaunchWorkerAfterInstall"):
+        errors.append("LaunchWorkerAfterInstall must run on first install and major upgrade, but not uninstall")
+
+    stop = actions.get("StopWorkerBeforeUpgrade")
+    set_stop = actions.get("SetStopWorkerCommand")
+    launch = actions.get("LaunchWorkerAfterInstall")
+    set_launch_ca = actions.get("SetLaunchWorkerCommand")
+
+    if set_stop is None or set_stop[0] != SET_PROPERTY_ACTION_TYPE or set_stop[2] != "[SystemFolder]cmd.exe":
+        errors.append("SetStopWorkerCommand must resolve [SystemFolder]cmd.exe at execute time")
+    if stop is None or "/F" not in stop[2] or "taskkill" not in stop[2]:
+        errors.append("StopWorkerBeforeUpgrade must force-kill Orbita.Worker.exe")
+    if stop is not None and re.search(r"/T\b", stop[2]):
+        errors.append("StopWorkerBeforeUpgrade must not use taskkill /T")
+    if set_launch_ca is None or set_launch_ca[0] != SET_PROPERTY_ACTION_TYPE or set_launch_ca[2] != "[SystemFolder]cmd.exe":
+        errors.append("SetLaunchWorkerCommand must resolve [SystemFolder]cmd.exe at execute time")
+    if launch is None:
+        errors.append("LaunchWorkerAfterInstall custom action is missing")
+    else:
+        type_code, source, target = launch
+        if type_code == FILEKEY_LAUNCH_TYPE or source.startswith("File_"):
+            errors.append("LaunchWorkerAfterInstall must not be Type 18 FileKey (skipped on major upgrade)")
+        if type_code % 64 != 50 or source != "LaunchWorkerCommand":
+            errors.append("LaunchWorkerAfterInstall must be Type 50 (property EXE), not FileKey")
+        if "start" not in target or WORKER_LAUNCH_ARGUMENT not in target:
+            errors.append("LaunchWorkerAfterInstall must cmd-start the worker with --update-restart")
+        if "[#" not in target:
+            errors.append("LaunchWorkerAfterInstall must use [#FileId] so the path survives nested uninstall")
+
+    if errors:
+        raise RuntimeError("Compiled MSI fails the upgrade contract: " + "; ".join(errors))
 
 
 def generate(publish_dir: Path, output: Path, version: str) -> None:
@@ -117,12 +335,13 @@ def generate(publish_dir: Path, output: Path, version: str) -> None:
     if worker_executable_id is None:
         raise RuntimeError("Orbita.Worker.exe is missing from the publish directory")
 
+    autorun_value = f"{XML_QUOT}[INSTALLFOLDER]Orbita.Worker.exe{XML_QUOT}"
     lines.extend([
         '    <DirectoryRef Id="INSTALLFOLDER">',
         f'      <Component Id="AutoStartComponent" Guid="{component_guid(version, "auto-start")}">',
         '        <RegistryValue Root="HKCU" Key="Software\\Microsoft\\Windows\\CurrentVersion\\Run"',
-        '                       Name="OrbitaWorker" Type="string"',
-        '                       Value="&quot;[INSTALLFOLDER]Orbita.Worker.exe&quot;" KeyPath="yes" />',
+        f'                       Name="OrbitaWorker" Type="string"',
+        f'                       Value="{autorun_value}" KeyPath="yes" />',
         '      </Component>',
         f'      <Component Id="CleanupInstallFolder" Guid="{component_guid(version, "cleanup-install-folder")}">',
         '        <RemoveFolder Id="RemoveInstallFolder" On="uninstall" />',
@@ -145,33 +364,18 @@ def generate(publish_dir: Path, output: Path, version: str) -> None:
         '      <ComponentRef Id="CleanupInstallFolder" />',
         '      <ComponentRef Id="CleanupCompanyFolder" />',
         '    </Feature>',
-        '    <CustomAction Id="SetStopWorkerCommand" Property="StopWorkerCommand"',
-        '                  Value="[SystemFolder]cmd.exe" Execute="immediate" />',
-        '    <CustomAction Id="StopWorkerBeforeUpgrade" Property="StopWorkerCommand"',
-        '                  ExeCommand="/d /c taskkill /IM Orbita.Worker.exe /T &gt;nul 2&gt;&amp;1"',
-        '                  Execute="immediate" Return="ignore" Impersonate="yes" />',
-        f'    <CustomAction Id="LaunchWorkerAfterInstall" FileKey="{worker_executable_id}"',
-        '                  ExeCommand="" Execute="immediate"',
-        '                  Return="asyncNoWait" Impersonate="yes" />',
-        '    <InstallExecuteSequence>',
-        '      <RemoveExistingProducts Before="InstallInitialize" />',
-        '      <Custom Action="SetStopWorkerCommand" Before="StopWorkerBeforeUpgrade">',
-        '        NOT REMOVE~=&quot;ALL&quot;',
-        '      </Custom>',
-        '      <Custom Action="StopWorkerBeforeUpgrade" Before="RemoveExistingProducts">',
-        '        NOT REMOVE~=&quot;ALL&quot;',
-        '      </Custom>',
-        '      <Custom Action="LaunchWorkerAfterInstall" After="InstallFinalize">',
-        '        NOT REMOVE~=&quot;ALL&quot;',
-        '      </Custom>',
-        '    </InstallExecuteSequence>',
+    ])
+    lines.extend(custom_action_lines(worker_executable_id))
+    lines.extend([
         '  </Product>',
         '</Wix>',
         '',
     ])
 
+    text = "\n".join(lines)
+    assert_wxs_upgrade_contract(text, worker_executable_id)
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.write_text("\n".join(lines), encoding="utf-8")
+    output.write_text(text, encoding="utf-8")
 
 
 def main() -> None:
