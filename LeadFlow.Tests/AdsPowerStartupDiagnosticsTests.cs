@@ -1,6 +1,7 @@
 using System.Net;
 using System.Net.Http;
 using LeadFlow.Core.Logging.Audit;
+using LeadFlow.Core.Models;
 using LeadFlow.Core.Services.AdsPower;
 using LeadFlow.Core.Services.Worker;
 using LeadFlow.Tests.Support;
@@ -587,6 +588,112 @@ public sealed class AdsPowerStartupDiagnosticsTests
     }
 
     [Fact]
+    public async Task StartBrowserAsync_DailyLimit_WithSecrets_DoesNotLeakOnExternalPaths()
+    {
+        using var capture = GlobalLogCapture.Start();
+        var raw =
+            $"Exceeding open daily limit, recovery after 7 hours proxy {SecretProxy} cookie {SecretCookie} {SecretToken} open {TabUrl}";
+        var body = $$"""{"code":-1,"msg":"{{raw}}"}""";
+        var client = BuildClient((_, _) => Task.FromResult(StubHttpMessageHandler.Ok(body)));
+
+        using var trace = AdsPowerStartupTrace.Begin("user-1", 1).Activate();
+        var ex = await Assert.ThrowsAsync<AdsPowerDailyOpenLimitExceededException>(() =>
+            client.StartBrowserAsync(
+                new AdsPowerConnectionOptions("http://127.0.0.1:57610", null),
+                "user-1",
+                TabUrl,
+                CancellationToken.None));
+
+        Assert.True(AdsPowerDailyOpenLimitExceededException.LooksLikeDailyOpenLimit(-1, raw));
+        AssertExternalAdsPowerText(ex.Message, ex.ApiMessage);
+        Assert.Contains("daily limit", ex.ApiMessage, StringComparison.OrdinalIgnoreCase);
+        var lastError = AdsPowerStartupLogSanitizer.ExternalDetail(ex.ApiMessage, ex.Message);
+        var details = ex.ApiMessage ?? ex.Message;
+        AssertExternalAdsPowerText(lastError, details);
+        AssertNoSecrets(capture.CombinedBlob(capture.WithCorrelation(trace.CorrelationId)));
+        Assert.Contains(capture.Entries, e => e.ErrorKey == AdsPowerDailyOpenLimitExceededException.ErrorKey);
+    }
+
+    [Fact]
+    public void RateLimitException_WithSecrets_ExternalPathsUseLimitText()
+    {
+        var raw =
+            $"Too many request per second, please check proxy {SecretProxy} cookie {SecretCookie} {SecretToken} {TabUrl}";
+        Assert.True(AdsPowerApiErrorClassifier.LooksLikeRateLimit(-1, raw));
+
+        var ex = new AdsPowerRateLimitExceededException(-1, raw);
+        AssertExternalAdsPowerText(ex.Message, ex.ApiMessage);
+        Assert.Contains("Too many request", ex.ApiMessage, StringComparison.OrdinalIgnoreCase);
+
+        var lastError = AdsPowerStartupLogSanitizer.ExternalDetail(ex.ApiMessage, ex.Message);
+        var outcomeReason = $"AdsPower rate limit: {lastError}";
+        AssertExternalAdsPowerText(lastError, outcomeReason);
+    }
+
+    [Fact]
+    public async Task StartBrowserAsync_ProfileInUse_WithSecrets_DoesNotLeakOnExternalPaths()
+    {
+        using var capture = GlobalLogCapture.Start();
+        var raw =
+            $"[k1cu2550] is being used by [a.pakin797@gmail.com] and is not allowed to open cookie {SecretCookie} {SecretToken} open {TabUrl} proxy {SecretProxy}";
+        var body = $$"""{"code":-1,"msg":"{{raw}}"}""";
+        var client = BuildClient((_, _) => Task.FromResult(StubHttpMessageHandler.Ok(body)));
+
+        using var trace = AdsPowerStartupTrace.Begin("user-1", 1).Activate();
+        var ex = await Assert.ThrowsAsync<AdsPowerProfileInUseException>(() =>
+            client.StartBrowserAsync(
+                new AdsPowerConnectionOptions("http://127.0.0.1:57610", null),
+                "user-1",
+                TabUrl,
+                CancellationToken.None));
+
+        Assert.True(AdsPowerProfileInUseException.LooksLikeProfileInUse(-1, raw));
+        AssertExternalAdsPowerText(ex.Message, ex.ApiMessage, ex.UserMessage);
+        Assert.Contains("k1cu2550", ex.UserMessage, StringComparison.Ordinal);
+        Assert.DoesNotContain("a.pakin797@gmail.com", ex.UserMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("a.pakin797@gmail.com", ex.ApiMessage, StringComparison.OrdinalIgnoreCase);
+
+        var lastError = AdsPowerStartupLogSanitizer.LimitText(ex.UserMessage);
+        AssertExternalAdsPowerText(lastError);
+        AssertNoSecrets(capture.CombinedBlob(capture.WithCorrelation(trace.CorrelationId)));
+        Assert.Contains(capture.Entries, e => e.ErrorKey == AdsPowerProfileInUseException.ErrorKey);
+    }
+
+    [Fact]
+    public async Task WorkerMonitoringLogger_ClassifiedFailures_DoNotPublishRawApiMessage()
+    {
+        using var capture = GlobalLogCapture.Start();
+        var account = new AvitoAccount { DisplayName = "acc-secrets" };
+
+        var daily = new AdsPowerDailyOpenLimitExceededException(
+            -1,
+            $"Exceeding open daily limit, recovery after 7 hours proxy {SecretProxy} cookie {SecretCookie} {SecretToken} open {TabUrl}");
+        account.LastErrorMessage = AdsPowerStartupLogSanitizer.ExternalDetail(daily.ApiMessage, daily.Message);
+        WorkerMonitoringLogger.AccountFailed(account, "AdsPower", account.LastErrorMessage);
+
+        var rate = new AdsPowerRateLimitExceededException(
+            -1,
+            $"Too many request per second, please check proxy {SecretProxy} cookie {SecretCookie} {SecretToken} {TabUrl}");
+        account.LastErrorMessage = AdsPowerStartupLogSanitizer.ExternalDetail(rate.ApiMessage, rate.Message);
+        WorkerMonitoringLogger.AccountFailed(account, "AdsPower rate limit", account.LastErrorMessage);
+
+        var profile = new AdsPowerProfileInUseException(
+            -1,
+            $"[k1cu2550] is being used by [a.pakin797@gmail.com] and is not allowed to open cookie {SecretCookie} {SecretToken} open {TabUrl} proxy {SecretProxy}");
+        var safeUserMessage = AdsPowerStartupLogSanitizer.LimitText(profile.UserMessage);
+        account.LastErrorMessage = safeUserMessage;
+        WorkerMonitoringLogger.AccountFailed(account, "AdsPower", safeUserMessage);
+
+        var blob = capture.CombinedBlob();
+        AssertNoSecrets(blob);
+        Assert.DoesNotContain("a.pakin797@gmail.com", blob, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("proxy-user", blob, StringComparison.Ordinal);
+        Assert.Contains("daily limit", blob, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Too many request", blob, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("k1cu2550", blob, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public async Task StartBrowserAsync_Http200AdsPowerError_ExceptionMessageUsesLimitText()
     {
         using var capture = GlobalLogCapture.Start();
@@ -686,6 +793,40 @@ public sealed class AdsPowerStartupDiagnosticsTests
     }
 
     [Fact]
+    public async Task GlobalLogger_TestCapture_ReceivesSerializedPayload_NestedMutationDoesNotAffectJournal()
+    {
+        using var capture = GlobalLogCapture.Start();
+        var nested = new List<string> { "keep-me", "inner-keep" };
+        var input = new Dictionary<string, object?>
+        {
+            ["items"] = nested,
+            ["password"] = "leak-SECRET",
+            ["okField"] = "visible"
+        };
+
+        await GlobalLogger.Instance.LogAsync(
+            "capture-hook-deep-freeze",
+            DeskLinkAuditLogLevel.Warning,
+            memberName: nameof(GlobalLogger_TestCapture_ReceivesSerializedPayload_NestedMutationDoesNotAffectJournal),
+            properties: input);
+
+        var entry = Assert.Single(capture.Entries, e => e.Message == "capture-hook-deep-freeze");
+        Assert.False(string.IsNullOrEmpty(entry.SerializedPayload));
+        Assert.Contains("keep-me", entry.SerializedPayload, StringComparison.Ordinal);
+        Assert.Contains("inner-keep", entry.SerializedPayload, StringComparison.Ordinal);
+        Assert.Contains("\"password\":\"***\"", entry.SerializedPayload, StringComparison.Ordinal);
+        Assert.DoesNotContain("leak-SECRET", entry.SerializedPayload, StringComparison.Ordinal);
+
+        var capturedItems = Assert.IsAssignableFrom<System.Collections.IList>(entry.Properties["items"]);
+        Assert.ThrowsAny<Exception>(() => capturedItems[0] = "MUTATED-CAPTURE");
+        nested[0] = "MUTATED-INPUT";
+        Assert.Contains("keep-me", entry.SerializedPayload, StringComparison.Ordinal);
+        Assert.DoesNotContain("MUTATED-CAPTURE", entry.SerializedPayload, StringComparison.Ordinal);
+        Assert.DoesNotContain("MUTATED-INPUT", entry.SerializedPayload, StringComparison.Ordinal);
+        Assert.Equal("keep-me", capturedItems[0]);
+    }
+
+    [Fact]
     public void CopyIdentity_DoesNotOverwriteCallerErrorKeyFields()
     {
         using var trace = AdsPowerStartupTrace.Begin("user-1", 1);
@@ -699,6 +840,17 @@ public sealed class AdsPowerStartupDiagnosticsTests
         Assert.Equal(trace.CorrelationId, properties["startup.correlationId"]);
         Assert.Equal("поиск рабочей вкладки", properties["startup.stage"]);
         Assert.False(properties.ContainsKey("adsPower.openUrl"));
+    }
+
+    private static void AssertExternalAdsPowerText(params string?[] texts)
+    {
+        foreach (var text in texts)
+        {
+            Assert.False(string.IsNullOrWhiteSpace(text));
+            AssertNoSecrets(text!);
+            Assert.DoesNotContain("proxy-user", text, StringComparison.Ordinal);
+            Assert.DoesNotContain("a.pakin797@gmail.com", text, StringComparison.OrdinalIgnoreCase);
+        }
     }
 
     private static bool IsLocalApiFailure(IReadOnlyList<CapturedGlobalLog> events)
@@ -773,7 +925,8 @@ public sealed class AdsPowerStartupDiagnosticsTests
                 "10.1.2.3",
                 "avito.ru",
                 "api-pass",
-                "base-token-SECRET"));
+                "base-token-SECRET",
+                "a.pakin797@gmail.com"));
         Assert.DoesNotContain("adsPower.openUrl\":", blob, StringComparison.Ordinal);
         Assert.DoesNotContain("\"adsPower.openUrl\"", blob, StringComparison.Ordinal);
     }

@@ -165,6 +165,12 @@ internal static class AdsPowerStartupLogSanitizer
             HasUserInfo: !string.IsNullOrEmpty(uri.UserInfo));
     }
 
+    public static string ExternalDetail(string? apiMessage, string fallback)
+    {
+        var safe = LimitText(apiMessage);
+        return string.IsNullOrEmpty(safe) ? fallback : safe;
+    }
+
     public static string LimitText(string? text, int maxLength = MaxMessageLength)
     {
         if (string.IsNullOrEmpty(text))

@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
@@ -109,9 +110,10 @@ public static class GlobalLogger
 
     /// <summary>
     /// Тестовый sink: вызывается из <see cref="Logger.LogAsync"/> с тем же payload, что уходит в журнал.
+    /// Свойства — глубокая immutable копия после sanitization; последний аргумент — уже сериализованный envelope.
     /// Не используется в проде.
     /// </summary>
-    internal static Action<DeskLinkAuditLogLevel, string, string?, string?, IReadOnlyDictionary<string, object?>>? TestCapture;
+    internal static Action<DeskLinkAuditLogLevel, string, string?, string?, IReadOnlyDictionary<string, object?>, string?>? TestCapture;
 
     /// <summary>
     /// Подключает стандартный ILogger (для app-логов), не меняя существующие вызовы GlobalLogger.Instance.LogAsync().
@@ -442,7 +444,6 @@ public class Logger
         var context = properties != null
             ? LogSanitizer.SanitizeDictionary(properties)
             : new Dictionary<string, object?>();
-        NotifyTestCapture(level, message, memberName, errorKey, context);
 
         string? propsJson = BuildStructuredPropertiesJson(
             DateTime.UtcNow,
@@ -454,6 +455,7 @@ public class Logger
             otelTraceId,
             spanId,
             context);
+        NotifyTestCapture(level, message, memberName, errorKey, context, propsJson);
 
         // App-лог: стандартный ILogger (если подключён)
         ForwardToAppLogger(level, prefix, message, errorKey, traceForIndex, propsJson);
@@ -467,7 +469,8 @@ public class Logger
         string message,
         string? memberName,
         string? errorKey,
-        IReadOnlyDictionary<string, object?> sanitizedProperties)
+        IReadOnlyDictionary<string, object?> sanitizedProperties,
+        string? serializedPayload)
     {
         try
         {
@@ -476,7 +479,8 @@ public class Logger
                 message,
                 memberName,
                 errorKey,
-                FreezeProperties(sanitizedProperties));
+                FreezeProperties(sanitizedProperties),
+                serializedPayload);
         }
         catch
         {
@@ -490,12 +494,56 @@ public class Logger
         var copy = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
         foreach (var kv in source)
         {
-            copy[kv.Key] = kv.Value is IReadOnlyDictionary<string, object?> nested
-                ? FreezeProperties(nested)
-                : kv.Value;
+            copy[kv.Key] = FreezeValue(kv.Value);
         }
 
-        return copy;
+        return new System.Collections.ObjectModel.ReadOnlyDictionary<string, object?>(copy);
+    }
+
+    private static object? FreezeValue(object? value)
+    {
+        switch (value)
+        {
+            case null:
+                return null;
+            case string:
+            case ValueType:
+                return value;
+            case IReadOnlyDictionary<string, object?> nested:
+                return FreezeProperties(nested);
+            case Array array:
+            {
+                var frozen = new object?[array.Length];
+                for (var i = 0; i < array.Length; i++)
+                {
+                    frozen[i] = FreezeValue(array.GetValue(i));
+                }
+
+                return Array.AsReadOnly(frozen);
+            }
+            case IList list:
+            {
+                var frozen = new object?[list.Count];
+                for (var i = 0; i < list.Count; i++)
+                {
+                    frozen[i] = FreezeValue(list[i]);
+                }
+
+                return Array.AsReadOnly(frozen);
+            }
+            case IEnumerable enumerable:
+            {
+                var items = new List<object?>();
+                foreach (var item in enumerable)
+                {
+                    items.Add(FreezeValue(item));
+                }
+
+                return Array.AsReadOnly(items.ToArray());
+            }
+            default:
+                return value;
+        }
     }
 
     private static string MapLevelString(DeskLinkAuditLogLevel level) => level switch

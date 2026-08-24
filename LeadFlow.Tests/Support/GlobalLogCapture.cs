@@ -11,6 +11,7 @@ internal sealed class CapturedGlobalLog
     public string? MemberName { get; init; }
     public string? ErrorKey { get; init; }
     public Dictionary<string, object?> Properties { get; init; } = [];
+    public string? SerializedPayload { get; init; }
 }
 
 /// <summary>
@@ -47,7 +48,12 @@ internal sealed class GlobalLogCapture : IDisposable
         var logs = subset ?? _entries;
         return string.Join(
             "\n",
-            logs.Select(e => e.Message + "\n" + AdsPowerStartupLogSanitizer.SerializeForInspection(e.Properties)));
+            logs.Select(e =>
+                e.Message
+                + "\n"
+                + AdsPowerStartupLogSanitizer.SerializeForInspection(e.Properties)
+                + "\n"
+                + (e.SerializedPayload ?? string.Empty)));
     }
 
     public void Dispose()
@@ -67,7 +73,8 @@ internal sealed class GlobalLogCapture : IDisposable
         string message,
         string? memberName,
         string? errorKey,
-        IReadOnlyDictionary<string, object?> properties)
+        IReadOnlyDictionary<string, object?> properties,
+        string? serializedPayload)
     {
         _entries.Add(new CapturedGlobalLog
         {
@@ -75,7 +82,8 @@ internal sealed class GlobalLogCapture : IDisposable
             Message = message,
             MemberName = memberName,
             ErrorKey = errorKey,
-            Properties = new Dictionary<string, object?>(properties)
+            Properties = new Dictionary<string, object?>(properties),
+            SerializedPayload = serializedPayload
         });
     }
 }

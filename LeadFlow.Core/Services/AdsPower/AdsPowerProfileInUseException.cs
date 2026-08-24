@@ -13,12 +13,14 @@ public sealed class AdsPowerProfileInUseException : InvalidOperationException
         : base(FormatMessage(apiCode, apiMessage))
     {
         ApiCode = apiCode;
-        ApiMessage = apiMessage;
-        UserMessage = AdsPowerErrorMessageNormalizer.NormalizeForDisplay(apiMessage ?? FormatMessage(apiCode, apiMessage));
+        ApiMessage = AdsPowerStartupLogSanitizer.LimitText(apiMessage);
+        UserMessage = AdsPowerStartupLogSanitizer.LimitText(
+            AdsPowerErrorMessageNormalizer.NormalizeForDisplay(apiMessage ?? string.Empty));
     }
 
     public int ApiCode { get; }
 
+    /// <summary>Санитизированный текст AdsPower для логов/UI. Сырой msg используется только в <see cref="LooksLikeProfileInUse"/>.</summary>
     public string? ApiMessage { get; }
 
     public string UserMessage { get; }

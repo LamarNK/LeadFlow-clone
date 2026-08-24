@@ -12,11 +12,12 @@ public sealed class AdsPowerDailyOpenLimitExceededException : InvalidOperationEx
         : base(FormatMessage(apiCode, apiMessage))
     {
         ApiCode = apiCode;
-        ApiMessage = apiMessage;
+        ApiMessage = AdsPowerStartupLogSanitizer.LimitText(apiMessage);
     }
 
     public int ApiCode { get; }
 
+    /// <summary>Санитизированный текст AdsPower для логов/UI. Сырой msg используется только в <see cref="LooksLikeDailyOpenLimit"/>.</summary>
     public string? ApiMessage { get; }
 
     /// <summary>Эвристика по коду/тексту ответа AdsPower (формулировки могут меняться между версиями).</summary>
