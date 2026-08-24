@@ -315,9 +315,17 @@
             });
     };
 
+    const isManualCreateModalOpen = () => Array.from(
+        document.querySelectorAll('[data-crm-manual-create-modal]')
+    ).some((modal) => !modal.hidden);
+
     const applyCrmBoardHtml = (html) => {
         var liveWorkspace = document.querySelector('[data-crm-live-workspace]');
         if (!liveWorkspace || !html || !String(html).trim()) return;
+        // A live snapshot replaces the entire CRM workspace. Do not destroy an
+        // open form while the user is entering a candidate; the next scheduled
+        // refresh will apply normally after the modal is closed or submitted.
+        if (isManualCreateModalOpen()) return;
         liveWorkspace.innerHTML = html;
         initCrmBoardPage();
     };

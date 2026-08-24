@@ -295,6 +295,9 @@
     }
 
     function destroyLeavingPage() {
+        // Modal markup is replaced together with the page content. Always clear
+        // its global scroll lock before swapping the current page.
+        document.body.classList.remove('orbita-modal-open');
         if (window.OrbitaDashboard && typeof window.OrbitaDashboard.destroyCharts === 'function') {
             try { window.OrbitaDashboard.destroyCharts(); } catch (e) { }
         }
@@ -679,6 +682,7 @@
 
                 var content = document.querySelector('.orbita-content');
                 if (!content) throw new Error('Current content container is missing');
+                destroyLeavingPage();
                 content.innerHTML = nextHtml;
 
                 var meta = content.querySelector('.orbita-page-meta');
