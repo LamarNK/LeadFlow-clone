@@ -176,13 +176,16 @@ public sealed class WorkerLogSyncService(
             _ => "Info"
         };
 
+        var properties = WorkerLogPropertyAllowlist.ToTransportMap(
+            LogEnvelopeParser.ParseContext(entry.Properties));
         return new WorkerLogEntryUploadDto(
             entry.Timestamp,
             level,
             string.IsNullOrWhiteSpace(entry.Prefix) ? "—" : entry.Prefix.Trim(),
             entry.Message ?? string.Empty,
             string.IsNullOrWhiteSpace(entry.TraceId) ? null : entry.TraceId.Trim(),
-            entry.IsTampered);
+            entry.IsTampered,
+            properties.Count == 0 ? null : properties);
     }
 
     internal enum SyncOutcome

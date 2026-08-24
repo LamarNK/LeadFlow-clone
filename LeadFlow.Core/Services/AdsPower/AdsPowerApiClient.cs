@@ -65,38 +65,163 @@ public sealed class AdsPowerApiClient(IHttpClientFactory httpClientFactory) : IA
         return result;
     }
 
-    public Task<AdsPowerProfileProxy?> GetProfileProxyAsync(
+    public async Task<AdsPowerProfileProxy?> GetProfileProxyAsync(
         AdsPowerConnectionOptions options,
         string adsPowerUserId,
         CancellationToken cancellationToken = default)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(adsPowerUserId);
 
-        return ExecuteWithRateLimitRetryAsync(
-            options,
-            async ct =>
-            {
-                var baseUrl = NormalizeBaseUrl(options.BaseUrl);
-                var url = $"{baseUrl}/api/v1/user/list?user_id={Uri.EscapeDataString(adsPowerUserId)}&page=1&page_size=1";
-                var (response, json) = await SendGetAsync(options, url, ct).ConfigureAwait(false);
-                if (!response.IsSuccessStatusCode)
+        var throttleCall = new AdsPowerThrottleCall();
+        var totalWatch = Stopwatch.StartNew();
+        var httpSend = TimeSpan.Zero;
+        var httpRead = TimeSpan.Zero;
+        var parse = TimeSpan.Zero;
+        int? httpStatus = null;
+        var outcome = AdsPowerLocalApiCall.OutcomeUnknown;
+        var phase = AdsPowerLocalApiCall.PhaseQueueWait;
+        try
+        {
+            return await ExecuteWithRateLimitRetryAsync(
+                options,
+                async ct =>
                 {
-                    throw new InvalidOperationException(
-                        $"AdsPower user/list: {(int)response.StatusCode} {Truncate(json, 500)}");
-                }
+                    phase = AdsPowerLocalApiCall.PhaseHttpSend;
+                    var baseUrl = NormalizeBaseUrl(options.BaseUrl);
+                    var url =
+                        $"{baseUrl}/api/v1/user/list?user_id={FormatUserListUserIdQuery(adsPowerUserId)}&page=1&page_size=1";
+                    var exchange = await SendGetAsync(options, url, ct).ConfigureAwait(false);
+                    httpSend = exchange.SendDuration;
+                    httpRead = exchange.ReadDuration;
+                    httpStatus = (int)exchange.Response.StatusCode;
+                    phase = AdsPowerLocalApiCall.PhaseHttpResponse;
+                    if (!exchange.Response.IsSuccessStatusCode)
+                    {
+                        outcome = AdsPowerLocalApiCall.OutcomeHttpError;
+                        throw new InvalidOperationException(
+                            $"AdsPower user/list: {(int)exchange.Response.StatusCode} {AdsPowerStartupLogSanitizer.LimitText(exchange.Json)}");
+                    }
 
-                using var doc = JsonDocument.Parse(string.IsNullOrWhiteSpace(json) ? "{}" : json);
-                var root = doc.RootElement;
-                EnsureApiSuccess(
-                    root,
-                    baseUrl,
-                    options,
-                    nameof(GetProfileProxyAsync),
-                    CreateProperties(baseUrl, hasApiKey: !string.IsNullOrWhiteSpace(options.ApiKey), userId: adsPowerUserId));
+                    phase = AdsPowerLocalApiCall.PhaseParse;
+                    var parseWatch = Stopwatch.StartNew();
+                    using var doc = JsonDocument.Parse(string.IsNullOrWhiteSpace(exchange.Json) ? "{}" : exchange.Json);
+                    var root = doc.RootElement;
+                    EnsureApiSuccess(
+                        root,
+                        baseUrl,
+                        options,
+                        nameof(GetProfileProxyAsync),
+                        CreateProperties(
+                            baseUrl,
+                            hasApiKey: !string.IsNullOrWhiteSpace(options.ApiKey),
+                            userId: adsPowerUserId));
+                    var parsed = ParseProfileProxy(root, adsPowerUserId);
+                    parse = parseWatch.Elapsed;
+                    outcome = AdsPowerLocalApiCall.OutcomeOk;
+                    return parsed;
+                },
+                cancellationToken,
+                AdsPowerThrottleOptions.UserList,
+                throttleCall).ConfigureAwait(false);
+        }
+        catch (AdsPowerLocalApiTimeoutException ex)
+        {
+            outcome = ex.Phase == AdsPowerLocalApiCall.PhaseQueueWait
+                ? AdsPowerLocalApiCall.OutcomeQueueTimeout
+                : AdsPowerLocalApiCall.OutcomeHttpTimeout;
+            phase = ex.Phase;
+            throw;
+        }
+        catch (OperationCanceledException)
+        {
+            outcome = AdsPowerLocalApiCall.OutcomeCancelled;
+            throw;
+        }
+        catch (Exception)
+        {
+            if (outcome == AdsPowerLocalApiCall.OutcomeUnknown)
+            {
+                outcome = AdsPowerLocalApiCall.OutcomeError;
+            }
 
-                return ParseProfileProxy(root, adsPowerUserId);
-            },
-            cancellationToken);
+            throw;
+        }
+        finally
+        {
+            ObserveUserList(
+                adsPowerUserId,
+                throttleCall,
+                httpSend,
+                httpRead,
+                parse,
+                totalWatch.Elapsed,
+                httpStatus,
+                outcome,
+                phase);
+        }
+    }
+
+    internal static string FormatUserListUserIdQuery(string adsPowerUserId) =>
+        Uri.EscapeDataString(JsonSerializer.Serialize(new[] { adsPowerUserId }));
+
+    private static void ObserveUserList(
+        string adsPowerUserId,
+        AdsPowerThrottleCall throttleCall,
+        TimeSpan httpSend,
+        TimeSpan httpRead,
+        TimeSpan parse,
+        TimeSpan duration,
+        int? httpStatus,
+        string outcome,
+        string phase)
+    {
+        try
+        {
+            var ok = outcome == AdsPowerLocalApiCall.OutcomeOk;
+            var properties = new Dictionary<string, object?>
+            {
+                ["localApi.operation"] = AdsPowerLocalApiCall.OperationUserList,
+                ["localApi.phase"] = phase,
+                ["localApi.queueWaitMs"] = throttleCall.QueueWait.TotalMilliseconds,
+                ["localApi.rateLimitWaitMs"] = throttleCall.RateLimitWait.TotalMilliseconds,
+                ["localApi.httpSendMs"] = httpSend.TotalMilliseconds,
+                ["localApi.httpResponseMs"] = httpRead.TotalMilliseconds,
+                ["localApi.parseMs"] = parse.TotalMilliseconds,
+                ["localApi.durationMs"] = duration.TotalMilliseconds,
+                ["localApi.outcome"] = outcome,
+                ["localApi.httpStatus"] = httpStatus,
+                ["localApi.ok"] = ok,
+                ["adsPower.userId"] = adsPowerUserId
+            };
+            var evt = AdsPowerStartupTrace.Current?.RecordLocalApiOperation(
+                AdsPowerLocalApiCall.OperationUserList,
+                "user_list",
+                ok,
+                properties);
+            if (evt is null)
+            {
+                AdsPowerStartupDiagnostics.TryCopyIdentity(properties);
+                properties["startup.boundary"] = "local_api";
+                properties["startup.event"] = "user_list";
+                evt = new AdsPowerStartupDiagnosticEvent(
+                    "user_list",
+                    "local_api",
+                    ok
+                        ? "AdsPower startup: Local API user/list завершён."
+                        : $"AdsPower startup: Local API user/list {outcome}.",
+                    ok,
+                    properties);
+            }
+
+            AdsPowerStartupDiagnostics.TryLog(
+                evt,
+                ok ? DeskLinkAuditLogLevel.Info : DeskLinkAuditLogLevel.Warning,
+                nameof(GetProfileProxyAsync));
+        }
+        catch
+        {
+            // диагностика не должна ломать user/list
+        }
     }
 
     public async Task<IReadOnlyList<AdsPowerGroupSummary>> ListGroupsAsync(
@@ -150,7 +275,7 @@ public sealed class AdsPowerApiClient(IHttpClientFactory httpClientFactory) : IA
                 }
 
                 var url = $"{baseUrl}/api/v1/user/list?{query}";
-                var (response, json) = await SendGetAsync(options, url, ct).ConfigureAwait(false);
+                var (response, json, _, _) = await SendGetAsync(options, url, ct).ConfigureAwait(false);
                 if (!response.IsSuccessStatusCode)
                 {
                     Log(
@@ -180,7 +305,8 @@ public sealed class AdsPowerApiClient(IHttpClientFactory httpClientFactory) : IA
 
                 return ParseProfileList(root);
             },
-            cancellationToken);
+            cancellationToken,
+            AdsPowerThrottleOptions.UserList);
 
     private Task<IReadOnlyList<AdsPowerGroupSummary>> ListGroupsPageAsync(
         AdsPowerConnectionOptions options,
@@ -192,7 +318,7 @@ public sealed class AdsPowerApiClient(IHttpClientFactory httpClientFactory) : IA
             async ct =>
             {
                 var url = $"{baseUrl}/api/v1/group/list?page={page}&page_size={GroupListPageSize}";
-                var (response, json) = await SendGetAsync(options, url, ct).ConfigureAwait(false);
+                var (response, json, _, _) = await SendGetAsync(options, url, ct).ConfigureAwait(false);
                 if (!response.IsSuccessStatusCode)
                 {
                     Log(
@@ -220,7 +346,8 @@ public sealed class AdsPowerApiClient(IHttpClientFactory httpClientFactory) : IA
 
                 return ParseGroupList(root);
             },
-            cancellationToken);
+            cancellationToken,
+            AdsPowerThrottleOptions.GroupList);
 
     private static IReadOnlyList<AdsPowerProfileSummary> ParseProfileList(JsonElement root)
     {
@@ -389,7 +516,7 @@ public sealed class AdsPowerApiClient(IHttpClientFactory httpClientFactory) : IA
                 string json;
                 try
                 {
-                    (response, json) = await SendGetAsync(options, url, ct).ConfigureAwait(false);
+                    (response, json, _, _) = await SendGetAsync(options, url, ct).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException ex) when (ct.IsCancellationRequested)
                 {
@@ -438,6 +565,44 @@ public sealed class AdsPowerApiClient(IHttpClientFactory httpClientFactory) : IA
                 using var doc = JsonDocument.Parse(string.IsNullOrWhiteSpace(json) ? "{}" : json);
                 var root = doc.RootElement;
                 ReadBrowserStartEndpoint(root, out var webSocketDebuggerUrl, out var debugPort);
+
+                try
+                {
+                    var props = CreateProperties(
+                        baseUrl,
+                        hasApiKey: !string.IsNullOrWhiteSpace(options.ApiKey),
+                        userId: adsPowerUserId,
+                        openUrl: openUrl);
+                    AdsPowerStartupDiagnostics.TryCopyIdentity(props);
+                    EnsureApiSuccess(
+                        root,
+                        baseUrl,
+                        options,
+                        nameof(StartBrowserAsync),
+                        props,
+                        requireNumericSuccessCode: true);
+
+                    if (!TryGetUsablePuppeteerEndpoint(webSocketDebuggerUrl, out webSocketDebuggerUrl))
+                    {
+                        throw new InvalidOperationException(
+                            "AdsPower не вернул usable data.ws.puppeteer. HTTP 200 и code=0 недостаточно.");
+                    }
+                }
+                catch
+                {
+                    ObserveBrowserStart(
+                        AdsPowerStartupLogSanitizer.SummarizeBrowserStart(
+                            json,
+                            (int)response.StatusCode,
+                            transportException: null,
+                            httpWatch.Elapsed,
+                            webSocketDebuggerUrl,
+                            debugPort,
+                            openUrl),
+                        adsPowerUserId);
+                    throw;
+                }
+
                 ObserveBrowserStart(
                     AdsPowerStartupLogSanitizer.SummarizeBrowserStart(
                         json,
@@ -449,23 +614,10 @@ public sealed class AdsPowerApiClient(IHttpClientFactory httpClientFactory) : IA
                         openUrl),
                     adsPowerUserId);
 
-                var props = CreateProperties(
-                    baseUrl,
-                    hasApiKey: !string.IsNullOrWhiteSpace(options.ApiKey),
-                    userId: adsPowerUserId,
-                    openUrl: openUrl);
-                AdsPowerStartupDiagnostics.TryCopyIdentity(props);
-                EnsureApiSuccess(
-                    root,
-                    baseUrl,
-                    options,
-                    nameof(StartBrowserAsync),
-                    props);
-
-                ReadBrowserStartEndpoint(root, out webSocketDebuggerUrl, out debugPort);
                 return new AdsPowerBrowserStartResult(webSocketDebuggerUrl, debugPort);
             },
-            cancellationToken);
+            cancellationToken,
+            AdsPowerThrottleOptions.BrowserStart);
     }
 
     public Task StopBrowserAsync(
@@ -490,7 +642,7 @@ public sealed class AdsPowerApiClient(IHttpClientFactory httpClientFactory) : IA
                         hasApiKey: !string.IsNullOrWhiteSpace(options.ApiKey),
                         userId: adsPowerUserId));
 
-                var (response, json) = await SendGetAsync(options, url, ct).ConfigureAwait(false);
+                var (response, json, _, _) = await SendGetAsync(options, url, ct).ConfigureAwait(false);
                 if (!response.IsSuccessStatusCode)
                 {
                     Log(
@@ -540,13 +692,16 @@ public sealed class AdsPowerApiClient(IHttpClientFactory httpClientFactory) : IA
                         hasApiKey: !string.IsNullOrWhiteSpace(options.ApiKey),
                         userId: adsPowerUserId));
             },
-            cancellationToken);
+            cancellationToken,
+            AdsPowerThrottleOptions.BrowserStop);
     }
 
     private async Task<T> ExecuteWithRateLimitRetryAsync<T>(
         AdsPowerConnectionOptions options,
         Func<CancellationToken, Task<T>> action,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        AdsPowerThrottleOptions? throttle = null,
+        AdsPowerThrottleCall? throttleCall = null)
     {
         var baseUrl = NormalizeBaseUrl(options.BaseUrl);
 
@@ -557,7 +712,7 @@ public sealed class AdsPowerApiClient(IHttpClientFactory httpClientFactory) : IA
             try
             {
                 return await AdsPowerApiThrottler
-                    .ExecuteAsync(baseUrl, action, cancellationToken)
+                    .ExecuteAsync(baseUrl, action, cancellationToken, throttle, throttleCall)
                     .ConfigureAwait(false);
             }
             catch (AdsPowerRateLimitExceededException ex)
@@ -593,7 +748,8 @@ public sealed class AdsPowerApiClient(IHttpClientFactory httpClientFactory) : IA
     private async Task ExecuteWithRateLimitRetryAsync(
         AdsPowerConnectionOptions options,
         Func<CancellationToken, Task> action,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        AdsPowerThrottleOptions? throttle = null)
     {
         await ExecuteWithRateLimitRetryAsync(
                 options,
@@ -602,11 +758,12 @@ public sealed class AdsPowerApiClient(IHttpClientFactory httpClientFactory) : IA
                     await action(ct).ConfigureAwait(false);
                     return true;
                 },
-                cancellationToken)
+                cancellationToken,
+                throttle)
             .ConfigureAwait(false);
     }
 
-    private async Task<(HttpResponseMessage Response, string Json)> SendGetAsync(
+    private async Task<(HttpResponseMessage Response, string Json, TimeSpan SendDuration, TimeSpan ReadDuration)> SendGetAsync(
         AdsPowerConnectionOptions options,
         string url,
         CancellationToken cancellationToken)
@@ -614,9 +771,12 @@ public sealed class AdsPowerApiClient(IHttpClientFactory httpClientFactory) : IA
         var client = httpClientFactory.CreateClient();
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
         AddAuthorizationHeader(request, options.ApiKey);
+        var sendWatch = Stopwatch.StartNew();
         var response = await client.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        var sendDuration = sendWatch.Elapsed;
+        var readWatch = Stopwatch.StartNew();
         var json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-        return (response, json);
+        return (response, json, sendDuration, readWatch.Elapsed);
     }
 
     private static void EnsureApiSuccess(
@@ -624,14 +784,19 @@ public sealed class AdsPowerApiClient(IHttpClientFactory httpClientFactory) : IA
         string baseUrl,
         AdsPowerConnectionOptions options,
         string memberName,
-        Dictionary<string, object?> props)
+        Dictionary<string, object?> props,
+        bool requireNumericSuccessCode = false)
     {
-        if (!root.TryGetProperty("code", out var codeProp) || codeProp.ValueKind != JsonValueKind.Number)
+        if (!TryReadNumericApiCode(root, out var code))
         {
-            return;
+            if (!requireNumericSuccessCode)
+            {
+                return;
+            }
+
+            throw new InvalidOperationException("AdsPower: ответ без числового code == 0.");
         }
 
-        var code = codeProp.GetInt32();
         if (code == 0)
         {
             return;
@@ -742,6 +907,43 @@ public sealed class AdsPowerApiClient(IHttpClientFactory httpClientFactory) : IA
         {
             webSocketDebuggerUrl = puppeteerProp.GetString();
         }
+    }
+
+    internal static bool TryGetUsablePuppeteerEndpoint(string? raw, out string endpoint)
+    {
+        endpoint = "";
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return false;
+        }
+
+        var trimmed = raw.Trim();
+        if (!Uri.TryCreate(trimmed, UriKind.Absolute, out var uri))
+        {
+            return false;
+        }
+
+        if (!string.Equals(uri.Scheme, "ws", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(uri.Scheme, "wss", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(uri.Host))
+        {
+            return false;
+        }
+
+        endpoint = trimmed;
+        return true;
+    }
+
+    private static bool TryReadNumericApiCode(JsonElement root, out int code)
+    {
+        code = 0;
+        return root.TryGetProperty("code", out var codeProp)
+               && codeProp.ValueKind == JsonValueKind.Number
+               && codeProp.TryGetInt32(out code);
     }
 
     private static void ObserveBrowserStart(AdsPowerLocalApiStartSnapshot snapshot, string adsPowerUserId)

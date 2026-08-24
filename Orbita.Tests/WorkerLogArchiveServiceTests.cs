@@ -3,6 +3,7 @@ using Microsoft.Extensions.Configuration;
 using Orbita.Api.Data;
 using Orbita.Api.Services;
 using Orbita.Contracts;
+using Orbita.Logging.Audit;
 
 namespace Orbita.Tests;
 
@@ -79,6 +80,117 @@ public sealed class WorkerLogArchiveServiceTests
             Assert.Contains($"worker:{workerId:D}", entry.Source, StringComparison.Ordinal);
             Assert.Contains("[WorkerMonitoringService.RunAsync]", entry.Source, StringComparison.Ordinal);
             Assert.Contains("[source-tampered]", entry.Source, StringComparison.Ordinal);
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void Filter_KeepsAllowlistedStartupFields_AndDropsSecrets()
+    {
+        var filtered = WorkerLogPropertyAllowlist.Filter(new Dictionary<string, object?>
+        {
+            ["startup.correlationId"] = "corr-secret-safe",
+            ["startup.stage"] = "чтение прокси профиля",
+            ["startup.elapsedMs"] = 180000,
+            ["localApi.operation"] = "user/list",
+            ["localApi.phase"] = "http_response",
+            ["localApi.queueWaitMs"] = 12.5,
+            ["localApi.durationMs"] = 40,
+            ["localApi.outcome"] = "ok",
+            ["localApi.httpStatus"] = 200L,
+            ["cdp.call"] = "Connect",
+            ["error.type"] = "System.TimeoutException",
+            ["password"] = "leak-SECRET",
+            ["adsPower.apiMessage"] = "proxy http://user:pass@10.1.2.3:8000",
+            ["error.message"] = "ws://127.0.0.1:9222/devtools/browser/secret"
+        });
+
+        Assert.Equal("corr-secret-safe", filtered["startup.correlationId"]);
+        Assert.Equal("чтение прокси профиля", filtered["startup.stage"]);
+        Assert.Equal("user/list", filtered["localApi.operation"]);
+        Assert.Equal("http_response", filtered["localApi.phase"]);
+        Assert.Equal(200L, filtered["localApi.httpStatus"]);
+        Assert.Equal("Connect", filtered["cdp.call"]);
+        Assert.False(filtered.ContainsKey("password"));
+        Assert.False(filtered.ContainsKey("adsPower.apiMessage"));
+        Assert.False(filtered.ContainsKey("error.message"));
+    }
+
+    [Fact]
+    public async Task IngestBatch_WritesAllowlistedStructuredProperties_ToArchivedWorkerLog()
+    {
+        var root = Path.Combine(Path.GetTempPath(), $"orbita-worker-log-test-{Guid.NewGuid():N}");
+        try
+        {
+            var configuration = new ConfigurationBuilder()
+                .AddInMemoryCollection(new Dictionary<string, string?> { ["Logs:SharedRoot"] = root })
+                .Build();
+            await using var db = CreateDb();
+            var workerId = Guid.NewGuid();
+            db.Workers.Add(new WorkerEntity
+            {
+                Id = workerId,
+                OfficeId = Guid.NewGuid(),
+                DisplayName = "Фермы1-2-3",
+                MachineName = "farm-pc",
+                ApiKeyHash = "key",
+                AppVersion = "1.0.1.94",
+                CreatedAtUtc = DateTime.UtcNow
+            });
+            await db.SaveChangesAsync();
+
+            var timestamp = DateTime.UtcNow.AddMinutes(-3);
+            var archive = new WorkerLogFileArchive(configuration);
+            var sut = new WorkerLogArchiveService(db, archive);
+            var properties = WorkerLogPropertyAllowlist.ToTransportMap(new Dictionary<string, object?>
+            {
+                ["startup.correlationId"] = "corr-farm-1",
+                ["startup.attempt"] = 1,
+                ["startup.stage"] = "чтение прокси профиля",
+                ["startup.elapsedMs"] = 1234.0,
+                ["localApi.operation"] = "user/list",
+                ["localApi.phase"] = "http_response",
+                ["localApi.queueWaitMs"] = 50.0,
+                ["localApi.durationMs"] = 80.0,
+                ["localApi.outcome"] = "ok",
+                ["localApi.httpStatus"] = 200,
+                ["cdp.call"] = "PagesAsync",
+                ["error.type"] = "LeadFlow.Core.Services.AdsPower.AdsPowerLocalApiTimeoutException",
+                ["password"] = "leak-SECRET",
+                ["adsPower.apiMessage"] = "raw"
+            });
+
+            var (accepted, error) = await sut.IngestBatchAsync(workerId,
+            [
+                new WorkerLogEntryUploadDto(
+                    timestamp,
+                    "Warning",
+                    "[AdsPowerApiClient.GetProfileProxyAsync]",
+                    "AdsPower startup: Local API user/list завершён.",
+                    "corr-farm-1",
+                    false,
+                    properties)
+            ]);
+
+            Assert.Null(error);
+            Assert.Equal(1, accepted);
+
+            var logger = new Logger(Path.Combine(root, "Orbita.Worker"));
+            var entries = await logger.ReadEntriesNewerThanAsync(timestamp.AddMinutes(-1), 20);
+            var entry = Assert.Single(entries, e => e.Message.Contains("user/list", StringComparison.Ordinal));
+            Assert.Contains("corr-farm-1", entry.Properties, StringComparison.Ordinal);
+            Assert.Contains("чтение прокси профиля", entry.Properties, StringComparison.Ordinal);
+            Assert.Contains("user/list", entry.Properties, StringComparison.Ordinal);
+            Assert.Contains("http_response", entry.Properties, StringComparison.Ordinal);
+            Assert.Contains("PagesAsync", entry.Properties, StringComparison.Ordinal);
+            Assert.DoesNotContain("leak-SECRET", entry.Properties, StringComparison.Ordinal);
+            Assert.DoesNotContain("\"adsPower.apiMessage\"", entry.Properties, StringComparison.Ordinal);
         }
         finally
         {

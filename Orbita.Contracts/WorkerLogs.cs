@@ -6,6 +6,7 @@ public sealed record WorkerLogEntryUploadDto(
     string Source,
     string Message,
     string? TraceId,
-    bool IsTampered);
+    bool IsTampered,
+    Dictionary<string, string>? Properties = null);
 
 public sealed record WorkerLogsBatchRequest(IReadOnlyList<WorkerLogEntryUploadDto> Entries);
