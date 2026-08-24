@@ -230,23 +230,12 @@ public sealed partial class AdsPowerAvitoAutomationService
         string adsPowerUserId,
         CancellationToken cancellationToken)
     {
-        try
-        {
-            await AdsPowerCdpGuard.WaitAsync(
-                    page.BringToFrontAsync(),
-                    CdpPageDiscoveryTimeout,
-                    "BringToFront прогрева вкладки",
-                    cancellationToken)
-                .ConfigureAwait(false);
-        }
-        catch (TimeoutException)
-        {
-            throw;
-        }
-        catch
-        {
-            // не критично
-        }
+        await TryBringAutomationPageToFrontAsync(
+                page,
+                CdpPageDiscoveryTimeout,
+                "BringToFront прогрева вкладки",
+                cancellationToken)
+            .ConfigureAwait(false);
 
         var currentUrl = await ReadPageUrlAsync(page, cancellationToken).ConfigureAwait(false);
         if (IsReusableStartupPlaceholderUrl(currentUrl) || !IsUsableWorkerPageUrl(currentUrl))
@@ -541,23 +530,12 @@ public sealed partial class AdsPowerAvitoAutomationService
             page = await WarmUpSessionPageAsync(page, "session", cancellationToken).ConfigureAwait(false);
         }
 
-        try
-        {
-            await AdsPowerCdpGuard.WaitAsync(
-                    page.BringToFrontAsync(),
-                    CdpSwitchActionTimeout,
-                    "BringToFront вкладки Avito",
-                    cancellationToken)
-                .ConfigureAwait(false);
-        }
-        catch (TimeoutException)
-        {
-            throw;
-        }
-        catch
-        {
-            // не критично
-        }
+        await TryBringAutomationPageToFrontAsync(
+                page,
+                CdpSwitchActionTimeout,
+                "BringToFront вкладки Avito",
+                cancellationToken)
+            .ConfigureAwait(false);
 
         await DismissAvitoBlockingOverlaysAsync(page, cancellationToken).ConfigureAwait(false);
 

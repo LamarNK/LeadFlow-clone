@@ -195,6 +195,45 @@ public sealed class AdsPowerCdpGuardTests
     }
 
     [Fact]
+    public async Task WaitIgnoringNonTimeout_HungTask_ThrowsCdpTimeout()
+    {
+        var hung = new TaskCompletionSource<bool>();
+        var ex = await Assert.ThrowsAsync<TimeoutException>(() =>
+            AdsPowerCdpGuard.WaitIgnoringNonTimeoutAsync(
+                hung.Task,
+                TimeSpan.FromMilliseconds(40),
+                "BringToFront рабочей вкладки",
+                CancellationToken.None));
+
+        Assert.StartsWith(AdsPowerCdpGuard.TimeoutPrefix, ex.Message, StringComparison.Ordinal);
+        Assert.True(AdsPowerCdpGuard.IsCdpTimeout(ex));
+    }
+
+    [Fact]
+    public async Task WaitIgnoringNonTimeout_NonTimeoutFault_IsSwallowed()
+    {
+        await AdsPowerCdpGuard.WaitIgnoringNonTimeoutAsync(
+            Task.FromException(new InvalidOperationException("target closed")),
+            TimeSpan.FromSeconds(1),
+            "BringToFront рабочей вкладки",
+            CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task WaitIgnoringNonTimeout_Cancel_Throws()
+    {
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+        var hung = new TaskCompletionSource<bool>();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            AdsPowerCdpGuard.WaitIgnoringNonTimeoutAsync(
+                hung.Task,
+                TimeSpan.FromSeconds(1),
+                "BringToFront рабочей вкладки",
+                cts.Token));
+    }
+
+    [Fact]
     public async Task WaitAsync_HungNewPageLikeTask_FailsInsideDiscoveryBudget()
     {
         var hungNewPage = new TaskCompletionSource<bool>();

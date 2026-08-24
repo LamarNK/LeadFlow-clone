@@ -2245,12 +2245,21 @@ public sealed partial class AdsPowerAvitoAutomationService(
         }
 
         var targetKind = ClassifyAutomationPageKind(preferredUrl);
-        var existingPages = (await GetBrowserPagesAsync(
-                browser,
-                "выбор рабочей вкладки",
-                cancellationToken)
-            .ConfigureAwait(false)).ToList();
-        if (existingPages.Count == 0)
+        IReadOnlyList<IPage> existingPages = [];
+        AutomationPageAcquisition acquisition;
+        try
+        {
+            acquisition = await ResolveAutomationPageAcquisitionAsync(
+                    async (operation, ct) =>
+                    {
+                        existingPages = await GetBrowserPagesAsync(browser, operation, ct).ConfigureAwait(false);
+                        return existingPages.Select(static page => (string?)page.Url).ToArray();
+                    },
+                    preferredUrl,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (TimeoutException ex) when (AdsPowerCdpGuard.IsCdpTimeout(ex))
         {
             LogAutomationPageAcquisition(
                 callerMemberName,
@@ -2261,37 +2270,13 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 branch: "empty_pages",
                 cdpCall: "PagesAsync",
                 closed: 0,
-                extraMessage: "список вкладок пуст, повторный опрос");
-            await Task.Delay(
-                    TimeSpan.FromMilliseconds(MonitoringTiming.AdsPowerStartupNavigationPollMs),
-                    cancellationToken)
-                .ConfigureAwait(false);
-            existingPages = (await GetBrowserPagesAsync(
-                    browser,
-                    "повторный поиск рабочей вкладки",
-                    cancellationToken)
-                .ConfigureAwait(false)).ToList();
-        }
-
-        var existingUrls = existingPages.Select(static page => page.Url).ToArray();
-        var existingWorkerPageIndex = SelectExistingAutomationPageIndex(existingUrls, preferredUrl);
-        var branch = DescribeAutomationPageAcquisitionBranch(existingPages.Count, existingWorkerPageIndex);
-        if (branch == "empty_pages")
-        {
-            LogAutomationPageAcquisition(
-                callerMemberName,
-                preferredUrl,
-                targetKind,
-                existingPages,
-                existingWorkerPageIndex,
-                branch,
-                cdpCall: "PagesAsync",
-                closed: 0,
                 extraMessage: "NewPage не создаём");
-            throw CreateEmptyPagesAcquisitionTimeout();
+            throw;
         }
 
-        var worker = existingPages[existingWorkerPageIndex];
+        var existingUrls = acquisition.Urls;
+        var existingWorkerPageIndex = acquisition.SelectedIndex;
+        var branch = acquisition.Branch;
         LogAutomationPageAcquisition(
             callerMemberName,
             preferredUrl,
@@ -2302,6 +2287,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
             cdpCall: "BringToFrontAsync",
             closed: 0);
 
+        var worker = existingPages[existingWorkerPageIndex];
         var closed = 0;
         if (ShouldCloseNonWorkerPages(worker.Url))
         {
@@ -2312,23 +2298,12 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 .ConfigureAwait(false);
         }
 
-        try
-        {
-            await AdsPowerCdpGuard.WaitAsync(
-                    worker.BringToFrontAsync(),
-                    CdpPageDiscoveryTimeout,
-                    "BringToFront рабочей вкладки",
-                    cancellationToken)
-                .ConfigureAwait(false);
-        }
-        catch (TimeoutException)
-        {
-            throw;
-        }
-        catch
-        {
-            // Не критично для парсинга.
-        }
+        await TryBringAutomationPageToFrontAsync(
+                worker,
+                CdpPageDiscoveryTimeout,
+                "BringToFront рабочей вкладки",
+                cancellationToken)
+            .ConfigureAwait(false);
 
         _ = GlobalLogger.Instance.LogAsync(
             $"AdsPower CDP: рабочая вкладка выбрана (ветка {branch}, закрыто лишних: {closed}, было: {existingPages.Count}).",
@@ -2381,6 +2356,55 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 ["automation.tabsBefore"] = pages.Count
             });
     }
+
+    internal const string PageAcquireOperation = "выбор рабочей вкладки";
+    internal const string PageAcquireRetryOperation = "повторный поиск рабочей вкладки";
+
+    internal readonly record struct AutomationPageAcquisition(
+        IReadOnlyList<string?> Urls,
+        int SelectedIndex,
+        string Branch);
+
+    internal static async Task<AutomationPageAcquisition> ResolveAutomationPageAcquisitionAsync(
+        Func<string, CancellationToken, Task<IReadOnlyList<string?>>> getPageUrls,
+        string preferredUrl,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(getPageUrls);
+        ArgumentException.ThrowIfNullOrWhiteSpace(preferredUrl);
+
+        var urls = await getPageUrls(PageAcquireOperation, cancellationToken).ConfigureAwait(false)
+                   ?? [];
+        if (urls.Count == 0)
+        {
+            await Task.Delay(
+                    TimeSpan.FromMilliseconds(MonitoringTiming.AdsPowerStartupNavigationPollMs),
+                    cancellationToken)
+                .ConfigureAwait(false);
+            urls = await getPageUrls(PageAcquireRetryOperation, cancellationToken).ConfigureAwait(false)
+                   ?? [];
+        }
+
+        var selectedIndex = SelectExistingAutomationPageIndex(urls, preferredUrl);
+        var branch = DescribeAutomationPageAcquisitionBranch(urls.Count, selectedIndex);
+        if (branch == "empty_pages")
+        {
+            throw CreateEmptyPagesAcquisitionTimeout();
+        }
+
+        return new AutomationPageAcquisition(urls, selectedIndex, branch);
+    }
+
+    private static Task TryBringAutomationPageToFrontAsync(
+        IPage page,
+        TimeSpan timeout,
+        string operation,
+        CancellationToken cancellationToken) =>
+        AdsPowerCdpGuard.WaitIgnoringNonTimeoutAsync(
+            page.BringToFrontAsync(),
+            timeout,
+            operation,
+            cancellationToken);
 
     internal static async Task WaitForAdsPowerStartupNavigationAsync(
         IBrowser browser,
