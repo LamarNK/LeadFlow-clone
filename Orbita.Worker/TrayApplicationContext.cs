@@ -51,6 +51,7 @@ public sealed class TrayApplicationContext : ApplicationContext
         _runtimeState.Changed += (_, _) => UpdateUi();
         Application.ApplicationExit += OnApplicationExit;
         UpdateUi();
+        ShowFailedUpdateBalloon();
 
         _ = WorkerLifecycleLog.InfoAsync(
             "Worker lifecycle: трей открыт",
@@ -104,6 +105,28 @@ public sealed class TrayApplicationContext : ApplicationContext
             ToolTipIcon.Info);
     }
 
+    private void ShowFailedUpdateBalloon()
+    {
+        try
+        {
+            var last = new WorkerUpdateStore().PeekLastResult();
+            if (last is not { Success: false } || string.IsNullOrWhiteSpace(last.Message))
+            {
+                return;
+            }
+
+            _trayIcon.ShowBalloonTip(
+                15000,
+                "Обновление не установилось",
+                TruncateBalloon(last.Message),
+                ToolTipIcon.Warning);
+        }
+        catch
+        {
+            // balloon is best-effort
+        }
+    }
+
     private void OnOpenSettings(object? sender, EventArgs e)
     {
         if (!SetupWizardForm.TryConfigure(_configStore, _credentials))
@@ -147,6 +170,9 @@ public sealed class TrayApplicationContext : ApplicationContext
 
     private static string TruncateTooltip(string text) =>
         text.Length <= 127 ? text : text[..124] + "...";
+
+    private static string TruncateBalloon(string text) =>
+        text.Length <= 250 ? text : text[..247] + "...";
 
     protected override void Dispose(bool disposing)
     {

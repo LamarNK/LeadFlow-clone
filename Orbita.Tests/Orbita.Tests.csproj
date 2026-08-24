@@ -27,4 +27,8 @@
     <ProjectReference Include="..\Orbita.Web\Orbita.Web.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Include="..\Orbita.Worker\Services\WorkerUpdateBatchScript.cs" Link="WorkerUpdateBatchScript.cs" />
+  </ItemGroup>
+
 </Project>

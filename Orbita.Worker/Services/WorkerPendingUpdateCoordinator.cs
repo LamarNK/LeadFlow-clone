@@ -32,6 +32,13 @@ public sealed class WorkerPendingUpdateCoordinator(
             return false;
         }
 
+        if (updateStore.IsSilentInstallBlocked(pending.Version))
+        {
+            runtimeState.Detail = updateStore.PeekLastResult()?.Message
+                ?? $"Обновление {pending.Version}: требуется ручная установка MSI";
+            return false;
+        }
+
         if (!updateGate.IsSafeToApply)
         {
             var (phase, monitoringActive) = updateGate.GetSnapshot();

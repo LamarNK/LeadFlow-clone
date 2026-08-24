@@ -2,6 +2,7 @@ using LeadFlow.Core.Logging.Audit;
 using LeadFlow.Core.Services.Worker;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Orbita.Contracts;
 
 namespace Orbita.Worker.Services;
 
@@ -82,6 +83,28 @@ public sealed class WorkerShutdownService(
             return false;
         }
 
+        var pending = updateStore.TryGetPendingMsi();
+        var version = pending?.Version
+            ?? (AppVersionHelper.TryParseVersionFromFileName(Path.GetFileName(msiPath), out var parsed)
+                ? parsed
+                : "unknown");
+
+        if (updateStore.IsSilentInstallBlocked(version))
+        {
+            return false;
+        }
+
+        if (WorkerRestartHelper.TryDetectLegacyPerMachineInstall(out var productDetails))
+        {
+            var message = WorkerRestartHelper.BuildManualElevationMessage(msiPath, productDetails);
+            updateStore.SaveSilentInstallBlocked(version, message);
+            _ = GlobalLogger.Instance.LogAsync(
+                $"Worker update: {message}",
+                DeskLinkAuditLogLevel.Warning,
+                memberName: nameof(RequestInstall));
+            return false;
+        }
+
         if (Volatile.Read(ref _shutdownRequested) == 1)
         {
             lock (_sync)
@@ -100,8 +123,33 @@ public sealed class WorkerShutdownService(
             _pendingInstallPath = msiPath;
         }
 
+        var launched = WorkerRestartHelper.LaunchInstallScript(
+            msiPath,
+            Environment.ProcessId,
+            updateRestart: true,
+            version: version);
+        if (!launched)
+        {
+            Volatile.Write(ref _installScriptLaunched, 0);
+            updateStore.SaveResult(new WorkerUpdateResultDto(
+                version,
+                false,
+                $"Не удалось запустить скрипт установки. MSI сохранён: {msiPath}",
+                DateTime.UtcNow));
+            _ = WorkerLifecycleLog.ErrorAsync(
+                "Worker update: cmd-скрипт установки не запустился, shutdown отменён",
+                nameof(RequestInstall),
+                new Dictionary<string, object?> { ["update.msiPath"] = msiPath });
+            lock (_sync)
+            {
+                _pendingInstallPath = null;
+            }
+
+            Volatile.Write(ref _shutdownRequested, 0);
+            return false;
+        }
+
         PersistPendingInstallState();
-        WorkerRestartHelper.LaunchInstallScript(msiPath, Environment.ProcessId);
         Volatile.Write(ref _installScriptLaunched, 1);
         _ = GlobalLogger.Instance.LogAsync(
             $"Worker update: фоновый установщик запущен, ожидание выхода процесса (PID {Environment.ProcessId}).",
@@ -195,29 +243,31 @@ public sealed class WorkerShutdownService(
             Application.Exit();
         }
 
-        if (!PendingRestart)
+        // Do not Environment.Exit after launching the installer or restart script:
+        // ExitProcess can tear down a non-detached child cmd/msiexec and leave
+        // RemoveExistingProducts half-applied (old product gone, new not committed).
+        if (PendingRestart || InstallScriptLaunched)
         {
             await WorkerLifecycleLog.InfoAsync(
-                "Worker lifecycle: запланирован принудительный Environment.Exit через 8 с",
+                "Worker lifecycle: Environment.Exit не используется — ожидается установщик или перезапуск",
                 nameof(BeginShutdownAsync))
                 .ConfigureAwait(false);
+            return;
+        }
 
-            _ = Task.Run(async () =>
-            {
-                await Task.Delay(TimeSpan.FromSeconds(8)).ConfigureAwait(false);
-                await WorkerLifecycleLog.InfoAsync(
-                    "Worker lifecycle: Environment.Exit(0)",
-                    nameof(BeginShutdownAsync))
-                    .ConfigureAwait(false);
-                Environment.Exit(0);
-            });
-        }
-        else
+        await WorkerLifecycleLog.InfoAsync(
+            "Worker lifecycle: запланирован принудительный Environment.Exit через 8 с",
+            nameof(BeginShutdownAsync))
+            .ConfigureAwait(false);
+
+        _ = Task.Run(async () =>
         {
+            await Task.Delay(TimeSpan.FromSeconds(8)).ConfigureAwait(false);
             await WorkerLifecycleLog.InfoAsync(
-                "Worker lifecycle: Environment.Exit не используется — ожидается перезапуск",
+                "Worker lifecycle: Environment.Exit(0)",
                 nameof(BeginShutdownAsync))
                 .ConfigureAwait(false);
-        }
+            Environment.Exit(0);
+        });
     }
 }
