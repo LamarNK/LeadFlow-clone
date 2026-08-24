@@ -61,6 +61,96 @@ public sealed class AdsPowerApiClientTests
     }
 
     [Fact]
+    public void DescribeAutomationPageAcquisitionBranch_EmptyList_IsEmptyPages()
+    {
+        Assert.Equal("empty_pages", AdsPowerAvitoAutomationService.DescribeAutomationPageAcquisitionBranch(0, -1));
+        Assert.Equal("existing_page", AdsPowerAvitoAutomationService.DescribeAutomationPageAcquisitionBranch(1, 0));
+        Assert.Equal("existing_page", AdsPowerAvitoAutomationService.DescribeAutomationPageAcquisitionBranch(3, 2));
+    }
+
+    [Fact]
+    public void CreateEmptyPagesAcquisitionTimeout_HasCdpPrefix_AndIsRetryable()
+    {
+        var ex = AdsPowerAvitoAutomationService.CreateEmptyPagesAcquisitionTimeout();
+        Assert.StartsWith(AdsPowerCdpGuard.TimeoutPrefix, ex.Message, StringComparison.Ordinal);
+        Assert.Contains("список вкладок пуст", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("NewPage", ex.Message, StringComparison.Ordinal);
+        Assert.True(AdsPowerCdpGuard.IsCdpTimeout(ex));
+        Assert.True(AdsPowerAvitoAutomationService.IsRetryableAdsPowerStartupFailure(ex));
+    }
+
+    [Fact]
+    public void EmptyPagesAcquisitionTimeout_WrappedAsSessionFailure_TriggersCdpRetry()
+    {
+        var inner = AdsPowerAvitoAutomationService.CreateEmptyPagesAcquisitionTimeout();
+        var wrapped = new InvalidOperationException(
+            $"AdsPower не открыл сессию: последний этап «попытка 2: поиск рабочей вкладки», прошло 12 с. {inner.Message}",
+            inner);
+
+        Assert.True(AdsPowerCdpGuard.IsCdpTimeout(wrapped));
+        Assert.Same(inner, AdsPowerCdpGuard.FindCdpTimeout(wrapped));
+    }
+
+    [Fact]
+    public void OuterThreeMinuteStartupTimeout_IsNotCdpRetry()
+    {
+        var outer = new TimeoutException("AdsPower: запуск сессии не завершился за 3 мин.");
+        var wrapped = new InvalidOperationException(
+            "AdsPower не открыл сессию: последний этап «попытка 1: поиск рабочей вкладки», прошло 180 с. " + outer.Message,
+            outer);
+
+        Assert.False(AdsPowerCdpGuard.IsCdpTimeout(wrapped));
+        Assert.Null(AdsPowerCdpGuard.FindCdpTimeout(wrapped));
+    }
+
+    [Fact]
+    public void ClassifyAutomationPageUrl_MapsKnownClasses()
+    {
+        Assert.Equal("empty", AdsPowerAvitoAutomationService.ClassifyAutomationPageUrl(null));
+        Assert.Equal("blank", AdsPowerAvitoAutomationService.ClassifyAutomationPageUrl("about:blank"));
+        Assert.Equal("blank", AdsPowerAvitoAutomationService.ClassifyAutomationPageUrl(":"));
+        Assert.Equal("chrome", AdsPowerAvitoAutomationService.ClassifyAutomationPageUrl("chrome://new-tab-page"));
+        Assert.Equal("adspower-start", AdsPowerAvitoAutomationService.ClassifyAutomationPageUrl(
+            "https://start.adspower.net/?id=k1ehuqvx"));
+        Assert.Equal("avito", AdsPowerAvitoAutomationService.ClassifyAutomationPageUrl(
+            "https://www.avito.ru/profile/pro/items"));
+        Assert.Equal("avito,blank", AdsPowerAvitoAutomationService.FormatAutomationPageUrlClasses(
+            ["https://www.avito.ru/profile/pro/items", "about:blank"]));
+    }
+
+    [Fact]
+    public void ShouldKeepWaitingForStartupNavigation_WhenNoPages_StopsOnWallClockTimeout()
+    {
+        Assert.True(AdsPowerAvitoAutomationService.ShouldKeepWaitingForStartupNavigation(
+            [],
+            elapsed: TimeSpan.FromSeconds(1),
+            timeout: TimeSpan.FromSeconds(5)));
+        Assert.False(AdsPowerAvitoAutomationService.ShouldKeepWaitingForStartupNavigation(
+            [],
+            elapsed: TimeSpan.FromSeconds(5),
+            timeout: TimeSpan.FromSeconds(5)));
+    }
+
+    [Fact]
+    public void AcquireAutomationPage_DoesNotCreateNewPageWhenTargetListIsEmpty()
+    {
+        var path = Path.Combine(
+            AppContext.BaseDirectory,
+            "..", "..", "..", "..",
+            "LeadFlow.Core",
+            "Services",
+            "AdsPower",
+            "AdsPowerAvitoAutomationService.cs");
+        path = Path.GetFullPath(path);
+        Assert.True(File.Exists(path), path);
+        var source = File.ReadAllText(path);
+        Assert.DoesNotContain("await browser.NewPageAsync()", source, StringComparison.Ordinal);
+        Assert.Contains("CreateEmptyPagesAcquisitionTimeout", source, StringComparison.Ordinal);
+        Assert.Contains("empty_pages", source, StringComparison.Ordinal);
+        Assert.Contains("BringToFront рабочей вкладки", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void SelectExistingAutomationPageIndex_WhenOnlyChromeNewTab_ReusesItInsteadOfOpeningNewTab()
     {
         var pageIndex = AdsPowerAvitoAutomationService.SelectExistingAutomationPageIndex(

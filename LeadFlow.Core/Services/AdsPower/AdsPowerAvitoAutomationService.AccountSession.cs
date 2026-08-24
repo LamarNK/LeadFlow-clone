@@ -232,7 +232,16 @@ public sealed partial class AdsPowerAvitoAutomationService
     {
         try
         {
-            await page.BringToFrontAsync().ConfigureAwait(false);
+            await AdsPowerCdpGuard.WaitAsync(
+                    page.BringToFrontAsync(),
+                    CdpPageDiscoveryTimeout,
+                    "BringToFront прогрева вкладки",
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (TimeoutException)
+        {
+            throw;
         }
         catch
         {

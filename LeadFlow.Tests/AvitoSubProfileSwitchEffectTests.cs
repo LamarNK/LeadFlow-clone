@@ -190,6 +190,25 @@ public sealed class AdsPowerCdpGuardTests
     {
         Assert.False(AdsPowerCdpGuard.IsCdpTimeout(new TimeoutException("generic")));
         Assert.False(AdsPowerCdpGuard.IsCdpTimeout(new InvalidOperationException("AdsPower не открыл сессию")));
+        Assert.False(AdsPowerCdpGuard.IsCdpTimeout(
+            new TimeoutException("AdsPower: запуск сессии не завершился за 3 мин.")));
+    }
+
+    [Fact]
+    public async Task WaitAsync_HungNewPageLikeTask_FailsInsideDiscoveryBudget()
+    {
+        var hungNewPage = new TaskCompletionSource<bool>();
+        var started = DateTime.UtcNow;
+        var ex = await Assert.ThrowsAsync<TimeoutException>(() =>
+            AdsPowerCdpGuard.WaitAsync(
+                hungNewPage.Task,
+                TimeSpan.FromMilliseconds(50),
+                "поиск рабочей вкладки",
+                CancellationToken.None));
+
+        Assert.StartsWith(AdsPowerCdpGuard.TimeoutPrefix, ex.Message, StringComparison.Ordinal);
+        Assert.True(DateTime.UtcNow - started < TimeSpan.FromSeconds(2));
+        Assert.True(AdsPowerCdpGuard.IsCdpTimeout(ex));
     }
 
     [Fact]
