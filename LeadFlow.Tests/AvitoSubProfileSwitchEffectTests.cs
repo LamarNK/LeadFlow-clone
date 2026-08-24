@@ -190,6 +190,64 @@ public sealed class AdsPowerCdpGuardTests
     {
         Assert.False(AdsPowerCdpGuard.IsCdpTimeout(new TimeoutException("generic")));
         Assert.False(AdsPowerCdpGuard.IsCdpTimeout(new InvalidOperationException("AdsPower не открыл сессию")));
+        Assert.False(AdsPowerCdpGuard.IsCdpTimeout(
+            new TimeoutException("AdsPower: запуск сессии не завершился за 3 мин.")));
+    }
+
+    [Fact]
+    public async Task WaitIgnoringNonTimeout_HungTask_ThrowsCdpTimeout()
+    {
+        var hung = new TaskCompletionSource<bool>();
+        var ex = await Assert.ThrowsAsync<TimeoutException>(() =>
+            AdsPowerCdpGuard.WaitIgnoringNonTimeoutAsync(
+                hung.Task,
+                TimeSpan.FromMilliseconds(40),
+                "BringToFront рабочей вкладки",
+                CancellationToken.None));
+
+        Assert.StartsWith(AdsPowerCdpGuard.TimeoutPrefix, ex.Message, StringComparison.Ordinal);
+        Assert.True(AdsPowerCdpGuard.IsCdpTimeout(ex));
+    }
+
+    [Fact]
+    public async Task WaitIgnoringNonTimeout_NonTimeoutFault_IsSwallowed()
+    {
+        await AdsPowerCdpGuard.WaitIgnoringNonTimeoutAsync(
+            Task.FromException(new InvalidOperationException("target closed")),
+            TimeSpan.FromSeconds(1),
+            "BringToFront рабочей вкладки",
+            CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task WaitIgnoringNonTimeout_Cancel_Throws()
+    {
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+        var hung = new TaskCompletionSource<bool>();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            AdsPowerCdpGuard.WaitIgnoringNonTimeoutAsync(
+                hung.Task,
+                TimeSpan.FromSeconds(1),
+                "BringToFront рабочей вкладки",
+                cts.Token));
+    }
+
+    [Fact]
+    public async Task WaitAsync_HungNewPageLikeTask_FailsInsideDiscoveryBudget()
+    {
+        var hungNewPage = new TaskCompletionSource<bool>();
+        var started = DateTime.UtcNow;
+        var ex = await Assert.ThrowsAsync<TimeoutException>(() =>
+            AdsPowerCdpGuard.WaitAsync(
+                hungNewPage.Task,
+                TimeSpan.FromMilliseconds(50),
+                "поиск рабочей вкладки",
+                CancellationToken.None));
+
+        Assert.StartsWith(AdsPowerCdpGuard.TimeoutPrefix, ex.Message, StringComparison.Ordinal);
+        Assert.True(DateTime.UtcNow - started < TimeSpan.FromSeconds(2));
+        Assert.True(AdsPowerCdpGuard.IsCdpTimeout(ex));
     }
 
     [Fact]

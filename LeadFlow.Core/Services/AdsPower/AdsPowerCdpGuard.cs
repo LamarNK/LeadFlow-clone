@@ -74,6 +74,30 @@ internal static class AdsPowerCdpGuard
         }
     }
 
+    public static async Task WaitIgnoringNonTimeoutAsync(
+        Task task,
+        TimeSpan timeout,
+        string operation,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            await WaitAsync(task, timeout, operation, cancellationToken).ConfigureAwait(false);
+        }
+        catch (TimeoutException)
+        {
+            throw;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            // Команда не обязательна для продолжения (BringToFront и аналоги).
+        }
+    }
+
     private static string FormatSeconds(TimeSpan timeout) =>
         timeout.TotalSeconds >= 1 && Math.Abs(timeout.TotalSeconds - Math.Round(timeout.TotalSeconds)) < 0.05
             ? timeout.TotalSeconds.ToString("0")

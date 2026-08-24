@@ -389,29 +389,15 @@ public sealed class WorkerMonitoringService(
                     var historicalHeat = await repository
                         .GetHistoricalResponseIngestHeatScoreAsync(DateTime.UtcNow, cancellationToken)
                         .ConfigureAwait(false);
-                    TimeSpan personalDelay;
-                    if (retryAfter is { } requestedRetry)
-                    {
-                        // CDP оборвался при нормальной видимой вкладке. Это не «тихий» проход,
-                        // поэтому не ждём обычные 3–20 минут до следующего запуска профиля.
-                        personalDelay = requestedRetry;
-                    }
-                    else if (polled)
-                    {
-                        personalDelay = MonitoringCycleDelay.GetDelayAfterCycle(
-                            newResponses,
-                            accountsPolled: 1,
-                            quietStreak,
-                            backlog,
-                            historicalHeat);
-                    }
-                    else
-                    {
-                        // Skip: короткая пауза, не блокируем на max quiet.
-                        personalDelay = TimeSpan.FromMinutes(MonitoringTiming.CycleDelayMinMinutes);
-                    }
-
-                    personalDelay = MonitoringNightQuiet.ApplyFloor(personalDelay, DateTime.UtcNow);
+                    // CDP hang: RetryAfter=1 мин, ночной пол 45–90 мин к нему не применяется.
+                    var personalDelay = WorkerAccountPassDelay.Resolve(
+                        retryAfter,
+                        polled,
+                        newResponses,
+                        quietStreak,
+                        backlog,
+                        historicalHeat,
+                        DateTime.UtcNow);
 
                     var nextEligible = DateTime.UtcNow.Add(personalDelay);
                     _accountNextEligibleUtc[job.Account.Id] = nextEligible;

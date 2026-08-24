@@ -1,5 +1,8 @@
+using System.Diagnostics;
 using System.Net.Http;
+using LeadFlow.Core.Services;
 using LeadFlow.Core.Services.AdsPower;
+using LeadFlow.Core.Services.Worker;
 using LeadFlow.Tests.Support;
 using Xunit;
 
@@ -58,6 +61,188 @@ public sealed class AdsPowerApiClientTests
             "https://www.avito.ru/profile/pro/items");
 
         Assert.Equal(-1, pageIndex);
+    }
+
+    [Fact]
+    public void DescribeAutomationPageAcquisitionBranch_EmptyList_IsEmptyPages()
+    {
+        Assert.Equal("empty_pages", AdsPowerAvitoAutomationService.DescribeAutomationPageAcquisitionBranch(0, -1));
+        Assert.Equal("existing_page", AdsPowerAvitoAutomationService.DescribeAutomationPageAcquisitionBranch(1, 0));
+        Assert.Equal("existing_page", AdsPowerAvitoAutomationService.DescribeAutomationPageAcquisitionBranch(3, 2));
+    }
+
+    [Fact]
+    public void CreateEmptyPagesAcquisitionTimeout_HasCdpPrefix_AndIsRetryable()
+    {
+        var ex = AdsPowerAvitoAutomationService.CreateEmptyPagesAcquisitionTimeout();
+        Assert.StartsWith(AdsPowerCdpGuard.TimeoutPrefix, ex.Message, StringComparison.Ordinal);
+        Assert.Contains("список вкладок пуст", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("NewPage", ex.Message, StringComparison.Ordinal);
+        Assert.True(AdsPowerCdpGuard.IsCdpTimeout(ex));
+        Assert.True(AdsPowerAvitoAutomationService.IsRetryableAdsPowerStartupFailure(ex));
+    }
+
+    [Fact]
+    public void EmptyPagesAcquisitionTimeout_WrappedAsSessionFailure_TriggersCdpRetry()
+    {
+        var inner = AdsPowerAvitoAutomationService.CreateEmptyPagesAcquisitionTimeout();
+        var wrapped = new InvalidOperationException(
+            $"AdsPower не открыл сессию: последний этап «попытка 2: поиск рабочей вкладки», прошло 12 с. {inner.Message}",
+            inner);
+
+        Assert.True(AdsPowerCdpGuard.IsCdpTimeout(wrapped));
+        Assert.Same(inner, AdsPowerCdpGuard.FindCdpTimeout(wrapped));
+    }
+
+    [Fact]
+    public void OuterThreeMinuteStartupTimeout_IsNotCdpRetry()
+    {
+        var outer = new TimeoutException("AdsPower: запуск сессии не завершился за 3 мин.");
+        var wrapped = new InvalidOperationException(
+            "AdsPower не открыл сессию: последний этап «попытка 1: поиск рабочей вкладки», прошло 180 с. " + outer.Message,
+            outer);
+
+        Assert.False(AdsPowerCdpGuard.IsCdpTimeout(wrapped));
+        Assert.Null(AdsPowerCdpGuard.FindCdpTimeout(wrapped));
+    }
+
+    [Fact]
+    public void ClassifyAutomationPageUrl_MapsKnownClasses()
+    {
+        Assert.Equal("empty", AdsPowerAvitoAutomationService.ClassifyAutomationPageUrl(null));
+        Assert.Equal("blank", AdsPowerAvitoAutomationService.ClassifyAutomationPageUrl("about:blank"));
+        Assert.Equal("blank", AdsPowerAvitoAutomationService.ClassifyAutomationPageUrl(":"));
+        Assert.Equal("chrome", AdsPowerAvitoAutomationService.ClassifyAutomationPageUrl("chrome://new-tab-page"));
+        Assert.Equal("adspower-start", AdsPowerAvitoAutomationService.ClassifyAutomationPageUrl(
+            "https://start.adspower.net/?id=k1ehuqvx"));
+        Assert.Equal("avito", AdsPowerAvitoAutomationService.ClassifyAutomationPageUrl(
+            "https://www.avito.ru/profile/pro/items"));
+        Assert.Equal("avito,blank", AdsPowerAvitoAutomationService.FormatAutomationPageUrlClasses(
+            ["https://www.avito.ru/profile/pro/items", "about:blank"]));
+    }
+
+    [Fact]
+    public void ShouldKeepWaitingForStartupNavigation_WhenNoPages_StopsOnWallClockTimeout()
+    {
+        Assert.True(AdsPowerAvitoAutomationService.ShouldKeepWaitingForStartupNavigation(
+            [],
+            elapsed: TimeSpan.FromSeconds(1),
+            timeout: TimeSpan.FromSeconds(5)));
+        Assert.False(AdsPowerAvitoAutomationService.ShouldKeepWaitingForStartupNavigation(
+            [],
+            elapsed: TimeSpan.FromSeconds(5),
+            timeout: TimeSpan.FromSeconds(5)));
+    }
+
+    [Fact]
+    public async Task ResolveAutomationPageAcquisition_EmptyPages_RetriesOnceThenCdpTimeoutWithoutNewPage()
+    {
+        var events = new List<string>();
+        var timestamps = new List<long>();
+        var started = Stopwatch.StartNew();
+
+        var ex = await Assert.ThrowsAsync<TimeoutException>(() =>
+            AdsPowerAvitoAutomationService.ResolveAutomationPageAcquisitionAsync(
+                (operation, _) =>
+                {
+                    events.Add($"poll:{operation}");
+                    timestamps.Add(started.ElapsedMilliseconds);
+                    return Task.FromResult<IReadOnlyList<string?>>([]);
+                },
+                "https://www.avito.ru/profile/pro/items",
+                CancellationToken.None,
+                onEmptyFirstPoll: urls =>
+                {
+                    Assert.Empty(urls);
+                    events.Add("log:empty_pages_retryScheduled");
+                    timestamps.Add(started.ElapsedMilliseconds);
+                }));
+
+        Assert.Equal(
+            [
+                $"poll:{AdsPowerAvitoAutomationService.PageAcquireOperation}",
+                "log:empty_pages_retryScheduled",
+                $"poll:{AdsPowerAvitoAutomationService.PageAcquireRetryOperation}"
+            ],
+            events);
+        Assert.Equal(3, timestamps.Count);
+        Assert.True(
+            timestamps[2] - timestamps[1] >= MonitoringTiming.AdsPowerStartupNavigationPollMs - 30,
+            $"повторный PagesAsync слишком рано после лога: {timestamps[2] - timestamps[1]} мс");
+        Assert.StartsWith(AdsPowerCdpGuard.TimeoutPrefix, ex.Message, StringComparison.Ordinal);
+        Assert.Contains("NewPage", ex.Message, StringComparison.Ordinal);
+        Assert.True(AdsPowerCdpGuard.IsCdpTimeout(ex));
+        Assert.True(AdsPowerAvitoAutomationService.IsRetryableAdsPowerStartupFailure(ex));
+
+        var wrapped = new InvalidOperationException(
+            $"AdsPower не открыл сессию: последний этап «попытка 2: поиск рабочей вкладки», прошло 12 с. {ex.Message}",
+            ex);
+        Assert.Same(ex, AdsPowerCdpGuard.FindCdpTimeout(wrapped));
+
+        var night = new DateTime(2026, 8, 24, 20, 30, 0, DateTimeKind.Utc);
+        Assert.True(MonitoringNightQuiet.IsActive(night));
+        var retry = WorkerAccountPassDelay.Resolve(
+            retryAfter: TimeSpan.FromMinutes(1),
+            polled: true,
+            newResponses: 0,
+            quietStreak: 4,
+            backlog: false,
+            historicalHeat: 0,
+            utcNow: night);
+        Assert.Equal(TimeSpan.FromMinutes(1), retry);
+    }
+
+    [Fact]
+    public async Task ResolveAutomationPageAcquisition_EmptyThenExisting_LogsEmptyPagesBeforeRetry()
+    {
+        var events = new List<string>();
+        var result = await AdsPowerAvitoAutomationService.ResolveAutomationPageAcquisitionAsync(
+            (operation, _) =>
+            {
+                events.Add($"poll:{operation}");
+                IReadOnlyList<string?> urls = events.Count(static e => e.StartsWith("poll:", StringComparison.Ordinal)) == 1
+                    ? []
+                    : ["https://www.avito.ru/profile/pro/items"];
+                return Task.FromResult(urls);
+            },
+            "https://www.avito.ru/profile/pro/items",
+            CancellationToken.None,
+            onEmptyFirstPoll: urls =>
+            {
+                Assert.Empty(urls);
+                events.Add("log:empty_pages_retryScheduled");
+            });
+
+        Assert.Equal(
+            [
+                $"poll:{AdsPowerAvitoAutomationService.PageAcquireOperation}",
+                "log:empty_pages_retryScheduled",
+                $"poll:{AdsPowerAvitoAutomationService.PageAcquireRetryOperation}"
+            ],
+            events);
+        Assert.Equal("existing_page", result.Branch);
+        Assert.Equal(0, result.SelectedIndex);
+    }
+
+    [Fact]
+    public async Task ResolveAutomationPageAcquisition_ExistingOnFirstPoll_DoesNotRetry()
+    {
+        var operations = new List<string>();
+        var started = Stopwatch.StartNew();
+        var result = await AdsPowerAvitoAutomationService.ResolveAutomationPageAcquisitionAsync(
+            (operation, _) =>
+            {
+                operations.Add(operation);
+                return Task.FromResult<IReadOnlyList<string?>>(["about:blank"]);
+            },
+            "https://www.avito.ru/profile/pro/items",
+            CancellationToken.None,
+            onEmptyFirstPoll: _ => throw new InvalidOperationException(
+                "пустой PagesAsync не должен логироваться, если первая выборка уже не пустая"));
+
+        Assert.Equal([AdsPowerAvitoAutomationService.PageAcquireOperation], operations);
+        Assert.Equal("existing_page", result.Branch);
+        Assert.True(started.Elapsed < TimeSpan.FromMilliseconds(200));
     }
 
     [Fact]

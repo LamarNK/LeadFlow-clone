@@ -2223,8 +2223,9 @@ public sealed partial class AdsPowerAvitoAutomationService(
 
     /// <summary>
     /// Одна рабочая вкладка на сессию CDP: берём уже открытую вкладку AdsPower (в том числе стартовый
-    /// about:blank) и навигируем её. Новую вкладку через CDP не создаём, если есть хоть одна существующая —
-    /// новая about:blank в AdsPower часто остаётся мёртвой.
+    /// about:blank) и навигируем её. Пустой <c>PagesAsync</c> — это CDP-сбой, а не повод звать
+    /// <c>NewPageAsync</c>: новая about:blank в AdsPower часто остаётся мёртвой и в проде не имеет
+    /// клиентского timeout (слот горит до внешнего 3-мин лимита).
     /// </summary>
     private static async Task<IPage> AcquireAutomationPageAsync(
         IBrowser browser,
@@ -2244,39 +2245,79 @@ public sealed partial class AdsPowerAvitoAutomationService(
         }
 
         var targetKind = ClassifyAutomationPageKind(preferredUrl);
-        var existingPages = (await GetBrowserPagesAsync(
-                browser,
-                "выбор рабочей вкладки",
-                cancellationToken)
-            .ConfigureAwait(false)).ToList();
-        var existingWorkerPageIndex = SelectExistingAutomationPageIndex(
-            existingPages.Select(static page => page.Url).ToArray(),
-            preferredUrl);
-        var worker = existingWorkerPageIndex >= 0 ? existingPages[existingWorkerPageIndex] : null;
-        // Новая about:blank через NewPageAsync в AdsPower часто мёртвая. Берём уже открытую вкладку.
-        worker ??= existingPages.Count > 0
-            ? existingPages[0]
-            : await browser.NewPageAsync().ConfigureAwait(false);
+        IReadOnlyList<IPage> existingPages = [];
+        AutomationPageAcquisition acquisition;
+        try
+        {
+            acquisition = await ResolveAutomationPageAcquisitionAsync(
+                    async (operation, ct) =>
+                    {
+                        existingPages = await GetBrowserPagesAsync(browser, operation, ct).ConfigureAwait(false);
+                        return existingPages.Select(static page => (string?)page.Url).ToArray();
+                    },
+                    preferredUrl,
+                    cancellationToken,
+                    onEmptyFirstPoll: _ => LogAutomationPageAcquisition(
+                        callerMemberName,
+                        preferredUrl,
+                        targetKind,
+                        existingPages,
+                        selectedIndex: -1,
+                        branch: "empty_pages",
+                        cdpCall: "PagesAsync",
+                        closed: 0,
+                        extraMessage: "повторный опрос",
+                        retryScheduled: true))
+                .ConfigureAwait(false);
+        }
+        catch (TimeoutException ex) when (AdsPowerCdpGuard.IsCdpTimeout(ex))
+        {
+            LogAutomationPageAcquisition(
+                callerMemberName,
+                preferredUrl,
+                targetKind,
+                existingPages,
+                selectedIndex: -1,
+                branch: "empty_pages",
+                cdpCall: "PagesAsync",
+                closed: 0,
+                extraMessage: "NewPage не создаём");
+            throw;
+        }
+
+        var existingUrls = acquisition.Urls;
+        var existingWorkerPageIndex = acquisition.SelectedIndex;
+        var branch = acquisition.Branch;
+        LogAutomationPageAcquisition(
+            callerMemberName,
+            preferredUrl,
+            targetKind,
+            existingPages,
+            existingWorkerPageIndex,
+            branch,
+            cdpCall: "BringToFrontAsync",
+            closed: 0);
+
+        var worker = existingPages[existingWorkerPageIndex];
         var closed = 0;
         if (ShouldCloseNonWorkerPages(worker.Url))
         {
             var pagesToClose = existingPages
                 .Where(page => !ReferenceEquals(page, worker))
                 .ToArray();
-            closed = await CloseBrowserPagesAsync(pagesToClose, callerMemberName).ConfigureAwait(false);
+            closed = await CloseBrowserPagesAsync(pagesToClose, callerMemberName, cancellationToken)
+                .ConfigureAwait(false);
         }
 
-        try
-        {
-            await worker.BringToFrontAsync().ConfigureAwait(false);
-        }
-        catch
-        {
-            // Не критично для парсинга.
-        }
+        await TryBringAutomationPageToFrontAsync(
+                worker,
+                CdpPageDiscoveryTimeout,
+                "BringToFront рабочей вкладки",
+                cancellationToken)
+            .ConfigureAwait(false);
 
         _ = GlobalLogger.Instance.LogAsync(
-            $"AdsPower CDP: рабочая вкладка выбрана (закрыто лишних: {closed}, было: {existingPages.Count}).",
+            $"AdsPower CDP: рабочая вкладка выбрана (ветка {branch}, закрыто лишних: {closed}, было: {existingPages.Count}).",
             DeskLinkAuditLogLevel.Info,
             memberName: callerMemberName,
             properties: new Dictionary<string, object?>
@@ -2284,12 +2325,101 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 ["automation.targetKind"] = targetKind.ToString(),
                 ["automation.preferredUrl"] = preferredUrl,
                 ["automation.workerUrl"] = worker.Url,
+                ["automation.pageAcquireBranch"] = branch,
+                ["automation.pagesCount"] = existingPages.Count,
+                ["automation.urlClasses"] = FormatAutomationPageUrlClasses(existingUrls),
+                ["automation.selectedIndex"] = existingWorkerPageIndex,
+                ["automation.cdpCall"] = "BringToFrontAsync",
                 ["automation.tabsClosed"] = closed,
                 ["automation.tabsBefore"] = existingPages.Count
             });
 
         return worker;
     }
+
+    private static void LogAutomationPageAcquisition(
+        string callerMemberName,
+        string preferredUrl,
+        AvitoAutomationPageKind targetKind,
+        IReadOnlyList<IPage> pages,
+        int selectedIndex,
+        string branch,
+        string cdpCall,
+        int closed,
+        string? extraMessage = null,
+        bool retryScheduled = false)
+    {
+        var urls = pages.Select(static page => page.Url).ToArray();
+        var suffix = string.IsNullOrWhiteSpace(extraMessage) ? string.Empty : $", {extraMessage}";
+        _ = GlobalLogger.Instance.LogAsync(
+            $"AdsPower CDP: поиск рабочей вкладки, ветка {branch}, pages={pages.Count}{suffix}.",
+            branch == "empty_pages" ? DeskLinkAuditLogLevel.Warning : DeskLinkAuditLogLevel.Info,
+            memberName: callerMemberName,
+            properties: new Dictionary<string, object?>
+            {
+                ["automation.targetKind"] = targetKind.ToString(),
+                ["automation.preferredUrl"] = preferredUrl,
+                ["automation.pageAcquireBranch"] = branch,
+                ["automation.pagesCount"] = pages.Count,
+                ["automation.urlClasses"] = FormatAutomationPageUrlClasses(urls),
+                ["automation.selectedIndex"] = selectedIndex,
+                ["automation.cdpCall"] = cdpCall,
+                ["automation.retryScheduled"] = retryScheduled,
+                ["automation.tabsClosed"] = closed,
+                ["automation.tabsBefore"] = pages.Count
+            });
+    }
+
+    internal const string PageAcquireOperation = "выбор рабочей вкладки";
+    internal const string PageAcquireRetryOperation = "повторный поиск рабочей вкладки";
+
+    internal readonly record struct AutomationPageAcquisition(
+        IReadOnlyList<string?> Urls,
+        int SelectedIndex,
+        string Branch);
+
+    internal static async Task<AutomationPageAcquisition> ResolveAutomationPageAcquisitionAsync(
+        Func<string, CancellationToken, Task<IReadOnlyList<string?>>> getPageUrls,
+        string preferredUrl,
+        CancellationToken cancellationToken,
+        Action<IReadOnlyList<string?>>? onEmptyFirstPoll = null)
+    {
+        ArgumentNullException.ThrowIfNull(getPageUrls);
+        ArgumentException.ThrowIfNullOrWhiteSpace(preferredUrl);
+
+        var urls = await getPageUrls(PageAcquireOperation, cancellationToken).ConfigureAwait(false)
+                   ?? [];
+        if (urls.Count == 0)
+        {
+            onEmptyFirstPoll?.Invoke(urls);
+            await Task.Delay(
+                    TimeSpan.FromMilliseconds(MonitoringTiming.AdsPowerStartupNavigationPollMs),
+                    cancellationToken)
+                .ConfigureAwait(false);
+            urls = await getPageUrls(PageAcquireRetryOperation, cancellationToken).ConfigureAwait(false)
+                   ?? [];
+        }
+
+        var selectedIndex = SelectExistingAutomationPageIndex(urls, preferredUrl);
+        var branch = DescribeAutomationPageAcquisitionBranch(urls.Count, selectedIndex);
+        if (branch == "empty_pages")
+        {
+            throw CreateEmptyPagesAcquisitionTimeout();
+        }
+
+        return new AutomationPageAcquisition(urls, selectedIndex, branch);
+    }
+
+    private static Task TryBringAutomationPageToFrontAsync(
+        IPage page,
+        TimeSpan timeout,
+        string operation,
+        CancellationToken cancellationToken) =>
+        AdsPowerCdpGuard.WaitIgnoringNonTimeoutAsync(
+            page.BringToFrontAsync(),
+            timeout,
+            operation,
+            cancellationToken);
 
     internal static async Task WaitForAdsPowerStartupNavigationAsync(
         IBrowser browser,
@@ -2298,7 +2428,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
     {
         var timeout = TimeSpan.FromMilliseconds(MonitoringTiming.AdsPowerStartupNavigationMaxWaitMs);
         var poll = TimeSpan.FromMilliseconds(MonitoringTiming.AdsPowerStartupNavigationPollMs);
-        var elapsed = TimeSpan.Zero;
+        var started = Stopwatch.StartNew();
 
         while (true)
         {
@@ -2311,22 +2441,22 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 .Select(static page => page.Url)
                 .ToArray();
 
-            if (!ShouldKeepWaitingForStartupNavigation(urls, elapsed, timeout))
+            if (!ShouldKeepWaitingForStartupNavigation(urls, started.Elapsed, timeout))
             {
                 _ = GlobalLogger.Instance.LogAsync(
-                    $"AdsPower CDP: ожидание стартовой навигации завершено ({elapsed.TotalMilliseconds:F0} мс).",
+                    $"AdsPower CDP: ожидание стартовой навигации завершено ({started.Elapsed.TotalMilliseconds:F0} мс).",
                     DeskLinkAuditLogLevel.Info,
                     memberName: callerMemberName,
                     properties: new Dictionary<string, object?>
                     {
-                        ["automation.startupWaitMs"] = elapsed.TotalMilliseconds,
-                        ["automation.startupUrls"] = string.Join(" | ", urls)
+                        ["automation.startupWaitMs"] = started.Elapsed.TotalMilliseconds,
+                        ["automation.startupUrls"] = string.Join(" | ", urls),
+                        ["automation.urlClasses"] = FormatAutomationPageUrlClasses(urls)
                     });
                 return;
             }
 
             await Task.Delay(poll, cancellationToken).ConfigureAwait(false);
-            elapsed += poll;
         }
     }
 
@@ -2341,7 +2471,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
     {
         var timeout = TimeSpan.FromMilliseconds(MonitoringTiming.AdsPowerStartPageProxyCheckMaxWaitMs);
         var poll = TimeSpan.FromMilliseconds(MonitoringTiming.AdsPowerStartupNavigationPollMs);
-        var elapsed = TimeSpan.Zero;
+        var started = Stopwatch.StartNew();
         string? lastStartUrl = null;
 
         while (true)
@@ -2385,7 +2515,8 @@ public sealed partial class AdsPowerAvitoAutomationService(
                         properties: new Dictionary<string, object?>
                         {
                             ["automation.startPageUrl"] = startPage.Url,
-                            ["automation.startupUrls"] = string.Join(" | ", urls)
+                            ["automation.startupUrls"] = string.Join(" | ", urls),
+                            ["automation.urlClasses"] = FormatAutomationPageUrlClasses(urls)
                         });
                     throw new AdsPowerProxyFailureException(startPage.Url);
                 }
@@ -2399,13 +2530,14 @@ public sealed partial class AdsPowerAvitoAutomationService(
                         properties: new Dictionary<string, object?>
                         {
                             ["automation.startPageUrl"] = startPage.Url,
-                            ["automation.proxyCheckWaitMs"] = elapsed.TotalMilliseconds
+                            ["automation.proxyCheckWaitMs"] = started.Elapsed.TotalMilliseconds,
+                            ["automation.urlClasses"] = FormatAutomationPageUrlClasses(urls)
                         });
                     return;
                 }
             }
 
-            if (elapsed >= timeout)
+            if (started.Elapsed >= timeout)
             {
                 if (startPage is not null || AdsPowerStartPage.IsUrl(lastStartUrl))
                 {
@@ -2418,7 +2550,6 @@ public sealed partial class AdsPowerAvitoAutomationService(
             }
 
             await Task.Delay(poll, cancellationToken).ConfigureAwait(false);
-            elapsed += poll;
         }
     }
 
@@ -2831,6 +2962,47 @@ public sealed partial class AdsPowerAvitoAutomationService(
         return pageUrls.Count > 0 ? 0 : -1;
     }
 
+    internal static string DescribeAutomationPageAcquisitionBranch(int pagesCount, int selectedIndex) =>
+        pagesCount <= 0 || selectedIndex < 0 ? "empty_pages" : "existing_page";
+
+    internal static TimeoutException CreateEmptyPagesAcquisitionTimeout() =>
+        new($"{AdsPowerCdpGuard.TimeoutPrefix} поиск рабочей вкладки: список вкладок пуст, NewPage не создаём.");
+
+    internal static string ClassifyAutomationPageUrl(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            return "empty";
+        }
+
+        if (IsReusableStartupPlaceholderUrl(url))
+        {
+            return "blank";
+        }
+
+        if (IsChromeNewTabUrl(url)
+            || url.StartsWith("chrome://", StringComparison.OrdinalIgnoreCase)
+            || url.StartsWith("devtools://", StringComparison.OrdinalIgnoreCase))
+        {
+            return "chrome";
+        }
+
+        if (AdsPowerStartPage.IsUrl(url))
+        {
+            return "adspower-start";
+        }
+
+        if (IsUsableAvitoPageUrl(url))
+        {
+            return "avito";
+        }
+
+        return "other";
+    }
+
+    internal static string FormatAutomationPageUrlClasses(IEnumerable<string?> pageUrls) =>
+        string.Join(",", pageUrls.Select(ClassifyAutomationPageUrl));
+
     internal static bool ShouldCloseNonWorkerPages(string? workerUrl) =>
         IsUsableWorkerPageUrl(workerUrl);
 
@@ -2887,15 +3059,35 @@ public sealed partial class AdsPowerAvitoAutomationService(
 
     private static async Task<int> CloseBrowserPagesAsync(
         IReadOnlyList<IPage> pages,
-        string callerMemberName)
+        string callerMemberName,
+        CancellationToken cancellationToken)
     {
         var closed = 0;
         foreach (var page in pages)
         {
             try
             {
-                await page.CloseAsync().ConfigureAwait(false);
+                await AdsPowerCdpGuard.WaitAsync(
+                        page.CloseAsync(),
+                        CdpPageDiscoveryTimeout,
+                        "закрытие лишней вкладки",
+                        cancellationToken)
+                    .ConfigureAwait(false);
                 closed++;
+            }
+            catch (TimeoutException)
+            {
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"AdsPower CDP: закрытие лишней вкладки зависло ({page.Url}), продолжаем с рабочей.",
+                    DeskLinkAuditLogLevel.Warning,
+                    memberName: callerMemberName,
+                    properties: new Dictionary<string, object?>
+                    {
+                        ["page.url"] = page.Url,
+                        ["automation.cdpCall"] = "CloseAsync",
+                        ["automation.pageAcquireBranch"] = "existing_page"
+                    });
+                break;
             }
             catch (Exception ex)
             {
