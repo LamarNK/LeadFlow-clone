@@ -119,6 +119,30 @@ internal sealed class AdsPowerStartupTrace : IDisposable
         });
     }
 
+    public AdsPowerStartupDiagnosticEvent? RecordLocalApiOperation(
+        string operation,
+        string eventName,
+        bool ok,
+        Dictionary<string, object?> properties)
+    {
+        return SafeRecord(() =>
+        {
+            if (ok)
+            {
+                LastSuccessfulLocalApiOperation = operation;
+            }
+
+            CopyIdentityTo(properties);
+            properties["startup.boundary"] = "local_api";
+            properties["startup.event"] = eventName;
+            properties["localApi.operation"] = operation;
+            var message = ok
+                ? $"AdsPower startup: Local API {operation} завершён."
+                : $"AdsPower startup: Local API {operation} ошибка.";
+            return Complete(eventName, "local_api", message, ok, properties);
+        });
+    }
+
     public AdsPowerStartupDiagnosticEvent? RecordCdp(
         string call,
         string operation,

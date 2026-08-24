@@ -77,20 +77,27 @@ public sealed class WorkerLogFileArchive
             ct.ThrowIfCancellationRequested();
             var originalSource = string.IsNullOrWhiteSpace(entry.Source) ? "—" : entry.Source.Trim();
             var sourceTamperMarker = entry.IsTampered ? " [source-tampered]" : string.Empty;
+            var properties = new Dictionary<string, object?>
+            {
+                ["worker.id"] = workerId,
+                ["worker.name"] = displayName,
+                ["worker.machine"] = machineName,
+                ["worker.source"] = originalSource,
+                ["worker.source_is_tampered"] = entry.IsTampered
+            };
+            foreach (var kv in WorkerLogPropertyAllowlist.Filter(
+                         entry.Properties?.ToDictionary(static x => x.Key, static x => (object?)x.Value, StringComparer.OrdinalIgnoreCase)))
+            {
+                properties[kv.Key] = kv.Value;
+            }
+
             await logger.AppendImportedAsync(
                     entry.TimestampUtc,
                     ParseLevel(entry.Level),
                     $"[{identity}] {originalSource}{sourceTamperMarker}",
                     entry.Message ?? string.Empty,
                     entry.TraceId,
-                    new Dictionary<string, object?>
-                    {
-                        ["worker.id"] = workerId,
-                        ["worker.name"] = displayName,
-                        ["worker.machine"] = machineName,
-                        ["worker.source"] = originalSource,
-                        ["worker.source_is_tampered"] = entry.IsTampered
-                    },
+                    properties,
                     ct)
                 .ConfigureAwait(false);
         }

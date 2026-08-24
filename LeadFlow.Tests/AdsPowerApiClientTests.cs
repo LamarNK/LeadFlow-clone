@@ -285,6 +285,8 @@ public sealed class AdsPowerApiClientTests
             new AdsPowerProxyFailureException("https://start.adspower.net/?id=k1dp9we7")));
         Assert.False(AdsPowerAvitoAutomationService.IsRetryableAdsPowerStartupFailure(
             new OperationCanceledException()));
+        Assert.True(AdsPowerAvitoAutomationService.IsRetryableAdsPowerStartupFailure(
+            new AdsPowerLocalApiTimeoutException("user/list", "queue_wait", TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1))));
     }
 
     [Theory]
@@ -431,7 +433,7 @@ public sealed class AdsPowerApiClientTests
         Assert.NotNull(capturedRequest);
         Assert.Equal("/api/v1/user/list", capturedRequest!.RequestUri?.AbsolutePath);
         var query = Uri.UnescapeDataString(capturedRequest.RequestUri?.Query ?? string.Empty);
-        Assert.Contains("user_id=profile-1", query);
+        Assert.Contains("user_id=[\"profile-1\"]", query, StringComparison.Ordinal);
         Assert.Contains("page_size=1", query);
 
         var result = pending.GetType().GetProperty("Result")?.GetValue(pending);
