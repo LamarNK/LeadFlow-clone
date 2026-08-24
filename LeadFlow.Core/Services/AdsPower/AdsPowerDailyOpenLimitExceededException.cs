@@ -33,6 +33,9 @@ public sealed class AdsPowerDailyOpenLimitExceededException : InvalidOperationEx
                m.Contains("Exceeding open", StringComparison.OrdinalIgnoreCase);
     }
 
-    private static string FormatMessage(int apiCode, string? apiMessage) =>
-        $"AdsPower browser/start: {apiMessage ?? "превышен дневной лимит запусков"} (code {apiCode})";
+    private static string FormatMessage(int apiCode, string? apiMessage)
+    {
+        var safe = AdsPowerStartupLogSanitizer.LimitText(apiMessage);
+        return $"AdsPower browser/start: {(string.IsNullOrEmpty(safe) ? "превышен дневной лимит запусков" : safe)} (code {apiCode})";
+    }
 }

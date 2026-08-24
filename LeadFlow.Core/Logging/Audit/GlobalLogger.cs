@@ -111,7 +111,7 @@ public static class GlobalLogger
     /// Тестовый sink: вызывается из <see cref="Logger.LogAsync"/> с тем же payload, что уходит в журнал.
     /// Не используется в проде.
     /// </summary>
-    internal static Action<DeskLinkAuditLogLevel, string, string?, string?, Dictionary<string, object?>?>? TestCapture;
+    internal static Action<DeskLinkAuditLogLevel, string, string?, string?, IReadOnlyDictionary<string, object?>>? TestCapture;
 
     /// <summary>
     /// Подключает стандартный ILogger (для app-логов), не меняя существующие вызовы GlobalLogger.Instance.LogAsync().
@@ -383,15 +383,6 @@ public class Logger
         if (!LogLevelConfiguration.IsEnabled(level))
             return;
 
-        try
-        {
-            GlobalLogger.TestCapture?.Invoke(level, message, memberName, errorKey, properties);
-        }
-        catch
-        {
-            // тестовый sink не должен ломать логирование
-        }
-
         // Оптимизация: кешируем вычисление prefix (особенно важно в single-file, где CallerFilePath пуст и нужен StackTrace)
         string prefixKey = string.Concat(filePath ?? string.Empty, "|", memberName ?? string.Empty);
         if (!prefixCache.TryGetValue(prefixKey, out var prefix))
@@ -431,7 +422,7 @@ public class Logger
             prefixCache[prefixKey] = prefix;
         }
 
-        await WriteLogAsync(message, level, prefix, errorKey, properties);
+        await WriteLogAsync(message, level, prefix, errorKey, properties, memberName);
     }
 
     private async Task WriteLogAsync(
@@ -439,13 +430,19 @@ public class Logger
         DeskLinkAuditLogLevel level,
         string prefix,
         string? errorKey,
-        Dictionary<string, object?>? properties)
+        Dictionary<string, object?>? properties,
+        string? memberName)
     {
         var activity = Activity.Current;
         string? correlationId = TruncateUtf8(CorrelationContext.Current, MaxTraceIdBytes);
         string? otelTraceId = TruncateUtf8(activity?.TraceId.ToString(), MaxTraceIdBytes);
         string? spanId = TruncateUtf8(activity?.SpanId.ToString(), MaxTraceIdBytes);
         string? traceForIndex = !string.IsNullOrEmpty(correlationId) ? correlationId : otelTraceId;
+
+        var context = properties != null
+            ? LogSanitizer.SanitizeDictionary(properties)
+            : new Dictionary<string, object?>();
+        NotifyTestCapture(level, message, memberName, errorKey, context);
 
         string? propsJson = BuildStructuredPropertiesJson(
             DateTime.UtcNow,
@@ -456,13 +453,49 @@ public class Logger
             correlationId,
             otelTraceId,
             spanId,
-            properties);
+            context);
 
         // App-лог: стандартный ILogger (если подключён)
         ForwardToAppLogger(level, prefix, message, errorKey, traceForIndex, propsJson);
 
         // Audit-лог: пишем в бинарный файл
         await LogInternalAsync(message, level, prefix, errorKey, traceForIndex, propsJson);
+    }
+
+    private static void NotifyTestCapture(
+        DeskLinkAuditLogLevel level,
+        string message,
+        string? memberName,
+        string? errorKey,
+        IReadOnlyDictionary<string, object?> sanitizedProperties)
+    {
+        try
+        {
+            GlobalLogger.TestCapture?.Invoke(
+                level,
+                message,
+                memberName,
+                errorKey,
+                FreezeProperties(sanitizedProperties));
+        }
+        catch
+        {
+            // тестовый sink не должен ломать логирование
+        }
+    }
+
+    private static IReadOnlyDictionary<string, object?> FreezeProperties(
+        IReadOnlyDictionary<string, object?> source)
+    {
+        var copy = new Dictionary<string, object?>(StringComparer.OrdinalIgnoreCase);
+        foreach (var kv in source)
+        {
+            copy[kv.Key] = kv.Value is IReadOnlyDictionary<string, object?> nested
+                ? FreezeProperties(nested)
+                : kv.Value;
+        }
+
+        return copy;
     }
 
     private static string MapLevelString(DeskLinkAuditLogLevel level) => level switch
@@ -492,9 +525,7 @@ public class Logger
                       ?? "Production";
             var serviceName = Environment.GetEnvironmentVariable("LOG_SERVICE_NAME") ?? "";
 
-            var context = userProps != null
-                ? LogSanitizer.SanitizeDictionary(userProps)
-                : new Dictionary<string, object?>();
+            var context = userProps ?? new Dictionary<string, object?>();
 
             var envelope = new Dictionary<string, object?>
             {

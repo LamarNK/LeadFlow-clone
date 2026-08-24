@@ -67,7 +67,7 @@ internal sealed class GlobalLogCapture : IDisposable
         string message,
         string? memberName,
         string? errorKey,
-        Dictionary<string, object?>? properties)
+        IReadOnlyDictionary<string, object?> properties)
     {
         _entries.Add(new CapturedGlobalLog
         {
@@ -75,9 +75,7 @@ internal sealed class GlobalLogCapture : IDisposable
             Message = message,
             MemberName = memberName,
             ErrorKey = errorKey,
-            Properties = properties is null
-                ? []
-                : new Dictionary<string, object?>(properties)
+            Properties = new Dictionary<string, object?>(properties)
         });
     }
 }

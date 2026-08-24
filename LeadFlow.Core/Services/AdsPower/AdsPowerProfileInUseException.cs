@@ -26,6 +26,9 @@ public sealed class AdsPowerProfileInUseException : InvalidOperationException
     public static bool LooksLikeProfileInUse(int apiCode, string? apiMessage) =>
         apiCode == -1 && AdsPowerErrorMessageNormalizer.LooksLikeProfileInUse(apiMessage);
 
-    private static string FormatMessage(int apiCode, string? apiMessage) =>
-        $"AdsPower: {apiMessage ?? "профиль уже используется"} (code {apiCode})";
+    private static string FormatMessage(int apiCode, string? apiMessage)
+    {
+        var safe = AdsPowerStartupLogSanitizer.LimitText(apiMessage);
+        return $"AdsPower: {(string.IsNullOrEmpty(safe) ? "профиль уже используется" : safe)} (code {apiCode})";
+    }
 }

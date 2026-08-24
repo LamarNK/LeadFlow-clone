@@ -569,17 +569,18 @@ public sealed class AdsPowerApiClient(IHttpClientFactory httpClientFactory) : IA
                 }
 
                 var delaySeconds = Math.Min(30, Math.Pow(2, attempt));
+                var retryProps = new Dictionary<string, object?>
+                {
+                    ["adsPower.apiCode"] = ex.ApiCode,
+                    ["adsPower.apiMessage"] = AdsPowerStartupLogSanitizer.LimitText(ex.ApiMessage),
+                    ["adsPower.rateLimitAttempt"] = attempt
+                };
+                AdsPowerStartupLogSanitizer.CopySafeEndpointProperties(retryProps, "adsPower.baseUrl", baseUrl);
                 Log(
                     $"AdsPower rate limit (attempt {attempt}/{RateLimitMaxAttempts}): {AdsPowerStartupLogSanitizer.LimitText(ex.ApiMessage)}. Повтор через {delaySeconds:F0} с.",
                     DeskLinkAuditLogLevel.Warning,
                     nameof(ExecuteWithRateLimitRetryAsync),
-                    new Dictionary<string, object?>
-                    {
-                        ["adsPower.baseUrl"] = baseUrl,
-                        ["adsPower.apiCode"] = ex.ApiCode,
-                        ["adsPower.apiMessage"] = AdsPowerStartupLogSanitizer.LimitText(ex.ApiMessage),
-                        ["adsPower.rateLimitAttempt"] = attempt
-                    },
+                    retryProps,
                     AdsPowerRateLimitExceededException.ErrorKey);
                 await Task.Delay(TimeSpan.FromSeconds(delaySeconds), cancellationToken).ConfigureAwait(false);
             }
@@ -679,7 +680,8 @@ public sealed class AdsPowerApiClient(IHttpClientFactory httpClientFactory) : IA
             DeskLinkAuditLogLevel.Warning,
             memberName,
             props);
-        throw new InvalidOperationException($"AdsPower: {msg ?? "ошибка"} (code {code})");
+        throw new InvalidOperationException(
+            $"AdsPower: {(string.IsNullOrEmpty(safeMsg) ? "ошибка" : safeMsg)} (code {code})");
     }
 
     private static void AddAuthorizationHeader(HttpRequestMessage request, string? apiKey)
@@ -779,9 +781,8 @@ public sealed class AdsPowerApiClient(IHttpClientFactory httpClientFactory) : IA
         int? profileCount = null,
         string? groupId = null)
     {
-        return new Dictionary<string, object?>
+        var props = new Dictionary<string, object?>
         {
-            ["adsPower.baseUrl"] = baseUrl,
             ["adsPower.hasApiKey"] = hasApiKey,
             ["adsPower.userId"] = userId,
             ["adsPower.openUrlClass"] = string.IsNullOrWhiteSpace(openUrl)
@@ -792,6 +793,8 @@ public sealed class AdsPowerApiClient(IHttpClientFactory httpClientFactory) : IA
             ["adsPower.profileCount"] = profileCount,
             ["adsPower.groupId"] = groupId
         };
+        AdsPowerStartupLogSanitizer.CopySafeEndpointProperties(props, "adsPower.baseUrl", baseUrl);
+        return props;
     }
 
     private static void Log(

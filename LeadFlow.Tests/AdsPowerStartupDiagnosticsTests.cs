@@ -1,5 +1,6 @@
 using System.Net;
 using System.Net.Http;
+using LeadFlow.Core.Logging.Audit;
 using LeadFlow.Core.Services.AdsPower;
 using LeadFlow.Core.Services.Worker;
 using LeadFlow.Tests.Support;
@@ -18,6 +19,7 @@ public sealed class AdsPowerStartupDiagnosticsTests
     private const string SecretHtml = "<html><body>full page SECRET-HTML</body></html>";
     private const string TabUrl = "https://www.avito.ru/profile/pro/items";
     private const string UrlLikeDataKey = "https://evil.example/access_token";
+    private const string SecretBaseUrl = "http://api-user:api-pass@127.0.0.1:57610/?token=base-token-SECRET";
 
     [Fact]
     public void SummarizeBrowserStart_Success_KeepsAllowlistedFields_AndDropsSecrets()
@@ -438,6 +440,10 @@ public sealed class AdsPowerStartupDiagnosticsTests
             Assert.Equal("avito", start.Properties["adsPower.openUrlClass"]);
             Assert.True((double)start.Properties["localApi.durationMs"]! >= 0);
             Assert.Equal("ws,debug_port", start.Properties["localApi.dataKeys"]);
+            Assert.False(start.Properties.ContainsKey("adsPower.baseUrl"));
+            Assert.Contains(
+                correlated,
+                e => Equals(e.Properties.GetValueOrDefault("adsPower.baseUrl.hostClass"), "loopback"));
             AssertLoggedNoRawOpenUrl(correlated);
             AssertNoSecrets(capture.CombinedBlob(correlated));
             Assert.DoesNotContain(TabUrl, capture.CombinedBlob(correlated), StringComparison.Ordinal);
@@ -581,6 +587,105 @@ public sealed class AdsPowerStartupDiagnosticsTests
     }
 
     [Fact]
+    public async Task StartBrowserAsync_Http200AdsPowerError_ExceptionMessageUsesLimitText()
+    {
+        using var capture = GlobalLogCapture.Start();
+        var body = $$"""
+            {"code":-1,"msg":"start failed proxy {{SecretProxy}} cookie {{SecretCookie}} {{SecretToken}} open {{TabUrl}}"}
+            """;
+        var client = BuildClient((_, _) => Task.FromResult(StubHttpMessageHandler.Ok(body)));
+
+        using var trace = AdsPowerStartupTrace.Begin("user-1", 1).Activate();
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            client.StartBrowserAsync(
+                new AdsPowerConnectionOptions("http://127.0.0.1:57610", null),
+                "user-1",
+                TabUrl,
+                CancellationToken.None));
+
+        Assert.IsNotType<AdsPowerDailyOpenLimitExceededException>(ex);
+        Assert.IsNotType<AdsPowerRateLimitExceededException>(ex);
+        Assert.IsNotType<AdsPowerProfileInUseException>(ex);
+        Assert.Contains("code -1", ex.Message, StringComparison.Ordinal);
+        AssertNoSecrets(ex.Message);
+        Assert.DoesNotContain("10.1.2.3", ex.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("avito.ru", ex.Message, StringComparison.Ordinal);
+
+        var wrapped = new InvalidOperationException(
+            $"AdsPower не открыл сессию: последний этап «попытка 1: ожидание очереди AdsPower browser/start», прошло 12 с. {ex.Message}",
+            ex);
+        AssertNoSecrets(wrapped.Message);
+
+        var correlated = capture.WithCorrelation(trace.CorrelationId);
+        Assert.Contains(correlated, e => e.Message.Contains("AdsPower API error", StringComparison.Ordinal));
+        AssertNoSecrets(capture.CombinedBlob(correlated));
+        AssertLoggedNoRawOpenUrl(correlated);
+        Assert.Null(trace.LastSuccessfulLocalApiOperation);
+    }
+
+    [Fact]
+    public async Task StartBrowserAsync_BaseUrlWithUserInfoAndQuery_DoesNotLogRawEndpoint()
+    {
+        using var capture = GlobalLogCapture.Start();
+        var client = BuildClient((_, _) => Task.FromResult(StubHttpMessageHandler.Ok(
+            """{"code":0,"data":{"ws":{"puppeteer":"ws://127.0.0.1:9222/devtools/browser/abc"}}}""")));
+
+        using var trace = AdsPowerStartupTrace.Begin("user-1", 1).Activate();
+        await client.StartBrowserAsync(
+            new AdsPowerConnectionOptions(SecretBaseUrl, "secret-key"),
+            "user-1",
+            TabUrl,
+            CancellationToken.None);
+
+        var correlated = capture.WithCorrelation(trace.CorrelationId);
+        Assert.NotEmpty(correlated);
+        var blob = capture.CombinedBlob(correlated);
+        Assert.DoesNotContain(SecretBaseUrl, blob, StringComparison.Ordinal);
+        Assert.DoesNotContain("api-pass", blob, StringComparison.Ordinal);
+        Assert.DoesNotContain("api-user", blob, StringComparison.Ordinal);
+        Assert.DoesNotContain("base-token-SECRET", blob, StringComparison.Ordinal);
+        Assert.DoesNotContain("token=base-token", blob, StringComparison.Ordinal);
+        Assert.All(correlated, log => Assert.False(log.Properties.ContainsKey("adsPower.baseUrl")));
+
+        var withEndpoint = correlated
+            .Where(e => e.Properties.ContainsKey("adsPower.baseUrl.hostClass"))
+            .ToList();
+        Assert.NotEmpty(withEndpoint);
+        foreach (var log in withEndpoint)
+        {
+            Assert.Equal("loopback", log.Properties["adsPower.baseUrl.hostClass"]);
+            Assert.Equal("http", log.Properties["adsPower.baseUrl.scheme"]);
+            Assert.Equal(true, log.Properties["adsPower.baseUrl.hasUserInfo"]);
+            Assert.Equal(true, log.Properties["adsPower.baseUrl.hasQuery"]);
+            Assert.True(Convert.ToInt32(log.Properties["adsPower.baseUrl.queryKeyCount"]) >= 1);
+        }
+    }
+
+    [Fact]
+    public async Task GlobalLogger_TestCapture_SeesSanitizedSnapshot_NotMutableInput()
+    {
+        using var capture = GlobalLogCapture.Start();
+        var input = new Dictionary<string, object?>
+        {
+            ["password"] = "leak-SECRET",
+            ["okField"] = "visible"
+        };
+
+        await GlobalLogger.Instance.LogAsync(
+            "capture-hook-sanitized",
+            DeskLinkAuditLogLevel.Warning,
+            memberName: nameof(GlobalLogger_TestCapture_SeesSanitizedSnapshot_NotMutableInput),
+            properties: input);
+
+        var entry = Assert.Single(capture.Entries, e => e.Message == "capture-hook-sanitized");
+        Assert.Equal("***", entry.Properties["password"]);
+        Assert.Equal("visible", entry.Properties["okField"]);
+        Assert.Equal("leak-SECRET", input["password"]);
+        entry.Properties["password"] = "mutated-by-test";
+        Assert.Equal("leak-SECRET", input["password"]);
+    }
+
+    [Fact]
     public void CopyIdentity_DoesNotOverwriteCallerErrorKeyFields()
     {
         using var trace = AdsPowerStartupTrace.Begin("user-1", 1);
@@ -631,6 +736,7 @@ public sealed class AdsPowerStartupDiagnosticsTests
         foreach (var log in logs)
         {
             Assert.False(log.Properties.ContainsKey("adsPower.openUrl"));
+            Assert.False(log.Properties.ContainsKey("adsPower.baseUrl"));
             Assert.DoesNotContain(TabUrl, log.Message, StringComparison.Ordinal);
             foreach (var value in log.Properties.Values)
             {
@@ -665,7 +771,9 @@ public sealed class AdsPowerStartupDiagnosticsTests
                 "ws://127.0.0.1",
                 "wss://",
                 "10.1.2.3",
-                "avito.ru"));
+                "avito.ru",
+                "api-pass",
+                "base-token-SECRET"));
         Assert.DoesNotContain("adsPower.openUrl\":", blob, StringComparison.Ordinal);
         Assert.DoesNotContain("\"adsPower.openUrl\"", blob, StringComparison.Ordinal);
     }

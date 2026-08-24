@@ -256,6 +256,30 @@ internal static class AdsPowerStartupLogSanitizer
         return props;
     }
 
+    public static void CopySafeEndpointProperties(
+        Dictionary<string, object?> properties,
+        string prefix,
+        string? url)
+    {
+        ArgumentNullException.ThrowIfNull(properties);
+        ArgumentException.ThrowIfNullOrWhiteSpace(prefix);
+
+        var meta = DescribeWsEndpoint(url);
+        if (meta is null)
+        {
+            return;
+        }
+
+        properties[$"{prefix}.scheme"] = meta.Scheme;
+        properties[$"{prefix}.hostClass"] = meta.HostClass;
+        properties[$"{prefix}.port"] = meta.Port;
+        properties[$"{prefix}.pathClass"] = meta.PathClass;
+        properties[$"{prefix}.hasQuery"] = meta.HasQuery;
+        properties[$"{prefix}.queryKeyCount"] = meta.QueryKeyCount;
+        properties[$"{prefix}.urlLength"] = meta.UrlLength;
+        properties[$"{prefix}.hasUserInfo"] = meta.HasUserInfo;
+    }
+
     public static string FormatLocalApiExceptionHint(AdsPowerLocalApiStartSnapshot snapshot)
     {
         var code = snapshot.AdsPowerCode is { } apiCode ? $" code {apiCode}" : string.Empty;
