@@ -233,13 +233,12 @@ public sealed class CrmTelephonyServiceTests
             Assert.Contains($"set_var=ORBITA_OFFICE_ID={officeId:D}", runtimeConfig, StringComparison.Ordinal);
             Assert.Contains("username=auth-user@beeline.test", runtimeConfig, StringComparison.Ordinal);
             Assert.Contains("password=test-secret", runtimeConfig, StringComparison.Ordinal);
-            Assert.Contains("contact=sip:beeline.test:5060", runtimeConfig, StringComparison.Ordinal);
-            Assert.Contains("server_uri=sip:beeline.test:5060", runtimeConfig, StringComparison.Ordinal);
+            Assert.Contains("contact=sip:sip.beeline.test:5060", runtimeConfig, StringComparison.Ordinal);
+            Assert.Contains("server_uri=sip:sip.beeline.test:5060", runtimeConfig, StringComparison.Ordinal);
             Assert.Contains("client_uri=sip:sip-user@beeline.test", runtimeConfig, StringComparison.Ordinal);
-            Assert.Equal(
-                2,
-                runtimeConfig.Split("outbound_proxy=sip:sip.beeline.test:5060\\;lr", StringSplitOptions.None).Length - 1);
-            Assert.DoesNotContain("server_uri=sip:sip.beeline.test:5060", runtimeConfig, StringComparison.Ordinal);
+            Assert.DoesNotContain("outbound_proxy=", runtimeConfig, StringComparison.Ordinal);
+            Assert.Contains("expiration=120", runtimeConfig, StringComparison.Ordinal);
+            Assert.DoesNotContain("expiration=300", runtimeConfig, StringComparison.Ordinal);
             Assert.Equal("beeline\n", await File.ReadAllTextAsync(Path.Combine(runtimePath, $"beeline.{officeId:D}.outbound")));
 
             await writer.WriteUserOutboundRoutesAsync(
@@ -266,8 +265,8 @@ public sealed class CrmTelephonyServiceTests
             Assert.True(update.Success, update.Error);
             runtimeConfig = await File.ReadAllTextAsync(Path.Combine(runtimePath, $"beeline.{officeId:D}.conf"));
             Assert.Contains("password=test-secret", runtimeConfig, StringComparison.Ordinal);
-            Assert.Contains("server_uri=sip:beeline.test:5060", runtimeConfig, StringComparison.Ordinal);
-            Assert.Contains("outbound_proxy=sip:new-sip.beeline.test:5060\\;lr", runtimeConfig, StringComparison.Ordinal);
+            Assert.Contains("server_uri=sip:new-sip.beeline.test:5060", runtimeConfig, StringComparison.Ordinal);
+            Assert.DoesNotContain("outbound_proxy=", runtimeConfig, StringComparison.Ordinal);
             Assert.Equal("primary\n", await File.ReadAllTextAsync(Path.Combine(runtimePath, $"beeline.{officeId:D}.outbound")));
 
             var settings = await sut.GetSettingsAsync(officeId, provider: CrmTelephonyProviders.Beeline);
@@ -379,6 +378,89 @@ public sealed class CrmTelephonyServiceTests
             Assert.Equal(
                 $"beeline-{officeId:N}-shared\n",
                 (await File.ReadAllTextAsync(Path.Combine(runtimePath, $"beeline.{officeId:D}.outbound"))).Replace("\r\n", "\n"));
+        }
+        finally
+        {
+            if (Directory.Exists(runtimePath))
+            {
+                Directory.Delete(runtimePath, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task BeelineSipAccounts_AreStoredAndWrittenSeparatelyForEachOffice()
+    {
+        var runtimePath = Path.Combine(Path.GetTempPath(), "orbita-sip-runtime-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var options = new DbContextOptionsBuilder<OrbitaDbContext>()
+                .UseInMemoryDatabase($"crm-telephony-beeline-offices-{Guid.NewGuid():N}")
+                .Options;
+            await using var db = new OrbitaDbContext(options);
+            var firstOfficeId = Guid.NewGuid();
+            var thirdOfficeId = Guid.NewGuid();
+            db.Offices.AddRange(
+                new OfficeEntity
+                {
+                    Id = firstOfficeId,
+                    Name = "First office",
+                    RegistrationSecretHash = "hash-1",
+                    IsEnabled = true,
+                    CrmEnabled = true,
+                    CreatedAtUtc = DateTime.UtcNow
+                },
+                new OfficeEntity
+                {
+                    Id = thirdOfficeId,
+                    Name = "Third office",
+                    RegistrationSecretHash = "hash-3",
+                    IsEnabled = true,
+                    CrmEnabled = true,
+                    CreatedAtUtc = DateTime.UtcNow
+                });
+            await db.SaveChangesAsync();
+
+            var writer = new CrmSipRuntimeConfigWriter(Options.Create(new CrmSipRuntimeOptions
+            {
+                ConfigPath = runtimePath
+            }));
+            var sut = new CrmTelephonyService(
+                db,
+                new PhoneNormalizer(),
+                TimeProvider.System,
+                credentialProtector: new CrmTelephonyCredentialProtector(new EphemeralDataProtectionProvider()),
+                sipRuntimeConfigWriter: writer);
+
+            var first = await sut.UpsertBeelineSipAccountAsync(
+                firstOfficeId,
+                "first-line",
+                new UpdateSipProviderAccountRequest(
+                    "first.proxy.test", "beeline.test", 5060, "udp", "first-user", "first-auth",
+                    "first-password", true, "Линия первого офиса", CrmSipAccountModes.Shared));
+            var third = await sut.UpsertBeelineSipAccountAsync(
+                thirdOfficeId,
+                "third-line",
+                new UpdateSipProviderAccountRequest(
+                    "third.proxy.test", "beeline.test", 5060, "udp", "third-user", "third-auth",
+                    "third-password", true, "Линия третьего офиса", CrmSipAccountModes.Shared));
+
+            Assert.True(first.Success, first.Error);
+            Assert.True(third.Success, third.Error);
+
+            var firstSettings = await sut.GetSettingsAsync(firstOfficeId, provider: CrmTelephonyProviders.Beeline);
+            var thirdSettings = await sut.GetSettingsAsync(thirdOfficeId, provider: CrmTelephonyProviders.Beeline);
+            var firstAccount = Assert.Single(firstSettings!.SipAccounts!);
+            var thirdAccount = Assert.Single(thirdSettings!.SipAccounts!);
+            Assert.Equal("first-user", firstAccount.SipLogin);
+            Assert.Equal("third-user", thirdAccount.SipLogin);
+
+            var firstRuntime = await File.ReadAllTextAsync(Path.Combine(runtimePath, $"beeline.{firstOfficeId:D}.conf"));
+            var thirdRuntime = await File.ReadAllTextAsync(Path.Combine(runtimePath, $"beeline.{thirdOfficeId:D}.conf"));
+            Assert.Contains("first-user", firstRuntime, StringComparison.Ordinal);
+            Assert.DoesNotContain("third-user", firstRuntime, StringComparison.Ordinal);
+            Assert.Contains("third-user", thirdRuntime, StringComparison.Ordinal);
+            Assert.DoesNotContain("first-user", thirdRuntime, StringComparison.Ordinal);
         }
         finally
         {
@@ -516,6 +598,8 @@ public sealed class CrmTelephonyServiceTests
                 var config = await File.ReadAllTextAsync(Path.Combine(runtimePath, $"beeline.{officeId:D}.conf"));
                 Assert.Contains($"[beeline-{officeId:N}]", config, StringComparison.Ordinal);
                 Assert.Contains($"set_var=ORBITA_OFFICE_ID={officeId:D}", config, StringComparison.Ordinal);
+                Assert.Contains("qualify_frequency=0", config, StringComparison.Ordinal);
+                Assert.DoesNotContain("qualify_frequency=30", config, StringComparison.Ordinal);
             }
         }
         finally

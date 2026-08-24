@@ -8,7 +8,9 @@ namespace Orbita.Web.Controllers;
 
 [Authorize(Policy = "OfficeStaff")]
 [Route("Settings")]
-public sealed class TelephonySettingsController(OrbitaApiClient api) : Controller
+public sealed class TelephonySettingsController(
+    OrbitaApiClient api,
+    IOfficeContext officeContext) : Controller
 {
     [HttpGet("Telephony")]
     public async Task<IActionResult> Telephony(
@@ -28,9 +30,11 @@ public sealed class TelephonySettingsController(OrbitaApiClient api) : Controlle
         if (isAdmin)
         {
             adminOffices = await api.GetOfficesAsync(ct) ?? [];
-            effectiveOfficeId = officeId != Guid.Empty
-                ? officeId
-                : profile.OfficeId ?? adminOffices.FirstOrDefault()?.Id;
+            effectiveOfficeId = ResolveAdminOfficeId(
+                officeId,
+                officeContext.EffectiveOfficeId,
+                profile.OfficeId,
+                adminOffices.FirstOrDefault()?.Id);
         }
         else
         {
@@ -117,6 +121,20 @@ public sealed class TelephonySettingsController(OrbitaApiClient api) : Controlle
             StatusMessage = TempData["SettingsStatus"] as string,
             ErrorMessage = TempData["SettingsError"] as string
         });
+    }
+
+    internal static Guid? ResolveAdminOfficeId(
+        Guid requestedOfficeId,
+        Guid? selectedOfficeId,
+        Guid? profileOfficeId,
+        Guid? firstAvailableOfficeId)
+    {
+        if (requestedOfficeId != Guid.Empty)
+        {
+            return requestedOfficeId;
+        }
+
+        return selectedOfficeId ?? profileOfficeId ?? firstAvailableOfficeId;
     }
 
     [HttpPost("Telephony/RotateReceiver")]
