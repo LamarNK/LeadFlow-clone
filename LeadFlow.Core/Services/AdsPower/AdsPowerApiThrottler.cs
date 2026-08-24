@@ -9,21 +9,27 @@ internal sealed class AdsPowerThrottleOptions
 
     public static AdsPowerThrottleOptions UserList { get; } = new()
     {
-        Operation = AdsPowerApiThrottler.UserListOperation,
+        Operation = AdsPowerLocalApiCall.OperationUserList,
         MinIntervalMs = AdsPowerApiThrottler.UserListMinIntervalMs,
         HttpTimeout = AdsPowerApiThrottler.UserListHttpTimeout
     };
 
     public static AdsPowerThrottleOptions GroupList { get; } = new()
     {
-        Operation = "group/list",
+        Operation = AdsPowerLocalApiCall.OperationGroupList,
         MinIntervalMs = AdsPowerApiThrottler.UserListMinIntervalMs,
         HttpTimeout = AdsPowerApiThrottler.UserListHttpTimeout
     };
 
+    public static AdsPowerThrottleOptions BrowserStart { get; } = new()
+    {
+        Operation = AdsPowerLocalApiCall.OperationBrowserStart,
+        HttpTimeout = AdsPowerApiThrottler.BrowserStartHttpTimeout
+    };
+
     public static AdsPowerThrottleOptions BrowserStop { get; } = new()
     {
-        Operation = "browser/stop",
+        Operation = AdsPowerLocalApiCall.OperationBrowserStop,
         HttpTimeout = AdsPowerApiThrottler.BrowserStopHttpTimeout
     };
 
@@ -49,12 +55,10 @@ internal sealed class AdsPowerThrottleCall
 /// Сериализует запросы к одному экземпляру Local API AdsPower.
 /// Интервал считается от фактической отправки, а не от успешного ответа.
 /// Semaphore удерживается на время HTTP, но HTTP/очередь имеют короткие deadline,
-/// чтобы зависший user/list не держал очередь до внешнего 180-секундного timeout.
+/// чтобы зависший user/list или browser/start не держал очередь до внешнего 180-секундного timeout.
 /// </summary>
 internal static class AdsPowerApiThrottler
 {
-    internal const string UserListOperation = "user/list";
-
     /// <summary>Общий запас для browser/start и прочих вызовов.</summary>
     internal const int MinIntervalMs = 1200;
 
@@ -64,6 +68,12 @@ internal static class AdsPowerApiThrottler
     internal static readonly TimeSpan DefaultQueueWaitTimeout = TimeSpan.FromSeconds(45);
 
     internal static readonly TimeSpan UserListHttpTimeout = TimeSpan.FromSeconds(8);
+
+    /// <summary>
+    /// Launch профиля быстрее 180 с внешнего startup, но дольше типичного user/list.
+    /// Production-start проходит за миллисекунды; 20 с — потолок на зависший HTTP.
+    /// </summary>
+    internal static readonly TimeSpan BrowserStartHttpTimeout = TimeSpan.FromSeconds(20);
 
     internal static readonly TimeSpan BrowserStopHttpTimeout = TimeSpan.FromSeconds(8);
 
@@ -115,7 +125,7 @@ internal static class AdsPowerApiThrottler
             call.QueueWait = queueWatch.Elapsed;
             throw new AdsPowerLocalApiTimeoutException(
                 options.Operation,
-                "queue_wait",
+                AdsPowerLocalApiCall.PhaseQueueWait,
                 call.QueueWait,
                 queueWatch.Elapsed);
         }
@@ -148,7 +158,7 @@ internal static class AdsPowerApiThrottler
             {
                 throw new AdsPowerLocalApiTimeoutException(
                     options.Operation,
-                    "http_response",
+                    AdsPowerLocalApiCall.PhaseHttpResponse,
                     call.QueueWait,
                     rateWatch.Elapsed);
             }

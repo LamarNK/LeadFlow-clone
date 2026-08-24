@@ -29,6 +29,19 @@ public sealed class AdsPowerLocalApiTimeoutException : TimeoutException
 
     public TimeSpan Duration { get; }
 
+    public static AdsPowerLocalApiTimeoutException? Find(Exception? exception)
+    {
+        for (var current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is AdsPowerLocalApiTimeoutException timeout)
+            {
+                return timeout;
+            }
+        }
+
+        return null;
+    }
+
     private static string FormatMessage(string operation, string phase, TimeSpan queueWait, TimeSpan elapsed) =>
         $"AdsPower Local API timeout: {operation} {phase} " +
         $"(queue {queueWait.TotalMilliseconds:F0} ms, elapsed {elapsed.TotalMilliseconds:F0} ms).";

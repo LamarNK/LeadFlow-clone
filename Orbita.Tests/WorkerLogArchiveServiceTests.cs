@@ -91,28 +91,26 @@ public sealed class WorkerLogArchiveServiceTests
     }
 
     [Fact]
-    public void ParseAndFilter_KeepsAllowlistedStartupFields_AndDropsSecrets()
+    public void Filter_KeepsAllowlistedStartupFields_AndDropsSecrets()
     {
-        var envelope = """
-            {"timestamp":"2026-08-24T00:00:00Z","level":"warn","context":{
-              "startup.correlationId":"corr-secret-safe",
-              "startup.stage":"чтение прокси профиля",
-              "startup.elapsedMs":180000,
-              "localApi.operation":"user/list",
-              "localApi.phase":"http_response",
-              "localApi.queueWaitMs":12.5,
-              "localApi.durationMs":40,
-              "localApi.outcome":"ok",
-              "localApi.httpStatus":200,
-              "cdp.call":"Connect",
-              "error.type":"System.TimeoutException",
-              "password":"leak-SECRET",
-              "adsPower.apiMessage":"proxy http://user:pass@10.1.2.3:8000",
-              "error.message":"ws://127.0.0.1:9222/devtools/browser/secret"
-            }}
-            """;
+        var filtered = WorkerLogPropertyAllowlist.Filter(new Dictionary<string, object?>
+        {
+            ["startup.correlationId"] = "corr-secret-safe",
+            ["startup.stage"] = "чтение прокси профиля",
+            ["startup.elapsedMs"] = 180000,
+            ["localApi.operation"] = "user/list",
+            ["localApi.phase"] = "http_response",
+            ["localApi.queueWaitMs"] = 12.5,
+            ["localApi.durationMs"] = 40,
+            ["localApi.outcome"] = "ok",
+            ["localApi.httpStatus"] = 200L,
+            ["cdp.call"] = "Connect",
+            ["error.type"] = "System.TimeoutException",
+            ["password"] = "leak-SECRET",
+            ["adsPower.apiMessage"] = "proxy http://user:pass@10.1.2.3:8000",
+            ["error.message"] = "ws://127.0.0.1:9222/devtools/browser/secret"
+        });
 
-        var filtered = WorkerLogPropertyAllowlist.ParseAndFilter(envelope);
         Assert.Equal("corr-secret-safe", filtered["startup.correlationId"]);
         Assert.Equal("чтение прокси профиля", filtered["startup.stage"]);
         Assert.Equal("user/list", filtered["localApi.operation"]);

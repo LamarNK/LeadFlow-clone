@@ -1,4 +1,5 @@
 using LeadFlow.Core.Services;
+using LeadFlow.Core.Services.AdsPower;
 using LeadFlow.Core.Services.Worker;
 using Xunit;
 
@@ -58,5 +59,19 @@ public sealed class WorkerAccountPassDelayTests
             utcNow: day);
 
         Assert.Equal(TimeSpan.FromMinutes(1), delay);
+    }
+
+    [Fact]
+    public void LocalApiTimeout_IsShortRetry_NotErrorPause()
+    {
+        var timeout = new AdsPowerLocalApiTimeoutException(
+            AdsPowerLocalApiCall.OperationUserList,
+            AdsPowerLocalApiCall.PhaseHttpResponse,
+            TimeSpan.FromSeconds(8),
+            TimeSpan.FromSeconds(8));
+        var generic = new TimeoutException("AdsPower: запуск сессии не завершился за 3 мин.");
+
+        Assert.Equal(WorkerAdsPowerPassRetry.Delay, WorkerAdsPowerPassRetry.FromException(timeout));
+        Assert.Null(WorkerAdsPowerPassRetry.FromException(generic));
     }
 }

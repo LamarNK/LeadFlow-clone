@@ -78,15 +78,15 @@ public sealed class AdsPowerApiClient(IHttpClientFactory httpClientFactory) : IA
         var httpRead = TimeSpan.Zero;
         var parse = TimeSpan.Zero;
         int? httpStatus = null;
-        var outcome = "unknown";
-        var phase = "queue_wait";
+        var outcome = AdsPowerLocalApiCall.OutcomeUnknown;
+        var phase = AdsPowerLocalApiCall.PhaseQueueWait;
         try
         {
             return await ExecuteWithRateLimitRetryAsync(
                 options,
                 async ct =>
                 {
-                    phase = "http_send";
+                    phase = AdsPowerLocalApiCall.PhaseHttpSend;
                     var baseUrl = NormalizeBaseUrl(options.BaseUrl);
                     var url =
                         $"{baseUrl}/api/v1/user/list?user_id={FormatUserListUserIdQuery(adsPowerUserId)}&page=1&page_size=1";
@@ -94,15 +94,15 @@ public sealed class AdsPowerApiClient(IHttpClientFactory httpClientFactory) : IA
                     httpSend = exchange.SendDuration;
                     httpRead = exchange.ReadDuration;
                     httpStatus = (int)exchange.Response.StatusCode;
-                    phase = "http_response";
+                    phase = AdsPowerLocalApiCall.PhaseHttpResponse;
                     if (!exchange.Response.IsSuccessStatusCode)
                     {
-                        outcome = "http_error";
+                        outcome = AdsPowerLocalApiCall.OutcomeHttpError;
                         throw new InvalidOperationException(
                             $"AdsPower user/list: {(int)exchange.Response.StatusCode} {AdsPowerStartupLogSanitizer.LimitText(exchange.Json)}");
                     }
 
-                    phase = "parse";
+                    phase = AdsPowerLocalApiCall.PhaseParse;
                     var parseWatch = Stopwatch.StartNew();
                     using var doc = JsonDocument.Parse(string.IsNullOrWhiteSpace(exchange.Json) ? "{}" : exchange.Json);
                     var root = doc.RootElement;
@@ -117,7 +117,7 @@ public sealed class AdsPowerApiClient(IHttpClientFactory httpClientFactory) : IA
                             userId: adsPowerUserId));
                     var parsed = ParseProfileProxy(root, adsPowerUserId);
                     parse = parseWatch.Elapsed;
-                    outcome = "ok";
+                    outcome = AdsPowerLocalApiCall.OutcomeOk;
                     return parsed;
                 },
                 cancellationToken,
@@ -126,20 +126,22 @@ public sealed class AdsPowerApiClient(IHttpClientFactory httpClientFactory) : IA
         }
         catch (AdsPowerLocalApiTimeoutException ex)
         {
-            outcome = ex.Phase == "queue_wait" ? "queue_timeout" : "http_timeout";
+            outcome = ex.Phase == AdsPowerLocalApiCall.PhaseQueueWait
+                ? AdsPowerLocalApiCall.OutcomeQueueTimeout
+                : AdsPowerLocalApiCall.OutcomeHttpTimeout;
             phase = ex.Phase;
             throw;
         }
         catch (OperationCanceledException)
         {
-            outcome = "cancelled";
+            outcome = AdsPowerLocalApiCall.OutcomeCancelled;
             throw;
         }
         catch (Exception)
         {
-            if (outcome == "unknown")
+            if (outcome == AdsPowerLocalApiCall.OutcomeUnknown)
             {
-                outcome = "error";
+                outcome = AdsPowerLocalApiCall.OutcomeError;
             }
 
             throw;
@@ -175,10 +177,10 @@ public sealed class AdsPowerApiClient(IHttpClientFactory httpClientFactory) : IA
     {
         try
         {
-            var ok = outcome == "ok";
+            var ok = outcome == AdsPowerLocalApiCall.OutcomeOk;
             var properties = new Dictionary<string, object?>
             {
-                ["localApi.operation"] = AdsPowerApiThrottler.UserListOperation,
+                ["localApi.operation"] = AdsPowerLocalApiCall.OperationUserList,
                 ["localApi.phase"] = phase,
                 ["localApi.queueWaitMs"] = throttleCall.QueueWait.TotalMilliseconds,
                 ["localApi.rateLimitWaitMs"] = throttleCall.RateLimitWait.TotalMilliseconds,
@@ -192,7 +194,7 @@ public sealed class AdsPowerApiClient(IHttpClientFactory httpClientFactory) : IA
                 ["adsPower.userId"] = adsPowerUserId
             };
             var evt = AdsPowerStartupTrace.Current?.RecordLocalApiOperation(
-                AdsPowerApiThrottler.UserListOperation,
+                AdsPowerLocalApiCall.OperationUserList,
                 "user_list",
                 ok,
                 properties);
@@ -585,10 +587,11 @@ public sealed class AdsPowerApiClient(IHttpClientFactory httpClientFactory) : IA
                     baseUrl,
                     options,
                     nameof(StartBrowserAsync),
-                    props);
+                    props,
+                    requireNumericSuccessCode: true);
 
                 ReadBrowserStartEndpoint(root, out webSocketDebuggerUrl, out debugPort);
-                if (string.IsNullOrWhiteSpace(webSocketDebuggerUrl))
+                if (!TryGetUsablePuppeteerEndpoint(webSocketDebuggerUrl, out webSocketDebuggerUrl))
                 {
                     throw new InvalidOperationException(
                         "AdsPower не вернул usable data.ws.puppeteer. HTTP 200 и code=0 недостаточно.");
@@ -596,7 +599,8 @@ public sealed class AdsPowerApiClient(IHttpClientFactory httpClientFactory) : IA
 
                 return new AdsPowerBrowserStartResult(webSocketDebuggerUrl, debugPort);
             },
-            cancellationToken);
+            cancellationToken,
+            AdsPowerThrottleOptions.BrowserStart);
     }
 
     public Task StopBrowserAsync(
@@ -763,14 +767,19 @@ public sealed class AdsPowerApiClient(IHttpClientFactory httpClientFactory) : IA
         string baseUrl,
         AdsPowerConnectionOptions options,
         string memberName,
-        Dictionary<string, object?> props)
+        Dictionary<string, object?> props,
+        bool requireNumericSuccessCode = false)
     {
-        if (!root.TryGetProperty("code", out var codeProp) || codeProp.ValueKind != JsonValueKind.Number)
+        if (!TryReadNumericApiCode(root, out var code))
         {
-            return;
+            if (!requireNumericSuccessCode)
+            {
+                return;
+            }
+
+            throw new InvalidOperationException("AdsPower: ответ без числового code == 0.");
         }
 
-        var code = codeProp.GetInt32();
         if (code == 0)
         {
             return;
@@ -881,6 +890,43 @@ public sealed class AdsPowerApiClient(IHttpClientFactory httpClientFactory) : IA
         {
             webSocketDebuggerUrl = puppeteerProp.GetString();
         }
+    }
+
+    internal static bool TryGetUsablePuppeteerEndpoint(string? raw, out string endpoint)
+    {
+        endpoint = "";
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return false;
+        }
+
+        var trimmed = raw.Trim();
+        if (!Uri.TryCreate(trimmed, UriKind.Absolute, out var uri))
+        {
+            return false;
+        }
+
+        if (!string.Equals(uri.Scheme, "ws", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(uri.Scheme, "wss", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        if (string.IsNullOrWhiteSpace(uri.Host))
+        {
+            return false;
+        }
+
+        endpoint = trimmed;
+        return true;
+    }
+
+    private static bool TryReadNumericApiCode(JsonElement root, out int code)
+    {
+        code = 0;
+        return root.TryGetProperty("code", out var codeProp)
+               && codeProp.ValueKind == JsonValueKind.Number
+               && codeProp.TryGetInt32(out code);
     }
 
     private static void ObserveBrowserStart(AdsPowerLocalApiStartSnapshot snapshot, string adsPowerUserId)

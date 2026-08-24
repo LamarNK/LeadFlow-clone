@@ -389,7 +389,7 @@ public sealed class WorkerMonitoringService(
                     var historicalHeat = await repository
                         .GetHistoricalResponseIngestHeatScoreAsync(DateTime.UtcNow, cancellationToken)
                         .ConfigureAwait(false);
-                    // CDP hang: RetryAfter=1 мин, ночной пол 45–90 мин к нему не применяется.
+                    // CDP hang / Local API queue-HTTP timeout: RetryAfter=1 мин, ночной пол не применяется.
                     var personalDelay = WorkerAccountPassDelay.Resolve(
                         retryAfter,
                         polled,
@@ -805,9 +805,7 @@ public sealed class WorkerMonitoringService(
                 0,
                 true,
                 false,
-                RetryAfter: FindAdsPowerCdpTimeout(diagnosticEx) is null
-                    ? null
-                    : TimeSpan.FromMinutes(1));
+                RetryAfter: WorkerAdsPowerPassRetry.FromException(diagnosticEx));
         }
         catch (OperationCanceledException)
         {
@@ -827,7 +825,7 @@ public sealed class WorkerMonitoringService(
         catch (Exception ex)
         {
             account.LastErrorMessage = ex.Message;
-            account.Status = FindAdsPowerCdpTimeout(ex) is null
+            account.Status = WorkerAdsPowerPassRetry.FromException(ex) is null
                 ? AvitoAccountStatus.Error
                 : AvitoAccountStatus.Authorized;
             await repository.SaveAccountAsync(account, cancellationToken).ConfigureAwait(false);
@@ -845,9 +843,7 @@ public sealed class WorkerMonitoringService(
                 0,
                 true,
                 false,
-                RetryAfter: FindAdsPowerCdpTimeout(ex) is null
-                    ? null
-                    : TimeSpan.FromMinutes(1));
+                RetryAfter: WorkerAdsPowerPassRetry.FromException(ex));
         }
         finally
         {
@@ -1922,9 +1918,6 @@ public sealed class WorkerMonitoringService(
         }
     }
 
-    private static TimeoutException? FindAdsPowerCdpTimeout(Exception exception) =>
-        AdsPowerCdpGuard.FindCdpTimeout(exception);
-
     private async Task PublishCandidateAsync(CandidateResponse response, CancellationToken cancellationToken)
     {
         var names = candidateParser.ParseName(response.FullName);
@@ -2586,7 +2579,7 @@ public sealed class WorkerMonitoringService(
         CancellationToken ct)
     {
         var inner = diagnosticEx.InnerException ?? diagnosticEx;
-        var cdpTimeout = FindAdsPowerCdpTimeout(diagnosticEx);
+        var transientTimeout = WorkerAdsPowerPassRetry.FromException(diagnosticEx) is not null;
         var sub = FindSubProfile(account, diagnosticEx.SubProfileId);
         AvitoPageState? pageState = null;
         var formatted = AvitoAutomationFailureFormatter.Format(
@@ -2597,8 +2590,8 @@ public sealed class WorkerMonitoringService(
         account.LastErrorMessage = sub is not null
             ? AccountIssueFormatting.FormatIssue(account, sub, diagnosticEx.DiagnosticKind, formatted)
             : formatted;
-        // CDP-таймаут — переходный сбой сессии, не блокирующая Error: слот освобождается и цикл повторит аккаунт.
-        account.Status = cdpTimeout is null ? AvitoAccountStatus.Error : AvitoAccountStatus.Authorized;
+        // CDP / Local API timeout — переходный сбой сессии, не блокирующая Error.
+        account.Status = transientTimeout ? AvitoAccountStatus.Authorized : AvitoAccountStatus.Error;
         await repository.SaveAccountAsync(account, ct).ConfigureAwait(false);
         WorkerMonitoringLogger.AccountFailed(
             account,
@@ -2619,10 +2612,10 @@ public sealed class WorkerMonitoringService(
         await repository.SaveAccountAsync(account, ct).ConfigureAwait(false);
         await PublishAccountEventAsync(
             account,
-            cdpTimeout is null ? "Error" : "Warning",
-            cdpTimeout is null
-                ? $"Ошибка аккаунта {account.DisplayName}: {account.LastErrorMessage}"
-                : $"CDP завис на аккаунте {account.DisplayName}, браузер закрыт, повтор через ~1 мин: {account.LastErrorMessage}",
+            transientTimeout ? "Warning" : "Error",
+            transientTimeout
+                ? $"AdsPower timeout на аккаунте {account.DisplayName}, браузер закрыт, повтор через ~1 мин: {account.LastErrorMessage}"
+                : $"Ошибка аккаунта {account.DisplayName}: {account.LastErrorMessage}",
             diagnostic.Details,
             ct).ConfigureAwait(false);
     }

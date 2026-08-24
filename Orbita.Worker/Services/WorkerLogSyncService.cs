@@ -177,7 +177,7 @@ public sealed class WorkerLogSyncService(
         };
 
         var properties = WorkerLogPropertyAllowlist.ToTransportMap(
-            WorkerLogPropertyAllowlist.ParseAndFilter(entry.Properties));
+            LogEnvelopeParser.ParseContext(entry.Properties));
         return new WorkerLogEntryUploadDto(
             entry.Timestamp,
             level,

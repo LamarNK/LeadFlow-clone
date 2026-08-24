@@ -286,7 +286,11 @@ public sealed class AdsPowerApiClientTests
         Assert.False(AdsPowerAvitoAutomationService.IsRetryableAdsPowerStartupFailure(
             new OperationCanceledException()));
         Assert.True(AdsPowerAvitoAutomationService.IsRetryableAdsPowerStartupFailure(
-            new AdsPowerLocalApiTimeoutException("user/list", "queue_wait", TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(1))));
+            new AdsPowerLocalApiTimeoutException(
+                AdsPowerLocalApiCall.OperationUserList,
+                AdsPowerLocalApiCall.PhaseQueueWait,
+                TimeSpan.FromSeconds(1),
+                TimeSpan.FromSeconds(1))));
     }
 
     [Theory]
