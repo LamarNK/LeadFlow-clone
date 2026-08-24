@@ -2316,23 +2316,25 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 cancellationToken)
             .ConfigureAwait(false);
 
+        var selectedProperties = new Dictionary<string, object?>
+        {
+            ["automation.targetKind"] = targetKind.ToString(),
+            ["automation.preferredUrlClass"] = ClassifyAutomationPageUrl(preferredUrl),
+            ["automation.workerUrlClass"] = ClassifyAutomationPageUrl(worker.Url),
+            ["automation.pageAcquireBranch"] = branch,
+            ["automation.pagesCount"] = existingPages.Count,
+            ["automation.urlClasses"] = FormatAutomationPageUrlClasses(existingUrls),
+            ["automation.selectedIndex"] = existingWorkerPageIndex,
+            ["automation.cdpCall"] = "BringToFrontAsync",
+            ["automation.tabsClosed"] = closed,
+            ["automation.tabsBefore"] = existingPages.Count
+        };
+        AdsPowerStartupDiagnostics.TryCopyIdentity(selectedProperties);
         _ = GlobalLogger.Instance.LogAsync(
             $"AdsPower CDP: рабочая вкладка выбрана (ветка {branch}, закрыто лишних: {closed}, было: {existingPages.Count}).",
             DeskLinkAuditLogLevel.Info,
             memberName: callerMemberName,
-            properties: new Dictionary<string, object?>
-            {
-                ["automation.targetKind"] = targetKind.ToString(),
-                ["automation.preferredUrl"] = preferredUrl,
-                ["automation.workerUrl"] = worker.Url,
-                ["automation.pageAcquireBranch"] = branch,
-                ["automation.pagesCount"] = existingPages.Count,
-                ["automation.urlClasses"] = FormatAutomationPageUrlClasses(existingUrls),
-                ["automation.selectedIndex"] = existingWorkerPageIndex,
-                ["automation.cdpCall"] = "BringToFrontAsync",
-                ["automation.tabsClosed"] = closed,
-                ["automation.tabsBefore"] = existingPages.Count
-            });
+            properties: selectedProperties);
 
         return worker;
     }
@@ -2351,23 +2353,25 @@ public sealed partial class AdsPowerAvitoAutomationService(
     {
         var urls = pages.Select(static page => page.Url).ToArray();
         var suffix = string.IsNullOrWhiteSpace(extraMessage) ? string.Empty : $", {extraMessage}";
+        var properties = new Dictionary<string, object?>
+        {
+            ["automation.targetKind"] = targetKind.ToString(),
+            ["automation.preferredUrlClass"] = ClassifyAutomationPageUrl(preferredUrl),
+            ["automation.pageAcquireBranch"] = branch,
+            ["automation.pagesCount"] = pages.Count,
+            ["automation.urlClasses"] = FormatAutomationPageUrlClasses(urls),
+            ["automation.selectedIndex"] = selectedIndex,
+            ["automation.cdpCall"] = cdpCall,
+            ["automation.retryScheduled"] = retryScheduled,
+            ["automation.tabsClosed"] = closed,
+            ["automation.tabsBefore"] = pages.Count
+        };
+        AdsPowerStartupDiagnostics.TryCopyIdentity(properties);
         _ = GlobalLogger.Instance.LogAsync(
             $"AdsPower CDP: поиск рабочей вкладки, ветка {branch}, pages={pages.Count}{suffix}.",
             branch == "empty_pages" ? DeskLinkAuditLogLevel.Warning : DeskLinkAuditLogLevel.Info,
             memberName: callerMemberName,
-            properties: new Dictionary<string, object?>
-            {
-                ["automation.targetKind"] = targetKind.ToString(),
-                ["automation.preferredUrl"] = preferredUrl,
-                ["automation.pageAcquireBranch"] = branch,
-                ["automation.pagesCount"] = pages.Count,
-                ["automation.urlClasses"] = FormatAutomationPageUrlClasses(urls),
-                ["automation.selectedIndex"] = selectedIndex,
-                ["automation.cdpCall"] = cdpCall,
-                ["automation.retryScheduled"] = retryScheduled,
-                ["automation.tabsClosed"] = closed,
-                ["automation.tabsBefore"] = pages.Count
-            });
+            properties: properties);
     }
 
     internal const string PageAcquireOperation = "выбор рабочей вкладки";
@@ -2450,7 +2454,6 @@ public sealed partial class AdsPowerAvitoAutomationService(
                     properties: new Dictionary<string, object?>
                     {
                         ["automation.startupWaitMs"] = started.Elapsed.TotalMilliseconds,
-                        ["automation.startupUrls"] = string.Join(" | ", urls),
                         ["automation.urlClasses"] = FormatAutomationPageUrlClasses(urls)
                     });
                 return;
@@ -2508,14 +2511,13 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 if (status == AdsPowerStartPageProxyStatus.Failed)
                 {
                     _ = GlobalLogger.Instance.LogAsync(
-                        $"AdsPower: стартовая страница показала отказ прокси ({startPage.Url}).",
+                        "AdsPower: стартовая страница показала отказ прокси.",
                         DeskLinkAuditLogLevel.Warning,
                         memberName: callerMemberName,
                         errorKey: AdsPowerProxyFailureException.ErrorKey,
                         properties: new Dictionary<string, object?>
                         {
-                            ["automation.startPageUrl"] = startPage.Url,
-                            ["automation.startupUrls"] = string.Join(" | ", urls),
+                            ["automation.startPageClass"] = ClassifyAutomationPageUrl(startPage.Url),
                             ["automation.urlClasses"] = FormatAutomationPageUrlClasses(urls)
                         });
                     throw new AdsPowerProxyFailureException(startPage.Url);
@@ -2529,7 +2531,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
                         memberName: callerMemberName,
                         properties: new Dictionary<string, object?>
                         {
-                            ["automation.startPageUrl"] = startPage.Url,
+                            ["automation.startPageClass"] = ClassifyAutomationPageUrl(startPage.Url),
                             ["automation.proxyCheckWaitMs"] = started.Elapsed.TotalMilliseconds,
                             ["automation.urlClasses"] = FormatAutomationPageUrlClasses(urls)
                         });
@@ -2847,17 +2849,30 @@ public sealed partial class AdsPowerAvitoAutomationService(
         string operation,
         CancellationToken cancellationToken)
     {
+        var started = Stopwatch.StartNew();
         try
         {
-            return await browser.PagesAsync()
+            var pages = await browser.PagesAsync()
                 .WaitAsync(CdpPageDiscoveryTimeout, cancellationToken)
                 .ConfigureAwait(false);
+            ObserveCdpPages(operation, started.Elapsed, pages, ok: true);
+            return pages;
         }
         catch (TimeoutException ex)
         {
+            ObserveCdpPages(operation, started.Elapsed, pages: null, ok: false);
             throw new TimeoutException(
                 $"AdsPower CDP: {operation} не получил список вкладок за {CdpPageDiscoveryTimeout.TotalSeconds:0} с.",
                 ex);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            ObserveCdpPages(operation, started.Elapsed, pages: null, ok: false);
+            throw;
         }
     }
 
@@ -3017,18 +3032,81 @@ public sealed partial class AdsPowerAvitoAutomationService(
         ConnectOptions connectOptions,
         CancellationToken cancellationToken)
     {
+        var started = Stopwatch.StartNew();
         try
         {
-            return await Puppeteer
+            var browser = await Puppeteer
                 .ConnectAsync(connectOptions)
                 .WaitAsync(CdpConnectTimeout, cancellationToken)
                 .ConfigureAwait(false);
+            ObserveCdpCall("Connect", "подключение CDP", started.Elapsed, ok: true);
+            return browser;
         }
         catch (TimeoutException ex)
         {
+            ObserveCdpCall("Connect", "подключение CDP", started.Elapsed, ok: false);
             throw new TimeoutException(
                 $"AdsPower: CDP-подключение не открылось за {CdpConnectTimeout.TotalSeconds:0} с.",
                 ex);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            ObserveCdpCall("Connect", "подключение CDP", started.Elapsed, ok: false);
+            throw;
+        }
+    }
+
+    private static void ObserveCdpPages(
+        string operation,
+        TimeSpan duration,
+        IReadOnlyList<IPage>? pages,
+        bool ok)
+    {
+        try
+        {
+            string? urlClasses = null;
+            int? pagesCount = null;
+            if (pages is not null)
+            {
+                pagesCount = pages.Count;
+                urlClasses = FormatAutomationPageUrlClasses(pages.Select(static page => page.Url));
+            }
+
+            ObserveCdpCall("PagesAsync", operation, duration, ok, pagesCount, urlClasses);
+        }
+        catch
+        {
+            // диагностика не должна ломать CDP
+        }
+    }
+
+    private static void ObserveCdpCall(
+        string call,
+        string operation,
+        TimeSpan duration,
+        bool ok,
+        int? pagesCount = null,
+        string? urlClasses = null)
+    {
+        try
+        {
+            var current = AdsPowerStartupTrace.Current;
+            if (current is null)
+            {
+                return;
+            }
+
+            AdsPowerStartupDiagnostics.TryLog(
+                current.RecordCdp(call, operation, duration, ok, pagesCount, urlClasses),
+                memberName: nameof(OpenAccountSessionAsync));
+        }
+        catch
+        {
+            // диагностика не должна ломать CDP
         }
     }
 

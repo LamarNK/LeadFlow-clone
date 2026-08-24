@@ -37,11 +37,13 @@ public sealed partial class AdsPowerAvitoAutomationService
             using var startupCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             startupCts.CancelAfter(AccountSessionStartupTimeout);
             var startupToken = startupCts.Token;
+            using var trace = AdsPowerStartupTrace.Begin(adsPowerUserId, attempt).Activate();
             var startupTask = OpenAccountSessionOnceAsync(
                 options,
                 adsPowerUserId,
                 attempt,
                 reportStartupStage,
+                trace,
                 startupToken);
 
             try
@@ -54,25 +56,34 @@ public sealed partial class AdsPowerAvitoAutomationService
                 // Некоторые вызовы PuppeteerSharp не реагируют на CancellationToken.
                 // Освобождаем слот немедленно, а результат позднего старта обязательно
                 // дочищаем в фоне, чтобы не оставить окно AdsPower открытым.
-                _ = CleanupTimedOutSessionAsync(startupTask, options, adsPowerUserId);
-                throw new TimeoutException(
+                var timeoutEx = new TimeoutException(
                     $"AdsPower: запуск сессии не завершился за {AccountSessionStartupTimeout.TotalMinutes:0} мин.",
                     ex);
+                AdsPowerStartupDiagnostics.TryLog(
+                    trace.RecordFailure(timeoutEx),
+                    memberName: nameof(OpenAccountSessionAsync));
+                _ = CleanupTimedOutSessionAsync(startupTask, options, adsPowerUserId);
+                throw timeoutEx;
             }
             catch (Exception ex) when (IsRetryableAdsPowerStartupFailure(ex) && attempt < 2)
             {
                 lastError = ex;
+                AdsPowerStartupDiagnostics.TryLog(
+                    trace.RecordFailure(ex),
+                    memberName: nameof(OpenAccountSessionAsync));
+                var retryProperties = new Dictionary<string, object?>
+                {
+                    ["step"] = "session_retry",
+                    ["attempt"] = attempt,
+                    ["adsPower.userId"] = adsPowerUserId,
+                    ["error.type"] = ex.GetType().FullName
+                };
+                AdsPowerStartupDiagnostics.TryCopyIdentity(retryProperties);
                 _ = GlobalLogger.Instance.LogAsync(
                     $"AdsPower account session: попытка {attempt} не открыла Avito ({ex.Message}), перезапускаем браузер.",
                     DeskLinkAuditLogLevel.Warning,
                     memberName: nameof(OpenAccountSessionAsync),
-                    properties: new Dictionary<string, object?>
-                    {
-                        ["step"] = "session_retry",
-                        ["attempt"] = attempt,
-                        ["adsPower.userId"] = adsPowerUserId,
-                        ["error.type"] = ex.GetType().FullName
-                    });
+                    properties: retryProperties);
                 await Task.Delay(1500, cancellationToken).ConfigureAwait(false);
             }
         }
@@ -85,6 +96,7 @@ public sealed partial class AdsPowerAvitoAutomationService
         string adsPowerUserId,
         int attempt,
         Action<string, TimeSpan>? reportStartupStage,
+        AdsPowerStartupTrace trace,
         CancellationToken cancellationToken)
     {
         var started = false;
@@ -92,12 +104,12 @@ public sealed partial class AdsPowerAvitoAutomationService
         var startupStopwatch = Stopwatch.StartNew();
         try
         {
-            ReportStartupStage(reportStartupStage, attempt, "ожидание очереди AdsPower browser/start", startupStopwatch);
+            ReportStartupStage(reportStartupStage, attempt, "ожидание очереди AdsPower browser/start", startupStopwatch, trace);
             var start = await adsPowerApiClient
                 .StartBrowserAsync(options, adsPowerUserId, ProfileItemsPageUrl, cancellationToken)
                 .ConfigureAwait(false);
             started = true;
-            ReportStartupStage(reportStartupStage, attempt, "browser/start завершён", startupStopwatch);
+            ReportStartupStage(reportStartupStage, attempt, "browser/start завершён", startupStopwatch, trace);
 
             if (string.IsNullOrWhiteSpace(start.WebSocketDebuggerUrl))
             {
@@ -105,7 +117,7 @@ public sealed partial class AdsPowerAvitoAutomationService
                     "AdsPower не вернул ws.puppeteer endpoint. Проверьте Local API и версию клиента AdsPower.");
             }
 
-            ReportStartupStage(reportStartupStage, attempt, "подключение CDP", startupStopwatch);
+            ReportStartupStage(reportStartupStage, attempt, "подключение CDP", startupStopwatch, trace);
             browser = await ConnectAdsPowerBrowserAsync(
                     new ConnectOptions
                     {
@@ -114,15 +126,15 @@ public sealed partial class AdsPowerAvitoAutomationService
                     },
                     cancellationToken)
                 .ConfigureAwait(false);
-            ReportStartupStage(reportStartupStage, attempt, "CDP подключён", startupStopwatch);
+            ReportStartupStage(reportStartupStage, attempt, "CDP подключён", startupStopwatch, trace);
 
-            ReportStartupStage(reportStartupStage, attempt, "чтение прокси профиля", startupStopwatch);
+            ReportStartupStage(reportStartupStage, attempt, "чтение прокси профиля", startupStopwatch, trace);
             var captchaOptions = await ResolveCaptchaTaskOptionsAsync(options, adsPowerUserId, cancellationToken)
                 .ConfigureAwait(false);
-            ReportStartupStage(reportStartupStage, attempt, "прокси профиля прочитан", startupStopwatch);
+            ReportStartupStage(reportStartupStage, attempt, "прокси профиля прочитан", startupStopwatch, trace);
             using var captchaScope = AvitoCaptchaTaskContext.Use(captchaOptions);
 
-            ReportStartupStage(reportStartupStage, attempt, "поиск рабочей вкладки", startupStopwatch);
+            ReportStartupStage(reportStartupStage, attempt, "поиск рабочей вкладки", startupStopwatch, trace);
             var page = await AcquireAutomationPageAsync(
                     browser,
                     ProfileItemsPageUrl,
@@ -130,29 +142,35 @@ public sealed partial class AdsPowerAvitoAutomationService
                     cancellationToken,
                     waitForStartupNavigation: true)
                 .ConfigureAwait(false);
-            ReportStartupStage(reportStartupStage, attempt, "вкладка получена", startupStopwatch);
+            ReportStartupStage(reportStartupStage, attempt, "вкладка получена", startupStopwatch, trace);
 
-            ReportStartupStage(reportStartupStage, attempt, "прогрев страницы Avito", startupStopwatch);
+            ReportStartupStage(reportStartupStage, attempt, "прогрев страницы Avito", startupStopwatch, trace);
             page = await WarmUpSessionPageAsync(page, adsPowerUserId, cancellationToken).ConfigureAwait(false);
-            ReportStartupStage(reportStartupStage, attempt, "страница Avito готова", startupStopwatch);
+            ReportStartupStage(reportStartupStage, attempt, "страница Avito готова", startupStopwatch, trace);
 
+            var openedProperties = new Dictionary<string, object?>
+            {
+                ["step"] = "session_opened",
+                ["attempt"] = attempt,
+                ["adsPower.userId"] = adsPowerUserId,
+                ["page.urlClass"] = ClassifyAutomationPageUrl(page.Url),
+                ["captcha.proxyMode"] = captchaOptions.UsesSuppliedProxy ? "profile" : "proxyless"
+            };
+            AdsPowerStartupDiagnostics.TryCopyIdentity(openedProperties);
             _ = GlobalLogger.Instance.LogAsync(
                 $"AdsPower account session opened for user {adsPowerUserId}.",
                 DeskLinkAuditLogLevel.Info,
                 memberName: nameof(OpenAccountSessionAsync),
-                properties: new Dictionary<string, object?>
-                {
-                    ["step"] = "session_opened",
-                    ["attempt"] = attempt,
-                    ["adsPower.userId"] = adsPowerUserId,
-                    ["page.url"] = page.Url,
-                    ["captcha.proxyMode"] = captchaOptions.UsesSuppliedProxy ? "profile" : "proxyless"
-                });
+                properties: openedProperties);
 
             return new AccountSession(this, browser, page, adsPowerUserId, captchaOptions);
         }
-        catch
+        catch (Exception ex)
         {
+            AdsPowerStartupDiagnostics.TryLog(
+                trace.RecordFailure(ex),
+                memberName: nameof(OpenAccountSessionOnceAsync));
+
             if (browser is not null)
             {
                 try
@@ -187,8 +205,18 @@ public sealed partial class AdsPowerAvitoAutomationService
         Action<string, TimeSpan>? reportStartupStage,
         int attempt,
         string stage,
-        Stopwatch stopwatch)
+        Stopwatch stopwatch,
+        AdsPowerStartupTrace? trace = null)
     {
+        try
+        {
+            trace?.SetStage(stage);
+        }
+        catch
+        {
+            // Диагностика не должна останавливать мониторинг.
+        }
+
         try
         {
             reportStartupStage?.Invoke($"попытка {attempt}: {stage}", stopwatch.Elapsed);
