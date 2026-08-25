@@ -385,6 +385,427 @@ public sealed class WorkerConfigServiceTests
     }
 
     [Fact]
+    public async Task SyncAccountsAsync_IgnoresItemsWithoutAdsPowerProfileId()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db);
+
+        var sut = CreateService(db);
+        var synced = await sut.SyncAccountsAsync(
+            WorkerId,
+            new WorkerAccountSyncRequest(
+                [
+                    new WorkerAccountSyncItemDto("profile-1", "acc-1"),
+                    new WorkerAccountSyncItemDto("", "multilogin-only"),
+                    new WorkerAccountSyncItemDto("   ", "whitespace")
+                ]));
+
+        Assert.True(synced);
+        var accounts = await db.WorkerAccounts.ToListAsync();
+        Assert.DoesNotContain(accounts, a => a.DisplayName is "multilogin-only" or "whitespace");
+        Assert.All(accounts, a => Assert.False(string.IsNullOrWhiteSpace(a.AdsPowerProfileId)));
+        Assert.All(accounts, a => Assert.Null(a.MultiloginProfileId));
+        Assert.Contains(accounts, a => a.AdsPowerProfileId == "profile-1");
+    }
+
+    [Fact]
+    public async Task SyncAccountsAsync_DoesNotDeleteMultiloginAccounts()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db);
+        var mlxId = Guid.Parse("dddddddd-dddd-dddd-dddd-dddddddddddd");
+        db.WorkerAccounts.Add(new WorkerAccountEntity
+        {
+            WorkerId = WorkerId,
+            AccountId = mlxId,
+            AdsPowerProfileId = string.Empty,
+            MultiloginProfileId = "mlx-profile",
+            MultiloginFolderId = "mlx-folder",
+            DisplayName = "multilogin-acc",
+            UpdatedAtUtc = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var sut = CreateService(db);
+        var synced = await sut.SyncAccountsAsync(
+            WorkerId,
+            new WorkerAccountSyncRequest([new WorkerAccountSyncItemDto("profile-1", "acc-1")]));
+
+        Assert.True(synced);
+        var accounts = await db.WorkerAccounts.ToListAsync();
+        Assert.Contains(accounts, a => a.AccountId == mlxId && a.MultiloginProfileId == "mlx-profile");
+        Assert.Contains(accounts, a => a.AdsPowerProfileId == "profile-1");
+    }
+
+    [Fact]
+    public async Task SyncAccountsAsync_PersistsMultiloginProfileAndFolder_WithOrbitaNamespace()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db);
+
+        const string profileId = "mlx-profile-1";
+        const string folderId = "mlx-folder-1";
+        var expectedId = MultiloginAccountId.ToAccountGuid(profileId);
+
+        var synced = await CreateService(db).SyncAccountsAsync(
+            WorkerId,
+            new WorkerAccountSyncRequest(
+                [
+                    new WorkerAccountSyncItemDto(
+                        AdsPowerProfileId: "",
+                        DisplayName: "from-display",
+                        MultiloginProfileId: profileId,
+                        MultiloginFolderId: folderId,
+                        MultiloginProfileName: "mlx-acc")
+                ]));
+
+        Assert.True(synced);
+        var mlx = await db.WorkerAccounts.SingleAsync(x => x.AccountId == expectedId);
+        Assert.Equal(profileId, mlx.MultiloginProfileId);
+        Assert.Equal(folderId, mlx.MultiloginFolderId);
+        Assert.Equal("mlx-acc", mlx.MultiloginProfileName);
+        Assert.Equal("mlx-acc", mlx.DisplayName);
+        Assert.Equal(string.Empty, mlx.AdsPowerProfileId);
+        Assert.Equal(expectedId, mlx.AccountId);
+        Assert.NotEqual(AdsPowerAccountId.ToAccountGuid(profileId), mlx.AccountId);
+
+        var ads = await db.WorkerAccounts.SingleAsync(x => x.AccountId == AccountId);
+        Assert.Equal("profile-1", ads.AdsPowerProfileId);
+        Assert.Null(ads.MultiloginProfileId);
+
+        var config = await CreateService(db).GetConfigForWorkerAsync(WorkerId, OfficeScope.ForOffice(OfficeId));
+        var mlxCfg = Assert.Single(config!.Accounts, a => a.AccountId == expectedId);
+        Assert.Equal("Multilogin", mlxCfg.ProfileProvider);
+        Assert.Equal(profileId, mlxCfg.MultiloginProfileId);
+        Assert.Equal(folderId, mlxCfg.MultiloginFolderId);
+        Assert.Null(typeof(WorkerAccountConfigDto).GetProperty("MultiloginAutomationToken"));
+    }
+
+    [Fact]
+    public async Task SyncAccountsAsync_SkipsMultiloginWithoutFolderOrProfileId()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db);
+
+        var synced = await CreateService(db).SyncAccountsAsync(
+            WorkerId,
+            new WorkerAccountSyncRequest(
+                [
+                    new WorkerAccountSyncItemDto(
+                        AdsPowerProfileId: "",
+                        DisplayName: "no-folder",
+                        MultiloginProfileId: "mlx-profile",
+                        MultiloginFolderId: null),
+                    new WorkerAccountSyncItemDto(
+                        AdsPowerProfileId: "",
+                        DisplayName: "no-profile",
+                        MultiloginProfileId: "",
+                        MultiloginFolderId: "mlx-folder")
+                ]));
+
+        Assert.True(synced);
+        var accounts = await db.WorkerAccounts.ToListAsync();
+        Assert.DoesNotContain(accounts, a => a.DisplayName is "no-folder" or "no-profile");
+        Assert.DoesNotContain(accounts, a => a.MultiloginProfileId == "mlx-profile");
+        Assert.Contains(accounts, a => a.AdsPowerProfileId == "profile-1");
+    }
+
+    [Fact]
+    public async Task SyncAccountsAsync_MultiloginOnly_DoesNotDeleteAdsPowerAccounts()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db);
+
+        var synced = await CreateService(db).SyncAccountsAsync(
+            WorkerId,
+            new WorkerAccountSyncRequest(
+                [
+                    new WorkerAccountSyncItemDto(
+                        AdsPowerProfileId: "",
+                        DisplayName: "mlx-acc",
+                        MultiloginProfileId: "mlx-profile",
+                        MultiloginFolderId: "mlx-folder")
+                ]));
+
+        Assert.True(synced);
+        var accounts = await db.WorkerAccounts.ToListAsync();
+        Assert.Contains(accounts, a => a.AccountId == AccountId && a.AdsPowerProfileId == "profile-1");
+        Assert.Contains(accounts, a => a.MultiloginProfileId == "mlx-profile" && a.MultiloginFolderId == "mlx-folder");
+    }
+
+    [Fact]
+    public async Task SyncAccountsAsync_AdsPowerStillRemovesStaleAdsPower_KeepingMultilogin()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db);
+        db.WorkerAccounts.Add(new WorkerAccountEntity
+        {
+            WorkerId = WorkerId,
+            AccountId = Guid.Parse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee"),
+            AdsPowerProfileId = "stale-ads",
+            DisplayName = "stale-ads",
+            UpdatedAtUtc = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var synced = await CreateService(db).SyncAccountsAsync(
+            WorkerId,
+            new WorkerAccountSyncRequest([new WorkerAccountSyncItemDto("profile-1", "acc-1")]));
+
+        Assert.True(synced);
+        var accounts = await db.WorkerAccounts.ToListAsync();
+        Assert.DoesNotContain(accounts, a => a.AdsPowerProfileId == "stale-ads");
+        Assert.Contains(accounts, a => a.AdsPowerProfileId == "profile-1");
+    }
+
+    [Fact]
+    public async Task SyncAccountsAsync_EmptyAdsPowerPayload_RemovesStaleAdsPower_KeepingMultilogin()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db);
+        var mlxId = Guid.Parse("dddddddd-dddd-dddd-dddd-dddddddddddd");
+        db.WorkerAccounts.Add(new WorkerAccountEntity
+        {
+            WorkerId = WorkerId,
+            AccountId = mlxId,
+            AdsPowerProfileId = string.Empty,
+            MultiloginProfileId = "mlx-profile",
+            MultiloginFolderId = "mlx-folder",
+            DisplayName = "multilogin-acc",
+            UpdatedAtUtc = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var synced = await CreateService(db).SyncAccountsAsync(
+            WorkerId,
+            new WorkerAccountSyncRequest([]));
+
+        Assert.True(synced);
+        var accounts = await db.WorkerAccounts.ToListAsync();
+        Assert.DoesNotContain(accounts, a => a.AdsPowerProfileId == "profile-1");
+        Assert.Contains(accounts, a => a.AccountId == mlxId && a.MultiloginProfileId == "mlx-profile");
+    }
+
+    [Fact]
+    public async Task SyncAccountsAsync_MultiloginFlagEmpty_DoesNotDeleteAdsPower_RemovesStaleMultilogin()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db);
+        var mlxId = Guid.Parse("dddddddd-dddd-dddd-dddd-dddddddddddd");
+        db.WorkerAccounts.Add(new WorkerAccountEntity
+        {
+            WorkerId = WorkerId,
+            AccountId = mlxId,
+            AdsPowerProfileId = string.Empty,
+            MultiloginProfileId = "stale-mlx",
+            MultiloginFolderId = "mlx-folder",
+            DisplayName = "stale-mlx",
+            UpdatedAtUtc = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var synced = await CreateService(db).SyncAccountsAsync(
+            WorkerId,
+            new WorkerAccountSyncRequest([], Multilogin: true, ReplaceMultiloginCatalog: true));
+
+        Assert.True(synced);
+        var accounts = await db.WorkerAccounts.ToListAsync();
+        Assert.Contains(accounts, a => a.AccountId == AccountId && a.AdsPowerProfileId == "profile-1");
+        Assert.DoesNotContain(accounts, a => a.MultiloginProfileId == "stale-mlx");
+    }
+
+    [Fact]
+    public async Task SyncAccountsAsync_IncompleteMultiloginPayload_DoesNotStaleDelete()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db);
+        var staleId = Guid.Parse("dddddddd-dddd-dddd-dddd-dddddddddddd");
+        db.WorkerAccounts.Add(new WorkerAccountEntity
+        {
+            WorkerId = WorkerId,
+            AccountId = staleId,
+            AdsPowerProfileId = string.Empty,
+            MultiloginProfileId = "stale-mlx",
+            MultiloginFolderId = "mlx-folder",
+            DisplayName = "stale-mlx",
+            UpdatedAtUtc = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var synced = await CreateService(db).SyncAccountsAsync(
+            WorkerId,
+            new WorkerAccountSyncRequest(
+                [
+                    new WorkerAccountSyncItemDto(
+                        AdsPowerProfileId: "",
+                        DisplayName: "keep",
+                        MultiloginProfileId: "keep-mlx",
+                        MultiloginFolderId: "keep-folder")
+                ],
+                Multilogin: true,
+                ReplaceMultiloginCatalog: false));
+
+        Assert.True(synced);
+        var accounts = await db.WorkerAccounts.ToListAsync();
+        Assert.Contains(accounts, a => a.AccountId == AccountId && a.AdsPowerProfileId == "profile-1");
+        Assert.Contains(accounts, a => a.AccountId == staleId && a.MultiloginProfileId == "stale-mlx");
+        Assert.Contains(accounts, a => a.MultiloginProfileId == "keep-mlx" && a.MultiloginFolderId == "keep-folder");
+    }
+
+    [Fact]
+    public async Task SyncAccountsAsync_MultiloginTrueWithoutReplace_Empty_DoesNotDeleteAnyone()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db);
+        var mlxId = Guid.Parse("dddddddd-dddd-dddd-dddd-dddddddddddd");
+        db.WorkerAccounts.Add(new WorkerAccountEntity
+        {
+            WorkerId = WorkerId,
+            AccountId = mlxId,
+            AdsPowerProfileId = string.Empty,
+            MultiloginProfileId = "keep-mlx",
+            MultiloginFolderId = "mlx-folder",
+            DisplayName = "keep-mlx",
+            UpdatedAtUtc = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var synced = await CreateService(db).SyncAccountsAsync(
+            WorkerId,
+            new WorkerAccountSyncRequest([], Multilogin: true, ReplaceMultiloginCatalog: false));
+
+        Assert.True(synced);
+        var accounts = await db.WorkerAccounts.ToListAsync();
+        Assert.Contains(accounts, a => a.AccountId == AccountId && a.AdsPowerProfileId == "profile-1");
+        Assert.Contains(accounts, a => a.AccountId == mlxId && a.MultiloginProfileId == "keep-mlx");
+    }
+
+    [Fact]
+    public async Task GetConfigForWorkerAsync_IncludesMultiloginFields_OnWorkerConfigOnly()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db);
+        var worker = await db.Workers.SingleAsync();
+        worker.MultiloginLauncherUrl = "https://launcher.mlx.yt:45001";
+        worker.MultiloginCloudApiUrl = "https://api.multilogin.com";
+        worker.MultiloginAutomationToken = "mlx-secret-token";
+        var account = await db.WorkerAccounts.SingleAsync();
+        account.MultiloginProfileId = "mlx-profile";
+        account.MultiloginFolderId = "mlx-folder";
+        await db.SaveChangesAsync();
+
+        var config = await CreateService(db).GetConfigForWorkerAsync(WorkerId, OfficeScope.ForOffice(OfficeId));
+
+        Assert.NotNull(config);
+        Assert.Equal("https://launcher.mlx.yt:45001", config.MultiloginLauncherUrl);
+        Assert.Equal("https://api.multilogin.com", config.MultiloginCloudApiUrl);
+        Assert.Equal("mlx-secret-token", config.MultiloginAutomationToken);
+        var acc = Assert.Single(config.Accounts);
+        Assert.Equal("Multilogin", acc.ProfileProvider);
+        Assert.Equal("mlx-profile", acc.MultiloginProfileId);
+        Assert.Equal("mlx-folder", acc.MultiloginFolderId);
+        Assert.Null(typeof(WorkerAccountConfigDto).GetProperty("MultiloginAutomationToken"));
+        Assert.Null(typeof(WorkerAccountDto).GetProperty("MultiloginAutomationToken"));
+    }
+
+    [Fact]
+    public async Task UpdateSettingsAsync_PersistsMultiloginUrls_AndStripsTrailingSlash()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db);
+
+        var sut = CreateService(db);
+        var (config, error) = await sut.UpdateSettingsAsync(
+            WorkerId,
+            new UpdateWorkerSettingsRequest(
+                MaxConcurrentAccounts: 1,
+                AdsPowerApiBaseUrl: "http://local.adspower.net:50325/",
+                AdsPowerApiKey: "ads-key",
+                MultiloginLauncherUrl: "https://launcher.mlx.yt:45001/",
+                MultiloginCloudApiUrl: "https://api.multilogin.com/",
+                MultiloginAutomationToken: "mlx-secret-token"),
+            OfficeScope.ForOffice(OfficeId));
+
+        Assert.Null(error);
+        Assert.NotNull(config);
+        Assert.Equal("http://local.adspower.net:50325", config!.AdsPowerApiBaseUrl);
+        Assert.Equal("ads-key", config.AdsPowerApiKey);
+        Assert.Equal("https://launcher.mlx.yt:45001", config.MultiloginLauncherUrl);
+        Assert.Equal("https://api.multilogin.com", config.MultiloginCloudApiUrl);
+        Assert.Equal("mlx-secret-token", config.MultiloginAutomationToken);
+
+        var worker = await db.Workers.SingleAsync();
+        Assert.Equal("https://launcher.mlx.yt:45001", worker.MultiloginLauncherUrl);
+        Assert.Equal("https://api.multilogin.com", worker.MultiloginCloudApiUrl);
+        Assert.Equal("mlx-secret-token", worker.MultiloginAutomationToken);
+        Assert.Equal("ads-key", worker.AdsPowerApiKey);
+    }
+
+    [Fact]
+    public async Task UpdateSettingsAsync_EmptyLauncher_SavesDefault_AndKeepsExistingToken()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db);
+        var worker = await db.Workers.SingleAsync();
+        worker.MultiloginAutomationToken = "mlx-secret-token";
+        worker.MultiloginLauncherUrl = "https://custom-launcher.example:45001";
+        await db.SaveChangesAsync();
+
+        var (config, error) = await CreateService(db).UpdateSettingsAsync(
+            WorkerId,
+            new UpdateWorkerSettingsRequest(
+                MaxConcurrentAccounts: 1,
+                MultiloginLauncherUrl: "  ",
+                MultiloginAutomationToken: null),
+            OfficeScope.ForOffice(OfficeId));
+
+        Assert.Null(error);
+        Assert.Equal(MultiloginWorkerSettings.DefaultLauncherUrl, config!.MultiloginLauncherUrl);
+        Assert.Equal("mlx-secret-token", config.MultiloginAutomationToken);
+
+        worker = await db.Workers.SingleAsync();
+        Assert.Equal(MultiloginWorkerSettings.DefaultLauncherUrl, worker.MultiloginLauncherUrl);
+        Assert.Equal("mlx-secret-token", worker.MultiloginAutomationToken);
+    }
+
+    [Fact]
+    public async Task UpdateSettingsAsync_InvalidLauncher_DoesNotIncludeTokenInError()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db);
+
+        var (config, error) = await CreateService(db).UpdateSettingsAsync(
+            WorkerId,
+            new UpdateWorkerSettingsRequest(
+                MaxConcurrentAccounts: 1,
+                MultiloginLauncherUrl: "not-a-url",
+                MultiloginAutomationToken: "mlx-secret-token"),
+            OfficeScope.ForOffice(OfficeId));
+
+        Assert.Null(config);
+        Assert.NotNull(error);
+        Assert.DoesNotContain("mlx-secret-token", error, StringComparison.Ordinal);
+        Assert.Contains("launcher Multilogin", error, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void WorkerConfigDto_OldJsonWithoutMultiloginFields_Deserializes()
+    {
+        const string json = """
+            {"workerId":"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb","maxConcurrentAccounts":1,"accounts":[]}
+            """;
+        var dto = System.Text.Json.JsonSerializer.Deserialize<WorkerConfigDto>(
+            json,
+            new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+        Assert.NotNull(dto);
+        Assert.Null(dto!.MultiloginLauncherUrl);
+        Assert.Null(dto.MultiloginCloudApiUrl);
+        Assert.Null(dto.MultiloginAutomationToken);
+        Assert.Empty(dto.Accounts);
+    }
+
+    [Fact]
     public async Task UpdateSettingsAsync_PersistsAdsPowerGroupId()
     {
         await using var db = CreateDb();

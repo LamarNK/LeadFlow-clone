@@ -461,7 +461,10 @@ public sealed class DashboardQueryService(
             worker.AdsPowerGroupId,
             worker.AdsPowerGroupName,
             AdsPowerGroupsJson.Parse(worker.AdsPowerGroupsJson),
-            worker.RuCaptchaApiKey);
+            worker.RuCaptchaApiKey,
+            worker.MultiloginLauncherUrl,
+            worker.MultiloginCloudApiUrl,
+            HasMultiloginAutomationToken: !string.IsNullOrWhiteSpace(worker.MultiloginAutomationToken));
     }
 
     public async Task<IReadOnlyList<WorkerAccountDto>> GetWorkerAccountsAsync(
@@ -615,6 +618,8 @@ public sealed class DashboardQueryService(
                 x.AdsPowerProfileId,
                 x.AdsPowerGroupId,
                 x.AdsPowerGroupName,
+                x.MultiloginProfileId,
+                x.MultiloginFolderId,
                 x.SubProfilesJson,
                 x.SubProfilesRefreshedAtUtc,
                 x.SubProfilesRefreshRequestedAtUtc,
@@ -854,7 +859,9 @@ public sealed class DashboardQueryService(
                         hasCredentials,
                         string.IsNullOrWhiteSpace(x.AvitoLogin) ? null : x.AvitoLogin.Trim(),
                         x.AdsPowerGroupId,
-                        x.AdsPowerGroupName);
+                        x.AdsPowerGroupName,
+                        string.IsNullOrWhiteSpace(x.MultiloginProfileId) ? null : x.MultiloginProfileId,
+                        string.IsNullOrWhiteSpace(x.MultiloginFolderId) ? null : x.MultiloginFolderId);
                 })
                 .ToList();
 

@@ -8,6 +8,7 @@ using LeadFlow.Core.Models;
 using LeadFlow.Core.Services.AdsPower;
 using LeadFlow.Core.Services.Avito;
 using LeadFlow.Core.Services.Captcha;
+using LeadFlow.Core.Services.Multilogin;
 using LeadFlow.Core.Services.Browser;
 using Orbita.Contracts;
 using PuppeteerSharp;
@@ -37,7 +38,9 @@ public sealed class WorkerMonitoringService(
     IBrowserMonitorSource browserMonitorSource,
     IResponsePhoneObservationStore? phoneObservationStore = null,
     IMonitoringCycleJournal? monitoringCycleJournal = null,
-    IOutboundChatDispatch? outboundChatDispatch = null) : IWorkerMonitoringService
+    IOutboundChatDispatch? outboundChatDispatch = null,
+    IMultiloginCdpConnector? multiloginCdpConnector = null,
+    WorkerAccountSessionFactory? accountSessionFactory = null) : IWorkerMonitoringService
 {
     private readonly IResponsePhoneObservationStore _phoneObservationStore =
         phoneObservationStore ?? new NullResponsePhoneObservationStore();
@@ -45,6 +48,10 @@ public sealed class WorkerMonitoringService(
         monitoringCycleJournal ?? NullMonitoringCycleJournal.Instance;
     private readonly IOutboundChatDispatch _outboundChat =
         outboundChatDispatch ?? NullOutboundChatDispatch.Instance;
+    private readonly WorkerAccountSessionFactory _accountSessions =
+        accountSessionFactory ?? new WorkerAccountSessionFactory(
+            adsPowerAvitoAutomationService,
+            multiloginCdpConnector);
 
     private const int LoopRecoveryPauseMinutes = 12;
     private const int MaxLoopRecoveryFailuresBeforeStop = 10;
@@ -1194,8 +1201,9 @@ public sealed class WorkerMonitoringService(
         var hasAdsPowerCreds =
             !string.IsNullOrWhiteSpace(account.AdsPowerProfileId)
             && !string.IsNullOrWhiteSpace(account.AdsPowerApiBaseUrl);
+        var useExternalBrowser = WorkerAccountRuntime.IsMultiloginProvider(account) || hasAdsPowerCreds;
 
-        if (!hasAdsPowerCreds)
+        if (!useExternalBrowser)
         {
             var responses = await avitoResponseSource
                 .GetNewResponsesAsync(account, settings, cancellationToken)
@@ -1209,6 +1217,12 @@ public sealed class WorkerMonitoringService(
                 publishedTotal,
                 collectedCount: publishedTotal);
             return (publishedTotal, false, 1, false);
+        }
+
+        if (WorkerAccountRuntime.IsMultiloginProvider(account) && !WorkerAccountRuntime.IsMultilogin(account))
+        {
+            throw new InvalidOperationException(
+                "Multilogin CDP: не заданы launcher URL, token, folder ID или profile ID.");
         }
 
         var adsOptions = new AdsPowerConnectionOptions(
@@ -1256,20 +1270,22 @@ public sealed class WorkerMonitoringService(
                 account.ProxyUsername,
                 account.ProxyPassword),
             captchaCounters);
+        WorkerOpenedAccountSession? opened = null;
         try
         {
-            await using var session = await OpenAccountSessionWithDiagnosticsAsync(
+            opened = await OpenAccountSessionWithDiagnosticsAsync(
                     account,
                     adsOptions,
                     cancellationToken)
                 .ConfigureAwait(false);
+            var session = opened.Session;
             browserOpened = true;
             WorkerMonitoringLogger.BrowserOpened(account);
 
             browserMonitorSource.Register(
                 account.Id,
                 account.DisplayName,
-                account.AdsPowerProfileId!,
+                WorkerAccountRuntime.MonitorProfileId(account),
                 async ct =>
                 {
                     try
@@ -1871,10 +1887,12 @@ public sealed class WorkerMonitoringService(
 
                     await monitorScreencast.DisposeAsync().ConfigureAwait(false);
                 }
+            }
 
-                var closed = await TryCloseAdsPowerBrowserForAccountAsync(account, adsOptions)
-                    .ConfigureAwait(false);
-                if (closed)
+            if (opened is not null)
+            {
+                await opened.DisposeAsync().ConfigureAwait(false);
+                if (browserOpened)
                 {
                     WorkerMonitoringLogger.BrowserClosed(account);
                 }
@@ -1882,13 +1900,15 @@ public sealed class WorkerMonitoringService(
         }
     }
 
-    private async Task<IAdsPowerAccountSession> OpenAccountSessionWithDiagnosticsAsync(
+    private async Task<WorkerOpenedAccountSession> OpenAccountSessionWithDiagnosticsAsync(
         AvitoAccount account,
         AdsPowerConnectionOptions adsOptions,
         CancellationToken cancellationToken)
     {
         var startupStopwatch = Stopwatch.StartNew();
         var lastStage = "ожидание запуска";
+        var isMultilogin = WorkerAccountRuntime.IsMultiloginProvider(account);
+        var startLabel = isMultilogin ? "Запуск Multilogin" : "Запуск AdsPower";
 
         void ReportStage(string stage, TimeSpan elapsed)
         {
@@ -1896,17 +1916,13 @@ public sealed class WorkerMonitoringService(
             activityReporter.ReportAccount(
                 account.Id,
                 account.DisplayName,
-                $"Запуск AdsPower: {stage} · {elapsed.TotalSeconds:F0} с");
+                $"{startLabel}: {stage} · {elapsed.TotalSeconds:F0} с");
         }
 
         try
         {
-            return await adsPowerAvitoAutomationService
-                .OpenAccountSessionAsync(
-                    adsOptions,
-                    account.AdsPowerProfileId!,
-                    ReportStage,
-                    cancellationToken)
+            return await _accountSessions
+                .OpenAsync(account, adsOptions, ReportStage, cancellationToken)
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -1915,8 +1931,9 @@ public sealed class WorkerMonitoringService(
         }
         catch (Exception ex)
         {
+            var prefix = isMultilogin ? "Multilogin CDP не открыл сессию" : "AdsPower не открыл сессию";
             throw new InvalidOperationException(
-                $"AdsPower не открыл сессию: последний этап «{lastStage}», прошло {startupStopwatch.Elapsed.TotalSeconds:F0} с. {ex.Message}",
+                $"{prefix}: последний этап «{lastStage}», прошло {startupStopwatch.Elapsed.TotalSeconds:F0} с. {ex.Message}",
                 ex);
         }
     }
@@ -2069,9 +2086,7 @@ public sealed class WorkerMonitoringService(
     }
 
     private static bool IsAdsPowerAccount(AvitoAccount account) =>
-        account.ProfileProvider == AvitoProfileProvider.AdsPower
-        && !string.IsNullOrWhiteSpace(account.AdsPowerProfileId)
-        && !string.IsNullOrWhiteSpace(account.AdsPowerApiBaseUrl);
+        WorkerAccountRuntime.IsAdsPower(account);
 
     private static bool ShouldRefreshSubProfiles(AvitoAccount account)
     {

@@ -104,7 +104,9 @@ public sealed record WorkerAccountDto(
     bool HasAvitoCredentials = false,
     string? AvitoLogin = null,
     string? AdsPowerGroupId = null,
-    string? AdsPowerGroupName = null);
+    string? AdsPowerGroupName = null,
+    string? MultiloginProfileId = null,
+    string? MultiloginFolderId = null);
 
 public sealed record WorkerBalanceDto(
     Guid AccountId,

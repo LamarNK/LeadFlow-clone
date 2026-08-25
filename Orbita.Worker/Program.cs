@@ -3,6 +3,7 @@ using LeadFlow.Core.Services.Worker;
 using LeadFlow.Core.Models;
 using LeadFlow.Core.Services;
 using LeadFlow.Core.Services.AdsPower;
+using LeadFlow.Core.Services.Multilogin;
 using LeadFlow.Core.Services.Avito;
 using LeadFlow.Core.Services.Captcha;
 using Microsoft.Extensions.DependencyInjection;
@@ -152,6 +153,10 @@ internal static class Program
         });
         host.Services.AddSingleton<IAvitoGeeTestSolver, AvitoGeeTestSolver>();
         host.Services.AddSingleton<IAdsPowerAvitoAutomationService, AdsPowerAvitoAutomationService>();
+        host.Services.AddSingleton<IMultiloginApiClient, MultiloginApiClient>();
+        host.Services.AddSingleton<IMultiloginBrowserConnector, PuppeteerMultiloginBrowserConnector>();
+        host.Services.AddSingleton<IMultiloginCdpConnector, MultiloginCdpConnector>();
+        host.Services.AddSingleton<WorkerAccountSessionFactory>();
         host.Services.AddSingleton<LeadFlow.Core.Services.Captcha.CaptchaSessionHost>();
         host.Services.AddSingleton<CaptchaSessionCoordinator>();
         host.Services.AddSingleton<BrowserMonitorSource>();

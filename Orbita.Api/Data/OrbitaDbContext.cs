@@ -139,6 +139,9 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
             entity.Property(x => x.AdsPowerGroupId).HasMaxLength(64);
             entity.Property(x => x.AdsPowerGroupName).HasMaxLength(200);
             entity.Property(x => x.AdsPowerGroupsJson).HasMaxLength(16000);
+            entity.Property(x => x.MultiloginLauncherUrl).HasMaxLength(512);
+            entity.Property(x => x.MultiloginCloudApiUrl).HasMaxLength(512);
+            entity.Property(x => x.MultiloginAutomationToken).HasMaxLength(2048);
             entity.Property(x => x.ResponseHighlightAgeBuckets).HasMaxLength(256);
             entity.Property(x => x.ResponseHighlightTargetsJson).HasMaxLength(16000);
             entity.Property(x => x.AutoScheduleDays).HasMaxLength(64);
@@ -167,6 +170,9 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
             entity.Property(x => x.AdsPowerProfileId).HasMaxLength(128);
             entity.Property(x => x.AdsPowerGroupId).HasMaxLength(64);
             entity.Property(x => x.AdsPowerGroupName).HasMaxLength(200);
+            entity.Property(x => x.MultiloginProfileId).HasMaxLength(128);
+            entity.Property(x => x.MultiloginProfileName).HasMaxLength(200);
+            entity.Property(x => x.MultiloginFolderId).HasMaxLength(128);
             entity.Property(x => x.AvitoLogin).HasMaxLength(256);
             entity.Property(x => x.AvitoPasswordProtected).HasMaxLength(2048);
             entity.HasOne(x => x.Worker).WithMany(x => x.Accounts).HasForeignKey(x => x.WorkerId);

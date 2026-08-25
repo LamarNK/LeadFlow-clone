@@ -98,4 +98,16 @@ public interface IAdsPowerAvitoAutomationService
         AdsPowerConnectionOptions options,
         string adsPowerUserId,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Собирает Avito-сессию на уже подключённом Puppeteer-браузере (Multilogin CDP).
+    /// Не вызывает AdsPower browser/start и browser/stop.
+    /// </summary>
+    Task<IAdsPowerAccountSession> OpenAccountSessionOnConnectedBrowserAsync(
+        PuppeteerSharp.IBrowser browser,
+        string sessionKey,
+        Action<string, TimeSpan>? reportStartupStage = null,
+        CancellationToken cancellationToken = default) =>
+        Task.FromException<IAdsPowerAccountSession>(
+            new NotSupportedException("OpenAccountSessionOnConnectedBrowserAsync is not supported."));
 }

@@ -212,6 +212,9 @@ public sealed class WorkersService(
         bool? autoDeliverToBitrix = null,
         string? responseHighlightTargetsJson = null,
         string? ruCaptchaApiKey = null,
+        string? multiloginLauncherUrl = null,
+        string? multiloginCloudApiUrl = null,
+        string? multiloginAutomationToken = null,
         CancellationToken ct = default) =>
         api.UpdateWorkerSettingsAsync(
             workerId,
@@ -238,6 +241,9 @@ public sealed class WorkersService(
             autoDeliverToBitrix,
             responseHighlightTargetsJson,
             ruCaptchaApiKey,
+            multiloginLauncherUrl,
+            multiloginCloudApiUrl,
+            multiloginAutomationToken,
             ct);
 
     public Task<(bool Success, string? Error)> UpdateWorkerAccountAsync(

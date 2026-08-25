@@ -91,6 +91,31 @@ public sealed partial class AdsPowerAvitoAutomationService
         throw lastError ?? new InvalidOperationException("AdsPower: не удалось открыть сессию аккаунта.");
     }
 
+    public async Task<IAdsPowerAccountSession> OpenAccountSessionOnConnectedBrowserAsync(
+        IBrowser browser,
+        string sessionKey,
+        Action<string, TimeSpan>? reportStartupStage = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(browser);
+        ArgumentException.ThrowIfNullOrWhiteSpace(sessionKey);
+
+        var startupStopwatch = Stopwatch.StartNew();
+        ReportStartupStage(reportStartupStage, 1, "поиск рабочей вкладки", startupStopwatch);
+        var page = await AcquireAutomationPageAsync(
+                browser,
+                ProfileItemsPageUrl,
+                nameof(OpenAccountSessionOnConnectedBrowserAsync),
+                cancellationToken,
+                waitForStartupNavigation: true)
+            .ConfigureAwait(false);
+        ReportStartupStage(reportStartupStage, 1, "вкладка получена", startupStopwatch);
+        ReportStartupStage(reportStartupStage, 1, "прогрев страницы Avito", startupStopwatch);
+        page = await WarmUpSessionPageAsync(page, sessionKey, cancellationToken).ConfigureAwait(false);
+        ReportStartupStage(reportStartupStage, 1, "страница Avito готова", startupStopwatch);
+        return new AccountSession(this, browser, page, sessionKey, new GeeTestV4TaskOptions());
+    }
+
     private async Task<IAdsPowerAccountSession> OpenAccountSessionOnceAsync(
         AdsPowerConnectionOptions options,
         string adsPowerUserId,

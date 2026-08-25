@@ -201,7 +201,7 @@
         <div class="card card--worker-settings" id="worker-settings">
             <div class="card-header">
                 <h2>Настройки воркера</h2>
-                <p class="worker-settings-subtitle">Параллелизм и подключение к AdsPower Local API на VDS</p>
+                <p class="worker-settings-subtitle">Параллелизм и подключение к AdsPower Local API и Multilogin X</p>
             </div>
             <div class="card-body">
                 <form asp-action="UpdateSettings" method="post" class="worker-settings-form">
@@ -714,6 +714,55 @@
                             <code class="worker-settings-effective-value">@Model.EffectiveAdsPowerApiBaseUrl</code>
                         </div>
                     </div>
+                    <div class="worker-settings-section">
+                        <span class="worker-settings-section-title">Multilogin X</span>
+                        <label class="worker-settings-field" for="multiloginLauncherUrl">
+                            <span class="worker-settings-label">Launcher URL</span>
+                            <input type="url"
+                                   id="multiloginLauncherUrl"
+                                   name="multiloginLauncherUrl"
+                                   class="worker-settings-input"
+                                   value="@Model.MultiloginLauncherUrl"
+                                   placeholder="@WorkerDetailsViewModel.DefaultMultiloginLauncherUrl"
+                                   autocomplete="off"
+                                   spellcheck="false" />
+                            <span class="worker-settings-hint">
+                                Если поле пустое, сохраняется @WorkerDetailsViewModel.DefaultMultiloginLauncherUrl
+                            </span>
+                        </label>
+                        <label class="worker-settings-field" for="multiloginCloudApiUrl">
+                            <span class="worker-settings-label">Cloud API URL</span>
+                            <input type="url"
+                                   id="multiloginCloudApiUrl"
+                                   name="multiloginCloudApiUrl"
+                                   class="worker-settings-input"
+                                   value="@Model.MultiloginCloudApiUrl"
+                                   placeholder="@WorkerDetailsViewModel.DefaultMultiloginCloudApiUrl"
+                                   autocomplete="off"
+                                   spellcheck="false" />
+                            <span class="worker-settings-hint">
+                                Необязательно. Пустое поле не заполняется значением по умолчанию.
+                            </span>
+                        </label>
+                        <label class="worker-settings-field" for="multiloginAutomationToken">
+                            <span class="worker-settings-label">Automation Token</span>
+                            <input type="password"
+                                   id="multiloginAutomationToken"
+                                   name="multiloginAutomationToken"
+                                   class="worker-settings-input"
+                                   value=""
+                                   placeholder="@(Model.HasMultiloginAutomationToken ? "Токен задан — оставьте пустым, чтобы не менять" : "Не задан")"
+                                   autocomplete="new-password"
+                                   spellcheck="false" />
+                            <span class="worker-settings-hint">
+                                Token из Multilogin X. Не показывается повторно. Пустое поле не затирает сохранённый token.
+                            </span>
+                        </label>
+                        <div class="worker-settings-effective">
+                            <span class="worker-settings-label">Текущий launcher для воркера</span>
+                            <code class="worker-settings-effective-value">@Model.EffectiveMultiloginLauncherUrl</code>
+                        </div>
+                    </div>
                     </div>
                         </div>
                     </div>
@@ -837,7 +886,7 @@
                     Title = Model.HasActiveAccountFilters ? "Аккаунты не найдены" : "Аккаунтов пока нет",
                     Description = Model.HasActiveAccountFilters
                         ? "Измените поиск или группу AdsPower."
-                        : "Дождитесь синхронизации профилей AdsPower с воркером.",
+                        : "Дождитесь синхронизации профилей AdsPower или Multilogin с воркером.",
                     CtaLabel = Model.HasActiveAccountFilters ? "Сбросить фильтры" : null,
                     CtaUrl = Model.HasActiveAccountFilters
                         ? Url.Action("Details", "Workers", new { id = Model.WorkerId, sort = Model.Sort.Column, dir = Model.Sort.Dir })
@@ -886,6 +935,10 @@
                             @if (!string.IsNullOrWhiteSpace(account.AdsPowerProfileId))
                             {
                                 <span class="worker-account-sub">AdsPower @account.AdsPowerProfileId</span>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(account.MultiloginProfileId))
+                            {
+                                <span class="worker-account-sub" title="@(account.MultiloginFolderId)">Multilogin @account.MultiloginProfileId</span>
                             }
                             @if (account.HasAvitoCredentials)
                             {
