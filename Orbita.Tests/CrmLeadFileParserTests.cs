@@ -51,6 +51,77 @@ public sealed class CrmLeadFileParserTests
         Assert.Equal(1, result.DuplicateRowsInFile);
     }
 
+    [Fact]
+    public void Parse_TemporaryNumberAnnotation_KeepsCandidateNameAndSection()
+    {
+        const string content = """
+            ОХРАНА
+
+            недогреев Дмитрий Игоревич
+            Временный номер
+            +7 932 204-84-31
+
+            Махмудов Тельман Зейнуллаевич
+            +7 918 739-83-36
+            """;
+
+        var result = CrmLeadFileParser.Parse(content);
+
+        Assert.Collection(
+            result.Entries,
+            first =>
+            {
+                Assert.Equal("недогреев Дмитрий Игоревич", first.FullName);
+                Assert.Equal("+7 932 204-84-31", first.Phone);
+                Assert.Equal("ОХРАНА", first.Vacancy);
+            },
+            second =>
+            {
+                Assert.Equal("Махмудов Тельман Зейнуллаевич", second.FullName);
+                Assert.Equal("ОХРАНА", second.Vacancy);
+            });
+    }
+
+    [Fact]
+    public void Parse_DifferentAnnotationsAndNameCasing_DoNotBecomeNamesOrVacancies()
+    {
+        const string content = """
+            ОХРАНА
+            ПЕТРОВ ПЕТР ПЕТРОВИЧ
+            Контактный телефон
+            +7 999 111-22-33
+
+            сидоров сидор сидорович
+            служебная пометка
+            8 999 222 33 44
+
+            СЛЕСАРЯ
+            Алексей
+            Основной номер
+            +7 999 333-44-55
+            """;
+
+        var result = CrmLeadFileParser.Parse(content);
+
+        Assert.Collection(
+            result.Entries,
+            first =>
+            {
+                Assert.Equal("ПЕТРОВ ПЕТР ПЕТРОВИЧ", first.FullName);
+                Assert.Equal("ОХРАНА", first.Vacancy);
+            },
+            second =>
+            {
+                Assert.Equal("сидоров сидор сидорович", second.FullName);
+                Assert.Equal("ОХРАНА", second.Vacancy);
+            },
+            third =>
+            {
+                Assert.Equal("Алексей", third.FullName);
+                Assert.Equal("СЛЕСАРЯ", third.Vacancy);
+            });
+    }
+
     [Theory]
     [InlineData("+7 999 111-22-33", "79991112233")]
     [InlineData("8 (999) 111 22 33", "79991112233")]
