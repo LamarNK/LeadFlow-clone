@@ -113,12 +113,13 @@ public sealed class MultiloginConfigurationTests
     }
 
     [Fact]
-    public void ApiClientContract_HasStartAndStop_ButNotSearch()
+    public void ApiClientContract_HasStartStopAndSearch()
     {
         var names = typeof(IMultiloginApiClient).GetMethods().Select(static m => m.Name).ToHashSet(StringComparer.Ordinal);
         Assert.Contains(nameof(IMultiloginApiClient.StartProfileAsync), names);
         Assert.Contains(nameof(IMultiloginApiClient.StopProfileAsync), names);
-        Assert.DoesNotContain("SearchProfilesAsync", names);
+        Assert.Contains(nameof(IMultiloginApiClient.SearchProfilesAsync), names);
+        Assert.DoesNotContain("ListFoldersAsync", names);
         Assert.DoesNotContain("ListProfilesAsync", names);
     }
 }

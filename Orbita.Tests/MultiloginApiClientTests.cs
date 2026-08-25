@@ -277,16 +277,167 @@ public sealed class MultiloginApiClientTests
     }
 
     [Fact]
-    public void Client_DoesNotExposeSearch()
+    public void Client_ExposesSearchProfiles_NotFolders()
     {
         var names = typeof(MultiloginApiClient).GetMethods()
             .Select(static m => m.Name)
             .ToHashSet(StringComparer.Ordinal);
         Assert.Contains(nameof(IMultiloginApiClient.StartProfileAsync), names);
         Assert.Contains(nameof(IMultiloginApiClient.StopProfileAsync), names);
-        Assert.DoesNotContain("SearchProfilesAsync", names);
+        Assert.Contains(nameof(IMultiloginApiClient.SearchProfilesAsync), names);
         Assert.DoesNotContain("ListProfilesAsync", names);
         Assert.DoesNotContain("ListFoldersAsync", names);
+    }
+
+    [Fact]
+    public async Task SearchProfilesAsync_PostsConfirmedCloudPath_AndMapsIdFolderName()
+    {
+        HttpRequestMessage? captured = null;
+        string? body = null;
+        var sut = CreateClient(request =>
+        {
+            captured = CloneRequest(request);
+            body = request.Content?.ReadAsStringAsync().GetAwaiter().GetResult();
+            return Json(
+                HttpStatusCode.OK,
+                """
+                {"status":{"http_code":200},"data":{"profiles":[
+                  {"id":"profile-a","folder_id":"folder-a","name":"Авито 50","proxy":{"username":"u","password":"secret"},"username":"leak","password":"leak"},
+                  {"id":"profile-b","folder_id":"folder-b","name":"Second"}
+                ],"total_count":2}}
+                """);
+        });
+
+        var profiles = await sut.SearchProfilesAsync(ValidOptions());
+
+        Assert.Equal(2, profiles.Count);
+        Assert.Equal(new MultiloginProfileSummary("profile-a", "folder-a", "Авито 50"), profiles[0]);
+        Assert.Equal(new MultiloginProfileSummary("profile-b", "folder-b", "Second"), profiles[1]);
+        Assert.All(profiles, static p =>
+        {
+            Assert.Null(p.GetType().GetProperty("Proxy"));
+            Assert.Null(p.GetType().GetProperty("Username"));
+            Assert.Null(p.GetType().GetProperty("Password"));
+            Assert.Null(p.GetType().GetProperty("Token"));
+        });
+        Assert.NotNull(captured);
+        Assert.Equal(HttpMethod.Post, captured.Method);
+        Assert.Equal("https://api.multilogin.com/profile/search", captured.RequestUri?.AbsoluteUri);
+        Assert.Equal("Bearer", captured.Headers.Authorization?.Scheme);
+        Assert.Equal(Token, captured.Headers.Authorization?.Parameter);
+        Assert.Equal("application/json", captured.Content?.Headers.ContentType?.MediaType);
+        using var doc = System.Text.Json.JsonDocument.Parse(body!);
+        var root = doc.RootElement;
+        Assert.False(root.GetProperty("is_removed").GetBoolean());
+        Assert.Equal(100, root.GetProperty("limit").GetInt32());
+        Assert.Equal(0, root.GetProperty("offset").GetInt32());
+        Assert.Equal("", root.GetProperty("search_text").GetString());
+        Assert.Equal("all", root.GetProperty("storage_type").GetString());
+        Assert.Equal("created_at", root.GetProperty("order_by").GetString());
+        Assert.Equal("asc", root.GetProperty("sort").GetString());
+        Assert.Equal(7, root.EnumerateObject().Count());
+    }
+
+    [Fact]
+    public async Task SearchProfilesAsync_SkipsIncompleteProfiles()
+    {
+        var sut = CreateClient(_ => Json(
+            HttpStatusCode.OK,
+            """
+            {"status":{"http_code":200},"data":{"profiles":[
+              {"id":"ok","folder_id":"folder-ok","name":"Keep"},
+              {"folder_id":"folder-missing-id","name":"NoId"},
+              {"id":"missing-folder","name":"NoFolder"},
+              {"id":"","folder_id":"folder-empty","name":"EmptyId"},
+              {"id":"only-ws","folder_id":"  ","name":"WsFolder"}
+            ],"total_count":5}}
+            """));
+
+        var profiles = await sut.SearchProfilesAsync(ValidOptions());
+
+        var profile = Assert.Single(profiles);
+        Assert.Equal("ok", profile.ProfileId);
+        Assert.Equal("folder-ok", profile.FolderId);
+        Assert.Equal("Keep", profile.Name);
+    }
+
+    [Fact]
+    public async Task SearchProfilesAsync_PaginatesUntilTotalCount()
+    {
+        var offsets = new List<int>();
+        var sut = CreateClient(request =>
+        {
+            var json = request.Content?.ReadAsStringAsync().GetAwaiter().GetResult() ?? "{}";
+            using var doc = System.Text.Json.JsonDocument.Parse(json);
+            var offset = doc.RootElement.GetProperty("offset").GetInt32();
+            Assert.Equal(100, doc.RootElement.GetProperty("limit").GetInt32());
+            offsets.Add(offset);
+            return Json(HttpStatusCode.OK, SearchPage(offset, total: 101));
+        });
+
+        var profiles = await sut.SearchProfilesAsync(ValidOptions());
+
+        Assert.Equal([0, 100], offsets);
+        Assert.Equal(101, profiles.Count);
+        Assert.Equal("id-0", profiles[0].ProfileId);
+        Assert.Equal("folder-100", profiles[100].FolderId);
+        Assert.Equal("P100", profiles[100].Name);
+    }
+
+    [Fact]
+    public async Task SearchProfilesAsync_Unauthorized_DoesNotLeakTokenOrSecrets()
+    {
+        var sut = CreateClient(_ => Json(
+            HttpStatusCode.Unauthorized,
+            """{"status":{"http_code":401},"password":"super-secret","token":"mlx-automation-token","proxy":"1.2.3.4"}"""));
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => sut.SearchProfilesAsync(ValidOptions()));
+
+        Assert.Contains("profile/search", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("401", ex.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(Token, ex.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("super-secret", ex.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("1.2.3.4", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SearchProfilesAsync_EmptyProfiles_ReturnsEmpty()
+    {
+        var sut = CreateClient(_ => Json(
+            HttpStatusCode.OK,
+            """{"status":{"http_code":200},"data":{"profiles":[],"total_count":0}}"""));
+
+        var profiles = await sut.SearchProfilesAsync(ValidOptions());
+
+        Assert.Empty(profiles);
+    }
+
+    [Fact]
+    public async Task SearchProfilesAsync_UsesDefaultCloudUrl_WhenMissing()
+    {
+        HttpRequestMessage? captured = null;
+        var sut = CreateClient(request =>
+        {
+            captured = CloneRequest(request);
+            return Json(HttpStatusCode.OK, """{"status":{"http_code":200},"data":{"profiles":[],"total_count":0}}""");
+        });
+
+        await sut.SearchProfilesAsync(new MultiloginConnectionOptions
+        {
+            AutomationToken = Token,
+            CloudApiUrl = "  "
+        });
+
+        Assert.Equal("https://api.multilogin.com/profile/search", captured!.RequestUri?.AbsoluteUri);
+    }
+
+    private static string SearchPage(int offset, int total)
+    {
+        var take = Math.Min(MultiloginApiClient.ProfileSearchPageSize, Math.Max(0, total - offset));
+        var items = Enumerable.Range(offset, take)
+            .Select(static i => $$"""{"id":"id-{{i}}","folder_id":"folder-{{i}}","name":"P{{i}}"}""");
+        return $$"""{"status":{"http_code":200},"data":{"profiles":[{{string.Join(",", items)}}],"total_count":{{total}}}}""";
     }
 
     private static Task InvokeStartOrStop(MultiloginApiClient sut, bool start) =>
@@ -332,6 +483,15 @@ public sealed class MultiloginApiClientTests
         if (source.Headers.Authorization is AuthenticationHeaderValue authorization)
         {
             clone.Headers.Authorization = authorization;
+        }
+
+        if (source.Content is not null)
+        {
+            var text = source.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+            clone.Content = new StringContent(
+                text,
+                Encoding.UTF8,
+                source.Content.Headers.ContentType?.MediaType ?? "application/json");
         }
 
         return clone;

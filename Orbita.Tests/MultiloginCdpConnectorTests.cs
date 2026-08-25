@@ -393,6 +393,15 @@ public sealed class MultiloginCdpConnectorTests
             LastStopProfileId = profileId;
             return Task.CompletedTask;
         }
+
+        public Task<IReadOnlyList<MultiloginProfileSummary>> SearchProfilesAsync(
+            MultiloginConnectionOptions options,
+            CancellationToken cancellationToken = default)
+        {
+            _ = options;
+            _ = cancellationToken;
+            return Task.FromResult<IReadOnlyList<MultiloginProfileSummary>>([]);
+        }
     }
 
     private sealed class FakeBrowserConnector : IMultiloginBrowserConnector
