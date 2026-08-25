@@ -559,6 +559,34 @@ public sealed class WorkerConfigServiceTests
     }
 
     [Fact]
+    public async Task SyncAccountsAsync_EmptyAdsPowerPayload_RemovesStaleAdsPower_KeepingMultilogin()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db);
+        var mlxId = Guid.Parse("dddddddd-dddd-dddd-dddd-dddddddddddd");
+        db.WorkerAccounts.Add(new WorkerAccountEntity
+        {
+            WorkerId = WorkerId,
+            AccountId = mlxId,
+            AdsPowerProfileId = string.Empty,
+            MultiloginProfileId = "mlx-profile",
+            MultiloginFolderId = "mlx-folder",
+            DisplayName = "multilogin-acc",
+            UpdatedAtUtc = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var synced = await CreateService(db).SyncAccountsAsync(
+            WorkerId,
+            new WorkerAccountSyncRequest([]));
+
+        Assert.True(synced);
+        var accounts = await db.WorkerAccounts.ToListAsync();
+        Assert.DoesNotContain(accounts, a => a.AdsPowerProfileId == "profile-1");
+        Assert.Contains(accounts, a => a.AccountId == mlxId && a.MultiloginProfileId == "mlx-profile");
+    }
+
+    [Fact]
     public async Task GetConfigForWorkerAsync_IncludesMultiloginFields_OnWorkerConfigOnly()
     {
         await using var db = CreateDb();

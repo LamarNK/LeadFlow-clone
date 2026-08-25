@@ -143,6 +143,7 @@ public sealed class WorkerConfigService(
         var multiloginSyncedIds = new HashSet<Guid>();
         var sawAdsPowerItems = false;
         var sawMultiloginItems = false;
+        var hasMultiloginMarker = false;
         var now = DateTime.UtcNow;
 
         foreach (var item in request.Accounts)
@@ -179,6 +180,11 @@ public sealed class WorkerConfigService(
                     db.WorkerAccounts.Add(created);
                     existing[accountId] = created;
                 }
+            }
+
+            if (!string.IsNullOrWhiteSpace(item.MultiloginProfileId))
+            {
+                hasMultiloginMarker = true;
             }
 
             if (!string.IsNullOrWhiteSpace(item.MultiloginProfileId)
@@ -224,7 +230,7 @@ public sealed class WorkerConfigService(
             }
         }
 
-        if (sawAdsPowerItems)
+        if (sawAdsPowerItems || !hasMultiloginMarker)
         {
             foreach (var stale in existing.Values.Where(x =>
                          !adsPowerSyncedIds.Contains(x.AccountId)
