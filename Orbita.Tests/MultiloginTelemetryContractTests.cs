@@ -19,6 +19,18 @@ public sealed class MultiloginTelemetryContractTests
     }
 
     [Fact]
+    public void WorkerDetail_ExposesHasTokenFlag_WithoutTokenValue()
+    {
+        var names = typeof(WorkerDetail).GetProperties()
+            .Select(static p => p.Name)
+            .ToHashSet(StringComparer.Ordinal);
+        Assert.Contains(nameof(WorkerDetail.HasMultiloginAutomationToken), names);
+        Assert.Contains(nameof(WorkerDetail.MultiloginLauncherUrl), names);
+        Assert.Contains(nameof(WorkerDetail.MultiloginCloudApiUrl), names);
+        Assert.DoesNotContain("MultiloginAutomationToken", names);
+    }
+
+    [Fact]
     public void WorkerAccountConfigDto_DoesNotExposeAutomationToken()
     {
         var names = typeof(WorkerAccountConfigDto).GetProperties(BindingFlags.Public | BindingFlags.Instance)

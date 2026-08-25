@@ -444,6 +444,7 @@ public sealed class WorkerConfigServiceTests
         SeedWorkerWithAccount(db);
         var worker = await db.Workers.SingleAsync();
         worker.MultiloginLauncherUrl = "https://launcher.mlx.yt:45001";
+        worker.MultiloginCloudApiUrl = "https://api.multilogin.com";
         worker.MultiloginAutomationToken = "mlx-secret-token";
         var account = await db.WorkerAccounts.SingleAsync();
         account.MultiloginProfileId = "mlx-profile";
@@ -454,6 +455,7 @@ public sealed class WorkerConfigServiceTests
 
         Assert.NotNull(config);
         Assert.Equal("https://launcher.mlx.yt:45001", config.MultiloginLauncherUrl);
+        Assert.Equal("https://api.multilogin.com", config.MultiloginCloudApiUrl);
         Assert.Equal("mlx-secret-token", config.MultiloginAutomationToken);
         var acc = Assert.Single(config.Accounts);
         Assert.Equal("Multilogin", acc.ProfileProvider);
@@ -461,6 +463,103 @@ public sealed class WorkerConfigServiceTests
         Assert.Equal("mlx-folder", acc.MultiloginFolderId);
         Assert.Null(typeof(WorkerAccountConfigDto).GetProperty("MultiloginAutomationToken"));
         Assert.Null(typeof(WorkerAccountDto).GetProperty("MultiloginAutomationToken"));
+    }
+
+    [Fact]
+    public async Task UpdateSettingsAsync_PersistsMultiloginUrls_AndStripsTrailingSlash()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db);
+
+        var sut = CreateService(db);
+        var (config, error) = await sut.UpdateSettingsAsync(
+            WorkerId,
+            new UpdateWorkerSettingsRequest(
+                MaxConcurrentAccounts: 1,
+                AdsPowerApiBaseUrl: "http://local.adspower.net:50325/",
+                AdsPowerApiKey: "ads-key",
+                MultiloginLauncherUrl: "https://launcher.mlx.yt:45001/",
+                MultiloginCloudApiUrl: "https://api.multilogin.com/",
+                MultiloginAutomationToken: "mlx-secret-token"),
+            OfficeScope.ForOffice(OfficeId));
+
+        Assert.Null(error);
+        Assert.NotNull(config);
+        Assert.Equal("http://local.adspower.net:50325", config!.AdsPowerApiBaseUrl);
+        Assert.Equal("ads-key", config.AdsPowerApiKey);
+        Assert.Equal("https://launcher.mlx.yt:45001", config.MultiloginLauncherUrl);
+        Assert.Equal("https://api.multilogin.com", config.MultiloginCloudApiUrl);
+        Assert.Equal("mlx-secret-token", config.MultiloginAutomationToken);
+
+        var worker = await db.Workers.SingleAsync();
+        Assert.Equal("https://launcher.mlx.yt:45001", worker.MultiloginLauncherUrl);
+        Assert.Equal("https://api.multilogin.com", worker.MultiloginCloudApiUrl);
+        Assert.Equal("mlx-secret-token", worker.MultiloginAutomationToken);
+        Assert.Equal("ads-key", worker.AdsPowerApiKey);
+    }
+
+    [Fact]
+    public async Task UpdateSettingsAsync_EmptyLauncher_SavesDefault_AndKeepsExistingToken()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db);
+        var worker = await db.Workers.SingleAsync();
+        worker.MultiloginAutomationToken = "mlx-secret-token";
+        worker.MultiloginLauncherUrl = "https://custom-launcher.example:45001";
+        await db.SaveChangesAsync();
+
+        var (config, error) = await CreateService(db).UpdateSettingsAsync(
+            WorkerId,
+            new UpdateWorkerSettingsRequest(
+                MaxConcurrentAccounts: 1,
+                MultiloginLauncherUrl: "  ",
+                MultiloginAutomationToken: null),
+            OfficeScope.ForOffice(OfficeId));
+
+        Assert.Null(error);
+        Assert.Equal(MultiloginWorkerSettings.DefaultLauncherUrl, config!.MultiloginLauncherUrl);
+        Assert.Equal("mlx-secret-token", config.MultiloginAutomationToken);
+
+        worker = await db.Workers.SingleAsync();
+        Assert.Equal(MultiloginWorkerSettings.DefaultLauncherUrl, worker.MultiloginLauncherUrl);
+        Assert.Equal("mlx-secret-token", worker.MultiloginAutomationToken);
+    }
+
+    [Fact]
+    public async Task UpdateSettingsAsync_InvalidLauncher_DoesNotIncludeTokenInError()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db);
+
+        var (config, error) = await CreateService(db).UpdateSettingsAsync(
+            WorkerId,
+            new UpdateWorkerSettingsRequest(
+                MaxConcurrentAccounts: 1,
+                MultiloginLauncherUrl: "not-a-url",
+                MultiloginAutomationToken: "mlx-secret-token"),
+            OfficeScope.ForOffice(OfficeId));
+
+        Assert.Null(config);
+        Assert.NotNull(error);
+        Assert.DoesNotContain("mlx-secret-token", error, StringComparison.Ordinal);
+        Assert.Contains("launcher Multilogin", error, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void WorkerConfigDto_OldJsonWithoutMultiloginFields_Deserializes()
+    {
+        const string json = """
+            {"workerId":"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb","maxConcurrentAccounts":1,"accounts":[]}
+            """;
+        var dto = System.Text.Json.JsonSerializer.Deserialize<WorkerConfigDto>(
+            json,
+            new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+        Assert.NotNull(dto);
+        Assert.Null(dto!.MultiloginLauncherUrl);
+        Assert.Null(dto.MultiloginCloudApiUrl);
+        Assert.Null(dto.MultiloginAutomationToken);
+        Assert.Empty(dto.Accounts);
     }
 
     [Fact]
