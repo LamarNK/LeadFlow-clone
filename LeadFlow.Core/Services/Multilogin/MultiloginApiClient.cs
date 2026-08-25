@@ -1,5 +1,6 @@
 using System.Net.Http.Headers;
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace LeadFlow.Core.Services.Multilogin;
 
@@ -30,7 +31,7 @@ public sealed class MultiloginApiClient(IHttpClientFactory httpClientFactory) : 
         if (!isSuccess)
         {
             throw new InvalidOperationException(
-                $"Multilogin profile/start: {statusCode} {Truncate(json, 500)}");
+                FormatHttpError("Multilogin profile/start", statusCode, json, token));
         }
 
         return MultiloginBrowserStartResult.FromPort(ParsePort(json));
@@ -54,7 +55,7 @@ public sealed class MultiloginApiClient(IHttpClientFactory httpClientFactory) : 
         if (!isSuccess)
         {
             throw new InvalidOperationException(
-                $"Multilogin profile/stop: {statusCode} {Truncate(json, 500)}");
+                FormatHttpError("Multilogin profile/stop", statusCode, json, token));
         }
     }
 
@@ -128,6 +129,25 @@ public sealed class MultiloginApiClient(IHttpClientFactory httpClientFactory) : 
         {
             throw new InvalidOperationException("Multilogin profile/start: некорректный JSON.", ex);
         }
+    }
+
+    private static string FormatHttpError(string operation, int statusCode, string body, string? token) =>
+        $"{operation}: {statusCode} {Truncate(SanitizeErrorBody(body, token), 500)}";
+
+    private static string SanitizeErrorBody(string? body, string? token)
+    {
+        var result = body ?? string.Empty;
+        if (string.IsNullOrWhiteSpace(token))
+        {
+            return result;
+        }
+
+        result = Regex.Replace(
+            result,
+            @"bearer\s+" + Regex.Escape(token),
+            string.Empty,
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        return result.Replace(token, string.Empty, StringComparison.Ordinal);
     }
 
     private static string Truncate(string value, int max)

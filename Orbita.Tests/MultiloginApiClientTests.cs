@@ -197,6 +197,70 @@ public sealed class MultiloginApiClientTests
         Assert.DoesNotContain(Token, ex.Message, StringComparison.Ordinal);
     }
 
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task HttpError_ExactTokenInBody_IsRemovedForStartAndStop(bool start)
+    {
+        var sut = CreateClient(_ => Json(
+            HttpStatusCode.InternalServerError,
+            $"{{\"error\":\"replay rejected\",\"hint\":\"{Token}\"}}"));
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => InvokeStartOrStop(sut, start));
+
+        AssertSafeHttpError(ex.Message, start, HttpStatusCode.InternalServerError);
+        Assert.Contains("replay rejected", ex.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(Token, ex.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(true)]
+    [InlineData(false)]
+    public async Task HttpError_BearerTokenInBody_IsRemovedForStartAndStop(bool start)
+    {
+        var sut = CreateClient(_ => Json(
+            HttpStatusCode.Forbidden,
+            $"{{\"auth\":\"Bearer {Token}\",\"alt\":\"bearer {Token}\",\"upper\":\"BEARER {Token}\",\"ok\":\"safe-error\"}}"));
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => InvokeStartOrStop(sut, start));
+
+        AssertSafeHttpError(ex.Message, start, HttpStatusCode.Forbidden);
+        Assert.Contains("safe-error", ex.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(Token, ex.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("Bearer " + Token, ex.Message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("bearer " + Token, ex.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task HttpError_SafeBody_IsPreserved()
+    {
+        var sut = CreateClient(_ => Json(HttpStatusCode.Unauthorized, """{"message":"profile is already running"}"""));
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => sut.StartProfileAsync(ValidOptions(), FolderId, ProfileId));
+
+        Assert.Contains("401", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("profile is already running", ex.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(Token, ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task HttpError_SanitizesTokenBeforeTruncation()
+    {
+        var keepMarker = "KEEP_ME";
+        var droppedMarker = "DROP_ME";
+        var body = Token + new string('X', 480) + keepMarker + new string('Y', 80) + droppedMarker;
+        var sut = CreateClient(_ => Json(HttpStatusCode.BadGateway, body));
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => sut.StartProfileAsync(ValidOptions(), FolderId, ProfileId));
+
+        Assert.Contains(keepMarker, ex.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(droppedMarker, ex.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(Token, ex.Message, StringComparison.Ordinal);
+        Assert.Contains("…", ex.Message, StringComparison.Ordinal);
+    }
+
     [Fact]
     public async Task StartProfileAsync_HonorsCancellation()
     {
@@ -223,6 +287,18 @@ public sealed class MultiloginApiClientTests
         Assert.DoesNotContain("SearchProfilesAsync", names);
         Assert.DoesNotContain("ListProfilesAsync", names);
         Assert.DoesNotContain("ListFoldersAsync", names);
+    }
+
+    private static Task InvokeStartOrStop(MultiloginApiClient sut, bool start) =>
+        start
+            ? sut.StartProfileAsync(ValidOptions(), FolderId, ProfileId)
+            : sut.StopProfileAsync(ValidOptions(), ProfileId);
+
+    private static void AssertSafeHttpError(string message, bool start, HttpStatusCode status)
+    {
+        Assert.Contains(start ? "profile/start" : "profile/stop", message, StringComparison.Ordinal);
+        Assert.Contains(((int)status).ToString(), message, StringComparison.Ordinal);
+        Assert.DoesNotContain(Token, message, StringComparison.Ordinal);
     }
 
     private static MultiloginConnectionOptions ValidOptions() => new()
