@@ -119,7 +119,8 @@ public sealed class WorkerConfigService(
             worker.AdsPowerGroupId,
             worker.RuCaptchaApiKey,
             worker.MultiloginLauncherUrl,
-            worker.MultiloginAutomationToken);
+            worker.MultiloginAutomationToken,
+            worker.MultiloginCloudApiUrl);
     }
 
     public async Task<bool> SyncAccountsAsync(
@@ -250,6 +251,33 @@ public sealed class WorkerConfigService(
                 : ruCaptchaKeyError.Replace("AdsPower", "RuCaptcha", StringComparison.Ordinal));
         }
 
+        if (!TryNormalizeMultiloginUrl(
+                request.MultiloginLauncherUrl,
+                MultiloginWorkerSettings.DefaultLauncherUrl,
+                persistDefaultWhenEmpty: true,
+                "URL launcher Multilogin",
+                out var normalizedLauncherUrl,
+                out var launcherError))
+        {
+            return (null, launcherError);
+        }
+
+        if (!TryNormalizeMultiloginUrl(
+                request.MultiloginCloudApiUrl,
+                MultiloginWorkerSettings.DefaultCloudApiUrl,
+                persistDefaultWhenEmpty: false,
+                "URL cloud API Multilogin",
+                out var normalizedCloudUrl,
+                out var cloudError))
+        {
+            return (null, cloudError);
+        }
+
+        if (!TryNormalizeMultiloginAutomationToken(request.MultiloginAutomationToken, out var normalizedToken, out var tokenError))
+        {
+            return (null, tokenError);
+        }
+
         var maxResponseAgeDays = ResponseCollectionFilters.ClampResponseAgeDays(request.ResponseFilterMaxResponseAgeDays);
         var filters = ResponseCollectionFilters.NormalizeLegacy(
             request.ResponseFilterEnabled,
@@ -277,6 +305,12 @@ public sealed class WorkerConfigService(
         worker.AdsPowerApiBaseUrl = normalizedBaseUrl;
         worker.AdsPowerApiKey = normalizedApiKey;
         worker.RuCaptchaApiKey = normalizedRuCaptchaKey;
+        worker.MultiloginLauncherUrl = normalizedLauncherUrl;
+        worker.MultiloginCloudApiUrl = normalizedCloudUrl;
+        if (normalizedToken is not null)
+        {
+            worker.MultiloginAutomationToken = normalizedToken;
+        }
         var normalizedGroupId = AdsPowerGroupsJson.NormalizeGroupId(request.AdsPowerGroupId);
         worker.AdsPowerGroupId = normalizedGroupId;
         worker.AdsPowerGroupName = normalizedGroupId is null
@@ -383,7 +417,66 @@ public sealed class WorkerConfigService(
         return true;
     }
 
-    private static string? NormalizeAutoReplyMessage(string? message)
+    private static bool TryNormalizeMultiloginUrl(
+        string? value,
+        string defaultUrl,
+        bool persistDefaultWhenEmpty,
+        string fieldName,
+        out string? normalized,
+        out string? error)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            normalized = persistDefaultWhenEmpty ? defaultUrl : null;
+            error = null;
+            return true;
+        }
+
+        var trimmed = value.Trim().TrimEnd('/');
+        if (trimmed.Length > MultiloginWorkerSettings.MaxUrlLength)
+        {
+            normalized = null;
+            error = $"{fieldName} не должен превышать {MultiloginWorkerSettings.MaxUrlLength} символов.";
+            return false;
+        }
+
+        if (!Uri.TryCreate(trimmed, UriKind.Absolute, out var uri)
+            || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+        {
+            normalized = null;
+            error = $"Укажите корректный {fieldName} (http или https).";
+            return false;
+        }
+
+        normalized = trimmed;
+        error = null;
+        return true;
+    }
+
+    private static bool TryNormalizeMultiloginAutomationToken(
+        string? value,
+        out string? normalized,
+        out string? error)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            normalized = null;
+            error = null;
+            return true;
+        }
+
+        var trimmed = value.Trim();
+        if (trimmed.Length > MultiloginWorkerSettings.MaxAutomationTokenLength)
+        {
+            normalized = null;
+            error = "Automation token Multilogin слишком длинный.";
+            return false;
+        }
+
+        normalized = trimmed;
+        error = null;
+        return true;
+    }
     {
         if (string.IsNullOrWhiteSpace(message))
         {

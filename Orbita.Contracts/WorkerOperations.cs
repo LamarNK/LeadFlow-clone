@@ -94,7 +94,9 @@ public sealed record WorkerConfigDto(
     /// <summary>URL launcher Multilogin X (worker config channel).</summary>
     string? MultiloginLauncherUrl = null,
     /// <summary>Automation token Multilogin X. Только worker config, не телеметрия панели.</summary>
-    string? MultiloginAutomationToken = null)
+    string? MultiloginAutomationToken = null,
+    /// <summary>URL cloud API Multilogin X (worker config channel).</summary>
+    string? MultiloginCloudApiUrl = null)
 {
     public ResponseCollectionFilters ResponseFilters =>
         ResponseCollectionFilters.NormalizeLegacy(
@@ -255,7 +257,11 @@ public sealed record UpdateWorkerSettingsRequest(
     /// <summary>ID группы AdsPower; пусто — все группы.</summary>
     string? AdsPowerGroupId = null,
     /// <summary>Ключ RuCaptcha для автопрохождения GeeTest v4. Пусто — выкл.</summary>
-    string? RuCaptchaApiKey = null);
+    string? RuCaptchaApiKey = null,
+    string? MultiloginLauncherUrl = null,
+    string? MultiloginCloudApiUrl = null,
+    /// <summary>Пусто — не менять сохранённый token (поле не возвращается в HTML панели).</summary>
+    string? MultiloginAutomationToken = null);
 
 public sealed record UpdateWorkerAccountRequest(bool IsEnabledInPanel);
 

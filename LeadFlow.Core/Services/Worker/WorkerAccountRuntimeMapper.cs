@@ -28,6 +28,7 @@ public static class WorkerAccountRuntimeMapper
             MultiloginProfileId = NullIfWhiteSpace(dto.MultiloginProfileId),
             MultiloginFolderId = NullIfWhiteSpace(dto.MultiloginFolderId),
             MultiloginLauncherUrl = MultiloginUrl.Normalize(config.MultiloginLauncherUrl),
+            MultiloginCloudApiUrl = MultiloginUrl.Normalize(config.MultiloginCloudApiUrl),
             MultiloginAutomationToken = NullIfWhiteSpace(config.MultiloginAutomationToken),
             Status = WorkerAccountStatusMapper.ResolveRuntimeStatus(dto.IsEnabled, dto.Status),
             LastErrorMessage = dto.LastErrorMessage ?? string.Empty,

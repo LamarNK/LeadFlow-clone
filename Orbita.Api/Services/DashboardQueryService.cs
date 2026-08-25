@@ -461,7 +461,10 @@ public sealed class DashboardQueryService(
             worker.AdsPowerGroupId,
             worker.AdsPowerGroupName,
             AdsPowerGroupsJson.Parse(worker.AdsPowerGroupsJson),
-            worker.RuCaptchaApiKey);
+            worker.RuCaptchaApiKey,
+            worker.MultiloginLauncherUrl,
+            worker.MultiloginCloudApiUrl,
+            HasMultiloginAutomationToken: !string.IsNullOrWhiteSpace(worker.MultiloginAutomationToken));
     }
 
     public async Task<IReadOnlyList<WorkerAccountDto>> GetWorkerAccountsAsync(
