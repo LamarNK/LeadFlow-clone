@@ -303,7 +303,13 @@
         if (!root || !liveWorkspace) return Promise.resolve();
         var url = root.getAttribute('data-orbita-snapshot');
         if (!url) return Promise.resolve();
-        return fetch(url, { credentials: 'same-origin', headers: { 'X-Orbita-Content-Only': '1' } })
+        return fetch(url, {
+            credentials: 'same-origin',
+            headers: {
+                'X-Orbita-Content-Only': '1',
+                'X-Orbita-Snapshot': 'crm'
+            }
+        })
             .then(function (res) {
                 if (res.status === 204) return null;
                 if (!res.ok) throw new Error('Crm board snapshot failed: ' + res.status);
@@ -316,7 +322,7 @@
     };
 
     const isManualCreateModalOpen = () => Array.from(
-        document.querySelectorAll('[data-crm-manual-create-modal]')
+        document.querySelectorAll('[data-crm-manual-create-modal], [data-crm-lead-import-modal]')
     ).some((modal) => !modal.hidden);
 
     const applyCrmBoardHtml = (html) => {
@@ -334,7 +340,10 @@
         ? window.OrbitaLiveShared.createSnapshotFetcher('crm', applyCrmBoardHtml, {
             errorName: 'Crm board',
             asText: true,
-            headers: { 'X-Orbita-Content-Only': '1' }
+            headers: {
+                'X-Orbita-Content-Only': '1',
+                'X-Orbita-Snapshot': 'crm'
+            }
         })
         : null;
 
@@ -1160,6 +1169,133 @@
         });
     };
 
+    const initLeadImportModal = () => {
+        document.querySelectorAll('[data-crm-lead-import-modal]').forEach((modal) => {
+            if (modal.dataset.leadImportBound === 'true') return;
+            modal.dataset.leadImportBound = 'true';
+
+            const form = modal.querySelector('[data-crm-lead-import-form]');
+            const fileInput = modal.querySelector('[data-crm-lead-import-file]');
+            const status = modal.querySelector('[data-crm-lead-import-status]');
+            const submit = modal.querySelector('[data-crm-lead-import-submit]');
+            if (!form || !fileInput || !status || !submit) return;
+
+            const initialStatus = status.textContent.trim();
+            let validatingFile = 0;
+            let submitting = false;
+
+            const setStatus = (message, variant) => {
+                status.textContent = message;
+                status.classList.toggle('is-success', variant === 'success');
+                status.classList.toggle('is-error', variant === 'error');
+            };
+            const resetValidation = () => {
+                validatingFile += 1;
+                submit.disabled = true;
+                submit.removeAttribute('aria-busy');
+                setStatus(initialStatus, 'default');
+            };
+            const closeModal = () => {
+                if (submitting) return;
+                modal.hidden = true;
+                document.body.classList.remove('orbita-modal-open');
+                form.reset();
+                resetValidation();
+            };
+            const openModal = () => {
+                modal.hidden = false;
+                document.body.classList.add('orbita-modal-open');
+                window.setTimeout(() => fileInput.focus(), 0);
+            };
+
+            const normalizePhone = (value) => {
+                const raw = String(value || '').trim();
+                if (!/^\+?[\d\s()\-]+$/.test(raw)) return '';
+                let digits = raw.replace(/\D/g, '');
+                if (digits.length === 10 && digits[0] === '9') digits = `7${digits}`;
+                if (digits.length === 11 && digits[0] === '8') digits = `7${digits.slice(1)}`;
+                return digits.length === 11 && digits[0] === '7' ? digits : '';
+            };
+            const inspectText = (text) => {
+                const tokens = String(text || '')
+                    .split(/\r?\n/)
+                    .map((line) => line.trim())
+                    .filter(Boolean);
+                const phones = new Set();
+                let duplicates = 0;
+                for (let index = 0; index < tokens.length - 1; index += 1) {
+                    const phone = normalizePhone(tokens[index + 1]);
+                    if (!phone || normalizePhone(tokens[index])) continue;
+                    if (phones.has(phone)) duplicates += 1;
+                    else phones.add(phone);
+                    index += 1;
+                }
+                return { count: phones.size, duplicates };
+            };
+            const validateFile = async () => {
+                const validationId = ++validatingFile;
+                submit.disabled = true;
+                const file = fileInput.files && fileInput.files[0];
+                if (!file) {
+                    setStatus(initialStatus, 'default');
+                    return;
+                }
+                if (file.size > 2 * 1024 * 1024) {
+                    setStatus('Файл больше 2 МБ. Выберите файл меньшего размера.', 'error');
+                    return;
+                }
+                if (!file.name.toLowerCase().endsWith('.txt')) {
+                    setStatus('Поддерживаются только текстовые файлы .txt.', 'error');
+                    return;
+                }
+
+                setStatus('Проверяем файл…', 'default');
+                try {
+                    const result = inspectText(await file.text());
+                    if (validationId !== validatingFile) return;
+                    if (result.count === 0) {
+                        setStatus('Лиды не распознаны. Проверьте, что после ФИО указан телефон.', 'error');
+                        return;
+                    }
+                    if (result.count > 1000) {
+                        setStatus(`Распознано ${result.count} лидов. Максимум за одну загрузку — 1000.`, 'error');
+                        return;
+                    }
+                    const duplicateText = result.duplicates > 0
+                        ? ` Дублей внутри файла: ${result.duplicates} — они будут пропущены.`
+                        : '';
+                    setStatus(`Распознано уникальных лидов: ${result.count}.${duplicateText}`, 'success');
+                    submit.disabled = false;
+                } catch {
+                    if (validationId === validatingFile) {
+                        setStatus('Не удалось прочитать файл. Сохраните его как обычный UTF-8 .txt.', 'error');
+                    }
+                }
+            };
+
+            document.querySelectorAll('[data-crm-lead-import-open]').forEach((trigger) => {
+                trigger.addEventListener('click', openModal);
+            });
+            modal.querySelectorAll('[data-crm-lead-import-close]').forEach((trigger) => {
+                trigger.addEventListener('click', closeModal);
+            });
+            modal.addEventListener('keydown', (event) => {
+                if (event.key === 'Escape') closeModal();
+            });
+            fileInput.addEventListener('change', validateFile);
+            form.addEventListener('submit', (event) => {
+                if (submit.disabled || submitting) {
+                    event.preventDefault();
+                    return;
+                }
+                submitting = true;
+                submit.disabled = true;
+                submit.setAttribute('aria-busy', 'true');
+                submit.innerHTML = '<i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>Импортируем…';
+            });
+        });
+    };
+
     const initResponsibleAutoFilter = () => {
         document.querySelectorAll('[data-crm-responsible-auto-filter]').forEach((select) => {
             if (select.dataset.crmResponsibleAutoFilterReady === 'true') return;
@@ -1319,6 +1455,7 @@
         initScopeTabPositionReset();
         restoreResponsibleFilterScroll();
         initManualCreateModal();
+        initLeadImportModal();
         initCrmCardPage();
         restoreBoardBackLinks();
 

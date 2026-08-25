@@ -5,6 +5,25 @@ namespace Orbita.Tests;
 public sealed class CrmDailyDistributionTests
 {
     [Fact]
+    public void BuildBalancedPlan_ImportedFileWithOneHundredOneLeadsAndFourManagers_SplitsTwentySixTwentyFive()
+    {
+        var plan = CrmDailyDistribution.BuildBalancedPlan(
+            Enumerable.Range(1, 101).Select(_ => Guid.NewGuid()),
+            ["manager-1", "manager-2", "manager-3", "manager-4"],
+            Guid.Parse("11111111-1111-1111-1111-111111111111"),
+            new DateOnly(2026, 8, 25),
+            $"{CrmDailyDistribution.LeadPool}-file-import");
+
+        var counts = plan
+            .GroupBy(x => x.ManagerUserId)
+            .Select(x => x.Count())
+            .OrderByDescending(x => x)
+            .ToArray();
+
+        Assert.Equal([26, 25, 25, 25], counts);
+    }
+
+    [Fact]
     public void BuildBalancedPlan_OneHundredCardsAndFourManagers_GivesTwentyFiveEach()
     {
         var cards = Enumerable.Range(1, 100).Select(DeterministicGuid).ToList();

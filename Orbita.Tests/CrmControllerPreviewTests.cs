@@ -113,6 +113,51 @@ public sealed class CrmControllerPreviewTests
     }
 
     [Fact]
+    public async Task Snapshot_OpenedAsDocument_RedirectsToFullCrmPageAndPreservesFilters()
+    {
+        var (controller, _) = CreateController(previewEnabled: true);
+
+        var result = await controller.Snapshot(
+            officeId: DesignPreviewData.PreviewOfficeId,
+            search: "Николаев",
+            scope: CrmBoardScopes.Team,
+            city: "Пермь",
+            vacancy: "Сварщик",
+            managerUserId: "preview-manager-elena",
+            overdueOnly: true,
+            includeClosed: true);
+
+        var redirect = Assert.IsType<RedirectToActionResult>(result);
+        Assert.Equal(nameof(CrmController.Index), redirect.ActionName);
+        Assert.Equal("Николаев", redirect.RouteValues!["search"]);
+        Assert.Equal(CrmBoardScopes.Team, redirect.RouteValues["scope"]);
+        Assert.Equal("Пермь", redirect.RouteValues["city"]);
+        Assert.Equal("Сварщик", redirect.RouteValues["vacancy"]);
+        Assert.Equal("preview-manager-elena", redirect.RouteValues["managerUserId"]);
+        Assert.Equal(true, redirect.RouteValues["overdueOnly"]);
+        Assert.Equal(true, redirect.RouteValues["includeClosed"]);
+    }
+
+    [Fact]
+    public async Task Snapshot_RequestedByLiveRefresh_ReturnsWorkspacePartial()
+    {
+        var (controller, _) = CreateController(previewEnabled: true);
+        controller.Request.Headers["X-Orbita-Content-Only"] = "1";
+        controller.Request.Headers["X-Orbita-Snapshot"] = "crm";
+
+        var result = await controller.Snapshot(
+            officeId: DesignPreviewData.PreviewOfficeId,
+            search: null,
+            scope: CrmBoardScopes.Team,
+            city: null,
+            vacancy: null);
+
+        var partial = Assert.IsType<PartialViewResult>(result);
+        Assert.Equal("_CrmWorkspace", partial.ViewName);
+        Assert.IsType<CrmBoardDto>(partial.Model);
+    }
+
+    [Fact]
     public async Task Analytics_InDesignPreview_UsesLocalCalendarHalfOpenUtcRange()
     {
         var (controller, _) = CreateController(previewEnabled: true);

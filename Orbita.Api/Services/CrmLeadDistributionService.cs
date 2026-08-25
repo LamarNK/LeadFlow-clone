@@ -26,6 +26,7 @@ public sealed class CrmLeadDistributionService(
     public const string ReasonManual = "Ручное назначение";
     public const string ReasonDailyLead = "Ежедневное распределение: Лиды";
     public const string ReasonDailyNdz = "Ежедневное распределение: НДЗ";
+    public const string ReasonFileImport = "Импорт лидов из файла";
 
     /// <summary>
     /// Assign a lead that arrived after the morning batch. During the five-minute
@@ -112,6 +113,109 @@ public sealed class CrmLeadDistributionService(
                 actorName ?? "Система",
                 now);
             return new CrmLeadDistribution.AutoAssignDecision(selected, "Дневная равномерная очередь Лидов");
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    /// <summary>
+    /// Immediately distributes one imported batch evenly among the eligible
+    /// Manager/SeniorManager users who are on shift now. Existing workload is
+    /// deliberately ignored: every uploaded batch is split independently.
+    /// Caller owns SaveChanges and the surrounding transaction.
+    /// </summary>
+    public async Task<(int AssignedCount, int ManagersOnShift)> AssignImportedLeadBatchAsync(
+        Guid officeId,
+        IReadOnlyList<CrmCandidateCardEntity> cards,
+        string actorUserId,
+        string actorName,
+        CancellationToken ct = default)
+    {
+        if (cards.Count == 0)
+        {
+            return (0, 0);
+        }
+
+        if (cards.Any(x => x.OfficeId != officeId
+                           || x.IsClosed
+                           || x.ManagerUserId is not null
+                           || !string.Equals(x.Stage, CrmStages.Lead, StringComparison.Ordinal)))
+        {
+            throw new InvalidOperationException("Импортированная пачка содержит карточку, которую нельзя распределить.");
+        }
+
+        var gate = OfficeLocks.GetOrAdd(officeId, static _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(ct);
+        try
+        {
+            var now = UtcNow();
+            var managers = await LoadEligibleDistributionManagersAsync(officeId, now, ct);
+            if (managers.Count == 0)
+            {
+                return (0, 0);
+            }
+
+            var localDate = CrmDailyDistribution.BusinessDate(now);
+            var plan = CrmDailyDistribution.BuildBalancedPlan(
+                cards.Select(x => x.Id),
+                managers.Select(x => x.UserId),
+                officeId,
+                localDate,
+                $"{CrmDailyDistribution.LeadPool}-file-import");
+            var cardsById = cards.ToDictionary(x => x.Id);
+            foreach (var assignment in plan)
+            {
+                var card = cardsById[assignment.CardId];
+                ApplyAssignment(card, assignment.ManagerUserId, now);
+                AddAssignedHistory(
+                    card.Id,
+                    ReasonFileImport,
+                    actorUserId,
+                    actorName,
+                    now);
+            }
+
+            var assignedIds = plan
+                .Select(x => x.ManagerUserId)
+                .ToHashSet(StringComparer.Ordinal);
+            foreach (var manager in managers.Where(x => assignedIds.Contains(x.UserId)))
+            {
+                manager.CrmLastAutoAssignmentAtUtc = now;
+            }
+
+            // Keep the daytime round-robin cursor consistent when today's
+            // shift session already exists, without making it a prerequisite
+            // for a senior manager's explicit file import.
+            var session = db.CrmDailyDistributionSessions.Local.FirstOrDefault(
+                              x => x.OfficeId == officeId && x.LocalDate == localDate)
+                          ?? await db.CrmDailyDistributionSessions.FirstOrDefaultAsync(
+                              x => x.OfficeId == officeId && x.LocalDate == localDate,
+                              ct);
+            if (session is not null && plan.Count > 0)
+            {
+                var counters = await db.CrmDailyDistributionCounters
+                    .Where(x => x.OfficeId == officeId
+                                && x.LocalDate == localDate
+                                && x.Pool == CrmDailyDistribution.LeadPool)
+                    .ToListAsync(ct);
+                foreach (var assignment in plan)
+                {
+                    IncrementCounter(
+                        counters,
+                        officeId,
+                        localDate,
+                        CrmDailyDistribution.LeadPool,
+                        assignment.ManagerUserId,
+                        now);
+                }
+
+                session.LastLeadManagerUserId = plan[^1].ManagerUserId;
+                session.UpdatedAtUtc = now;
+            }
+
+            return (plan.Count, managers.Count);
         }
         finally
         {

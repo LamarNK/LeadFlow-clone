@@ -3,6 +3,7 @@
 @{
     var currentUserId = ViewData["CurrentCrmUserId"] as string;
     var canCreateManualResponse = Model.IsAdmin || PanelRoles.IsCrmDeskRole(User);
+    var canImportLeadFile = PanelRoles.HasElevatedOfficeAccess(User);
     var selectedResponsibleUserId = Model.Scope == CrmBoardScopes.Mine
         ? currentUserId
         : Model.ManagerUserId;
@@ -89,11 +90,22 @@
             <span class="crm-pill @(Model.IsShiftActive ? "is-on" : "")">@(Model.IsShiftActive ? "На смене" : "Не на смене")</span>
             <strong class="crm-toolbar__load">@Model.ActiveLoad <span>/ @Model.Capacity</span></strong>
             <p>Нагрузка · открытых задач @Model.OpenTaskCount@if (Model.OverdueTaskCount > 0) { <text> · </text><a class="crm-toolbar__overdue" asp-action="Tasks">просрочено @Model.OverdueTaskCount</a> }</p>
-            @if (canCreateManualResponse && Model.IsEnabled)
+            @if ((canCreateManualResponse || canImportLeadFile) && Model.IsEnabled)
             {
-                <button type="button" class="crm-manual-create-trigger" data-crm-manual-create-open aria-haspopup="dialog" aria-controls="crm-manual-create-modal">
-                    <i class="fa-solid fa-user-plus" aria-hidden="true"></i>Создать отклик
-                </button>
+                <div class="crm-toolbar__create-actions">
+                    @if (canCreateManualResponse)
+                    {
+                        <button type="button" class="crm-manual-create-trigger" data-crm-manual-create-open aria-haspopup="dialog" aria-controls="crm-manual-create-modal">
+                            <i class="fa-solid fa-user-plus" aria-hidden="true"></i>Создать отклик
+                        </button>
+                    }
+                    @if (canImportLeadFile)
+                    {
+                        <button type="button" class="crm-manual-create-trigger crm-lead-import-trigger" data-crm-lead-import-open aria-haspopup="dialog" aria-controls="crm-lead-import-modal">
+                            <i class="fa-solid fa-file-arrow-up" aria-hidden="true"></i>Загрузить лиды
+                        </button>
+                    }
+                </div>
             }
         </div>
         @if (Model.IsShiftActive)
@@ -148,6 +160,41 @@
                             <button class="settings-primary-btn" type="submit"><i class="fa-solid fa-plus" aria-hidden="true"></i>Создать отклик</button>
                         </footer>
                     </form>
+            </section>
+        </div>
+    }
+    @if (canImportLeadFile && Model.IsEnabled)
+    {
+        <div class="crm-manual-create-modal" id="crm-lead-import-modal" data-crm-lead-import-modal hidden>
+            <div class="crm-manual-create-modal__backdrop" data-crm-lead-import-close></div>
+            <section class="crm-manual-create-modal__dialog crm-lead-import-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="crm-lead-import-title" tabindex="-1">
+                <header class="crm-manual-create-modal__header">
+                    <div>
+                        <h2 id="crm-lead-import-title">Загрузить лиды из файла</h2>
+                        <p>Новые лиды попадут в текущий офис и сразу поровну распределятся между менеджерами и старшими менеджерами на смене.</p>
+                    </div>
+                    <button type="button" class="crm-manual-create-modal__close" data-crm-lead-import-close aria-label="Закрыть"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+                </header>
+                <form asp-action="ImportLeadFile" method="post" enctype="multipart/form-data" class="crm-lead-import__form" data-crm-lead-import-form>
+                    <label class="crm-lead-import__picker">
+                        <span><i class="fa-solid fa-file-lines" aria-hidden="true"></i>Текстовый файл</span>
+                        <input type="file" name="leadFile" accept=".txt,text/plain" required data-crm-lead-import-file />
+                        <small>Формат: заголовок вакансии, затем ФИО и телефон каждого кандидата. До 1000 лидов и 2 МБ.</small>
+                    </label>
+                    <div class="crm-lead-import__status" data-crm-lead-import-status aria-live="polite">
+                        Выберите файл — система заранее покажет, сколько уникальных лидов распознано.
+                    </div>
+                    <div class="crm-hint">
+                        <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+                        Телефоны, которые уже есть в CRM этого офиса, будут пропущены. Если на смене никого нет, импорт не начнётся.
+                    </div>
+                    <footer class="crm-manual-create__actions">
+                        <button class="settings-secondary-btn" type="button" data-crm-lead-import-close>Отмена</button>
+                        <button class="settings-primary-btn" type="submit" disabled data-crm-lead-import-submit>
+                            <i class="fa-solid fa-file-import" aria-hidden="true"></i>Импортировать и распределить
+                        </button>
+                    </footer>
+                </form>
             </section>
         </div>
     }

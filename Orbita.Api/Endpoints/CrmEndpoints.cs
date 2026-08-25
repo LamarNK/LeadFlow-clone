@@ -591,6 +591,37 @@ public static class CrmEndpoints
                 : Results.BadRequest(new { error = error ?? "Не удалось создать отклик." });
         });
 
+        crmBoard.MapPost("/cards/import-file", async (
+            Guid? officeId,
+            CrmLeadFileImportRequest request,
+            CrmWorkspaceService workspace,
+            OfficeScopeService officeScope,
+            ClaimsPrincipal principal,
+            CancellationToken ct) =>
+        {
+            if (!PanelRoles.HasElevatedOfficeAccess(principal))
+            {
+                return Results.Forbid();
+            }
+
+            var scope = await officeScope.ResolveAsync(principal, ct);
+            var effectiveOfficeId = scope.ResolveFilter(officeId);
+            var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrWhiteSpace(userId) || effectiveOfficeId is not Guid resolvedOfficeId)
+            {
+                return Results.Forbid();
+            }
+
+            var (result, error) = await workspace.ImportLeadFileAsync(
+                resolvedOfficeId,
+                request,
+                userId,
+                ct);
+            return result is not null
+                ? Results.Ok(result)
+                : Results.BadRequest(new { error = error ?? "Не удалось импортировать лиды." });
+        });
+
         crmBoard.MapPut("/cards/{cardId:guid}/notes/{noteId:guid}", async (
             Guid cardId,
             Guid noteId,

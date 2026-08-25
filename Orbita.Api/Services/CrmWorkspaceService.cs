@@ -1960,6 +1960,229 @@ public sealed class CrmWorkspaceService(
         return (card.Id, null);
     }
 
+    public async Task<(CrmLeadFileImportResult? Result, string? Error)> ImportLeadFileAsync(
+        Guid officeId,
+        CrmLeadFileImportRequest request,
+        string actorUserId,
+        CancellationToken ct = default)
+    {
+        if (request.Entries is null || request.Entries.Count == 0)
+        {
+            return (null, "В файле не найдено ни одного лида.");
+        }
+
+        if (request.Entries.Count > CrmLeadFileParser.MaximumEntries)
+        {
+            return (null, $"В одном файле допускается не более {CrmLeadFileParser.MaximumEntries} лидов.");
+        }
+
+        var office = await db.Offices.AsNoTracking()
+            .Where(x => x.Id == officeId)
+            .Select(x => new { x.CrmEnabled, x.IsEnabled, x.CrmStagesJson })
+            .FirstOrDefaultAsync(ct);
+        if (office is null || !office.IsEnabled)
+        {
+            return (null, "Офис не найден или отключён.");
+        }
+
+        if (!office.CrmEnabled)
+        {
+            return (null, "CRM выключена для офиса.");
+        }
+
+        var officeStages = CrmStages.Resolve(office.CrmStagesJson);
+        if (!officeStages.Contains(CrmStages.Lead, StringComparer.Ordinal))
+        {
+            return (null, "В воронке офиса отсутствует этап «Лид».");
+        }
+
+        var normalizedEntries = new List<(CrmLeadFileImportEntry Entry, string PhoneNormalized)>();
+        var seenPhones = new HashSet<string>(StringComparer.Ordinal);
+        var defensiveDuplicates = 0;
+        foreach (var entry in request.Entries)
+        {
+            var fullName = entry.FullName?.Trim() ?? string.Empty;
+            var phoneRaw = entry.PhoneRaw?.Trim() ?? string.Empty;
+            var phoneNormalized = _phoneNormalizer.Normalize(phoneRaw);
+            if (fullName.Length == 0 || fullName.Length > 256 || string.IsNullOrWhiteSpace(phoneNormalized))
+            {
+                return (null, $"Некорректная запись в строке {entry.SourceLine}.");
+            }
+
+            if (!seenPhones.Add(phoneNormalized))
+            {
+                defensiveDuplicates++;
+                continue;
+            }
+
+            normalizedEntries.Add((entry with
+            {
+                FullName = fullName,
+                PhoneRaw = phoneRaw,
+                Vacancy = string.IsNullOrWhiteSpace(entry.Vacancy)
+                    ? null
+                    : entry.Vacancy.Trim()[..Math.Min(entry.Vacancy.Trim().Length, 512)]
+            }, phoneNormalized));
+        }
+
+        var normalizedPhones = normalizedEntries.Select(x => x.PhoneNormalized).ToArray();
+        var existingPhones = await db.CrmCandidateCards.AsNoTracking()
+            .Where(x => x.OfficeId == officeId && normalizedPhones.Contains(x.Response.PhoneNormalized))
+            .Select(x => x.Response.PhoneNormalized)
+            .Distinct()
+            .ToListAsync(ct);
+        var existingPhoneSet = existingPhones.ToHashSet(StringComparer.Ordinal);
+        var entriesToCreate = normalizedEntries
+            .Where(x => !existingPhoneSet.Contains(x.PhoneNormalized))
+            .ToList();
+        var duplicateRows = Math.Max(0, request.DuplicateRowsInFile) + defensiveDuplicates;
+
+        if (entriesToCreate.Count == 0)
+        {
+            return (new CrmLeadFileImportResult(
+                normalizedEntries.Count,
+                0,
+                existingPhoneSet.Count,
+                duplicateRows,
+                0,
+                0), null);
+        }
+
+        await using var transaction = db.Database.IsRelational()
+            ? await db.Database.BeginTransactionAsync(ct)
+            : null;
+
+        var now = DateTime.UtcNow;
+        var actorName = await ResolveDisplayNameAsync(actorUserId, ct);
+        const string initialStage = CrmStages.Lead;
+        var safeFileName = Path.GetFileName(request.FileName ?? string.Empty).Trim();
+        if (safeFileName.Length == 0)
+        {
+            safeFileName = "список лидов.txt";
+        }
+        else if (safeFileName.Length > 180)
+        {
+            safeFileName = safeFileName[..180];
+        }
+
+        var cards = new List<CrmCandidateCardEntity>(entriesToCreate.Count);
+        foreach (var (entry, phoneNormalized) in entriesToCreate)
+        {
+            var (firstName, lastName, middleName) = _candidateParser.ParseName(entry.FullName);
+            var person = new CandidatePersonEntity
+            {
+                Id = Guid.NewGuid(),
+                OfficeId = officeId,
+                FullName = entry.FullName,
+                FirstName = firstName,
+                LastName = lastName,
+                MiddleName = middleName,
+                City = string.Empty,
+                PhoneRaw = entry.PhoneRaw,
+                PhoneNormalized = phoneNormalized,
+                CreatedAtUtc = now,
+                UpdatedAtUtc = now
+            };
+            var response = new CandidateResponseEntity
+            {
+                Id = Guid.NewGuid(),
+                PersonId = person.Id,
+                OfficeId = officeId,
+                AccountId = Guid.Empty,
+                AccountName = "Импорт файла",
+                Source = "FileImport",
+                SourceResponseId = $"file-{Guid.NewGuid():N}",
+                FullName = entry.FullName,
+                FirstName = firstName,
+                LastName = lastName,
+                MiddleName = middleName,
+                Citizenship = CandidateCitizenshipResolver.Normalize(null),
+                PhoneRaw = entry.PhoneRaw,
+                PhoneNormalized = phoneNormalized,
+                City = string.Empty,
+                Vacancy = entry.Vacancy ?? string.Empty,
+                Status = ResponseStatuses.New,
+                CreatedAt = now,
+                CollectedAt = now
+            };
+            var card = new CrmCandidateCardEntity
+            {
+                Id = Guid.NewGuid(),
+                ResponseId = response.Id,
+                OfficeId = officeId,
+                Stage = initialStage,
+                CreatedAtUtc = now,
+                UpdatedAtUtc = now,
+                StageChangedAtUtc = now,
+                IsInActiveLoad = true
+            };
+
+            db.CandidatePersons.Add(person);
+            db.CandidateResponses.Add(response);
+            db.CandidateContactPhones.Add(new CandidateContactPhoneEntity
+            {
+                Id = Guid.NewGuid(),
+                PersonId = person.Id,
+                PhoneRaw = entry.PhoneRaw,
+                PhoneNormalized = phoneNormalized,
+                IsPrimary = true,
+                CreatedAtUtc = now,
+                CreatedByUserId = actorUserId
+            });
+            db.CandidatePhoneHistory.Add(new CandidatePhoneHistoryEntity
+            {
+                Id = Guid.NewGuid(),
+                PersonId = person.Id,
+                ResponseId = response.Id,
+                PhoneRaw = entry.PhoneRaw,
+                PhoneNormalized = phoneNormalized,
+                RecordedAtUtc = now
+            });
+            db.CrmCandidateCards.Add(card);
+            AddHistory(
+                card.Id,
+                "Created",
+                $"Карточка создана из файла «{safeFileName}», строка {entry.SourceLine}",
+                actorUserId,
+                actorName,
+                now);
+            cards.Add(card);
+        }
+
+        var (assignedCount, managersOnShift) = await leadDistribution.AssignImportedLeadBatchAsync(
+            officeId,
+            cards,
+            actorUserId,
+            actorName,
+            ct);
+        if (managersOnShift == 0)
+        {
+            return (null, "В офисе нет менеджеров или старших менеджеров на смене. Импорт отменён.");
+        }
+
+        try
+        {
+            await db.SaveChangesAsync(ct);
+            if (transaction is not null)
+            {
+                await transaction.CommitAsync(ct);
+            }
+        }
+        catch (DbUpdateException)
+        {
+            return (null, "Не удалось импортировать файл. Данные не были сохранены.");
+        }
+
+        NotifyBoardChanged(officeId);
+        return (new CrmLeadFileImportResult(
+            normalizedEntries.Count,
+            cards.Count,
+            existingPhoneSet.Count,
+            duplicateRows,
+            assignedCount,
+            managersOnShift), null);
+    }
+
     public async Task<(bool Ok, string? Error)> UpdateNoteAsync(
         Guid cardId,
         Guid noteId,

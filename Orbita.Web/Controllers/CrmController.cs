@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using System.Security.Claims;
+using System.Text;
 using Orbita.Contracts;
 using Orbita.Web.Authorization;
 using Orbita.Web.Helpers;
@@ -175,6 +176,37 @@ public sealed class CrmController(
         bool includeClosed = false,
         CancellationToken ct = default)
     {
+        // Snapshot is an internal fragment used by the live CRM refresh. If its URL is
+        // restored by the browser or opened as a normal document, return the complete
+        // CRM page instead of rendering the fragment without layout and styles.
+        if (!Request.Headers.TryGetValue("X-Orbita-Content-Only", out var contentOnly)
+            || !string.Equals(contentOnly.ToString(), "1", StringComparison.Ordinal)
+            || !Request.Headers.TryGetValue("X-Orbita-Snapshot", out var snapshotPage)
+            || !string.Equals(snapshotPage.ToString(), "crm", StringComparison.OrdinalIgnoreCase))
+        {
+            return RedirectToAction(nameof(Index), new
+            {
+                officeId,
+                search,
+                scope,
+                city,
+                vacancy,
+                managerUserId,
+                closeReason,
+                stageFilter,
+                createdFrom,
+                createdTo,
+                view,
+                page,
+                pageSize,
+                sort,
+                dir,
+                overdueOnly,
+                activeLoadOnly,
+                includeClosed
+            });
+        }
+
         officeId = ResolveOfficeId(officeId);
         if (officeId is null)
         {
@@ -871,6 +903,82 @@ public sealed class CrmController(
         }
 
         return RedirectToAction(nameof(Card), new { id = cardId.Value, stage });
+    }
+
+    [HttpPost]
+    [Authorize(Policy = PanelPermissions.CrmBoard)]
+    [ValidateAntiForgeryToken]
+    [RequestSizeLimit(2_200_000)]
+    public async Task<IActionResult> ImportLeadFile(IFormFile? leadFile, CancellationToken ct = default)
+    {
+        if (!PanelRoles.HasElevatedOfficeAccess(User))
+        {
+            return Forbid();
+        }
+
+        if (leadFile is null || leadFile.Length == 0)
+        {
+            TempData["CrmError"] = "Выберите текстовый файл с лидами.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        if (leadFile.Length > 2 * 1024 * 1024)
+        {
+            TempData["CrmError"] = "Размер файла с лидами не должен превышать 2 МБ.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        if (!string.Equals(Path.GetExtension(leadFile.FileName), ".txt", StringComparison.OrdinalIgnoreCase))
+        {
+            TempData["CrmError"] = "Для импорта нужен файл в формате .txt.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        CrmLeadFileParseResult parsed;
+        try
+        {
+            await using var stream = leadFile.OpenReadStream();
+            using var reader = new StreamReader(
+                stream,
+                new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true),
+                detectEncodingFromByteOrderMarks: true);
+            parsed = CrmLeadFileParser.Parse(await reader.ReadToEndAsync(ct));
+        }
+        catch (DecoderFallbackException)
+        {
+            TempData["CrmError"] = "Не удалось прочитать файл. Сохраните его в кодировке UTF-8 и повторите загрузку.";
+            return RedirectToAction(nameof(Index));
+        }
+        catch (InvalidOperationException exception)
+        {
+            TempData["CrmError"] = exception.Message;
+            return RedirectToAction(nameof(Index));
+        }
+
+        if (parsed.Entries.Count == 0)
+        {
+            TempData["CrmError"] = "В файле не найдено строк вида «ФИО», затем «телефон».";
+            return RedirectToAction(nameof(Index));
+        }
+
+        var (result, error) = await api.ImportCrmLeadFileAsync(
+            new CrmLeadFileImportRequest(
+                Path.GetFileName(leadFile.FileName),
+                parsed.Entries,
+                parsed.DuplicateRowsInFile),
+            ct);
+        if (result is null)
+        {
+            TempData["CrmError"] = error ?? "Не удалось импортировать лиды.";
+            return RedirectToAction(nameof(Index));
+        }
+
+        TempData["CrmOk"] = result.CreatedCount == 0
+            ? $"Распознано лидов: {result.RecognizedCount}. Новых карточек нет: все телефоны уже есть в этом офисе."
+            : $"Распознано лидов: {result.RecognizedCount}. Создано и распределено: {result.CreatedCount} "
+              + $"между {result.ManagersOnShift} сотрудниками на смене. "
+              + $"Пропущено существующих: {result.SkippedExistingCount}; дублей в файле: {result.DuplicateRowsInFile}.";
+        return RedirectToAction(nameof(Index));
     }
 
     [HttpPost]

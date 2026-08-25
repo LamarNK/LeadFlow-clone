@@ -2702,6 +2702,34 @@ public sealed class OrbitaApiClient(
             : (payload.Id, null);
     }
 
+    public async Task<(CrmLeadFileImportResult? Result, string? Error)> ImportCrmLeadFileAsync(
+        CrmLeadFileImportRequest body,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return (new CrmLeadFileImportResult(
+                body.Entries.Count,
+                body.Entries.Count,
+                0,
+                body.DuplicateRowsInFile,
+                body.Entries.Count,
+                1), null);
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, WithOfficeQuery("api/v1/crm/cards/import-file"))
+        {
+            Content = JsonContent.Create(body)
+        };
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null) return (null, InvalidApiSessionError);
+        if (!response.IsSuccessStatusCode) return (null, await ReadApiErrorAsync(response, ct));
+        var payload = await response.Content.ReadFromJsonAsync<CrmLeadFileImportResult>(ApiJsonOptions, ct);
+        return payload is null
+            ? (null, "Импорт выполнен, но ответ API не распознан.")
+            : (payload, null);
+    }
+
     public async Task<(bool Success, string? Error)> CloseCrmCardAsync(Guid cardId, string reason, string? comment = null, CancellationToken ct = default)
     {
         if (_preview.Enabled)

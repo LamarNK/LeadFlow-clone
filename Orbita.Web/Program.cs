@@ -96,14 +96,22 @@ builder.Services.AddAuthorization(options =>
     }
 });
 
+var orbitaApiBaseUrl = builder.Configuration["OrbitaApi:BaseUrl"] ?? "https://localhost:7291";
+var orbitaApiUri = new Uri(orbitaApiBaseUrl.TrimEnd('/') + "/");
+
 builder.Services.AddHttpClient<OrbitaApiClient>(client =>
 {
-    var baseUrl = builder.Configuration["OrbitaApi:BaseUrl"] ?? "https://localhost:7291";
-    client.BaseAddress = new Uri(baseUrl.TrimEnd('/') + "/");
+    client.BaseAddress = orbitaApiUri;
     client.Timeout = TimeSpan.FromMinutes(30);
+})
+.ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+{
+    // A system proxy can intercept loopback calls on Windows and return 503
+    // before the request reaches the local Orbita API.
+    UseProxy = !orbitaApiUri.IsLoopback
 });
 
-var apiProxyBase = (builder.Configuration["OrbitaApi:BaseUrl"] ?? "https://localhost:7291").TrimEnd('/') + "/";
+var apiProxyBase = orbitaApiUri.ToString();
 builder.Services.AddReverseProxy()
     .LoadFromMemory(
         [

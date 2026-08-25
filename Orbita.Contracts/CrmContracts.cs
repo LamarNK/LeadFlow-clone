@@ -536,6 +536,25 @@ public sealed record CrmManualCardCreateRequest(
 
 public sealed record CrmManualCardCreateResult(Guid Id);
 
+public sealed record CrmLeadFileImportEntry(
+    string FullName,
+    string PhoneRaw,
+    string? Vacancy,
+    int SourceLine);
+
+public sealed record CrmLeadFileImportRequest(
+    string FileName,
+    IReadOnlyList<CrmLeadFileImportEntry> Entries,
+    int DuplicateRowsInFile = 0);
+
+public sealed record CrmLeadFileImportResult(
+    int RecognizedCount,
+    int CreatedCount,
+    int SkippedExistingCount,
+    int DuplicateRowsInFile,
+    int AssignedCount,
+    int ManagersOnShift);
+
 public sealed record CrmNoteDto(
     Guid Id,
     string AuthorUserId,
