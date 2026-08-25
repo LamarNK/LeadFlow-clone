@@ -11,15 +11,27 @@ public sealed record MultiloginBrowserStartResult(
 {
     public static MultiloginBrowserStartResult FromPort(int port)
     {
-        ArgumentOutOfRangeException.ThrowIfLessThan(port, 1);
-        ArgumentOutOfRangeException.ThrowIfGreaterThan(port, 65535);
-        return new(port, $"http://127.0.0.1:{port}", null);
+        EnsureValidPort(port);
+        return new(port, BuildLocalBrowserUrl(port), null);
     }
 
     public static MultiloginBrowserStartResult FromWebSocket(string webSocketDebuggerUrl, int? port = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(webSocketDebuggerUrl);
-        var browserUrl = port is > 0 and <= 65535 ? $"http://127.0.0.1:{port}" : null;
+        if (port is not null)
+        {
+            EnsureValidPort(port.Value);
+        }
+
+        var browserUrl = port is null ? null : BuildLocalBrowserUrl(port.Value);
         return new(port, browserUrl, webSocketDebuggerUrl.Trim());
     }
+
+    private static void EnsureValidPort(int port)
+    {
+        ArgumentOutOfRangeException.ThrowIfLessThan(port, 1);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(port, 65535);
+    }
+
+    private static string BuildLocalBrowserUrl(int port) => $"http://127.0.0.1:{port}";
 }

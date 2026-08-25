@@ -75,6 +75,15 @@ public sealed class MultiloginConfigurationTests
         Assert.Null(result.WebSocketDebuggerUrl);
     }
 
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    [InlineData(65536)]
+    public void StartResult_FromPort_RejectsInvalidPort(int port)
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => MultiloginBrowserStartResult.FromPort(port));
+    }
+
     [Fact]
     public void StartResult_FromWebSocket_KeepsEndpointAndOptionalPort()
     {
@@ -82,6 +91,25 @@ public sealed class MultiloginConfigurationTests
         Assert.Equal(35001, result.Port);
         Assert.Equal("http://127.0.0.1:35001", result.BrowserUrl);
         Assert.Equal("ws://127.0.0.1:35001/devtools/browser/abc", result.WebSocketDebuggerUrl);
+    }
+
+    [Fact]
+    public void StartResult_FromWebSocket_WithoutPort_LeavesBrowserUrlNull()
+    {
+        var result = MultiloginBrowserStartResult.FromWebSocket(" ws://127.0.0.1:35001/devtools/browser/abc ");
+        Assert.Null(result.Port);
+        Assert.Null(result.BrowserUrl);
+        Assert.Equal("ws://127.0.0.1:35001/devtools/browser/abc", result.WebSocketDebuggerUrl);
+    }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-1)]
+    [InlineData(65536)]
+    public void StartResult_FromWebSocket_RejectsInvalidPort(int port)
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => MultiloginBrowserStartResult.FromWebSocket("ws://127.0.0.1:1/devtools/browser/abc", port));
     }
 
     [Fact]
