@@ -89,11 +89,6 @@ public sealed class WorkerShutdownService(
                 ? parsed
                 : "unknown");
 
-        if (updateStore.IsSilentInstallBlocked(version))
-        {
-            return false;
-        }
-
         if (WorkerRestartHelper.TryDetectLegacyPerMachineInstall(out var productDetails))
         {
             var message = WorkerRestartHelper.BuildManualElevationMessage(msiPath, productDetails);
@@ -103,6 +98,18 @@ public sealed class WorkerShutdownService(
                 DeskLinkAuditLogLevel.Warning,
                 memberName: nameof(RequestInstall));
             return false;
+        }
+
+        // The old guard stored only the target version. If a manual migration
+        // removed the HKLM product afterwards, the same version stayed blocked
+        // forever even though a silent update was now safe.
+        if (updateStore.IsSilentInstallBlocked(version))
+        {
+            updateStore.ClearSilentInstallBlocked();
+            _ = GlobalLogger.Instance.LogAsync(
+                $"Worker update: снята устаревшая блокировка тихой установки {version}; HKLM-продукт больше не найден.",
+                DeskLinkAuditLogLevel.Info,
+                memberName: nameof(RequestInstall));
         }
 
         if (Volatile.Read(ref _shutdownRequested) == 1)

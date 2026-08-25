@@ -94,6 +94,11 @@ public sealed class WorkerUpdateStore
         }
     }
 
+    internal void ClearSilentInstallBlocked()
+    {
+        TryDeleteFile(SilentBlockPath);
+    }
+
     public PendingMsiState? TryGetPendingMsi()
     {
         var state = TryReadPendingMsiState();
