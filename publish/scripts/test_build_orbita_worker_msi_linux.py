@@ -29,8 +29,8 @@ Action\tInstallExecuteSequence
 InstallValidate\t\t1400
 SetStopWorkerCommand\tNOT REMOVE~=\"ALL\"\t1447
 StopWorkerBeforeUpgrade\tNOT REMOVE~=\"ALL\"\t1448
-RemoveExistingProducts\t\t1450
 InstallInitialize\t\t1500
+RemoveExistingProducts\t\t1501
 InstallFiles\t\t4000
 InstallFinalize\t\t6600
 SetLaunchWorkerCommand\tNOT REMOVE~=\"ALL\"\t6601
@@ -71,7 +71,7 @@ class WorkerMsiContractTests(unittest.TestCase):
         self.assertIn("[#File_", text)
         self.assertIn("taskkill /F /IM Orbita.Worker.exe", text)
         self.assertNotIn("taskkill /IM Orbita.Worker.exe /T", text)
-        self.assertIn('Sequence="1450"', text)
+        self.assertIn('Sequence="1501"', text)
         self.assertIn('Sequence="6602"', text)
         self.assertIn("start " + builder.XML_QUOT + builder.XML_QUOT, text)
         self.assertNotIn('Guid="*"', text)
@@ -104,10 +104,10 @@ class WorkerMsiContractTests(unittest.TestCase):
             builder.validate_msi_tables(GOOD_TABLES, GOOD_SEQUENCE, bad_ca)
         self.assertIn("Type 18", str(raised.exception))
 
-    def test_compiled_tables_reject_late_remove_existing_products(self) -> None:
-        late = GOOD_SEQUENCE.replace("RemoveExistingProducts\t\t1450", "RemoveExistingProducts\t\t6700")
+    def test_compiled_tables_reject_remove_existing_products_outside_transaction(self) -> None:
+        early = GOOD_SEQUENCE.replace("RemoveExistingProducts\t\t1501", "RemoveExistingProducts\t\t1450")
         with self.assertRaises(RuntimeError) as raised:
-            builder.validate_msi_tables(GOOD_TABLES, late, GOOD_CUSTOM_ACTION)
+            builder.validate_msi_tables(GOOD_TABLES, early, GOOD_CUSTOM_ACTION)
         self.assertIn("RemoveExistingProducts", str(raised.exception))
 
     def test_compiled_tables_reject_launch_before_installfinalize(self) -> None:

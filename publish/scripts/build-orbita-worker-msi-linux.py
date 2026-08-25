@@ -27,8 +27,12 @@ XML_AMP = "&" + "amp;"
 # can land at the MSI default 6700 — after InstallFinalize and after launch.
 INSTALL_VALIDATE_SEQUENCE = 1400
 STOP_WORKER_SEQUENCE = 1448
-REMOVE_EXISTING_PRODUCTS_SEQUENCE = 1450
 INSTALL_INITIALIZE_SEQUENCE = 1500
+# RemoveExistingProducts must be *inside* the MSI transaction.  Putting it
+# before InstallInitialize uninstalls the old worker without rollback; one
+# failed copy then leaves the client with neither version.  Immediately after
+# InstallInitialize still clears the old files before InstallFiles.
+REMOVE_EXISTING_PRODUCTS_SEQUENCE = INSTALL_INITIALIZE_SEQUENCE + 1
 INSTALL_FINALIZE_SEQUENCE = 6600
 SET_LAUNCH_WORKER_SEQUENCE = 6601
 LAUNCH_WORKER_SEQUENCE = 6602
@@ -125,7 +129,7 @@ def custom_action_lines(worker_executable_id: str) -> list[str]:
         f'                  ExeCommand="{launch_cmd}"',
         '                  Execute="immediate" Return="ignore" Impersonate="yes" />',
         '    <InstallExecuteSequence>',
-        f'      <RemoveExistingProducts Sequence="{REMOVE_EXISTING_PRODUCTS_SEQUENCE}" Before="InstallInitialize" />',
+        f'      <RemoveExistingProducts Sequence="{REMOVE_EXISTING_PRODUCTS_SEQUENCE}" After="InstallInitialize" />',
         f'      <Custom Action="SetStopWorkerCommand" Sequence="{STOP_WORKER_SEQUENCE - 1}" Before="StopWorkerBeforeUpgrade">',
         f'        {condition}',
         '      </Custom>',
@@ -162,7 +166,7 @@ def assert_wxs_upgrade_contract(text: str, worker_executable_id: str) -> None:
     if "taskkill /IM Orbita.Worker.exe /T" in text:
         errors.append("StopWorkerBeforeUpgrade must not use /T (it can kill msiexec)")
     if f'Sequence="{REMOVE_EXISTING_PRODUCTS_SEQUENCE}"' not in text:
-        errors.append("RemoveExistingProducts must be pinned before InstallInitialize")
+        errors.append("RemoveExistingProducts must be pinned immediately after InstallInitialize")
     if f'Sequence="{LAUNCH_WORKER_SEQUENCE}"' not in text:
         errors.append("LaunchWorkerAfterInstall must be pinned after InstallFinalize")
     if f"NOT REMOVE~={XML_QUOT}ALL{XML_QUOT}" not in text:
@@ -237,8 +241,15 @@ def validate_msi_tables(msi_tables: str, sequence_table: str, custom_action_tabl
 
     if remove_existing is None or install_files is None or remove_existing >= install_files:
         errors.append("RemoveExistingProducts must run before InstallFiles")
-    if install_initialize is not None and remove_existing is not None and remove_existing >= install_initialize:
-        errors.append("RemoveExistingProducts must run before InstallInitialize so old files are gone before the new copy")
+    if (
+        install_initialize is None
+        or remove_existing is None
+        or remove_existing != install_initialize + 1
+    ):
+        errors.append(
+            "RemoveExistingProducts must run immediately after InstallInitialize "
+            "inside the transaction so a failed upgrade rolls back the old worker"
+        )
     if stop_worker is None or remove_existing is None or stop_worker >= remove_existing:
         errors.append("StopWorkerBeforeUpgrade must run before RemoveExistingProducts")
     if launch_worker is None or install_finalize is None or launch_worker <= install_finalize:
