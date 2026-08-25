@@ -146,6 +146,7 @@ public static class PanelAuditActions
     public const string WorkerKeyRotated = "worker.key_rotated";
     public const string WorkerCreated = "worker.created";
     public const string WorkerDeleted = "worker.deleted";
+    public const string CrmCardDeleted = "crm.card_deleted";
     public const string BitrixWebhookUpdated = "bitrix.webhook_updated";
     public const string BitrixWebhookValidated = "bitrix.webhook_validated";
     public const string LeadFlowImportExecuted = "leadflow.import_executed";

@@ -867,6 +867,73 @@ public sealed class CrmWorkspaceService(
             : new ResponseAvatarFile(image, contentType);
     }
 
+    public async Task<(bool Ok, string? Error, string? CardName)> DeleteCardAsync(
+        Guid cardId,
+        bool isAdministrator,
+        CancellationToken ct = default)
+    {
+        if (!isAdministrator)
+        {
+            return (false, "Удалить карточку может только администратор.", null);
+        }
+
+        var card = await db.CrmCandidateCards
+            .Include(x => x.Response)
+            .FirstOrDefaultAsync(x => x.Id == cardId, ct);
+        if (card is null)
+        {
+            return (false, "Карточка не найдена.", null);
+        }
+
+        var tasks = await db.CrmTasks.Where(x => x.CardId == cardId).ToListAsync(ct);
+        var taskIds = tasks.Select(x => x.Id).ToList();
+        var attachments = taskIds.Count == 0
+            ? []
+            : await db.CrmTaskAttachments.Where(x => taskIds.Contains(x.TaskId)).ToListAsync(ct);
+
+        if (taskIds.Count > 0)
+        {
+            db.CrmTaskNotifications.RemoveRange(
+                await db.CrmTaskNotifications.Where(x => taskIds.Contains(x.TaskId)).ToListAsync(ct));
+            db.CrmTaskComments.RemoveRange(
+                await db.CrmTaskComments.Where(x => taskIds.Contains(x.TaskId)).ToListAsync(ct));
+            db.CrmTaskAttachments.RemoveRange(attachments);
+            db.CrmTasks.RemoveRange(tasks);
+        }
+
+        db.CrmCandidateNotes.RemoveRange(
+            await db.CrmCandidateNotes.Where(x => x.CardId == cardId).ToListAsync(ct));
+        db.CrmCandidateHistory.RemoveRange(
+            await db.CrmCandidateHistory.Where(x => x.CardId == cardId).ToListAsync(ct));
+        db.CrmOutboundChatMessages.RemoveRange(
+            await db.CrmOutboundChatMessages.Where(x => x.CardId == cardId).ToListAsync(ct));
+        db.CrmCardChatReads.RemoveRange(
+            await db.CrmCardChatReads.Where(x => x.CardId == cardId).ToListAsync(ct));
+
+        var calls = await db.CrmCalls.Where(x => x.CardId == cardId).ToListAsync(ct);
+        calls.ForEach(x => x.CardId = null);
+        var deliveries = await db.ResponseCrmDeliveries.Where(x => x.CardId == cardId).ToListAsync(ct);
+        deliveries.ForEach(x => x.CardId = null);
+        var alerts = await db.CrmDeskAlerts.Where(x => x.CardId == cardId).ToListAsync(ct);
+        alerts.ForEach(x => x.CardId = null);
+
+        var officeId = card.OfficeId;
+        var cardName = card.Response.FullName;
+        db.CrmCandidateCards.Remove(card);
+        await db.SaveChangesAsync(ct);
+
+        if (taskAttachments is not null)
+        {
+            foreach (var attachment in attachments)
+            {
+                taskAttachments.TryDelete(attachment.RelativePath);
+            }
+        }
+
+        NotifyBoardChanged(officeId);
+        return (true, null, cardName);
+    }
+
     public async Task<IReadOnlyList<CrmTaskDto>> GetTasksAsync(Guid officeId, string userId, bool isAdmin, CancellationToken ct = default)
         => await GetTasksAsync(officeId, userId, isAdmin, managerUserId: null, ct);
 

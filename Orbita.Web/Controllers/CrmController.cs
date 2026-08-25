@@ -294,6 +294,26 @@ public sealed class CrmController(
         return View(card);
     }
 
+    [HttpPost]
+    [Authorize(Policy = PanelPermissions.CrmBoard)]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> DeleteCard(Guid id, string? stage, CancellationToken ct = default)
+    {
+        if (!User.IsInRole(PanelRoles.Admin))
+        {
+            return Forbid();
+        }
+
+        var (success, error) = await api.DeleteCrmCardAsync(id, ct);
+        if (!success)
+        {
+            TempData["CrmError"] = error ?? "Не удалось удалить карточку.";
+            return RedirectToAction(nameof(Card), new { id, stage });
+        }
+
+        return RedirectToAction(nameof(Index), new { stage });
+    }
+
     [HttpGet]
     [Authorize(Policy = PanelPermissions.CrmBoard)]
     [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]

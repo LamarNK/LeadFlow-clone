@@ -17,6 +17,181 @@ public sealed class CrmWorkspaceServiceTests
     private static readonly Guid WorkerId = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
 
     [Fact]
+    public async Task DeleteCard_NonAdministrator_IsRejected()
+    {
+        await using var harness = await Harness.CreateAsync();
+        SeedOffice(harness.Db, crmEnabled: true);
+        var response = await SeedResponseAsync(harness.Db, "delete-denied");
+        var card = NewCard(response.Id);
+        harness.Db.CrmCandidateCards.Add(card);
+        await harness.Db.SaveChangesAsync();
+
+        var (ok, error, cardName) = await harness.Sut.DeleteCardAsync(card.Id, isAdministrator: false);
+
+        Assert.False(ok);
+        Assert.Contains("только администратор", error, StringComparison.OrdinalIgnoreCase);
+        Assert.Null(cardName);
+        Assert.True(await harness.Db.CrmCandidateCards.AnyAsync(x => x.Id == card.Id));
+        Assert.True(await harness.Db.CandidateResponses.AnyAsync(x => x.Id == response.Id));
+    }
+
+    [Fact]
+    public async Task DeleteCard_Administrator_RemovesCardContentAndPreservesSourceEvidence()
+    {
+        await using var harness = await Harness.CreateAsync();
+        SeedOffice(harness.Db, crmEnabled: true);
+        var response = await SeedResponseAsync(harness.Db, "delete-admin");
+        var card = NewCard(response.Id);
+        var task = new CrmTaskEntity
+        {
+            Id = Guid.NewGuid(),
+            OfficeId = OfficeId,
+            CardId = card.Id,
+            Title = "Связанная задача",
+            AssigneeUserId = "manager-id",
+            CreatorUserId = "admin-id",
+            CreatorName = "Администратор",
+            CreatedAtUtc = DateTime.UtcNow,
+            ReminderVersionChangedAtUtc = DateTime.UtcNow
+        };
+        var attachmentId = Guid.NewGuid();
+        var attachmentRelativePath = $"{task.Id:N}/{attachmentId:N}.bin";
+        var attachmentFullPath = Path.Combine(harness.AttachmentRoot, attachmentRelativePath.Replace('/', Path.DirectorySeparatorChar));
+        Directory.CreateDirectory(Path.GetDirectoryName(attachmentFullPath)!);
+        await File.WriteAllTextAsync(attachmentFullPath, "test");
+
+        harness.Db.CrmCandidateCards.Add(card);
+        harness.Db.CrmCandidateNotes.Add(new CrmCandidateNoteEntity
+        {
+            Id = Guid.NewGuid(),
+            CardId = card.Id,
+            AuthorUserId = "admin-id",
+            AuthorName = "Администратор",
+            Text = "Заметка",
+            CreatedAtUtc = DateTime.UtcNow
+        });
+        harness.Db.CrmCandidateHistory.Add(new CrmCandidateHistoryEntity
+        {
+            Id = Guid.NewGuid(),
+            CardId = card.Id,
+            Action = "test",
+            ActorUserId = "admin-id",
+            ActorName = "Администратор",
+            CreatedAtUtc = DateTime.UtcNow
+        });
+        harness.Db.CrmTasks.Add(task);
+        harness.Db.CrmTaskNotifications.Add(new CrmTaskNotificationEntity
+        {
+            Id = Guid.NewGuid(),
+            OfficeId = OfficeId,
+            TaskId = task.Id,
+            ReminderVersion = task.ReminderVersion,
+            RecipientUserId = "manager-id",
+            Kind = "test",
+            DueAtUtc = DateTime.UtcNow,
+            CreatedAtUtc = DateTime.UtcNow
+        });
+        harness.Db.CrmTaskComments.Add(new CrmTaskCommentEntity
+        {
+            Id = Guid.NewGuid(),
+            TaskId = task.Id,
+            AuthorUserId = "admin-id",
+            AuthorName = "Администратор",
+            Text = "Комментарий",
+            CreatedAtUtc = DateTime.UtcNow
+        });
+        harness.Db.CrmTaskAttachments.Add(new CrmTaskAttachmentEntity
+        {
+            Id = attachmentId,
+            TaskId = task.Id,
+            FileName = "test.txt",
+            ContentType = "text/plain",
+            SizeBytes = 4,
+            UploadedByUserId = "admin-id",
+            UploadedByName = "Администратор",
+            RelativePath = attachmentRelativePath,
+            CreatedAtUtc = DateTime.UtcNow
+        });
+        harness.Db.CrmOutboundChatMessages.Add(new CrmOutboundChatMessageEntity
+        {
+            Id = Guid.NewGuid(),
+            CardId = card.Id,
+            ResponseId = response.Id,
+            AuthorUserId = "manager-id",
+            AuthorName = "Менеджер",
+            Text = "Сообщение",
+            CreatedAtUtc = DateTime.UtcNow
+        });
+        harness.Db.CrmCardChatReads.Add(new CrmCardChatReadEntity
+        {
+            CardId = card.Id,
+            UserId = "manager-id",
+            LastReadAtUtc = DateTime.UtcNow,
+            ContentHash = "hash"
+        });
+        var call = new CrmCallEntity
+        {
+            Id = Guid.NewGuid(),
+            OfficeId = OfficeId,
+            CardId = card.Id,
+            Provider = "test",
+            ExternalCallId = Guid.NewGuid().ToString("N"),
+            Direction = "outbound",
+            CallerPhone = "201",
+            CalledPhone = "79990001122",
+            ClientPhoneNormalized = "79990001122",
+            StartedAtUtc = DateTime.UtcNow,
+            ReceivedAtUtc = DateTime.UtcNow,
+            UpdatedAtUtc = DateTime.UtcNow
+        };
+        var delivery = new ResponseCrmDeliveryEntity
+        {
+            Id = Guid.NewGuid(),
+            ResponseId = response.Id,
+            OfficeId = OfficeId,
+            CardId = card.Id,
+            Outcome = "created",
+            Source = "test",
+            CreatedAtUtc = DateTime.UtcNow
+        };
+        var alert = new CrmDeskAlertEntity
+        {
+            Id = Guid.NewGuid(),
+            OfficeId = OfficeId,
+            RecipientUserId = "manager-id",
+            Kind = "test",
+            CardId = card.Id,
+            Title = "Оповещение",
+            Message = "Текст",
+            CreatedAtUtc = DateTime.UtcNow
+        };
+        harness.Db.CrmCalls.Add(call);
+        harness.Db.ResponseCrmDeliveries.Add(delivery);
+        harness.Db.CrmDeskAlerts.Add(alert);
+        await harness.Db.SaveChangesAsync();
+
+        var (ok, error, cardName) = await harness.Sut.DeleteCardAsync(card.Id, isAdministrator: true);
+
+        Assert.True(ok, error);
+        Assert.Equal(response.FullName, cardName);
+        harness.Db.ChangeTracker.Clear();
+        Assert.False(await harness.Db.CrmCandidateCards.AnyAsync(x => x.Id == card.Id));
+        Assert.False(await harness.Db.CrmCandidateNotes.AnyAsync(x => x.CardId == card.Id));
+        Assert.False(await harness.Db.CrmCandidateHistory.AnyAsync(x => x.CardId == card.Id));
+        Assert.False(await harness.Db.CrmTasks.AnyAsync(x => x.CardId == card.Id));
+        Assert.False(await harness.Db.CrmTaskNotifications.AnyAsync(x => x.TaskId == task.Id));
+        Assert.False(await harness.Db.CrmTaskComments.AnyAsync(x => x.TaskId == task.Id));
+        Assert.False(await harness.Db.CrmTaskAttachments.AnyAsync(x => x.TaskId == task.Id));
+        Assert.False(await harness.Db.CrmOutboundChatMessages.AnyAsync(x => x.CardId == card.Id));
+        Assert.False(await harness.Db.CrmCardChatReads.AnyAsync(x => x.CardId == card.Id));
+        Assert.True(await harness.Db.CandidateResponses.AnyAsync(x => x.Id == response.Id));
+        Assert.Null((await harness.Db.CrmCalls.SingleAsync(x => x.Id == call.Id)).CardId);
+        Assert.Null((await harness.Db.ResponseCrmDeliveries.SingleAsync(x => x.Id == delivery.Id)).CardId);
+        Assert.Null((await harness.Db.CrmDeskAlerts.SingleAsync(x => x.Id == alert.Id)).CardId);
+        Assert.False(File.Exists(attachmentFullPath));
+    }
+
+    [Fact]
     public async Task CreateCard_WhenCrmDisabled_DoesNothing()
     {
         await using var harness = await Harness.CreateAsync();
@@ -1780,7 +1955,7 @@ public sealed class CrmWorkspaceServiceTests
         public UserManager<IdentityUser> Users { get; }
         public CrmWorkspaceService Sut { get; }
         public ManualTimeProvider Clock { get; }
-        private string AttachmentRoot { get; }
+        public string AttachmentRoot { get; }
 
         private Harness(
             ServiceProvider services,

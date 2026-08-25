@@ -352,6 +352,14 @@
                             <button class="settings-primary-btn" type="submit">Вернуть в работу</button>
                         </form>
                     }
+                    @if (User.IsInRole(PanelRoles.Admin))
+                    {
+                        <form asp-action="DeleteCard" method="post" class="crm-side-form" onsubmit="return confirm('Удалить карточку без возможности восстановления? Связанные задачи, комментарии и история также будут удалены.');">
+                            <input type="hidden" name="id" value="@card.Id" />
+                            <input type="hidden" name="stage" value="@boardReturnStage" />
+                            <button class="settings-secondary-btn crm-btn-danger" type="submit"><i class="fa-solid fa-trash" aria-hidden="true"></i>Удалить карточку</button>
+                        </form>
+                    }
                 </section>
             }
         </aside>

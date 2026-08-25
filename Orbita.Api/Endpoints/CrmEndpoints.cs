@@ -327,6 +327,45 @@ public static class CrmEndpoints
             return card is null ? Results.NotFound() : Results.Ok(card);
         });
 
+        crmBoard.MapDelete("/cards/{cardId:guid}", async (
+            Guid cardId,
+            CrmWorkspaceService workspace,
+            PanelAuditService audit,
+            ClaimsPrincipal principal,
+            HttpContext http,
+            CancellationToken ct) =>
+        {
+            if (!principal.IsInRole(PanelRoles.Admin))
+            {
+                return Results.Forbid();
+            }
+
+            var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrWhiteSpace(userId))
+            {
+                return Results.Forbid();
+            }
+
+            var (ok, error, cardName) = await workspace.DeleteCardAsync(cardId, isAdministrator: true, ct);
+            if (!ok)
+            {
+                return string.Equals(error, "Карточка не найдена.", StringComparison.Ordinal)
+                    ? Results.NotFound()
+                    : Results.BadRequest(new { error = error ?? "Не удалось удалить карточку." });
+            }
+
+            await audit.LogAsync(
+                userId,
+                principal.FindFirstValue(ClaimTypes.Email),
+                PanelAuditActions.CrmCardDeleted,
+                "crm_card",
+                cardId.ToString("D"),
+                cardName,
+                http.Connection.RemoteIpAddress?.ToString(),
+                ct);
+            return Results.NoContent();
+        });
+
         crmBoard.MapGet("/cards/{cardId:guid}/avatar", async (Guid cardId, CrmWorkspaceService workspace, ClaimsPrincipal principal, CancellationToken ct) =>
         {
             var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);

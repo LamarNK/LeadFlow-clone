@@ -2304,6 +2304,24 @@ public sealed class OrbitaApiClient(
             ? Task.FromResult(DesignPreviewData.GetCrmCard(cardId))
             : GetAsync<CrmCandidateDetailDto>($"api/v1/crm/cards/{cardId:D}", ct);
 
+    public async Task<(bool Success, string? Error)> DeleteCrmCardAsync(
+        Guid cardId,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return (false, "Удаление недоступно в режиме предпросмотра.");
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Delete, $"api/v1/crm/cards/{cardId:D}");
+        using var response = await SendAuthenticatedAsync(request, ct);
+        return response is null
+            ? (false, InvalidApiSessionError)
+            : response.IsSuccessStatusCode
+                ? (true, null)
+                : (false, await ReadApiErrorAsync(response, ct));
+    }
+
     public async Task<(Stream? Stream, string? ContentType)> GetCrmCardAvatarAsync(Guid cardId, CancellationToken ct = default)
     {
         if (_preview.Enabled)
