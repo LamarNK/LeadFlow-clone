@@ -67,6 +67,12 @@ public sealed class AvitoAccountEntity
     public string? AdsPowerProfileName { get; set; }
     public string? AdsPowerApiBaseUrl { get; set; }
     public string? AdsPowerApiKey { get; set; }
+    public string? MultiloginProfileId { get; set; }
+    public string? MultiloginProfileName { get; set; }
+    public string? MultiloginFolderId { get; set; }
+    public string? MultiloginLauncherUrl { get; set; }
+    public string? MultiloginCloudApiUrl { get; set; }
+    public string? MultiloginAutomationToken { get; set; }
 
     /// <summary>
     /// Имя пользователя со страницы Avito (последняя удачная проверка авторизации).

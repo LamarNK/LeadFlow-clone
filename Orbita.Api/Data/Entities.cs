@@ -224,6 +224,12 @@ public sealed class WorkerEntity
     public string? AdsPowerGroupName { get; set; }
     /// <summary>JSON-список групп AdsPower, последний раз полученный с воркера.</summary>
     public string? AdsPowerGroupsJson { get; set; }
+    /// <summary>URL локального launcher Multilogin X.</summary>
+    public string? MultiloginLauncherUrl { get; set; }
+    /// <summary>URL cloud API Multilogin X.</summary>
+    public string? MultiloginCloudApiUrl { get; set; }
+    /// <summary>Automation token Multilogin X. Не отдаётся в телеметрию панели.</summary>
+    public string? MultiloginAutomationToken { get; set; }
     public string? LastUpdateVersion { get; set; }
     public bool? LastUpdateSuccess { get; set; }
     public string? LastUpdateMessage { get; set; }
@@ -272,6 +278,9 @@ public sealed class WorkerAccountEntity
     public string AdsPowerProfileId { get; set; } = string.Empty;
     public string? AdsPowerGroupId { get; set; }
     public string? AdsPowerGroupName { get; set; }
+    public string? MultiloginProfileId { get; set; }
+    public string? MultiloginProfileName { get; set; }
+    public string? MultiloginFolderId { get; set; }
     public string DisplayName { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
     public bool IsEnabled { get; set; }
