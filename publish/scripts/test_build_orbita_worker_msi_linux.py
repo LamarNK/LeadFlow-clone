@@ -71,6 +71,8 @@ class WorkerMsiContractTests(unittest.TestCase):
         self.assertIn("[#File_", text)
         self.assertIn("taskkill /F /IM Orbita.Worker.exe", text)
         self.assertNotIn("taskkill /IM Orbita.Worker.exe /T", text)
+        self.assertIn('Version="1.2.30004"', text)
+        self.assertNotIn('Version="1.2.3.4"', text)
         self.assertIn('Sequence="1501"', text)
         self.assertIn('Sequence="6602"', text)
         self.assertIn("start " + builder.XML_QUOT + builder.XML_QUOT, text)
@@ -84,6 +86,14 @@ class WorkerMsiContractTests(unittest.TestCase):
         self.assertNotEqual(first, second)
         self.assertIn("FileComponent_1", first)
         self.assertIn("FileComponent_1", second)
+
+    def test_msi_product_version_keeps_four_part_worker_releases_ordered(self) -> None:
+        self.assertEqual("1.0.10096", builder.msi_product_version("1.0.1.96"))
+        self.assertEqual("1.0.10097", builder.msi_product_version("1.0.1.97"))
+        self.assertLess(
+            tuple(map(int, builder.msi_product_version("1.0.1.96").split("."))),
+            tuple(map(int, builder.msi_product_version("1.0.1.97").split("."))),
+        )
 
     def test_wxs_contract_rejects_filekey_launch(self) -> None:
         with self.assertRaises(RuntimeError):

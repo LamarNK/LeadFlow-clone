@@ -21,6 +21,8 @@ WORKER_LAUNCH_ARGUMENT = "--update-restart"
 XML_QUOT = "&" + "quot;"
 XML_GT = "&" + "gt;"
 XML_AMP = "&" + "amp;"
+MSI_VERSION_PATTERN = re.compile(r"^(\d+)\.(\d+)\.(\d+)\.(\d+)$")
+MSI_VERSION_FIELD_MAX = 65_535
 
 # Explicit numbers pin wixl's topological sort. MajorUpgrade only adds a
 # dependency on InstallValidate (1400); without a number, RemoveExistingProducts
@@ -62,6 +64,31 @@ def component_guid(version: str, identity: str) -> str:
     then RemoveExistingProducts deletes that very file from the old package.
     """
     return str(uuid.uuid5(uuid.NAMESPACE_URL, f"orbita-worker/{version}/{identity}")).upper()
+
+
+def msi_product_version(version: str) -> str:
+    """Map the four-part app version to a strictly increasing MSI version.
+
+    Windows Installer compares only the first three ProductVersion fields.
+    Publishing 1.0.1.96 followed by 1.0.1.97 therefore used to create a
+    *same-version* major upgrade: it could remove the old product while
+    refusing to install its replacement.  Keep the public app/FileVersion
+    intact, but encode its build and revision into MSI's third field.
+    """
+    match = MSI_VERSION_PATTERN.fullmatch(version)
+    if match is None:
+        raise ValueError(f"Worker version must have four numeric fields: {version}")
+
+    major, minor, build, revision = (int(part) for part in match.groups())
+    if major > 255 or minor > 255:
+        raise ValueError(f"MSI major/minor version fields must be at most 255: {version}")
+    if revision >= 10_000:
+        raise ValueError(f"Worker revision must be below 10000 for MSI version encoding: {version}")
+
+    encoded_build = build * 10_000 + revision
+    if encoded_build > MSI_VERSION_FIELD_MAX:
+        raise ValueError(f"Worker build/revision is too large for MSI ProductVersion: {version}")
+    return f"{major}.{minor}.{encoded_build}"
 
 
 def directory_tree(parent: str, children: dict[str, dict]) -> list[str]:
@@ -303,11 +330,12 @@ def generate(publish_dir: Path, output: Path, version: str) -> None:
         if relative.parent != Path("."):
             add_to_tree(tree, relative.parent)
 
+    product_version = msi_product_version(version)
     lines = [
         '<?xml version="1.0" encoding="UTF-8"?>',
         '<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">',
         '  <Product Id="*" Name="Orbita Worker" Language="1049"',
-        f'           Version="{xml(version)}" Manufacturer="Orbita" UpgradeCode="{UPGRADE_CODE}">',
+        f'           Version="{xml(product_version)}" Manufacturer="Orbita" UpgradeCode="{UPGRADE_CODE}">',
         '    <Package InstallerVersion="200" Compressed="yes" InstallScope="perUser" />',
         '    <MajorUpgrade AllowSameVersionUpgrades="yes"',
         '                  DowngradeErrorMessage="A newer version of Orbita Worker is already installed." />',
