@@ -7,6 +7,7 @@ using LeadFlow.Core.Logging.Audit;
 using LeadFlow.Core.Models;
 using LeadFlow.Core.Services.AdsPower;
 using LeadFlow.Core.Services.Avito;
+using LeadFlow.Core.Services.Captcha;
 using LeadFlow.Core.Services.Multilogin;
 using LeadFlow.Core.Services.Browser;
 using Orbita.Contracts;
