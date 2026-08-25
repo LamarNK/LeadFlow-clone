@@ -19,6 +19,20 @@ public sealed class MultiloginTelemetryContractTests
     }
 
     [Fact]
+    public void WorkerAccountSyncItemDto_CarriesMultiloginIds_WithoutToken()
+    {
+        var names = typeof(WorkerAccountSyncItemDto).GetProperties()
+            .Select(static p => p.Name)
+            .ToHashSet(StringComparer.Ordinal);
+        Assert.Contains(nameof(WorkerAccountSyncItemDto.MultiloginProfileId), names);
+        Assert.Contains(nameof(WorkerAccountSyncItemDto.MultiloginFolderId), names);
+        Assert.Contains(nameof(WorkerAccountSyncItemDto.MultiloginProfileName), names);
+        Assert.DoesNotContain("MultiloginAutomationToken", names);
+        Assert.DoesNotContain("AutomationToken", names);
+        Assert.DoesNotContain("ProjectId", names);
+    }
+
+    [Fact]
     public void WorkerDetail_ExposesHasTokenFlag_WithoutTokenValue()
     {
         var names = typeof(WorkerDetail).GetProperties()
