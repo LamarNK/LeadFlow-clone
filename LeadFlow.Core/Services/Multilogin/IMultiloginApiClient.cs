@@ -1,8 +1,8 @@
 namespace LeadFlow.Core.Services.Multilogin;
 
 /// <summary>
-/// Клиент Multilogin X. На этом этапе контракт зафиксирован без HTTP-вызовов:
-/// список профилей не включён, пока в репозитории нет подтверждённого JSON-fixture.
+/// Клиент launcher Multilogin X: только подтверждённые start/stop.
+/// Список профилей не входит в контракт.
 /// </summary>
 public interface IMultiloginApiClient
 {
