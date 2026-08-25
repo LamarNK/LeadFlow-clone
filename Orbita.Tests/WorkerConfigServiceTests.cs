@@ -385,6 +385,30 @@ public sealed class WorkerConfigServiceTests
     }
 
     [Fact]
+    public async Task SyncAccountsAsync_IgnoresItemsWithoutAdsPowerProfileId()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db);
+
+        var sut = CreateService(db);
+        var synced = await sut.SyncAccountsAsync(
+            WorkerId,
+            new WorkerAccountSyncRequest(
+                [
+                    new WorkerAccountSyncItemDto("profile-1", "acc-1"),
+                    new WorkerAccountSyncItemDto("", "multilogin-only"),
+                    new WorkerAccountSyncItemDto("   ", "whitespace")
+                ]));
+
+        Assert.True(synced);
+        var accounts = await db.WorkerAccounts.ToListAsync();
+        Assert.DoesNotContain(accounts, a => a.DisplayName is "multilogin-only" or "whitespace");
+        Assert.All(accounts, a => Assert.False(string.IsNullOrWhiteSpace(a.AdsPowerProfileId)));
+        Assert.All(accounts, a => Assert.Null(a.MultiloginProfileId));
+        Assert.Contains(accounts, a => a.AdsPowerProfileId == "profile-1");
+    }
+
+    [Fact]
     public async Task UpdateSettingsAsync_PersistsAdsPowerGroupId()
     {
         await using var db = CreateDb();
