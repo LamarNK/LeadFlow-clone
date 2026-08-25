@@ -80,7 +80,9 @@ public sealed class WorkerTelemetryCollector(
             cfg.AdsPowerProfileId,
             MapSubProfiles(local, cfg),
             EnsureUtc(local?.SubProfilesRefreshedAt ?? cfg.SubProfilesRefreshedAtUtc),
-            SubProfilesRefreshRequestedAtUtc: cfg.SubProfilesRefreshRequestedAtUtc);
+            SubProfilesRefreshRequestedAtUtc: cfg.SubProfilesRefreshRequestedAtUtc,
+            MultiloginProfileId: cfg.MultiloginProfileId,
+            MultiloginFolderId: cfg.MultiloginFolderId);
     }
 
     private static WorkerBalanceDto MapBalance(

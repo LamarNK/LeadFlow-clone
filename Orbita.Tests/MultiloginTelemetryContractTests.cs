@@ -84,16 +84,20 @@ public sealed class MultiloginTelemetryContractTests
     }
 
     [Fact]
-    public void WorkerAccountDto_StillExposesAdsPowerProfileId_WithoutMultiloginFields()
+    public void WorkerAccountDto_CarriesMultiloginIds_WithoutTokenOrUrls()
     {
         var names = typeof(WorkerAccountDto).GetProperties()
             .Select(static p => p.Name)
             .ToHashSet(StringComparer.Ordinal);
         Assert.Contains(nameof(WorkerAccountDto.AdsPowerProfileId), names);
-        Assert.DoesNotContain("MultiloginProfileId", names);
-        Assert.DoesNotContain("MultiloginFolderId", names);
+        Assert.Contains(nameof(WorkerAccountDto.MultiloginProfileId), names);
+        Assert.Contains(nameof(WorkerAccountDto.MultiloginFolderId), names);
+        Assert.DoesNotContain("MultiloginAutomationToken", names);
+        Assert.DoesNotContain("AutomationToken", names);
         Assert.DoesNotContain("MultiloginLauncherUrl", names);
         Assert.DoesNotContain("MultiloginCloudApiUrl", names);
+        Assert.DoesNotContain("Proxy", names);
+        Assert.DoesNotContain("Password", names);
     }
 
     [Fact]

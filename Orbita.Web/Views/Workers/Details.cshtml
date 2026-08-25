@@ -886,7 +886,7 @@
                     Title = Model.HasActiveAccountFilters ? "Аккаунты не найдены" : "Аккаунтов пока нет",
                     Description = Model.HasActiveAccountFilters
                         ? "Измените поиск или группу AdsPower."
-                        : "Дождитесь синхронизации профилей AdsPower с воркером.",
+                        : "Дождитесь синхронизации профилей AdsPower или Multilogin с воркером.",
                     CtaLabel = Model.HasActiveAccountFilters ? "Сбросить фильтры" : null,
                     CtaUrl = Model.HasActiveAccountFilters
                         ? Url.Action("Details", "Workers", new { id = Model.WorkerId, sort = Model.Sort.Column, dir = Model.Sort.Dir })
@@ -935,6 +935,10 @@
                             @if (!string.IsNullOrWhiteSpace(account.AdsPowerProfileId))
                             {
                                 <span class="worker-account-sub">AdsPower @account.AdsPowerProfileId</span>
+                            }
+                            @if (!string.IsNullOrWhiteSpace(account.MultiloginProfileId))
+                            {
+                                <span class="worker-account-sub" title="@(account.MultiloginFolderId)">Multilogin @account.MultiloginProfileId</span>
                             }
                             @if (account.HasAvitoCredentials)
                             {

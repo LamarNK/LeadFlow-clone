@@ -154,7 +154,8 @@ internal static class WorkerDetailsBuilder
                     searchQuery,
                     a.DisplayName,
                     a.AdsPowerProfileId,
-                    a.AdsPowerGroupName));
+                    a.AdsPowerGroupName,
+                    a.MultiloginProfileId));
         }
 
         if (!string.IsNullOrWhiteSpace(groupId))
@@ -207,6 +208,8 @@ internal static class WorkerDetailsBuilder
             AdsPowerProfileId = account.AdsPowerProfileId,
             AdsPowerGroupId = account.AdsPowerGroupId,
             AdsPowerGroupName = account.AdsPowerGroupName,
+            MultiloginProfileId = account.MultiloginProfileId,
+            MultiloginFolderId = account.MultiloginFolderId,
             HasAvitoCredentials = account.HasAvitoCredentials,
             AvitoLogin = account.AvitoLogin,
             StatusLabel = label,

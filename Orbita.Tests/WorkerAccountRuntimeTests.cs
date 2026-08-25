@@ -54,6 +54,7 @@ public sealed class WorkerAccountRuntimeTests
         Assert.Equal(AvitoProfileProvider.Multilogin, account.ProfileProvider);
         Assert.Equal("profile-mlx", account.MultiloginProfileId);
         Assert.Equal("folder-mlx", account.MultiloginFolderId);
+        Assert.Equal("mlx", account.MultiloginProfileName);
         Assert.Equal("https://launcher.mlx.yt:45001", account.MultiloginLauncherUrl);
         Assert.Equal("mlx-secret-token", account.MultiloginAutomationToken);
         Assert.Equal(WorkerAccountRuntimeKind.Multilogin, WorkerAccountRuntime.Resolve(account));
@@ -76,6 +77,7 @@ public sealed class WorkerAccountRuntimeTests
         Assert.Equal(AvitoProfileProvider.AdsPower, account.ProfileProvider);
         Assert.Equal("ads-user", account.AdsPowerProfileId);
         Assert.Null(account.MultiloginProfileId);
+        Assert.Null(account.MultiloginProfileName);
         Assert.Equal(WorkerAccountRuntimeKind.AdsPower, WorkerAccountRuntime.Resolve(account));
     }
 

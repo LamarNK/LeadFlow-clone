@@ -15,18 +15,22 @@ public static class WorkerAccountRuntimeMapper
         WorkerConfigDto config,
         string defaultBaseUrl)
     {
+        var provider = ResolveProvider(dto);
         var account = new AvitoAccount
         {
             Id = dto.AccountId,
             DisplayName = dto.DisplayName,
             IsEnabled = dto.IsEnabled,
-            ProfileProvider = ResolveProvider(dto),
+            ProfileProvider = provider,
             AdsPowerProfileId = dto.AdsPowerProfileId,
             AdsPowerProfileName = dto.DisplayName,
             AdsPowerApiBaseUrl = string.IsNullOrWhiteSpace(dto.AdsPowerApiBaseUrl) ? defaultBaseUrl : dto.AdsPowerApiBaseUrl,
             AdsPowerApiKey = dto.AdsPowerApiKey ?? config.AdsPowerApiKey,
             MultiloginProfileId = NullIfWhiteSpace(dto.MultiloginProfileId),
             MultiloginFolderId = NullIfWhiteSpace(dto.MultiloginFolderId),
+            MultiloginProfileName = provider == AvitoProfileProvider.Multilogin
+                ? NullIfWhiteSpace(dto.DisplayName)
+                : null,
             MultiloginLauncherUrl = MultiloginUrl.Normalize(config.MultiloginLauncherUrl),
             MultiloginCloudApiUrl = MultiloginUrl.Normalize(config.MultiloginCloudApiUrl),
             MultiloginAutomationToken = NullIfWhiteSpace(config.MultiloginAutomationToken),

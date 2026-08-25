@@ -253,6 +253,8 @@ public sealed class WorkerAccountRowViewModel
     public string AdsPowerProfileId { get; init; } = string.Empty;
     public string? AdsPowerGroupId { get; init; }
     public string? AdsPowerGroupName { get; init; }
+    public string? MultiloginProfileId { get; init; }
+    public string? MultiloginFolderId { get; init; }
     public bool HasAvitoCredentials { get; init; }
     public string? AvitoLogin { get; init; }
     public string StatusLabel { get; init; } = string.Empty;
