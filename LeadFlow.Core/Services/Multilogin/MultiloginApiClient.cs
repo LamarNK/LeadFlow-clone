@@ -1,15 +1,26 @@
 using System.Net.Http.Headers;
+using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 using System.Text.RegularExpressions;
+using Orbita.Contracts;
 
 namespace LeadFlow.Core.Services.Multilogin;
 
 /// <summary>
-/// HTTP-клиент launcher Multilogin X только для подтверждённых start/stop.
-/// Не вызывает cloud API, profile/search и неподтверждённые пути.
+/// HTTP-клиент Multilogin X: launcher start/stop и POST /profile/search.
 /// </summary>
 public sealed class MultiloginApiClient(IHttpClientFactory httpClientFactory) : IMultiloginApiClient
 {
+    public const int ProfileSearchPageSize = 100;
+    private const int ProfileSearchMaxPages = 50;
+
+    private static readonly JsonSerializerOptions SearchRequestJson = new()
+    {
+        PropertyNamingPolicy = JsonNamingPolicy.SnakeCaseLower,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
+    };
+
     public async Task<MultiloginBrowserStartResult> StartProfileAsync(
         MultiloginConnectionOptions options,
         string folderId,
@@ -59,6 +70,61 @@ public sealed class MultiloginApiClient(IHttpClientFactory httpClientFactory) : 
         }
     }
 
+    public async Task<IReadOnlyList<MultiloginProfileSummary>> SearchProfilesAsync(
+        MultiloginConnectionOptions options,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+
+        var normalized = options.Normalized();
+        var origin = ResolveCloudOrigin(normalized.CloudApiUrl);
+        var token = RequireAutomationToken(normalized);
+        var url = $"{origin}/profile/search";
+        var results = new List<MultiloginProfileSummary>();
+
+        for (var page = 0; page < ProfileSearchMaxPages; page++)
+        {
+            var offset = page * ProfileSearchPageSize;
+            var body = JsonSerializer.Serialize(
+                new ProfileSearchRequestBody(
+                    IsRemoved: false,
+                    Limit: ProfileSearchPageSize,
+                    Offset: offset,
+                    SearchText: "",
+                    StorageType: "all",
+                    OrderBy: "created_at",
+                    Sort: "asc"),
+                SearchRequestJson);
+
+            var (statusCode, isSuccess, json) = await SendPostAsync(token, url, body, cancellationToken)
+                .ConfigureAwait(false);
+            if (!isSuccess)
+            {
+                throw new InvalidOperationException(
+                    FormatHttpError("Multilogin profile/search", statusCode, json, token));
+            }
+
+            var (profiles, totalCount) = ParseSearchPage(json);
+            results.AddRange(profiles);
+            if (profiles.Count == 0)
+            {
+                break;
+            }
+
+            if (totalCount is int total && (results.Count >= total || offset + ProfileSearchPageSize >= total))
+            {
+                break;
+            }
+
+            if (totalCount is null && profiles.Count < ProfileSearchPageSize)
+            {
+                break;
+            }
+        }
+
+        return results;
+    }
+
     private async Task<(int StatusCode, bool IsSuccess, string Json)> SendGetAsync(
         string token,
         string url,
@@ -69,6 +135,23 @@ public sealed class MultiloginApiClient(IHttpClientFactory httpClientFactory) : 
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         request.Headers.TryAddWithoutValidation("Content-Type", "application/json");
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+
+        using var response = await client.SendAsync(request, cancellationToken).ConfigureAwait(false);
+        var json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        return ((int)response.StatusCode, response.IsSuccessStatusCode, json);
+    }
+
+    private async Task<(int StatusCode, bool IsSuccess, string Json)> SendPostAsync(
+        string token,
+        string url,
+        string jsonBody,
+        CancellationToken cancellationToken)
+    {
+        var client = httpClientFactory.CreateClient();
+        using var request = new HttpRequestMessage(HttpMethod.Post, url);
+        request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
+        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", token);
+        request.Content = new StringContent(jsonBody, Encoding.UTF8, "application/json");
 
         using var response = await client.SendAsync(request, cancellationToken).ConfigureAwait(false);
         var json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
@@ -91,6 +174,9 @@ public sealed class MultiloginApiClient(IHttpClientFactory httpClientFactory) : 
 
         return normalized.TrimEnd('/');
     }
+
+    private static string ResolveCloudOrigin(string? cloudApiUrl) =>
+        MultiloginUrl.Normalize(cloudApiUrl) ?? MultiloginWorkerSettings.DefaultCloudApiUrl;
 
     private static string RequireAutomationToken(MultiloginConnectionOptions options)
     {
@@ -131,12 +217,86 @@ public sealed class MultiloginApiClient(IHttpClientFactory httpClientFactory) : 
         }
     }
 
+    private static (IReadOnlyList<MultiloginProfileSummary> Profiles, int? TotalCount) ParseSearchPage(string json)
+    {
+        try
+        {
+            using var doc = JsonDocument.Parse(string.IsNullOrWhiteSpace(json) ? "{}" : json);
+            if (!doc.RootElement.TryGetProperty("data", out var data)
+                || data.ValueKind != JsonValueKind.Object)
+            {
+                return ([], null);
+            }
+
+            int? totalCount = null;
+            if (data.TryGetProperty("total_count", out var totalProp)
+                && totalProp.ValueKind == JsonValueKind.Number
+                && totalProp.TryGetInt32(out var total))
+            {
+                totalCount = total;
+            }
+
+            if (!data.TryGetProperty("profiles", out var profilesProp)
+                || profilesProp.ValueKind != JsonValueKind.Array)
+            {
+                return ([], totalCount);
+            }
+
+            var profiles = new List<MultiloginProfileSummary>();
+            foreach (var item in profilesProp.EnumerateArray())
+            {
+                if (item.ValueKind != JsonValueKind.Object)
+                {
+                    continue;
+                }
+
+                var id = ReadString(item, "id");
+                var folderId = ReadString(item, "folder_id");
+                if (string.IsNullOrWhiteSpace(id) || string.IsNullOrWhiteSpace(folderId))
+                {
+                    continue;
+                }
+
+                profiles.Add(new MultiloginProfileSummary(
+                    id.Trim(),
+                    folderId.Trim(),
+                    ReadString(item, "name")?.Trim() ?? string.Empty));
+            }
+
+            return (profiles, totalCount);
+        }
+        catch (JsonException ex)
+        {
+            throw new InvalidOperationException("Multilogin profile/search: некорректный JSON.", ex);
+        }
+    }
+
+    private static string? ReadString(JsonElement obj, string name)
+    {
+        if (!obj.TryGetProperty(name, out var prop))
+        {
+            return null;
+        }
+
+        return prop.ValueKind switch
+        {
+            JsonValueKind.String => prop.GetString(),
+            JsonValueKind.Number => prop.ToString(),
+            _ => null
+        };
+    }
+
     private static string FormatHttpError(string operation, int statusCode, string body, string? token) =>
         $"{operation}: {statusCode} {Truncate(SanitizeErrorBody(body, token), 500)}";
 
     private static string SanitizeErrorBody(string? body, string? token)
     {
         var result = body ?? string.Empty;
+        result = Regex.Replace(
+            result,
+            "\"(password|username|proxy|token)\"\\s*:\\s*\"(?:\\\\.|[^\"\\\\])*\"",
+            "\"$1\":\"\"",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
         if (string.IsNullOrWhiteSpace(token))
         {
             return result;
@@ -159,4 +319,13 @@ public sealed class MultiloginApiClient(IHttpClientFactory httpClientFactory) : 
 
         return value[..max] + "…";
     }
+
+    private sealed record ProfileSearchRequestBody(
+        bool IsRemoved,
+        int Limit,
+        int Offset,
+        string SearchText,
+        string StorageType,
+        string OrderBy,
+        string Sort);
 }

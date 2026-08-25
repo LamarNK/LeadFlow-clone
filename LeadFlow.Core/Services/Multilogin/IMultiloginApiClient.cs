@@ -1,8 +1,7 @@
 namespace LeadFlow.Core.Services.Multilogin;
 
 /// <summary>
-/// Клиент launcher Multilogin X: только подтверждённые start/stop.
-/// Список профилей не входит в контракт.
+/// Клиент Multilogin X: launcher start/stop и подтверждённый cloud profile/search.
 /// </summary>
 public interface IMultiloginApiClient
 {
@@ -15,5 +14,9 @@ public interface IMultiloginApiClient
     Task StopProfileAsync(
         MultiloginConnectionOptions options,
         string profileId,
+        CancellationToken cancellationToken = default);
+
+    Task<IReadOnlyList<MultiloginProfileSummary>> SearchProfilesAsync(
+        MultiloginConnectionOptions options,
         CancellationToken cancellationToken = default);
 }
