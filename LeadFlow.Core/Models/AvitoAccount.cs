@@ -92,6 +92,15 @@ public sealed partial class AvitoAccount : ObservableObject
     [ObservableProperty] private string? adsPowerProfileName;
     [ObservableProperty] private string? adsPowerApiBaseUrl;
     [ObservableProperty] private string? adsPowerApiKey;
+    /// <summary>Идентификатор профиля Multilogin X (<c>profile_id</c>).</summary>
+    [ObservableProperty] private string? multiloginProfileId;
+    [ObservableProperty] private string? multiloginProfileName;
+    /// <summary>Папка Multilogin X (<c>folder_id</c>), обязательная для launcher start.</summary>
+    [ObservableProperty] private string? multiloginFolderId;
+    [ObservableProperty] private string? multiloginLauncherUrl;
+    [ObservableProperty] private string? multiloginCloudApiUrl;
+    /// <summary>Automation token Multilogin X. Не отправляется в телеметрию панели.</summary>
+    [ObservableProperty] private string? multiloginAutomationToken;
 
     /// <summary>
     /// Логин Avito из панели Орбиты (не сохраняется в SQLite воркера, только runtime из config).

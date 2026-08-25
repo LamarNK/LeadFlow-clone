@@ -49,6 +49,9 @@ public interface IWorkersService
         bool? autoDeliverToBitrix = null,
         string? responseHighlightTargetsJson = null,
         string? ruCaptchaApiKey = null,
+        string? multiloginLauncherUrl = null,
+        string? multiloginCloudApiUrl = null,
+        string? multiloginAutomationToken = null,
         CancellationToken ct = default);
     Task<(bool Success, string? Error)> UpdateWorkerAccountAsync(Guid workerId, Guid accountId, bool isEnabled, CancellationToken ct = default);
     Task<(bool Success, string? Error)> UpdateWorkerAccountCredentialsAsync(

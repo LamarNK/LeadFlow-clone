@@ -149,6 +149,12 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
                 x.AdsPowerProfileName,
                 x.AdsPowerApiBaseUrl,
                 x.AdsPowerApiKey,
+                x.MultiloginProfileId,
+                x.MultiloginProfileName,
+                x.MultiloginFolderId,
+                x.MultiloginLauncherUrl,
+                x.MultiloginCloudApiUrl,
+                x.MultiloginAutomationToken,
                 x.AvitoProfileName,
                 x.SubProfilesJson))
             .ToListAsync(cancellationToken);
@@ -1203,6 +1209,12 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         AdsPowerProfileName = model.AdsPowerProfileName,
         AdsPowerApiBaseUrl = model.AdsPowerApiBaseUrl,
         AdsPowerApiKey = model.AdsPowerApiKey,
+        MultiloginProfileId = model.MultiloginProfileId,
+        MultiloginProfileName = model.MultiloginProfileName,
+        MultiloginFolderId = model.MultiloginFolderId,
+        MultiloginLauncherUrl = model.MultiloginLauncherUrl,
+        MultiloginCloudApiUrl = model.MultiloginCloudApiUrl,
+        MultiloginAutomationToken = model.MultiloginAutomationToken,
         AvitoProfileName = model.AvitoProfileName,
         SubProfilesJson = string.IsNullOrWhiteSpace(model.SubProfilesJson) ? "[]" : model.SubProfilesJson,
         SubProfilesRefreshedAt = model.SubProfilesRefreshedAt
@@ -1242,6 +1254,12 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         string? AdsPowerProfileName,
         string? AdsPowerApiBaseUrl,
         string? AdsPowerApiKey,
+        string? MultiloginProfileId,
+        string? MultiloginProfileName,
+        string? MultiloginFolderId,
+        string? MultiloginLauncherUrl,
+        string? MultiloginCloudApiUrl,
+        string? MultiloginAutomationToken,
         string? AvitoProfileName,
         string SubProfilesJson)
     {
@@ -1269,6 +1287,12 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
             AdsPowerProfileName = AdsPowerProfileName,
             AdsPowerApiBaseUrl = AdsPowerApiBaseUrl,
             AdsPowerApiKey = AdsPowerApiKey,
+            MultiloginProfileId = MultiloginProfileId,
+            MultiloginProfileName = MultiloginProfileName,
+            MultiloginFolderId = MultiloginFolderId,
+            MultiloginLauncherUrl = MultiloginLauncherUrl,
+            MultiloginCloudApiUrl = MultiloginCloudApiUrl,
+            MultiloginAutomationToken = MultiloginAutomationToken,
             AvitoProfileName = AvitoProfileName,
             SubProfilesJson = string.IsNullOrWhiteSpace(SubProfilesJson) ? "[]" : SubProfilesJson,
             ActiveAdsSnapshotJson = "[]",
@@ -1342,6 +1366,12 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         AdsPowerProfileName = entity.AdsPowerProfileName,
         AdsPowerApiBaseUrl = entity.AdsPowerApiBaseUrl,
         AdsPowerApiKey = entity.AdsPowerApiKey,
+        MultiloginProfileId = entity.MultiloginProfileId,
+        MultiloginProfileName = entity.MultiloginProfileName,
+        MultiloginFolderId = entity.MultiloginFolderId,
+        MultiloginLauncherUrl = entity.MultiloginLauncherUrl,
+        MultiloginCloudApiUrl = entity.MultiloginCloudApiUrl,
+        MultiloginAutomationToken = entity.MultiloginAutomationToken,
         AvitoProfileName = entity.AvitoProfileName,
         SubProfilesJson = string.IsNullOrWhiteSpace(entity.SubProfilesJson) ? "[]" : entity.SubProfilesJson,
         SubProfilesRefreshedAt = entity.SubProfilesRefreshedAt
@@ -1367,6 +1397,12 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         target.AdsPowerProfileName = source.AdsPowerProfileName;
         target.AdsPowerApiBaseUrl = source.AdsPowerApiBaseUrl;
         target.AdsPowerApiKey = source.AdsPowerApiKey;
+        target.MultiloginProfileId = source.MultiloginProfileId;
+        target.MultiloginProfileName = source.MultiloginProfileName;
+        target.MultiloginFolderId = source.MultiloginFolderId;
+        target.MultiloginLauncherUrl = source.MultiloginLauncherUrl;
+        target.MultiloginCloudApiUrl = source.MultiloginCloudApiUrl;
+        target.MultiloginAutomationToken = source.MultiloginAutomationToken;
         target.AvitoProfileName = source.AvitoProfileName;
         target.SubProfilesJson = string.IsNullOrWhiteSpace(source.SubProfilesJson) ? "[]" : source.SubProfilesJson;
         target.SubProfilesRefreshedAt = source.SubProfilesRefreshedAt;
@@ -1431,6 +1467,12 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         target.AdsPowerProfileName = source.AdsPowerProfileName;
         target.AdsPowerApiBaseUrl = source.AdsPowerApiBaseUrl;
         target.AdsPowerApiKey = source.AdsPowerApiKey;
+        target.MultiloginProfileId = source.MultiloginProfileId;
+        target.MultiloginProfileName = source.MultiloginProfileName;
+        target.MultiloginFolderId = source.MultiloginFolderId;
+        target.MultiloginLauncherUrl = source.MultiloginLauncherUrl;
+        target.MultiloginCloudApiUrl = source.MultiloginCloudApiUrl;
+        target.MultiloginAutomationToken = source.MultiloginAutomationToken;
         target.AvitoProfileName = source.AvitoProfileName;
         target.SubProfilesJson = string.IsNullOrWhiteSpace(source.SubProfilesJson) ? "[]" : source.SubProfilesJson;
         target.SubProfilesRefreshedAt = source.SubProfilesRefreshedAt;
@@ -1592,6 +1634,12 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
             ["AdsPowerProfileName"] = "ALTER TABLE AvitoAccounts ADD COLUMN AdsPowerProfileName TEXT NULL;",
             ["AdsPowerApiBaseUrl"] = "ALTER TABLE AvitoAccounts ADD COLUMN AdsPowerApiBaseUrl TEXT NULL;",
             ["AdsPowerApiKey"] = "ALTER TABLE AvitoAccounts ADD COLUMN AdsPowerApiKey TEXT NULL;",
+            ["MultiloginProfileId"] = "ALTER TABLE AvitoAccounts ADD COLUMN MultiloginProfileId TEXT NULL;",
+            ["MultiloginProfileName"] = "ALTER TABLE AvitoAccounts ADD COLUMN MultiloginProfileName TEXT NULL;",
+            ["MultiloginFolderId"] = "ALTER TABLE AvitoAccounts ADD COLUMN MultiloginFolderId TEXT NULL;",
+            ["MultiloginLauncherUrl"] = "ALTER TABLE AvitoAccounts ADD COLUMN MultiloginLauncherUrl TEXT NULL;",
+            ["MultiloginCloudApiUrl"] = "ALTER TABLE AvitoAccounts ADD COLUMN MultiloginCloudApiUrl TEXT NULL;",
+            ["MultiloginAutomationToken"] = "ALTER TABLE AvitoAccounts ADD COLUMN MultiloginAutomationToken TEXT NULL;",
             ["AvitoProfileName"] = "ALTER TABLE AvitoAccounts ADD COLUMN AvitoProfileName TEXT NULL;",
             ["SubProfilesJson"] = "ALTER TABLE AvitoAccounts ADD COLUMN SubProfilesJson TEXT NOT NULL DEFAULT '[]';",
             ["SubProfilesRefreshedAt"] = "ALTER TABLE AvitoAccounts ADD COLUMN SubProfilesRefreshedAt TEXT NULL;",

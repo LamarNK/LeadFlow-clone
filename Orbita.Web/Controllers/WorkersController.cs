@@ -177,6 +177,9 @@ public sealed class WorkersController(IWorkersService workers) : Controller
         bool autoDeliverToCrm = false,
         bool autoDeliverToBitrix = false,
         string? settingsTab = null,
+        string? multiloginLauncherUrl = null,
+        string? multiloginCloudApiUrl = null,
+        string? multiloginAutomationToken = null,
         CancellationToken ct = default)
     {
         var responseHighlightAgeBucketsCsv = responseHighlightAgeBuckets is { Length: > 0 }
@@ -216,6 +219,9 @@ public sealed class WorkersController(IWorkersService workers) : Controller
             autoDeliverToBitrix,
             responseHighlightTargetsJson,
             ruCaptchaApiKey,
+            multiloginLauncherUrl,
+            multiloginCloudApiUrl,
+            multiloginAutomationToken,
             ct);
         if (!success)
         {

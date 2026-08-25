@@ -108,7 +108,10 @@ public sealed record WorkerDetail(
     string? AdsPowerGroupId = null,
     string? AdsPowerGroupName = null,
     IReadOnlyList<AdsPowerGroupDto>? AdsPowerGroups = null,
-    string? RuCaptchaApiKey = null);
+    string? RuCaptchaApiKey = null,
+    string? MultiloginLauncherUrl = null,
+    string? MultiloginCloudApiUrl = null,
+    bool HasMultiloginAutomationToken = false);
 
 /// <summary>
 /// One row of the office-wide accounts page: account payload plus the worker

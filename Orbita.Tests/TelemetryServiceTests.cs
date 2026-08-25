@@ -490,6 +490,49 @@ public sealed class TelemetryServiceTests
         Assert.Contains("sp-2", account.SubProfilesJson);
     }
 
+    [Fact]
+    public async Task SaveSnapshotAsync_NullMultiloginIds_DoNotWipeExisting()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db, disabledIdsJson: "[]");
+        var account = await db.WorkerAccounts.SingleAsync();
+        account.AdsPowerProfileId = string.Empty;
+        account.MultiloginProfileId = "mlx-profile";
+        account.MultiloginFolderId = "mlx-folder";
+        await db.SaveChangesAsync();
+
+        var sut = new TelemetryService(db, new OfficeAdminService(db), new NoopPanelRealtimeNotifier());
+        var capturedAt = DateTime.UtcNow;
+        var saved = await sut.SaveSnapshotAsync(
+            new WorkerSnapshotRequest(
+                WorkerId,
+                capturedAt,
+                CreateNonEmptyStats(),
+                [
+                    new WorkerAccountDto(
+                        AccountId,
+                        "acc-1",
+                        "Ok",
+                        true,
+                        1,
+                        0,
+                        0,
+                        null,
+                        capturedAt,
+                        SubProfiles: null)
+                ],
+                [
+                    new WorkerBalanceDto(AccountId, "acc-1", 0m, [])
+                ]),
+            CancellationToken.None);
+
+        Assert.True(saved);
+        account = await db.WorkerAccounts.SingleAsync();
+        Assert.Equal("mlx-profile", account.MultiloginProfileId);
+        Assert.Equal("mlx-folder", account.MultiloginFolderId);
+        Assert.Equal(string.Empty, account.AdsPowerProfileId);
+    }
+
     private static DashboardStatsDto CreateNonEmptyStats() =>
         new(
             NewResponses: 0,

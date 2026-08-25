@@ -1,6 +1,7 @@
 using LeadFlow.Core.Models;
 using LeadFlow.Core.Services;
 using LeadFlow.Core.Services.AdsPower;
+using LeadFlow.Core.Services.Multilogin;
 using LeadFlow.Core.Services.Worker;
 using Microsoft.Extensions.Hosting;
 using Orbita.Contracts;
@@ -17,6 +18,7 @@ public sealed class WorkerOrchestrator(
     WorkerEventSink eventSink,
     WorkerTelemetryCollector telemetryCollector,
     IAdsPowerApiClient adsPowerApi,
+    IMultiloginApiClient multiloginApi,
     IWorkerMonitoringService monitoringService,
     WorkerCredentials credentials,
     WorkerRuntimeState runtimeState,
@@ -140,6 +142,7 @@ public sealed class WorkerOrchestrator(
                     if (groupChanged || DateTime.UtcNow - _lastAccountSyncUtc >= AccountSyncInterval)
                     {
                         await SyncAdsPowerProfilesAsync(config, stoppingToken).ConfigureAwait(false);
+                        await SyncMultiloginProfilesAsync(config, stoppingToken).ConfigureAwait(false);
                         _lastAccountSyncUtc = DateTime.UtcNow;
                         _lastSyncedAdsPowerGroupId = config.AdsPowerGroupId;
                     }
@@ -503,6 +506,62 @@ public sealed class WorkerOrchestrator(
 
         await apiClient.SyncAccountsAsync(new WorkerAccountSyncRequest(items, groups), ct)
             .ConfigureAwait(false);
+    }
+
+    private async Task SyncMultiloginProfilesAsync(WorkerConfigDto config, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(config.MultiloginAutomationToken))
+        {
+            return;
+        }
+
+        var options = new MultiloginConnectionOptions
+        {
+            CloudApiUrl = string.IsNullOrWhiteSpace(config.MultiloginCloudApiUrl)
+                ? MultiloginWorkerSettings.DefaultCloudApiUrl
+                : config.MultiloginCloudApiUrl,
+            AutomationToken = config.MultiloginAutomationToken,
+            LauncherUrl = config.MultiloginLauncherUrl
+        };
+
+        MultiloginProfileSearchResult catalog;
+        try
+        {
+            catalog = await multiloginApi.SearchProfilesAsync(options, ct).ConfigureAwait(false);
+        }
+        catch
+        {
+            return;
+        }
+
+        if (!catalog.IsComplete && catalog.Profiles.Count == 0)
+        {
+            return;
+        }
+
+        var items = catalog.Profiles
+            .Select(static p => new WorkerAccountSyncItemDto(
+                AdsPowerProfileId: string.Empty,
+                DisplayName: p.Name,
+                MultiloginProfileId: p.ProfileId,
+                MultiloginFolderId: p.FolderId,
+                MultiloginProfileName: p.Name))
+            .ToList();
+
+        try
+        {
+            await apiClient.SyncAccountsAsync(
+                    new WorkerAccountSyncRequest(
+                        items,
+                        Multilogin: true,
+                        ReplaceMultiloginCatalog: catalog.IsComplete),
+                    ct)
+                .ConfigureAwait(false);
+        }
+        catch
+        {
+            // AdsPower sync already completed; Multilogin catalog is best-effort.
+        }
     }
 
     private async Task SendHeartbeatAsync(Guid workerId, CancellationToken ct)

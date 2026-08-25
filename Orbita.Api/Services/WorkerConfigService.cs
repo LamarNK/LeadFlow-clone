@@ -117,7 +117,10 @@ public sealed class WorkerConfigService(
             worker.PhoneUnchangedHours,
             worker.ResponseHighlightTargetsJson,
             worker.AdsPowerGroupId,
-            worker.RuCaptchaApiKey);
+            worker.RuCaptchaApiKey,
+            worker.MultiloginLauncherUrl,
+            worker.MultiloginAutomationToken,
+            worker.MultiloginCloudApiUrl);
     }
 
     public async Task<bool> SyncAccountsAsync(
@@ -136,48 +139,113 @@ public sealed class WorkerConfigService(
             .Where(x => x.WorkerId == workerId)
             .ToDictionaryAsync(x => x.AccountId, ct);
 
-        var syncedAccountIds = new HashSet<Guid>();
+        var adsPowerSyncedIds = new HashSet<Guid>();
+        var multiloginSyncedIds = new HashSet<Guid>();
+        var sawAdsPowerItems = false;
+        var hasMultiloginMarker = false;
         var now = DateTime.UtcNow;
 
         foreach (var item in request.Accounts)
         {
-            if (string.IsNullOrWhiteSpace(item.AdsPowerProfileId))
+            if (!string.IsNullOrWhiteSpace(item.AdsPowerProfileId))
             {
-                continue;
-            }
+                sawAdsPowerItems = true;
+                var accountId = AdsPowerAccountId.ToAccountGuid(item.AdsPowerProfileId);
+                adsPowerSyncedIds.Add(accountId);
 
-            var accountId = AdsPowerAccountId.ToAccountGuid(item.AdsPowerProfileId);
-            syncedAccountIds.Add(accountId);
-
-            if (existing.TryGetValue(accountId, out var account))
-            {
-                account.AdsPowerProfileId = item.AdsPowerProfileId.Trim();
-                account.DisplayName = item.DisplayName.Trim();
-                account.AdsPowerGroupId = AdsPowerGroupsJson.NormalizeGroupId(item.AdsPowerGroupId);
-                account.AdsPowerGroupName = AdsPowerGroupsJson.NormalizeGroupName(item.AdsPowerGroupName);
-                account.UpdatedAtUtc = now;
-            }
-            else
-            {
-                db.WorkerAccounts.Add(new WorkerAccountEntity
+                if (existing.TryGetValue(accountId, out var account))
                 {
-                    WorkerId = workerId,
-                    AccountId = accountId,
-                    AdsPowerProfileId = item.AdsPowerProfileId.Trim(),
-                    DisplayName = item.DisplayName.Trim(),
-                    AdsPowerGroupId = AdsPowerGroupsJson.NormalizeGroupId(item.AdsPowerGroupId),
-                    AdsPowerGroupName = AdsPowerGroupsJson.NormalizeGroupName(item.AdsPowerGroupName),
-                    Status = string.Empty,
-                    IsEnabled = false,
-                    IsEnabledInPanel = false,
-                    UpdatedAtUtc = now
-                });
+                    account.AdsPowerProfileId = item.AdsPowerProfileId.Trim();
+                    account.DisplayName = item.DisplayName.Trim();
+                    account.AdsPowerGroupId = AdsPowerGroupsJson.NormalizeGroupId(item.AdsPowerGroupId);
+                    account.AdsPowerGroupName = AdsPowerGroupsJson.NormalizeGroupName(item.AdsPowerGroupName);
+                    account.UpdatedAtUtc = now;
+                }
+                else
+                {
+                    var created = new WorkerAccountEntity
+                    {
+                        WorkerId = workerId,
+                        AccountId = accountId,
+                        AdsPowerProfileId = item.AdsPowerProfileId.Trim(),
+                        DisplayName = item.DisplayName.Trim(),
+                        AdsPowerGroupId = AdsPowerGroupsJson.NormalizeGroupId(item.AdsPowerGroupId),
+                        AdsPowerGroupName = AdsPowerGroupsJson.NormalizeGroupName(item.AdsPowerGroupName),
+                        Status = string.Empty,
+                        IsEnabled = false,
+                        IsEnabledInPanel = false,
+                        UpdatedAtUtc = now
+                    };
+                    db.WorkerAccounts.Add(created);
+                    existing[accountId] = created;
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(item.MultiloginProfileId))
+            {
+                hasMultiloginMarker = true;
+            }
+
+            if (!string.IsNullOrWhiteSpace(item.MultiloginProfileId)
+                && !string.IsNullOrWhiteSpace(item.MultiloginFolderId))
+            {
+                var profileId = item.MultiloginProfileId.Trim();
+                var folderId = item.MultiloginFolderId.Trim();
+                var accountId = MultiloginAccountId.ToAccountGuid(profileId);
+                multiloginSyncedIds.Add(accountId);
+                var displayName = FirstNonEmpty(
+                    item.MultiloginProfileName,
+                    item.DisplayName,
+                    profileId);
+
+                if (existing.TryGetValue(accountId, out var account))
+                {
+                    account.MultiloginProfileId = profileId;
+                    account.MultiloginFolderId = folderId;
+                    account.MultiloginProfileName = NullIfWhiteSpace(item.MultiloginProfileName) ?? displayName;
+                    account.DisplayName = displayName;
+                    account.UpdatedAtUtc = now;
+                }
+                else
+                {
+                    var created = new WorkerAccountEntity
+                    {
+                        WorkerId = workerId,
+                        AccountId = accountId,
+                        AdsPowerProfileId = string.Empty,
+                        MultiloginProfileId = profileId,
+                        MultiloginFolderId = folderId,
+                        MultiloginProfileName = NullIfWhiteSpace(item.MultiloginProfileName) ?? displayName,
+                        DisplayName = displayName,
+                        Status = string.Empty,
+                        IsEnabled = false,
+                        IsEnabledInPanel = false,
+                        UpdatedAtUtc = now
+                    };
+                    db.WorkerAccounts.Add(created);
+                    existing[accountId] = created;
+                }
             }
         }
 
-        foreach (var stale in existing.Values.Where(x => !syncedAccountIds.Contains(x.AccountId)))
+        if (sawAdsPowerItems || (!hasMultiloginMarker && !request.Multilogin && !request.ReplaceMultiloginCatalog))
         {
-            db.WorkerAccounts.Remove(stale);
+            foreach (var stale in existing.Values.Where(x =>
+                         !adsPowerSyncedIds.Contains(x.AccountId)
+                         && string.IsNullOrWhiteSpace(x.MultiloginProfileId)))
+            {
+                db.WorkerAccounts.Remove(stale);
+            }
+        }
+
+        if (request.ReplaceMultiloginCatalog)
+        {
+            foreach (var stale in existing.Values.Where(x =>
+                         !multiloginSyncedIds.Contains(x.AccountId)
+                         && !string.IsNullOrWhiteSpace(x.MultiloginProfileId)))
+            {
+                db.WorkerAccounts.Remove(stale);
+            }
         }
 
         if (request.Groups is not null)
@@ -243,6 +311,33 @@ public sealed class WorkerConfigService(
                 : ruCaptchaKeyError.Replace("AdsPower", "RuCaptcha", StringComparison.Ordinal));
         }
 
+        if (!TryNormalizeMultiloginUrl(
+                request.MultiloginLauncherUrl,
+                MultiloginWorkerSettings.DefaultLauncherUrl,
+                persistDefaultWhenEmpty: true,
+                "URL launcher Multilogin",
+                out var normalizedLauncherUrl,
+                out var launcherError))
+        {
+            return (null, launcherError);
+        }
+
+        if (!TryNormalizeMultiloginUrl(
+                request.MultiloginCloudApiUrl,
+                MultiloginWorkerSettings.DefaultCloudApiUrl,
+                persistDefaultWhenEmpty: false,
+                "URL cloud API Multilogin",
+                out var normalizedCloudUrl,
+                out var cloudError))
+        {
+            return (null, cloudError);
+        }
+
+        if (!TryNormalizeMultiloginAutomationToken(request.MultiloginAutomationToken, out var normalizedToken, out var tokenError))
+        {
+            return (null, tokenError);
+        }
+
         var maxResponseAgeDays = ResponseCollectionFilters.ClampResponseAgeDays(request.ResponseFilterMaxResponseAgeDays);
         var filters = ResponseCollectionFilters.NormalizeLegacy(
             request.ResponseFilterEnabled,
@@ -270,6 +365,12 @@ public sealed class WorkerConfigService(
         worker.AdsPowerApiBaseUrl = normalizedBaseUrl;
         worker.AdsPowerApiKey = normalizedApiKey;
         worker.RuCaptchaApiKey = normalizedRuCaptchaKey;
+        worker.MultiloginLauncherUrl = normalizedLauncherUrl;
+        worker.MultiloginCloudApiUrl = normalizedCloudUrl;
+        if (normalizedToken is not null)
+        {
+            worker.MultiloginAutomationToken = normalizedToken;
+        }
         var normalizedGroupId = AdsPowerGroupsJson.NormalizeGroupId(request.AdsPowerGroupId);
         worker.AdsPowerGroupId = normalizedGroupId;
         worker.AdsPowerGroupName = normalizedGroupId is null
@@ -368,6 +469,67 @@ public sealed class WorkerConfigService(
         {
             normalized = null;
             error = "API Key AdsPower не должен превышать 256 символов.";
+            return false;
+        }
+
+        normalized = trimmed;
+        error = null;
+        return true;
+    }
+
+    private static bool TryNormalizeMultiloginUrl(
+        string? value,
+        string defaultUrl,
+        bool persistDefaultWhenEmpty,
+        string fieldName,
+        out string? normalized,
+        out string? error)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            normalized = persistDefaultWhenEmpty ? defaultUrl : null;
+            error = null;
+            return true;
+        }
+
+        var trimmed = value.Trim().TrimEnd('/');
+        if (trimmed.Length > MultiloginWorkerSettings.MaxUrlLength)
+        {
+            normalized = null;
+            error = $"{fieldName} не должен превышать {MultiloginWorkerSettings.MaxUrlLength} символов.";
+            return false;
+        }
+
+        if (!Uri.TryCreate(trimmed, UriKind.Absolute, out var uri)
+            || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+        {
+            normalized = null;
+            error = $"Укажите корректный {fieldName} (http или https).";
+            return false;
+        }
+
+        normalized = trimmed;
+        error = null;
+        return true;
+    }
+
+    private static bool TryNormalizeMultiloginAutomationToken(
+        string? value,
+        out string? normalized,
+        out string? error)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            normalized = null;
+            error = null;
+            return true;
+        }
+
+        var trimmed = value.Trim();
+        if (trimmed.Length > MultiloginWorkerSettings.MaxAutomationTokenLength)
+        {
+            normalized = null;
+            error = "Automation token Multilogin слишком длинный.";
             return false;
         }
 
@@ -552,7 +714,26 @@ public sealed class WorkerConfigService(
             account.BlockedCount,
             account.DraftsCount,
             avitoLogin,
-            avitoPassword);
+            avitoPassword,
+            string.IsNullOrWhiteSpace(account.MultiloginProfileId) ? "AdsPower" : "Multilogin",
+            NullIfWhiteSpace(account.MultiloginProfileId),
+            NullIfWhiteSpace(account.MultiloginFolderId));
+    }
+
+    private static string? NullIfWhiteSpace(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private static string FirstNonEmpty(params string?[] values)
+    {
+        foreach (var value in values)
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                return value.Trim();
+            }
+        }
+
+        return string.Empty;
     }
 
     private static WorkerAccountCredentialsDto ToCredentialsDto(WorkerAccountEntity account) =>

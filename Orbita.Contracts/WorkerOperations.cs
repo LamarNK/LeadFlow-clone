@@ -31,7 +31,11 @@ public sealed record WorkerAccountConfigDto(
     /// <summary>Логин/телефон Avito для автологина воркера (только worker config, не в телеметрии панели).</summary>
     string? AvitoLogin = null,
     /// <summary>Пароль Avito (plaintext только в защищённом worker config channel).</summary>
-    string? AvitoPassword = null);
+    string? AvitoPassword = null,
+    /// <summary>AdsPower или Multilogin. Пусто — AdsPower (обратная совместимость).</summary>
+    string? ProfileProvider = null,
+    string? MultiloginProfileId = null,
+    string? MultiloginFolderId = null);
 
 public sealed record UpdateWorkerSubProfileRequest(bool IsEnabledInPanel);
 
@@ -86,7 +90,13 @@ public sealed record WorkerConfigDto(
     /// <summary>ID группы AdsPower; null — синхронизировать все профили Local API.</summary>
     string? AdsPowerGroupId = null,
     /// <summary>Ключ RuCaptcha для автопрохождения GeeTest v4. Пусто — выкл.</summary>
-    string? RuCaptchaApiKey = null)
+    string? RuCaptchaApiKey = null,
+    /// <summary>URL launcher Multilogin X (worker config channel).</summary>
+    string? MultiloginLauncherUrl = null,
+    /// <summary>Automation token Multilogin X. Только worker config, не телеметрия панели.</summary>
+    string? MultiloginAutomationToken = null,
+    /// <summary>URL cloud API Multilogin X (worker config channel).</summary>
+    string? MultiloginCloudApiUrl = null)
 {
     public ResponseCollectionFilters ResponseFilters =>
         ResponseCollectionFilters.NormalizeLegacy(
@@ -108,11 +118,16 @@ public sealed record WorkerAccountSyncItemDto(
     string AdsPowerProfileId,
     string DisplayName,
     string? AdsPowerGroupId = null,
-    string? AdsPowerGroupName = null);
+    string? AdsPowerGroupName = null,
+    string? MultiloginProfileId = null,
+    string? MultiloginFolderId = null,
+    string? MultiloginProfileName = null);
 
 public sealed record WorkerAccountSyncRequest(
     IReadOnlyList<WorkerAccountSyncItemDto> Accounts,
-    IReadOnlyList<AdsPowerGroupDto>? Groups = null);
+    IReadOnlyList<AdsPowerGroupDto>? Groups = null,
+    bool Multilogin = false,
+    bool ReplaceMultiloginCatalog = false);
 
 public sealed record WorkerCandidateDto(
     Guid AccountId,
@@ -247,7 +262,11 @@ public sealed record UpdateWorkerSettingsRequest(
     /// <summary>ID группы AdsPower; пусто — все группы.</summary>
     string? AdsPowerGroupId = null,
     /// <summary>Ключ RuCaptcha для автопрохождения GeeTest v4. Пусто — выкл.</summary>
-    string? RuCaptchaApiKey = null);
+    string? RuCaptchaApiKey = null,
+    string? MultiloginLauncherUrl = null,
+    string? MultiloginCloudApiUrl = null,
+    /// <summary>Пусто — не менять сохранённый token (поле не возвращается в HTML панели).</summary>
+    string? MultiloginAutomationToken = null);
 
 public sealed record UpdateWorkerAccountRequest(bool IsEnabledInPanel);
 

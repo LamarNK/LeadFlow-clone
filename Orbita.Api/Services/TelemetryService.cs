@@ -264,6 +264,16 @@ public sealed class TelemetryService(
         target.IsEnabled = account.IsEnabled;
         target.IsEnabledInPanel = account.IsEnabledInPanel;
         target.AdsPowerProfileId = account.AdsPowerProfileId?.Trim() ?? string.Empty;
+        if (!string.IsNullOrWhiteSpace(account.MultiloginProfileId))
+        {
+            target.MultiloginProfileId = account.MultiloginProfileId.Trim();
+        }
+
+        if (!string.IsNullOrWhiteSpace(account.MultiloginFolderId))
+        {
+            target.MultiloginFolderId = account.MultiloginFolderId.Trim();
+        }
+
         target.ActiveAdsCount = account.ActiveAdsCount;
         target.BlockedCount = account.BlockedCount;
         target.DraftsCount = account.DraftsCount;
