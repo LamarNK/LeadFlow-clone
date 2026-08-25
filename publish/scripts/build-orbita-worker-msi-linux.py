@@ -128,19 +128,20 @@ def custom_action_lines(worker_executable_id: str) -> list[str]:
     The launched process is also a msiexec child, so ``msiexec /qn`` can kill
     it when the installer job object goes away.
 
-    Type 50 + ``cmd /c start`` breaks away from msiexec. ``[#FileId]`` is
-    formatted after InstallFinalize from the File table destination, so it
-    does not depend on INSTALLFOLDER surviving the nested uninstall.
+    Type 50 + ``cmd /c start`` breaks away from msiexec.  Do not use a
+    ``[#FileId]`` reference here: Windows Installer can reject it after the
+    transaction with Error 2753 ("file is not marked for installation"),
+    even though InstallFiles succeeded.  ``INSTALLFOLDER`` is resolved in the
+    running package and remains valid after the early major-upgrade removal.
     ``--update-restart`` makes the worker retry the single-instance mutex
     instead of exiting on the first attempt.
     """
-    file_ref = f"[#{worker_executable_id}]"
     stop_cmd = (
         f"/d /c taskkill /F /IM Orbita.Worker.exe {XML_GT}nul 2{XML_GT}{XML_AMP}1 "
         f"{XML_AMP} ping -n 3 127.0.0.1 {XML_GT}nul"
     )
     launch_cmd = (
-        f"/d /c start {XML_QUOT}{XML_QUOT} {XML_QUOT}{file_ref}{XML_QUOT} "
+        f"/d /c start {XML_QUOT}{XML_QUOT} {XML_QUOT}[INSTALLFOLDER]Orbita.Worker.exe{XML_QUOT} "
         f"{WORKER_LAUNCH_ARGUMENT}"
     )
     condition = f"NOT REMOVE~={XML_QUOT}ALL{XML_QUOT}"
@@ -186,8 +187,10 @@ def assert_wxs_upgrade_contract(text: str, worker_executable_id: str) -> None:
         errors.append(f"launch command must pass {WORKER_LAUNCH_ARGUMENT}")
     if f"start {XML_QUOT}{XML_QUOT}" not in text:
         errors.append("launch command must use cmd start to detach from msiexec")
-    if f"[#{worker_executable_id}]" not in text:
-        errors.append("launch command must resolve the installed File table path")
+    if "[#" in text:
+        errors.append("launch command must not reference a File table row after InstallFinalize")
+    if "[INSTALLFOLDER]Orbita.Worker.exe" not in text:
+        errors.append("launch command must resolve Orbita.Worker.exe from INSTALLFOLDER")
     if "taskkill /F /IM Orbita.Worker.exe" not in text:
         errors.append("StopWorkerBeforeUpgrade must force-kill the running worker")
     if "taskkill /IM Orbita.Worker.exe /T" in text:
@@ -312,8 +315,10 @@ def validate_msi_tables(msi_tables: str, sequence_table: str, custom_action_tabl
             errors.append("LaunchWorkerAfterInstall must be Type 50 (property EXE), not FileKey")
         if "start" not in target or WORKER_LAUNCH_ARGUMENT not in target:
             errors.append("LaunchWorkerAfterInstall must cmd-start the worker with --update-restart")
-        if "[#" not in target:
-            errors.append("LaunchWorkerAfterInstall must use [#FileId] so the path survives nested uninstall")
+        if "[#" in target:
+            errors.append("LaunchWorkerAfterInstall must not use [#FileId] (it causes Error 2753 after InstallFinalize)")
+        if "[INSTALLFOLDER]Orbita.Worker.exe" not in target:
+            errors.append("LaunchWorkerAfterInstall must use [INSTALLFOLDER]Orbita.Worker.exe")
 
     if errors:
         raise RuntimeError("Compiled MSI fails the upgrade contract: " + "; ".join(errors))

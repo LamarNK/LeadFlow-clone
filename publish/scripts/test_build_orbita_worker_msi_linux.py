@@ -43,7 +43,7 @@ Action\tCustomAction
 SetStopWorkerCommand\t51\tStopWorkerCommand\t[SystemFolder]cmd.exe
 StopWorkerBeforeUpgrade\t114\tStopWorkerCommand\t/d /c taskkill /F /IM Orbita.Worker.exe
 SetLaunchWorkerCommand\t51\tLaunchWorkerCommand\t[SystemFolder]cmd.exe
-LaunchWorkerAfterInstall\t114\tLaunchWorkerCommand\t/d /c start \"\" \"[#File_1]\" --update-restart
+LaunchWorkerAfterInstall\t114\tLaunchWorkerCommand\t/d /c start \"\" \"[INSTALLFOLDER]Orbita.Worker.exe\" --update-restart
 """
 
 GOOD_TABLES = "File\nUpgrade\nCustomAction\nInstallExecuteSequence\n"
@@ -68,7 +68,8 @@ class WorkerMsiContractTests(unittest.TestCase):
         self.assertIn('Property="LaunchWorkerCommand"', text)
         self.assertNotIn("FileKey=", text)
         self.assertIn("--update-restart", text)
-        self.assertIn("[#File_", text)
+        self.assertIn("[INSTALLFOLDER]Orbita.Worker.exe", text)
+        self.assertNotIn("[#File_", text)
         self.assertIn("taskkill /F /IM Orbita.Worker.exe", text)
         self.assertNotIn("taskkill /IM Orbita.Worker.exe /T", text)
         self.assertIn('Version="1.2.30004"', text)
@@ -107,7 +108,7 @@ class WorkerMsiContractTests(unittest.TestCase):
 
     def test_compiled_tables_reject_type18_filekey(self) -> None:
         bad_ca = GOOD_CUSTOM_ACTION.replace(
-            "LaunchWorkerAfterInstall\t114\tLaunchWorkerCommand\t/d /c start \"\" \"[#File_1]\" --update-restart",
+            "LaunchWorkerAfterInstall\t114\tLaunchWorkerCommand\t/d /c start \"\" \"[INSTALLFOLDER]Orbita.Worker.exe\" --update-restart",
             "LaunchWorkerAfterInstall\t210\tFile_1\t",
         )
         with self.assertRaises(RuntimeError) as raised:
