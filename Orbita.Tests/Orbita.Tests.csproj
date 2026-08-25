@@ -29,6 +29,7 @@
 
   <ItemGroup>
     <Compile Include="..\Orbita.Worker\Services\WorkerUpdateBatchScript.cs" Link="WorkerUpdateBatchScript.cs" />
+    <Compile Include="..\Orbita.Worker\Services\MonitoringCycleJournalSink.cs" Link="MonitoringCycleJournalSink.cs" />
   </ItemGroup>
 
 </Project>

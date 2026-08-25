@@ -230,7 +230,7 @@ internal static partial class MonitoringCycleReportBuilder
 
                         if (run.Outcome == MonitoringSubProfileRunOutcomes.Skipped)
                         {
-                            posPasses[position].Add(BuildPass(run, passLeads: 0, captchaSeen: 0, captchaSolved: 0));
+                            posPasses[position].Add(BuildPass(cycle, run, passLeads: 0, captchaSeen: 0, captchaSolved: 0));
                             if (cycleInterrupted && !posHadRun[position])
                             {
                                 posExplicitNotStarted.Add(position);
@@ -252,7 +252,7 @@ internal static partial class MonitoringCycleReportBuilder
                         var (captchaSeen, captchaSolved) = CaptchaForRun(run);
                         accountCaptcha += captchaSeen;
                         accountCaptchaSolved += captchaSolved;
-                        var pass = BuildPass(run, passLeads, captchaSeen, captchaSolved);
+                        var pass = BuildPass(cycle, run, passLeads, captchaSeen, captchaSolved);
                         posPasses[position].Add(pass);
                         if (pass.CaptchaStatus is { Length: > 0 } captchaStatus)
                         {
@@ -889,6 +889,7 @@ internal static partial class MonitoringCycleReportBuilder
     }
 
     private static MonitoringCyclePassDto BuildPass(
+        MonitoringCycleRunSnapshot cycle,
         MonitoringSubProfileRunSnapshot run,
         int passLeads,
         int captchaSeen,
@@ -948,6 +949,18 @@ internal static partial class MonitoringCycleReportBuilder
                 CaptchaStatus: captchaStatus,
                 CaptchaUnsolved: captchaUnsolved,
                 ErrorDetail: detail);
+        }
+
+        if (cycle.Status != MonitoringCycleRunStatuses.Running)
+        {
+            return new MonitoringCyclePassDto(
+                timestamp,
+                Completed: false,
+                CollectedCount: passLeads,
+                HasCollected: passLeads > 0,
+                CaptchaStatus: captchaStatus,
+                CaptchaUnsolved: captchaUnsolved,
+                ErrorDetail: "цикл прерван до завершения субпрофиля");
         }
 
         return new MonitoringCyclePassDto(
@@ -1024,6 +1037,16 @@ internal static partial class MonitoringCycleReportBuilder
             or MonitoringCycleRunStatuses.Running;
         if (interrupted)
         {
+            var queuedTotal = lastMiss.SubProfiles
+                .Where(sp => !IsCycleLevelRun(sp))
+                .Select(sp => sp.Total)
+                .DefaultIfEmpty(0)
+                .Max();
+            if (queuedTotal > 0 && queuedTotal < rowsMeta.Count)
+            {
+                return new NotStartedInfo("не входил в очередь последней попытки", at);
+            }
+
             return new NotStartedInfo($"очередь не дошла: {DescribeCycleStop(lastMiss)}", at);
         }
 
@@ -1123,7 +1146,9 @@ internal static partial class MonitoringCycleReportBuilder
         if (last.Outcome == MonitoringSubProfileRunOutcomes.Started
             && last.CompletedAtUtc is null)
         {
-            return $"сейчас обрабатывается {who}";
+            return cycle.Status == MonitoringCycleRunStatuses.Running
+                ? $"сейчас обрабатывается {who}"
+                : $"цикл прерван на {who}";
         }
 
         if (last.Outcome == MonitoringSubProfileRunOutcomes.Failed)

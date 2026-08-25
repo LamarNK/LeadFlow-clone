@@ -357,13 +357,16 @@ public sealed class MonitoringCycleJournalTests
         Assert.DoesNotContain(trud.Errors, e => e.Detail.Contains("Не запущен", StringComparison.Ordinal));
         var v3 = Assert.Single(report.AccountReports[0].Rows, r => r.Name == "Ветер3");
         Assert.Empty(v3.CompletionTimesUtc);
-        // Started in last cycle but not completed — not "не запущен".
+        // A terminal parent cycle must never render an unclosed child as live.
         Assert.DoesNotContain(v3.Errors, e => e.Detail.Contains("Не запущен", StringComparison.Ordinal));
+        var stalePass = Assert.Single(v3.Passes!);
+        Assert.False(stalePass.InProgress);
+        Assert.Equal("цикл прерван до завершения субпрофиля", stalePass.ErrorDetail);
         // Others never started in this interrupted cycle → not started.
         Assert.True(report.AccountsWithNotStarted >= 1);
         Assert.Contains(report.AccountReports[0].NotStartedPositions, x => x.Contains("ВетерПеремен 10"));
         var wp10 = Assert.Single(report.AccountReports[0].Rows, r => r.Name == "ВетерПеремен 10");
-        Assert.Contains("сейчас обрабатывается «Ветер3»", wp10.NotStartedReason ?? string.Empty);
+        Assert.Contains("цикл прерван на «Ветер3»", wp10.NotStartedReason ?? string.Empty);
     }
 
     [Fact]
@@ -400,6 +403,39 @@ public sealed class MonitoringCycleJournalTests
         Assert.False(skipped.WasStarted);
         Assert.Equal("очередь не дошла: капча на «отдел 4»", skipped.NotStartedReason);
         Assert.Equal(done, skipped.NotStartedAtUtc);
+    }
+
+    [Fact]
+    public void BuildFromJournal_PartialResumedQueue_DoesNotClaimTheQueueNeverReachedOtherProfiles()
+    {
+        var start = TimeZoneInfo.ConvertTimeToUtc(Day.AddHours(13), TimeZoneInfo.Local);
+        var stopped = start.AddMinutes(1);
+        var cycles = new List<MonitoringCycleRunSnapshot>
+        {
+            new(
+                Guid.NewGuid(),
+                "Avito 88",
+                start,
+                stopped,
+                MonitoringCycleRunStatuses.Aborted,
+                [Sp("sp-10", "Воронеж 10", 1, 2, start, null, MonitoringSubProfileRunOutcomes.Started)])
+        };
+        var catalog = new Dictionary<string, IReadOnlyList<MonitoringAccountSubProfileCatalogEntry>>(
+            StringComparer.OrdinalIgnoreCase)
+        {
+            ["Avito 88"] =
+            [
+                new(1, "sp-1", "Воронеж 1"),
+                new(2, "sp-2", "Воронеж 2"),
+                new(3, "sp-10", "Воронеж 10")
+            ]
+        };
+
+        var report = MonitoringCycleReportBuilder.BuildFromJournal(cycles, Day, Day, accountCatalog: catalog);
+
+        var absent = Assert.Single(report.AccountReports[0].Rows, row => row.Name == "Воронеж 1");
+        Assert.Equal("не входил в очередь последней попытки", absent.NotStartedReason);
+        Assert.DoesNotContain("сейчас обрабатывается", absent.NotStartedReason ?? string.Empty);
     }
 
     [Fact]

@@ -228,10 +228,10 @@ public sealed class MonitoringCycleJournalSink(
             return;
         }
 
+        var now = DateTime.UtcNow;
         if (cycle.SubProfiles.Count == 0 && !string.IsNullOrWhiteSpace(errorMessage))
         {
             var id = Guid.NewGuid();
-            var now = DateTime.UtcNow;
             cycle.SubProfiles[id] = new MutableSubProfile
             {
                 Id = id,
@@ -247,8 +247,22 @@ public sealed class MonitoringCycleJournalSink(
             };
         }
 
+        // A terminal cycle must not leave a child in Started: otherwise the dashboard
+        // reports a browser that stopped long ago as "идёт" forever.
+        foreach (var sub in cycle.SubProfiles.Values.Where(sub => sub.CompletedAtUtc is null))
+        {
+            sub.Outcome = MonitoringSubProfileRunOutcomes.Failed;
+            sub.CompletedAtUtc = now;
+            sub.ErrorType ??= string.IsNullOrWhiteSpace(errorType)
+                ? "cycle-terminal"
+                : errorType.Trim();
+            sub.ErrorMessage ??= string.IsNullOrWhiteSpace(errorMessage)
+                ? "цикл прерван до завершения субпрофиля"
+                : errorMessage.Trim();
+        }
+
         cycle.Status = status;
-        cycle.FinishedAtUtc = DateTime.UtcNow;
+        cycle.FinishedAtUtc = now;
         cycle.Dirty = true;
         _ = MaybeFlushAsync(force: true);
     }
