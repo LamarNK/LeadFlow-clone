@@ -209,16 +209,44 @@ public sealed class MultiloginCdpConnectorTests
     }
 
     [Fact]
-    public void CreateConnectOptions_UsesBrowserUrl_WithoutWebsocket()
+    public async Task RunAsync_CanceledAfterStart_StillStops()
     {
-        var options = PuppeteerMultiloginBrowserConnector.CreateConnectOptions(
-            "http://127.0.0.1:35001",
-            TimeSpan.FromSeconds(15));
+        using var cts = new CancellationTokenSource();
+        var api = new FakeApi
+        {
+            AfterStart = () => cts.Cancel()
+        };
+        var workCalled = false;
+        var sut = CreateSut(api, new FakeBrowserConnector
+        {
+            Connect = (_, _, _, ct) =>
+            {
+                ct.ThrowIfCancellationRequested();
+                return Task.FromResult<IMultiloginConnectedBrowser>(new FakeBrowser());
+            }
+        });
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+            sut.RunAsync(ValidOptions(), FolderId, ProfileId, (_, _) =>
+            {
+                workCalled = true;
+                return Task.FromResult(0);
+            }, cts.Token));
+
+        Assert.False(workCalled);
+        Assert.Equal(1, api.StartCount);
+        Assert.Equal(1, api.StopCount);
+    }
+
+    [Fact]
+    public void CreateConnectOptions_UsesBrowserUrl_WithoutWebsocketOrTimeoutProperty()
+    {
+        var options = PuppeteerMultiloginBrowserConnector.CreateConnectOptions("http://127.0.0.1:35001");
 
         Assert.Equal("http://127.0.0.1:35001", options.BrowserURL);
         Assert.True(string.IsNullOrEmpty(options.BrowserWSEndpoint));
-        Assert.Equal(15_000, options.Timeout);
         Assert.Null(options.DefaultViewport);
+        Assert.Null(typeof(ConnectOptions).GetProperty("Timeout"));
     }
 
     [Fact]
@@ -273,6 +301,8 @@ public sealed class MultiloginCdpConnectorTests
 
         public Exception? StartException { get; init; }
 
+        public Action? AfterStart { get; init; }
+
         public Task<MultiloginBrowserStartResult> StartProfileAsync(
             MultiloginConnectionOptions options,
             string folderId,
@@ -290,6 +320,7 @@ public sealed class MultiloginCdpConnectorTests
                 throw StartException;
             }
 
+            AfterStart?.Invoke();
             return Task.FromResult(StartResult);
         }
 

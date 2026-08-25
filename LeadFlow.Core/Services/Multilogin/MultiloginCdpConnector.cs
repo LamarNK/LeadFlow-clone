@@ -91,18 +91,35 @@ public sealed class MultiloginCdpConnector : IMultiloginCdpConnector
         string? webSocketDebuggerUrl,
         CancellationToken cancellationToken)
     {
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        linkedCts.CancelAfter(_connectTimeout);
+        var connectTask = _browserConnector.ConnectAsync(
+            browserUrl,
+            webSocketDebuggerUrl,
+            _connectTimeout,
+            linkedCts.Token);
         try
         {
-            return await _browserConnector
-                .ConnectAsync(browserUrl, webSocketDebuggerUrl, _connectTimeout, cancellationToken)
-                .WaitAsync(_connectTimeout, cancellationToken)
-                .ConfigureAwait(false);
+            return await connectTask.ConfigureAwait(false);
         }
         catch (TimeoutException ex)
         {
+            ObserveAbandonedConnect(connectTask);
             throw new TimeoutException(
                 $"Multilogin CDP: подключение не открылось за {_connectTimeout.TotalSeconds:0} с.",
                 ex);
+        }
+        catch (OperationCanceledException ex) when (!cancellationToken.IsCancellationRequested)
+        {
+            ObserveAbandonedConnect(connectTask);
+            throw new TimeoutException(
+                $"Multilogin CDP: подключение не открылось за {_connectTimeout.TotalSeconds:0} с.",
+                ex);
+        }
+        catch
+        {
+            ObserveAbandonedConnect(connectTask);
+            throw;
         }
     }
 
@@ -117,8 +134,39 @@ public sealed class MultiloginCdpConnector : IMultiloginCdpConnector
         }
         catch
         {
-            // Stop must not hide the original start/connect/work error.
+            // Stop must not hide the original start/connect/work error
+            // and must still run after the caller cancels the outer token.
         }
+    }
+
+    private static void ObserveAbandonedConnect(Task<IMultiloginConnectedBrowser> connectTask)
+    {
+        _ = connectTask.ContinueWith(
+            static task =>
+            {
+                if (task.IsFaulted)
+                {
+                    _ = task.Exception;
+                    return;
+                }
+
+                if (!task.IsCompletedSuccessfully)
+                {
+                    return;
+                }
+
+                try
+                {
+                    task.Result.Disconnect();
+                }
+                catch
+                {
+                    // Abandoned connect must not throw on a background thread.
+                }
+            },
+            CancellationToken.None,
+            TaskContinuationOptions.None,
+            TaskScheduler.Default);
     }
 
     private static string ResolveBrowserUrl(MultiloginBrowserStartResult start)
