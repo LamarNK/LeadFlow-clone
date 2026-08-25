@@ -1,6 +1,5 @@
 using System.Diagnostics;
 using System.Text;
-using Microsoft.Win32;
 using Orbita.Contracts;
 
 namespace Orbita.Worker.Services;
@@ -136,67 +135,6 @@ internal static class WorkerRestartHelper
         WriteLaunchRecord(msiPath, exePath, workingDir, scriptPath, logPath, statusPath, resolvedVersion, workerPid);
 
         return TryStartDetachedScript(scriptPath, scriptDir, workerPid, updateRestart, exePath, workingDir);
-    }
-
-    public static bool TryDetectLegacyPerMachineInstall(out string? details)
-    {
-        details = null;
-        var processPath = Environment.ProcessPath;
-        if (IsProgramFilesPath(processPath))
-        {
-            details = processPath;
-            return true;
-        }
-
-        try
-        {
-            foreach (var hivePath in new[]
-                     {
-                         @"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
-                         @"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall"
-                     })
-            {
-                using var root = Registry.LocalMachine.OpenSubKey(hivePath);
-                if (root is null)
-                {
-                    continue;
-                }
-
-                foreach (var subKeyName in root.GetSubKeyNames())
-                {
-                    using var subKey = root.OpenSubKey(subKeyName);
-                    if (subKey is null)
-                    {
-                        continue;
-                    }
-
-                    var displayName = subKey.GetValue("DisplayName") as string;
-                    if (string.IsNullOrWhiteSpace(displayName)
-                        || displayName.IndexOf("Orbita Worker", StringComparison.OrdinalIgnoreCase) < 0)
-                    {
-                        continue;
-                    }
-
-                    // Per-user WiX ARP lives in HKCU. Any HKLM hit is a leftover per-machine product.
-                    details = $"{displayName} ({subKeyName})";
-                    return true;
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            _ = WorkerLifecycleLog.WarningAsync(
-                $"Worker update: не удалось проверить HKLM Uninstall: {ex.Message}",
-                nameof(TryDetectLegacyPerMachineInstall));
-        }
-
-        return false;
-    }
-
-    public static string BuildManualElevationMessage(string msiPath, string? productDetails)
-    {
-        var product = string.IsNullOrWhiteSpace(productDetails) ? "Orbita Worker" : productDetails;
-        return $"Тихая установка невозможна: найдена установка «{product}» для всех пользователей. Запустите MSI вручную от имени администратора один раз, не закрывая UAC. Файл: {msiPath}";
     }
 
     private static bool TryStartDetachedScript(
@@ -366,11 +304,6 @@ internal static class WorkerRestartHelper
             ? parsed
             : "unknown";
     }
-
-    private static bool IsProgramFilesPath(string? path) =>
-        !string.IsNullOrWhiteSpace(path)
-        && (path.Contains(@"\Program Files\", StringComparison.OrdinalIgnoreCase)
-            || path.Contains(@"\Program Files (x86)\", StringComparison.OrdinalIgnoreCase));
 
     private static string EscapeCmdPath(string path) => path.Replace("\"", "\"\"", StringComparison.Ordinal);
 }

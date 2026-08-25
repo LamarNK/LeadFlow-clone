@@ -89,25 +89,14 @@ public sealed class WorkerShutdownService(
                 ? parsed
                 : "unknown");
 
-        if (WorkerRestartHelper.TryDetectLegacyPerMachineInstall(out var productDetails))
-        {
-            var message = WorkerRestartHelper.BuildManualElevationMessage(msiPath, productDetails);
-            updateStore.SaveSilentInstallBlocked(version, message);
-            _ = GlobalLogger.Instance.LogAsync(
-                $"Worker update: {message}",
-                DeskLinkAuditLogLevel.Warning,
-                memberName: nameof(RequestInstall));
-            return false;
-        }
-
-        // The old guard stored only the target version. If a manual migration
-        // removed the HKLM product afterwards, the same version stayed blocked
-        // forever even though a silent update was now safe.
+        // Do not infer MSI install scope from arbitrary HKLM uninstall entries.
+        // MajorUpgrade is responsible for reconciling any related package; the
+        // worker must always start the downloaded MSI and report its real result.
         if (updateStore.IsSilentInstallBlocked(version))
         {
             updateStore.ClearSilentInstallBlocked();
             _ = GlobalLogger.Instance.LogAsync(
-                $"Worker update: снята устаревшая блокировка тихой установки {version}; HKLM-продукт больше не найден.",
+                $"Worker update: снята устаревшая блокировка тихой установки {version}; запускаем MSI.",
                 DeskLinkAuditLogLevel.Info,
                 memberName: nameof(RequestInstall));
         }
