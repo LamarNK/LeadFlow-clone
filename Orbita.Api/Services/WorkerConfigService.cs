@@ -230,7 +230,7 @@ public sealed class WorkerConfigService(
             }
         }
 
-        if (sawAdsPowerItems || !hasMultiloginMarker)
+        if (sawAdsPowerItems || (!hasMultiloginMarker && !request.Multilogin))
         {
             foreach (var stale in existing.Values.Where(x =>
                          !adsPowerSyncedIds.Contains(x.AccountId)
@@ -240,7 +240,7 @@ public sealed class WorkerConfigService(
             }
         }
 
-        if (sawMultiloginItems)
+        if (sawMultiloginItems || request.Multilogin)
         {
             foreach (var stale in existing.Values.Where(x =>
                          !multiloginSyncedIds.Contains(x.AccountId)
