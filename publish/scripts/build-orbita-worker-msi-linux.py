@@ -45,6 +45,9 @@ LAUNCH_CUSTOM_ACTION_TYPE_IGNORE = 114
 SET_PROPERTY_ACTION_TYPE = 51
 # Type 18 (EXE from File table) + asyncNoWait — the upgrade-breaking form.
 FILEKEY_LAUNCH_TYPE = 210
+# "a" forces the complete payload to be copied even if a framework DLL has a
+# higher intrinsic PE version than the Worker release version.
+FORCE_FILE_REINSTALL_MODE = "amus"
 
 
 def xml(value: str) -> str:
@@ -241,20 +244,11 @@ def _custom_action_map(custom_action_table: str) -> dict[str, tuple[int, str, st
     return values
 
 
-def _file_versions(file_table: str) -> dict[str, str]:
-    """Return authored MSI file versions keyed by long file name.
-
-    wixl does not extract PE file versions on Linux.  A blank Version column
-    makes Windows Installer treat a new EXE as an unchanged file during a
-    major upgrade, after which RemoveExistingProducts removes the old EXE.
-    """
+def _property_map(property_table: str) -> dict[str, str]:
     values: dict[str, str] = {}
-    for fields in _tab_rows(file_table):
-        if len(fields) < 5:
-            continue
-        file_name, version = fields[2], fields[4]
-        if file_name and version:
-            values[file_name] = version
+    for fields in _tab_rows(property_table):
+        if len(fields) >= 2 and fields[0] != "Property":
+            values[fields[0]] = fields[1]
     return values
 
 
@@ -262,7 +256,7 @@ def validate_msi_tables(
     msi_tables: str,
     sequence_table: str,
     custom_action_table: str,
-    file_table: str,
+    property_table: str,
 ) -> None:
     """Validate the compiled MSI tables that actually run on Windows."""
     errors: list[str] = []
@@ -271,21 +265,9 @@ def validate_msi_tables(
         errors.append("MSI is missing the File table")
     if "Upgrade" not in table_names:
         errors.append("MSI is missing the Upgrade table (MajorUpgrade was dropped by wixl)")
-    file_versions = _file_versions(file_table)
-    payload_rows = [
-        fields
-        for fields in _tab_rows(file_table)
-        if len(fields) >= 5 and fields[3].isdigit()
-    ]
-    missing_file_versions = [fields[2] for fields in payload_rows if not fields[4]]
-    if not file_versions.get("Orbita.Worker.exe"):
+    if _property_map(property_table).get("REINSTALLMODE") != FORCE_FILE_REINSTALL_MODE:
         errors.append(
-            "Orbita.Worker.exe must have an explicit File table Version so a major upgrade copies it before removing the old package"
-        )
-    if missing_file_versions:
-        errors.append(
-            "every payload file must have a File table Version so a major upgrade copies the complete worker: "
-            + ", ".join(missing_file_versions[:5])
+            f"REINSTALLMODE must be {FORCE_FILE_REINSTALL_MODE} so a major upgrade copies the complete payload regardless of PE file versions"
         )
 
     sequence = _sequence_map(sequence_table)
@@ -380,6 +362,7 @@ def generate(publish_dir: Path, output: Path, version: str) -> None:
         '  <Product Id="*" Name="Orbita Worker" Language="1049"',
         f'           Version="{xml(product_version)}" Manufacturer="Orbita" UpgradeCode="{UPGRADE_CODE}">',
         '    <Package InstallerVersion="200" Compressed="yes" InstallScope="perUser" />',
+        f'    <Property Id="REINSTALLMODE" Value="{FORCE_FILE_REINSTALL_MODE}" />',
         '    <MajorUpgrade AllowSameVersionUpgrades="yes"',
         '                  DowngradeErrorMessage="A newer version of Orbita Worker is already installed." />',
         '    <MediaTemplate EmbedCab="yes" />',

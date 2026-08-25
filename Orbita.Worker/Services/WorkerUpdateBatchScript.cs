@@ -54,7 +54,7 @@ internal static class WorkerUpdateBatchScript
         AppendWaitForWorkerExit(script);
         script
             .AppendLine(":install")
-            .AppendLine("\"%SystemRoot%\\System32\\msiexec.exe\" /qn /norestart /i \"%MSI_PATH%\" /l*v \"%LOG_PATH%\"")
+            .AppendLine("\"%SystemRoot%\\System32\\msiexec.exe\" /qn /norestart REINSTALLMODE=amus /i \"%MSI_PATH%\" /l*v \"%LOG_PATH%\"")
             .AppendLine("set \"INSTALL_EXIT=%ERRORLEVEL%\"")
             .AppendLine("set \"SUCCESS=0\"")
             .AppendLine("if \"%INSTALL_EXIT%\"==\"0\" set \"SUCCESS=1\"")

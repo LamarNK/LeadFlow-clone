@@ -48,10 +48,10 @@ LaunchWorkerAfterInstall\t114\tLaunchWorkerCommand\t/d /c start \"\" \"[INSTALLF
 
 GOOD_TABLES = "File\nUpgrade\nCustomAction\nInstallExecuteSequence\n"
 
-GOOD_FILE = """File\tComponent_\tFileName\tFileSize\tVersion\tLanguage\tAttributes\tSequence
-s72\ts72\tl255\ti4\tS72\tS20\tI2\ti2
-File\tFile
-File_1\tFileComponent_1\tOrbita.Worker.exe\t2\t1.2.3.4\t\t512\t1
+GOOD_PROPERTY = """Property\tValue
+s72\tl0
+Property\tProperty
+REINSTALLMODE\tamus
 """
 
 
@@ -79,6 +79,7 @@ class WorkerMsiContractTests(unittest.TestCase):
         self.assertIn("taskkill /F /IM Orbita.Worker.exe", text)
         self.assertNotIn("taskkill /IM Orbita.Worker.exe /T", text)
         self.assertIn('Version="1.2.30004"', text)
+        self.assertIn('Property Id="REINSTALLMODE" Value="amus"', text)
         self.assertIn('Sequence="1501"', text)
         self.assertIn('Sequence="6602"', text)
         self.assertIn("start " + builder.XML_QUOT + builder.XML_QUOT, text)
@@ -109,7 +110,7 @@ class WorkerMsiContractTests(unittest.TestCase):
             )
 
     def test_compiled_tables_accept_type50_start_launch(self) -> None:
-        builder.validate_msi_tables(GOOD_TABLES, GOOD_SEQUENCE, GOOD_CUSTOM_ACTION, GOOD_FILE)
+        builder.validate_msi_tables(GOOD_TABLES, GOOD_SEQUENCE, GOOD_CUSTOM_ACTION, GOOD_PROPERTY)
 
     def test_compiled_tables_reject_type18_filekey(self) -> None:
         bad_ca = GOOD_CUSTOM_ACTION.replace(
@@ -117,13 +118,13 @@ class WorkerMsiContractTests(unittest.TestCase):
             "LaunchWorkerAfterInstall\t210\tFile_1\t",
         )
         with self.assertRaises(RuntimeError) as raised:
-            builder.validate_msi_tables(GOOD_TABLES, GOOD_SEQUENCE, bad_ca, GOOD_FILE)
+            builder.validate_msi_tables(GOOD_TABLES, GOOD_SEQUENCE, bad_ca, GOOD_PROPERTY)
         self.assertIn("Type 18", str(raised.exception))
 
     def test_compiled_tables_reject_remove_existing_products_outside_transaction(self) -> None:
         early = GOOD_SEQUENCE.replace("RemoveExistingProducts\t\t1501", "RemoveExistingProducts\t\t1450")
         with self.assertRaises(RuntimeError) as raised:
-            builder.validate_msi_tables(GOOD_TABLES, early, GOOD_CUSTOM_ACTION, GOOD_FILE)
+            builder.validate_msi_tables(GOOD_TABLES, early, GOOD_CUSTOM_ACTION, GOOD_PROPERTY)
         self.assertIn("RemoveExistingProducts", str(raised.exception))
 
     def test_compiled_tables_reject_launch_before_installfinalize(self) -> None:
@@ -132,18 +133,18 @@ class WorkerMsiContractTests(unittest.TestCase):
             "LaunchWorkerAfterInstall\tNOT REMOVE~=\"ALL\"\t3999",
         )
         with self.assertRaises(RuntimeError):
-            builder.validate_msi_tables(GOOD_TABLES, early, GOOD_CUSTOM_ACTION, GOOD_FILE)
+            builder.validate_msi_tables(GOOD_TABLES, early, GOOD_CUSTOM_ACTION, GOOD_PROPERTY)
 
     def test_compiled_tables_require_upgrade_table(self) -> None:
         with self.assertRaises(RuntimeError) as raised:
-            builder.validate_msi_tables("File\nCustomAction\n", GOOD_SEQUENCE, GOOD_CUSTOM_ACTION, GOOD_FILE)
+            builder.validate_msi_tables("File\nCustomAction\n", GOOD_SEQUENCE, GOOD_CUSTOM_ACTION, GOOD_PROPERTY)
         self.assertIn("Upgrade", str(raised.exception))
 
-    def test_compiled_tables_reject_worker_without_file_version(self) -> None:
-        missing_version = GOOD_FILE.replace("\t1.2.3.4\t", "\t\t")
+    def test_compiled_tables_reject_missing_force_reinstall_mode(self) -> None:
+        missing_mode = GOOD_PROPERTY.replace("amus", "omus")
         with self.assertRaises(RuntimeError) as raised:
-            builder.validate_msi_tables(GOOD_TABLES, GOOD_SEQUENCE, GOOD_CUSTOM_ACTION, missing_version)
-        self.assertIn("explicit File table Version", str(raised.exception))
+            builder.validate_msi_tables(GOOD_TABLES, GOOD_SEQUENCE, GOOD_CUSTOM_ACTION, missing_mode)
+        self.assertIn("REINSTALLMODE", str(raised.exception))
 
 
 def validate_compiled_msi(msi_path: Path) -> None:
@@ -155,7 +156,7 @@ def validate_compiled_msi(msi_path: Path) -> None:
         tables,
         export("InstallExecuteSequence"),
         export("CustomAction"),
-        export("File"),
+        export("Property"),
     )
 
 

@@ -24,7 +24,7 @@ public sealed class WorkerUpdateBatchScriptTests
         Assert.Contains("chcp 65001", script, StringComparison.Ordinal);
         Assert.Contains("/l*v \"%LOG_PATH%\"", script, StringComparison.Ordinal);
         Assert.Contains("%SystemRoot%\\System32\\msiexec.exe", script, StringComparison.Ordinal);
-        Assert.Contains("/qn /norestart /i", script, StringComparison.Ordinal);
+        Assert.Contains("/qn /norestart REINSTALLMODE=amus /i", script, StringComparison.Ordinal);
         Assert.Contains("set \"INSTALL_EXIT=%ERRORLEVEL%\"", script, StringComparison.Ordinal);
         Assert.Contains(@"set ""LOG_PATH=C:\Users\test\AppData\Local\OrbitaWorker\update-logs\msi-1.2.3.4-20260824T120000Z.log""", script, StringComparison.Ordinal);
         Assert.Contains("echo ExitCode=%INSTALL_EXIT%", script, StringComparison.Ordinal);
