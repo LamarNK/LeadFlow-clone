@@ -117,7 +117,9 @@ public sealed class WorkerConfigService(
             worker.PhoneUnchangedHours,
             worker.ResponseHighlightTargetsJson,
             worker.AdsPowerGroupId,
-            worker.RuCaptchaApiKey);
+            worker.RuCaptchaApiKey,
+            worker.MultiloginLauncherUrl,
+            worker.MultiloginAutomationToken);
     }
 
     public async Task<bool> SyncAccountsAsync(
@@ -177,6 +179,11 @@ public sealed class WorkerConfigService(
 
         foreach (var stale in existing.Values.Where(x => !syncedAccountIds.Contains(x.AccountId)))
         {
+            if (!string.IsNullOrWhiteSpace(stale.MultiloginProfileId))
+            {
+                continue;
+            }
+
             db.WorkerAccounts.Remove(stale);
         }
 
@@ -552,8 +559,14 @@ public sealed class WorkerConfigService(
             account.BlockedCount,
             account.DraftsCount,
             avitoLogin,
-            avitoPassword);
+            avitoPassword,
+            string.IsNullOrWhiteSpace(account.MultiloginProfileId) ? "AdsPower" : "Multilogin",
+            NullIfWhiteSpace(account.MultiloginProfileId),
+            NullIfWhiteSpace(account.MultiloginFolderId));
     }
+
+    private static string? NullIfWhiteSpace(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
     private static WorkerAccountCredentialsDto ToCredentialsDto(WorkerAccountEntity account) =>
         new(

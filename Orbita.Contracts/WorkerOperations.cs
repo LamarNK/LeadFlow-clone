@@ -31,7 +31,11 @@ public sealed record WorkerAccountConfigDto(
     /// <summary>Логин/телефон Avito для автологина воркера (только worker config, не в телеметрии панели).</summary>
     string? AvitoLogin = null,
     /// <summary>Пароль Avito (plaintext только в защищённом worker config channel).</summary>
-    string? AvitoPassword = null);
+    string? AvitoPassword = null,
+    /// <summary>AdsPower или Multilogin. Пусто — AdsPower (обратная совместимость).</summary>
+    string? ProfileProvider = null,
+    string? MultiloginProfileId = null,
+    string? MultiloginFolderId = null);
 
 public sealed record UpdateWorkerSubProfileRequest(bool IsEnabledInPanel);
 
@@ -86,7 +90,11 @@ public sealed record WorkerConfigDto(
     /// <summary>ID группы AdsPower; null — синхронизировать все профили Local API.</summary>
     string? AdsPowerGroupId = null,
     /// <summary>Ключ RuCaptcha для автопрохождения GeeTest v4. Пусто — выкл.</summary>
-    string? RuCaptchaApiKey = null)
+    string? RuCaptchaApiKey = null,
+    /// <summary>URL launcher Multilogin X (worker config channel).</summary>
+    string? MultiloginLauncherUrl = null,
+    /// <summary>Automation token Multilogin X. Только worker config, не телеметрия панели.</summary>
+    string? MultiloginAutomationToken = null)
 {
     public ResponseCollectionFilters ResponseFilters =>
         ResponseCollectionFilters.NormalizeLegacy(
