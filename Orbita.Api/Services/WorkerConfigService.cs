@@ -477,6 +477,8 @@ public sealed class WorkerConfigService(
         error = null;
         return true;
     }
+
+    private static string? NormalizeAutoReplyMessage(string? message)
     {
         if (string.IsNullOrWhiteSpace(message))
         {
