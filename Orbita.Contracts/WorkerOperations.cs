@@ -118,7 +118,10 @@ public sealed record WorkerAccountSyncItemDto(
     string AdsPowerProfileId,
     string DisplayName,
     string? AdsPowerGroupId = null,
-    string? AdsPowerGroupName = null);
+    string? AdsPowerGroupName = null,
+    string? MultiloginProfileId = null,
+    string? MultiloginFolderId = null,
+    string? MultiloginProfileName = null);
 
 public sealed record WorkerAccountSyncRequest(
     IReadOnlyList<WorkerAccountSyncItemDto> Accounts,

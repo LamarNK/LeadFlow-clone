@@ -139,53 +139,109 @@ public sealed class WorkerConfigService(
             .Where(x => x.WorkerId == workerId)
             .ToDictionaryAsync(x => x.AccountId, ct);
 
-        var syncedAccountIds = new HashSet<Guid>();
+        var adsPowerSyncedIds = new HashSet<Guid>();
+        var multiloginSyncedIds = new HashSet<Guid>();
+        var sawAdsPowerItems = false;
+        var sawMultiloginItems = false;
         var now = DateTime.UtcNow;
 
         foreach (var item in request.Accounts)
         {
-            if (string.IsNullOrWhiteSpace(item.AdsPowerProfileId))
+            if (!string.IsNullOrWhiteSpace(item.AdsPowerProfileId))
             {
-                continue;
-            }
+                sawAdsPowerItems = true;
+                var accountId = AdsPowerAccountId.ToAccountGuid(item.AdsPowerProfileId);
+                adsPowerSyncedIds.Add(accountId);
 
-            var accountId = AdsPowerAccountId.ToAccountGuid(item.AdsPowerProfileId);
-            syncedAccountIds.Add(accountId);
-
-            if (existing.TryGetValue(accountId, out var account))
-            {
-                account.AdsPowerProfileId = item.AdsPowerProfileId.Trim();
-                account.DisplayName = item.DisplayName.Trim();
-                account.AdsPowerGroupId = AdsPowerGroupsJson.NormalizeGroupId(item.AdsPowerGroupId);
-                account.AdsPowerGroupName = AdsPowerGroupsJson.NormalizeGroupName(item.AdsPowerGroupName);
-                account.UpdatedAtUtc = now;
-            }
-            else
-            {
-                db.WorkerAccounts.Add(new WorkerAccountEntity
+                if (existing.TryGetValue(accountId, out var account))
                 {
-                    WorkerId = workerId,
-                    AccountId = accountId,
-                    AdsPowerProfileId = item.AdsPowerProfileId.Trim(),
-                    DisplayName = item.DisplayName.Trim(),
-                    AdsPowerGroupId = AdsPowerGroupsJson.NormalizeGroupId(item.AdsPowerGroupId),
-                    AdsPowerGroupName = AdsPowerGroupsJson.NormalizeGroupName(item.AdsPowerGroupName),
-                    Status = string.Empty,
-                    IsEnabled = false,
-                    IsEnabledInPanel = false,
-                    UpdatedAtUtc = now
-                });
+                    account.AdsPowerProfileId = item.AdsPowerProfileId.Trim();
+                    account.DisplayName = item.DisplayName.Trim();
+                    account.AdsPowerGroupId = AdsPowerGroupsJson.NormalizeGroupId(item.AdsPowerGroupId);
+                    account.AdsPowerGroupName = AdsPowerGroupsJson.NormalizeGroupName(item.AdsPowerGroupName);
+                    account.UpdatedAtUtc = now;
+                }
+                else
+                {
+                    var created = new WorkerAccountEntity
+                    {
+                        WorkerId = workerId,
+                        AccountId = accountId,
+                        AdsPowerProfileId = item.AdsPowerProfileId.Trim(),
+                        DisplayName = item.DisplayName.Trim(),
+                        AdsPowerGroupId = AdsPowerGroupsJson.NormalizeGroupId(item.AdsPowerGroupId),
+                        AdsPowerGroupName = AdsPowerGroupsJson.NormalizeGroupName(item.AdsPowerGroupName),
+                        Status = string.Empty,
+                        IsEnabled = false,
+                        IsEnabledInPanel = false,
+                        UpdatedAtUtc = now
+                    };
+                    db.WorkerAccounts.Add(created);
+                    existing[accountId] = created;
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(item.MultiloginProfileId)
+                && !string.IsNullOrWhiteSpace(item.MultiloginFolderId))
+            {
+                sawMultiloginItems = true;
+                var profileId = item.MultiloginProfileId.Trim();
+                var folderId = item.MultiloginFolderId.Trim();
+                var accountId = MultiloginAccountId.ToAccountGuid(profileId);
+                multiloginSyncedIds.Add(accountId);
+                var displayName = FirstNonEmpty(
+                    item.MultiloginProfileName,
+                    item.DisplayName,
+                    profileId);
+
+                if (existing.TryGetValue(accountId, out var account))
+                {
+                    account.MultiloginProfileId = profileId;
+                    account.MultiloginFolderId = folderId;
+                    account.MultiloginProfileName = NullIfWhiteSpace(item.MultiloginProfileName) ?? displayName;
+                    account.DisplayName = displayName;
+                    account.UpdatedAtUtc = now;
+                }
+                else
+                {
+                    var created = new WorkerAccountEntity
+                    {
+                        WorkerId = workerId,
+                        AccountId = accountId,
+                        AdsPowerProfileId = string.Empty,
+                        MultiloginProfileId = profileId,
+                        MultiloginFolderId = folderId,
+                        MultiloginProfileName = NullIfWhiteSpace(item.MultiloginProfileName) ?? displayName,
+                        DisplayName = displayName,
+                        Status = string.Empty,
+                        IsEnabled = false,
+                        IsEnabledInPanel = false,
+                        UpdatedAtUtc = now
+                    };
+                    db.WorkerAccounts.Add(created);
+                    existing[accountId] = created;
+                }
             }
         }
 
-        foreach (var stale in existing.Values.Where(x => !syncedAccountIds.Contains(x.AccountId)))
+        if (sawAdsPowerItems)
         {
-            if (!string.IsNullOrWhiteSpace(stale.MultiloginProfileId))
+            foreach (var stale in existing.Values.Where(x =>
+                         !adsPowerSyncedIds.Contains(x.AccountId)
+                         && string.IsNullOrWhiteSpace(x.MultiloginProfileId)))
             {
-                continue;
+                db.WorkerAccounts.Remove(stale);
             }
+        }
 
-            db.WorkerAccounts.Remove(stale);
+        if (sawMultiloginItems)
+        {
+            foreach (var stale in existing.Values.Where(x =>
+                         !multiloginSyncedIds.Contains(x.AccountId)
+                         && !string.IsNullOrWhiteSpace(x.MultiloginProfileId)))
+            {
+                db.WorkerAccounts.Remove(stale);
+            }
         }
 
         if (request.Groups is not null)
@@ -662,6 +718,19 @@ public sealed class WorkerConfigService(
 
     private static string? NullIfWhiteSpace(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
+
+    private static string FirstNonEmpty(params string?[] values)
+    {
+        foreach (var value in values)
+        {
+            if (!string.IsNullOrWhiteSpace(value))
+            {
+                return value.Trim();
+            }
+        }
+
+        return string.Empty;
+    }
 
     private static WorkerAccountCredentialsDto ToCredentialsDto(WorkerAccountEntity account) =>
         new(
