@@ -232,6 +232,22 @@ resolve_endpoint() {
   office_key="$(endpoint_key "${office_id}")"
 
   case "${provider}" in
+    default)
+      # "По маршруту провайдера" means the office default, not the optional
+      # legacy orbita-provider trunk. Resolve it here so a newly assigned
+      # extension immediately receives the active Plusofon/Beeline endpoint.
+      local office_provider=""
+      if [[ -f "${runtime_dir}/outbound.${office_id}.conf" ]]; then
+        office_provider="$(tr -d '\r\n ' < "${runtime_dir}/outbound.${office_id}.conf")"
+      elif [[ -f "${runtime_dir}/beeline.${office_id}.outbound" ]]; then
+        office_provider="$(tr -d '\r\n ' < "${runtime_dir}/beeline.${office_id}.outbound")"
+      fi
+      if [[ -n "${office_provider}" && "${office_provider}" != "default" ]]; then
+        resolve_endpoint "${office_provider}" "${office_id}"
+      else
+        printf 'orbita-provider'
+      fi
+      ;;
     beeline)
       if [[ -f "${runtime_dir}/beeline.${office_id}.conf" ]] && is_endpoint_loaded "beeline-${office_key}"; then
         printf 'beeline-%s' "${office_key}"
@@ -259,8 +275,30 @@ resolve_endpoint() {
   esac
 }
 
+expects_runtime_endpoint() {
+  local provider="$1"
+  local office_id="$2"
+  case "${provider}" in
+    plusofon|beeline|beeline-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]*)
+      return 0
+      ;;
+    default)
+      local office_provider=""
+      if [[ -f "${runtime_dir}/outbound.${office_id}.conf" ]]; then
+        office_provider="$(tr -d '\r\n ' < "${runtime_dir}/outbound.${office_id}.conf")"
+      elif [[ -f "${runtime_dir}/beeline.${office_id}.outbound" ]]; then
+        office_provider="$(tr -d '\r\n ' < "${runtime_dir}/beeline.${office_id}.outbound")"
+      fi
+      [[ -n "${office_provider}" && "${office_provider}" != "default" ]] \
+        && expects_runtime_endpoint "${office_provider}" "${office_id}"
+      return $?
+      ;;
+  esac
+  return 1
+}
+
 apply_routes_if_changed() {
-  local routes_hash outbound_hash providers_hash combined_hash
+  local routes_hash outbound_hash providers_hash combined_hash routes_pending
   routes_hash="$(hash_files 'routes.*.conf')"
   outbound_hash="$(hash_files 'outbound.*.conf'):$(hash_files 'beeline.*.outbound'):$(hash_files 'plusofon.*.callerid')"
   providers_hash="$(hash_files 'beeline.*.conf'):$(hash_files 'plusofon.*.conf')"
@@ -268,6 +306,7 @@ apply_routes_if_changed() {
   if [[ "${combined_hash}" == "${last_routes_hash}" ]]; then
     return 0
   fi
+  routes_pending=0
 
   /usr/sbin/asterisk -rx 'database deltree orbita_user outbound_endpoint' >/dev/null 2>&1 || true
   /usr/sbin/asterisk -rx 'database deltree orbita_user office_id' >/dev/null 2>&1 || true
@@ -289,6 +328,10 @@ apply_routes_if_changed() {
       seen_extensions["${extension}"]="${office_id}"
       local endpoint
       endpoint="$(resolve_endpoint "${provider}" "${office_id}")"
+      if [[ "${endpoint}" == "orbita-provider" ]] \
+          && expects_runtime_endpoint "${provider}" "${office_id}"; then
+        routes_pending=1
+      fi
       /usr/sbin/asterisk -rx "database put orbita_user outbound_endpoint/${extension} ${endpoint}" >/dev/null
       /usr/sbin/asterisk -rx "database put orbita_user office_id/${extension} ${office_id}" >/dev/null
     done < "${file}"
@@ -302,6 +345,10 @@ apply_routes_if_changed() {
     seen_offices["${office_id}"]=1
     outbound="$(tr -d '\r\n ' < "${file}")"
     endpoint="$(resolve_endpoint "${outbound}" "${office_id}")"
+    if [[ "${endpoint}" == "orbita-provider" ]] \
+        && expects_runtime_endpoint "${outbound}" "${office_id}"; then
+      routes_pending=1
+    fi
     /usr/sbin/asterisk -rx "database put orbita_office outbound_endpoint/${office_id} ${endpoint}" >/dev/null
   done < <(find "${runtime_dir}" -maxdepth 1 -type f -name 'outbound.*.conf' -print0 | sort -z)
 
@@ -312,6 +359,10 @@ apply_routes_if_changed() {
     [[ -n "${office_id}" && -z "${seen_offices[${office_id}]:-}" ]] || continue
     outbound="$(tr -d '\r\n ' < "${file}")"
     endpoint="$(resolve_endpoint "${outbound}" "${office_id}")"
+    if [[ "${endpoint}" == "orbita-provider" ]] \
+        && expects_runtime_endpoint "${outbound}" "${office_id}"; then
+      routes_pending=1
+    fi
     /usr/sbin/asterisk -rx "database put orbita_office outbound_endpoint/${office_id} ${endpoint}" >/dev/null
   done < <(find "${runtime_dir}" -maxdepth 1 -type f -name 'beeline.*.outbound' -print0 | sort -z)
 
@@ -329,7 +380,13 @@ apply_routes_if_changed() {
     /usr/sbin/asterisk -rx "database put orbita_endpoint outbound_domain/${endpoint} ${domain}" >/dev/null
   done < <(find "${runtime_dir}" -maxdepth 1 -type f -name 'plusofon.*.callerid' -print0 | sort -z)
 
-  last_routes_hash="${combined_hash}"
+  if [[ "${routes_pending}" == "1" ]]; then
+    # A provider config can appear just before pjsip finishes loading it. Keep
+    # retrying instead of permanently caching the legacy fallback endpoint.
+    last_routes_hash=""
+  else
+    last_routes_hash="${combined_hash}"
+  fi
 }
 
 update_beeline_registration_statuses() {

@@ -215,6 +215,45 @@ Local pilot values:
 TELEPHONY_WEBRTC_ENABLED=true
 TELEPHONY_WEBRTC_WS_URL=ws://127.0.0.1:8088/ws
 TELEPHONY_WEBRTC_SIP_DOMAIN=127.0.0.1
+TELEPHONY_WEBRTC_ICE_SERVER_URLS=stun:stun.l.google.com:19302
+TELEPHONY_WEBRTC_ICE_USERNAME=
+TELEPHONY_WEBRTC_ICE_CREDENTIAL=
+TELEPHONY_WEBRTC_ICE_CREDENTIAL_TTL_SECONDS=3600
+```
+
+`TELEPHONY_WEBRTC_ICE_SERVER_URLS` accepts a semicolon-separated list of
+`stun:`, `stuns:`, `turn:` and `turns:` URLs. A public STUN server is the
+default and is suitable for ordinary NAT. Production installations that must
+work from restrictive or symmetric NAT networks should supply their own TURN
+server and set its username and credential in the two variables above.
+
+### Bundled coturn for production WebRTC
+
+The production compose files include coturn in the `telephony-media` profile.
+It uses the TURN REST authentication mechanism: the shared secret stays on the
+server, while the API issues an authenticated employee a short-lived username
+and HMAC credential. Configure the same secret for the API and coturn through
+`COTURN_AUTH_SECRET`:
+
+```env
+TELEPHONY_WEBRTC_ICE_SERVER_URLS=stun:stun.l.google.com:19302;turn:141.105.66.183:3478?transport=udp;turn:141.105.66.183:3478?transport=tcp
+TELEPHONY_WEBRTC_ICE_USERNAME=
+TELEPHONY_WEBRTC_ICE_CREDENTIAL=
+TELEPHONY_WEBRTC_ICE_CREDENTIAL_TTL_SECONDS=3600
+COTURN_REALM=orbitsu.ru
+COTURN_AUTH_SECRET=<long-random-secret>
+COTURN_EXTERNAL_IP=141.105.66.183
+COTURN_RELAY_IP=192.168.137.28
+```
+
+Coturn uses host networking and listens on TCP/UDP 3478. Its UDP relay range
+is 49160-49200. If the server has private and public addresses, the upstream
+NAT must forward those ports without translating the relay port numbers. Start
+it with:
+
+```bash
+docker compose -f docker-compose.images.yml --env-file .env \
+  --profile telephony-media up -d coturn api web asterisk
 ```
 
 Bind an internal number to the matching employee in the office telephony

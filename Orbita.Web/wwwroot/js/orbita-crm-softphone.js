@@ -7,6 +7,7 @@
     var activeSession = null;
     var activeDirection = '';
     var closeTimer = null;
+    var peerConnectionConfig = { iceServers: [], iceTransportPolicy: 'all' };
     var modal = document.querySelector('[data-orbita-softphone]');
     var targetLabel = document.querySelector('[data-orbita-softphone-target]');
     var statusLabel = document.querySelector('[data-orbita-softphone-status]');
@@ -65,6 +66,24 @@
         return String(phone || '').replace(/\D/g, '');
     }
 
+    function buildPeerConnectionConfig(config) {
+        var urls = Array.isArray(config && config.iceServerUrls)
+            ? config.iceServerUrls.filter(function (url) {
+                return typeof url === 'string' && url.trim().length > 0;
+            })
+            : [];
+        if (!urls.length) {
+            return { iceServers: [], iceTransportPolicy: 'all' };
+        }
+
+        var iceServer = { urls: urls };
+        if (config.iceUsername && config.iceCredential) {
+            iceServer.username = config.iceUsername;
+            iceServer.credential = config.iceCredential;
+        }
+        return { iceServers: [iceServer], iceTransportPolicy: 'all' };
+    }
+
     async function loadConfig() {
         var response = await fetch('/Crm/WebRtcConfig', {
             method: 'GET',
@@ -90,6 +109,7 @@
     }
 
     function ensureRegistered(config) {
+        peerConnectionConfig = buildPeerConnectionConfig(config);
         var key = [config.webSocketUrl, config.sipUri, config.authorizationUsername].join('|');
         if (ua && uaKey === key && ua.isRegistered && ua.isRegistered()) {
             return Promise.resolve(ua);
@@ -173,6 +193,42 @@
             ? new window.MediaStream()
             : null;
         var playbackErrorShown = false;
+        var sipEstablished = false;
+        var iceConnected = false;
+        var iceFailureShown = false;
+        var iceTimer = null;
+
+        function clearIceTimer() {
+            if (!iceTimer) return;
+            window.clearTimeout(iceTimer);
+            iceTimer = null;
+        }
+
+        function failIceConnection() {
+            if (iceFailureShown || activeSession !== session) return;
+            iceFailureShown = true;
+            clearIceTimer();
+            var message = 'Не удалось установить аудиоканал. Проверьте STUN/TURN и сетевые правила.';
+            setStatus(message);
+            toast(message, 'error');
+            try { session.terminate(); } catch (e) { closeCall(2600); }
+        }
+
+        function waitForIceConnection(delay) {
+            clearIceTimer();
+            iceTimer = window.setTimeout(failIceConnection, delay || 15000);
+        }
+
+        function updateEstablishedStatus() {
+            if (!sipEstablished) return;
+            if (iceConnected) {
+                clearIceTimer();
+                setStatus('Разговор идёт');
+            } else {
+                setStatus('Устанавливаем аудиоканал…');
+                waitForIceConnection(15000);
+            }
+        }
 
         function playRemoteAudio() {
             if (!remoteAudio || !remoteAudio.srcObject) return;
@@ -209,6 +265,27 @@
             if (!pc || pc === attachedPeerConnection) return;
             attachedPeerConnection = pc;
             pc.addEventListener('track', attachRemoteTrack);
+            pc.addEventListener('iceconnectionstatechange', function () {
+                var state = pc.iceConnectionState;
+                if (state === 'connected' || state === 'completed') {
+                    iceConnected = true;
+                    clearIceTimer();
+                    updateEstablishedStatus();
+                } else if (state === 'failed') {
+                    iceConnected = false;
+                    failIceConnection();
+                } else if (state === 'disconnected') {
+                    iceConnected = false;
+                    if (sipEstablished) {
+                        setStatus('Аудиоканал прерван, переподключаемся…');
+                        waitForIceConnection(8000);
+                    }
+                }
+            });
+
+            if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
+                iceConnected = true;
+            }
 
             // For an outgoing JsSIP call the peer connection can already exist
             // by the time ua.call() returns, so its event may have fired early.
@@ -230,20 +307,24 @@
         });
         session.on('accepted', function () {
             showActiveCallControls();
-            setStatus(activeDirection === 'incoming' ? 'Звонок принят' : 'Собеседник ответил');
+            sipEstablished = true;
+            updateEstablishedStatus();
             playRemoteAudio();
         });
         session.on('confirmed', function () {
             showActiveCallControls();
-            setStatus('Разговор идёт');
+            sipEstablished = true;
+            updateEstablishedStatus();
             playRemoteAudio();
         });
         session.on('ended', function () {
+            clearIceTimer();
             activeSession = null;
             setStatus('Звонок завершён');
             closeCall(1400);
         });
         session.on('failed', function (event) {
+            clearIceTimer();
             var directionAtFailure = activeDirection;
             activeSession = null;
             var cause = event && event.cause ? ' (' + event.cause + ')' : '';
@@ -281,7 +362,7 @@
             var target = 'sip:' + digits + '@' + config.sipDomain;
             var session = registeredUa.call(target, {
                 mediaConstraints: { audio: true, video: false },
-                pcConfig: { iceServers: [] },
+                pcConfig: peerConnectionConfig,
                 rtcOfferConstraints: { offerToReceiveAudio: true, offerToReceiveVideo: false }
             });
             attachSession(session, 'outgoing');
@@ -325,7 +406,7 @@
                 setStatus('Подключаем микрофон…');
                 activeSession.answer({
                     mediaConstraints: { audio: true, video: false },
-                    pcConfig: { iceServers: [] },
+                    pcConfig: peerConnectionConfig,
                     rtcOfferConstraints: { offerToReceiveAudio: true, offerToReceiveVideo: false }
                 });
                 showActiveCallControls();

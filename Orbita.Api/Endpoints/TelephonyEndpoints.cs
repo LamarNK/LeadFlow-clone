@@ -202,6 +202,7 @@ public static class TelephonyEndpoints
                 OfficeScopeService officeScope,
                 CrmTelephonyService telephony,
                 IOptions<CrmTelephonyWebRtcOptions> configuredOptions,
+                TimeProvider timeProvider,
                 CancellationToken ct) =>
             {
                 var options = configuredOptions.Value;
@@ -247,6 +248,33 @@ public static class TelephonyEndpoints
                         statusCode: StatusCodes.Status500InternalServerError);
                 }
 
+                var iceServerUrls = ParseIceServerUrls(options.IceServerUrls);
+                var hasTurnServer = iceServerUrls.Any(url =>
+                    url.StartsWith("turn:", StringComparison.OrdinalIgnoreCase)
+                    || url.StartsWith("turns:", StringComparison.OrdinalIgnoreCase));
+                var iceUsername = string.IsNullOrWhiteSpace(options.IceUsername)
+                    ? null
+                    : options.IceUsername.Trim();
+                var iceCredential = string.IsNullOrWhiteSpace(options.IceCredential)
+                    ? null
+                    : options.IceCredential;
+                if (hasTurnServer && !string.IsNullOrWhiteSpace(options.IceAuthSecret))
+                {
+                    (iceUsername, iceCredential) = CrmTelephonyIceCredentialFactory.Create(
+                        options.IceAuthSecret,
+                        endpoint.Extension,
+                        timeProvider.GetUtcNow(),
+                        options.IceCredentialTtlSeconds);
+                }
+                else if (hasTurnServer
+                    && (string.IsNullOrWhiteSpace(iceUsername)
+                        || string.IsNullOrWhiteSpace(iceCredential)))
+                {
+                    return Results.Problem(
+                        "Для TURN-сервера не настроен временный секрет или статические реквизиты.",
+                        statusCode: StatusCodes.Status500InternalServerError);
+                }
+
                 response.Headers.CacheControl = "no-store, no-cache, max-age=0";
                 response.Headers.Pragma = "no-cache";
                 return Results.Ok(new CrmTelephonyWebRtcConfigDto(
@@ -255,7 +283,10 @@ public static class TelephonyEndpoints
                     options.SipDomain.Trim(),
                     endpoint.Extension,
                     endpoint.AuthorizationUsername.Trim(),
-                    endpoint.Password));
+                    endpoint.Password,
+                    iceServerUrls,
+                    iceUsername,
+                    iceCredential));
             })
             .RequireAuthorization(PanelPermissions.CrmBoard);
 
@@ -472,6 +503,25 @@ public static class TelephonyEndpoints
                 ? Results.NoContent()
                 : Results.NotFound();
         });
+    }
+
+    private static IReadOnlyList<string> ParseIceServerUrls(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return [];
+        }
+
+        return raw.Split([';', ',', '\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(url => url.Length <= 512
+                && !url.Any(char.IsWhiteSpace)
+                && (url.StartsWith("stun:", StringComparison.OrdinalIgnoreCase)
+                    || url.StartsWith("stuns:", StringComparison.OrdinalIgnoreCase)
+                    || url.StartsWith("turn:", StringComparison.OrdinalIgnoreCase)
+                    || url.StartsWith("turns:", StringComparison.OrdinalIgnoreCase)))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Take(8)
+            .ToArray();
     }
 
     private static IResult ToReceiveResult(SipoutCallReceiveResult result, string invalidMessage) =>

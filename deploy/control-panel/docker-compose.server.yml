@@ -46,6 +46,11 @@ services:
       TelephonyWebRtc__Enabled: ${TELEPHONY_WEBRTC_ENABLED:-false}
       TelephonyWebRtc__WebSocketUrl: ${TELEPHONY_WEBRTC_WS_URL:-}
       TelephonyWebRtc__SipDomain: ${TELEPHONY_WEBRTC_SIP_DOMAIN:-}
+      TelephonyWebRtc__IceServerUrls: ${TELEPHONY_WEBRTC_ICE_SERVER_URLS:-stun:stun.l.google.com:19302}
+      TelephonyWebRtc__IceUsername: ${TELEPHONY_WEBRTC_ICE_USERNAME:-}
+      TelephonyWebRtc__IceCredential: ${TELEPHONY_WEBRTC_ICE_CREDENTIAL:-}
+      TelephonyWebRtc__IceAuthSecret: ${COTURN_AUTH_SECRET:-}
+      TelephonyWebRtc__IceCredentialTtlSeconds: ${TELEPHONY_WEBRTC_ICE_CREDENTIAL_TTL_SECONDS:-3600}
     depends_on:
       postgres:
         condition: service_healthy
@@ -150,6 +155,41 @@ services:
       timeout: 5s
       retries: 3
       start_period: 20s
+
+  coturn:
+    profiles: ["telephony-media"]
+    image: coturn/coturn:4.17.2-r0-alpine
+    restart: unless-stopped
+    network_mode: host
+    environment:
+      COTURN_REALM: ${COTURN_REALM:-orbitsu.ru}
+      COTURN_AUTH_SECRET: ${COTURN_AUTH_SECRET:-}
+      COTURN_EXTERNAL_IP: ${COTURN_EXTERNAL_IP:-}
+      COTURN_RELAY_IP: ${COTURN_RELAY_IP:-}
+    entrypoint: ["/bin/sh", "-ec"]
+    command:
+      - |
+        test -n "$${COTURN_AUTH_SECRET}" || { echo "COTURN_AUTH_SECRET is required" >&2; exit 1; }
+        test -n "$${COTURN_EXTERNAL_IP}" || { echo "COTURN_EXTERNAL_IP is required" >&2; exit 1; }
+        test -n "$${COTURN_RELAY_IP}" || { echo "COTURN_RELAY_IP is required" >&2; exit 1; }
+        exec turnserver -n --log-file=stdout --listening-port=3478 \
+          --listening-ip="$${COTURN_RELAY_IP}" --relay-ip="$${COTURN_RELAY_IP}" \
+          --external-ip="$${COTURN_EXTERNAL_IP}/$${COTURN_RELAY_IP}" \
+          --min-port=49160 --max-port=49200 --fingerprint \
+          --use-auth-secret --static-auth-secret="$${COTURN_AUTH_SECRET}" \
+          --realm="$${COTURN_REALM}" --stale-nonce=600 \
+          --user-quota=12 --total-quota=200 --no-cli --no-multicast-peers \
+          --unauthorized-ratelimit \
+          --allowed-peer-ip="$${COTURN_RELAY_IP}" \
+          --denied-peer-ip=10.0.0.0-10.255.255.255 \
+          --denied-peer-ip=192.168.0.0-192.168.255.255 \
+          --no-tls --no-dtls
+    healthcheck:
+      test: ["CMD-SHELL", "turnutils_stunclient -p 3478 $${COTURN_RELAY_IP} >/dev/null 2>&1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
 volumes:
   orbita_pg:

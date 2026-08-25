@@ -129,7 +129,10 @@ public sealed record CrmTelephonyWebRtcConfigDto(
     string SipDomain,
     string Extension,
     string AuthorizationUsername,
-    string Password);
+    string Password,
+    IReadOnlyList<string>? IceServerUrls = null,
+    string? IceUsername = null,
+    string? IceCredential = null);
 
 public sealed record UpdateCrmTelephonyBindingRequest(
     string UserId,

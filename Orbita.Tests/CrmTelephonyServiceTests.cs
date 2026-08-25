@@ -12,6 +12,21 @@ namespace Orbita.Tests;
 public sealed class CrmTelephonyServiceTests
 {
     [Fact]
+    public void IceCredentialFactory_CreatesCoturnRestApiCredential()
+    {
+        var now = DateTimeOffset.FromUnixTimeSeconds(1_700_000_000);
+
+        var (username, credential) = CrmTelephonyIceCredentialFactory.Create(
+            "test-secret",
+            "301",
+            now,
+            3600);
+
+        Assert.Equal("1700003600:301", username);
+        Assert.Equal("MyiicCuKr1PN6dMdoKGrj6PLVHY=", credential);
+    }
+
+    [Fact]
     public async Task AsteriskBinding_GeneratesEncryptedWebRtcCredentials_AndPublishesRuntimeEndpoint()
     {
         var runtimePath = Path.Combine(Path.GetTempPath(), "orbita-webrtc-runtime-tests", Guid.NewGuid().ToString("N"));
@@ -92,6 +107,32 @@ public sealed class CrmTelephonyServiceTests
             Assert.NotNull(sameEndpoint);
             Assert.Null(sameEndpointError);
             Assert.Equal(endpoint.Password, sameEndpoint.Password);
+
+            var (updatedBinding, updatedBindingError) = await sut.SetBindingAsync(
+                officeId,
+                userId,
+                "301",
+                provider: CrmTelephonyProviders.Asterisk);
+            Assert.NotNull(updatedBinding);
+            Assert.Null(updatedBindingError);
+
+            var (updatedEndpoint, updatedEndpointError) = await sut.GetOrProvisionWebRtcEndpointAsync(
+                officeId,
+                userId);
+            Assert.NotNull(updatedEndpoint);
+            Assert.Null(updatedEndpointError);
+            Assert.Equal("301", updatedEndpoint.Extension);
+            Assert.Equal("301-webrtc", updatedEndpoint.AuthorizationUsername);
+            Assert.NotEqual(endpoint.Password, updatedEndpoint.Password);
+
+            runtimeConfig = await File.ReadAllTextAsync(
+                Path.Combine(runtimePath, $"webrtc.{officeId:D}.conf"));
+            Assert.Contains("[301-webrtc]", runtimeConfig, StringComparison.Ordinal);
+            Assert.DoesNotContain("[201-webrtc]", runtimeConfig, StringComparison.Ordinal);
+            Assert.Equal(
+                "301=plusofon\n",
+                (await File.ReadAllTextAsync(Path.Combine(runtimePath, $"routes.{officeId:D}.conf")))
+                    .Replace("\r\n", "\n"));
 
             Assert.True(await sut.RemoveBindingAsync(
                 officeId,
