@@ -29,6 +29,7 @@ command -v dotnet >/dev/null || { echo "dotnet SDK is required." >&2; exit 1; }
 command -v python3 >/dev/null || { echo "python3 is required." >&2; exit 1; }
 command -v wixl >/dev/null || { echo "wixl is required (Ubuntu: apt-get install wixl)." >&2; exit 1; }
 command -v msiinfo >/dev/null || { echo "msiinfo is required (Ubuntu: apt-get install msitools)." >&2; exit 1; }
+command -v msibuild >/dev/null || { echo "msibuild is required (Ubuntu: apt-get install msitools)." >&2; exit 1; }
 command -v wrestool >/dev/null || { echo "wrestool is required (Ubuntu: apt-get install icoutils)." >&2; exit 1; }
 
 script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
@@ -71,6 +72,14 @@ if grep -Fq 'Guid="*"' "$wxs_path"; then
   exit 1
 fi
 wixl -a x64 -o "$msi_path" "$wxs_path"
+
+# wixl does not implement WiX's File/@Version and therefore writes every
+# payload row with a blank Version column. During a major upgrade Windows
+# Installer then skips the new EXE as "already present" and the removal of
+# the prior package deletes it. Stamp the generated MSI table directly; the
+# compiled-MSI contract below verifies this before any artifact is published.
+printf -v msi_file_version_query "UPDATE \`File\` SET \`Version\` = '%s'" "$version"
+msibuild "$msi_path" -q "$msi_file_version_query"
 
 if ! python3 "$script_dir/test_build_orbita_worker_msi_linux.py" --msi "$msi_path"; then
   echo "---- InstallExecuteSequence ----" >&2

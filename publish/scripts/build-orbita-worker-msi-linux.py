@@ -241,7 +241,29 @@ def _custom_action_map(custom_action_table: str) -> dict[str, tuple[int, str, st
     return values
 
 
-def validate_msi_tables(msi_tables: str, sequence_table: str, custom_action_table: str) -> None:
+def _file_versions(file_table: str) -> dict[str, str]:
+    """Return authored MSI file versions keyed by long file name.
+
+    wixl does not extract PE file versions on Linux.  A blank Version column
+    makes Windows Installer treat a new EXE as an unchanged file during a
+    major upgrade, after which RemoveExistingProducts removes the old EXE.
+    """
+    values: dict[str, str] = {}
+    for fields in _tab_rows(file_table):
+        if len(fields) < 5:
+            continue
+        file_name, version = fields[2], fields[4]
+        if file_name and version:
+            values[file_name] = version
+    return values
+
+
+def validate_msi_tables(
+    msi_tables: str,
+    sequence_table: str,
+    custom_action_table: str,
+    file_table: str,
+) -> None:
     """Validate the compiled MSI tables that actually run on Windows."""
     errors: list[str] = []
     table_names = {line.strip() for line in msi_tables.splitlines() if line.strip()}
@@ -249,6 +271,22 @@ def validate_msi_tables(msi_tables: str, sequence_table: str, custom_action_tabl
         errors.append("MSI is missing the File table")
     if "Upgrade" not in table_names:
         errors.append("MSI is missing the Upgrade table (MajorUpgrade was dropped by wixl)")
+    file_versions = _file_versions(file_table)
+    payload_rows = [
+        fields
+        for fields in _tab_rows(file_table)
+        if len(fields) >= 5 and fields[3].isdigit()
+    ]
+    missing_file_versions = [fields[2] for fields in payload_rows if not fields[4]]
+    if not file_versions.get("Orbita.Worker.exe"):
+        errors.append(
+            "Orbita.Worker.exe must have an explicit File table Version so a major upgrade copies it before removing the old package"
+        )
+    if missing_file_versions:
+        errors.append(
+            "every payload file must have a File table Version so a major upgrade copies the complete worker: "
+            + ", ".join(missing_file_versions[:5])
+        )
 
     sequence = _sequence_map(sequence_table)
     actions = _custom_action_map(custom_action_table)
