@@ -72,7 +72,7 @@ public sealed class CrmLeadFileParserTests
             first =>
             {
                 Assert.Equal("недогреев Дмитрий Игоревич", first.FullName);
-                Assert.Equal("+7 932 204-84-31", first.Phone);
+                Assert.Equal("+7 932 204-84-31", first.PhoneRaw);
                 Assert.Equal("ОХРАНА", first.Vacancy);
             },
             second =>
