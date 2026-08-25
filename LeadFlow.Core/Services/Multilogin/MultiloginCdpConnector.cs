@@ -31,15 +31,13 @@ public sealed class MultiloginCdpConnector : IMultiloginCdpConnector
             : DefaultStopTimeout;
     }
 
-    public async Task<T> RunAsync<T>(
+    public async Task<IMultiloginCdpSession> OpenAsync(
         MultiloginConnectionOptions options,
         string folderId,
         string profileId,
-        Func<IMultiloginConnectedBrowser, CancellationToken, Task<T>> work,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(options);
-        ArgumentNullException.ThrowIfNull(work);
         ArgumentException.ThrowIfNullOrWhiteSpace(folderId);
         ArgumentException.ThrowIfNullOrWhiteSpace(profileId);
 
@@ -63,7 +61,10 @@ public sealed class MultiloginCdpConnector : IMultiloginCdpConnector
             }
 
             await browser.EnsureResponsiveAsync(cancellationToken).ConfigureAwait(false);
-            return await work(browser, cancellationToken).ConfigureAwait(false);
+            var session = new OpenedSession(browser, () => TryStopAsync(normalized, profileId.Trim()));
+            browser = null;
+            started = false;
+            return session;
         }
         finally
         {
@@ -84,6 +85,19 @@ public sealed class MultiloginCdpConnector : IMultiloginCdpConnector
                 await TryStopAsync(normalized, profileId.Trim()).ConfigureAwait(false);
             }
         }
+    }
+
+    public async Task<T> RunAsync<T>(
+        MultiloginConnectionOptions options,
+        string folderId,
+        string profileId,
+        Func<IMultiloginConnectedBrowser, CancellationToken, Task<T>> work,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(work);
+        await using var session = await OpenAsync(options, folderId, profileId, cancellationToken)
+            .ConfigureAwait(false);
+        return await work(session.Connected, cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<IMultiloginConnectedBrowser> ConnectAsync(
@@ -183,5 +197,26 @@ public sealed class MultiloginCdpConnector : IMultiloginCdpConnector
         }
 
         return $"http://127.0.0.1:{port}";
+    }
+
+    private sealed class OpenedSession(
+        IMultiloginConnectedBrowser connected,
+        Func<Task> stopAsync) : IMultiloginCdpSession
+    {
+        public IMultiloginConnectedBrowser Connected { get; } = connected;
+
+        public async ValueTask DisposeAsync()
+        {
+            try
+            {
+                Connected.Disconnect();
+            }
+            catch
+            {
+                // Disconnect must never throw out of Dispose.
+            }
+
+            await stopAsync().ConfigureAwait(false);
+        }
     }
 }

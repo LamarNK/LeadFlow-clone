@@ -8,6 +8,8 @@ internal sealed class PuppeteerMultiloginConnectedBrowser(IBrowser browser) : IM
 
     public bool IsConnected => browser.IsConnected;
 
+    public IBrowser Browser => browser;
+
     public async Task EnsureResponsiveAsync(CancellationToken cancellationToken = default)
     {
         if (!browser.IsConnected)
