@@ -192,20 +192,78 @@ public sealed class MultiloginCdpConnectorTests
         using var cts = new CancellationTokenSource();
         var api = new FakeApi();
         CancellationToken? connectToken = null;
+        var workCalled = false;
+        var connectStarted = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
         var connectorHost = new FakeBrowserConnector
         {
-            Connect = (_, _, _, ct) =>
+            Connect = async (_, _, _, ct) =>
             {
                 connectToken = ct;
-                return Task.FromResult<IMultiloginConnectedBrowser>(new FakeBrowser());
+                connectStarted.TrySetResult();
+                await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+                return new FakeBrowser();
             }
         };
         var sut = CreateSut(api, connectorHost);
+        var runTask = sut.RunAsync(
+            ValidOptions(),
+            FolderId,
+            ProfileId,
+            (_, _) =>
+            {
+                workCalled = true;
+                return Task.FromResult(0);
+            },
+            cts.Token);
 
-        await sut.RunAsync(ValidOptions(), FolderId, ProfileId, (_, _) => Task.FromResult(0), cts.Token);
+        await connectStarted.Task;
+        Assert.True(api.LastStartToken.Equals(cts.Token));
+        Assert.True(connectToken.HasValue);
+        Assert.True(connectToken.Value.CanBeCanceled);
 
-        Assert.Equal(cts.Token, api.LastStartToken);
-        Assert.Equal(cts.Token, connectToken);
+        await cts.CancelAsync();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => runTask);
+        Assert.False(workCalled);
+        Assert.Equal(1, api.StartCount);
+        Assert.Equal(1, api.StopCount);
+    }
+
+    [Fact]
+    public async Task RunAsync_ConnectTimeout_WithoutExternalCancellation_StillStops()
+    {
+        var api = new FakeApi();
+        var workCalled = false;
+        var connectorHost = new FakeBrowserConnector
+        {
+            Connect = async (_, _, _, ct) =>
+            {
+                Assert.True(ct.CanBeCanceled);
+                Assert.False(ct.IsCancellationRequested);
+                await Task.Delay(Timeout.InfiniteTimeSpan, ct);
+                return new FakeBrowser();
+            }
+        };
+        var sut = CreateSut(api, connectorHost, connectTimeout: TimeSpan.FromMilliseconds(40));
+
+        var ex = await Assert.ThrowsAsync<TimeoutException>(() =>
+            sut.RunAsync(
+                ValidOptions(),
+                FolderId,
+                ProfileId,
+                (_, _) =>
+                {
+                    workCalled = true;
+                    return Task.FromResult(0);
+                },
+                CancellationToken.None));
+
+        Assert.Contains("Multilogin CDP", ex.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("AdsPower", ex.Message, StringComparison.Ordinal);
+        Assert.False(workCalled);
+        Assert.False(api.LastStartToken.IsCancellationRequested);
+        Assert.Equal(1, api.StartCount);
+        Assert.Equal(1, api.StopCount);
     }
 
     [Fact]
