@@ -8,6 +8,7 @@
     var activeDirection = '';
     var closeTimer = null;
     var peerConnectionConfig = { iceServers: [], iceTransportPolicy: 'all' };
+    var iceGatheringTimeoutMs = 6000;
     var modal = document.querySelector('[data-orbita-softphone]');
     var targetLabel = document.querySelector('[data-orbita-softphone-target]');
     var statusLabel = document.querySelector('[data-orbita-softphone-status]');
@@ -76,12 +77,67 @@
             return { iceServers: [], iceTransportPolicy: 'all' };
         }
 
-        var iceServer = { urls: urls };
-        if (config.iceUsername && config.iceCredential) {
-            iceServer.username = config.iceUsername;
-            iceServer.credential = config.iceCredential;
+        var stunUrls = urls.filter(function (url) {
+            return /^stuns?:/i.test(url);
+        });
+        var turnUrls = urls.filter(function (url) {
+            return /^turns?:/i.test(url);
+        });
+        var iceServers = [];
+        if (stunUrls.length) {
+            iceServers.push({ urls: stunUrls });
         }
-        return { iceServers: [iceServer], iceTransportPolicy: 'all' };
+        if (turnUrls.length) {
+            var turnServer = { urls: turnUrls };
+            if (config.iceUsername && config.iceCredential) {
+                turnServer.username = config.iceUsername;
+                turnServer.credential = config.iceCredential;
+            }
+            iceServers.push(turnServer);
+        }
+        return { iceServers: iceServers, iceTransportPolicy: 'all' };
+    }
+
+    function createIceCandidateHandler() {
+        var timeout = null;
+        var latestReady = null;
+        var completed = false;
+
+        function finish(ready) {
+            if (completed || typeof ready !== 'function') return;
+            completed = true;
+            if (timeout) window.clearTimeout(timeout);
+            timeout = null;
+            latestReady = null;
+            ready();
+        }
+
+        function handler(event) {
+            if (completed || !event || typeof event.ready !== 'function') return;
+            latestReady = event.ready;
+
+            var candidate = event.candidate;
+            var candidateText = candidate && candidate.candidate ? candidate.candidate : '';
+            var candidateType = candidate && candidate.type ? candidate.type : '';
+            if (candidateType === 'relay' || /\btyp relay\b/i.test(candidateText)) {
+                finish(event.ready);
+                return;
+            }
+
+            if (!timeout) {
+                timeout = window.setTimeout(function () {
+                    finish(latestReady);
+                }, iceGatheringTimeoutMs);
+            }
+        }
+
+        handler.dispose = function () {
+            completed = true;
+            if (timeout) window.clearTimeout(timeout);
+            timeout = null;
+            latestReady = null;
+        };
+        return handler;
     }
 
     async function loadConfig() {
@@ -187,6 +243,13 @@
         activeSession = session;
         activeDirection = direction || 'outgoing';
         if (hangupButton) hangupButton.disabled = false;
+
+        var iceCandidateHandler = session._orbitaIceCandidateHandler;
+        if (!iceCandidateHandler) {
+            iceCandidateHandler = createIceCandidateHandler();
+            session._orbitaIceCandidateHandler = iceCandidateHandler;
+            session.on('icecandidate', iceCandidateHandler);
+        }
 
         var attachedPeerConnection = null;
         var fallbackRemoteStream = typeof window.MediaStream === 'function'
@@ -319,12 +382,14 @@
         });
         session.on('ended', function () {
             clearIceTimer();
+            if (iceCandidateHandler.dispose) iceCandidateHandler.dispose();
             activeSession = null;
             setStatus('Звонок завершён');
             closeCall(1400);
         });
         session.on('failed', function (event) {
             clearIceTimer();
+            if (iceCandidateHandler.dispose) iceCandidateHandler.dispose();
             var directionAtFailure = activeDirection;
             activeSession = null;
             var cause = event && event.cause ? ' (' + event.cause + ')' : '';
@@ -360,11 +425,14 @@
             var registeredUa = await ensureRegistered(config);
             setStatus('Запрашиваем доступ к микрофону…');
             var target = 'sip:' + digits + '@' + config.sipDomain;
+            var iceCandidateHandler = createIceCandidateHandler();
             var session = registeredUa.call(target, {
                 mediaConstraints: { audio: true, video: false },
                 pcConfig: peerConnectionConfig,
-                rtcOfferConstraints: { offerToReceiveAudio: true, offerToReceiveVideo: false }
+                rtcOfferConstraints: { offerToReceiveAudio: true, offerToReceiveVideo: false },
+                eventHandlers: { icecandidate: iceCandidateHandler }
             });
+            session._orbitaIceCandidateHandler = iceCandidateHandler;
             attachSession(session, 'outgoing');
             setStatus('Набираем номер…');
         } catch (error) {
