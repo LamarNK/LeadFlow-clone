@@ -1,6 +1,51 @@
 (() => {
     const elementFromEvent = event => event.target instanceof Element ? event.target : null;
 
+    const registrationStates = {
+        registered: { label: 'Зарегистрирован', tone: 'settings-status-pill--online', final: true },
+        rejected: { label: 'Отклонён провайдером', tone: 'settings-status-pill--danger', final: true },
+        unregistered: { label: 'Не зарегистрирован', tone: 'settings-status-pill--warning', final: false },
+        'reload-failed': { label: 'Ошибка конфигурации', tone: 'settings-status-pill--danger', final: true },
+        'runtime-unavailable': { label: 'SIP-сервер недоступен', tone: 'settings-status-pill--danger', final: true },
+        pending: { label: 'Проверяется', tone: 'settings-status-pill--warning', final: false }
+    };
+
+    const updateRegistrationStatus = (element, status) => {
+        const state = registrationStates[status] || registrationStates.pending;
+        element.classList.remove(
+            'settings-status-pill--online',
+            'settings-status-pill--danger',
+            'settings-status-pill--warning',
+            'settings-status-pill--disabled');
+        element.classList.add(state.tone);
+        element.textContent = state.label;
+        element.dataset.registrationStatus = status;
+        return state.final;
+    };
+
+    const pollRegistrationStatus = async () => {
+        const element = document.querySelector('[data-sip-registration-status]');
+        const statusUrl = element?.dataset.statusUrl;
+        if (!element || !statusUrl || !element.dataset.registrationStatus) return;
+        if (registrationStates[element.dataset.registrationStatus]?.final) return;
+
+        const deadline = Date.now() + 120_000;
+        while (Date.now() < deadline) {
+            try {
+                const response = await fetch(statusUrl, {
+                    headers: { Accept: 'application/json' },
+                    cache: 'no-store'
+                });
+                if (!response.ok) return;
+                const payload = await response.json();
+                if (updateRegistrationStatus(element, payload.status)) return;
+            } catch {
+                return;
+            }
+            await new Promise(resolve => window.setTimeout(resolve, 3000));
+        }
+    };
+
     const closeModal = modal => {
         if (!modal) return;
         modal.hidden = true;
@@ -126,4 +171,6 @@
         if (event.key !== 'Escape') return;
         closeModal(document.querySelector('.telephony-modal:not([hidden])'));
     });
+
+    void pollRegistrationStatus();
 })();

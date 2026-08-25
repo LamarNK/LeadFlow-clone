@@ -72,6 +72,7 @@ public sealed class SaveSipProviderAccountFormModel
     public string SipLogin { get; set; } = string.Empty;
     public string AuthorizationLogin { get; set; } = string.Empty;
     public string? Password { get; set; }
+    public string? OutboundCallerId { get; set; }
     public bool UseForOutbound { get; set; }
 }
 

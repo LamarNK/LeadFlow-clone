@@ -362,11 +362,12 @@ public static class TelephonyEndpoints
             {
                 return Results.Forbid();
             }
-            if (!string.Equals(provider, CrmTelephonyProviders.Beeline, StringComparison.OrdinalIgnoreCase))
+            provider = CrmTelephonyProviders.Normalize(provider);
+            if (provider is not (CrmTelephonyProviders.Beeline or CrmTelephonyProviders.Plusofon))
             {
-                return Results.BadRequest(new { error = "Форма SIP-аккаунта пока поддерживает только Билайн." });
+                return Results.BadRequest(new { error = "Форма SIP-аккаунта поддерживает Плюсофон и Билайн." });
             }
-            var (success, error) = await telephony.SetBeelineSipAccountAsync(officeId, request, ct);
+            var (success, error) = await telephony.SetSipProviderAccountAsync(officeId, provider, request, ct);
             return success ? Results.NoContent() : Results.BadRequest(new { error });
         });
 

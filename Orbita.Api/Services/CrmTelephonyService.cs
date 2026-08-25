@@ -110,6 +110,40 @@ public sealed class CrmTelephonyService(
                 sipAccount = null;
             }
         }
+        else if (provider == CrmTelephonyProviders.Plusofon
+            && receiver is not null
+            && credentialProtector is not null
+            && !string.IsNullOrWhiteSpace(receiver.SipAccountProtected))
+        {
+            try
+            {
+                var protectedPayload = credentialProtector.Unprotect(receiver.SipAccountProtected);
+                var payload = JsonSerializer.Deserialize<SipProviderCredentialPayload>(protectedPayload);
+                if (payload is not null)
+                {
+                    var runtimeStatus = sipRuntimeConfigWriter is null
+                        ? new CrmSipRuntimeStatus("runtime-unavailable", null)
+                        : await sipRuntimeConfigWriter.ReadPlusofonStatusAsync(officeId, ct);
+                    sipAccount = new CrmSipProviderAccountDto(
+                        payload.Server,
+                        payload.Domain,
+                        payload.Port,
+                        payload.Transport,
+                        payload.SipLogin,
+                        payload.AuthorizationLogin,
+                        !string.IsNullOrWhiteSpace(payload.Password),
+                        payload.UseForOutbound,
+                        runtimeStatus.Status,
+                        runtimeStatus.CheckedAtUtc,
+                        runtimeStatus.Detail,
+                        OutboundCallerId: payload.OutboundCallerId);
+                }
+            }
+            catch (Exception ex) when (ex is CryptographicException or JsonException)
+            {
+                sipAccount = null;
+            }
+        }
 
         var credentialsConfigured = provider switch
         {
@@ -172,6 +206,25 @@ public sealed class CrmTelephonyService(
         return (success, error);
     }
 
+    public async Task<(bool Success, string? Error)> SetSipProviderAccountAsync(
+        Guid officeId,
+        string provider,
+        UpdateSipProviderAccountRequest request,
+        CancellationToken ct = default)
+    {
+        provider = NormalizeProvider(provider);
+        if (provider == CrmTelephonyProviders.Beeline)
+        {
+            return await SetBeelineSipAccountAsync(officeId, request, ct);
+        }
+        if (provider == CrmTelephonyProviders.Plusofon)
+        {
+            return await SetPlusofonSipAccountAsync(officeId, request, ct);
+        }
+
+        return (false, "SIP-аккаунт этого провайдера пока не поддерживается.");
+    }
+
     public async Task<(bool Success, string? Error, string? AccountKey)> UpsertBeelineSipAccountAsync(
         Guid officeId,
         string? accountKey,
@@ -221,7 +274,9 @@ public sealed class CrmTelephonyService(
             : request.Domain.Trim().ToLowerInvariant();
         var transport = request.Transport.Trim().ToLowerInvariant();
         var sipLogin = request.SipLogin.Trim();
-        var authorizationLogin = request.AuthorizationLogin.Trim();
+        var authorizationLogin = string.IsNullOrWhiteSpace(request.AuthorizationLogin)
+            ? sipLogin
+            : request.AuthorizationLogin.Trim();
         if (!IsValidSipHost(server) || !IsValidSipHost(domain))
         {
             return (false, "Укажите корректные SIP proxy и домен без протокола sip://.", null);
@@ -230,12 +285,10 @@ public sealed class CrmTelephonyService(
         {
             return (false, "Порт должен быть от 1 до 65535, транспорт — UDP или TCP.", null);
         }
-        if (sipLogin.Length is 0 or > 128 || authorizationLogin.Length is 0 or > 256
-            || ContainsControlCharacters(sipLogin) || ContainsControlCharacters(authorizationLogin))
+        if (!IsValidSipUser(sipLogin, 128) || !IsValidSipUser(authorizationLogin, 256))
         {
             return (false, "Укажите корректные SIP User ID и Authorization User ID.", null);
         }
-
         var now = timeProvider.GetUtcNow().UtcDateTime;
         var receiver = await db.CrmTelephonyWebhooks
             .FirstOrDefaultAsync(x => x.OfficeId == officeId
@@ -318,6 +371,125 @@ public sealed class CrmTelephonyService(
         return applied
             ? (true, null, accountKey)
             : (false, $"Реквизиты сохранены, но SIP-сервер не применил конфигурацию: {applyError}", accountKey);
+    }
+
+    private async Task<(bool Success, string? Error)> SetPlusofonSipAccountAsync(
+        Guid officeId,
+        UpdateSipProviderAccountRequest request,
+        CancellationToken ct)
+    {
+        if (credentialProtector is null)
+        {
+            return (false, "Защита реквизитов телефонии недоступна.");
+        }
+        if (sipRuntimeConfigWriter is null || !sipRuntimeConfigWriter.IsAvailable)
+        {
+            return (false, "Общий runtime-каталог API и SIP-сервера не настроен.");
+        }
+        if (!await db.Offices.AnyAsync(x => x.Id == officeId, ct))
+        {
+            return (false, "Офис не найден.");
+        }
+
+        var server = request.Server.Trim().ToLowerInvariant();
+        var domain = string.IsNullOrWhiteSpace(request.Domain)
+            ? server
+            : request.Domain.Trim().ToLowerInvariant();
+        var transport = request.Transport.Trim().ToLowerInvariant();
+        var sipLogin = request.SipLogin.Trim();
+        var authorizationLogin = string.IsNullOrWhiteSpace(request.AuthorizationLogin)
+            ? sipLogin
+            : request.AuthorizationLogin.Trim();
+        var outboundCallerId = phoneNormalizer.Normalize(request.OutboundCallerId ?? string.Empty);
+        if (!IsValidSipHost(server) || !IsValidSipHost(domain))
+        {
+            return (false, "Укажите корректные SIP-сервер и Domain / Realm без протокола sip://.");
+        }
+        if (request.Port is <= 0 or > 65535 || transport is not ("udp" or "tcp"))
+        {
+            return (false, "Порт должен быть от 1 до 65535, транспорт — UDP или TCP.");
+        }
+        if (!IsValidSipUser(sipLogin, 128) || !IsValidSipUser(authorizationLogin, 256))
+        {
+            return (false, "Укажите корректные SIP-логин и логин авторизации.");
+        }
+        if (outboundCallerId.Length != 11 || !outboundCallerId.StartsWith('7'))
+        {
+            return (false, "Укажите исходящий АОН Плюсофона в формате 7XXXXXXXXXX.");
+        }
+
+        var receiver = await db.CrmTelephonyWebhooks.FirstOrDefaultAsync(x =>
+            x.OfficeId == officeId && x.Provider == CrmTelephonyProviders.Plusofon, ct);
+        SipProviderCredentialPayload? previous = null;
+        if (!string.IsNullOrWhiteSpace(receiver?.SipAccountProtected))
+        {
+            try
+            {
+                previous = JsonSerializer.Deserialize<SipProviderCredentialPayload>(
+                    credentialProtector.Unprotect(receiver.SipAccountProtected));
+            }
+            catch (Exception ex) when (ex is CryptographicException or JsonException)
+            {
+                return (false, "Сохранённые SIP-реквизиты Плюсофона повреждены. Укажите пароль заново.");
+            }
+        }
+
+        var password = string.IsNullOrEmpty(request.Password) ? previous?.Password ?? string.Empty : request.Password;
+        if (password.Length is 0 or > 4096 || ContainsControlCharacters(password))
+        {
+            return (false, "Укажите корректный SIP-пароль. При первой настройке он обязателен.");
+        }
+
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+        var payload = new SipProviderCredentialPayload(
+            server,
+            domain,
+            request.Port,
+            transport,
+            sipLogin,
+            authorizationLogin,
+            password,
+            request.UseForOutbound,
+            AccountKey: "default",
+            Name: "Линия Плюсофона",
+            Mode: CrmSipAccountModes.Shared,
+            OutboundCallerId: outboundCallerId);
+        if (receiver is null)
+        {
+            receiver = new CrmTelephonyWebhookEntity
+            {
+                Id = Guid.NewGuid(),
+                OfficeId = officeId,
+                Provider = CrmTelephonyProviders.Plusofon,
+                PublicId = Guid.NewGuid(),
+                SecretHash = HashSecret(ToBase64Url(RandomNumberGenerator.GetBytes(32))),
+                CreatedAtUtc = now
+            };
+            db.CrmTelephonyWebhooks.Add(receiver);
+        }
+
+        receiver.SipAccountProtected = credentialProtector.Protect(JsonSerializer.Serialize(payload));
+        receiver.IsEnabled = true;
+        receiver.UpdatedAtUtc = now;
+        await db.SaveChangesAsync(ct);
+
+        var runtimeAccount = new CrmSipRuntimeAccount(
+            payload.Server,
+            payload.Domain,
+            payload.Port,
+            payload.Transport,
+            payload.SipLogin,
+            payload.AuthorizationLogin,
+            payload.Password,
+            payload.UseForOutbound,
+            payload.AccountKey,
+            payload.Name,
+            payload.Mode,
+            payload.OutboundCallerId);
+        var (applied, applyError) = await sipRuntimeConfigWriter.WritePlusofonAsync(officeId, runtimeAccount, ct);
+        return applied
+            ? (true, null)
+            : (false, $"Реквизиты сохранены, но SIP-сервер не применил конфигурацию: {applyError}");
     }
 
     public async Task<(bool Success, string? Error)> DeleteBeelineSipAccountAsync(
@@ -1072,7 +1244,14 @@ public sealed class CrmTelephonyService(
 
     private static bool IsValidSipHost(string value) =>
         value.Length is > 0 and <= 253
+        && value.All(character => character <= 0x7f)
         && Uri.CheckHostName(value) is UriHostNameType.Dns or UriHostNameType.IPv4 or UriHostNameType.IPv6;
+
+    private static bool IsValidSipUser(string value, int maximumLength) =>
+        value.Length > 0
+        && value.Length <= maximumLength
+        && value.All(character => character is >= '!' and <= '~')
+        && !ContainsControlCharacters(value);
 
     private static bool ContainsControlCharacters(string value) =>
         value.Any(char.IsControl) || value.IndexOfAny([';', '[', ']']) >= 0;
@@ -1247,7 +1426,8 @@ public sealed class CrmTelephonyService(
         bool UseForOutbound,
         string AccountKey = "default",
         string Name = "Общая линия Билайна",
-        string Mode = CrmSipAccountModes.Shared);
+        string Mode = CrmSipAccountModes.Shared,
+        string OutboundCallerId = "");
 
     private sealed record SipProviderCredentialEnvelope(
         int Version,

@@ -3,6 +3,7 @@
     var isPlusofon = Model.Provider == CrmTelephonyProviders.Plusofon;
     var isAsterisk = Model.Provider == CrmTelephonyProviders.Asterisk;
     var isBeeline = Model.Provider == CrmTelephonyProviders.Beeline;
+    var isSipProvider = isPlusofon || isBeeline;
     var providerLabel = isPlusofon ? "Плюсофон" : isAsterisk ? "SIP-сервер" : isBeeline ? "Билайн SIP" : "SIPOUT";
     var bindingsByUser = Model.Settings.UserBindings.ToDictionary(x => x.UserId, StringComparer.Ordinal);
     var phoneUsersByUser = Model.PhoneUsers.ToDictionary(x => x.UserId, StringComparer.Ordinal);
@@ -135,8 +136,8 @@
         <section class="card telephony-card">
             <div class="card-header settings-card-header">
                 <div>
-                    <h2 class="settings-card-title">API для записей звонков</h2>
-                    <p class="settings-card-subtitle">Реквизиты нужны только серверу Орбиты и обратно не показываются</p>
+                    <h2 class="settings-card-title">API для облачных записей звонков</h2>
+                    <p class="settings-card-subtitle">Не влияет на прохождение звонков: SIP-линия настраивается отдельным блоком ниже</p>
                 </div>
                 <span class="settings-status-pill @(Model.Settings.ProviderCredentialsConfigured ? "settings-status-pill--online" : "settings-status-pill--disabled")">
                     @(Model.Settings.ProviderCredentialsConfigured ? "Настроено" : "Не настроено")
@@ -164,6 +165,101 @@
                 <p class="telephony-configured-note">
                     Токен шифруется Data Protection Орбиты. В логах и интерфейсе его значение не выводится.
                 </p>
+            </div>
+        </section>
+    }
+
+    @if (isPlusofon)
+    {
+        var account = Model.Settings.SipAccount;
+        var registrationTone = account is null
+            ? "settings-status-pill--disabled"
+            : account.RegistrationStatus == "registered"
+                ? "settings-status-pill--online"
+                : account.RegistrationStatus is "rejected" or "reload-failed" or "runtime-unavailable"
+                    ? "settings-status-pill--danger"
+                    : "settings-status-pill--warning";
+        var registrationLabel = account?.RegistrationStatus switch
+        {
+            "registered" => "Зарегистрирован",
+            "rejected" => "Отклонён провайдером",
+            "unregistered" => "Не зарегистрирован",
+            "reload-failed" => "Ошибка конфигурации",
+            "runtime-unavailable" => "SIP-сервер недоступен",
+            _ => account is not null ? "Проверяется" : "Не настроен"
+        };
+        <section class="card telephony-card telephony-sip-account-card">
+            <div class="card-header settings-card-header">
+                <div>
+                    <h2 class="settings-card-title">SIP-линия Плюсофона</h2>
+                    <p class="settings-card-subtitle">Общий номер офиса, через который Asterisk совершает и принимает звонки</p>
+                </div>
+                <span class="settings-status-pill @registrationTone"
+                      data-sip-registration-status
+                      data-registration-status="@account?.RegistrationStatus"
+                      data-status-url="@Url.Action("SipAccountStatus", "TelephonySettings", new { officeId = Model.OfficeId, provider = Model.Provider })">@registrationLabel</span>
+            </div>
+            <div class="card-body">
+                <form asp-controller="TelephonySettings" asp-action="SaveSipProviderAccount" method="post" class="telephony-sip-account-grid" autocomplete="off">
+                    @Html.AntiForgeryToken()
+                    <input type="hidden" name="OfficeId" value="@Model.OfficeId" />
+                    <input type="hidden" name="Provider" value="@CrmTelephonyProviders.Plusofon" />
+                    <input type="hidden" name="Name" value="Линия Плюсофона" />
+                    <input type="hidden" name="Mode" value="@CrmSipAccountModes.Shared" />
+                    <label class="settings-field">
+                        <span class="settings-field-label">SIP-сервер</span>
+                        <input type="text" name="Server" value="@account?.Server" required maxlength="253" placeholder="12345.voice.plusofon.ru" autocomplete="off" />
+                    </label>
+                    <label class="settings-field">
+                        <span class="settings-field-label">Domain / Realm</span>
+                        <input type="text" name="Domain" value="@account?.Domain" maxlength="253" placeholder="Обычно совпадает с SIP-сервером" autocomplete="off" />
+                    </label>
+                    <label class="settings-field">
+                        <span class="settings-field-label">SIP-логин</span>
+                        <input type="text" name="SipLogin" value="@account?.SipLogin" required maxlength="128" autocomplete="off" />
+                    </label>
+                    <label class="settings-field">
+                        <span class="settings-field-label">Логин авторизации</span>
+                        <input type="text" name="AuthorizationLogin" value="@account?.AuthorizationLogin" maxlength="256" placeholder="Если совпадает с SIP-логином — оставьте пустым" autocomplete="off" />
+                    </label>
+                    <label class="settings-field">
+                        <span class="settings-field-label">SIP-пароль</span>
+                        <input type="password" name="Password" maxlength="4096" autocomplete="new-password" placeholder="@(account?.PasswordConfigured == true ? "Оставьте пустым, чтобы не менять" : "Обязательно при первой настройке")" />
+                    </label>
+                    <label class="settings-field">
+                        <span class="settings-field-label">Исходящий АОН</span>
+                        <input type="tel" name="OutboundCallerId" value="@account?.OutboundCallerId" required maxlength="18" inputmode="numeric" placeholder="7XXXXXXXXXX" autocomplete="off" />
+                        <small>Номер должен быть активирован на договоре Plusofon. Для SIP-транка он передаётся в P-Charge-Info.</small>
+                    </label>
+                    <div class="telephony-sip-account-grid__pair">
+                        <label class="settings-field"><span class="settings-field-label">Порт</span><input type="number" name="Port" value="@(account?.Port ?? 5060)" min="1" max="65535" required /></label>
+                        <label class="settings-field">
+                            <span class="settings-field-label">Транспорт</span>
+                            <select name="Transport" required>
+                                <option value="udp" selected="@(account?.Transport == "udp")">UDP</option>
+                                <option value="tcp" selected="@(account?.Transport != "udp")">TCP</option>
+                            </select>
+                        </label>
+                    </div>
+                    <label class="telephony-sip-outbound-option">
+                        <input type="checkbox" name="UseForOutbound" value="true" checked="@(account?.UseForOutbound != false)" />
+                        <span><strong>Использовать Плюсофон по умолчанию</strong><small>Новые звонки из карточки будут направляться через эту линию.</small></span>
+                    </label>
+                    <div class="telephony-sip-account-grid__actions">
+                        @if (Model.CanManage)
+                        {
+                            <button type="submit" class="settings-primary-btn">@(account is null ? "Подключить линию" : "Сохранить и переподключить")</button>
+                        }
+                        <span>Пароль шифруется в БД и никогда не возвращается в браузер.</span>
+                    </div>
+                </form>
+                <div class="telephony-binding-guide telephony-sip-account-help">
+                    <span class="telephony-binding-guide__icon"><i class="fa-solid fa-link" aria-hidden="true"></i></span>
+                    <div>
+                        <strong>Как назначаются звонки</strong>
+                        <p>Менеджерам назначаются разные внутренние номера <strong>201, 202…</strong> в разделе «SIP-сервер». Обратный звонок направляется сотруднику, который последним звонил этому клиенту.</p>
+                    </div>
+                </div>
             </div>
         </section>
     }

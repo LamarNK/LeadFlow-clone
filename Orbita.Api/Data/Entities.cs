@@ -885,6 +885,7 @@ public sealed class CrmTelephonyWebhookEntity
     public string SecretHash { get; set; } = string.Empty;
     public string? ProviderClientId { get; set; }
     public string? ProviderAccessTokenProtected { get; set; }
+    public string? SipAccountProtected { get; set; }
     public bool IsEnabled { get; set; } = true;
     public DateTime CreatedAtUtc { get; set; }
     public DateTime UpdatedAtUtc { get; set; }

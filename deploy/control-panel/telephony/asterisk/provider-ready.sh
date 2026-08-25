@@ -27,6 +27,21 @@ while IFS= read -r -d '' file; do
   done < "${file}"
 done < <(find "${runtime_dir}" -maxdepth 1 -type f -name 'beeline.*.accounts' -print0 | sort -z)
 
+while IFS= read -r -d '' file; do
+  name="$(basename "${file}")"
+  office_id="${name#plusofon.}"
+  office_id="${office_id%.conf}"
+  [[ "${office_id}" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]] || continue
+  office_key="${office_id//-/}"
+  registration_name="plusofon-${office_key,,}-registration"
+  found=true
+  output="$(asterisk -rx "pjsip show registration ${registration_name}" 2>&1)"
+  printf '%s\n' "${output}"
+  if grep -Eq '(^|[[:space:]])Registered([[:space:]]|$)' <<< "${output}"; then
+    registered=true
+  fi
+done < <(find "${runtime_dir}" -maxdepth 1 -type f -name 'plusofon.*.conf' -print0 | sort -z)
+
 if [[ "${found}" != "true" ]]; then
   echo 'No office SIP lines are configured in Orbita.' >&2
   exit 1

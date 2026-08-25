@@ -79,15 +79,26 @@ the rest of the office.
 
 ## Plusofon
 
-1. In **Settings → office → Telephony → Plusofon**, create a receiver.
-2. In Plusofon create a webhook for the `destroy` event and all calls. Copy the
-   generated callback URL and the complete `X-Orbita-Webhook-Secret` header.
-3. Configure these event fields: `call_id`, `direction`, `from`, `to`,
-   `internal`, `timestamp`, and `duration`.
-4. In the same Orbita page save the Plusofon `Client ID` and API access token.
-   The token is encrypted with the persistent Orbita Data Protection key ring
-   and is never returned by the API after saving.
-5. Bind each Plusofon internal number to the corresponding Orbita user.
+1. In **Settings → office → Telephony → Plusofon**, fill the SIP server, login,
+   optional authorization login, password and active outgoing caller ID. The
+   password is encrypted in the database and the Asterisk runtime configuration
+   is updated without putting credentials in Git.
+2. Keep TCP, port 5060 and the server/domain issued for the same Plusofon
+   contract. Assign the same active caller ID in the Plusofon cabinet.
+3. In **Telephony → SIP server**, bind unique extensions such as 201 and 202 to
+   employees. An inbound callback is first offered to the employee who most
+   recently called that client during the 30-day affinity window.
+4. The provider webhook and recording API are optional when Asterisk is the
+   authoritative call source. If provider-side records are required, create a
+   webhook for the `destroy` event and all calls, then configure the fields
+   `call_id`, `direction`, `from`, `to`, `internal`, `timestamp`, and `duration`.
+5. Save the Plusofon `Client ID` and API access token. The token is encrypted
+   with the persistent Orbita Data Protection key ring and is never returned by
+   the API after saving.
+
+Do not enable both the Asterisk call publisher and the Plusofon webhook for the
+same line unless cross-provider deduplication is implemented: their external
+call identifiers differ, so the same conversation can otherwise appear twice.
 
 Plusofon publishes the recording through a separate API method. When a
 `destroy` event arrives, Orbita saves the call immediately and a background
@@ -119,10 +130,13 @@ ASTERISK_DEFAULT_EXTENSION=201
 ASTERISK_PRIMARY_TRUNK_ENABLED=false
 ```
 
-Create and edit each Beeline line in **Settings → Telephony**. Orbita encrypts
-the SIP password in its database, publishes an office-specific runtime config
-to the shared volume, and Asterisk reloads it automatically. No office SIP
-login, password, proxy or registrar belongs in the server `.env`.
+Create and edit each Beeline line or the Plusofon SIP line in
+**Settings → Telephony**. For Plusofon, enter the SIP server, domain, login,
+authorization login, password, outbound caller ID, port and transport in that
+form. Orbita encrypts the SIP password in its database, publishes an
+office-specific runtime config to the shared volume, and Asterisk reloads it
+automatically. No office SIP login, password, proxy or registrar belongs in the
+server `.env`.
 
 `ASTERISK_PRIMARY_TRUNK_ENABLED=true` is a compatibility option for one
 separate, non-office legacy provider. Only in that case also set
@@ -155,11 +169,11 @@ Office SIP passwords are encrypted in Orbita and copied only to Asterisk's
 private generated runtime config; browser clients never receive them.
 
 The container listens for manager endpoints on UDP 5060 and can register the
-upstream provider by either TCP or UDP. For the current Plusofon pilot use TCP,
-port 5060, registration lifetime 300 seconds, and only PCMA/PCMU (G.711A/U), as
-recommended by the provider. Keep `ASTERISK_SIP_TRANSPORT=tcp`. The server must
-have a Russian public IP; Plusofon does not accept calls from foreign IP
-segments.
+upstream provider by either TCP or UDP. For the current Plusofon pilot select
+TCP and port 5060 in the interface. The generated line uses a 300-second
+registration lifetime and only PCMA/PCMU (G.711A/U). The server must use the
+public IP range approved for the Plusofon account; do not route SIP or RTP
+through a VPN unless that egress address has been approved.
 
 Container health checks only prove that Asterisk itself is running. Confirm the
 actual provider registration separately:
@@ -236,10 +250,10 @@ encrypted bounded queue. If the gateway itself is unavailable, Asterisk keeps
 the metadata and any WAV file and retries every 30 seconds. The local WAV is removed
 only after a successful response.
 
-The supplied template intentionally configures one upstream SIP trunk per
-container. Exact additional trunks/routes for Beeline, Plusofon and SIPOUT must
-be added only after checking each provider's registration requirements; their
-authentication assumptions are not interchangeable.
+The runtime directory can contain isolated Plusofon and Beeline trunks for
+multiple offices. Employee routes select the configured office endpoint; if an
+office-specific endpoint is absent, routing falls back to the optional legacy
+`orbita-provider` trunk. Provider authentication assumptions remain separate.
 
 ## Failure behaviour
 

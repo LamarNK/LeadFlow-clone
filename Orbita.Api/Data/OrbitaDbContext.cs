@@ -361,6 +361,7 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
             entity.Property(x => x.SecretHash).HasMaxLength(128);
             entity.Property(x => x.ProviderClientId).HasMaxLength(128);
             entity.Property(x => x.ProviderAccessTokenProtected).HasMaxLength(8192);
+            entity.Property(x => x.SipAccountProtected).HasMaxLength(8192);
             entity.HasOne<OfficeEntity>()
                 .WithMany()
                 .HasForeignKey(x => x.OfficeId)

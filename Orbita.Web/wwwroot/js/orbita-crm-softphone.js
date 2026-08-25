@@ -168,27 +168,75 @@
         activeDirection = direction || 'outgoing';
         if (hangupButton) hangupButton.disabled = false;
 
+        var attachedPeerConnection = null;
+        var fallbackRemoteStream = typeof window.MediaStream === 'function'
+            ? new window.MediaStream()
+            : null;
+        var playbackErrorShown = false;
+
+        function playRemoteAudio() {
+            if (!remoteAudio || !remoteAudio.srcObject) return;
+            remoteAudio.muted = false;
+            remoteAudio.volume = 1;
+            var playPromise = remoteAudio.play();
+            if (playPromise && typeof playPromise.catch === 'function') {
+                playPromise.catch(function () {
+                    if (playbackErrorShown) return;
+                    playbackErrorShown = true;
+                    setStatus('Браузер заблокировал звук. Нажмите на страницу и повторите звонок.');
+                    toast('Браузер заблокировал воспроизведение звука звонка.', 'error');
+                });
+            }
+        }
+
+        function attachRemoteTrack(trackEvent) {
+            if (!remoteAudio) return;
+
+            if (trackEvent.streams && trackEvent.streams[0]) {
+                remoteAudio.srcObject = trackEvent.streams[0];
+            } else if (fallbackRemoteStream && trackEvent.track) {
+                var alreadyAdded = fallbackRemoteStream.getTracks().some(function (track) {
+                    return track.id === trackEvent.track.id;
+                });
+                if (!alreadyAdded) fallbackRemoteStream.addTrack(trackEvent.track);
+                remoteAudio.srcObject = fallbackRemoteStream;
+            }
+
+            playRemoteAudio();
+        }
+
+        function attachPeerConnection(pc) {
+            if (!pc || pc === attachedPeerConnection) return;
+            attachedPeerConnection = pc;
+            pc.addEventListener('track', attachRemoteTrack);
+
+            // For an outgoing JsSIP call the peer connection can already exist
+            // by the time ua.call() returns, so its event may have fired early.
+            if (typeof pc.getReceivers === 'function') {
+                pc.getReceivers().forEach(function (receiver) {
+                    if (receiver.track && receiver.track.kind === 'audio') {
+                        attachRemoteTrack({ track: receiver.track, streams: [] });
+                    }
+                });
+            }
+        }
+
         session.on('peerconnection', function (event) {
-            var pc = event && event.peerconnection;
-            if (!pc) return;
-            pc.addEventListener('track', function (trackEvent) {
-                if (!remoteAudio) return;
-                if (trackEvent.streams && trackEvent.streams[0]) {
-                    remoteAudio.srcObject = trackEvent.streams[0];
-                    remoteAudio.play().catch(function () { });
-                }
-            });
+            attachPeerConnection(event && event.peerconnection);
         });
+        attachPeerConnection(session.connection);
         session.on('progress', function () {
             setStatus(activeDirection === 'incoming' ? 'Входящий звонок…' : 'Идёт вызов…');
         });
         session.on('accepted', function () {
             showActiveCallControls();
             setStatus(activeDirection === 'incoming' ? 'Звонок принят' : 'Собеседник ответил');
+            playRemoteAudio();
         });
         session.on('confirmed', function () {
             showActiveCallControls();
             setStatus('Разговор идёт');
+            playRemoteAudio();
         });
         session.on('ended', function () {
             activeSession = null;

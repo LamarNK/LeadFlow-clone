@@ -472,6 +472,160 @@ public sealed class CrmTelephonyServiceTests
     }
 
     [Fact]
+    public async Task PlusofonSipAccount_StoresCallerIdSeparatelyFromRecordingApiCredentials()
+    {
+        var runtimePath = Path.Combine(Path.GetTempPath(), "orbita-sip-runtime-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var options = new DbContextOptionsBuilder<OrbitaDbContext>()
+                .UseInMemoryDatabase($"crm-telephony-plusofon-{Guid.NewGuid():N}")
+                .Options;
+            await using var db = new OrbitaDbContext(options);
+            var officeId = Guid.NewGuid();
+            db.Offices.Add(new OfficeEntity
+            {
+                Id = officeId,
+                Name = "Plusofon office",
+                RegistrationSecretHash = "hash",
+                IsEnabled = true,
+                CrmEnabled = true,
+                CreatedAtUtc = DateTime.UtcNow
+            });
+            await db.SaveChangesAsync();
+
+            var writer = new CrmSipRuntimeConfigWriter(Options.Create(new CrmSipRuntimeOptions
+            {
+                ConfigPath = runtimePath
+            }));
+            var sut = new CrmTelephonyService(
+                db,
+                new PhoneNormalizer(),
+                TimeProvider.System,
+                credentialProtector: new CrmTelephonyCredentialProtector(new EphemeralDataProtectionProvider()),
+                sipRuntimeConfigWriter: writer);
+
+            var sipResult = await sut.SetSipProviderAccountAsync(
+                officeId,
+                CrmTelephonyProviders.Plusofon,
+                new UpdateSipProviderAccountRequest(
+                    "12345.voice.plusofon.ru",
+                    null,
+                    5060,
+                    "tcp",
+                    "210123456789",
+                    string.Empty,
+                    "sip-secret",
+                    true,
+                    OutboundCallerId: "+7 (495) 133-22-10"));
+            Assert.True(sipResult.Success, sipResult.Error);
+
+            var apiResult = await sut.SetPlusofonCredentialsAsync(officeId, "client-id", "recording-token");
+            Assert.True(apiResult.Success, apiResult.Error);
+
+            var stored = Assert.Single(await db.CrmTelephonyWebhooks.ToListAsync());
+            Assert.DoesNotContain("sip-secret", stored.SipAccountProtected, StringComparison.Ordinal);
+            Assert.DoesNotContain("recording-token", stored.ProviderAccessTokenProtected, StringComparison.Ordinal);
+            Assert.Equal("client-id", stored.ProviderClientId);
+
+            var endpointKey = officeId.ToString("N");
+            var runtimeConfig = await File.ReadAllTextAsync(Path.Combine(runtimePath, $"plusofon.{officeId:D}.conf"));
+            Assert.Contains($"[plusofon-{endpointKey}]", runtimeConfig, StringComparison.Ordinal);
+            Assert.Contains($"[plusofon-{endpointKey}-registration]", runtimeConfig, StringComparison.Ordinal);
+            Assert.Contains("line=yes", runtimeConfig, StringComparison.Ordinal);
+            Assert.Contains($"endpoint=plusofon-{endpointKey}", runtimeConfig, StringComparison.Ordinal);
+            Assert.Contains("transport=transport-tcp", runtimeConfig, StringComparison.Ordinal);
+            Assert.Contains("server_uri=sip:12345.voice.plusofon.ru:5060", runtimeConfig, StringComparison.Ordinal);
+            Assert.Contains("username=210123456789", runtimeConfig, StringComparison.Ordinal);
+            Assert.Equal(
+                "74951332210\n12345.voice.plusofon.ru\n",
+                (await File.ReadAllTextAsync(Path.Combine(runtimePath, $"plusofon.{officeId:D}.callerid"))).Replace("\r\n", "\n"));
+            Assert.Equal(
+                "plusofon\n",
+                (await File.ReadAllTextAsync(Path.Combine(runtimePath, $"outbound.{officeId:D}.conf"))).Replace("\r\n", "\n"));
+
+            var settings = await sut.GetSettingsAsync(officeId, provider: CrmTelephonyProviders.Plusofon);
+            Assert.NotNull(settings?.SipAccount);
+            Assert.Equal("74951332210", settings.SipAccount.OutboundCallerId);
+            Assert.True(settings.SipAccount.PasswordConfigured);
+            Assert.True(settings.ProviderCredentialsConfigured);
+        }
+        finally
+        {
+            if (Directory.Exists(runtimePath))
+            {
+                Directory.Delete(runtimePath, recursive: true);
+            }
+        }
+    }
+
+    [Theory]
+    [InlineData("тест", "plusofon.test", "210123456789", "210123456789", "SIP-сервер")]
+    [InlineData("plusofon.test", "plusofon.test", "тест", "210123456789", "SIP-логин")]
+    [InlineData("plusofon.test", "plusofon.test", "210123456789", "тест", "SIP-логин")]
+    public async Task PlusofonSipAccount_RejectsValuesThatAsteriskCannotParse(
+        string server,
+        string domain,
+        string sipLogin,
+        string authorizationLogin,
+        string expectedError)
+    {
+        var runtimePath = Path.Combine(Path.GetTempPath(), "orbita-sip-runtime-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var options = new DbContextOptionsBuilder<OrbitaDbContext>()
+                .UseInMemoryDatabase($"crm-telephony-invalid-sip-{Guid.NewGuid():N}")
+                .Options;
+            await using var db = new OrbitaDbContext(options);
+            var officeId = Guid.NewGuid();
+            db.Offices.Add(new OfficeEntity
+            {
+                Id = officeId,
+                Name = "Invalid SIP office",
+                RegistrationSecretHash = "hash",
+                IsEnabled = true,
+                CrmEnabled = true,
+                CreatedAtUtc = DateTime.UtcNow
+            });
+            await db.SaveChangesAsync();
+
+            var sut = new CrmTelephonyService(
+                db,
+                new PhoneNormalizer(),
+                TimeProvider.System,
+                credentialProtector: new CrmTelephonyCredentialProtector(new EphemeralDataProtectionProvider()),
+                sipRuntimeConfigWriter: new CrmSipRuntimeConfigWriter(Options.Create(new CrmSipRuntimeOptions
+                {
+                    ConfigPath = runtimePath
+                })));
+
+            var result = await sut.SetSipProviderAccountAsync(
+                officeId,
+                CrmTelephonyProviders.Plusofon,
+                new UpdateSipProviderAccountRequest(
+                    server,
+                    domain,
+                    5060,
+                    "tcp",
+                    sipLogin,
+                    authorizationLogin,
+                    "sip-secret",
+                    true,
+                    OutboundCallerId: "74951332210"));
+
+            Assert.False(result.Success);
+            Assert.Contains(expectedError, result.Error, StringComparison.Ordinal);
+            Assert.Empty(await db.CrmTelephonyWebhooks.ToListAsync());
+        }
+        finally
+        {
+            if (Directory.Exists(runtimePath))
+            {
+                Directory.Delete(runtimePath, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public async Task AsteriskBinding_StoresPerEmployeeOutboundProvider()
     {
         await using var harness = await Harness.CreateAsync();
@@ -959,6 +1113,36 @@ public sealed class CrmTelephonyServiceTests
         Assert.Equal(AsteriskInboundRouteOutcome.Resolved, route.Outcome);
         Assert.Equal("201", route.PreferredExtension);
         Assert.Equal(["202"], route.FallbackExtensions);
+    }
+
+    [Fact]
+    public async Task AsteriskInboundRoute_WithSharedCallerId_PrefersManagerWhoCalledClientLast()
+    {
+        await using var harness = await Harness.CreateAsync();
+        var receiver = await harness.CreateReceiverAsync(CrmTelephonyProviders.Asterisk);
+        await harness.AddAsteriskManagerAsync("second-manager", "202", onShift: true);
+        await harness.AddAsteriskCallAsync(
+            "shared-aon-first",
+            CrmCallDirections.Outgoing,
+            Harness.ManagerId,
+            "201",
+            harness.Now.UtcDateTime.AddHours(-2));
+        await harness.AddAsteriskCallAsync(
+            "shared-aon-latest",
+            CrmCallDirections.Outgoing,
+            "second-manager",
+            "202",
+            harness.Now.UtcDateTime.AddHours(-1));
+
+        var route = await harness.Sut.ResolveAsteriskInboundRouteAsync(
+            receiver.PublicId,
+            receiver.Secret,
+            "79991112233",
+            "74951332210");
+
+        Assert.Equal(AsteriskInboundRouteOutcome.Resolved, route.Outcome);
+        Assert.Equal("202", route.PreferredExtension);
+        Assert.Equal(harness.Now.UtcDateTime.AddDays(30).AddHours(-1), route.AffinityExpiresAtUtc);
     }
 
     [Fact]

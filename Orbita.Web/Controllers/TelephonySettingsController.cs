@@ -82,13 +82,19 @@ public sealed class TelephonySettingsController(
         users = users
             .OrderBy(x => string.IsNullOrWhiteSpace(x.FullName) ? x.Email : x.FullName)
             .ToList();
+        var phoneUsers = providerSettings[CrmTelephonyProviders.Asterisk]?.UserBindings ?? [];
+        var plusofonLineUsers = phoneUsers.Count(x =>
+            x.OutboundProvider is CrmTelephonyOutboundProviders.Default or CrmTelephonyProviders.Plusofon);
+        var beelineLineUsers = phoneUsers.Count(x =>
+            x.OutboundProvider == CrmTelephonyProviders.Beeline
+            || CrmTelephonyOutboundProviders.TryGetBeelineLineKey(x.OutboundProvider, out _));
 
         return View("~/Views/Settings/Telephony.cshtml", new CrmTelephonyPageViewModel
         {
             OfficeId = selectedOfficeId,
             OfficeName = officeName,
             Settings = selectedSettings,
-            PhoneUsers = providerSettings[CrmTelephonyProviders.Asterisk]?.UserBindings ?? [],
+            PhoneUsers = phoneUsers,
             OfficeUsers = users,
             ProviderSummaries =
             [
@@ -104,14 +110,16 @@ public sealed class TelephonySettingsController(
                     "fa-phone-volume"),
                 ToProviderSummary(
                     providerSettings[CrmTelephonyProviders.Plusofon],
-                    "Плюсофон API",
-                    "Синхронизация завершённых звонков и аудиозаписей",
-                    "fa-cloud-arrow-down"),
+                    "Плюсофон",
+                    "SIP-линия офиса, события и аудиозаписи",
+                    "fa-phone",
+                    plusofonLineUsers),
                 ToProviderSummary(
                     providerSettings[CrmTelephonyProviders.Beeline],
                     "Билайн SIP",
                     "Транк Билайна для исходящих и входящих звонков",
-                    "fa-tower-cell")
+                    "fa-tower-cell",
+                    beelineLineUsers)
             ],
             Provider = provider,
             CanManage = User.IsInRole(PanelRoles.Admin) || User.IsInRole(PanelRoles.OfficeLead),
@@ -135,6 +143,30 @@ public sealed class TelephonySettingsController(
         }
 
         return selectedOfficeId ?? profileOfficeId ?? firstAvailableOfficeId;
+    }
+
+    [HttpGet("Telephony/SipAccount/Status")]
+    [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+    public async Task<IActionResult> SipAccountStatus(
+        Guid officeId,
+        string provider,
+        CancellationToken ct = default)
+    {
+        if (!CrmTelephonyProviders.IsSupported(provider)) return BadRequest();
+        provider = CrmTelephonyProviders.Normalize(provider);
+        if (provider is not (CrmTelephonyProviders.Beeline or CrmTelephonyProviders.Plusofon))
+        {
+            return BadRequest();
+        }
+
+        var settings = await api.GetCrmTelephonySettingsAsync(officeId, ct, provider);
+        if (settings?.SipAccount is not { } account) return NotFound();
+
+        return Json(new
+        {
+            status = account.RegistrationStatus,
+            checkedAtUtc = account.StatusCheckedAtUtc
+        });
     }
 
     [HttpPost("Telephony/RotateReceiver")]
@@ -199,29 +231,38 @@ public sealed class TelephonySettingsController(
         SaveSipProviderAccountFormModel model,
         CancellationToken ct = default)
     {
-        if (!string.Equals(model.Provider, CrmTelephonyProviders.Beeline, StringComparison.OrdinalIgnoreCase))
+        if (!CrmTelephonyProviders.IsSupported(model.Provider))
+        {
+            return BadRequest();
+        }
+        var provider = CrmTelephonyProviders.Normalize(model.Provider);
+        if (provider is not (CrmTelephonyProviders.Beeline or CrmTelephonyProviders.Plusofon))
         {
             return BadRequest();
         }
 
         var request = new UpdateSipProviderAccountRequest(
-                model.Server,
-                model.Domain,
-                model.Port,
-                model.Transport,
-                model.SipLogin,
-                model.AuthorizationLogin,
-                model.Password,
-                model.UseForOutbound,
-                model.Name,
-                model.Mode);
-        var (success, error) = string.IsNullOrWhiteSpace(model.AccountKey)
-            ? await api.AddSipProviderAccountAsync(model.OfficeId, CrmTelephonyProviders.Beeline, request, ct)
-            : await api.UpdateSipProviderAccountAsync(model.OfficeId, CrmTelephonyProviders.Beeline, model.AccountKey, request, ct);
+            model.Server,
+            model.Domain,
+            model.Port,
+            model.Transport,
+            model.SipLogin,
+            model.AuthorizationLogin,
+            model.Password,
+            model.UseForOutbound,
+            model.Name,
+            model.Mode,
+            model.OutboundCallerId);
+        (bool success, string? error) = provider == CrmTelephonyProviders.Beeline
+            ? string.IsNullOrWhiteSpace(model.AccountKey)
+                ? await api.AddSipProviderAccountAsync(model.OfficeId, provider, request, ct)
+                : await api.UpdateSipProviderAccountAsync(model.OfficeId, provider, model.AccountKey, request, ct)
+            : await api.SetSipProviderAccountAsync(model.OfficeId, provider, request, ct);
+        var providerLabel = provider == CrmTelephonyProviders.Plusofon ? "Плюсофона" : "Билайна";
         TempData[success ? "SettingsStatus" : "SettingsError"] = success
-            ? "Линия Билайна сохранена и передана Asterisk. Статус регистрации обновится в течение нескольких секунд."
+            ? $"SIP-линия {providerLabel} сохранена и передана Asterisk. Статус регистрации обновится в течение нескольких секунд."
             : error;
-        return RedirectToAction(nameof(Telephony), new { officeId = model.OfficeId, provider = CrmTelephonyProviders.Beeline });
+        return RedirectToAction(nameof(Telephony), new { officeId = model.OfficeId, provider });
     }
 
     [HttpPost("Telephony/SipAccount/Delete")]
@@ -276,12 +317,13 @@ public sealed class TelephonySettingsController(
         CrmTelephonySettingsDto? settings,
         string name,
         string description,
-        string icon) => new(
+        string icon,
+        int? boundUsersCount = null) => new(
         settings?.Provider ?? string.Empty,
         name,
         description,
         icon,
         settings?.IsConfigured == true,
         settings?.IsEnabled == true,
-        settings?.UserBindings.Count ?? 0);
+        boundUsersCount ?? settings?.UserBindings.Count ?? 0);
 }

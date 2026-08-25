@@ -107,7 +107,8 @@ public sealed record CrmSipProviderAccountDto(
     string Name = "Основная линия",
     string Mode = CrmSipAccountModes.Shared,
     string? AssignedUserId = null,
-    string? AssignedUserName = null);
+    string? AssignedUserName = null,
+    string? OutboundCallerId = null);
 
 public sealed record CrmTelephonyReceiverDto(
     Guid OfficeId,
@@ -151,7 +152,8 @@ public sealed record UpdateSipProviderAccountRequest(
     string? Password,
     bool UseForOutbound,
     string? Name = null,
-    string Mode = CrmSipAccountModes.Shared);
+    string Mode = CrmSipAccountModes.Shared,
+    string? OutboundCallerId = null);
 
 public sealed record SipoutCallWebhookPayload(
     string ExternalCallId,

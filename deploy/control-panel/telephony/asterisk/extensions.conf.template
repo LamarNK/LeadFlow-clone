@@ -22,9 +22,19 @@ exten => _X.,1,NoOp(Orbita outgoing call)
  same => n,ExecIf($["${ORBITA_OUTBOUND_ENDPOINT}"=""]?Set(ORBITA_OUTBOUND_ENDPOINT=${DB(orbita_office/outbound_endpoint/${ORBITA_OFFICE_ID})}))
  same => n,ExecIf($["${ORBITA_OUTBOUND_ENDPOINT}"=""]?Set(ORBITA_OUTBOUND_ENDPOINT=${DB(orbita/outbound_endpoint)}))
  same => n,ExecIf($["${ORBITA_OUTBOUND_ENDPOINT}"=""]?Set(ORBITA_OUTBOUND_ENDPOINT=${ASTERISK_OUTBOUND_ENDPOINT}))
- same => n,Dial(PJSIP/${ORBITA_CALLED}@${ORBITA_OUTBOUND_ENDPOINT},60)
+ same => n,Set(__ORBITA_OUTBOUND_CALLER_ID=${DB(orbita_endpoint/outbound_caller_id/${ORBITA_OUTBOUND_ENDPOINT})})
+ same => n,Set(__ORBITA_OUTBOUND_DOMAIN=${DB(orbita_endpoint/outbound_domain/${ORBITA_OUTBOUND_ENDPOINT})})
+ same => n,Dial(PJSIP/${ORBITA_CALLED}@${ORBITA_OUTBOUND_ENDPOINT},60,b(orbita-provider-headers^s^1))
  same => n,Hangup()
 exten => h,1,Gosub(orbita-publish,s,1)
+
+[orbita-provider-headers]
+exten => s,1,NoOp(Apply outbound provider caller ID)
+ same => n,GotoIf($["${ORBITA_OUTBOUND_CALLER_ID}"=""]?done)
+ same => n,Set(CALLERID(num)=${ORBITA_OUTBOUND_CALLER_ID})
+ same => n,GotoIf($["${ORBITA_OUTBOUND_DOMAIN}"=""]?done)
+ same => n,Set(PJSIP_HEADER(add,P-Charge-Info)=<sip:${ORBITA_OUTBOUND_CALLER_ID}@${ORBITA_OUTBOUND_DOMAIN}>)
+ same => n(done),Return()
 
 [from-orbita-provider]
 exten => _X.,1,NoOp(Orbita incoming call)
