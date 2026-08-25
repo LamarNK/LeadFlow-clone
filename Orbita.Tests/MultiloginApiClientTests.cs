@@ -511,9 +511,12 @@ public sealed class MultiloginApiClientTests
     private static string SearchPage(int offset, int total)
     {
         var take = Math.Min(MultiloginApiClient.ProfileSearchPageSize, Math.Max(0, total - offset));
-        var items = Enumerable.Range(offset, take)
-            .Select(static i => $$"""{"id":"id-{{i}}","folder_id":"folder-{{i}}","name":"P{{i}}"}""");
-        return $$"""{"status":{"http_code":200},"data":{"profiles":[{{string.Join(",", items)}}],"total_count":{{total}}}}""";
+        var items = string.Join(
+            ",",
+            Enumerable.Range(offset, take)
+                .Select(static i =>
+                    "{\"id\":\"id-" + i + "\",\"folder_id\":\"folder-" + i + "\",\"name\":\"P" + i + "\"}"));
+        return "{\"status\":{\"http_code\":200},\"data\":{\"profiles\":[" + items + "],\"total_count\":" + total + "}}";
     }
 
     private static Task InvokeStartOrStop(MultiloginApiClient sut, bool start) =>
