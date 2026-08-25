@@ -13,7 +13,7 @@ namespace LeadFlow.Core.Services.Multilogin;
 public sealed class MultiloginApiClient(IHttpClientFactory httpClientFactory) : IMultiloginApiClient
 {
     public const int ProfileSearchPageSize = 100;
-    private const int ProfileSearchMaxPages = 50;
+    public const int ProfileSearchMaxPages = 50;
 
     private static readonly JsonSerializerOptions SearchRequestJson = new()
     {
@@ -70,7 +70,7 @@ public sealed class MultiloginApiClient(IHttpClientFactory httpClientFactory) : 
         }
     }
 
-    public async Task<IReadOnlyList<MultiloginProfileSummary>> SearchProfilesAsync(
+    public async Task<MultiloginProfileSearchResult> SearchProfilesAsync(
         MultiloginConnectionOptions options,
         CancellationToken cancellationToken = default)
     {
@@ -81,6 +81,8 @@ public sealed class MultiloginApiClient(IHttpClientFactory httpClientFactory) : 
         var token = RequireAutomationToken(normalized);
         var url = $"{origin}/profile/search";
         var results = new List<MultiloginProfileSummary>();
+        var discarded = 0;
+        var fetchedRaw = 0;
 
         for (var page = 0; page < ProfileSearchMaxPages; page++)
         {
@@ -104,25 +106,37 @@ public sealed class MultiloginApiClient(IHttpClientFactory httpClientFactory) : 
                     FormatHttpError("Multilogin profile/search", statusCode, json, token));
             }
 
-            var (profiles, totalCount) = ParseSearchPage(json);
-            results.AddRange(profiles);
-            if (profiles.Count == 0)
+            var parsed = ParseSearchPage(json);
+            discarded += parsed.DiscardedCount;
+            fetchedRaw += parsed.RawCount;
+            results.AddRange(parsed.Profiles);
+
+            if (parsed.RawCount == 0)
             {
-                break;
+                if (offset == 0 && parsed.TotalCount == 0 && discarded == 0)
+                {
+                    return MultiloginProfileSearchResult.EmptyComplete;
+                }
+
+                throw SearchCatalogError("неполный или некорректный каталог.");
             }
 
-            if (totalCount is int total && (results.Count >= total || offset + ProfileSearchPageSize >= total))
+            var fetchedAll = fetchedRaw >= parsed.TotalCount
+                || offset + ProfileSearchPageSize >= parsed.TotalCount;
+            if (!fetchedAll)
             {
-                break;
+                continue;
             }
 
-            if (totalCount is null && profiles.Count < ProfileSearchPageSize)
+            if (results.Count == 0)
             {
-                break;
+                throw SearchCatalogError("профили без id или folder_id.");
             }
+
+            return new MultiloginProfileSearchResult(results, IsComplete: discarded == 0);
         }
 
-        return results;
+        throw SearchCatalogError("каталог неполный.");
     }
 
     private async Task<(int StatusCode, bool IsSuccess, string Json)> SendGetAsync(
@@ -217,7 +231,7 @@ public sealed class MultiloginApiClient(IHttpClientFactory httpClientFactory) : 
         }
     }
 
-    private static (IReadOnlyList<MultiloginProfileSummary> Profiles, int? TotalCount) ParseSearchPage(string json)
+    private static ParsedSearchPage ParseSearchPage(string json)
     {
         try
         {
@@ -225,28 +239,36 @@ public sealed class MultiloginApiClient(IHttpClientFactory httpClientFactory) : 
             if (!doc.RootElement.TryGetProperty("data", out var data)
                 || data.ValueKind != JsonValueKind.Object)
             {
-                return ([], null);
+                throw SearchCatalogError("нет data.");
             }
 
-            int? totalCount = null;
-            if (data.TryGetProperty("total_count", out var totalProp)
-                && totalProp.ValueKind == JsonValueKind.Number
-                && totalProp.TryGetInt32(out var total))
+            if (!data.TryGetProperty("total_count", out var totalProp)
+                || totalProp.ValueKind != JsonValueKind.Number
+                || !totalProp.TryGetInt32(out var totalCount)
+                || totalCount < 0)
             {
-                totalCount = total;
+                throw SearchCatalogError("нет total_count.");
             }
 
             if (!data.TryGetProperty("profiles", out var profilesProp)
                 || profilesProp.ValueKind != JsonValueKind.Array)
             {
-                return ([], totalCount);
+                throw SearchCatalogError("нет profiles.");
+            }
+
+            var rawCount = profilesProp.GetArrayLength();
+            if (totalCount == 0 && rawCount != 0)
+            {
+                throw SearchCatalogError("несогласованный каталог.");
             }
 
             var profiles = new List<MultiloginProfileSummary>();
+            var discarded = 0;
             foreach (var item in profilesProp.EnumerateArray())
             {
                 if (item.ValueKind != JsonValueKind.Object)
                 {
+                    discarded++;
                     continue;
                 }
 
@@ -254,6 +276,7 @@ public sealed class MultiloginApiClient(IHttpClientFactory httpClientFactory) : 
                 var folderId = ReadString(item, "folder_id");
                 if (string.IsNullOrWhiteSpace(id) || string.IsNullOrWhiteSpace(folderId))
                 {
+                    discarded++;
                     continue;
                 }
 
@@ -263,13 +286,22 @@ public sealed class MultiloginApiClient(IHttpClientFactory httpClientFactory) : 
                     ReadString(item, "name")?.Trim() ?? string.Empty));
             }
 
-            return (profiles, totalCount);
+            return new ParsedSearchPage(profiles, rawCount, discarded, totalCount);
         }
         catch (JsonException ex)
         {
             throw new InvalidOperationException("Multilogin profile/search: некорректный JSON.", ex);
         }
     }
+
+    private static InvalidOperationException SearchCatalogError(string reason) =>
+        new("Multilogin profile/search: " + reason);
+
+    private readonly record struct ParsedSearchPage(
+        IReadOnlyList<MultiloginProfileSummary> Profiles,
+        int RawCount,
+        int DiscardedCount,
+        int TotalCount);
 
     private static string? ReadString(JsonElement obj, string name)
     {

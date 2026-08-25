@@ -308,12 +308,13 @@ public sealed class MultiloginApiClientTests
                 """);
         });
 
-        var profiles = await sut.SearchProfilesAsync(ValidOptions());
+        var result = await sut.SearchProfilesAsync(ValidOptions());
 
-        Assert.Equal(2, profiles.Count);
-        Assert.Equal(new MultiloginProfileSummary("profile-a", "folder-a", "Авито 50"), profiles[0]);
-        Assert.Equal(new MultiloginProfileSummary("profile-b", "folder-b", "Second"), profiles[1]);
-        Assert.All(profiles, static p =>
+        Assert.True(result.IsComplete);
+        Assert.Equal(2, result.Profiles.Count);
+        Assert.Equal(new MultiloginProfileSummary("profile-a", "folder-a", "Авито 50"), result.Profiles[0]);
+        Assert.Equal(new MultiloginProfileSummary("profile-b", "folder-b", "Second"), result.Profiles[1]);
+        Assert.All(result.Profiles, static p =>
         {
             Assert.Null(p.GetType().GetProperty("Proxy"));
             Assert.Null(p.GetType().GetProperty("Username"));
@@ -353,9 +354,10 @@ public sealed class MultiloginApiClientTests
             ],"total_count":5}}
             """));
 
-        var profiles = await sut.SearchProfilesAsync(ValidOptions());
+        var result = await sut.SearchProfilesAsync(ValidOptions());
 
-        var profile = Assert.Single(profiles);
+        Assert.False(result.IsComplete);
+        var profile = Assert.Single(result.Profiles);
         Assert.Equal("ok", profile.ProfileId);
         Assert.Equal("folder-ok", profile.FolderId);
         Assert.Equal("Keep", profile.Name);
@@ -375,13 +377,14 @@ public sealed class MultiloginApiClientTests
             return Json(HttpStatusCode.OK, SearchPage(offset, total: 101));
         });
 
-        var profiles = await sut.SearchProfilesAsync(ValidOptions());
+        var result = await sut.SearchProfilesAsync(ValidOptions());
 
+        Assert.True(result.IsComplete);
         Assert.Equal([0, 100], offsets);
-        Assert.Equal(101, profiles.Count);
-        Assert.Equal("id-0", profiles[0].ProfileId);
-        Assert.Equal("folder-100", profiles[100].FolderId);
-        Assert.Equal("P100", profiles[100].Name);
+        Assert.Equal(101, result.Profiles.Count);
+        Assert.Equal("id-0", result.Profiles[0].ProfileId);
+        Assert.Equal("folder-100", result.Profiles[100].FolderId);
+        Assert.Equal("P100", result.Profiles[100].Name);
     }
 
     [Fact]
@@ -408,9 +411,82 @@ public sealed class MultiloginApiClientTests
             HttpStatusCode.OK,
             """{"status":{"http_code":200},"data":{"profiles":[],"total_count":0}}"""));
 
-        var profiles = await sut.SearchProfilesAsync(ValidOptions());
+        var result = await sut.SearchProfilesAsync(ValidOptions());
 
-        Assert.Empty(profiles);
+        Assert.True(result.IsComplete);
+        Assert.Empty(result.Profiles);
+    }
+
+    [Theory]
+    [InlineData("""{"status":{"http_code":200},"password":"super-secret"}""", "нет data")]
+    [InlineData("""{"status":{"http_code":200},"data":{"total_count":0},"token":"mlx-automation-token"}""", "нет profiles")]
+    [InlineData("""{"status":{"http_code":200},"data":{"profiles":[],"proxy":"1.2.3.4"}}""", "нет total_count")]
+    [InlineData("""not-json""", "некорректный JSON")]
+    public async Task SearchProfilesAsync_MalformedResponse_ThrowsWithoutSecrets(string body, string reason)
+    {
+        var sut = CreateClient(_ => Json(HttpStatusCode.OK, body));
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => sut.SearchProfilesAsync(ValidOptions()));
+
+        Assert.Contains("profile/search", ex.Message, StringComparison.Ordinal);
+        Assert.Contains(reason, ex.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(Token, ex.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("super-secret", ex.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("1.2.3.4", ex.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(body, ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SearchProfilesAsync_AllIncompleteProfiles_ThrowsAndIsNotEmptyComplete()
+    {
+        var sut = CreateClient(_ => Json(
+            HttpStatusCode.OK,
+            """
+            {"status":{"http_code":200},"data":{"profiles":[
+              {"folder_id":"folder-1","name":"NoId"},
+              {"id":"p2","name":"NoFolder"}
+            ],"total_count":2}}
+            """));
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => sut.SearchProfilesAsync(ValidOptions()));
+
+        Assert.Contains("id или folder_id", ex.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(Token, ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SearchProfilesAsync_EmptyProfilesWithoutZeroTotal_Throws()
+    {
+        var sut = CreateClient(_ => Json(
+            HttpStatusCode.OK,
+            """{"status":{"http_code":200},"data":{"profiles":[],"total_count":3}}"""));
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => sut.SearchProfilesAsync(ValidOptions()));
+
+        Assert.Contains("неполный", ex.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task SearchProfilesAsync_MaxPages_ThrowsIncomplete_DoesNotReturnPartialCatalog()
+    {
+        var pages = 0;
+        var total = MultiloginApiClient.ProfileSearchMaxPages * MultiloginApiClient.ProfileSearchPageSize + 1;
+        var sut = CreateClient(_ =>
+        {
+            var offset = pages * MultiloginApiClient.ProfileSearchPageSize;
+            pages++;
+            return Json(HttpStatusCode.OK, SearchPage(offset, total));
+        });
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(
+            () => sut.SearchProfilesAsync(ValidOptions()));
+
+        Assert.Equal(MultiloginApiClient.ProfileSearchMaxPages, pages);
+        Assert.Contains("каталог неполный", ex.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(Token, ex.Message, StringComparison.Ordinal);
     }
 
     [Fact]

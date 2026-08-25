@@ -142,7 +142,6 @@ public sealed class WorkerConfigService(
         var adsPowerSyncedIds = new HashSet<Guid>();
         var multiloginSyncedIds = new HashSet<Guid>();
         var sawAdsPowerItems = false;
-        var sawMultiloginItems = false;
         var hasMultiloginMarker = false;
         var now = DateTime.UtcNow;
 
@@ -190,7 +189,6 @@ public sealed class WorkerConfigService(
             if (!string.IsNullOrWhiteSpace(item.MultiloginProfileId)
                 && !string.IsNullOrWhiteSpace(item.MultiloginFolderId))
             {
-                sawMultiloginItems = true;
                 var profileId = item.MultiloginProfileId.Trim();
                 var folderId = item.MultiloginFolderId.Trim();
                 var accountId = MultiloginAccountId.ToAccountGuid(profileId);
@@ -230,7 +228,7 @@ public sealed class WorkerConfigService(
             }
         }
 
-        if (sawAdsPowerItems || (!hasMultiloginMarker && !request.Multilogin))
+        if (sawAdsPowerItems || (!hasMultiloginMarker && !request.Multilogin && !request.ReplaceMultiloginCatalog))
         {
             foreach (var stale in existing.Values.Where(x =>
                          !adsPowerSyncedIds.Contains(x.AccountId)
@@ -240,7 +238,7 @@ public sealed class WorkerConfigService(
             }
         }
 
-        if (sawMultiloginItems || request.Multilogin)
+        if (request.ReplaceMultiloginCatalog)
         {
             foreach (var stale in existing.Values.Where(x =>
                          !multiloginSyncedIds.Contains(x.AccountId)

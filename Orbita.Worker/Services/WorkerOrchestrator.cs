@@ -524,17 +524,22 @@ public sealed class WorkerOrchestrator(
             LauncherUrl = config.MultiloginLauncherUrl
         };
 
-        IReadOnlyList<MultiloginProfileSummary> profiles;
+        MultiloginProfileSearchResult catalog;
         try
         {
-            profiles = await multiloginApi.SearchProfilesAsync(options, ct).ConfigureAwait(false);
+            catalog = await multiloginApi.SearchProfilesAsync(options, ct).ConfigureAwait(false);
         }
         catch
         {
             return;
         }
 
-        var items = profiles
+        if (!catalog.IsComplete && catalog.Profiles.Count == 0)
+        {
+            return;
+        }
+
+        var items = catalog.Profiles
             .Select(static p => new WorkerAccountSyncItemDto(
                 AdsPowerProfileId: string.Empty,
                 DisplayName: p.Name,
@@ -545,7 +550,12 @@ public sealed class WorkerOrchestrator(
 
         try
         {
-            await apiClient.SyncAccountsAsync(new WorkerAccountSyncRequest(items, Multilogin: true), ct)
+            await apiClient.SyncAccountsAsync(
+                    new WorkerAccountSyncRequest(
+                        items,
+                        Multilogin: true,
+                        ReplaceMultiloginCatalog: catalog.IsComplete),
+                    ct)
                 .ConfigureAwait(false);
         }
         catch

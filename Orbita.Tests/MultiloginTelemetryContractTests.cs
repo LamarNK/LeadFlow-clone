@@ -33,6 +33,17 @@ public sealed class MultiloginTelemetryContractTests
     }
 
     [Fact]
+    public void WorkerAccountSyncRequest_ExposesReplaceFlag_WithoutToken()
+    {
+        var names = typeof(WorkerAccountSyncRequest).GetProperties()
+            .Select(static p => p.Name)
+            .ToHashSet(StringComparer.Ordinal);
+        Assert.Contains(nameof(WorkerAccountSyncRequest.ReplaceMultiloginCatalog), names);
+        Assert.DoesNotContain("MultiloginAutomationToken", names);
+        Assert.DoesNotContain("AutomationToken", names);
+    }
+
+    [Fact]
     public void WorkerDetail_ExposesHasTokenFlag_WithoutTokenValue()
     {
         var names = typeof(WorkerDetail).GetProperties()

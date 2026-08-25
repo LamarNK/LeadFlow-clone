@@ -126,7 +126,8 @@ public sealed record WorkerAccountSyncItemDto(
 public sealed record WorkerAccountSyncRequest(
     IReadOnlyList<WorkerAccountSyncItemDto> Accounts,
     IReadOnlyList<AdsPowerGroupDto>? Groups = null,
-    bool Multilogin = false);
+    bool Multilogin = false,
+    bool ReplaceMultiloginCatalog = false);
 
 public sealed record WorkerCandidateDto(
     Guid AccountId,

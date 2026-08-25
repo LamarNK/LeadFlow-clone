@@ -394,13 +394,13 @@ public sealed class MultiloginCdpConnectorTests
             return Task.CompletedTask;
         }
 
-        public Task<IReadOnlyList<MultiloginProfileSummary>> SearchProfilesAsync(
+        public Task<MultiloginProfileSearchResult> SearchProfilesAsync(
             MultiloginConnectionOptions options,
             CancellationToken cancellationToken = default)
         {
             _ = options;
             _ = cancellationToken;
-            return Task.FromResult<IReadOnlyList<MultiloginProfileSummary>>([]);
+            return Task.FromResult(MultiloginProfileSearchResult.EmptyComplete);
         }
     }
 

@@ -16,7 +16,7 @@ public interface IMultiloginApiClient
         string profileId,
         CancellationToken cancellationToken = default);
 
-    Task<IReadOnlyList<MultiloginProfileSummary>> SearchProfilesAsync(
+    Task<MultiloginProfileSearchResult> SearchProfilesAsync(
         MultiloginConnectionOptions options,
         CancellationToken cancellationToken = default);
 }
