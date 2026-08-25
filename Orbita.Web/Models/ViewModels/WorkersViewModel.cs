@@ -146,6 +146,8 @@ public sealed class CreateWorkerResultViewModel
 public sealed class WorkerDetailsViewModel
 {
     public const string DefaultAdsPowerApiBaseUrl = "http://local.adspower.net:50325";
+    public const string DefaultMultiloginLauncherUrl = MultiloginWorkerSettings.DefaultLauncherUrl;
+    public const string DefaultMultiloginCloudApiUrl = MultiloginWorkerSettings.DefaultCloudApiUrl;
 
     public PageHeaderViewModel Header { get; init; } = new();
     public Guid WorkerId { get; init; }
@@ -154,6 +156,9 @@ public sealed class WorkerDetailsViewModel
     public string? AdsPowerApiBaseUrl { get; init; }
     public string? AdsPowerApiKey { get; init; }
     public string? RuCaptchaApiKey { get; init; }
+    public string? MultiloginLauncherUrl { get; init; }
+    public string? MultiloginCloudApiUrl { get; init; }
+    public bool HasMultiloginAutomationToken { get; init; }
     public string? AdsPowerGroupId { get; init; }
     public string? AdsPowerGroupName { get; init; }
     public IReadOnlyList<AdsPowerGroupDto> AdsPowerGroups { get; init; } = [];
@@ -183,6 +188,10 @@ public sealed class WorkerDetailsViewModel
     public string OfficeName { get; init; } = string.Empty;
     public string EffectiveAdsPowerApiBaseUrl =>
         string.IsNullOrWhiteSpace(AdsPowerApiBaseUrl) ? DefaultAdsPowerApiBaseUrl : AdsPowerApiBaseUrl;
+    public string EffectiveMultiloginLauncherUrl =>
+        string.IsNullOrWhiteSpace(MultiloginLauncherUrl) ? DefaultMultiloginLauncherUrl : MultiloginLauncherUrl;
+    public string EffectiveMultiloginCloudApiUrl =>
+        string.IsNullOrWhiteSpace(MultiloginCloudApiUrl) ? DefaultMultiloginCloudApiUrl : MultiloginCloudApiUrl;
     public WorkerSystemPanelViewModel System { get; init; } = new();
     public IReadOnlyList<BreadcrumbItemViewModel> Breadcrumbs { get; init; } = [];
     public string DisplayName { get; init; } = string.Empty;

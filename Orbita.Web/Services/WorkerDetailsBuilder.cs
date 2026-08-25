@@ -98,6 +98,9 @@ internal static class WorkerDetailsBuilder
             AdsPowerApiBaseUrl = worker.AdsPowerApiBaseUrl,
             AdsPowerApiKey = worker.AdsPowerApiKey,
             RuCaptchaApiKey = worker.RuCaptchaApiKey,
+            MultiloginLauncherUrl = worker.MultiloginLauncherUrl,
+            MultiloginCloudApiUrl = worker.MultiloginCloudApiUrl,
+            HasMultiloginAutomationToken = worker.HasMultiloginAutomationToken,
             AdsPowerGroupId = worker.AdsPowerGroupId,
             AdsPowerGroupName = worker.AdsPowerGroupName,
             AdsPowerGroups = BuildAdsPowerGroupOptions(

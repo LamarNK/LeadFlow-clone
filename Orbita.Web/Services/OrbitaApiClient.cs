@@ -927,6 +927,9 @@ public sealed class OrbitaApiClient(
         bool? autoDeliverToBitrix = null,
         string? responseHighlightTargetsJson = null,
         string? ruCaptchaApiKey = null,
+        string? multiloginLauncherUrl = null,
+        string? multiloginCloudApiUrl = null,
+        string? multiloginAutomationToken = null,
         CancellationToken ct = default)
     {
         using var request = new HttpRequestMessage(HttpMethod.Patch, $"api/v1/workers/{workerId}/settings");
@@ -954,7 +957,10 @@ public sealed class OrbitaApiClient(
             autoDeliverToBitrix,
             responseHighlightTargetsJson,
             adsPowerGroupId,
-            ruCaptchaApiKey));
+            ruCaptchaApiKey,
+            multiloginLauncherUrl,
+            multiloginCloudApiUrl,
+            multiloginAutomationToken));
         using var response = await SendAuthenticatedAsync(request, ct);
         if (response is null)
         {
