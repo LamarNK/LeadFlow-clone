@@ -433,6 +433,8 @@ public sealed class MultiloginCdpConnectorTests
     {
         public bool IsConnected { get; init; } = true;
 
+        public IBrowser Browser => null!;
+
         public int ProbeCount { get; private set; }
 
         public int DisconnectCount { get; private set; }
