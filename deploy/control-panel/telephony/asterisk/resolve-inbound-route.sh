@@ -4,10 +4,18 @@ set -euo pipefail
 office_id="${1:-}"
 caller="${2:-}"
 called="${3:-}"
+provider="${4:-}"
+account="${5:-}"
 if [[ ! "$office_id" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]]; then
   exit 0
 fi
 if [[ ! "$caller" =~ ^[0-9+]{10,20}$ ]] || [[ ! "$called" =~ ^[0-9+]{1,20}$ ]]; then
+  exit 0
+fi
+if [[ -n "$provider" && ! "$provider" =~ ^(plusofon|beeline)$ ]]; then
+  exit 0
+fi
+if [[ -n "$account" && ! "$account" =~ ^[a-zA-Z0-9_-]{1,16}$ ]]; then
   exit 0
 fi
 
@@ -38,6 +46,8 @@ response="$(curl \
   --get \
   --data-urlencode "caller=${caller}" \
   --data-urlencode "called=${called}" \
+  --data-urlencode "provider=${provider}" \
+  --data-urlencode "account=${account}" \
   "$url" 2>/dev/null || true)"
 
 # The trusted API returns only an extension, a separator and PJSIP targets.

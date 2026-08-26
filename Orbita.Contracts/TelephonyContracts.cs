@@ -20,13 +20,15 @@ public static class CrmTelephonyOutboundProviders
 {
     public const string Default = "default";
     public const string BeelineLinePrefix = "beeline:";
+    public const string PlusofonLinePrefix = "plusofon:";
 
     public static bool IsSupported(string? provider) =>
         string.IsNullOrWhiteSpace(provider)
         || string.Equals(provider, Default, StringComparison.OrdinalIgnoreCase)
         || string.Equals(provider, CrmTelephonyProviders.Plusofon, StringComparison.OrdinalIgnoreCase)
         || string.Equals(provider, CrmTelephonyProviders.Beeline, StringComparison.OrdinalIgnoreCase)
-        || TryGetBeelineLineKey(provider, out _);
+        || TryGetBeelineLineKey(provider, out _)
+        || TryGetPlusofonLineKey(provider, out _);
 
     public static string Normalize(string? provider) => string.IsNullOrWhiteSpace(provider)
         ? Default
@@ -35,16 +37,25 @@ public static class CrmTelephonyOutboundProviders
     public static string ForBeelineLine(string accountKey) =>
         $"{BeelineLinePrefix}{accountKey.Trim().ToLowerInvariant()}";
 
+    public static string ForPlusofonLine(string accountKey) =>
+        $"{PlusofonLinePrefix}{accountKey.Trim().ToLowerInvariant()}";
+
     public static bool TryGetBeelineLineKey(string? provider, out string accountKey)
+        => TryGetLineKey(provider, BeelineLinePrefix, out accountKey);
+
+    public static bool TryGetPlusofonLineKey(string? provider, out string accountKey)
+        => TryGetLineKey(provider, PlusofonLinePrefix, out accountKey);
+
+    private static bool TryGetLineKey(string? provider, string prefix, out string accountKey)
     {
         accountKey = string.Empty;
         if (string.IsNullOrWhiteSpace(provider)
-            || !provider.StartsWith(BeelineLinePrefix, StringComparison.OrdinalIgnoreCase))
+            || !provider.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
         {
             return false;
         }
 
-        var candidate = provider[BeelineLinePrefix.Length..].Trim().ToLowerInvariant();
+        var candidate = provider[prefix.Length..].Trim().ToLowerInvariant();
         if (candidate.Length is 0 or > 16 || !candidate.All(character => char.IsAsciiLetterOrDigit(character) || character is '-' or '_'))
         {
             return false;
@@ -140,6 +151,8 @@ public sealed record UpdateCrmTelephonyBindingRequest(
     string? OutboundProvider = null);
 
 public sealed record UpdateCrmTelephonyEnabledRequest(bool IsEnabled);
+
+public sealed record UpdateCrmTelephonyOfficeOutboundRequest(string OutboundProvider);
 
 public sealed record UpdatePlusofonCredentialsRequest(
     string ClientId,

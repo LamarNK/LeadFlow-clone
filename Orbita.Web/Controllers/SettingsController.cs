@@ -439,7 +439,8 @@ public sealed class SettingsController(
             .ToList();
         var phoneUsers = providerSettings[CrmTelephonyProviders.Asterisk]?.UserBindings ?? [];
         var plusofonLineUsers = phoneUsers.Count(x =>
-            x.OutboundProvider is CrmTelephonyOutboundProviders.Default or CrmTelephonyProviders.Plusofon);
+            x.OutboundProvider is CrmTelephonyOutboundProviders.Default or CrmTelephonyProviders.Plusofon
+            || CrmTelephonyOutboundProviders.TryGetPlusofonLineKey(x.OutboundProvider, out _));
         var beelineLineUsers = phoneUsers.Count(x =>
             x.OutboundProvider == CrmTelephonyProviders.Beeline
             || CrmTelephonyOutboundProviders.TryGetBeelineLineKey(x.OutboundProvider, out _));
@@ -449,6 +450,14 @@ public sealed class SettingsController(
             OfficeName = office.Name,
             Settings = settings,
             PhoneUsers = phoneUsers,
+            PlusofonAccounts = providerSettings[CrmTelephonyProviders.Plusofon]?.SipAccounts
+                ?? (providerSettings[CrmTelephonyProviders.Plusofon]?.SipAccount is null
+                    ? []
+                    : [providerSettings[CrmTelephonyProviders.Plusofon]!.SipAccount!]),
+            BeelineAccounts = providerSettings[CrmTelephonyProviders.Beeline]?.SipAccounts
+                ?? (providerSettings[CrmTelephonyProviders.Beeline]?.SipAccount is null
+                    ? []
+                    : [providerSettings[CrmTelephonyProviders.Beeline]!.SipAccount!]),
             OfficeUsers = users,
             ProviderSummaries =
             [
@@ -582,10 +591,7 @@ public sealed class SettingsController(
         {
             return BadRequest();
         }
-        var (success, error) = await api.SetSipProviderAccountAsync(
-            model.OfficeId,
-            provider,
-            new UpdateSipProviderAccountRequest(
+        var request = new UpdateSipProviderAccountRequest(
                 model.Server,
                 model.Domain,
                 model.Port,
@@ -596,8 +602,10 @@ public sealed class SettingsController(
                 model.UseForOutbound,
                 model.Name,
                 model.Mode,
-                model.OutboundCallerId),
-            ct);
+                model.OutboundCallerId);
+        (bool success, string? error) = string.IsNullOrWhiteSpace(model.AccountKey)
+            ? await api.AddSipProviderAccountAsync(model.OfficeId, provider, request, ct)
+            : await api.UpdateSipProviderAccountAsync(model.OfficeId, provider, model.AccountKey, request, ct);
         var providerLabel = provider == CrmTelephonyProviders.Plusofon ? "Плюсофона" : "Билайна";
         TempData[success ? "SettingsStatus" : "SettingsError"] = success
             ? $"SIP-аккаунт {providerLabel} сохранён и передан Asterisk. Статус регистрации обновится в течение нескольких секунд."

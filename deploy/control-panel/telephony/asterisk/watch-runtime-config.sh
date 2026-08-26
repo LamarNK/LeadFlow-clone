@@ -61,6 +61,29 @@ write_beeline_accounts_status() {
   mv -f "${temporary}" "${status_path}"
 }
 
+write_plusofon_accounts_status() {
+  local office_id="$1"
+  local status="$2"
+  local accounts_path="${runtime_dir}/plusofon.${office_id}.accounts"
+  local status_path="${runtime_dir}/plusofon.${office_id}.status"
+  local temporary="${status_path}.tmp"
+  local account_written=false
+  : > "${temporary}"
+  if [[ -f "${accounts_path}" ]]; then
+    while IFS='=' read -r account_key registration_name; do
+      [[ "${account_key}" =~ ^[a-z0-9_-]{1,16}$ ]] || continue
+      [[ "${registration_name}" =~ ^plusofon-[0-9a-f]{32}(-[a-z0-9_-]{1,16})?-registration$ ]] || continue
+      printf '%s=%s\n' "${account_key}" "${status}" >> "${temporary}"
+      account_written=true
+    done < "${accounts_path}"
+  fi
+  if [[ "${account_written}" != "true" ]]; then
+    printf 'default=%s\n' "${status}" >> "${temporary}"
+  fi
+  printf '%s\n' "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "${temporary}"
+  mv -f "${temporary}" "${status_path}"
+}
+
 wait_for_asterisk() {
   until /usr/sbin/asterisk -rx 'core show uptime' >/dev/null 2>&1; do
     sleep 1
@@ -160,7 +183,7 @@ apply_configs_if_changed() {
         if [[ "${provider}" == "beeline" ]]; then
           write_beeline_accounts_status "${office_id}" "reload-failed"
         else
-          write_default_status "${provider}" "${office_id}" "reload-failed"
+          write_plusofon_accounts_status "${office_id}" "reload-failed"
         fi
         continue
       fi
@@ -202,9 +225,21 @@ apply_configs_if_changed() {
     done < <(find "${runtime_dir}" -maxdepth 1 -type f -name 'beeline.*.accounts' -print0 | sort -z)
 
     while IFS= read -r -d '' file; do
+      local office_id account_key registration_name
+      office_id="$(office_from_file "${file}" 'plusofon.' '.accounts')"
+      [[ -n "${office_id}" ]] || continue
+      write_plusofon_accounts_status "${office_id}" "pending"
+      while IFS='=' read -r account_key registration_name; do
+        [[ "${registration_name}" =~ ^plusofon-[0-9a-f]{32}(-[a-z0-9_-]{1,16})?-registration$ ]] || continue
+        /usr/sbin/asterisk -rx "pjsip send register ${registration_name}" >/dev/null 2>&1 || true
+      done < "${file}"
+    done < <(find "${runtime_dir}" -maxdepth 1 -type f -name 'plusofon.*.accounts' -print0 | sort -z)
+
+    while IFS= read -r -d '' file; do
       local office_id office_key
       office_id="$(office_from_file "${file}" 'plusofon.' '.conf')"
       [[ -n "${office_id}" ]] || continue
+      [[ ! -f "${runtime_dir}/plusofon.${office_id}.accounts" ]] || continue
       office_key="$(endpoint_key "${office_id}")"
       write_default_status "plusofon" "${office_id}" "pending"
       /usr/sbin/asterisk -rx "pjsip send register plusofon-${office_key}-registration" >/dev/null 2>&1 || true
@@ -218,7 +253,7 @@ apply_configs_if_changed() {
         if [[ "${provider}" == "beeline" ]]; then
           write_beeline_accounts_status "${office_id}" "reload-failed"
         else
-          write_default_status "${provider}" "${office_id}" "reload-failed"
+          write_plusofon_accounts_status "${office_id}" "reload-failed"
         fi
       done < <(find "${runtime_dir}" -maxdepth 1 -type f -name "${provider}.*.conf" -print0 | sort -z)
     done
@@ -269,6 +304,13 @@ resolve_endpoint() {
         printf 'orbita-provider'
       fi
       ;;
+    plusofon-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]*)
+      if is_endpoint_loaded "${provider}"; then
+        printf '%s' "${provider}"
+      else
+        printf 'orbita-provider'
+      fi
+      ;;
     *)
       printf 'orbita-provider'
       ;;
@@ -279,7 +321,7 @@ expects_runtime_endpoint() {
   local provider="$1"
   local office_id="$2"
   case "${provider}" in
-    plusofon|beeline|beeline-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]*)
+    plusofon|plusofon-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]*|beeline|beeline-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]*)
       return 0
       ;;
     default)
@@ -300,7 +342,7 @@ expects_runtime_endpoint() {
 apply_routes_if_changed() {
   local routes_hash outbound_hash providers_hash combined_hash routes_pending
   routes_hash="$(hash_files 'routes.*.conf')"
-  outbound_hash="$(hash_files 'outbound.*.conf'):$(hash_files 'beeline.*.outbound'):$(hash_files 'plusofon.*.callerid')"
+  outbound_hash="$(hash_files 'outbound.*.conf'):$(hash_files 'beeline.*.outbound'):$(hash_files 'plusofon.*.callerids'):$(hash_files 'plusofon.*.callerid')"
   providers_hash="$(hash_files 'beeline.*.conf'):$(hash_files 'plusofon.*.conf')"
   combined_hash="${routes_hash}:${outbound_hash}:${providers_hash}"
   if [[ "${combined_hash}" == "${last_routes_hash}" ]]; then
@@ -367,9 +409,32 @@ apply_routes_if_changed() {
   done < <(find "${runtime_dir}" -maxdepth 1 -type f -name 'beeline.*.outbound' -print0 | sort -z)
 
   while IFS= read -r -d '' file; do
+    local office_id office_key account_key value endpoint caller_id domain
+    office_id="$(office_from_file "${file}" 'plusofon.' '.callerids')"
+    [[ -n "${office_id}" ]] || continue
+    office_key="$(endpoint_key "${office_id}")"
+    while IFS='=' read -r account_key value; do
+      [[ "${account_key}" =~ ^[a-z0-9_-]{1,16}$ ]] || continue
+      caller_id="${value%%|*}"
+      domain="${value#*|}"
+      [[ "${value}" == *'|'* ]] || continue
+      [[ "${caller_id}" =~ ^7[0-9]{10}$ ]] || continue
+      [[ "${domain}" =~ ^[A-Za-z0-9.-]{1,253}$ ]] || continue
+      if [[ "${account_key}" == "default" ]]; then
+        endpoint="plusofon-${office_key}"
+      else
+        endpoint="plusofon-${office_key}-${account_key}"
+      fi
+      /usr/sbin/asterisk -rx "database put orbita_endpoint outbound_caller_id/${endpoint} ${caller_id}" >/dev/null
+      /usr/sbin/asterisk -rx "database put orbita_endpoint outbound_domain/${endpoint} ${domain}" >/dev/null
+    done < "${file}"
+  done < <(find "${runtime_dir}" -maxdepth 1 -type f -name 'plusofon.*.callerids' -print0 | sort -z)
+
+  while IFS= read -r -d '' file; do
     local office_id office_key endpoint caller_id domain
     office_id="$(office_from_file "${file}" 'plusofon.' '.callerid')"
     [[ -n "${office_id}" ]] || continue
+    [[ ! -f "${runtime_dir}/plusofon.${office_id}.callerids" ]] || continue
     office_key="$(endpoint_key "${office_id}")"
     endpoint="plusofon-${office_key}"
     caller_id="$(sed -n '1p' "${file}" | tr -d '\r\n ')"
@@ -423,9 +488,40 @@ update_beeline_registration_statuses() {
 
 update_plusofon_registration_statuses() {
   while IFS= read -r -d '' file; do
+    local office_id status_path temporary
+    office_id="$(office_from_file "${file}" 'plusofon.' '.accounts')"
+    [[ -n "${office_id}" ]] || continue
+    status_path="${runtime_dir}/plusofon.${office_id}.status"
+    temporary="${status_path}.tmp"
+    : > "${temporary}"
+    while IFS='=' read -r account_key registration_name; do
+      [[ "${account_key}" =~ ^[a-z0-9_-]{1,16}$ ]] || continue
+      [[ "${registration_name}" =~ ^plusofon-[0-9a-f]{32}(-[a-z0-9_-]{1,16})?-registration$ ]] || continue
+      local output status detail
+      output="$(/usr/sbin/asterisk -rx "pjsip show registration ${registration_name}" 2>/dev/null || true)"
+      detail=""
+      if grep -qiE '(^|[[:space:]])Registered([[:space:]]|$)' <<< "${output}"; then
+        status="registered"
+      elif grep -qiE 'Rejected|Forbidden|Auth\. Sent' <<< "${output}"; then
+        status="rejected"
+        detail="$(registration_detail "${output}")"
+      elif grep -qiE 'Unregistered|Stopped' <<< "${output}"; then
+        status="unregistered"
+      else
+        status="pending"
+      fi
+      printf '%s=%s\n' "${account_key}" "${status}" >> "${temporary}"
+      [[ -z "${detail}" ]] || printf '%s.detail=%s\n' "${account_key}" "${detail}" >> "${temporary}"
+    done < "${file}"
+    printf '%s\n' "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "${temporary}"
+    mv -f "${temporary}" "${status_path}"
+  done < <(find "${runtime_dir}" -maxdepth 1 -type f -name 'plusofon.*.accounts' -print0 | sort -z)
+
+  while IFS= read -r -d '' file; do
     local office_id office_key output status detail
     office_id="$(office_from_file "${file}" 'plusofon.' '.conf')"
     [[ -n "${office_id}" ]] || continue
+    [[ ! -f "${runtime_dir}/plusofon.${office_id}.accounts" ]] || continue
     if ! is_runtime_config_valid "${file}"; then
       write_default_status "plusofon" "${office_id}" "reload-failed"
       continue

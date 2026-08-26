@@ -29,6 +29,8 @@ public sealed class CrmTelephonyPageViewModel
     public string OfficeName { get; init; } = string.Empty;
     public required CrmTelephonySettingsDto Settings { get; init; }
     public IReadOnlyList<CrmTelephonyUserBindingDto> PhoneUsers { get; init; } = [];
+    public IReadOnlyList<CrmSipProviderAccountDto> PlusofonAccounts { get; init; } = [];
+    public IReadOnlyList<CrmSipProviderAccountDto> BeelineAccounts { get; init; } = [];
     public IReadOnlyList<PanelUserDto> OfficeUsers { get; init; } = [];
     public IReadOnlyList<CrmTelephonyProviderSummaryViewModel> ProviderSummaries { get; init; } = [];
     public string Provider { get; init; } = CrmTelephonyProviders.Sipout;

@@ -3150,6 +3150,25 @@ public sealed class OrbitaApiClient(
                 : (false, await ReadApiErrorAsync(response, ct));
     }
 
+    public async Task<(bool Success, string? Error)> SetOfficeDefaultOutboundAsync(
+        Guid officeId,
+        string outboundProvider,
+        CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Put,
+            $"api/v1/crm/telephony/offices/{officeId:D}/outbound-default")
+        {
+            Content = JsonContent.Create(new UpdateCrmTelephonyOfficeOutboundRequest(outboundProvider))
+        };
+        using var response = await SendAuthenticatedAsync(request, ct);
+        return response is null
+            ? (false, InvalidApiSessionError)
+            : response.IsSuccessStatusCode
+                ? (true, null)
+                : (false, await ReadApiErrorAsync(response, ct));
+    }
+
     public async Task<(CrmTelephonyUserBindingDto? Binding, string? Error)> SetCrmTelephonyBindingAsync(
         Guid officeId,
         string userId,

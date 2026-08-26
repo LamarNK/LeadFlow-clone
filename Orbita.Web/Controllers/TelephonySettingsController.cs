@@ -84,7 +84,8 @@ public sealed class TelephonySettingsController(
             .ToList();
         var phoneUsers = providerSettings[CrmTelephonyProviders.Asterisk]?.UserBindings ?? [];
         var plusofonLineUsers = phoneUsers.Count(x =>
-            x.OutboundProvider is CrmTelephonyOutboundProviders.Default or CrmTelephonyProviders.Plusofon);
+            x.OutboundProvider is CrmTelephonyOutboundProviders.Default or CrmTelephonyProviders.Plusofon
+            || CrmTelephonyOutboundProviders.TryGetPlusofonLineKey(x.OutboundProvider, out _));
         var beelineLineUsers = phoneUsers.Count(x =>
             x.OutboundProvider == CrmTelephonyProviders.Beeline
             || CrmTelephonyOutboundProviders.TryGetBeelineLineKey(x.OutboundProvider, out _));
@@ -95,6 +96,14 @@ public sealed class TelephonySettingsController(
             OfficeName = officeName,
             Settings = selectedSettings,
             PhoneUsers = phoneUsers,
+            PlusofonAccounts = providerSettings[CrmTelephonyProviders.Plusofon]?.SipAccounts
+                ?? (providerSettings[CrmTelephonyProviders.Plusofon]?.SipAccount is null
+                    ? []
+                    : [providerSettings[CrmTelephonyProviders.Plusofon]!.SipAccount!]),
+            BeelineAccounts = providerSettings[CrmTelephonyProviders.Beeline]?.SipAccounts
+                ?? (providerSettings[CrmTelephonyProviders.Beeline]?.SipAccount is null
+                    ? []
+                    : [providerSettings[CrmTelephonyProviders.Beeline]!.SipAccount!]),
             OfficeUsers = users,
             ProviderSummaries =
             [
@@ -253,11 +262,9 @@ public sealed class TelephonySettingsController(
             model.Name,
             model.Mode,
             model.OutboundCallerId);
-        (bool success, string? error) = provider == CrmTelephonyProviders.Beeline
-            ? string.IsNullOrWhiteSpace(model.AccountKey)
-                ? await api.AddSipProviderAccountAsync(model.OfficeId, provider, request, ct)
-                : await api.UpdateSipProviderAccountAsync(model.OfficeId, provider, model.AccountKey, request, ct)
-            : await api.SetSipProviderAccountAsync(model.OfficeId, provider, request, ct);
+        (bool success, string? error) = string.IsNullOrWhiteSpace(model.AccountKey)
+            ? await api.AddSipProviderAccountAsync(model.OfficeId, provider, request, ct)
+            : await api.UpdateSipProviderAccountAsync(model.OfficeId, provider, model.AccountKey, request, ct);
         var providerLabel = provider == CrmTelephonyProviders.Plusofon ? "Плюсофона" : "Билайна";
         TempData[success ? "SettingsStatus" : "SettingsError"] = success
             ? $"SIP-линия {providerLabel} сохранена и передана Asterisk. Статус регистрации обновится в течение нескольких секунд."
@@ -269,15 +276,37 @@ public sealed class TelephonySettingsController(
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> DeleteSipProviderAccount(
         Guid officeId,
+        string provider,
         string accountKey,
         CancellationToken ct = default)
     {
+        if (!CrmTelephonyProviders.IsSupported(provider)) return BadRequest();
+        provider = CrmTelephonyProviders.Normalize(provider);
+        if (provider is not (CrmTelephonyProviders.Beeline or CrmTelephonyProviders.Plusofon)) return BadRequest();
         var (success, error) = await api.DeleteSipProviderAccountAsync(
-            officeId, CrmTelephonyProviders.Beeline, accountKey, ct);
+            officeId, provider, accountKey, ct);
+        var providerLabel = provider == CrmTelephonyProviders.Plusofon ? "Плюсофона" : "Билайна";
         TempData[success ? "SettingsStatus" : "SettingsError"] = success
-            ? "Линия Билайна удалена."
+            ? $"Линия {providerLabel} удалена."
             : error;
-        return RedirectToAction(nameof(Telephony), new { officeId, provider = CrmTelephonyProviders.Beeline });
+        return RedirectToAction(nameof(Telephony), new { officeId, provider });
+    }
+
+    [HttpPost("Telephony/OutboundDefault")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> SetOfficeDefaultOutbound(
+        Guid officeId,
+        string outboundProvider,
+        string provider,
+        CancellationToken ct = default)
+    {
+        if (!CrmTelephonyProviders.IsSupported(provider)) return BadRequest();
+        provider = CrmTelephonyProviders.Normalize(provider);
+        var (success, error) = await api.SetOfficeDefaultOutboundAsync(officeId, outboundProvider, ct);
+        TempData[success ? "SettingsStatus" : "SettingsError"] = success
+            ? "Линия офиса по умолчанию переключена. Остальные SIP-линии остались подключёнными."
+            : error;
+        return RedirectToAction(nameof(Telephony), new { officeId, provider });
     }
 
     [HttpPost("Telephony/Binding")]

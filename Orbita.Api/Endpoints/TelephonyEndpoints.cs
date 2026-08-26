@@ -121,6 +121,8 @@ public static class TelephonyEndpoints
                 Guid publicId,
                 string? caller,
                 string? called,
+                string? provider,
+                string? account,
                 HttpRequest request,
                 CrmTelephonyService telephony,
                 CancellationToken ct) =>
@@ -133,6 +135,8 @@ public static class TelephonyEndpoints
                     secret,
                     caller,
                     called,
+                    provider,
+                    account,
                     ct);
                 if (result.Outcome == AsteriskInboundRouteOutcome.Unauthorized)
                 {
@@ -415,11 +419,14 @@ public static class TelephonyEndpoints
             {
                 return Results.Forbid();
             }
-            if (!string.Equals(provider, CrmTelephonyProviders.Beeline, StringComparison.OrdinalIgnoreCase))
+            provider = CrmTelephonyProviders.Normalize(provider);
+            if (provider is not (CrmTelephonyProviders.Beeline or CrmTelephonyProviders.Plusofon))
             {
-                return Results.BadRequest(new { error = "Несколько SIP-линий пока поддерживаются только для Билайна." });
+                return Results.BadRequest(new { error = "Несколько SIP-линий поддерживаются только для Плюсофона и Билайна." });
             }
-            var (success, error, accountKey) = await telephony.UpsertBeelineSipAccountAsync(officeId, null, request, ct);
+            var (success, error, accountKey) = provider == CrmTelephonyProviders.Plusofon
+                ? await telephony.UpsertPlusofonSipAccountAsync(officeId, null, request, ct)
+                : await telephony.UpsertBeelineSipAccountAsync(officeId, null, request, ct);
             return success ? Results.Ok(new { accountKey }) : Results.BadRequest(new { error });
         });
 
@@ -437,11 +444,14 @@ public static class TelephonyEndpoints
             {
                 return Results.Forbid();
             }
-            if (!string.Equals(provider, CrmTelephonyProviders.Beeline, StringComparison.OrdinalIgnoreCase))
+            provider = CrmTelephonyProviders.Normalize(provider);
+            if (provider is not (CrmTelephonyProviders.Beeline or CrmTelephonyProviders.Plusofon))
             {
-                return Results.BadRequest(new { error = "Несколько SIP-линий пока поддерживаются только для Билайна." });
+                return Results.BadRequest(new { error = "Несколько SIP-линий поддерживаются только для Плюсофона и Билайна." });
             }
-            var (success, error, _) = await telephony.UpsertBeelineSipAccountAsync(officeId, accountKey, request, ct);
+            var (success, error, _) = provider == CrmTelephonyProviders.Plusofon
+                ? await telephony.UpsertPlusofonSipAccountAsync(officeId, accountKey, request, ct)
+                : await telephony.UpsertBeelineSipAccountAsync(officeId, accountKey, request, ct);
             return success ? Results.NoContent() : Results.BadRequest(new { error });
         });
 
@@ -458,11 +468,33 @@ public static class TelephonyEndpoints
             {
                 return Results.Forbid();
             }
-            if (!string.Equals(provider, CrmTelephonyProviders.Beeline, StringComparison.OrdinalIgnoreCase))
+            provider = CrmTelephonyProviders.Normalize(provider);
+            if (provider is not (CrmTelephonyProviders.Beeline or CrmTelephonyProviders.Plusofon))
             {
                 return Results.BadRequest();
             }
-            var (success, error) = await telephony.DeleteBeelineSipAccountAsync(officeId, accountKey, ct);
+            var (success, error) = provider == CrmTelephonyProviders.Plusofon
+                ? await telephony.DeletePlusofonSipAccountAsync(officeId, accountKey, ct)
+                : await telephony.DeleteBeelineSipAccountAsync(officeId, accountKey, ct);
+            return success ? Results.NoContent() : Results.BadRequest(new { error });
+        });
+
+        admin.MapPut("/offices/{officeId:guid}/outbound-default", async (
+            Guid officeId,
+            UpdateCrmTelephonyOfficeOutboundRequest request,
+            CrmTelephonyService telephony,
+            OfficeScopeService officeScope,
+            ClaimsPrincipal principal,
+            CancellationToken ct) =>
+        {
+            if (!await CanManageTelephonyAsync(officeId, officeScope, principal, ct))
+            {
+                return Results.Forbid();
+            }
+            var (success, error) = await telephony.SetOfficeDefaultOutboundAsync(
+                officeId,
+                request.OutboundProvider,
+                ct);
             return success ? Results.NoContent() : Results.BadRequest(new { error });
         });
 

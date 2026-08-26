@@ -60,7 +60,7 @@
         if (!userSelect || !outboundProvider) return;
 
         const selectedUserId = userSelect.value;
-        outboundProvider.querySelectorAll('[data-beeline-account]').forEach(option => {
+        outboundProvider.querySelectorAll('[data-sip-account]').forEach(option => {
             const assignedUserId = option.dataset.assignedUserId || '';
             const isPersonal = option.dataset.accountMode === 'personal';
             option.disabled = isPersonal && assignedUserId !== '' && assignedUserId !== selectedUserId;

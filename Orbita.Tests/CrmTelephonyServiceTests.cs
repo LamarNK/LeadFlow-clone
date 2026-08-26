@@ -130,7 +130,7 @@ public sealed class CrmTelephonyServiceTests
             Assert.Contains("[301-webrtc]", runtimeConfig, StringComparison.Ordinal);
             Assert.DoesNotContain("[201-webrtc]", runtimeConfig, StringComparison.Ordinal);
             Assert.Equal(
-                "301=plusofon\n",
+                "301=default\n",
                 (await File.ReadAllTextAsync(Path.Combine(runtimePath, $"routes.{officeId:D}.conf")))
                     .Replace("\r\n", "\n"));
 
@@ -589,6 +589,189 @@ public sealed class CrmTelephonyServiceTests
             Assert.Equal("74951332210", settings.SipAccount.OutboundCallerId);
             Assert.True(settings.SipAccount.PasswordConfigured);
             Assert.True(settings.ProviderCredentialsConfigured);
+        }
+        finally
+        {
+            if (Directory.Exists(runtimePath))
+            {
+                Directory.Delete(runtimePath, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task PlusofonAndBeeline_StayConnected_WhenOfficeDefaultIsSwitched()
+    {
+        var runtimePath = Path.Combine(Path.GetTempPath(), "orbita-sip-runtime-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var options = new DbContextOptionsBuilder<OrbitaDbContext>()
+                .UseInMemoryDatabase($"crm-telephony-provider-switch-{Guid.NewGuid():N}")
+                .Options;
+            await using var db = new OrbitaDbContext(options);
+            var officeId = Guid.NewGuid();
+            db.Offices.Add(new OfficeEntity
+            {
+                Id = officeId,
+                Name = "Provider switch office",
+                RegistrationSecretHash = "hash",
+                IsEnabled = true,
+                CrmEnabled = true,
+                CreatedAtUtc = DateTime.UtcNow
+            });
+            await db.SaveChangesAsync();
+
+            var protector = new CrmTelephonyCredentialProtector(new EphemeralDataProtectionProvider());
+            var writer = new CrmSipRuntimeConfigWriter(Options.Create(new CrmSipRuntimeOptions
+            {
+                ConfigPath = runtimePath
+            }));
+            var sut = new CrmTelephonyService(
+                db,
+                new PhoneNormalizer(),
+                TimeProvider.System,
+                credentialProtector: protector,
+                sipRuntimeConfigWriter: writer);
+
+            var plusofon = await sut.UpsertPlusofonSipAccountAsync(
+                officeId,
+                "main",
+                new UpdateSipProviderAccountRequest(
+                    "12345.voice.plusofon.ru", "12345.voice.plusofon.ru", 5060, "tcp",
+                    "plus-user", "plus-auth", "plus-password", true,
+                    "Плюсофон", CrmSipAccountModes.Shared, "74951332210"));
+            Assert.True(plusofon.Success, plusofon.Error);
+
+            var beelineConnected = await sut.UpsertBeelineSipAccountAsync(
+                officeId,
+                "main",
+                new UpdateSipProviderAccountRequest(
+                    "sip.beeline.test", "beeline.test", 5060, "udp",
+                    "beeline-user", "beeline-auth", "beeline-password", false,
+                    "Билайн", CrmSipAccountModes.Shared));
+            Assert.True(beelineConnected.Success, beelineConnected.Error);
+
+            var plusSettings = await sut.GetSettingsAsync(officeId, provider: CrmTelephonyProviders.Plusofon);
+            var beelineSettings = await sut.GetSettingsAsync(officeId, provider: CrmTelephonyProviders.Beeline);
+            Assert.True(plusSettings?.IsConfigured);
+            Assert.True(beelineSettings?.IsConfigured);
+            Assert.True(Assert.Single(plusSettings!.SipAccounts!).UseForOutbound);
+            Assert.False(Assert.Single(beelineSettings!.SipAccounts!).UseForOutbound);
+            Assert.Contains(
+                "plusofon",
+                await File.ReadAllTextAsync(Path.Combine(runtimePath, $"outbound.{officeId:D}.conf")),
+                StringComparison.Ordinal);
+
+            var beelineSelected = await sut.SetOfficeDefaultOutboundAsync(
+                officeId,
+                CrmTelephonyOutboundProviders.ForBeelineLine("main"));
+            Assert.True(beelineSelected.Success, beelineSelected.Error);
+
+            plusSettings = await sut.GetSettingsAsync(officeId, provider: CrmTelephonyProviders.Plusofon);
+            beelineSettings = await sut.GetSettingsAsync(officeId, provider: CrmTelephonyProviders.Beeline);
+            Assert.True(plusSettings?.IsConfigured);
+            Assert.True(beelineSettings?.IsConfigured);
+            Assert.False(Assert.Single(plusSettings!.SipAccounts!).UseForOutbound);
+            Assert.True(Assert.Single(beelineSettings!.SipAccounts!).UseForOutbound);
+            Assert.True(File.Exists(Path.Combine(runtimePath, $"plusofon.{officeId:D}.conf")));
+            Assert.True(File.Exists(Path.Combine(runtimePath, $"beeline.{officeId:D}.conf")));
+            Assert.Contains(
+                "beeline",
+                await File.ReadAllTextAsync(Path.Combine(runtimePath, $"outbound.{officeId:D}.conf")),
+                StringComparison.Ordinal);
+        }
+        finally
+        {
+            if (Directory.Exists(runtimePath))
+            {
+                Directory.Delete(runtimePath, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task AsteriskInboundRoute_PersonalPlusofonLineTargetsItsAssignedManager()
+    {
+        var runtimePath = Path.Combine(Path.GetTempPath(), "orbita-sip-runtime-tests", Guid.NewGuid().ToString("N"));
+        try
+        {
+            var options = new DbContextOptionsBuilder<OrbitaDbContext>()
+                .UseInMemoryDatabase($"crm-telephony-personal-inbound-{Guid.NewGuid():N}")
+                .Options;
+            await using var db = new OrbitaDbContext(options);
+            var officeId = Guid.NewGuid();
+            const string managerId = "personal-plusofon-manager";
+            db.Offices.Add(new OfficeEntity
+            {
+                Id = officeId,
+                Name = "Personal Plusofon office",
+                RegistrationSecretHash = "hash",
+                IsEnabled = true,
+                CrmEnabled = true,
+                CreatedAtUtc = DateTime.UtcNow
+            });
+            db.Users.Add(new IdentityUser
+            {
+                Id = managerId,
+                UserName = "personal-plusofon-manager@orbita.local",
+                NormalizedUserName = "PERSONAL-PLUSOFON-MANAGER@ORBITA.LOCAL",
+                Email = "personal-plusofon-manager@orbita.local",
+                NormalizedEmail = "PERSONAL-PLUSOFON-MANAGER@ORBITA.LOCAL"
+            });
+            db.PanelUserProfiles.Add(new PanelUserProfileEntity
+            {
+                UserId = managerId,
+                OfficeId = officeId,
+                FullName = "Персональный менеджер"
+            });
+            await db.SaveChangesAsync();
+
+            var protector = new CrmTelephonyCredentialProtector(new EphemeralDataProtectionProvider());
+            var writer = new CrmSipRuntimeConfigWriter(Options.Create(new CrmSipRuntimeOptions
+            {
+                ConfigPath = runtimePath
+            }));
+            var sut = new CrmTelephonyService(
+                db,
+                new PhoneNormalizer(),
+                TimeProvider.System,
+                credentialProtector: protector,
+                sipRuntimeConfigWriter: writer);
+            var line = await sut.UpsertPlusofonSipAccountAsync(
+                officeId,
+                "personal1",
+                new UpdateSipProviderAccountRequest(
+                    "12345.voice.plusofon.ru", "12345.voice.plusofon.ru", 5060, "tcp",
+                    "personal-user", "personal-auth", "personal-password", false,
+                    "Личная линия", CrmSipAccountModes.Personal, "74951332210"));
+            Assert.True(line.Success, line.Error);
+            var (binding, bindingError) = await sut.SetBindingAsync(
+                officeId,
+                managerId,
+                "301",
+                provider: CrmTelephonyProviders.Asterisk,
+                outboundProvider: CrmTelephonyOutboundProviders.ForPlusofonLine("personal1"));
+            Assert.NotNull(binding);
+            Assert.Null(bindingError);
+            var (receiver, receiverError) = await sut.RotateReceiverAsync(
+                officeId,
+                "https://orbita.test",
+                provider: CrmTelephonyProviders.Asterisk);
+            Assert.NotNull(receiver);
+            Assert.Null(receiverError);
+            Assert.True(await sut.SetEnabledAsync(officeId, true, provider: CrmTelephonyProviders.Asterisk));
+
+            var route = await sut.ResolveAsteriskInboundRouteAsync(
+                receiver.PublicId,
+                receiver.WebhookSecret,
+                "79991112233",
+                "74951332210",
+                CrmTelephonyProviders.Plusofon,
+                "personal1");
+
+            Assert.Equal(AsteriskInboundRouteOutcome.Resolved, route.Outcome);
+            Assert.Equal("301", route.PreferredExtension);
+            Assert.Null(route.AffinityExpiresAtUtc);
         }
         finally
         {
