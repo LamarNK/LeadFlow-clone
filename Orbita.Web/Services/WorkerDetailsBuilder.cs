@@ -14,7 +14,8 @@ internal static class WorkerDetailsBuilder
         WorkerRowViewModel? summary = null,
         TableSortState? sort = null,
         string? accountSearchQuery = null,
-        string? accountGroupId = null)
+        string? accountGroupId = null,
+        string? accountProvider = null)
     {
         extra ??= new WorkerExtraInfoViewModel();
         var stats = worker.LatestStats;
@@ -51,20 +52,22 @@ internal static class WorkerDetailsBuilder
             ? DashboardChartsBuilder.FromHourlyActivity(stats.HourlyActivity)
             : DashboardChartsBuilder.FromHourlyActivity([]);
 
-        var groupOptions = AdsPowerAccountGroupFilter.BuildOptions(
-            accounts.Select(a => (a.AdsPowerGroupId, a.AdsPowerGroupName)),
-            worker.AdsPowerGroups);
+        var groupOptions = WorkerAccountCatalogFilter.BuildLocationOptions(accounts, worker.AdsPowerGroups);
         var normalizedSearch = string.IsNullOrWhiteSpace(accountSearchQuery) ? null : accountSearchQuery.Trim();
-        var normalizedGroupId = AdsPowerAccountGroupFilter.Normalize(accountGroupId);
+        var normalizedGroupId = WorkerAccountCatalogFilter.NormalizeLocation(accountGroupId);
+        var normalizedProvider = WorkerAccountCatalogFilter.NormalizeProvider(accountProvider);
         var tableSort = sort ?? TableSortState.Create("account", descending: false);
-        var filteredAccounts = FilterAccounts(accounts, normalizedSearch, normalizedGroupId);
+        var filteredAccounts = FilterAccounts(accounts, normalizedSearch, normalizedGroupId, normalizedProvider);
         var accountChips = FilterChipsBuilder.ForWorkerAccounts(
             worker.Id,
             normalizedSearch,
             normalizedGroupId,
+            normalizedProvider,
             groupOptions,
             tableSort.Column,
             tableSort.Dir);
+        var adsPowerCount = accounts.Count(a => !a.IsMultilogin);
+        var multiloginCount = accounts.Count(a => a.IsMultilogin);
 
         return new WorkerDetailsViewModel
         {
@@ -87,9 +90,15 @@ internal static class WorkerDetailsBuilder
             Events = events,
             PeriodStats = BuildPeriodStats(stats, responses, duplicates, errors),
             Accounts = filteredAccounts,
+            HighlightAccounts = accounts,
+            CatalogAccountCount = accounts.Count,
+            AdsPowerAccountCount = adsPowerCount,
+            MultiloginAccountCount = multiloginCount,
             AccountSearchQuery = normalizedSearch,
             AccountGroupId = normalizedGroupId,
+            AccountProvider = normalizedProvider,
             AccountGroupOptions = groupOptions,
+            AccountProviderOptions = WorkerAccountCatalogFilter.ProviderOptions,
             HasActiveAccountFilters = accountChips.Count > 0,
             ActiveAccountFilterChips = accountChips,
             Sort = tableSort,
@@ -144,7 +153,8 @@ internal static class WorkerDetailsBuilder
     private static IReadOnlyList<WorkerAccountRowViewModel> FilterAccounts(
         IReadOnlyList<WorkerAccountRowViewModel> accounts,
         string? searchQuery,
-        string? groupId)
+        string? groupId,
+        string? provider)
     {
         IEnumerable<WorkerAccountRowViewModel> query = accounts;
         if (!string.IsNullOrWhiteSpace(searchQuery))
@@ -155,12 +165,20 @@ internal static class WorkerDetailsBuilder
                     a.DisplayName,
                     a.AdsPowerProfileId,
                     a.AdsPowerGroupName,
-                    a.MultiloginProfileId));
+                    a.MultiloginProfileId,
+                    a.MultiloginFolderId,
+                    a.ProfileProvider));
+        }
+
+        if (!string.IsNullOrWhiteSpace(provider))
+        {
+            query = query.Where(a => WorkerAccountCatalogFilter.MatchesProvider(provider, a.MultiloginProfileId));
         }
 
         if (!string.IsNullOrWhiteSpace(groupId))
         {
-            query = query.Where(a => AdsPowerAccountGroupFilter.Matches(groupId, a.AdsPowerGroupId));
+            query = query.Where(a =>
+                WorkerAccountCatalogFilter.MatchesLocation(groupId, a.AdsPowerGroupId, a.MultiloginFolderId));
         }
 
         return query.ToList();
@@ -227,7 +245,8 @@ internal static class WorkerDetailsBuilder
             ErrorHint = errorHint,
             SubProfiles = subProfiles,
             SubProfilesSummary = SubProfileViewModelMapper.BuildSummary(subProfiles),
-            CanRefreshSubProfiles = !string.IsNullOrWhiteSpace(account.AdsPowerProfileId),
+            CanRefreshSubProfiles = !string.IsNullOrWhiteSpace(account.AdsPowerProfileId)
+                || !string.IsNullOrWhiteSpace(account.MultiloginProfileId),
             IsSubProfilesRefreshPending = SubProfileViewModelMapper.IsRefreshPending(
                 account.SubProfilesRefreshRequestedAtUtc,
                 account.SubProfilesRefreshedAtUtc),

@@ -9,7 +9,7 @@
     var installCommand = TempData["CreatedWorkerInstallCommand"] as string;
     var workersError = TempData["WorkersError"] as string;
     var workersSuccess = TempData["WorkersSuccess"] as string;
-    var workerAccountsSortRoute = new { id = Model.WorkerId, q = Model.AccountSearchQuery, groupId = Model.AccountGroupId, sort = Model.Sort.Column, dir = Model.Sort.Dir };
+    var workerAccountsSortRoute = new { id = Model.WorkerId, q = Model.AccountSearchQuery, groupId = Model.AccountGroupId, provider = Model.AccountProvider, sort = Model.Sort.Column, dir = Model.Sort.Dir };
     var snapshotUrl = Url.Action("DetailsSnapshot", "Workers", workerAccountsSortRoute)!;
     var scheduleDayLabels = new Dictionary<string, string>(StringComparer.Ordinal)
     {
@@ -410,7 +410,11 @@
                             </div>
                             <span class="worker-settings-subsection-title">Профили Avito</span>
                             <div class="worker-highlight-profiles" data-worker-highlight-profiles>
-                                @foreach (var account in Model.Accounts)
+                                @if (Model.HighlightAccounts.Count == 0)
+                                {
+                                    <p class="worker-settings-hint">Аккаунтов пока нет. Они появятся после синхронизации AdsPower или Multilogin.</p>
+                                }
+                                @foreach (var account in Model.HighlightAccounts)
                                 {
                                     var profileTarget = new ResponseHighlightTarget(account.Id).ToFormValue();
                                     var isProfileSelected = selectedHighlightTargets.Contains(profileTarget);
@@ -446,6 +450,7 @@
                                                        value="@profileTarget"
                                                        @(isProfileSelected ? "checked" : null) />
                                                 <span>@account.DisplayName</span>
+                                                <span class="worker-provider-chip worker-provider-chip--@account.ProfileProviderTone" title="@account.ProfileIdTitle">@account.ProfileProvider</span>
                                             </label>
                                             <span class="worker-highlight-profile__meta">
                                                 @if (hasSubProfiles)
@@ -852,8 +857,15 @@
     </div>
 
     <div class="card card--worker-accounts" id="worker-accounts">
-        <div class="card-header">
-            <h2>Аккаунты воркера</h2>
+        <div class="card-header worker-accounts-header">
+            <div class="worker-accounts-heading">
+                <h2>Аккаунты воркера</h2>
+                <p class="worker-accounts-summary" data-worker-accounts-summary>
+                    <span data-worker-accounts-total>@Model.CatalogAccountCount @(Model.CatalogAccountCount == 1 ? "аккаунт" : "аккаунтов")</span>
+                    <span class="worker-provider-chip worker-provider-chip--ads" data-worker-accounts-ads>@Model.AdsPowerAccountCount AdsPower</span>
+                    <span class="worker-provider-chip worker-provider-chip--mlx" data-worker-accounts-mlx>@Model.MultiloginAccountCount Multilogin</span>
+                </p>
+            </div>
         </div>
         @{
             var workerAccountsFormAction = Url.Action("Details", "Workers", new { id = Model.WorkerId });
@@ -885,7 +897,7 @@
                     IconClass = "fa-solid fa-users",
                     Title = Model.HasActiveAccountFilters ? "Аккаунты не найдены" : "Аккаунтов пока нет",
                     Description = Model.HasActiveAccountFilters
-                        ? "Измените поиск или группу AdsPower."
+                        ? "Измените поиск, источник или группу."
                         : "Дождитесь синхронизации профилей AdsPower или Multilogin с воркером.",
                     CtaLabel = Model.HasActiveAccountFilters ? "Сбросить фильтры" : null,
                     CtaUrl = Model.HasActiveAccountFilters
@@ -927,25 +939,23 @@
                             </label>
                         </td>
                         <td class="cell-name" data-label="Аккаунт">
-                            <a href="@accountSearchUrl">@account.DisplayName</a>
-                            @if (!string.IsNullOrWhiteSpace(account.AdsPowerGroupName) || !string.IsNullOrWhiteSpace(account.AdsPowerGroupId))
-                            {
-                                <span class="worker-account-sub" title="Группа AdsPower">@(account.AdsPowerGroupName ?? account.AdsPowerGroupId)</span>
-                            }
-                            @if (!string.IsNullOrWhiteSpace(account.AdsPowerProfileId))
-                            {
-                                <span class="worker-account-sub">AdsPower @account.AdsPowerProfileId</span>
-                            }
-                            @if (!string.IsNullOrWhiteSpace(account.MultiloginProfileId))
-                            {
-                                <span class="worker-account-sub" title="@(account.MultiloginFolderId)">Multilogin @account.MultiloginProfileId</span>
-                            }
-                            @if (account.HasAvitoCredentials)
-                            {
-                                <span class="worker-account-sub worker-account-sub--ok" title="@(account.AvitoLogin ?? "логин задан")">
-                                    <i class="fa-solid fa-key" aria-hidden="true"></i> логин Avito
-                                </span>
-                            }
+                            <div class="worker-account-identity">
+                                <a class="worker-account-name" href="@accountSearchUrl">@account.DisplayName</a>
+                                <div class="worker-account-meta">
+                                    <span class="worker-provider-chip worker-provider-chip--@account.ProfileProviderTone" title="@account.ProfileIdTitle">@account.ProfileProvider</span>
+                                    @if (!string.IsNullOrWhiteSpace(account.LocationLabel))
+                                    {
+                                        <span class="worker-account-location" title="@account.LocationTitle">@account.LocationLabel</span>
+                                    }
+                                    @if (account.HasAvitoCredentials)
+                                    {
+                                        <span class="worker-account-cred" title="@(account.AvitoLogin ?? "логин задан")">
+                                            <i class="fa-solid fa-key" aria-hidden="true"></i>
+                                            Avito
+                                        </span>
+                                    }
+                                </div>
+                            </div>
                             <partial name="_SubProfilesSection" model="@(new SubProfilesSectionViewModel
                             {
                                 WorkerId = Model.WorkerId,
