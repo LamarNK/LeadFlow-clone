@@ -11,6 +11,8 @@
     var workersSuccess = TempData["WorkersSuccess"] as string;
     var workerAccountsSortRoute = new { id = Model.WorkerId, q = Model.AccountSearchQuery, groupId = Model.AccountGroupId, provider = Model.AccountProvider, sort = Model.Sort.Column, dir = Model.Sort.Dir };
     var snapshotUrl = Url.Action("DetailsSnapshot", "Workers", workerAccountsSortRoute)!;
+    var adsPowerAccountsUrl = Url.Action("Details", "Workers", new { id = Model.WorkerId, q = Model.AccountSearchQuery, provider = "adspower", sort = Model.Sort.Column, dir = Model.Sort.Dir })!;
+    var multiloginAccountsUrl = Url.Action("Details", "Workers", new { id = Model.WorkerId, q = Model.AccountSearchQuery, provider = "multilogin", sort = Model.Sort.Column, dir = Model.Sort.Dir })!;
     var scheduleDayLabels = new Dictionary<string, string>(StringComparer.Ordinal)
     {
         ["Mon"] = "Понедельник",
@@ -862,33 +864,54 @@
                 <h2>Аккаунты воркера</h2>
                 <p class="worker-accounts-summary" data-worker-accounts-summary>
                     <span data-worker-accounts-total>@Model.CatalogAccountCount @(Model.CatalogAccountCount == 1 ? "аккаунт" : "аккаунтов")</span>
-                    <span class="worker-provider-chip worker-provider-chip--ads" data-worker-accounts-ads>@Model.AdsPowerAccountCount AdsPower</span>
-                    <span class="worker-provider-chip worker-provider-chip--mlx" data-worker-accounts-mlx>@Model.MultiloginAccountCount Multilogin</span>
                 </p>
             </div>
+            <nav class="worker-accounts-tabs" aria-label="Источник аккаунтов">
+                <a class="worker-accounts-tab@(Model.AccountProvider == "adspower" ? " is-active" : "")"
+                   href="@adsPowerAccountsUrl"
+                   aria-current="@(Model.AccountProvider == "adspower" ? "page" : null)">
+                    <span>AdsPower</span>
+                    <span class="worker-accounts-tab-count" data-worker-accounts-ads>@Model.AdsPowerAccountCount</span>
+                </a>
+                <a class="worker-accounts-tab@(Model.AccountProvider == "multilogin" ? " is-active" : "")"
+                   href="@multiloginAccountsUrl"
+                   aria-current="@(Model.AccountProvider == "multilogin" ? "page" : null)">
+                    <span>Multilogin</span>
+                    <span class="worker-accounts-tab-count" data-worker-accounts-mlx>@Model.MultiloginAccountCount</span>
+                </a>
+            </nav>
         </div>
-        @{
-            var workerAccountsFormAction = Url.Action("Details", "Workers", new { id = Model.WorkerId });
-            var workerAccountsFilterBar = new ListFiltersBarViewModel
-            {
-                FormAction = workerAccountsFormAction!,
-                FormClass = "orbita-filters-form worker-accounts-filters",
-                SearchName = "q",
-                SearchPlaceholder = "Поиск по аккаунтам...",
-                SearchValue = Model.AccountSearchQuery,
-                FilterPanelId = "workerAccountsFilterPanel",
-                FilterToggleClass = "orbita-filters-toggle worker-accounts-filter-btn",
-                HasActiveFilters = Model.HasActiveAccountFilters,
-                ActiveFilterCount = Model.ActiveAccountFilterCount,
-                ActiveFilterChips = Model.ActiveAccountFilterChips,
-                ResetUrl = Url.Action("Details", "Workers", new { id = Model.WorkerId, sort = Model.Sort.Column, dir = Model.Sort.Dir })!,
-                FilterFieldsPartialName = "_WorkerAccountsFilterFields",
-                FilterFieldsModel = Model,
-                ExtraFormContent = $"<input type=\"hidden\" name=\"sort\" value=\"{Model.Sort.Column}\" /><input type=\"hidden\" name=\"dir\" value=\"{Model.Sort.Dir}\" />"
-            };
-        }
         <div class="worker-accounts-toolbar">
-            <partial name="_ListFiltersBar" model="workerAccountsFilterBar" />
+            <form class="worker-accounts-controls" method="get" action="@Url.Action("Details", "Workers", new { id = Model.WorkerId })">
+                <input type="hidden" name="provider" value="@Model.AccountProvider" />
+                <input type="hidden" name="sort" value="@Model.Sort.Column" />
+                <input type="hidden" name="dir" value="@Model.Sort.Dir" />
+                <div class="worker-accounts-search">
+                    <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+                    <input type="search" name="q" value="@Model.AccountSearchQuery" placeholder="Поиск по аккаунтам" aria-label="Поиск по аккаунтам" />
+                </div>
+                <label class="worker-accounts-group-select">
+                    <span>@(Model.AccountProvider == "multilogin" ? "Папка" : "Группа")</span>
+                    <select name="groupId" data-worker-accounts-group-select aria-label="@(Model.AccountProvider == "multilogin" ? "Папка Multilogin" : "Группа AdsPower")">
+                        @foreach (var opt in Model.AccountGroupOptions)
+                        {
+                            var label = string.IsNullOrWhiteSpace(opt.Value)
+                                ? Model.AccountProvider == "multilogin" ? "Все папки" : "Все группы"
+                                : opt.Label.Replace("AdsPower · ", string.Empty).Replace("Multilogin · ", string.Empty);
+                            <option value="@opt.Value" selected="@(opt.Value == (Model.AccountGroupId ?? ""))">@label</option>
+                        }
+                    </select>
+                </label>
+                <button class="worker-accounts-search-submit" type="submit">Найти</button>
+                <a class="worker-accounts-reset" href="@Url.Action("Details", "Workers", new { id = Model.WorkerId, provider = Model.AccountProvider, sort = Model.Sort.Column, dir = Model.Sort.Dir })">
+                    <i class="fa-solid fa-rotate-right" aria-hidden="true"></i>
+                    <span>Сбросить</span>
+                </a>
+                @if (Model.ActiveAccountFilterChips.Count > 0)
+                {
+                    <partial name="_FilterChips" model="Model.ActiveAccountFilterChips" />
+                }
+            </form>
         </div>
         <div class="card-body card-body-table worker-accounts-wrap">
             <div data-worker-accounts-empty @(Model.Accounts.Count == 0 ? null : "hidden")>
@@ -897,11 +920,11 @@
                     IconClass = "fa-solid fa-users",
                     Title = Model.HasActiveAccountFilters ? "Аккаунты не найдены" : "Аккаунтов пока нет",
                     Description = Model.HasActiveAccountFilters
-                        ? "Измените поиск, источник или группу."
+                        ? "Измените поисковый запрос."
                         : "Дождитесь синхронизации профилей AdsPower или Multilogin с воркером.",
                     CtaLabel = Model.HasActiveAccountFilters ? "Сбросить фильтры" : null,
                     CtaUrl = Model.HasActiveAccountFilters
-                        ? Url.Action("Details", "Workers", new { id = Model.WorkerId, sort = Model.Sort.Column, dir = Model.Sort.Dir })
+                        ? Url.Action("Details", "Workers", new { id = Model.WorkerId, provider = Model.AccountProvider, sort = Model.Sort.Column, dir = Model.Sort.Dir })
                         : null
                 })" />
             </div>
@@ -942,7 +965,6 @@
                             <div class="worker-account-identity">
                                 <a class="worker-account-name" href="@accountSearchUrl">@account.DisplayName</a>
                                 <div class="worker-account-meta">
-                                    <span class="worker-provider-chip worker-provider-chip--@account.ProfileProviderTone" title="@account.ProfileIdTitle">@account.ProfileProvider</span>
                                     @if (!string.IsNullOrWhiteSpace(account.LocationLabel))
                                     {
                                         <span class="worker-account-location" title="@account.LocationTitle">@account.LocationLabel</span>

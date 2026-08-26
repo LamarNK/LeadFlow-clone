@@ -522,19 +522,6 @@ internal static class FilterChipsBuilder
             });
         }
 
-        if (normalizedProvider is not null)
-        {
-            chips.Add(new ActiveFilterChipViewModel
-            {
-                Label = $"Источник: {WorkerAccountCatalogFilter.ProviderLabel(normalizedProvider)}",
-                RemoveUrl = BuildUrl(path,
-                    ("q", searchQuery),
-                    ("groupId", normalizedGroupId),
-                    ("sort", sort),
-                    ("dir", sortDir))
-            });
-        }
-
         if (normalizedGroupId is not null)
         {
             chips.Add(new ActiveFilterChipViewModel

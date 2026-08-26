@@ -570,11 +570,6 @@
 
     function renderWorkerAccountIdentity(account) {
         var isMlx = !!(account.isMultilogin || account.multiloginProfileId);
-        var chipClass = 'worker-provider-chip worker-provider-chip--' + (isMlx ? 'mlx' : 'ads');
-        var chipLabel = isMlx ? 'Multilogin' : 'AdsPower';
-        var chipTitle = account.profileIdTitle || (isMlx
-            ? (account.multiloginProfileId ? 'Профиль Multilogin: ' + account.multiloginProfileId : 'Multilogin')
-            : (account.adsPowerProfileId ? 'Профиль AdsPower: ' + account.adsPowerProfileId : 'AdsPower'));
         var location = account.locationLabel || '';
         if (!location) {
             location = isMlx
@@ -589,8 +584,7 @@
         var html = '<div class="worker-account-identity">' +
             '<a class="worker-account-name" href="' + shared.escapeHtml(accountSearchUrl(account.displayName)) + '">' +
             shared.escapeHtml(account.displayName) + '</a>' +
-            '<div class="worker-account-meta">' +
-            '<span class="' + chipClass + '" title="' + shared.escapeHtml(chipTitle) + '">' + shared.escapeHtml(chipLabel) + '</span>';
+            '<div class="worker-account-meta">';
         if (location) {
             html += '<span class="worker-account-location" title="' + shared.escapeHtml(locationTitle) + '">' +
                 shared.escapeHtml(location) + '</span>';
@@ -602,6 +596,15 @@
         }
         html += '</div></div>';
         return html;
+    }
+
+    function initWorkerAccountsControls() {
+        var select = document.querySelector('[data-worker-accounts-group-select]');
+        if (!select || select.hasAttribute('data-worker-accounts-group-bound')) return;
+        select.setAttribute('data-worker-accounts-group-bound', '1');
+        select.addEventListener('change', function () {
+            if (select.form) select.form.requestSubmit();
+        });
     }
 
     function accountNoun(count) {
@@ -687,18 +690,22 @@
     }
 
     function updateAccountGroupFilterOptions(options) {
-        var select = document.querySelector('.worker-accounts-filters select[name="groupId"]');
+        var select = document.querySelector('.worker-accounts-controls select[name="groupId"]');
         if (!select || !shared) return;
 
         var current = select.value || '';
+        var provider = document.querySelector('.worker-accounts-controls input[name="provider"]');
+        var isMultilogin = provider && provider.value === 'multilogin';
         var html = '';
         (options || []).forEach(function (opt) {
             var value = opt.value || '';
-            var label = opt.label || value || 'Все группы и папки';
+            var label = opt.label || value || (isMultilogin ? 'Все папки' : 'Все группы');
+            if (!value) label = isMultilogin ? 'Все папки' : 'Все группы';
+            label = label.replace(isMultilogin ? 'Multilogin · ' : 'AdsPower · ', '');
             html += '<option value="' + shared.escapeHtml(value) + '">' + shared.escapeHtml(label) + '</option>';
         });
         if (!html) {
-            html = '<option value="">Все группы и папки</option>';
+            html = '<option value="">' + (isMultilogin ? 'Все папки' : 'Все группы') + '</option>';
         }
         if (current && !(options || []).some(function (o) { return (o.value || '') === current; })) {
             html += '<option value="' + shared.escapeHtml(current) + '">' + shared.escapeHtml(current) + '</option>';
@@ -907,6 +914,7 @@
                 initActivityChart();
                 initParallelismSlider();
                 initWorkerSettings();
+                initWorkerAccountsControls();
                 initCopyButtons();
             });
             return;
@@ -922,6 +930,7 @@
         initActivityChart();
         initParallelismSlider();
         initWorkerSettings();
+        initWorkerAccountsControls();
         initCopyButtons();
     }
 

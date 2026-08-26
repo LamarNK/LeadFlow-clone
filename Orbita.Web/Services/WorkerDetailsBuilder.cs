@@ -52,12 +52,13 @@ internal static class WorkerDetailsBuilder
             ? DashboardChartsBuilder.FromHourlyActivity(stats.HourlyActivity)
             : DashboardChartsBuilder.FromHourlyActivity([]);
 
-        var groupOptions = WorkerAccountCatalogFilter.BuildLocationOptions(accounts, worker.AdsPowerGroups);
         var normalizedSearch = string.IsNullOrWhiteSpace(accountSearchQuery) ? null : accountSearchQuery.Trim();
         var normalizedGroupId = WorkerAccountCatalogFilter.NormalizeLocation(accountGroupId);
         var normalizedProvider = WorkerAccountCatalogFilter.NormalizeProvider(accountProvider);
         var tableSort = sort ?? TableSortState.Create("account", descending: false);
         var filteredAccounts = FilterAccounts(accounts, normalizedSearch, normalizedGroupId, normalizedProvider);
+        var providerAccounts = accounts.Where(a => WorkerAccountCatalogFilter.MatchesProvider(normalizedProvider, a.MultiloginProfileId));
+        var groupOptions = WorkerAccountCatalogFilter.BuildLocationOptions(providerAccounts, worker.AdsPowerGroups);
         var accountChips = FilterChipsBuilder.ForWorkerAccounts(
             worker.Id,
             normalizedSearch,

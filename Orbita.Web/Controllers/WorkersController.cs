@@ -34,6 +34,9 @@ public sealed class WorkersController(IWorkersService workers) : Controller
         string? provider = null,
         CancellationToken ct = default)
     {
+        provider = string.IsNullOrWhiteSpace(provider)
+            ? WorkerAccountCatalogFilter.AdsPowerProvider
+            : provider;
         var model = await workers.GetDetailsAsync(
             id,
             sort: sort,
@@ -128,6 +131,9 @@ public sealed class WorkersController(IWorkersService workers) : Controller
         string? provider = null,
         CancellationToken ct = default)
     {
+        provider = string.IsNullOrWhiteSpace(provider)
+            ? WorkerAccountCatalogFilter.AdsPowerProvider
+            : provider;
         var model = await workers.GetDetailsAsync(
             id,
             sort: sort,

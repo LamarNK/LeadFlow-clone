@@ -112,7 +112,7 @@ public sealed class WorkerDetailsAccountsTests
         Assert.Equal(MlxId, mlxOnly.Accounts[0].Id);
         Assert.Equal(2, mlxOnly.HighlightAccounts.Count);
         Assert.Equal("multilogin", mlxOnly.AccountProvider);
-        Assert.Contains(mlxOnly.ActiveAccountFilterChips, c => c.Label.Contains("Multilogin", StringComparison.Ordinal));
+        Assert.DoesNotContain(mlxOnly.ActiveAccountFilterChips, c => c.Label.StartsWith("Источник:", StringComparison.Ordinal));
 
         var folder = WorkerDetailsBuilder.Build(worker, accounts, [], accountGroupId: "mlx:folder-pro");
         Assert.Single(folder.Accounts);
