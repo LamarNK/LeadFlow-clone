@@ -160,7 +160,8 @@ internal static class AccountsIndexBuilder
             ErrorHint = errorHint,
             SubProfiles = subProfiles,
             SubProfilesSummary = SubProfileViewModelMapper.BuildSummary(subProfiles),
-            CanRefreshSubProfiles = !string.IsNullOrWhiteSpace(account.AdsPowerProfileId),
+            CanRefreshSubProfiles = !string.IsNullOrWhiteSpace(account.AdsPowerProfileId)
+                || !string.IsNullOrWhiteSpace(account.MultiloginProfileId),
             IsSubProfilesRefreshPending = SubProfileViewModelMapper.IsRefreshPending(
                 account.SubProfilesRefreshRequestedAtUtc,
                 account.SubProfilesRefreshedAtUtc),

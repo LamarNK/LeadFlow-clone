@@ -94,6 +94,7 @@ public sealed class WorkersService(
         string? sortDir = null,
         string? accountSearchQuery = null,
         string? accountGroupId = null,
+        string? accountProvider = null,
         CancellationToken ct = default)
     {
         var tableSort = TableSort.Parse(sort, sortDir, TableSort.WorkerAccounts.Default, TableSort.WorkerAccounts.Columns);
@@ -105,7 +106,8 @@ public sealed class WorkersService(
                 sort,
                 sortDir,
                 accountSearchQuery,
-                accountGroupId);
+                accountGroupId,
+                accountProvider);
         }
 
         var workerTask = api.GetWorkerAsync(id, ct);
@@ -150,7 +152,8 @@ public sealed class WorkersService(
             },
             sort: tableSort,
             accountSearchQuery: accountSearchQuery,
-            accountGroupId: accountGroupId);
+            accountGroupId: accountGroupId,
+            accountProvider: accountProvider);
     }
 
     public async Task<(CreateWorkerResultViewModel? Result, string? Error)> CreateWorkerAsync(

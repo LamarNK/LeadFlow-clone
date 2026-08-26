@@ -2223,7 +2223,8 @@ internal static class DesignPreviewData
         string? sort = null,
         string? sortDir = null,
         string? accountSearchQuery = null,
-        string? accountGroupId = null)
+        string? accountGroupId = null,
+        string? accountProvider = null)
     {
         var worker = GetWorker(id);
         if (worker is null) return null;
@@ -2238,7 +2239,8 @@ internal static class DesignPreviewData
             summary,
             sort: tableSort,
             accountSearchQuery: accountSearchQuery,
-            accountGroupId: accountGroupId);
+            accountGroupId: accountGroupId,
+            accountProvider: accountProvider);
     }
 
     private static IReadOnlyList<WorkerBalanceDto> BuildWorkerBalances(Guid workerId) =>
@@ -2396,9 +2398,16 @@ internal static class DesignPreviewData
         int todayErrors = 0,
         bool isEnabledInPanel = true,
         DateTime? subProfilesRefreshedAtUtc = null,
-        DateTime? subProfilesRefreshRequestedAtUtc = null)
+        DateTime? subProfilesRefreshRequestedAtUtc = null,
+        string? adsPowerGroupId = null,
+        string? adsPowerGroupName = null,
+        string? multiloginProfileId = null,
+        string? multiloginFolderId = null)
     {
         var subProfiles = BuildDemoSubProfiles(accountId, seed, tone);
+        var adsPowerProfileId = string.IsNullOrWhiteSpace(multiloginProfileId)
+            ? DemoAdsPowerProfileId(seed)
+            : string.Empty;
         return new WorkerAccountDto(
             accountId,
             displayName,
@@ -2410,13 +2419,19 @@ internal static class DesignPreviewData
             lastError,
             lastMonitoringAt,
             isEnabledInPanel,
-            DemoAdsPowerProfileId(seed),
+            adsPowerProfileId,
             subProfiles.Count > 0 ? subProfiles : null,
             subProfilesRefreshedAtUtc ?? (subProfiles.Count > 0 ? Now.AddHours(-2) : null),
             subProfilesRefreshRequestedAtUtc,
             todayResponses,
             todayDuplicates,
-            todayErrors);
+            todayErrors,
+            HasAvitoCredentials: seed % 3 != 0,
+            AvitoLogin: seed % 3 != 0 ? $"{displayName}@avito" : null,
+            AdsPowerGroupId: adsPowerGroupId,
+            AdsPowerGroupName: adsPowerGroupName,
+            MultiloginProfileId: multiloginProfileId,
+            MultiloginFolderId: multiloginFolderId);
     }
 
     public static IReadOnlyList<WorkerAccountDto> GetAccounts(Guid workerId)
@@ -2425,16 +2440,16 @@ internal static class DesignPreviewData
         {
             return
             [
-                BuildDemoWorkerAccount(AccountAlphaId, "user_01", "Active", true, 12, 0, 1, null, Now.AddMinutes(-3), 1, "active", 58, 5, 0),
-                BuildDemoWorkerAccount(AccountBetaId, "user_02", "Active", true, 8, 1, 0, null, Now.AddMinutes(-4), 2, "active", 51, 4, 0),
-                BuildDemoWorkerAccount(Guid.Parse("22222222-2222-2222-2222-222222222209"), "user_03", "RequiresLogin", true, 0, 0, 0, "Требуется повторный вход", Now.AddHours(-2), 3, "active", 0, 0, 0),
-                BuildDemoWorkerAccount(Guid.Parse("22222222-2222-2222-2222-222222222210"), "user_04", "Active", true, 10, 0, 0, null, Now.AddMinutes(-8), 4, "active", 47, 3, 0),
-                BuildDemoWorkerAccount(Guid.Parse("22222222-2222-2222-2222-222222222211"), "user_05", "Active", true, 9, 0, 0, null, Now.AddMinutes(-10), 5, "active", 44, 2, 0),
-                BuildDemoWorkerAccount(Guid.Parse("22222222-2222-2222-2222-222222222212"), "user_06", "Active", true, 7, 0, 0, null, Now.AddMinutes(-12), 6, "active", 39, 2, 0, subProfilesRefreshRequestedAtUtc: Now.AddMinutes(-3)),
-                BuildDemoWorkerAccount(Guid.Parse("22222222-2222-2222-2222-222222222213"), "user_07", "Active", true, 11, 0, 0, null, Now.AddMinutes(-14), 7, "active", 36, 1, 0),
-                BuildDemoWorkerAccount(Guid.Parse("22222222-2222-2222-2222-222222222214"), "user_08", "Error", true, 3, 1, 0, "Ошибка отправки в CRM", Now.AddMinutes(-16), 8, "active", 33, 1, 1),
-                BuildDemoWorkerAccount(Guid.Parse("22222222-2222-2222-2222-222222222215"), "user_09", "Active", true, 6, 0, 0, null, Now.AddMinutes(-18), 9, "active", 41, 2, 0),
-                BuildDemoWorkerAccount(Guid.Parse("22222222-2222-2222-2222-222222222216"), "user_10", "Active", true, 5, 0, 0, null, Now.AddMinutes(-20), 10, "active", 38, 1, 0)
+                BuildDemoWorkerAccount(AccountAlphaId, "user_01", "Active", true, 12, 0, 1, null, Now.AddMinutes(-3), 1, "active", 58, 5, 0, adsPowerGroupId: "1001", adsPowerGroupName: "Москва"),
+                BuildDemoWorkerAccount(AccountBetaId, "user_02", "Active", true, 8, 1, 0, null, Now.AddMinutes(-4), 2, "active", 51, 4, 0, adsPowerGroupId: "1001", adsPowerGroupName: "Москва"),
+                BuildDemoWorkerAccount(Guid.Parse("22222222-2222-2222-2222-222222222209"), "user_03", "RequiresLogin", true, 0, 0, 0, "Требуется повторный вход", Now.AddHours(-2), 3, "active", 0, 0, 0, adsPowerGroupId: "1001", adsPowerGroupName: "Москва"),
+                BuildDemoWorkerAccount(Guid.Parse("22222222-2222-2222-2222-222222222210"), "user_04", "Active", true, 10, 0, 0, null, Now.AddMinutes(-8), 4, "active", 47, 3, 0, adsPowerGroupId: "1001", adsPowerGroupName: "Москва"),
+                BuildDemoWorkerAccount(Guid.Parse("22222222-2222-2222-2222-222222222211"), "user_05", "Active", true, 9, 0, 0, null, Now.AddMinutes(-10), 5, "active", 44, 2, 0, adsPowerGroupId: "1002", adsPowerGroupName: "Смена"),
+                BuildDemoWorkerAccount(Guid.Parse("22222222-2222-2222-2222-222222222212"), "user_06", "Active", true, 7, 0, 0, null, Now.AddMinutes(-12), 6, "active", 39, 2, 0, subProfilesRefreshRequestedAtUtc: Now.AddMinutes(-3), adsPowerGroupId: "1002", adsPowerGroupName: "Смена"),
+                BuildDemoWorkerAccount(Guid.Parse("22222222-2222-2222-2222-222222222213"), "user_07", "Active", true, 11, 0, 0, null, Now.AddMinutes(-14), 7, "active", 36, 1, 0, adsPowerGroupId: "1002", adsPowerGroupName: "Смена"),
+                BuildDemoWorkerAccount(Guid.Parse("22222222-2222-2222-2222-222222222214"), "mlx_pro_01", "Error", true, 3, 1, 0, "Ошибка отправки в CRM", Now.AddMinutes(-16), 8, "active", 33, 1, 1, multiloginProfileId: "11111111-aaaa-4bbb-8ccc-000000000008", multiloginFolderId: "folder-pro"),
+                BuildDemoWorkerAccount(Guid.Parse("22222222-2222-2222-2222-222222222215"), "mlx_pro_02", "Active", true, 6, 0, 0, null, Now.AddMinutes(-18), 9, "active", 41, 2, 0, multiloginProfileId: "11111111-aaaa-4bbb-8ccc-000000000009", multiloginFolderId: "folder-pro"),
+                BuildDemoWorkerAccount(Guid.Parse("22222222-2222-2222-2222-222222222216"), "mlx_b2b_01", "Active", true, 5, 0, 0, null, Now.AddMinutes(-20), 10, "active", 38, 1, 0, multiloginProfileId: "11111111-aaaa-4bbb-8ccc-000000000010", multiloginFolderId: "folder-b2b")
             ];
         }
 
@@ -2442,9 +2457,9 @@ internal static class DesignPreviewData
         {
             return
             [
-                BuildDemoWorkerAccount(AccountGammaId, "avito_gamma", "Active", true, 15, 2, 1, null, Now.AddMinutes(-6), 11, "active", 22, 3, 0),
-                BuildDemoWorkerAccount(Guid.Parse("22222222-2222-2222-2222-222222222205"), "avito_epsilon", "Error", true, 3, 1, 0, "Ошибка отправки в CRM", Now.AddMinutes(-12), 12, "active", 8, 1, 1),
-                BuildDemoWorkerAccount(Guid.Parse("22222222-2222-2222-2222-222222222206"), "avito_zeta", "Paused", false, 0, 0, 0, null, Now.AddDays(-1), 13, "inactive", 0, 0, 0, isEnabledInPanel: false)
+                BuildDemoWorkerAccount(AccountGammaId, "avito_gamma", "Active", true, 15, 2, 1, null, Now.AddMinutes(-6), 11, "active", 22, 3, 0, adsPowerGroupId: "2001", adsPowerGroupName: "Питер"),
+                BuildDemoWorkerAccount(Guid.Parse("22222222-2222-2222-2222-222222222205"), "mlx_spb_01", "Error", true, 3, 1, 0, "Ошибка отправки в CRM", Now.AddMinutes(-12), 12, "active", 8, 1, 1, multiloginProfileId: "22222222-bbbb-4ccc-8ddd-000000000012", multiloginFolderId: "folder-spb"),
+                BuildDemoWorkerAccount(Guid.Parse("22222222-2222-2222-2222-222222222206"), "avito_zeta", "Paused", false, 0, 0, 0, null, Now.AddDays(-1), 13, "inactive", 0, 0, 0, isEnabledInPanel: false, adsPowerGroupId: "2001", adsPowerGroupName: "Питер")
             ];
         }
 

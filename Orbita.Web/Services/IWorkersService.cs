@@ -19,6 +19,7 @@ public interface IWorkersService
         string? sortDir = null,
         string? accountSearchQuery = null,
         string? accountGroupId = null,
+        string? accountProvider = null,
         CancellationToken ct = default);
     Task<(CreateWorkerResultViewModel? Result, string? Error)> CreateWorkerAsync(
         string displayName,
