@@ -40,6 +40,9 @@ public sealed class WorkerDetailsLiveSnapshotViewModel
     public IReadOnlyList<WorkerActivityViewModel> ActiveAccountActivities { get; init; } = [];
     public IReadOnlyList<AdsPowerGroupDto> AdsPowerGroups { get; init; } = [];
     public IReadOnlyList<EventFilterOptionViewModel> AccountGroupOptions { get; init; } = [];
+    public int CatalogAccountCount { get; init; }
+    public int AdsPowerAccountCount { get; init; }
+    public int MultiloginAccountCount { get; init; }
 }
 
 public sealed class EventsLiveSnapshotViewModel

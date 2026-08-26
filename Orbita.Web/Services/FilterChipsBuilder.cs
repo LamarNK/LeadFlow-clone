@@ -499,13 +499,15 @@ internal static class FilterChipsBuilder
         Guid workerId,
         string? searchQuery,
         string? groupId,
+        string? provider,
         IReadOnlyList<EventFilterOptionViewModel> groups,
         string? sort,
         string? sortDir)
     {
         var path = $"/Workers/Details/{workerId}";
         var chips = new List<ActiveFilterChipViewModel>();
-        var normalizedGroupId = AdsPowerAccountGroupFilter.Normalize(groupId);
+        var normalizedGroupId = WorkerAccountCatalogFilter.NormalizeLocation(groupId);
+        var normalizedProvider = WorkerAccountCatalogFilter.NormalizeProvider(provider);
 
         if (!string.IsNullOrWhiteSpace(searchQuery))
         {
@@ -513,6 +515,20 @@ internal static class FilterChipsBuilder
             {
                 Label = $"Поиск: {searchQuery}",
                 RemoveUrl = BuildUrl(path,
+                    ("groupId", normalizedGroupId),
+                    ("provider", normalizedProvider),
+                    ("sort", sort),
+                    ("dir", sortDir))
+            });
+        }
+
+        if (normalizedProvider is not null)
+        {
+            chips.Add(new ActiveFilterChipViewModel
+            {
+                Label = $"Источник: {WorkerAccountCatalogFilter.ProviderLabel(normalizedProvider)}",
+                RemoveUrl = BuildUrl(path,
+                    ("q", searchQuery),
                     ("groupId", normalizedGroupId),
                     ("sort", sort),
                     ("dir", sortDir))
@@ -523,9 +539,10 @@ internal static class FilterChipsBuilder
         {
             chips.Add(new ActiveFilterChipViewModel
             {
-                Label = $"Группа: {OptionLabel(groups, normalizedGroupId) ?? normalizedGroupId}",
+                Label = OptionLabel(groups, normalizedGroupId) ?? $"Группа: {normalizedGroupId}",
                 RemoveUrl = BuildUrl(path,
                     ("q", searchQuery),
+                    ("provider", normalizedProvider),
                     ("sort", sort),
                     ("dir", sortDir))
             });

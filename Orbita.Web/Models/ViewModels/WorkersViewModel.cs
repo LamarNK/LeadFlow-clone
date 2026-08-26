@@ -206,9 +206,15 @@ public sealed class WorkerDetailsViewModel
     public IReadOnlyList<DashboardEventRowViewModel> Events { get; init; } = [];
     public IReadOnlyList<WorkerPeriodStatViewModel> PeriodStats { get; init; } = [];
     public IReadOnlyList<WorkerAccountRowViewModel> Accounts { get; init; } = [];
+    public IReadOnlyList<WorkerAccountRowViewModel> HighlightAccounts { get; init; } = [];
+    public int CatalogAccountCount { get; init; }
+    public int AdsPowerAccountCount { get; init; }
+    public int MultiloginAccountCount { get; init; }
     public string? AccountSearchQuery { get; init; }
     public string? AccountGroupId { get; init; }
+    public string? AccountProvider { get; init; }
     public IReadOnlyList<EventFilterOptionViewModel> AccountGroupOptions { get; init; } = [];
+    public IReadOnlyList<EventFilterOptionViewModel> AccountProviderOptions { get; init; } = [];
     public bool HasActiveAccountFilters { get; init; }
     public IReadOnlyList<ActiveFilterChipViewModel> ActiveAccountFilterChips { get; init; } = [];
     public int ActiveAccountFilterCount => ActiveAccountFilterChips.Count;
@@ -255,6 +261,50 @@ public sealed class WorkerAccountRowViewModel
     public string? AdsPowerGroupName { get; init; }
     public string? MultiloginProfileId { get; init; }
     public string? MultiloginFolderId { get; init; }
+    public bool IsMultilogin => !string.IsNullOrWhiteSpace(MultiloginProfileId);
+    public string ProfileProvider => IsMultilogin ? "Multilogin" : "AdsPower";
+    public string ProfileProviderTone => IsMultilogin ? "mlx" : "ads";
+    public string? LocationLabel
+    {
+        get
+        {
+            if (IsMultilogin)
+            {
+                if (string.IsNullOrWhiteSpace(MultiloginFolderId))
+                {
+                    return null;
+                }
+
+                var folderId = MultiloginFolderId.Trim();
+                return folderId.Length <= 12 ? folderId : folderId[..8] + "…";
+            }
+
+            return string.IsNullOrWhiteSpace(AdsPowerGroupName) ? AdsPowerGroupId : AdsPowerGroupName;
+        }
+    }
+    public string? LocationTitle
+    {
+        get
+        {
+            if (IsMultilogin)
+            {
+                return string.IsNullOrWhiteSpace(MultiloginFolderId)
+                    ? null
+                    : $"Папка Multilogin: {MultiloginFolderId}";
+            }
+
+            if (string.IsNullOrWhiteSpace(AdsPowerGroupName) && string.IsNullOrWhiteSpace(AdsPowerGroupId))
+            {
+                return null;
+            }
+
+            return $"Группа AdsPower: {AdsPowerGroupName ?? AdsPowerGroupId}";
+        }
+    }
+    public string? ProfileIdTitle =>
+        IsMultilogin
+            ? (string.IsNullOrWhiteSpace(MultiloginProfileId) ? "Multilogin" : $"Профиль Multilogin: {MultiloginProfileId}")
+            : (string.IsNullOrWhiteSpace(AdsPowerProfileId) ? "AdsPower" : $"Профиль AdsPower: {AdsPowerProfileId}");
     public bool HasAvitoCredentials { get; init; }
     public string? AvitoLogin { get; init; }
     public string StatusLabel { get; init; } = string.Empty;

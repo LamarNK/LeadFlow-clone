@@ -568,6 +568,71 @@
         return shared.rowMenuShell('', items);
     }
 
+    function renderWorkerAccountIdentity(account) {
+        var isMlx = !!(account.isMultilogin || account.multiloginProfileId);
+        var chipClass = 'worker-provider-chip worker-provider-chip--' + (isMlx ? 'mlx' : 'ads');
+        var chipLabel = isMlx ? 'Multilogin' : 'AdsPower';
+        var chipTitle = account.profileIdTitle || (isMlx
+            ? (account.multiloginProfileId ? 'Профиль Multilogin: ' + account.multiloginProfileId : 'Multilogin')
+            : (account.adsPowerProfileId ? 'Профиль AdsPower: ' + account.adsPowerProfileId : 'AdsPower'));
+        var location = account.locationLabel || '';
+        if (!location) {
+            location = isMlx
+                ? (account.multiloginFolderId || '')
+                : (account.adsPowerGroupName || account.adsPowerGroupId || '');
+        }
+        var locationTitle = account.locationTitle || (isMlx
+            ? (account.multiloginFolderId ? 'Папка Multilogin: ' + account.multiloginFolderId : '')
+            : (account.adsPowerGroupName || account.adsPowerGroupId
+                ? 'Группа AdsPower: ' + (account.adsPowerGroupName || account.adsPowerGroupId)
+                : ''));
+        var html = '<div class="worker-account-identity">' +
+            '<a class="worker-account-name" href="' + shared.escapeHtml(accountSearchUrl(account.displayName)) + '">' +
+            shared.escapeHtml(account.displayName) + '</a>' +
+            '<div class="worker-account-meta">' +
+            '<span class="' + chipClass + '" title="' + shared.escapeHtml(chipTitle) + '">' + shared.escapeHtml(chipLabel) + '</span>';
+        if (location) {
+            html += '<span class="worker-account-location" title="' + shared.escapeHtml(locationTitle) + '">' +
+                shared.escapeHtml(location) + '</span>';
+        }
+        if (account.hasAvitoCredentials) {
+            html += '<span class="worker-account-cred" title="' +
+                shared.escapeHtml(account.avitoLogin || 'логин задан') +
+                '"><i class="fa-solid fa-key" aria-hidden="true"></i> Avito</span>';
+        }
+        html += '</div></div>';
+        return html;
+    }
+
+    function accountNoun(count) {
+        var n = Math.abs(count) % 100;
+        var n1 = n % 10;
+        if (n > 10 && n < 20) return 'аккаунтов';
+        if (n1 === 1) return 'аккаунт';
+        if (n1 >= 2 && n1 <= 4) return 'аккаунта';
+        return 'аккаунтов';
+    }
+
+    function updateAccountCatalogSummary(snapshot) {
+        var totalEl = document.querySelector('[data-worker-accounts-total]');
+        var adsEl = document.querySelector('[data-worker-accounts-ads]');
+        var mlxEl = document.querySelector('[data-worker-accounts-mlx]');
+        if (!snapshot) return;
+        var total = snapshot.catalogAccountCount;
+        if (typeof total !== 'number') {
+            total = (snapshot.adsPowerAccountCount || 0) + (snapshot.multiloginAccountCount || 0);
+        }
+        if (totalEl && typeof total === 'number') {
+            totalEl.textContent = total + ' ' + accountNoun(total);
+        }
+        if (adsEl && typeof snapshot.adsPowerAccountCount === 'number') {
+            adsEl.textContent = snapshot.adsPowerAccountCount + ' AdsPower';
+        }
+        if (mlxEl && typeof snapshot.multiloginAccountCount === 'number') {
+            mlxEl.textContent = snapshot.multiloginAccountCount + ' Multilogin';
+        }
+    }
+
     function insertWorkerSubProfileRowsAfter(accountRow, account, panelId, wasExpanded) {
         if (!account.hasSubProfiles || !shared.accountSubProfilesRenderable(account)) {
             shared.removeSubProfileTableRows(panelId);
@@ -629,11 +694,11 @@
         var html = '';
         (options || []).forEach(function (opt) {
             var value = opt.value || '';
-            var label = opt.label || value || 'Все группы';
+            var label = opt.label || value || 'Все группы и папки';
             html += '<option value="' + shared.escapeHtml(value) + '">' + shared.escapeHtml(label) + '</option>';
         });
         if (!html) {
-            html = '<option value="">Все группы</option>';
+            html = '<option value="">Все группы и папки</option>';
         }
         if (current && !(options || []).some(function (o) { return (o.value || '') === current; })) {
             html += '<option value="' + shared.escapeHtml(current) + '">' + shared.escapeHtml(current) + '</option>';
@@ -671,18 +736,7 @@
             var activityHtml = account.lastActivityUtc
                 ? '<time data-orbita-utc="' + shared.escapeHtml(account.lastActivityUtc) + '" data-orbita-format="activity"></time>'
                 : '—';
-            var adsPowerGroup = account.adsPowerGroupName || account.adsPowerGroupId
-                ? '<span class="worker-account-sub" title="Группа AdsPower">' +
-                    shared.escapeHtml(account.adsPowerGroupName || account.adsPowerGroupId) + '</span>'
-                : '';
-            var adsPower = account.adsPowerProfileId
-                ? '<span class="worker-account-sub">AdsPower ' + shared.escapeHtml(account.adsPowerProfileId) + '</span>'
-                : '';
-            var avitoCreds = account.hasAvitoCredentials
-                ? '<span class="worker-account-sub worker-account-sub--ok" title="' +
-                    shared.escapeHtml(account.avitoLogin || 'логин задан') +
-                    '"><i class="fa-solid fa-key" aria-hidden="true"></i> логин Avito</span>'
-                : '';
+            var identityHtml = renderWorkerAccountIdentity(account);
             var subProfiles = shared.renderSubProfilesToolbar(workerId, account, 'subprofiles');
             var checked = account.isEnabledInPanel ? ' checked' : '';
 
@@ -701,7 +755,7 @@
                 '<td class="cell-toggle" data-label="Вкл"><label class="worker-toggle" title="' + shared.escapeHtml(toggleTitle) + '">' +
                 '<input type="checkbox" data-account-enable-toggle data-worker-id="' + shared.escapeHtml(workerId) + '" data-account-id="' + shared.escapeHtml(account.id) + '"' + checked + ' />' +
                 '<span class="worker-toggle-slider"></span></label></td>' +
-                '<td class="cell-name" data-label="Аккаунт"><a href="' + shared.escapeHtml(accountSearchUrl(account.displayName)) + '">' + shared.escapeHtml(account.displayName) + '</a>' + adsPowerGroup + adsPower + avitoCreds + subProfiles + '</td>' +
+                '<td class="cell-name" data-label="Аккаунт">' + identityHtml + subProfiles + '</td>' +
                 '<td data-label="Статус">' + statusHtml + '</td>' +
                 '<td class="cell-num cell-balance" data-label="Баланс"><span class="account-balance-multiline">' + shared.escapeHtml(account.balanceText || '—') + '</span></td>' +
                 (function () {
@@ -819,6 +873,7 @@
 
         updateAdsPowerGroupOptions(snapshot.adsPowerGroups);
         updateAccountGroupFilterOptions(snapshot.accountGroupOptions);
+        updateAccountCatalogSummary(snapshot);
 
         if (activityChart && snapshot.activityChart && snapshot.activityChart.values) {
             var chartData = snapshot.activityChart;

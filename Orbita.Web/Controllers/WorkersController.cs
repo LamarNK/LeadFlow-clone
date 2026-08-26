@@ -31,6 +31,7 @@ public sealed class WorkersController(IWorkersService workers) : Controller
         string? dir = null,
         string? q = null,
         string? groupId = null,
+        string? provider = null,
         CancellationToken ct = default)
     {
         var model = await workers.GetDetailsAsync(
@@ -39,6 +40,7 @@ public sealed class WorkersController(IWorkersService workers) : Controller
             sortDir: dir,
             accountSearchQuery: q,
             accountGroupId: groupId,
+            accountProvider: provider,
             ct: ct);
 
         if (model is null)
@@ -65,7 +67,10 @@ public sealed class WorkersController(IWorkersService workers) : Controller
             CurrentActivity = model.CurrentActivity,
             ActiveAccountActivities = model.ActiveAccountActivities,
             AdsPowerGroups = model.AdsPowerGroups,
-            AccountGroupOptions = model.AccountGroupOptions
+            AccountGroupOptions = model.AccountGroupOptions,
+            AdsPowerAccountCount = model.AdsPowerAccountCount,
+            MultiloginAccountCount = model.MultiloginAccountCount,
+            CatalogAccountCount = model.CatalogAccountCount
         });
     }
 
@@ -120,6 +125,7 @@ public sealed class WorkersController(IWorkersService workers) : Controller
         string? dir = null,
         string? q = null,
         string? groupId = null,
+        string? provider = null,
         CancellationToken ct = default)
     {
         var model = await workers.GetDetailsAsync(
@@ -128,6 +134,7 @@ public sealed class WorkersController(IWorkersService workers) : Controller
             sortDir: dir,
             accountSearchQuery: q,
             accountGroupId: groupId,
+            accountProvider: provider,
             ct);
         return model is null ? NotFound() : View(model);
     }
