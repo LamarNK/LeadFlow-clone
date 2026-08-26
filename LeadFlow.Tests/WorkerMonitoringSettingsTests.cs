@@ -8,6 +8,46 @@ namespace LeadFlow.Tests;
 public sealed class WorkerMonitoringSettingsTests
 {
     [Fact]
+    public void SelectRunnableAccounts_IncludesAdsPowerAndMultilogin_AndSkipsDisabledOrLegacy()
+    {
+        var adsPower = new AvitoAccount
+        {
+            Id = Guid.NewGuid(),
+            IsEnabled = true,
+            ProfileProvider = AvitoProfileProvider.AdsPower,
+            AdsPowerProfileId = "ads-profile",
+            AdsPowerApiBaseUrl = "http://local.adspower.net:50325"
+        };
+        var multilogin = new AvitoAccount
+        {
+            Id = Guid.NewGuid(),
+            IsEnabled = true,
+            ProfileProvider = AvitoProfileProvider.Multilogin,
+            MultiloginProfileId = "mlx-profile",
+            MultiloginFolderId = "mlx-folder",
+            MultiloginLauncherUrl = "https://launcher.mlx.yt:45001",
+            MultiloginAutomationToken = "test-token"
+        };
+        var disabledMultilogin = new AvitoAccount
+        {
+            Id = Guid.NewGuid(),
+            IsEnabled = false,
+            ProfileProvider = AvitoProfileProvider.Multilogin,
+            MultiloginProfileId = "disabled-profile"
+        };
+        var legacy = new AvitoAccount
+        {
+            Id = Guid.NewGuid(),
+            IsEnabled = true,
+            ProfileProvider = AvitoProfileProvider.Local
+        };
+
+        var selected = SelectRunnableAccounts([adsPower, multilogin, disabledMultilogin, legacy]);
+
+        Assert.Equal([adsPower.Id, multilogin.Id], selected.Select(static account => account.Id));
+    }
+
+    [Fact]
     public void ToAppSettings_AutoReplyDisabledInOrbit_DisablesAutoReply()
     {
         var settings = MapSettings(new WorkerMonitoringConfig());
@@ -38,5 +78,14 @@ public sealed class WorkerMonitoringSettingsTests
             BindingFlags.NonPublic | BindingFlags.Static);
 
         return Assert.IsType<AppSettings>(mapper?.Invoke(null, [config]));
+    }
+
+    private static List<AvitoAccount> SelectRunnableAccounts(IEnumerable<AvitoAccount> accounts)
+    {
+        var selector = typeof(WorkerMonitoringService).GetMethod(
+            "SelectRunnableAccounts",
+            BindingFlags.NonPublic | BindingFlags.Static);
+
+        return Assert.IsType<List<AvitoAccount>>(selector?.Invoke(null, [accounts]));
     }
 }
