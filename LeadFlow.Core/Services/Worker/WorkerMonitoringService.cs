@@ -16,7 +16,7 @@ using PuppeteerSharp;
 namespace LeadFlow.Core.Services.Worker;
 
 /// <summary>
-/// Headless AdsPower-only monitoring loop extracted from <c>MonitoringService</c> (no WebView2/Browser/Bitrix).
+/// Headless AdsPower/Multilogin monitoring loop extracted from <c>MonitoringService</c> (no WebView2/Browser/Bitrix).
 /// New candidates are published via <see cref="INewCandidateSink"/>.
 /// </summary>
 public sealed class WorkerMonitoringService(
@@ -209,10 +209,7 @@ public sealed class WorkerMonitoringService(
                     configProvider.InvalidateConfigCache();
                     var config = await configProvider.GetConfigAsync(cancellationToken).ConfigureAwait(false);
                     var settings = ToAppSettings(config);
-                    var accounts = config.Accounts
-                        .Where(static a => a.IsEnabled)
-                        .Where(IsAdsPowerAccount)
-                        .ToList();
+                    var accounts = SelectRunnableAccounts(config.Accounts);
 
                     if (accounts.Count == 0)
                     {
@@ -652,9 +649,9 @@ public sealed class WorkerMonitoringService(
         AppSettings settings,
         CancellationToken cancellationToken)
     {
-        if (!IsAdsPowerAccount(account))
+        if (!HasSupportedRuntime(account))
         {
-            return new AccountCycleOutcome(0, false, false, "не AdsPower профиль");
+            return new AccountCycleOutcome(0, false, false, "неподдерживаемый runtime профиля");
         }
 
         var accountSw = Stopwatch.StartNew();
@@ -2087,6 +2084,16 @@ public sealed class WorkerMonitoringService(
 
     private static bool IsAdsPowerAccount(AvitoAccount account) =>
         WorkerAccountRuntime.IsAdsPower(account);
+
+    private static List<AvitoAccount> SelectRunnableAccounts(IEnumerable<AvitoAccount> accounts) =>
+        accounts
+            .Where(static account => account.IsEnabled)
+            .Where(HasSupportedRuntime)
+            .ToList();
+
+    private static bool HasSupportedRuntime(AvitoAccount account) =>
+        WorkerAccountRuntime.Resolve(account) is WorkerAccountRuntimeKind.AdsPower
+            or WorkerAccountRuntimeKind.Multilogin;
 
     private static bool ShouldRefreshSubProfiles(AvitoAccount account)
     {
