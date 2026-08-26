@@ -576,9 +576,8 @@
 .crm-phone-actions__menu a:hover i, .crm-phone-actions__menu button:hover i { color: currentColor; }
 
 .orbita-softphone[hidden] { display: none; }
-.orbita-softphone { position: fixed; z-index: 10050; inset: 0; display: grid; align-items: start; justify-items: end; padding: 76px 24px 24px; pointer-events: none; }
-.orbita-softphone__backdrop { position: absolute; inset: 0; background: rgba(15,23,42,.2); backdrop-filter: blur(2px); pointer-events: auto; }
-.orbita-softphone__panel { position: relative; display: grid; grid-template-columns: 44px minmax(190px, 1fr) auto; align-items: center; gap: 13px; width: min(520px, calc(100vw - 32px)); padding: 16px; border: 1px solid #d8e2f1; border-radius: 16px; background: #fff; box-shadow: 0 20px 55px rgba(15,23,42,.22); pointer-events: auto; }
+.orbita-softphone { position: fixed; z-index: 10050; top: 76px; right: 24px; width: min(520px, calc(100vw - 32px)); pointer-events: none; }
+.orbita-softphone__panel { position: relative; display: grid; grid-template-columns: 44px minmax(190px, 1fr) auto; align-items: center; gap: 13px; width: 100%; padding: 16px; border: 1px solid #d8e2f1; border-radius: 16px; background: #fff; box-shadow: 0 20px 55px rgba(15,23,42,.22); pointer-events: auto; }
 .orbita-softphone__icon { display: grid; place-items: center; width: 44px; height: 44px; border-radius: 50%; background: #e8f8ef; color: #159957; font-size: 17px; }
 .orbita-softphone__copy { min-width: 0; }
 .orbita-softphone__eyebrow { display: block; margin-bottom: 2px; color: #64748b; font-size: 10px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; }
@@ -590,10 +589,9 @@
 .orbita-softphone__answer[hidden] { display: none; }
 .orbita-softphone__hangup { background: #e5484d; }
 .orbita-softphone__hangup:disabled { opacity: .45; cursor: wait; }
-body.orbita-softphone-open { overflow: hidden; }
 
 @media (max-width: 640px) {
-    .orbita-softphone { align-items: end; padding: 16px; }
+    .orbita-softphone { top: auto; right: 12px; bottom: 12px; width: calc(100vw - 24px); }
     .orbita-softphone__panel { grid-template-columns: 40px 1fr; }
     .orbita-softphone__actions { grid-column: 1 / -1; width: 100%; }
     .orbita-softphone__answer, .orbita-softphone__hangup { flex: 1 1 0; }
@@ -931,7 +929,6 @@ body.orbita-softphone-open { overflow: hidden; }
 [data-theme="dark"] .crm-phone-actions__menu { border-color: var(--border); background: var(--bg-card); box-shadow: 0 12px 26px rgba(0,0,0,.35); }
 [data-theme="dark"] .crm-phone-actions__menu a, [data-theme="dark"] .crm-phone-actions__menu button { color: var(--text-secondary); }
 [data-theme="dark"] .crm-phone-actions__menu a:hover, [data-theme="dark"] .crm-phone-actions__menu button:hover { background: rgba(98,114,243,.16); color: #a5b4fc; }
-[data-theme="dark"] .orbita-softphone__backdrop { background: rgba(2,6,23,.48); }
 [data-theme="dark"] .orbita-softphone__panel { border-color: var(--border); background: var(--bg-card); box-shadow: 0 20px 55px rgba(0,0,0,.5); }
 [data-theme="dark"] .orbita-softphone__icon { background: rgba(22,163,74,.16); color: #72dda2; }
 [data-theme="dark"] .orbita-softphone__copy h2 { color: var(--text-primary); }

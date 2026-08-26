@@ -577,6 +577,7 @@ public sealed class CrmTelephonyServiceTests
             Assert.Contains("transport=transport-tcp", runtimeConfig, StringComparison.Ordinal);
             Assert.Contains("server_uri=sip:12345.voice.plusofon.ru:5060", runtimeConfig, StringComparison.Ordinal);
             Assert.Contains("username=210123456789", runtimeConfig, StringComparison.Ordinal);
+            Assert.Contains("fatal_retry_interval=60", runtimeConfig, StringComparison.Ordinal);
             Assert.Equal(
                 "74951332210\n12345.voice.plusofon.ru\n",
                 (await File.ReadAllTextAsync(Path.Combine(runtimePath, $"plusofon.{officeId:D}.callerid"))).Replace("\r\n", "\n"));

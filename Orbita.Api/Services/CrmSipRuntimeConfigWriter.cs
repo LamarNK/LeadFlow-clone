@@ -255,6 +255,7 @@ public sealed class CrmSipRuntimeConfigWriter(IOptions<CrmSipRuntimeOptions> con
             endpoint=plusofon-{{endpointKey}}
             retry_interval=60
             forbidden_retry_interval=300
+            fatal_retry_interval=60
             expiration=300
             auth_rejection_permanent=yes
             """);

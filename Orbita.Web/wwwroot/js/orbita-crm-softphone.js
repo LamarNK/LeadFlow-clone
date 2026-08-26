@@ -34,7 +34,6 @@
         }
         if (targetLabel) targetLabel.textContent = phone || 'Исходящий звонок';
         if (modal) modal.removeAttribute('hidden');
-        document.body.classList.add('orbita-softphone-open');
     }
 
     function closeCall(delay) {
@@ -42,7 +41,6 @@
         closeTimer = window.setTimeout(function () {
             closeTimer = null;
             if (modal) modal.setAttribute('hidden', '');
-            document.body.classList.remove('orbita-softphone-open');
             if (answerButton) answerButton.setAttribute('hidden', '');
             if (hangupButton) hangupButton.disabled = true;
             if (hangupLabel) hangupLabel.textContent = 'Завершить';

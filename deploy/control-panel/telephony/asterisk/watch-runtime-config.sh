@@ -124,20 +124,29 @@ is_runtime_config_valid() {
   return 0
 }
 
+is_pjsip_object_loaded() {
+  local object_type="$1"
+  local object_name="$2"
+  local output
+  output="$(/usr/sbin/asterisk -rx "pjsip show ${object_type} ${object_name}" 2>/dev/null || true)"
+
+  # Asterisk truncates long sorcery object names in the human-readable table.
+  # A successful detailed lookup still contains the parameter table (and, on
+  # some versions, an object count), so do not compare the rendered name.
+  grep -Eq '^[[:space:]]*ParameterName[[:space:]]*:|Objects found:[[:space:]]*[1-9][0-9]*' <<< "${output}"
+}
+
 is_endpoint_loaded() {
-  local endpoint="$1"
-  /usr/sbin/asterisk -rx "pjsip show endpoint ${endpoint}" 2>/dev/null \
-    | grep -Fq "Endpoint:  ${endpoint}"
+  is_pjsip_object_loaded "endpoint" "$1"
 }
 
 all_provider_auths_loaded() {
-  local auth_name output
+  local auth_name
   while IFS= read -r auth_name; do
     [[ "${auth_name}" =~ ^(beeline|plusofon)-[0-9a-f]{32}(-[a-z0-9_-]{1,16})?-auth$ ]] || continue
-    output="$(/usr/sbin/asterisk -rx "pjsip show auth ${auth_name}" 2>/dev/null || true)"
     # Do not print this command's output: some Asterisk versions expose
-    # credential metadata. The object name is enough to verify the reload.
-    if ! grep -Fq "${auth_name}/" <<< "${output}"; then
+    # credential metadata.
+    if ! is_pjsip_object_loaded "auth" "${auth_name}"; then
       return 1
     fi
   done < <(sed -nE 's/^\[([^]]+-auth)\]$/\1/p' "${asterisk_provider_config}")
@@ -339,6 +348,49 @@ expects_runtime_endpoint() {
   return 1
 }
 
+all_runtime_routes_ready() {
+  local file office_id extension provider outbound endpoint
+
+  while IFS= read -r -d '' file; do
+    office_id="$(office_from_file "${file}" 'routes.' '.conf')"
+    [[ -n "${office_id}" ]] || continue
+    while IFS='=' read -r extension provider; do
+      [[ "${extension}" =~ ^[0-9]{1,8}$ ]] || continue
+      endpoint="$(resolve_endpoint "${provider}" "${office_id}")"
+      if [[ "${endpoint}" == "orbita-provider" ]] \
+          && expects_runtime_endpoint "${provider}" "${office_id}"; then
+        return 1
+      fi
+    done < "${file}"
+  done < <(find "${runtime_dir}" -maxdepth 1 -type f -name 'routes.*.conf' -print0 | sort -z)
+
+  while IFS= read -r -d '' file; do
+    office_id="$(office_from_file "${file}" 'outbound.' '.conf')"
+    [[ -n "${office_id}" ]] || continue
+    outbound="$(tr -d '\r\n ' < "${file}")"
+    endpoint="$(resolve_endpoint "${outbound}" "${office_id}")"
+    if [[ "${endpoint}" == "orbita-provider" ]] \
+        && expects_runtime_endpoint "${outbound}" "${office_id}"; then
+      return 1
+    fi
+  done < <(find "${runtime_dir}" -maxdepth 1 -type f -name 'outbound.*.conf' -print0 | sort -z)
+
+  # Compatibility with offices configured before the generic selector.
+  while IFS= read -r -d '' file; do
+    office_id="$(office_from_file "${file}" 'beeline.' '.outbound')"
+    [[ -n "${office_id}" ]] || continue
+    [[ ! -f "${runtime_dir}/outbound.${office_id}.conf" ]] || continue
+    outbound="$(tr -d '\r\n ' < "${file}")"
+    endpoint="$(resolve_endpoint "${outbound}" "${office_id}")"
+    if [[ "${endpoint}" == "orbita-provider" ]] \
+        && expects_runtime_endpoint "${outbound}" "${office_id}"; then
+      return 1
+    fi
+  done < <(find "${runtime_dir}" -maxdepth 1 -type f -name 'beeline.*.outbound' -print0 | sort -z)
+
+  return 0
+}
+
 apply_routes_if_changed() {
   local routes_hash outbound_hash providers_hash combined_hash routes_pending
   routes_hash="$(hash_files 'routes.*.conf')"
@@ -349,6 +401,13 @@ apply_routes_if_changed() {
     return 0
   fi
   routes_pending=0
+
+  # pjsip reload and the route watcher run independently. Preserve the
+  # currently working AstDB routes until every configured endpoint is loaded.
+  if ! all_runtime_routes_ready; then
+    last_routes_hash=""
+    return 0
+  fi
 
   /usr/sbin/asterisk -rx 'database deltree orbita_user outbound_endpoint' >/dev/null 2>&1 || true
   /usr/sbin/asterisk -rx 'database deltree orbita_user office_id' >/dev/null 2>&1 || true
@@ -373,6 +432,7 @@ apply_routes_if_changed() {
       if [[ "${endpoint}" == "orbita-provider" ]] \
           && expects_runtime_endpoint "${provider}" "${office_id}"; then
         routes_pending=1
+        continue
       fi
       /usr/sbin/asterisk -rx "database put orbita_user outbound_endpoint/${extension} ${endpoint}" >/dev/null
       /usr/sbin/asterisk -rx "database put orbita_user office_id/${extension} ${office_id}" >/dev/null
@@ -390,6 +450,7 @@ apply_routes_if_changed() {
     if [[ "${endpoint}" == "orbita-provider" ]] \
         && expects_runtime_endpoint "${outbound}" "${office_id}"; then
       routes_pending=1
+      continue
     fi
     /usr/sbin/asterisk -rx "database put orbita_office outbound_endpoint/${office_id} ${endpoint}" >/dev/null
   done < <(find "${runtime_dir}" -maxdepth 1 -type f -name 'outbound.*.conf' -print0 | sort -z)
@@ -404,6 +465,7 @@ apply_routes_if_changed() {
     if [[ "${endpoint}" == "orbita-provider" ]] \
         && expects_runtime_endpoint "${outbound}" "${office_id}"; then
       routes_pending=1
+      continue
     fi
     /usr/sbin/asterisk -rx "database put orbita_office outbound_endpoint/${office_id} ${endpoint}" >/dev/null
   done < <(find "${runtime_dir}" -maxdepth 1 -type f -name 'beeline.*.outbound' -print0 | sort -z)
