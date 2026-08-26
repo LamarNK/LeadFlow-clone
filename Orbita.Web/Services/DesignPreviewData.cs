@@ -323,6 +323,8 @@ internal static class DesignPreviewData
                 managers.Count,
                 PreviewCrmCandidates.Count(c => c.IsClosed),
                 4,
+                2,
+                1,
                 _previewCrmStages.Select(s => new CrmStageCountDto(s, PreviewCrmCandidates.Count(c => c.Stage == s && !c.IsClosed))).ToList());
             return new CrmBoardDto(
                 _previewCrmEnabled,
@@ -504,6 +506,10 @@ internal static class DesignPreviewData
                 x.ActiveLoad,
                 PreviewPercent(x.ActiveLoad, x.Capacity),
                 Scale(x.Received),
+                Scale(Math.Max(0, x.Received - x.Active)),
+                Scale(Math.Max(0, x.Received - x.Active)),
+                Scale(x.Closed),
+                Scale(x.SuccessfulClosed),
                 x.TasksTotal,
                 x.OpenTasks,
                 x.OverdueTasks))

@@ -332,18 +332,58 @@ public sealed class CrmWorkspaceService(
             .Where(x => isAdmin || x.UserId == userId)
             .ToList();
 
-        var dayStart = now.Date;
+        var timeZoneOffsetMinutes = Math.Clamp(query.TimeZoneOffsetMinutes, -14 * 60, 14 * 60);
+        var localToday = LocalCalendarDateRange.GetLocalCalendarDate(
+            now,
+            timeZoneOffsetMinutes);
+        var (dayStart, dayEnd) = LocalCalendarDateRange.GetUtcRangeForLocalCalendarDay(
+            localToday,
+            timeZoneOffsetMinutes);
+        var assignmentEventsToday = await (
+                from history in db.CrmCandidateHistory.AsNoTracking()
+                join card in db.CrmCandidateCards.AsNoTracking() on history.CardId equals card.Id
+                where card.OfficeId == officeId
+                      && history.Action == "Assigned"
+                      && history.CreatedAtUtc >= dayStart
+                      && history.CreatedAtUtc < dayEnd
+                select new
+                {
+                    history.CardId,
+                    history.CreatedAtUtc,
+                    history.Details,
+                    card.InitialAssignedAtUtc
+                })
+            .ToListAsync(ct);
+        var redistributedAssignmentGroups = assignmentEventsToday
+            .GroupBy(x => x.CardId)
+            .Where(group => group.Any(item =>
+                !item.InitialAssignedAtUtc.HasValue
+                || item.CreatedAtUtc > item.InitialAssignedAtUtc.Value))
+            .ToList();
         var teamStats = new CrmTeamStatsDto(
             await db.CrmCandidateCards.CountAsync(x => x.OfficeId == officeId && !x.IsClosed, ct),
             await db.CrmCandidateCards.CountAsync(x => x.OfficeId == officeId && x.ManagerUserId == null && !x.IsClosed, ct),
             managers.Count(x => IsOnShift(x.Profile, now)),
             managers.Count,
-            await db.CrmCandidateCards.CountAsync(x => x.OfficeId == officeId && x.IsClosed && x.ClosedAtUtc >= dayStart, ct),
-            await (
-                from h in db.CrmCandidateHistory.AsNoTracking()
-                join c in db.CrmCandidateCards.AsNoTracking() on h.CardId equals c.Id
-                where c.OfficeId == officeId && h.Action == "Assigned" && h.CreatedAtUtc >= dayStart
-                select h.Id).CountAsync(ct),
+            await db.CrmCandidateCards.CountAsync(x =>
+                x.OfficeId == officeId
+                && x.IsClosed
+                && x.ClosedAtUtc >= dayStart
+                && x.ClosedAtUtc < dayEnd, ct),
+            await db.CrmCandidateCards.CountAsync(x =>
+                x.OfficeId == officeId
+                && x.InitialManagerUserId != null
+                && x.InitialManagerUserId != ""
+                && x.InitialAssignedAtUtc >= dayStart
+                && x.InitialAssignedAtUtc < dayEnd, ct),
+            redistributedAssignmentGroups.Count,
+            redistributedAssignmentGroups.Count(group => group.Any(item =>
+                string.Equals(
+                    item.Details,
+                    CrmLeadDistributionService.ReasonDailyNdz,
+                    StringComparison.Ordinal)
+                && (!item.InitialAssignedAtUtc.HasValue
+                    || item.CreatedAtUtc > item.InitialAssignedAtUtc.Value))),
             (await db.CrmCandidateCards.AsNoTracking()
                 .Where(x => x.OfficeId == officeId && !x.IsClosed)
                 .Select(x => x.Stage)
@@ -2004,6 +2044,8 @@ public sealed class CrmWorkspaceService(
         if (assignToActor)
         {
             card.ManagerUserId = actorUserId;
+            card.InitialManagerUserId = actorUserId;
+            card.InitialAssignedAtUtc = now;
         }
 
         db.CrmCandidateCards.Add(card);

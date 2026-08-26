@@ -1267,6 +1267,13 @@ namespace Orbita.Api.Data.Migrations
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<DateTime?>("InitialAssignedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("InitialManagerUserId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
                     b.Property<bool>("IsClosed")
                         .HasColumnType("boolean");
 
@@ -1311,6 +1318,9 @@ namespace Orbita.Api.Data.Migrations
 
                     b.HasIndex("OfficeId", "ManagerUserId", "IsInActiveLoad");
 
+                    b.HasIndex("OfficeId", "InitialManagerUserId", "InitialAssignedAtUtc")
+                        .HasDatabaseName("IX_CrmCards_Office_InitialManager_AssignedAt");
+
                     b.ToTable("CrmCandidateCards");
                 });
 
@@ -1346,6 +1356,9 @@ namespace Orbita.Api.Data.Migrations
                         .HasColumnType("character varying(2000)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("Action", "CreatedAtUtc", "CardId")
+                        .HasDatabaseName("IX_CrmHistory_Action_CreatedAt_Card");
 
                     b.HasIndex("CardId", "CreatedAtUtc");
 

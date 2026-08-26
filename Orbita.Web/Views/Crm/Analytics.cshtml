@@ -3,7 +3,9 @@
 @using Orbita.Web.Models.ViewModels
 @{
     ViewData["Title"] = "CRM — Аналитика";
-    string Percent(double value) => $"{value:0.#}%";
+    string Percent(double value) => value != 0d && Math.Abs(value) < 1d
+        ? $"{value:0.00}%"
+        : $"{value:0.#}%";
 }
 
 <partial name="_PageHeader" model="Model.Header" />
@@ -26,13 +28,14 @@
         var managerLabel = selectedManager?.DisplayName
                            ?? analytics.Managers.FirstOrDefault()?.DisplayName
                            ?? "Мои показатели";
+        var managerCohortSelected = !string.IsNullOrWhiteSpace(analytics.ManagerUserId);
         var visibleFunnels = analytics.Funnels
             .Where(x => x.Received > 0 || string.IsNullOrWhiteSpace(analytics.ManagerUserId))
             .ToList();
         var kpis = new[]
         {
-            new { Label = "Получено кандидатов", Value = cards.Received.ToString("N0"), Caption = "Карточек создано за период", Icon = "fa-solid fa-user-plus", Tone = "blue" },
-            new { Label = "Назначено", Value = cards.Assigned.ToString("N0"), Caption = $"{Percent(cards.AssignmentRatePercent)} от полученных", Icon = "fa-solid fa-user-check", Tone = "indigo" },
+            new { Label = managerCohortSelected ? "Получено менеджером" : "Получено кандидатов", Value = cards.Received.ToString("N0"), Caption = managerCohortSelected ? "Впервые выдано за период" : "Карточек создано за период", Icon = "fa-solid fa-user-plus", Tone = "blue" },
+            new { Label = managerCohortSelected ? "Сейчас назначены" : "Назначено", Value = cards.Assigned.ToString("N0"), Caption = managerCohortSelected ? $"{Percent(cards.AssignmentRatePercent)} сейчас имеют ответственного" : $"{Percent(cards.AssignmentRatePercent)} от полученных", Icon = "fa-solid fa-user-check", Tone = "indigo" },
             new { Label = "Активные", Value = cards.Active.ToString("N0"), Caption = "Сейчас не закрыты", Icon = "fa-regular fa-folder-open", Tone = "orange" },
             new { Label = "Закрытые", Value = cards.Closed.ToString("N0"), Caption = $"{Percent(cards.CloseRatePercent)} от полученных", Icon = "fa-solid fa-box-archive", Tone = "slate" },
             new { Label = "Успешно закрыто", Value = cards.SuccessfulClosed.ToString("N0"), Caption = $"{Percent(cards.SuccessAmongClosedPercent)} среди закрытых", Icon = "fa-solid fa-circle-check", Tone = "green" },
@@ -88,7 +91,7 @@
 
         <details class="crm-analytics-methodology">
             <summary><i class="fa-solid fa-circle-info" aria-hidden="true"></i>Как считаются показатели</summary>
-            <p>KPI показывают карточки, созданные в выбранный период, и их состояние на сейчас. Фильтр менеджера использует текущего ответственного. Нагрузка и задачи — текущий снимок, поэтому не зависят от периода. «Дошли» определяется по максимальному достигнутому этапу: карточка учитывается на нём и на всех предыдущих этапах воронки.</p>
+            <p>Общие KPI показывают карточки, созданные в выбранный период, и их состояние на сейчас. В таблице менеджеров и при фильтре по менеджеру карточка засчитывается первому получившему её сотруднику в дату первой выдачи, даже если ответственного позже изменили. «Работа с этапами» и «Закрыто сотрудником» считаются по фактическому автору действия; автоматические и служебные переходы не учитываются. Текущие карточки, нагрузка и задачи — снимок на сейчас. «Дошли» определяется по максимальному достигнутому этапу: карточка учитывается на нём и на всех предыдущих этапах воронки.</p>
         </details>
 
         <section class="crm-analytics-kpis" aria-label="Ключевые показатели CRM">
@@ -111,7 +114,7 @@
                 <header class="crm-analytics-panel__header">
                     <div>
                         <h2>Результаты закрытия</h2>
-                        <p>Доля каждой причины среди закрытых карточек периода.</p>
+                        <p>@(managerCohortSelected ? "Состояние лидов, впервые выданных выбранному менеджеру." : "Доля каждой причины среди закрытых карточек периода.")</p>
                     </div>
                     <span>@cards.Closed.ToString("N0") закрыто</span>
                 </header>
@@ -228,7 +231,7 @@
             <header class="crm-analytics-panel__header">
                 <div>
                     <h2>Нагрузка менеджеров</h2>
-                    <p>Карточки за период сопоставлены с текущим ответственным; нагрузка и задачи показаны на сейчас.</p>
+                    <p>Полученные лиды закреплены за первым менеджером; переходы и закрытия — за фактическим автором действия; нагрузка и задачи показаны на сейчас.</p>
                 </div>
                 <span>@analytics.Managers.Count менеджеров</span>
             </header>
@@ -245,7 +248,9 @@
                             <tr>
                                 <th>Менеджер</th>
                                 @if (showOffice) { <th>Офис</th> }
-                                <th>Карточки за период</th>
+                                <th>Получено за период</th>
+                                <th>Работа с этапами</th>
+                                <th>Закрыто сотрудником</th>
                                 <th>Текущие карточки</th>
                                 <th>Нагрузка / лимит</th>
                                 <th>Задачи</th>
@@ -268,7 +273,9 @@
                                         </span>
                                     </td>
                                     @if (showOffice) { <td data-label="Офис">@manager.OfficeName</td> }
-                                    <td data-label="За период"><strong>@manager.CardsInPeriod.ToString("N0")</strong></td>
+                                    <td data-label="Получено за период"><strong>@manager.CardsInPeriod.ToString("N0")</strong></td>
+                                    <td data-label="Работа с этапами"><strong>@manager.StageChangedCardsInPeriod.ToString("N0")</strong> карточек <small>@manager.StageChangesInPeriod.ToString("N0") переходов</small></td>
+                                    <td data-label="Закрыто сотрудником"><strong>@manager.ClosedCardsInPeriod.ToString("N0")</strong> <small>успешно — @manager.SuccessfulClosedCardsInPeriod.ToString("N0")</small></td>
                                     <td data-label="Текущие карточки">@manager.CurrentAssignedCards.ToString("N0")</td>
                                     <td data-label="Нагрузка / лимит">
                                         <div class="crm-analytics-load">

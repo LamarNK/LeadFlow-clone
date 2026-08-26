@@ -1441,9 +1441,10 @@
 /* CRM team uses the same KPI and work-area hierarchy as CRM tasks. */
 .crm-team-dashboard { padding-top: 0; }
 .crm-team-overview { margin-bottom: 26px; }
-.crm-team-metrics { display: grid; grid-template-columns: repeat(5, minmax(150px, 1fr)); gap: 12px; }
+.crm-team-metrics { display: grid; grid-template-columns: repeat(6, minmax(145px, 1fr)); gap: 12px; }
+.crm-team-metrics-note { display: flex; align-items: flex-start; gap: 7px; margin: 10px 2px 0; color: #78859b; font-size: 10px; line-height: 1.4; }.crm-team-metrics-note i { margin-top: 2px; color: #5275ff; }
 .crm-team-metric.kpi-card { min-height: 166px; padding: 22px; }
-.crm-team-metric.kpi-card .kpi-card-head { margin-bottom: 12px; }.crm-team-metric__metric { min-height: 42px; margin-bottom: 8px; }.crm-team-metric__caption { margin: auto 0 0; color: #98a2b3; font-size: 11px; line-height: 1.35; }.crm-team-metric--queue .kpi-value { color: #b54708; }.crm-team-metric--shift .kpi-value, .crm-team-metric--closed .kpi-value { color: #039855; }.crm-team-metric--assigned .kpi-value { color: #6938d3; }
+.crm-team-metric.kpi-card .kpi-card-head { margin-bottom: 12px; }.crm-team-metric__metric { min-height: 42px; margin-bottom: 8px; }.crm-team-metric__caption { margin: auto 0 0; color: #98a2b3; font-size: 11px; line-height: 1.35; }.crm-team-metric--queue .kpi-value, .crm-team-metric--redistributed .kpi-value { color: #b54708; }.crm-team-metric--shift .kpi-value, .crm-team-metric--closed .kpi-value { color: #039855; }.crm-team-metric--assigned .kpi-value { color: #6938d3; }
 
 .crm-team-grid { grid-template-columns: minmax(0, 1.35fr) minmax(340px, .8fr); gap: 16px; }
 .crm-team-panel { overflow: hidden; padding: 0; border-color: #edf0f5; box-shadow: 0 7px 22px rgba(16, 24, 40, .035); }

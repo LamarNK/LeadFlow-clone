@@ -293,7 +293,8 @@ public sealed record CrmBoardQuery(
     DateTime? CreatedFromUtc = null,
     DateTime? CreatedToUtc = null,
     string? CreatedFrom = null,
-    string? CreatedTo = null);
+    string? CreatedTo = null,
+    int TimeZoneOffsetMinutes = 0);
 
 /// <summary>
 /// CRM analytics filter. The period is a half-open UTC interval: [FromUtc, ToUtc).
@@ -364,6 +365,10 @@ public sealed record CrmAnalyticsManagerDto(
     int ActiveLoad,
     double CapacityUtilizationPercent,
     int CardsInPeriod,
+    int StageChangedCardsInPeriod,
+    int StageChangesInPeriod,
+    int ClosedCardsInPeriod,
+    int SuccessfulClosedCardsInPeriod,
     int TasksTotal,
     int OpenTasks,
     int OverdueTasks);
@@ -424,6 +429,8 @@ public sealed record CrmTeamStatsDto(
     int TotalManagers,
     int ClosedToday,
     int AssignedToday,
+    int RedistributedToday,
+    int RedistributedNdzToday,
     IReadOnlyList<CrmStageCountDto> StageCounts);
 
 public sealed record CrmStageCountDto(string Stage, int Count);

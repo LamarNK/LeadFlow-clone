@@ -117,6 +117,7 @@ public sealed class CrmDailyDistributionTests
             "Недоступные подменные",
             "НДЗ",
             "НДЗ 2",
+            "Пустые",
             "НДЗ с подменным",
             "НДЗ с подменным 2",
             "Переговоры"
@@ -140,6 +141,7 @@ public sealed class CrmDailyDistributionTests
     [InlineData("Недоступные подменные")]
     [InlineData("НДЗ с подменным")]
     [InlineData("НДЗ с подменным 2")]
+    [InlineData("Пустые")]
     public void IsNdz_DoesNotMixSubstitutePoolsIntoRegularNdz(string stage)
     {
         Assert.False(CrmDailyDistribution.IsNdz(stage));

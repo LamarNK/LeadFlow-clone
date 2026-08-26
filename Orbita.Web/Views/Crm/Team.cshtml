@@ -71,16 +71,22 @@
                 <p class="crm-team-metric__caption">Менеджеров доступны</p>
             </article>
             <article class="kpi-card crm-team-metric crm-team-metric--assigned" style="--kpi-index: 3;">
-                <header class="kpi-card-head"><span class="kpi-icon-box kpi-icon-box--purple"><i class="fa-solid fa-arrow-right-arrow-left" aria-hidden="true"></i></span><span class="kpi-card-label">Выдано сегодня</span></header>
+                <header class="kpi-card-head"><span class="kpi-icon-box kpi-icon-box--purple"><i class="fa-solid fa-user-plus" aria-hidden="true"></i></span><span class="kpi-card-label">Впервые выдано</span></header>
                 <div class="kpi-card-metric crm-team-metric__metric"><b class="kpi-value">@board.TeamStats.AssignedToday</b></div>
-                <p class="crm-team-metric__caption">Карточек назначено</p>
+                <p class="crm-team-metric__caption">Новых карточек сегодня</p>
             </article>
-            <article class="kpi-card crm-team-metric crm-team-metric--closed" style="--kpi-index: 4;">
+            <article class="kpi-card crm-team-metric crm-team-metric--redistributed" style="--kpi-index: 4;">
+                <header class="kpi-card-head"><span class="kpi-icon-box kpi-icon-box--orange"><i class="fa-solid fa-arrow-right-arrow-left" aria-hidden="true"></i></span><span class="kpi-card-label">Перераспределено</span></header>
+                <div class="kpi-card-metric crm-team-metric__metric"><b class="kpi-value">@board.TeamStats.RedistributedToday</b></div>
+                <p class="crm-team-metric__caption">Сегодня, из них НДЗ — @board.TeamStats.RedistributedNdzToday</p>
+            </article>
+            <article class="kpi-card crm-team-metric crm-team-metric--closed" style="--kpi-index: 5;">
                 <header class="kpi-card-head"><span class="kpi-icon-box kpi-icon-box--green"><i class="fa-solid fa-circle-check" aria-hidden="true"></i></span><span class="kpi-card-label">Закрыто сегодня</span></header>
                 <div class="kpi-card-metric crm-team-metric__metric"><b class="kpi-value">@board.TeamStats.ClosedToday</b></div>
                 <p class="crm-team-metric__caption">Завершено за смену</p>
             </article>
         </div>
+        <p class="crm-team-metrics-note"><i class="fa-solid fa-circle-info" aria-hidden="true"></i>Одна карточка может быть впервые выдана и затем перераспределена в тот же день, поэтому эти показатели не складываются.</p>
     </section>
 
     <div class="crm-team-grid">

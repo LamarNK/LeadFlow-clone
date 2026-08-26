@@ -252,6 +252,8 @@ public sealed class BitrixCrmImportService(
                 OfficeId = context.OfficeId,
                 Stage = deal.StageName,
                 ManagerUserId = managerUserId,
+                InitialManagerUserId = managerUserId,
+                InitialAssignedAtUtc = managerUserId is null ? null : deal.CreatedAtUtc,
                 IsInActiveLoad = true,
                 CreatedAtUtc = deal.CreatedAtUtc,
                 UpdatedAtUtc = now,
@@ -282,7 +284,15 @@ public sealed class BitrixCrmImportService(
         }
 
         card.Stage = deal.StageName;
-        card.ManagerUserId = managerUserId ?? card.ManagerUserId;
+        var effectiveManagerUserId = managerUserId ?? card.ManagerUserId;
+        if (string.IsNullOrWhiteSpace(card.InitialManagerUserId)
+            && !string.IsNullOrWhiteSpace(effectiveManagerUserId))
+        {
+            card.InitialManagerUserId = effectiveManagerUserId;
+            card.InitialAssignedAtUtc = card.CreatedAtUtc;
+        }
+
+        card.ManagerUserId = effectiveManagerUserId;
         card.StageChangedAtUtc = deal.UpdatedAtUtc;
         card.UpdatedAtUtc = now;
         response.BitrixContactId = deal.Contact?.Id.ToString(CultureInfo.InvariantCulture) ?? response.BitrixContactId;
