@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using LeadFlow.Core.Services.Multilogin;
 using Microsoft.Extensions.Http;
+using Orbita.Api.Services;
 
 namespace Orbita.Tests;
 
@@ -11,6 +12,41 @@ public sealed class MultiloginApiClientTests
     private const string Token = "mlx-automation-token";
     private const string FolderId = "11111111-2222-3333-4444-555555555555";
     private const string ProfileId = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee";
+
+    [Fact]
+    public async Task AutomationTokenIssuer_UsesCloudEndpointAndDoesNotExposeSourceToken()
+    {
+        HttpRequestMessage? captured = null;
+        var sut = new MultiloginAutomationTokenIssuer(new HttpClient(new StubHandler((request, _) =>
+        {
+            captured = CloneRequest(request);
+            return Json(HttpStatusCode.OK, """{"data":{"token":"long-lived-token"}}""");
+        })));
+
+        var token = await sut.IssueAsync("https://api.multilogin.com/", Token);
+
+        Assert.Equal("long-lived-token", token);
+        Assert.NotNull(captured);
+        Assert.Equal(HttpMethod.Get, captured.Method);
+        Assert.Equal(
+            "https://api.multilogin.com/workspace/automation_token?expiration_period=no_exp",
+            captured.RequestUri?.AbsoluteUri);
+        Assert.Equal("Bearer", captured.Headers.Authorization?.Scheme);
+        Assert.Equal(Token, captured.Headers.Authorization?.Parameter);
+    }
+
+    [Fact]
+    public async Task AutomationTokenIssuer_HttpError_DoesNotExposeSourceToken()
+    {
+        var sut = new MultiloginAutomationTokenIssuer(new HttpClient(new StubHandler((_, _) =>
+            Json(HttpStatusCode.Unauthorized, """{"message":"bad token"}"""))));
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => sut.IssueAsync(null, Token));
+
+        Assert.Contains("401", ex.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain(Token, ex.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("bad token", ex.Message, StringComparison.Ordinal);
+    }
 
     [Fact]
     public async Task StartProfileAsync_UsesConfirmedV2Path_AndParsesPort()

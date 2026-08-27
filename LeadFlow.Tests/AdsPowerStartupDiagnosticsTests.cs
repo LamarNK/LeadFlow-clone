@@ -192,7 +192,7 @@ public sealed class AdsPowerStartupDiagnosticsTests
         {
             trace.SetStage("ожидание очереди AdsPower browser/start");
             var local = AdsPowerStartupLogSanitizer.SummarizeBrowserStart(
-                $$"""{"code":0,"msg":"ok","data":{"ws":{"puppeteer":"{{SecretWs}}"},"debug_port":"9222"}}""",
+                $$$"""{"code":0,"msg":"ok","data":{"ws":{"puppeteer":"{{{SecretWs}}}"},"debug_port":"9222"}}""",
                 200,
                 null,
                 TimeSpan.FromMilliseconds(410),
@@ -414,8 +414,8 @@ public sealed class AdsPowerStartupDiagnosticsTests
     public async Task StartBrowserAsync_WithActiveTrace_WritesSanitizedRecordsToGlobalLogger()
     {
         using var capture = GlobalLogCapture.Start();
-        var body = $$"""
-            {"code":0,"msg":"ok {{SecretCookie}}","data":{"ws":{"puppeteer":"{{SecretWs}}"},"debug_port":"9222","proxy":"{{SecretProxy}}","{{UrlLikeDataKey}}":"leak"}}
+        var body = $$$"""
+            {"code":0,"msg":"ok {{{SecretCookie}}}","data":{"ws":{"puppeteer":"{{{SecretWs}}}"},"debug_port":"9222","proxy":"{{{SecretProxy}}}","{{{UrlLikeDataKey}}}":"leak"}}
             """;
         var client = BuildClient((_, _) => Task.FromResult(StubHttpMessageHandler.Ok(body)));
 
@@ -456,8 +456,8 @@ public sealed class AdsPowerStartupDiagnosticsTests
     public async Task StartBrowserAsync_HttpFailure_RecordsLocalApiError_WithoutRawBody()
     {
         using var capture = GlobalLogCapture.Start();
-        var body = $$"""
-            {"code":-1,"msg":"proxy {{SecretProxy}} cookie {{SecretCookie}} open {{TabUrl}}","data":{"html":"{{SecretHtml}}"}}
+        var body = $$$"""
+            {"code":-1,"msg":"proxy {{{SecretProxy}}} cookie {{{SecretCookie}}} open {{{TabUrl}}}","data":{"html":"{{{SecretHtml}}}"}}
             """;
         var client = BuildClient((_, _) =>
             Task.FromResult(StubHttpMessageHandler.Json(HttpStatusCode.BadGateway, body)));

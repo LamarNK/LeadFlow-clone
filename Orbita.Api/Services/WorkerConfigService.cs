@@ -15,7 +15,8 @@ public sealed class WorkerConfigService(
     WorkerReleaseService releases,
     CaptchaSessionService captchaSessions,
     BrowserMonitorService browserMonitorSessions,
-    AvitoAccountSecretProtector avitoSecrets)
+    AvitoAccountSecretProtector avitoSecrets,
+    IMultiloginAutomationTokenIssuer? multiloginTokenIssuer = null)
 {
     public Task<WorkerConfigDto?> GetConfigForWorkerAsync(
         Guid workerId,
@@ -333,9 +334,29 @@ public sealed class WorkerConfigService(
             return (null, cloudError);
         }
 
-        if (!TryNormalizeMultiloginAutomationToken(request.MultiloginAutomationToken, out var normalizedToken, out var tokenError))
+        if (!TryNormalizeMultiloginAutomationToken(request.MultiloginAutomationToken, out var apiToken, out var tokenError))
         {
             return (null, tokenError);
+        }
+
+        string? normalizedToken = null;
+        if (apiToken is not null)
+        {
+            if (multiloginTokenIssuer is null)
+            {
+                return (null, "Multilogin automation token service недоступен.");
+            }
+
+            try
+            {
+                normalizedToken = await multiloginTokenIssuer
+                    .IssueAsync(normalizedCloudUrl, apiToken, ct)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                return (null, ex.Message);
+            }
         }
 
         var maxResponseAgeDays = ResponseCollectionFilters.ClampResponseAgeDays(request.ResponseFilterMaxResponseAgeDays);

@@ -58,6 +58,29 @@ public sealed class AvitoSubProfileSwitchEffectTests
     }
 
     [Fact]
+    public void PointerClickWithoutDomEffect_RequiresNativeFallback()
+    {
+        var unchanged = new AvitoSubProfileSwitchSnapshot(
+            ModalOpen: true,
+            CardsCount: 3,
+            TargetCardFound: true,
+            CurrentSubProfileId: "111",
+            CurrentSubProfileName: "текущий",
+            Url: "https://www.avito.ru/profile/dashboard#profile/switch");
+
+        Assert.True(AvitoSubProfileSwitchEffect.PointerClickNeedsNativeFallback(true, unchanged, "222"));
+        Assert.False(AvitoSubProfileSwitchEffect.PointerClickNeedsNativeFallback(false, unchanged, "222"));
+        Assert.False(AvitoSubProfileSwitchEffect.PointerClickNeedsNativeFallback(
+            true,
+            unchanged with { CurrentSubProfileId = "222" },
+            "222"));
+        Assert.False(AvitoSubProfileSwitchEffect.PointerClickNeedsNativeFallback(
+            true,
+            unchanged with { ModalOpen = false },
+            "222"));
+    }
+
+    [Fact]
     public void SuccessfulSwitch_RequiresCurrentIdAndClosedModal()
     {
         var afterClickStillOpen = new AvitoSubProfileSwitchSnapshot(
@@ -126,6 +149,17 @@ public sealed class AvitoSubProfileSwitchEffectTests
     }
 
     [Fact]
+    public void ItemsSwitchHashTrap_CannotReuseOpenModal()
+    {
+        const string trapUrl = "https://www.avito.ru/profile/pro/items#profile/switch?withEntities=true";
+        const string dashboardUrl = "https://www.avito.ru/profile/dashboard#profile/switch?withEntities=true";
+
+        Assert.True(AvitoSubProfileSwitchEffect.IsItemsSwitchTrapUrl(trapUrl));
+        Assert.False(AvitoSubProfileSwitchEffect.CanReuseOpenModal(true, 7, trapUrl));
+        Assert.True(AvitoSubProfileSwitchEffect.CanReuseOpenModal(true, 7, dashboardUrl));
+    }
+
+    [Fact]
     public void AutomationService_DoesNotWaitForDialogOrPredicate()
     {
         var path = Path.Combine(
@@ -144,6 +178,10 @@ public sealed class AvitoSubProfileSwitchEffectTests
             StringComparison.Ordinal);
         Assert.Contains("AvitoHumanPointer.TryClickSelectorAsync", source, StringComparison.Ordinal);
         Assert.Contains("IsSuccessfulSwitch", source, StringComparison.Ordinal);
+        Assert.Contains("el.click()", source, StringComparison.Ordinal);
+        Assert.Contains("pointer_no_dom_native_fallback", source, StringComparison.Ordinal);
+        Assert.Contains("runtime.provider", source, StringComparison.Ordinal);
+        Assert.Contains("runtime.profileId", source, StringComparison.Ordinal);
     }
 }
 

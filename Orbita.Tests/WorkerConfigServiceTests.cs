@@ -714,7 +714,8 @@ public sealed class WorkerConfigServiceTests
         await using var db = CreateDb();
         SeedWorkerWithAccount(db);
 
-        var sut = CreateService(db);
+        var issuer = new FakeMultiloginTokenIssuer("mlx-generated-automation-token");
+        var sut = CreateService(db, tokenIssuer: issuer);
         var (config, error) = await sut.UpdateSettingsAsync(
             WorkerId,
             new UpdateWorkerSettingsRequest(
@@ -723,7 +724,7 @@ public sealed class WorkerConfigServiceTests
                 AdsPowerApiKey: "ads-key",
                 MultiloginLauncherUrl: "https://launcher.mlx.yt:45001/",
                 MultiloginCloudApiUrl: "https://api.multilogin.com/",
-                MultiloginAutomationToken: "mlx-secret-token"),
+                MultiloginAutomationToken: "mlx-api-token"),
             OfficeScope.ForOffice(OfficeId));
 
         Assert.Null(error);
@@ -732,12 +733,13 @@ public sealed class WorkerConfigServiceTests
         Assert.Equal("ads-key", config.AdsPowerApiKey);
         Assert.Equal("https://launcher.mlx.yt:45001", config.MultiloginLauncherUrl);
         Assert.Equal("https://api.multilogin.com", config.MultiloginCloudApiUrl);
-        Assert.Equal("mlx-secret-token", config.MultiloginAutomationToken);
+        Assert.Equal("mlx-generated-automation-token", config.MultiloginAutomationToken);
+        Assert.Equal("mlx-api-token", issuer.LastApiToken);
 
         var worker = await db.Workers.SingleAsync();
         Assert.Equal("https://launcher.mlx.yt:45001", worker.MultiloginLauncherUrl);
         Assert.Equal("https://api.multilogin.com", worker.MultiloginCloudApiUrl);
-        Assert.Equal("mlx-secret-token", worker.MultiloginAutomationToken);
+        Assert.Equal("mlx-generated-automation-token", worker.MultiloginAutomationToken);
         Assert.Equal("ads-key", worker.AdsPowerApiKey);
     }
 
@@ -872,7 +874,10 @@ public sealed class WorkerConfigServiceTests
         Assert.Equal("rucaptcha-test-key", worker.RuCaptchaApiKey);
     }
 
-    private static WorkerConfigService CreateService(OrbitaDbContext db, AvitoAccountSecretProtector? secrets = null)
+    private static WorkerConfigService CreateService(
+        OrbitaDbContext db,
+        AvitoAccountSecretProtector? secrets = null,
+        IMultiloginAutomationTokenIssuer? tokenIssuer = null)
     {
         var releases = CreateReleases();
         return new(
@@ -883,7 +888,8 @@ public sealed class WorkerConfigServiceTests
             releases,
             CreateCaptchaSessions(db),
             CreateBrowserMonitorSessions(db),
-            secrets ?? CreateAvitoSecrets());
+            secrets ?? CreateAvitoSecrets(),
+            tokenIssuer);
     }
 
     private static WorkerReleaseService CreateReleases()
@@ -918,6 +924,17 @@ public sealed class WorkerConfigServiceTests
     {
         public Task NotifyLockChangedAsync(Guid workerId, Guid officeId, WorkerCaptchaLockDto lockState, CancellationToken ct = default) =>
             Task.CompletedTask;
+    }
+
+    private sealed class FakeMultiloginTokenIssuer(string issuedToken) : IMultiloginAutomationTokenIssuer
+    {
+        public string? LastApiToken { get; private set; }
+
+        public Task<string> IssueAsync(string? cloudApiUrl, string apiToken, CancellationToken cancellationToken = default)
+        {
+            LastApiToken = apiToken;
+            return Task.FromResult(issuedToken);
+        }
     }
 
     private static OrbitaDbContext CreateDb()

@@ -20,6 +20,22 @@ public sealed record AvitoSubProfileSwitchSnapshot(
 
 public static class AvitoSubProfileSwitchEffect
 {
+    public static bool IsItemsSwitchTrapUrl(string? url) =>
+        !string.IsNullOrEmpty(url)
+        && url.Contains("/profile/pro/items", StringComparison.OrdinalIgnoreCase)
+        && url.Contains("profile/switch", StringComparison.OrdinalIgnoreCase);
+
+    public static bool IsDashboardSwitchUrl(string? url) =>
+        !string.IsNullOrEmpty(url)
+        && url.Contains("/profile/dashboard", StringComparison.OrdinalIgnoreCase)
+        && url.Contains("profile/switch", StringComparison.OrdinalIgnoreCase);
+
+    public static bool CanReuseOpenModal(bool modalOpen, int cardsCount, string? url) =>
+        modalOpen && cardsCount > 0 && !IsItemsSwitchTrapUrl(url);
+
+    public static bool CanReuseOpenModal(AvitoSubProfileSwitchSnapshot snapshot) =>
+        CanReuseOpenModal(snapshot.ModalOpen, snapshot.CardsCount, snapshot.Url);
+
     public static bool IdsEqual(string? left, string? right) =>
         !string.IsNullOrWhiteSpace(left)
         && !string.IsNullOrWhiteSpace(right)
@@ -52,6 +68,14 @@ public static class AvitoSubProfileSwitchEffect
         && !IdsEqual(after.CurrentSubProfileId, targetId)
         && IdsEqual(before.CurrentSubProfileId, after.CurrentSubProfileId);
 
+    public static bool PointerClickNeedsNativeFallback(
+        bool pointerReportedSuccess,
+        AvitoSubProfileSwitchSnapshot afterPointer,
+        string targetId) =>
+        pointerReportedSuccess
+        && afterPointer.ModalOpen
+        && !IdsEqual(afterPointer.CurrentSubProfileId, targetId);
+
     /// <summary>
     /// Модалка закрыта только когда нет корня switch. Нельзя OR-ить с <c>[role=dialog]</c>:
     /// карточки Avito — <c>role=button</c>, отдельного dialog может не быть, и старый предикат
@@ -75,10 +99,14 @@ public static class AvitoSubProfileSwitchEffect
                 let currentId = null;
                 let currentName = null;
                 const isCurrentCard = (card) => {
-                    const cls = card.className || "";
+                    const cls = String(card.className || "");
                     if (/isCurrent/i.test(cls)) return true;
                     if (card.getAttribute("aria-current") === "true") return true;
-                    return !!card.querySelector("[class*='isCurrent' i]");
+                    if (card.getAttribute("aria-checked") === "true") return true;
+                    if (card.querySelector("[class*='isCurrent' i]")) return true;
+                    const check = card.querySelector("svg, [class*='check' i], [class*='Check' i]");
+                    return !!check && /isCurrent/i.test(
+                        String(check.className || "") + String(check.getAttribute("class") || ""));
                 };
                 for (const card of cards) {
                     if (!isCurrentCard(card)) continue;
