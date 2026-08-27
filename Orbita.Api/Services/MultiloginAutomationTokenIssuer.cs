@@ -18,7 +18,7 @@ public interface IMultiloginAutomationTokenIssuer
 /// <summary>
 /// Получает долгоживущий automation token для workspace владельца Multilogin.
 /// </summary>
-public sealed class MultiloginAutomationTokenIssuer(IHttpClientFactory httpClientFactory)
+public sealed class MultiloginAutomationTokenIssuer(HttpClient httpClient)
     : IMultiloginAutomationTokenIssuer
 {
     public const string ExpirationPeriod = "no_exp";
@@ -40,7 +40,7 @@ public sealed class MultiloginAutomationTokenIssuer(IHttpClientFactory httpClien
         request.Headers.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", apiToken.Trim());
 
-        using var response = await httpClientFactory.CreateClient()
+        using var response = await httpClient
             .SendAsync(request, cancellationToken)
             .ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)

@@ -17,7 +17,7 @@ public sealed class MultiloginApiClientTests
     public async Task AutomationTokenIssuer_UsesCloudEndpointAndDoesNotExposeSourceToken()
     {
         HttpRequestMessage? captured = null;
-        var sut = new MultiloginAutomationTokenIssuer(new StubFactory(new StubHandler((request, _) =>
+        var sut = new MultiloginAutomationTokenIssuer(new HttpClient(new StubHandler((request, _) =>
         {
             captured = CloneRequest(request);
             return Json(HttpStatusCode.OK, """{"data":{"token":"long-lived-token"}}""");
@@ -38,7 +38,7 @@ public sealed class MultiloginApiClientTests
     [Fact]
     public async Task AutomationTokenIssuer_HttpError_DoesNotExposeSourceToken()
     {
-        var sut = new MultiloginAutomationTokenIssuer(new StubFactory(new StubHandler((_, _) =>
+        var sut = new MultiloginAutomationTokenIssuer(new HttpClient(new StubHandler((_, _) =>
             Json(HttpStatusCode.Unauthorized, """{"message":"bad token"}"""))));
 
         var ex = await Assert.ThrowsAsync<InvalidOperationException>(() => sut.IssueAsync(null, Token));
