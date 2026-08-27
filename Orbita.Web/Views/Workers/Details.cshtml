@@ -752,17 +752,17 @@
                             </span>
                         </label>
                         <label class="worker-settings-field" for="multiloginAutomationToken">
-                            <span class="worker-settings-label">Automation Token</span>
+                            <span class="worker-settings-label">API Token</span>
                             <input type="password"
                                    id="multiloginAutomationToken"
                                    name="multiloginAutomationToken"
                                    class="worker-settings-input"
                                    value=""
-                                   placeholder="@(Model.HasMultiloginAutomationToken ? "Токен задан — оставьте пустым, чтобы не менять" : "Не задан")"
+                                   placeholder="@(Model.HasMultiloginAutomationToken ? "Токен задан — оставьте пустым, чтобы не менять" : "Скопируйте в Multilogin → Информация → Токен API")"
                                    autocomplete="new-password"
                                    spellcheck="false" />
                             <span class="worker-settings-hint">
-                                Token из Multilogin X. Не показывается повторно. Пустое поле не затирает сохранённый token.
+                                Вставьте Token API из Multilogin → Информация. Orbita сама получит и сохранит долгоживущий automation token; ID проекта не нужен.
                             </span>
                         </label>
                         <div class="worker-settings-effective">
