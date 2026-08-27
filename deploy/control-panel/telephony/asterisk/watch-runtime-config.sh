@@ -7,6 +7,7 @@ asterisk_webrtc_config="/etc/asterisk/orbita/pjsip.webrtc.conf"
 last_provider_config_hash=""
 last_beeline_config_hash=""
 last_plusofon_config_hash=""
+last_sipout_config_hash=""
 last_webrtc_config_hash=""
 last_routes_hash=""
 declare -A registration_known_healthy=()
@@ -90,6 +91,24 @@ write_plusofon_accounts_status() {
   mv -f "${temporary}" "${status_path}"
 }
 
+write_sipout_accounts_status() {
+  local office_id="$1"
+  local status="$2"
+  local accounts_path="${runtime_dir}/sipout.${office_id}.accounts"
+  local status_path="${runtime_dir}/sipout.${office_id}.status"
+  local temporary="${status_path}.tmp"
+  : > "${temporary}"
+  if [[ -f "${accounts_path}" ]]; then
+    while IFS='=' read -r account_key registration_name; do
+      [[ "${account_key}" =~ ^[a-z0-9_-]{1,16}$ ]] || continue
+      [[ "${registration_name}" =~ ^sipout-[0-9a-f]{32}(-[a-z0-9_-]{1,16})?-registration$ ]] || continue
+      printf '%s=%s\n' "${account_key}" "${status}" >> "${temporary}"
+    done < "${accounts_path}"
+  fi
+  printf '%s\n' "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "${temporary}"
+  mv -f "${temporary}" "${status_path}"
+}
+
 wait_for_asterisk() {
   until /usr/sbin/asterisk -rx 'core show uptime' >/dev/null 2>&1; do
     sleep 1
@@ -149,7 +168,7 @@ is_endpoint_loaded() {
 all_provider_auths_loaded() {
   local auth_name
   while IFS= read -r auth_name; do
-    [[ "${auth_name}" =~ ^(beeline|plusofon)-[0-9a-f]{32}(-[a-z0-9_-]{1,16})?-auth$ ]] || continue
+    [[ "${auth_name}" =~ ^(beeline|plusofon|sipout)-[0-9a-f]{32}(-[a-z0-9_-]{1,16})?-auth$ ]] || continue
     # Do not print this command's output: some Asterisk versions expose
     # credential metadata.
     if ! is_pjsip_object_loaded "auth" "${auth_name}"; then
@@ -258,22 +277,24 @@ register_provider_accounts() {
       remember_registration_health "${provider}" "${office_id}" "${account_key}"
       send_registration "${registration_name}"
     done < "${file}"
-    if [[ "${provider}" == "beeline" ]]; then
-      write_beeline_accounts_status "${office_id}" "pending"
-    else
-      write_plusofon_accounts_status "${office_id}" "pending"
-    fi
+    case "${provider}" in
+      beeline) write_beeline_accounts_status "${office_id}" "pending" ;;
+      plusofon) write_plusofon_accounts_status "${office_id}" "pending" ;;
+      sipout) write_sipout_accounts_status "${office_id}" "pending" ;;
+    esac
   done < <(find "${runtime_dir}" -maxdepth 1 -type f -name "${provider}.*.accounts" -print0 | sort -z)
 }
 
 apply_configs_if_changed() {
-  local provider_config_hash beeline_config_hash plusofon_config_hash webrtc_config_hash
-  local beeline_changed=false plusofon_changed=false
+  local provider_config_hash beeline_config_hash plusofon_config_hash sipout_config_hash webrtc_config_hash
+  local beeline_changed=false plusofon_changed=false sipout_changed=false
   beeline_config_hash="$(hash_files 'beeline.*.conf')"
   plusofon_config_hash="$(hash_files 'plusofon.*.conf')"
-  provider_config_hash="${beeline_config_hash}:${plusofon_config_hash}"
+  sipout_config_hash="$(hash_files 'sipout.*.conf')"
+  provider_config_hash="${beeline_config_hash}:${plusofon_config_hash}:${sipout_config_hash}"
   [[ "${beeline_config_hash}" == "${last_beeline_config_hash}" ]] || beeline_changed=true
   [[ "${plusofon_config_hash}" == "${last_plusofon_config_hash}" ]] || plusofon_changed=true
+  [[ "${sipout_config_hash}" == "${last_sipout_config_hash}" ]] || sipout_changed=true
   if [[ "${ASTERISK_WEBRTC_ENABLED:-false}" == "true" ]]; then
     webrtc_config_hash="$(hash_files 'webrtc.*.conf')"
   else
@@ -288,18 +309,18 @@ apply_configs_if_changed() {
   local webrtc_temporary="${asterisk_webrtc_config}.tmp"
   printf '; Generated from all configured Orbita offices.\n' > "${provider_temporary}"
   local provider
-  for provider in beeline plusofon; do
+  for provider in beeline plusofon sipout; do
     while IFS= read -r -d '' file; do
       local office_id
       office_id="$(office_from_file "${file}" "${provider}." '.conf')"
       [[ -n "${office_id}" ]] || continue
       if ! is_runtime_config_valid "${file}"; then
         echo "Ignoring invalid ${provider} runtime config for office ${office_id}." >&2
-        if [[ "${provider}" == "beeline" ]]; then
-          write_beeline_accounts_status "${office_id}" "reload-failed"
-        else
-          write_plusofon_accounts_status "${office_id}" "reload-failed"
-        fi
+        case "${provider}" in
+          beeline) write_beeline_accounts_status "${office_id}" "reload-failed" ;;
+          plusofon) write_plusofon_accounts_status "${office_id}" "reload-failed" ;;
+          sipout) write_sipout_accounts_status "${office_id}" "reload-failed" ;;
+        esac
         continue
       fi
       printf '\n; %s office %s\n' "${provider}" "${office_id}" >> "${provider_temporary}"
@@ -328,6 +349,7 @@ apply_configs_if_changed() {
     last_provider_config_hash="${provider_config_hash}"
     last_beeline_config_hash="${beeline_config_hash}"
     last_plusofon_config_hash="${plusofon_config_hash}"
+    last_sipout_config_hash="${sipout_config_hash}"
     last_webrtc_config_hash="${webrtc_config_hash}"
     last_routes_hash=""
 
@@ -339,6 +361,9 @@ apply_configs_if_changed() {
     fi
     if [[ "${plusofon_changed}" == "true" ]]; then
       register_provider_accounts "plusofon"
+    fi
+    if [[ "${sipout_changed}" == "true" ]]; then
+      register_provider_accounts "sipout"
     fi
 
     if [[ "${plusofon_changed}" == "true" ]]; then
@@ -354,16 +379,16 @@ apply_configs_if_changed() {
       done < <(find "${runtime_dir}" -maxdepth 1 -type f -name 'plusofon.*.conf' -print0 | sort -z)
     fi
   else
-    for provider in beeline plusofon; do
+    for provider in beeline plusofon sipout; do
       while IFS= read -r -d '' file; do
         local office_id
         office_id="$(office_from_file "${file}" "${provider}." '.conf')"
         [[ -n "${office_id}" ]] || continue
-        if [[ "${provider}" == "beeline" ]]; then
-          write_beeline_accounts_status "${office_id}" "reload-failed"
-        else
-          write_plusofon_accounts_status "${office_id}" "reload-failed"
-        fi
+        case "${provider}" in
+          beeline) write_beeline_accounts_status "${office_id}" "reload-failed" ;;
+          plusofon) write_plusofon_accounts_status "${office_id}" "reload-failed" ;;
+          sipout) write_sipout_accounts_status "${office_id}" "reload-failed" ;;
+        esac
       done < <(find "${runtime_dir}" -maxdepth 1 -type f -name "${provider}.*.conf" -print0 | sort -z)
     done
   fi
@@ -406,6 +431,20 @@ resolve_endpoint() {
         printf 'orbita-provider'
       fi
       ;;
+    sipout)
+      if [[ -f "${runtime_dir}/sipout.${office_id}.conf" ]] && is_endpoint_loaded "sipout-${office_key}"; then
+        printf 'sipout-%s' "${office_key}"
+      else
+        printf 'orbita-provider'
+      fi
+      ;;
+    sipout-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]*)
+      if is_endpoint_loaded "${provider}"; then
+        printf '%s' "${provider}"
+      else
+        printf 'orbita-provider'
+      fi
+      ;;
     plusofon)
       if [[ -f "${runtime_dir}/plusofon.${office_id}.conf" ]] && is_endpoint_loaded "plusofon-${office_key}"; then
         printf 'plusofon-%s' "${office_key}"
@@ -430,7 +469,7 @@ expects_runtime_endpoint() {
   local provider="$1"
   local office_id="$2"
   case "${provider}" in
-    plusofon|plusofon-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]*|beeline|beeline-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]*)
+    sipout|sipout-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]*|plusofon|plusofon-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]*|beeline|beeline-[0-9a-f][0-9a-f][0-9a-f][0-9a-f]*)
       return 0
       ;;
     default)
@@ -494,8 +533,8 @@ all_runtime_routes_ready() {
 apply_routes_if_changed() {
   local routes_hash outbound_hash providers_hash combined_hash routes_pending
   routes_hash="$(hash_files 'routes.*.conf')"
-  outbound_hash="$(hash_files 'outbound.*.conf'):$(hash_files 'beeline.*.outbound'):$(hash_files 'plusofon.*.callerids'):$(hash_files 'plusofon.*.callerid')"
-  providers_hash="$(hash_files 'beeline.*.conf'):$(hash_files 'plusofon.*.conf')"
+  outbound_hash="$(hash_files 'outbound.*.conf'):$(hash_files 'beeline.*.outbound'):$(hash_files 'plusofon.*.callerids'):$(hash_files 'plusofon.*.callerid'):$(hash_files 'sipout.*.callerids')"
+  providers_hash="$(hash_files 'beeline.*.conf'):$(hash_files 'plusofon.*.conf'):$(hash_files 'sipout.*.conf')"
   combined_hash="${routes_hash}:${outbound_hash}:${providers_hash}"
   if [[ "${combined_hash}" == "${last_routes_hash}" ]]; then
     return 0
@@ -591,6 +630,24 @@ apply_routes_if_changed() {
       /usr/sbin/asterisk -rx "database put orbita_endpoint outbound_domain/${endpoint} ${domain}" >/dev/null
     done < "${file}"
   done < <(find "${runtime_dir}" -maxdepth 1 -type f -name 'plusofon.*.callerids' -print0 | sort -z)
+
+  while IFS= read -r -d '' file; do
+    local office_id office_key account_key value endpoint caller_id
+    office_id="$(office_from_file "${file}" 'sipout.' '.callerids')"
+    [[ -n "${office_id}" ]] || continue
+    office_key="$(endpoint_key "${office_id}")"
+    while IFS='=' read -r account_key value; do
+      [[ "${account_key}" =~ ^[a-z0-9_-]{1,16}$ ]] || continue
+      caller_id="${value%%|*}"
+      [[ "${caller_id}" =~ ^7[0-9]{10}$ ]] || continue
+      if [[ "${account_key}" == "default" ]]; then
+        endpoint="sipout-${office_key}"
+      else
+        endpoint="sipout-${office_key}-${account_key}"
+      fi
+      /usr/sbin/asterisk -rx "database put orbita_endpoint outbound_caller_id/${endpoint} ${caller_id}" >/dev/null
+    done < "${file}"
+  done < <(find "${runtime_dir}" -maxdepth 1 -type f -name 'sipout.*.callerids' -print0 | sort -z)
 
   while IFS= read -r -d '' file; do
     local office_id office_key endpoint caller_id domain
@@ -719,6 +776,41 @@ update_plusofon_registration_statuses() {
   done < <(find "${runtime_dir}" -maxdepth 1 -type f -name 'plusofon.*.conf' -print0 | sort -z)
 }
 
+update_sipout_registration_statuses() {
+  while IFS= read -r -d '' file; do
+    local office_id status_path temporary
+    office_id="$(office_from_file "${file}" 'sipout.' '.accounts')"
+    [[ -n "${office_id}" ]] || continue
+    status_path="${runtime_dir}/sipout.${office_id}.status"
+    temporary="${status_path}.tmp"
+    : > "${temporary}"
+    while IFS='=' read -r account_key registration_name; do
+      [[ "${account_key}" =~ ^[a-z0-9_-]{1,16}$ ]] || continue
+      [[ "${registration_name}" =~ ^sipout-[0-9a-f]{32}(-[a-z0-9_-]{1,16})?-registration$ ]] || continue
+      local output status detail
+      output="$(/usr/sbin/asterisk -rx "pjsip show registration ${registration_name}" 2>/dev/null || true)"
+      detail=""
+      if grep -qiE '(^|[[:space:]])Registered([[:space:]]|$)' <<< "${output}"; then
+        status="registered"
+      elif grep -qiE 'Rejected|Forbidden' <<< "${output}"; then
+        status="rejected"
+        detail="$(registration_detail "${output}")"
+      elif grep -qiE 'Auth\. Sent' <<< "${output}"; then
+        status="pending"
+      elif grep -qiE 'Unregistered|Stopped' <<< "${output}"; then
+        status="unregistered"
+      else
+        status="pending"
+      fi
+      printf '%s=%s\n' "${account_key}" "${status}" >> "${temporary}"
+      [[ -z "${detail}" ]] || printf '%s.detail=%s\n' "${account_key}" "${detail}" >> "${temporary}"
+      maybe_recover_registration "sipout" "${office_id}" "${account_key}" "${registration_name}" "${status}"
+    done < "${file}"
+    printf '%s\n' "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "${temporary}"
+    mv -f "${temporary}" "${status_path}"
+  done < <(find "${runtime_dir}" -maxdepth 1 -type f -name 'sipout.*.accounts' -print0 | sort -z)
+}
+
 watch_runtime_config_main() {
   wait_for_asterisk
   while true; do
@@ -726,6 +818,7 @@ watch_runtime_config_main() {
     apply_routes_if_changed
     update_beeline_registration_statuses
     update_plusofon_registration_statuses
+    update_sipout_registration_statuses
     sleep 5
   done
 }

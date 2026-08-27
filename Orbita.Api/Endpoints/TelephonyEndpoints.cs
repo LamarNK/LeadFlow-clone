@@ -398,9 +398,9 @@ public static class TelephonyEndpoints
                 return Results.Forbid();
             }
             provider = CrmTelephonyProviders.Normalize(provider);
-            if (provider is not (CrmTelephonyProviders.Beeline or CrmTelephonyProviders.Plusofon))
+            if (provider is not (CrmTelephonyProviders.Sipout or CrmTelephonyProviders.Beeline or CrmTelephonyProviders.Plusofon))
             {
-                return Results.BadRequest(new { error = "Форма SIP-аккаунта поддерживает Плюсофон и Билайн." });
+                return Results.BadRequest(new { error = "Форма SIP-аккаунта поддерживает SIPOUT, Плюсофон и Билайн." });
             }
             var (success, error) = await telephony.SetSipProviderAccountAsync(officeId, provider, request, ct);
             return success ? Results.NoContent() : Results.BadRequest(new { error });
@@ -420,13 +420,16 @@ public static class TelephonyEndpoints
                 return Results.Forbid();
             }
             provider = CrmTelephonyProviders.Normalize(provider);
-            if (provider is not (CrmTelephonyProviders.Beeline or CrmTelephonyProviders.Plusofon))
+            if (provider is not (CrmTelephonyProviders.Sipout or CrmTelephonyProviders.Beeline or CrmTelephonyProviders.Plusofon))
             {
-                return Results.BadRequest(new { error = "Несколько SIP-линий поддерживаются только для Плюсофона и Билайна." });
+                return Results.BadRequest(new { error = "Несколько SIP-линий поддерживаются для SIPOUT, Плюсофона и Билайна." });
             }
-            var (success, error, accountKey) = provider == CrmTelephonyProviders.Plusofon
-                ? await telephony.UpsertPlusofonSipAccountAsync(officeId, null, request, ct)
-                : await telephony.UpsertBeelineSipAccountAsync(officeId, null, request, ct);
+            var (success, error, accountKey) = provider switch
+            {
+                CrmTelephonyProviders.Sipout => await telephony.UpsertSipoutSipAccountAsync(officeId, null, request, ct),
+                CrmTelephonyProviders.Plusofon => await telephony.UpsertPlusofonSipAccountAsync(officeId, null, request, ct),
+                _ => await telephony.UpsertBeelineSipAccountAsync(officeId, null, request, ct)
+            };
             return success ? Results.Ok(new { accountKey }) : Results.BadRequest(new { error });
         });
 
@@ -445,13 +448,16 @@ public static class TelephonyEndpoints
                 return Results.Forbid();
             }
             provider = CrmTelephonyProviders.Normalize(provider);
-            if (provider is not (CrmTelephonyProviders.Beeline or CrmTelephonyProviders.Plusofon))
+            if (provider is not (CrmTelephonyProviders.Sipout or CrmTelephonyProviders.Beeline or CrmTelephonyProviders.Plusofon))
             {
-                return Results.BadRequest(new { error = "Несколько SIP-линий поддерживаются только для Плюсофона и Билайна." });
+                return Results.BadRequest(new { error = "Несколько SIP-линий поддерживаются для SIPOUT, Плюсофона и Билайна." });
             }
-            var (success, error, _) = provider == CrmTelephonyProviders.Plusofon
-                ? await telephony.UpsertPlusofonSipAccountAsync(officeId, accountKey, request, ct)
-                : await telephony.UpsertBeelineSipAccountAsync(officeId, accountKey, request, ct);
+            var (success, error, _) = provider switch
+            {
+                CrmTelephonyProviders.Sipout => await telephony.UpsertSipoutSipAccountAsync(officeId, accountKey, request, ct),
+                CrmTelephonyProviders.Plusofon => await telephony.UpsertPlusofonSipAccountAsync(officeId, accountKey, request, ct),
+                _ => await telephony.UpsertBeelineSipAccountAsync(officeId, accountKey, request, ct)
+            };
             return success ? Results.NoContent() : Results.BadRequest(new { error });
         });
 
@@ -469,13 +475,16 @@ public static class TelephonyEndpoints
                 return Results.Forbid();
             }
             provider = CrmTelephonyProviders.Normalize(provider);
-            if (provider is not (CrmTelephonyProviders.Beeline or CrmTelephonyProviders.Plusofon))
+            if (provider is not (CrmTelephonyProviders.Sipout or CrmTelephonyProviders.Beeline or CrmTelephonyProviders.Plusofon))
             {
                 return Results.BadRequest();
             }
-            var (success, error) = provider == CrmTelephonyProviders.Plusofon
-                ? await telephony.DeletePlusofonSipAccountAsync(officeId, accountKey, ct)
-                : await telephony.DeleteBeelineSipAccountAsync(officeId, accountKey, ct);
+            var (success, error) = provider switch
+            {
+                CrmTelephonyProviders.Sipout => await telephony.DeleteSipoutSipAccountAsync(officeId, accountKey, ct),
+                CrmTelephonyProviders.Plusofon => await telephony.DeletePlusofonSipAccountAsync(officeId, accountKey, ct),
+                _ => await telephony.DeleteBeelineSipAccountAsync(officeId, accountKey, ct)
+            };
             return success ? Results.NoContent() : Results.BadRequest(new { error });
         });
 

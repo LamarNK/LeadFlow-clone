@@ -3003,9 +3003,34 @@ public sealed class OrbitaApiClient(
         CancellationToken ct = default,
         string provider = CrmTelephonyProviders.Sipout) =>
         _preview.Enabled
-            ? Task.FromResult<CrmTelephonySettingsDto?>(new CrmTelephonySettingsDto(
-                officeId, provider, false, false, null, []))
+            ? Task.FromResult<CrmTelephonySettingsDto?>(BuildPreviewTelephonySettings(officeId, provider))
             : GetAsync<CrmTelephonySettingsDto>($"api/v1/crm/telephony/offices/{officeId:D}/{Uri.EscapeDataString(provider)}", ct);
+
+    private static CrmTelephonySettingsDto BuildPreviewTelephonySettings(Guid officeId, string provider)
+    {
+        if (provider == CrmTelephonyProviders.Sipout)
+        {
+            var account = new CrmSipProviderAccountDto(
+                "sip.sipout.net", "sip.sipout.net", 5060, "udp",
+                "1759571735121", "1759571735121", true, false,
+                "registered", DateTime.UtcNow, AccountKey: "ilya",
+                Name: "SIPOUT Илья", Mode: CrmSipAccountModes.Personal,
+                AssignedUserId: "preview-manager-elena", AssignedUserName: "Елена Воронцова",
+                OutboundCallerId: "79010786287", InternalNumber: "202");
+            return new CrmTelephonySettingsDto(
+                officeId, provider, true, true, Guid.Parse("77777777-7777-7777-7777-777777777777"),
+                [], true, account, [account]);
+        }
+        if (provider == CrmTelephonyProviders.Asterisk)
+        {
+            return new CrmTelephonySettingsDto(
+                officeId, provider, true, true, Guid.Parse("88888888-8888-8888-8888-888888888888"),
+                [new CrmTelephonyUserBindingDto(
+                    "preview-manager-elena", "Елена Воронцова", "202",
+                    CrmTelephonyOutboundProviders.ForSipoutLine("ilya"))]);
+        }
+        return new CrmTelephonySettingsDto(officeId, provider, false, false, null, []);
+    }
 
     public Task<CrmTelephonyWebRtcConfigDto?> GetCrmTelephonyWebRtcConfigAsync(
         CancellationToken ct = default) =>

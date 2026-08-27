@@ -90,8 +90,10 @@
         userSelect.value = button.dataset.userId || '';
         extension.value = button.dataset.providerKey || '';
         const requestedProvider = button.dataset.outboundProvider || 'default';
-        if (requestedProvider === 'beeline') {
-            outboundProvider.value = outboundProvider.querySelector('[data-office-default="true"]')?.value || 'default';
+        if (['sipout', 'plusofon', 'beeline'].includes(requestedProvider)) {
+            const matchingDefault = Array.from(outboundProvider.querySelectorAll('[data-office-default="true"]'))
+                .find(option => option.dataset.sipProvider === requestedProvider);
+            outboundProvider.value = matchingDefault?.value || 'default';
         } else {
             outboundProvider.value = requestedProvider;
         }

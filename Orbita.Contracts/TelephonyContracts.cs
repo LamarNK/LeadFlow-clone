@@ -19,14 +19,17 @@ public static class CrmTelephonyProviders
 public static class CrmTelephonyOutboundProviders
 {
     public const string Default = "default";
+    public const string SipoutLinePrefix = "sipout:";
     public const string BeelineLinePrefix = "beeline:";
     public const string PlusofonLinePrefix = "plusofon:";
 
     public static bool IsSupported(string? provider) =>
         string.IsNullOrWhiteSpace(provider)
         || string.Equals(provider, Default, StringComparison.OrdinalIgnoreCase)
+        || string.Equals(provider, CrmTelephonyProviders.Sipout, StringComparison.OrdinalIgnoreCase)
         || string.Equals(provider, CrmTelephonyProviders.Plusofon, StringComparison.OrdinalIgnoreCase)
         || string.Equals(provider, CrmTelephonyProviders.Beeline, StringComparison.OrdinalIgnoreCase)
+        || TryGetSipoutLineKey(provider, out _)
         || TryGetBeelineLineKey(provider, out _)
         || TryGetPlusofonLineKey(provider, out _);
 
@@ -37,8 +40,14 @@ public static class CrmTelephonyOutboundProviders
     public static string ForBeelineLine(string accountKey) =>
         $"{BeelineLinePrefix}{accountKey.Trim().ToLowerInvariant()}";
 
+    public static string ForSipoutLine(string accountKey) =>
+        $"{SipoutLinePrefix}{accountKey.Trim().ToLowerInvariant()}";
+
     public static string ForPlusofonLine(string accountKey) =>
         $"{PlusofonLinePrefix}{accountKey.Trim().ToLowerInvariant()}";
+
+    public static bool TryGetSipoutLineKey(string? provider, out string accountKey)
+        => TryGetLineKey(provider, SipoutLinePrefix, out accountKey);
 
     public static bool TryGetBeelineLineKey(string? provider, out string accountKey)
         => TryGetLineKey(provider, BeelineLinePrefix, out accountKey);
@@ -119,7 +128,8 @@ public sealed record CrmSipProviderAccountDto(
     string Mode = CrmSipAccountModes.Shared,
     string? AssignedUserId = null,
     string? AssignedUserName = null,
-    string? OutboundCallerId = null);
+    string? OutboundCallerId = null,
+    string? InternalNumber = null);
 
 public sealed record CrmTelephonyReceiverDto(
     Guid OfficeId,
@@ -169,7 +179,8 @@ public sealed record UpdateSipProviderAccountRequest(
     bool UseForOutbound,
     string? Name = null,
     string Mode = CrmSipAccountModes.Shared,
-    string? OutboundCallerId = null);
+    string? OutboundCallerId = null,
+    string? InternalNumber = null);
 
 public sealed record SipoutCallWebhookPayload(
     string ExternalCallId,

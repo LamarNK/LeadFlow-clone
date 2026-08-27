@@ -83,6 +83,9 @@ public sealed class TelephonySettingsController(
             .OrderBy(x => string.IsNullOrWhiteSpace(x.FullName) ? x.Email : x.FullName)
             .ToList();
         var phoneUsers = providerSettings[CrmTelephonyProviders.Asterisk]?.UserBindings ?? [];
+        var sipoutLineUsers = phoneUsers.Count(x =>
+            x.OutboundProvider == CrmTelephonyProviders.Sipout
+            || CrmTelephonyOutboundProviders.TryGetSipoutLineKey(x.OutboundProvider, out _));
         var plusofonLineUsers = phoneUsers.Count(x =>
             x.OutboundProvider is CrmTelephonyOutboundProviders.Default or CrmTelephonyProviders.Plusofon
             || CrmTelephonyOutboundProviders.TryGetPlusofonLineKey(x.OutboundProvider, out _));
@@ -96,6 +99,10 @@ public sealed class TelephonySettingsController(
             OfficeName = officeName,
             Settings = selectedSettings,
             PhoneUsers = phoneUsers,
+            SipoutAccounts = providerSettings[CrmTelephonyProviders.Sipout]?.SipAccounts
+                ?? (providerSettings[CrmTelephonyProviders.Sipout]?.SipAccount is null
+                    ? []
+                    : [providerSettings[CrmTelephonyProviders.Sipout]!.SipAccount!]),
             PlusofonAccounts = providerSettings[CrmTelephonyProviders.Plusofon]?.SipAccounts
                 ?? (providerSettings[CrmTelephonyProviders.Plusofon]?.SipAccount is null
                     ? []
@@ -110,13 +117,14 @@ public sealed class TelephonySettingsController(
                 ToProviderSummary(
                     providerSettings[CrmTelephonyProviders.Asterisk],
                     "SIP-сервер",
-                    "Звонки из браузера через линии Плюсофон и Билайн",
+                    "Звонки из браузера через линии SIPOUT, Плюсофон и Билайн",
                     "fa-server"),
                 ToProviderSummary(
                     providerSettings[CrmTelephonyProviders.Sipout],
                     "SIPOUT",
-                    "События и записи из существующей браузерной звонилки",
-                    "fa-phone-volume"),
+                    "SIP-линии, события и записи звонков SIPOUT",
+                    "fa-phone-volume",
+                    sipoutLineUsers),
                 ToProviderSummary(
                     providerSettings[CrmTelephonyProviders.Plusofon],
                     "Плюсофон",
@@ -163,7 +171,7 @@ public sealed class TelephonySettingsController(
     {
         if (!CrmTelephonyProviders.IsSupported(provider)) return BadRequest();
         provider = CrmTelephonyProviders.Normalize(provider);
-        if (provider is not (CrmTelephonyProviders.Beeline or CrmTelephonyProviders.Plusofon))
+        if (provider is not (CrmTelephonyProviders.Sipout or CrmTelephonyProviders.Beeline or CrmTelephonyProviders.Plusofon))
         {
             return BadRequest();
         }
@@ -245,7 +253,7 @@ public sealed class TelephonySettingsController(
             return BadRequest();
         }
         var provider = CrmTelephonyProviders.Normalize(model.Provider);
-        if (provider is not (CrmTelephonyProviders.Beeline or CrmTelephonyProviders.Plusofon))
+        if (provider is not (CrmTelephonyProviders.Sipout or CrmTelephonyProviders.Beeline or CrmTelephonyProviders.Plusofon))
         {
             return BadRequest();
         }
@@ -261,11 +269,17 @@ public sealed class TelephonySettingsController(
             model.UseForOutbound,
             model.Name,
             model.Mode,
-            model.OutboundCallerId);
+            model.OutboundCallerId,
+            model.InternalNumber);
         (bool success, string? error) = string.IsNullOrWhiteSpace(model.AccountKey)
             ? await api.AddSipProviderAccountAsync(model.OfficeId, provider, request, ct)
             : await api.UpdateSipProviderAccountAsync(model.OfficeId, provider, model.AccountKey, request, ct);
-        var providerLabel = provider == CrmTelephonyProviders.Plusofon ? "Плюсофона" : "Билайна";
+        var providerLabel = provider switch
+        {
+            CrmTelephonyProviders.Sipout => "SIPOUT",
+            CrmTelephonyProviders.Plusofon => "Плюсофона",
+            _ => "Билайна"
+        };
         TempData[success ? "SettingsStatus" : "SettingsError"] = success
             ? $"SIP-линия {providerLabel} сохранена и передана Asterisk. Статус регистрации обновится в течение нескольких секунд."
             : error;
@@ -282,10 +296,15 @@ public sealed class TelephonySettingsController(
     {
         if (!CrmTelephonyProviders.IsSupported(provider)) return BadRequest();
         provider = CrmTelephonyProviders.Normalize(provider);
-        if (provider is not (CrmTelephonyProviders.Beeline or CrmTelephonyProviders.Plusofon)) return BadRequest();
+        if (provider is not (CrmTelephonyProviders.Sipout or CrmTelephonyProviders.Beeline or CrmTelephonyProviders.Plusofon)) return BadRequest();
         var (success, error) = await api.DeleteSipProviderAccountAsync(
             officeId, provider, accountKey, ct);
-        var providerLabel = provider == CrmTelephonyProviders.Plusofon ? "Плюсофона" : "Билайна";
+        var providerLabel = provider switch
+        {
+            CrmTelephonyProviders.Sipout => "SIPOUT",
+            CrmTelephonyProviders.Plusofon => "Плюсофона",
+            _ => "Билайна"
+        };
         TempData[success ? "SettingsStatus" : "SettingsError"] = success
             ? $"Линия {providerLabel} удалена."
             : error;

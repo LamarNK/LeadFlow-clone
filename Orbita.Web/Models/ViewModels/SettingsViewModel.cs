@@ -29,6 +29,7 @@ public sealed class CrmTelephonyPageViewModel
     public string OfficeName { get; init; } = string.Empty;
     public required CrmTelephonySettingsDto Settings { get; init; }
     public IReadOnlyList<CrmTelephonyUserBindingDto> PhoneUsers { get; init; } = [];
+    public IReadOnlyList<CrmSipProviderAccountDto> SipoutAccounts { get; init; } = [];
     public IReadOnlyList<CrmSipProviderAccountDto> PlusofonAccounts { get; init; } = [];
     public IReadOnlyList<CrmSipProviderAccountDto> BeelineAccounts { get; init; } = [];
     public IReadOnlyList<PanelUserDto> OfficeUsers { get; init; } = [];
@@ -75,6 +76,7 @@ public sealed class SaveSipProviderAccountFormModel
     public string AuthorizationLogin { get; set; } = string.Empty;
     public string? Password { get; set; }
     public string? OutboundCallerId { get; set; }
+    public string? InternalNumber { get; set; }
     public bool UseForOutbound { get; set; }
 }
 

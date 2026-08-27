@@ -602,7 +602,7 @@ public sealed class CrmTelephonyServiceTests
     }
 
     [Fact]
-    public async Task PlusofonAndBeeline_StayConnected_WhenOfficeDefaultIsSwitched()
+    public async Task SipoutPlusofonAndBeeline_StayConnected_WhenOfficeDefaultIsSwitched()
     {
         var runtimePath = Path.Combine(Path.GetTempPath(), "orbita-sip-runtime-tests", Guid.NewGuid().ToString("N"));
         try
@@ -653,12 +653,26 @@ public sealed class CrmTelephonyServiceTests
                     "Билайн", CrmSipAccountModes.Shared));
             Assert.True(beelineConnected.Success, beelineConnected.Error);
 
+            var sipoutConnected = await sut.UpsertSipoutSipAccountAsync(
+                officeId,
+                "ilya",
+                new UpdateSipProviderAccountRequest(
+                    "sip.sipout.net", "sip.sipout.net", 5060, "udp",
+                    "1759571735121", "1759571735121", "sipout-password", false,
+                    "SIPOUT Илья", CrmSipAccountModes.Shared, "79010786287", "202"));
+            Assert.True(sipoutConnected.Success, sipoutConnected.Error);
+
             var plusSettings = await sut.GetSettingsAsync(officeId, provider: CrmTelephonyProviders.Plusofon);
             var beelineSettings = await sut.GetSettingsAsync(officeId, provider: CrmTelephonyProviders.Beeline);
+            var sipoutSettings = await sut.GetSettingsAsync(officeId, provider: CrmTelephonyProviders.Sipout);
             Assert.True(plusSettings?.IsConfigured);
             Assert.True(beelineSettings?.IsConfigured);
+            Assert.True(sipoutSettings?.IsConfigured);
             Assert.True(Assert.Single(plusSettings!.SipAccounts!).UseForOutbound);
             Assert.False(Assert.Single(beelineSettings!.SipAccounts!).UseForOutbound);
+            var sipoutAccount = Assert.Single(sipoutSettings!.SipAccounts!);
+            Assert.False(sipoutAccount.UseForOutbound);
+            Assert.Equal("202", sipoutAccount.InternalNumber);
             Assert.Contains(
                 "plusofon",
                 await File.ReadAllTextAsync(Path.Combine(runtimePath, $"outbound.{officeId:D}.conf")),
@@ -677,8 +691,28 @@ public sealed class CrmTelephonyServiceTests
             Assert.True(Assert.Single(beelineSettings!.SipAccounts!).UseForOutbound);
             Assert.True(File.Exists(Path.Combine(runtimePath, $"plusofon.{officeId:D}.conf")));
             Assert.True(File.Exists(Path.Combine(runtimePath, $"beeline.{officeId:D}.conf")));
+            Assert.True(File.Exists(Path.Combine(runtimePath, $"sipout.{officeId:D}.conf")));
+            var sipoutConfig = await File.ReadAllTextAsync(Path.Combine(runtimePath, $"sipout.{officeId:D}.conf"));
+            Assert.Contains("username=1759571735121", sipoutConfig, StringComparison.Ordinal);
+            Assert.Contains("contact_user=202", sipoutConfig, StringComparison.Ordinal);
+            Assert.Contains("set_var=ORBITA_INBOUND_PROVIDER=sipout", sipoutConfig, StringComparison.Ordinal);
             Assert.Contains(
                 "beeline",
+                await File.ReadAllTextAsync(Path.Combine(runtimePath, $"outbound.{officeId:D}.conf")),
+                StringComparison.Ordinal);
+
+            var sipoutSelected = await sut.SetOfficeDefaultOutboundAsync(
+                officeId,
+                CrmTelephonyOutboundProviders.ForSipoutLine("ilya"));
+            Assert.True(sipoutSelected.Success, sipoutSelected.Error);
+            plusSettings = await sut.GetSettingsAsync(officeId, provider: CrmTelephonyProviders.Plusofon);
+            beelineSettings = await sut.GetSettingsAsync(officeId, provider: CrmTelephonyProviders.Beeline);
+            sipoutSettings = await sut.GetSettingsAsync(officeId, provider: CrmTelephonyProviders.Sipout);
+            Assert.False(Assert.Single(plusSettings!.SipAccounts!).UseForOutbound);
+            Assert.False(Assert.Single(beelineSettings!.SipAccounts!).UseForOutbound);
+            Assert.True(Assert.Single(sipoutSettings!.SipAccounts!).UseForOutbound);
+            Assert.Contains(
+                "sipout",
                 await File.ReadAllTextAsync(Path.Combine(runtimePath, $"outbound.{officeId:D}.conf")),
                 StringComparison.Ordinal);
         }
