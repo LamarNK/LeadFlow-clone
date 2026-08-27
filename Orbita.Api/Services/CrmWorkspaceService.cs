@@ -2110,7 +2110,7 @@ public sealed class CrmWorkspaceService(
         var defensiveDuplicates = 0;
         foreach (var entry in request.Entries)
         {
-            var fullName = entry.FullName?.Trim() ?? string.Empty;
+            var fullName = CollapseLeadImportWhitespace(entry.FullName);
             var phoneRaw = entry.PhoneRaw?.Trim() ?? string.Empty;
             var phoneNormalized = _phoneNormalizer.Normalize(phoneRaw);
             if (fullName.Length == 0 || fullName.Length > 256 || string.IsNullOrWhiteSpace(phoneNormalized))
@@ -2134,24 +2134,45 @@ public sealed class CrmWorkspaceService(
             }, phoneNormalized));
         }
 
+        // One person may be listed more than once with different contact numbers.
+        // Group before creating and assigning cards so the person is distributed only once,
+        // while every unique phone remains available in the card contacts.
+        var entryGroups = normalizedEntries
+            .GroupBy(
+                x => NormalizeLeadImportFullNameKey(x.Entry.FullName),
+                StringComparer.Ordinal)
+            .Select(x => x.ToList())
+            .ToList();
+
         var normalizedPhones = normalizedEntries.Select(x => x.PhoneNormalized).ToArray();
-        var existingPhones = await db.CrmCandidateCards.AsNoTracking()
+        var existingPrimaryPhones = await db.CrmCandidateCards.AsNoTracking()
             .Where(x => x.OfficeId == officeId && normalizedPhones.Contains(x.Response.PhoneNormalized))
             .Select(x => x.Response.PhoneNormalized)
             .Distinct()
             .ToListAsync(ct);
-        var existingPhoneSet = existingPhones.ToHashSet(StringComparer.Ordinal);
-        var entriesToCreate = normalizedEntries
-            .Where(x => !existingPhoneSet.Contains(x.PhoneNormalized))
+
+        // Additional contact numbers must also protect against re-imports. Otherwise a
+        // secondary phone from a previously grouped person could create a second card.
+        var existingContactPhones = await db.CandidateContactPhones.AsNoTracking()
+            .Where(x => x.Person.OfficeId == officeId && normalizedPhones.Contains(x.PhoneNormalized))
+            .Select(x => x.PhoneNormalized)
+            .Distinct()
+            .ToListAsync(ct);
+        var existingPhoneSet = existingPrimaryPhones
+            .Concat(existingContactPhones)
+            .ToHashSet(StringComparer.Ordinal);
+        var groupsToCreate = entryGroups
+            .Where(group => group.All(x => !existingPhoneSet.Contains(x.PhoneNormalized)))
             .ToList();
+        var skippedExistingGroups = entryGroups.Count - groupsToCreate.Count;
         var duplicateRows = Math.Max(0, request.DuplicateRowsInFile) + defensiveDuplicates;
 
-        if (entriesToCreate.Count == 0)
+        if (groupsToCreate.Count == 0)
         {
             return (new CrmLeadFileImportResult(
-                normalizedEntries.Count,
+                entryGroups.Count,
                 0,
-                existingPhoneSet.Count,
+                skippedExistingGroups,
                 duplicateRows,
                 0,
                 0), null);
@@ -2174,9 +2195,10 @@ public sealed class CrmWorkspaceService(
             safeFileName = safeFileName[..180];
         }
 
-        var cards = new List<CrmCandidateCardEntity>(entriesToCreate.Count);
-        foreach (var (entry, phoneNormalized) in entriesToCreate)
+        var cards = new List<CrmCandidateCardEntity>(groupsToCreate.Count);
+        foreach (var group in groupsToCreate)
         {
+            var (entry, phoneNormalized) = group[0];
             var (firstName, lastName, middleName) = _candidateParser.ParseName(entry.FullName);
             var person = new CandidatePersonEntity
             {
@@ -2228,30 +2250,40 @@ public sealed class CrmWorkspaceService(
 
             db.CandidatePersons.Add(person);
             db.CandidateResponses.Add(response);
-            db.CandidateContactPhones.Add(new CandidateContactPhoneEntity
+            for (var phoneIndex = 0; phoneIndex < group.Count; phoneIndex++)
             {
-                Id = Guid.NewGuid(),
-                PersonId = person.Id,
-                PhoneRaw = entry.PhoneRaw,
-                PhoneNormalized = phoneNormalized,
-                IsPrimary = true,
-                CreatedAtUtc = now,
-                CreatedByUserId = actorUserId
-            });
-            db.CandidatePhoneHistory.Add(new CandidatePhoneHistoryEntity
-            {
-                Id = Guid.NewGuid(),
-                PersonId = person.Id,
-                ResponseId = response.Id,
-                PhoneRaw = entry.PhoneRaw,
-                PhoneNormalized = phoneNormalized,
-                RecordedAtUtc = now
-            });
+                var (phoneEntry, contactPhoneNormalized) = group[phoneIndex];
+                db.CandidateContactPhones.Add(new CandidateContactPhoneEntity
+                {
+                    Id = Guid.NewGuid(),
+                    PersonId = person.Id,
+                    PhoneRaw = phoneEntry.PhoneRaw,
+                    PhoneNormalized = contactPhoneNormalized,
+                    IsPrimary = phoneIndex == 0,
+                    CreatedAtUtc = now,
+                    CreatedByUserId = actorUserId
+                });
+                db.CandidatePhoneHistory.Add(new CandidatePhoneHistoryEntity
+                {
+                    Id = Guid.NewGuid(),
+                    PersonId = person.Id,
+                    ResponseId = response.Id,
+                    PhoneRaw = phoneEntry.PhoneRaw,
+                    PhoneNormalized = contactPhoneNormalized,
+                    RecordedAtUtc = now
+                });
+            }
             db.CrmCandidateCards.Add(card);
+            var sourceLines = string.Join(", ", group
+                .Select(x => x.Entry.SourceLine)
+                .Distinct()
+                .OrderBy(x => x));
             AddHistory(
                 card.Id,
                 "Created",
-                $"Карточка создана из файла «{safeFileName}», строка {entry.SourceLine}",
+                group.Count == 1
+                    ? $"Карточка создана из файла «{safeFileName}», строка {sourceLines}"
+                    : $"Карточка создана из файла «{safeFileName}», строки {sourceLines}; телефонов: {group.Count}",
                 actorUserId,
                 actorName,
                 now);
@@ -2284,13 +2316,23 @@ public sealed class CrmWorkspaceService(
 
         NotifyBoardChanged(officeId);
         return (new CrmLeadFileImportResult(
-            normalizedEntries.Count,
+            entryGroups.Count,
             cards.Count,
-            existingPhoneSet.Count,
+            skippedExistingGroups,
             duplicateRows,
             assignedCount,
             managersOnShift), null);
     }
+
+    private static string CollapseLeadImportWhitespace(string? value) =>
+        string.Join(" ", (value ?? string.Empty)
+            .Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries));
+
+    private static string NormalizeLeadImportFullNameKey(string value) =>
+        CollapseLeadImportWhitespace(value)
+            .Replace('ё', 'е')
+            .Replace('Ё', 'Е')
+            .ToUpperInvariant();
 
     public async Task<(bool Ok, string? Error)> UpdateNoteAsync(
         Guid cardId,

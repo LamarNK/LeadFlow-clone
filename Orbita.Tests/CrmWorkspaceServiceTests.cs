@@ -786,6 +786,95 @@ public sealed class CrmWorkspaceServiceTests
     }
 
     [Fact]
+    public async Task ImportLeadFile_SameFullNameWithDifferentPhones_CreatesOneCardWithBothPhones()
+    {
+        await using var harness = await Harness.CreateAsync();
+        SeedOffice(harness.Db, crmEnabled: true);
+        var manager = await harness.CreateManagerAsync("file-import@test.local", capacity: 300, onShift: true);
+        var request = new CrmLeadFileImportRequest(
+            "3(50).txt",
+            [
+                new CrmLeadFileImportEntry(
+                    "Пигунов Владимир Викторович",
+                    "+7 923 631-86-92",
+                    "Слесарь",
+                    61),
+                new CrmLeadFileImportEntry(
+                    "  пигунов   владимир викторович  ",
+                    "+7 923 062-74-09",
+                    "Слесарь вахта",
+                    91)
+            ]);
+
+        var (result, error) = await harness.Sut.ImportLeadFileAsync(
+            OfficeId,
+            request,
+            manager.Id);
+
+        Assert.Null(error);
+        Assert.NotNull(result);
+        Assert.Equal(1, result.RecognizedCount);
+        Assert.Equal(1, result.CreatedCount);
+        Assert.Equal(1, result.AssignedCount);
+
+        var card = await harness.Db.CrmCandidateCards
+            .Include(x => x.Response)
+            .SingleAsync();
+        Assert.Equal(manager.Id, card.ManagerUserId);
+        Assert.Equal("Пигунов Владимир Викторович", card.Response.FullName);
+        Assert.Equal("79236318692", card.Response.PhoneNormalized);
+
+        var phones = await harness.Db.CandidateContactPhones
+            .Where(x => x.PersonId == card.Response.PersonId)
+            .OrderByDescending(x => x.IsPrimary)
+            .ThenBy(x => x.PhoneNormalized)
+            .ToListAsync();
+        Assert.Equal(2, phones.Count);
+        Assert.Single(phones, x => x.IsPrimary);
+        Assert.Equal(
+            ["79230627409", "79236318692"],
+            phones.Select(x => x.PhoneNormalized).OrderBy(x => x).ToArray());
+        Assert.Equal(
+            2,
+            await harness.Db.CandidatePhoneHistory.CountAsync(x => x.PersonId == card.Response.PersonId));
+    }
+
+    [Fact]
+    public async Task ImportLeadFile_ExistingAdditionalPhone_DoesNotCreateDuplicateCard()
+    {
+        await using var harness = await Harness.CreateAsync();
+        SeedOffice(harness.Db, crmEnabled: true);
+        var manager = await harness.CreateManagerAsync("file-repeat@test.local", capacity: 300, onShift: true);
+        var initialRequest = new CrmLeadFileImportRequest(
+            "initial.txt",
+            [
+                new CrmLeadFileImportEntry("Ершов Алексей Алексеевич", "+7 924 307-43-93", "Охранник", 1),
+                new CrmLeadFileImportEntry("Ершов Алексей Алексеевич", "+7 969 403-68-27", "Охранник", 2)
+            ]);
+        var (initialResult, initialError) = await harness.Sut.ImportLeadFileAsync(
+            OfficeId,
+            initialRequest,
+            manager.Id);
+        Assert.Null(initialError);
+        Assert.Equal(1, initialResult!.CreatedCount);
+
+        var repeatedRequest = new CrmLeadFileImportRequest(
+            "repeat.txt",
+            [new CrmLeadFileImportEntry("Ершов Алексей Алексеевич", "+7 969 403-68-27", "Охранник", 1)]);
+        var (repeatResult, repeatError) = await harness.Sut.ImportLeadFileAsync(
+            OfficeId,
+            repeatedRequest,
+            manager.Id);
+
+        Assert.Null(repeatError);
+        Assert.NotNull(repeatResult);
+        Assert.Equal(0, repeatResult.CreatedCount);
+        Assert.Equal(1, repeatResult.SkippedExistingCount);
+        Assert.Single(harness.Db.CrmCandidateCards);
+        Assert.Equal(2, harness.Db.CandidateContactPhones.Count());
+    }
+
+    [Fact]
     public async Task AddContactPhone_AndSetPrimary_NotifiesManagerWhenChangedByAdmin()
     {
         await using var harness = await Harness.CreateAsync();
