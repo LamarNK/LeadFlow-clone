@@ -30,6 +30,7 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
     public DbSet<CrmTaskNotificationEntity> CrmTaskNotifications => Set<CrmTaskNotificationEntity>();
     public DbSet<CrmTaskCommentEntity> CrmTaskComments => Set<CrmTaskCommentEntity>();
     public DbSet<CrmTaskAttachmentEntity> CrmTaskAttachments => Set<CrmTaskAttachmentEntity>();
+    public DbSet<CrmSuccessDocumentEntity> CrmSuccessDocuments => Set<CrmSuccessDocumentEntity>();
     public DbSet<CrmCandidateHistoryEntity> CrmCandidateHistory => Set<CrmCandidateHistoryEntity>();
     public DbSet<CrmTelephonyWebhookEntity> CrmTelephonyWebhooks => Set<CrmTelephonyWebhookEntity>();
     public DbSet<CrmTelephonyUserBindingEntity> CrmTelephonyUserBindings => Set<CrmTelephonyUserBindingEntity>();
@@ -277,6 +278,7 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
             entity.Property(x => x.ManagerUserId).HasMaxLength(128);
             entity.Property(x => x.InitialManagerUserId).HasMaxLength(128);
             entity.Property(x => x.CloseReason).HasMaxLength(64);
+            entity.Property(x => x.SuccessContractMissingReason).HasMaxLength(2000);
             entity.HasOne(x => x.Response).WithMany().HasForeignKey(x => x.ResponseId).OnDelete(DeleteBehavior.Cascade);
         });
 
@@ -348,6 +350,22 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
             entity.HasOne<CrmTaskEntity>()
                 .WithMany()
                 .HasForeignKey(x => x.TaskId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<CrmSuccessDocumentEntity>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => new { x.CardId, x.Category, x.CreatedAtUtc });
+            entity.Property(x => x.Category).HasMaxLength(32);
+            entity.Property(x => x.FileName).HasMaxLength(255);
+            entity.Property(x => x.ContentType).HasMaxLength(128);
+            entity.Property(x => x.UploadedByUserId).HasMaxLength(128);
+            entity.Property(x => x.UploadedByName).HasMaxLength(256);
+            entity.Property(x => x.RelativePath).HasMaxLength(512);
+            entity.HasOne<CrmCandidateCardEntity>()
+                .WithMany()
+                .HasForeignKey(x => x.CardId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
 

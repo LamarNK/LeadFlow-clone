@@ -290,6 +290,8 @@ public sealed class CrmController(
         ViewData["CrmTab"] = resolvedTab;
         ViewData["CanAccessCrmTasks"] = canAccessTasks;
         ViewData["IsCrmAdmin"] = PanelRoles.HasElevatedOfficeAccess(User);
+        ViewData["CanEditSuccessReport"] = PanelRoles.CanEditSuccessReport(User);
+        ViewData["CanDownloadSuccessReportArchive"] = PanelRoles.CanDownloadSuccessReportArchive(User);
         ViewData["CurrentCrmUserId"] = User.FindFirstValue(ClaimTypes.NameIdentifier);
         // Chat mark-read is POST-only (see MarkChatRead) so GET stays free of side effects.
         ViewData["MarkChatReadOnLoad"] = resolvedTab == "chat" && card.ChatUnreadCount > 0;
@@ -753,6 +755,13 @@ public sealed class CrmController(
             return RedirectAfterCardMutation(returnUrl, nameof(Index), new { });
         }
 
+        if (operation == CrmBulkTransitionOperations.Close
+            && string.Equals(closeReason, CrmCloseReasons.Success, StringComparison.Ordinal))
+        {
+            TempData["CrmError"] = "Успешно закрывайте карточки по одной — для каждой нужен отдельный отчёт с файлами.";
+            return RedirectAfterCardMutation(returnUrl, nameof(Index), new { });
+        }
+
         var auditComment = string.IsNullOrWhiteSpace(comment)
             ? operation == CrmBulkTransitionOperations.Close
                 ? "Массовое закрытие карточек."
@@ -824,6 +833,122 @@ public sealed class CrmController(
         var (_, error) = await api.CloseCrmCardAsync(id, reason, comment, ct);
         if (error is not null) TempData["CrmError"] = error;
         return RedirectToAction(nameof(Card), new { id, stage });
+    }
+
+    [HttpPost]
+    [Authorize(Policy = PanelPermissions.CrmBoard)]
+    [ValidateAntiForgeryToken]
+    [RequestSizeLimit(CrmSuccessDocumentLimits.MaxReportSizeBytes)]
+    [RequestFormLimits(MultipartBodyLengthLimit = CrmSuccessDocumentLimits.MaxReportSizeBytes)]
+    public async Task<IActionResult> CloseSuccess(
+        Guid id,
+        string? comment,
+        bool noContractPhoto,
+        string? contractMissingReason,
+        string? stage,
+        List<IFormFile>? correspondence,
+        List<IFormFile>? ticket,
+        List<IFormFile>? ticket_receipt,
+        List<IFormFile>? contract,
+        List<IFormFile>? relationship,
+        List<IFormFile>? candidate_document,
+        List<IFormFile>? other,
+        CancellationToken ct = default)
+    {
+        var files = new List<CrmSuccessUploadFile>();
+        AddSuccessFiles(files, correspondence, CrmSuccessDocumentCategories.Correspondence);
+        AddSuccessFiles(files, ticket, CrmSuccessDocumentCategories.Ticket);
+        AddSuccessFiles(files, ticket_receipt, CrmSuccessDocumentCategories.TicketReceipt);
+        AddSuccessFiles(files, contract, CrmSuccessDocumentCategories.Contract);
+        AddSuccessFiles(files, relationship, CrmSuccessDocumentCategories.Relationship);
+        AddSuccessFiles(files, candidate_document, CrmSuccessDocumentCategories.CandidateDocument);
+        AddSuccessFiles(files, other, CrmSuccessDocumentCategories.Other);
+
+        var (_, error) = await api.CloseCrmCardSuccessAsync(
+            id,
+            comment,
+            noContractPhoto ? contractMissingReason : null,
+            files,
+            ct);
+        if (error is not null) TempData["CrmError"] = error;
+        else TempData["CrmOk"] = "Карточка успешно закрыта, отчёт сохранён.";
+        return RedirectToAction(nameof(Card), new { id, stage });
+    }
+
+    [HttpPost]
+    [Authorize(Policy = PanelPermissions.CrmBoard)]
+    [ValidateAntiForgeryToken]
+    [RequestSizeLimit(CrmSuccessDocumentLimits.MaxReportSizeBytes)]
+    [RequestFormLimits(MultipartBodyLengthLimit = CrmSuccessDocumentLimits.MaxReportSizeBytes)]
+    public async Task<IActionResult> UpdateSuccessReport(
+        Guid id,
+        bool noContractPhoto,
+        string? contractMissingReason,
+        string? stage,
+        List<Guid>? keptDocumentIds,
+        List<IFormFile>? correspondence,
+        List<IFormFile>? ticket,
+        List<IFormFile>? ticket_receipt,
+        List<IFormFile>? contract,
+        List<IFormFile>? relationship,
+        List<IFormFile>? candidate_document,
+        List<IFormFile>? other,
+        CancellationToken ct = default)
+    {
+        if (!PanelRoles.CanEditSuccessReport(User))
+        {
+            return Forbid();
+        }
+
+        var files = new List<CrmSuccessUploadFile>();
+        AddSuccessFiles(files, correspondence, CrmSuccessDocumentCategories.Correspondence);
+        AddSuccessFiles(files, ticket, CrmSuccessDocumentCategories.Ticket);
+        AddSuccessFiles(files, ticket_receipt, CrmSuccessDocumentCategories.TicketReceipt);
+        AddSuccessFiles(files, contract, CrmSuccessDocumentCategories.Contract);
+        AddSuccessFiles(files, relationship, CrmSuccessDocumentCategories.Relationship);
+        AddSuccessFiles(files, candidate_document, CrmSuccessDocumentCategories.CandidateDocument);
+        AddSuccessFiles(files, other, CrmSuccessDocumentCategories.Other);
+
+        var (_, error) = await api.UpdateCrmSuccessReportAsync(
+            id,
+            (keptDocumentIds ?? []).Where(documentId => documentId != Guid.Empty).Distinct().ToArray(),
+            noContractPhoto ? contractMissingReason : null,
+            files,
+            ct);
+        if (error is not null) TempData["CrmError"] = error;
+        else TempData["CrmOk"] = "Изменения в отчёте сохранены.";
+        return RedirectToAction(nameof(Card), new { id, stage });
+    }
+
+    [HttpGet]
+    [Authorize(Policy = PanelPermissions.CrmBoard)]
+    public async Task<IActionResult> DownloadSuccessDocument(Guid id, Guid documentId, CancellationToken ct = default)
+    {
+        var result = await api.OpenCrmSuccessDocumentAsync(id, documentId, ct);
+        if (result.Stream is null) return NotFound();
+        return File(
+            result.Stream,
+            result.ContentType ?? "application/octet-stream",
+            result.FileName ?? "Документ",
+            enableRangeProcessing: true);
+    }
+
+    [HttpGet]
+    [Authorize(Policy = PanelPermissions.CrmBoard)]
+    public async Task<IActionResult> DownloadSuccessReportArchive(Guid id, CancellationToken ct = default)
+    {
+        if (!PanelRoles.CanDownloadSuccessReportArchive(User))
+        {
+            return Forbid();
+        }
+
+        var result = await api.OpenCrmSuccessReportArchiveAsync(id, ct);
+        if (result.Stream is null) return NotFound();
+        return File(
+            result.Stream,
+            "application/zip",
+            result.FileName ?? "Отчёт.zip",
+            enableRangeProcessing: true);
     }
 
     [HttpPost]
@@ -1360,6 +1485,22 @@ public sealed class CrmController(
         .Distinct()
         .Take(500)
         .ToArray();
+
+    private static void AddSuccessFiles(
+        ICollection<CrmSuccessUploadFile> target,
+        IEnumerable<IFormFile>? files,
+        string category)
+    {
+        foreach (var file in files ?? [])
+        {
+            target.Add(new CrmSuccessUploadFile(
+                category,
+                file.FileName,
+                file.ContentType,
+                file.Length,
+                file.OpenReadStream));
+        }
+    }
 
     private void SetBulkActionMessage(CrmBulkActionResult? result, string? error, string successPrefix)
     {

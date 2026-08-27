@@ -2770,6 +2770,139 @@ public sealed class OrbitaApiClient(
         return response is null ? (false, InvalidApiSessionError) : response.IsSuccessStatusCode ? (true, null) : (false, await ReadApiErrorAsync(response, ct));
     }
 
+    public async Task<(bool Success, string? Error)> CloseCrmCardSuccessAsync(
+        Guid cardId,
+        string? comment,
+        string? contractMissingReason,
+        IReadOnlyList<CrmSuccessUploadFile> files,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return DesignPreviewData.CloseCrmCardSuccess(cardId, comment, contractMissingReason, files);
+        }
+
+        using var multipart = new MultipartFormDataContent();
+        multipart.Add(new StringContent(comment ?? string.Empty), "comment");
+        multipart.Add(new StringContent(contractMissingReason ?? string.Empty), "contractMissingReason");
+        foreach (var file in files)
+        {
+            var content = new StreamContent(file.OpenReadStream());
+            if (MediaTypeHeaderValue.TryParse(file.ContentType, out var contentType))
+            {
+                content.Headers.ContentType = contentType;
+            }
+            multipart.Add(content, file.Category, file.FileName);
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"api/v1/crm/cards/{cardId:D}/close-success")
+        {
+            Content = multipart
+        };
+        using var response = await SendAuthenticatedAsync(request, ct);
+        return response is null
+            ? (false, InvalidApiSessionError)
+            : response.IsSuccessStatusCode
+                ? (true, null)
+                : (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    public async Task<(bool Success, string? Error)> UpdateCrmSuccessReportAsync(
+        Guid cardId,
+        IReadOnlyCollection<Guid> keptDocumentIds,
+        string? contractMissingReason,
+        IReadOnlyList<CrmSuccessUploadFile> files,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return DesignPreviewData.UpdateCrmSuccessReport(
+                cardId,
+                keptDocumentIds,
+                contractMissingReason,
+                files);
+        }
+
+        using var multipart = new MultipartFormDataContent();
+        multipart.Add(new StringContent(contractMissingReason ?? string.Empty), "contractMissingReason");
+        foreach (var documentId in keptDocumentIds)
+        {
+            multipart.Add(new StringContent(documentId.ToString("D")), "keptDocumentIds");
+        }
+        foreach (var file in files)
+        {
+            var content = new StreamContent(file.OpenReadStream());
+            if (MediaTypeHeaderValue.TryParse(file.ContentType, out var contentType))
+            {
+                content.Headers.ContentType = contentType;
+            }
+            multipart.Add(content, file.Category, file.FileName);
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Put, $"api/v1/crm/cards/{cardId:D}/success-report")
+        {
+            Content = multipart
+        };
+        using var response = await SendAuthenticatedAsync(request, ct);
+        return response is null
+            ? (false, InvalidApiSessionError)
+            : response.IsSuccessStatusCode
+                ? (true, null)
+                : (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    public async Task<(Stream? Stream, string? FileName, string? ContentType, string? Error)> OpenCrmSuccessDocumentAsync(
+        Guid cardId,
+        Guid documentId,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return (null, null, null, "Файл недоступен в режиме предпросмотра.");
+        }
+
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"api/v1/crm/cards/{cardId:D}/success-documents/{documentId:D}");
+        var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null) return (null, null, null, InvalidApiSessionError);
+        if (!response.IsSuccessStatusCode)
+        {
+            var error = await ReadApiErrorAsync(response, ct);
+            response.Dispose();
+            return (null, null, null, error);
+        }
+
+        var contentType = response.Content.Headers.ContentType?.MediaType ?? "application/octet-stream";
+        var (stream, fileName, errorMessage) = await MaterializeDownloadResponseAsync(response, "Документ", ct);
+        return (stream, fileName, contentType, errorMessage);
+    }
+
+    public async Task<(Stream? Stream, string? FileName, string? Error)> OpenCrmSuccessReportArchiveAsync(
+        Guid cardId,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return DesignPreviewData.OpenCrmSuccessReportArchive(cardId);
+        }
+
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"api/v1/crm/cards/{cardId:D}/success-report/archive");
+        using var response = await SendAuthenticatedAsync(request, ct, HttpCompletionOption.ResponseHeadersRead);
+        if (response is null)
+        {
+            return (null, null, InvalidApiSessionError);
+        }
+        if (!response.IsSuccessStatusCode)
+        {
+            return (null, null, await ReadApiErrorAsync(response, ct));
+        }
+
+        return await MaterializeDownloadResponseAsync(response, "Отчёт.zip", ct);
+    }
+
     public async Task<(bool Success, string? Error)> ReopenCrmCardAsync(Guid cardId, CancellationToken ct = default)
     {
         if (_preview.Enabled)
@@ -3277,3 +3410,10 @@ public sealed class OrbitaApiClient(
 }
 
 public sealed record LoginResponse(string Token, string Email);
+
+public sealed record CrmSuccessUploadFile(
+    string Category,
+    string FileName,
+    string ContentType,
+    long Length,
+    Func<Stream> OpenReadStream);

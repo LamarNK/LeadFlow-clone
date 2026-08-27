@@ -84,6 +84,22 @@ public static class PanelRoles
         || principal.IsInRole(OfficeLead)
         || principal.IsInRole(SeniorManager);
 
+    /// <summary>
+    /// Editing an already saved successful-close report is restricted to the
+    /// office lead and the global administrator. Senior managers remain read-only.
+    /// </summary>
+    public static bool CanEditSuccessReport(ClaimsPrincipal principal) =>
+        principal.IsInRole(Admin) || principal.IsInRole(OfficeLead);
+
+    /// <summary>
+    /// A successful-close report archive contains the complete candidate file set,
+    /// so it is available only to the administrator and elevated office management.
+    /// </summary>
+    public static bool CanDownloadSuccessReportArchive(ClaimsPrincipal principal) =>
+        principal.IsInRole(Admin)
+        || principal.IsInRole(OfficeLead)
+        || principal.IsInRole(SeniorManager);
+
     /// <summary>CRM desk role that can run a shift and work with cards.</summary>
     public static bool IsCrmDeskRole(string? role)
     {

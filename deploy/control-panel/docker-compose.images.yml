@@ -40,6 +40,7 @@ services:
       WorkerReleases__PublishToken: ${WORKER_RELEASE_PUBLISH_TOKEN:-}
       DataProtection__KeysPath: /app/Data/dataprotection-api
       CrmCallRecordings__DataPath: /app/Data/crm/call-recordings
+      CrmSuccessDocuments__DataPath: /app/Data/crm/success-documents
       CrmSipRuntime__ConfigPath: /app/Data/telephony-runtime
       BitrixWorkforce__PublicBaseUrl: ${BITRIX_WORKFORCE_PUBLIC_BASE_URL:-https://api.orbitsu.ru}
       BitrixWorkforce__WorkerIntervalSeconds: ${BITRIX_WORKFORCE_WORKER_INTERVAL_SECONDS:-5}
@@ -65,6 +66,7 @@ services:
       - orbita_diagnostics:/app/Data/diagnostics
       - orbita_dataprotection_api:/app/Data/dataprotection-api
       - orbita_crm_call_recordings:/app/Data/crm/call-recordings
+      - orbita_crm_success_documents:/app/Data/crm/success-documents
       - orbita_telephony_runtime:/app/Data/telephony-runtime
 
   web:
@@ -251,6 +253,7 @@ volumes:
   orbita_dataprotection_api:
   orbita_telephony_queue:
   orbita_crm_call_recordings:
+  orbita_crm_success_documents:
   orbita_asterisk_recordings:
   orbita_telephony_runtime:
   notifybot_pg:

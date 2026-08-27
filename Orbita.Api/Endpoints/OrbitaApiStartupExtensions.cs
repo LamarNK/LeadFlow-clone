@@ -277,6 +277,7 @@ public static class OrbitaApiStartupExtensions
         builder.Services.Configure<WorkerReleaseOptions>(builder.Configuration.GetSection(WorkerReleaseOptions.SectionName));
         builder.Services.Configure<WorkerDiagnosticsOptions>(builder.Configuration.GetSection(WorkerDiagnosticsOptions.SectionName));
         builder.Services.Configure<CrmTaskAttachmentOptions>(builder.Configuration.GetSection(CrmTaskAttachmentOptions.SectionName));
+        builder.Services.Configure<CrmSuccessDocumentOptions>(builder.Configuration.GetSection(CrmSuccessDocumentOptions.SectionName));
         builder.Services.Configure<CrmCallRecordingOptions>(builder.Configuration.GetSection(CrmCallRecordingOptions.SectionName));
         builder.Services.Configure<CrmTelephonyWebRtcOptions>(builder.Configuration.GetSection(CrmTelephonyWebRtcOptions.SectionName));
         builder.Services.Configure<CrmSipRuntimeOptions>(builder.Configuration.GetSection(CrmSipRuntimeOptions.SectionName));
@@ -285,6 +286,7 @@ public static class OrbitaApiStartupExtensions
         builder.Services.AddSingleton<WorkerReleaseService>();
         builder.Services.AddScoped<WorkerDiagnosticsService>();
         builder.Services.AddScoped<CrmTaskAttachmentStorageService>();
+        builder.Services.AddScoped<CrmSuccessDocumentStorageService>();
         builder.Services.AddScoped<CrmCallRecordingStorageService>();
         builder.Services.AddHostedService<WorkerDiagnosticsCleanupService>();
         builder.Services.AddSingleton<WorkerLogFileArchive>();

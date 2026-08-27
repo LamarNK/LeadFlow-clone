@@ -1,4 +1,6 @@
 using System.Globalization;
+using System.IO.Compression;
+using System.Text;
 using Orbita.Contracts;
 using Orbita.Web.Formatting;
 using Orbita.Web.Models.ViewModels;
@@ -141,6 +143,8 @@ internal static class DesignPreviewData
             Guid.Parse("90000000-0000-0000-0000-000000000001"),
             new CrmHistoryDto(Guid.Parse("93000000-0000-0000-0000-000000000002"), "Assigned", "Елена Воронцова", "preview-admin", "Администратор", Now.AddMinutes(-34)))
     ];
+    private static readonly Dictionary<Guid, List<CrmSuccessDocumentDto>> PreviewCrmSuccessDocuments = [];
+    private static readonly Dictionary<Guid, string?> PreviewCrmContractMissingReasons = [];
 
     public static CrmBoardDto GetCrmBoard(CrmBoardQuery? query = null)
     {
@@ -628,6 +632,10 @@ internal static class DesignPreviewData
                 .Select(item => item.History)
                 .OrderByDescending(item => item.CreatedAtUtc)
                 .ToList();
+            var successDocuments = PreviewCrmSuccessDocuments.TryGetValue(cardId, out var reportDocuments)
+                ? reportDocuments.OrderBy(item => item.CreatedAtUtc).ToList()
+                : [];
+            var contractMissingReason = PreviewCrmContractMissingReasons.GetValueOrDefault(cardId);
             var activity = notes.Select(x => new CrmActivityItemDto(
                     "note",
                     x.IsPinned
@@ -666,7 +674,9 @@ internal static class DesignPreviewData
                         and not "NoteUnpinned"
                         and not "TaskCreated"
                         and not "TaskUpdated"
-                        and not "TaskCompleted")
+                        and not "TaskCompleted"
+                        and not "SuccessReportUploaded"
+                        and not "SuccessReportUpdated")
                     .Select(h =>
                     {
                         var activityDetails = CrmActivityDetails.Split(h.Details);
@@ -695,7 +705,9 @@ internal static class DesignPreviewData
                 [new CrmContactPhoneDto(Guid.Empty, candidate.PhoneRaw, candidate.PhoneRaw, true, null, DateTime.UtcNow)],
                 ChatUnreadCount: 0,
                 TaskComments: taskComments,
-                ClientTime: CrmClientTimeResolver.Resolve(candidate.City, DateTime.UtcNow));
+                ClientTime: CrmClientTimeResolver.Resolve(candidate.City, DateTime.UtcNow),
+                SuccessDocuments: successDocuments,
+                SuccessContractMissingReason: contractMissingReason);
         }
     }
 
@@ -932,6 +944,174 @@ internal static class DesignPreviewData
             candidate.IsInActiveLoad = false;
             AddPreviewCrmHistory(cardId, "Closed", CrmActivityDetails.WithComment(reason, comment));
             return (true, null);
+        }
+    }
+
+    public static (bool Success, string? Error) CloseCrmCardSuccess(
+        Guid cardId,
+        string? comment,
+        string? contractMissingReason,
+        IReadOnlyList<CrmSuccessUploadFile> files)
+    {
+        lock (CrmSync)
+        {
+            var candidate = PreviewCrmCandidates.FirstOrDefault(item => item.Id == cardId);
+            if (candidate is null) return (false, "Карточка не найдена.");
+            if (string.IsNullOrWhiteSpace(comment)) return (false, "При успешном закрытии обязателен комментарий.");
+
+            var now = DateTime.UtcNow;
+            PreviewCrmSuccessDocuments[cardId] = files
+                .Select(file => new CrmSuccessDocumentDto(
+                    Guid.NewGuid(),
+                    file.Category,
+                    file.FileName,
+                    file.ContentType,
+                    file.Length,
+                    "Администратор",
+                    now))
+                .ToList();
+            PreviewCrmContractMissingReasons[cardId] = string.IsNullOrWhiteSpace(contractMissingReason)
+                ? null
+                : contractMissingReason.Trim();
+            candidate.IsClosed = true;
+            candidate.CloseReason = CrmCloseReasons.Success;
+            candidate.IsInActiveLoad = false;
+            AddPreviewCrmHistory(
+                cardId,
+                "SuccessReportUploaded",
+                $"Загружено файлов: {files.Count}");
+            AddPreviewCrmHistory(
+                cardId,
+                "Closed",
+                CrmActivityDetails.WithComment(CrmCloseReasons.Success, comment));
+            return (true, null);
+        }
+    }
+
+    public static (bool Success, string? Error) UpdateCrmSuccessReport(
+        Guid cardId,
+        IReadOnlyCollection<Guid> keptDocumentIds,
+        string? contractMissingReason,
+        IReadOnlyList<CrmSuccessUploadFile> files)
+    {
+        lock (CrmSync)
+        {
+            var candidate = PreviewCrmCandidates.FirstOrDefault(item => item.Id == cardId);
+            if (candidate is null
+                || !candidate.IsClosed
+                || !string.Equals(candidate.CloseReason, CrmCloseReasons.Success, StringComparison.Ordinal))
+            {
+                return (false, "Редактировать отчёт можно только у карточки, закрытой в успех.");
+            }
+
+            if (!PreviewCrmSuccessDocuments.TryGetValue(cardId, out var existing))
+            {
+                existing = [];
+            }
+            var existingIds = existing.Select(document => document.Id).ToHashSet();
+            if (keptDocumentIds.Any(documentId => !existingIds.Contains(documentId)))
+            {
+                return (false, "Один из сохраняемых файлов не относится к этому отчёту.");
+            }
+
+            var now = DateTime.UtcNow;
+            var finalDocuments = existing
+                .Where(document => keptDocumentIds.Contains(document.Id))
+                .Concat(files.Select(file => new CrmSuccessDocumentDto(
+                    Guid.NewGuid(),
+                    file.Category,
+                    file.FileName,
+                    file.ContentType,
+                    file.Length,
+                    "Администратор",
+                    now)))
+                .ToList();
+            foreach (var requiredCategory in CrmSuccessDocumentCategories.Required)
+            {
+                if (finalDocuments.All(document => !string.Equals(document.Category, requiredCategory, StringComparison.Ordinal)))
+                {
+                    return (false, $"Добавьте обязательный раздел «{CrmSuccessDocumentCategories.GetLabel(requiredCategory)}».");
+                }
+            }
+
+            var hasContract = finalDocuments.Any(document =>
+                string.Equals(document.Category, CrmSuccessDocumentCategories.Contract, StringComparison.Ordinal));
+            if (!hasContract && string.IsNullOrWhiteSpace(contractMissingReason))
+            {
+                return (false, "Добавьте фото контракта или укажите обязательную причину, почему фото нет.");
+            }
+
+            PreviewCrmSuccessDocuments[cardId] = finalDocuments;
+            PreviewCrmContractMissingReasons[cardId] = hasContract ? null : contractMissingReason!.Trim();
+            AddPreviewCrmHistory(cardId, "SuccessReportUpdated", $"Файлов в отчёте: {finalDocuments.Count}");
+            return (true, null);
+        }
+    }
+
+    public static (Stream? Stream, string? FileName, string? Error) OpenCrmSuccessReportArchive(Guid cardId)
+    {
+        lock (CrmSync)
+        {
+            var candidate = PreviewCrmCandidates.FirstOrDefault(item => item.Id == cardId);
+            if (candidate is null
+                || !candidate.IsClosed
+                || !string.Equals(candidate.CloseReason, CrmCloseReasons.Success, StringComparison.Ordinal)
+                || !PreviewCrmSuccessDocuments.TryGetValue(cardId, out var documents)
+                || documents.Count == 0)
+            {
+                return (null, null, "Отчёт не найден.");
+            }
+
+            var output = new MemoryStream();
+            using (var archive = new ZipArchive(output, ZipArchiveMode.Create, leaveOpen: true, Encoding.UTF8))
+            {
+                var manifest = archive.CreateEntry("Отчёт.txt", CompressionLevel.Fastest);
+                using (var writer = new StreamWriter(manifest.Open(), new UTF8Encoding(true)))
+                {
+                    writer.WriteLine("ОТЧЁТ ПО УСПЕШНО ЗАКРЫТОМУ КАНДИДАТУ");
+                    writer.WriteLine();
+                    writer.WriteLine($"Кандидат: {candidate.FullName}");
+                    writer.WriteLine($"ID карточки: {cardId:D}");
+                    writer.WriteLine($"Всего файлов: {documents.Count}");
+                    var reason = PreviewCrmContractMissingReasons.GetValueOrDefault(cardId);
+                    if (!string.IsNullOrWhiteSpace(reason))
+                    {
+                        writer.WriteLine($"Причина отсутствия фото контракта: {reason}");
+                    }
+                }
+
+                var usedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { manifest.FullName };
+                foreach (var document in documents)
+                {
+                    var folder = document.Category switch
+                    {
+                        CrmSuccessDocumentCategories.Correspondence => "01 Переписка",
+                        CrmSuccessDocumentCategories.Ticket => "02 Билеты",
+                        CrmSuccessDocumentCategories.TicketReceipt => "03 Чеки на билеты",
+                        CrmSuccessDocumentCategories.Contract => "04 Контракт",
+                        CrmSuccessDocumentCategories.Relationship => "05 Отношение",
+                        CrmSuccessDocumentCategories.CandidateDocument => "06 Документы и прочие файлы/Документы кандидата",
+                        _ => "06 Документы и прочие файлы/Прочее"
+                    };
+                    var safeFileName = string.Concat(document.FileName.Select(character =>
+                        "<>:\"/\\|?*".IndexOf(character) >= 0 || char.IsControl(character)
+                            ? '_'
+                            : character));
+                    var entryName = $"{folder}/{safeFileName}";
+                    var extension = Path.GetExtension(safeFileName);
+                    var stem = Path.GetFileNameWithoutExtension(safeFileName);
+                    for (var suffix = 2; !usedNames.Add(entryName); suffix++)
+                    {
+                        entryName = $"{folder}/{stem} ({suffix}){extension}";
+                    }
+                    var entry = archive.CreateEntry(entryName, CompressionLevel.Fastest);
+                    using var stream = entry.Open();
+                    var placeholder = Encoding.UTF8.GetBytes($"Демо-файл: {document.FileName}");
+                    stream.Write(placeholder);
+                }
+            }
+            output.Position = 0;
+            return (output, $"Отчёт-{candidate.FullName}-{DateTime.UtcNow:yyyy-MM-dd}.zip", null);
         }
     }
 

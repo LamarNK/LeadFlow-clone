@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using System.IO.Compression;
 using Orbita.Api.Data;
 using Orbita.Api.Options;
 using Orbita.Api.Services;
@@ -700,6 +701,265 @@ public sealed class CrmWorkspaceServiceTests
         var closeActivity = Assert.Single(detail!.Activity, item => item.Title == "Карточка закрыта");
         Assert.Equal(CrmCloseReasons.NotRelevant, closeActivity.Body);
         Assert.Equal("не интересно", closeActivity.ActionComment);
+    }
+
+    [Fact]
+    public async Task CloseSuccess_RequiresReportAndStoresCategorizedFiles()
+    {
+        await using var harness = await Harness.CreateAsync();
+        SeedOffice(harness.Db, crmEnabled: true);
+        var manager = await harness.CreateManagerAsync("success-close@test.local", capacity: 5, onShift: true);
+        var response = await SeedResponseAsync(harness.Db, "success-close");
+        var card = NewCard(response.Id, manager.Id);
+        harness.Db.CrmCandidateCards.Add(card);
+        await harness.Db.SaveChangesAsync();
+
+        var (plainClose, plainError) = await harness.Sut.CloseAsync(
+            card.Id,
+            CrmCloseReasons.Success,
+            "Подписался",
+            manager.Id,
+            isAdmin: false);
+        Assert.False(plainClose);
+        Assert.Contains("отчёт", plainError, StringComparison.OrdinalIgnoreCase);
+
+        var incomplete = new[]
+        {
+            SuccessUpload(CrmSuccessDocumentCategories.Correspondence, "chat.png", [1, 2, 3])
+        };
+        var (incompleteClose, incompleteError) = await harness.Sut.CloseSuccessAsync(
+            card.Id,
+            "Подписался",
+            contractMissingReason: null,
+            incomplete,
+            manager.Id,
+            isAdmin: false);
+        Assert.False(incompleteClose);
+        Assert.Contains("Билеты", incompleteError, StringComparison.OrdinalIgnoreCase);
+        Assert.False(card.IsClosed);
+
+        var uploads = new[]
+        {
+            SuccessUpload(CrmSuccessDocumentCategories.Correspondence, "chat.png", [1, 2, 3]),
+            SuccessUpload(CrmSuccessDocumentCategories.Ticket, "ticket.pdf", "%PDF-test"u8.ToArray(), "application/pdf"),
+            SuccessUpload(CrmSuccessDocumentCategories.TicketReceipt, "receipt.jpg", [4, 5, 6]),
+            SuccessUpload(CrmSuccessDocumentCategories.Contract, "contract.png", [7, 8, 9]),
+            SuccessUpload(CrmSuccessDocumentCategories.CandidateDocument, "passport.jpeg", [10, 11, 12]),
+            SuccessUpload(CrmSuccessDocumentCategories.Other, "note.txt", "test"u8.ToArray(), "text/plain")
+        };
+        var (ok, error) = await harness.Sut.CloseSuccessAsync(
+            card.Id,
+            "Кандидат подписал контракт",
+            contractMissingReason: null,
+            uploads,
+            manager.Id,
+            isAdmin: false);
+
+        Assert.True(ok, error);
+        Assert.True(card.IsClosed);
+        Assert.Equal(CrmCloseReasons.Success, card.CloseReason);
+        Assert.False(card.IsInActiveLoad);
+        Assert.Equal(uploads.Length, await harness.Db.CrmSuccessDocuments.CountAsync(x => x.CardId == card.Id));
+        var detail = await harness.Sut.GetCardAsync(card.Id, manager.Id, isAdmin: false);
+        Assert.Equal(uploads.Length, detail!.SuccessDocuments!.Count);
+        Assert.All(
+            await harness.Db.CrmSuccessDocuments.Where(x => x.CardId == card.Id).ToListAsync(),
+            document => Assert.True(File.Exists(Path.Combine(
+                harness.SuccessDocumentRoot,
+                document.RelativePath.Replace('/', Path.DirectorySeparatorChar)))));
+    }
+
+    [Fact]
+    public async Task CloseSuccess_AllowsMissingContractPhotoOnlyWithReason()
+    {
+        await using var harness = await Harness.CreateAsync();
+        SeedOffice(harness.Db, crmEnabled: true);
+        var manager = await harness.CreateManagerAsync("success-no-contract@test.local", capacity: 5, onShift: true);
+        var response = await SeedResponseAsync(harness.Db, "success-no-contract");
+        var card = NewCard(response.Id, manager.Id);
+        harness.Db.CrmCandidateCards.Add(card);
+        await harness.Db.SaveChangesAsync();
+
+        var uploads = new[]
+        {
+            SuccessUpload(CrmSuccessDocumentCategories.Correspondence, "chat.png", [1, 2, 3]),
+            SuccessUpload(CrmSuccessDocumentCategories.Ticket, "ticket.pdf", "%PDF-test"u8.ToArray(), "application/pdf"),
+            SuccessUpload(CrmSuccessDocumentCategories.TicketReceipt, "receipt.jpg", [4, 5, 6]),
+            SuccessUpload(CrmSuccessDocumentCategories.CandidateDocument, "passport.jpeg", [7, 8, 9])
+        };
+
+        var (withoutReason, reasonError) = await harness.Sut.CloseSuccessAsync(
+            card.Id,
+            "Кандидат подписался",
+            contractMissingReason: null,
+            uploads,
+            manager.Id,
+            isAdmin: false);
+        Assert.False(withoutReason);
+        Assert.Contains("причину", reasonError, StringComparison.OrdinalIgnoreCase);
+
+        const string missingReason = "Кандидат пока не прислал фотографию контракта.";
+        var (ok, error) = await harness.Sut.CloseSuccessAsync(
+            card.Id,
+            "Кандидат подписался",
+            missingReason,
+            uploads,
+            manager.Id,
+            isAdmin: false);
+
+        Assert.True(ok, error);
+        Assert.True(card.IsClosed);
+        Assert.Equal(missingReason, card.SuccessContractMissingReason);
+        var detail = await harness.Sut.GetCardAsync(card.Id, manager.Id, isAdmin: false);
+        Assert.Equal(missingReason, detail!.SuccessContractMissingReason);
+        Assert.DoesNotContain(detail.SuccessDocuments!, x => x.Category == CrmSuccessDocumentCategories.Contract);
+    }
+
+    [Fact]
+    public async Task UpdateSuccessReport_IsRestrictedAndKeepsRequiredSectionsValid()
+    {
+        await using var harness = await Harness.CreateAsync();
+        SeedOffice(harness.Db, crmEnabled: true);
+        var manager = await harness.CreateManagerAsync("success-report-owner@test.local", capacity: 5, onShift: true);
+        var officeLead = await harness.CreateDeskUserAsync(
+            "success-report-lead@test.local",
+            capacity: 5,
+            onShift: true,
+            PanelRoles.OfficeLead);
+        var response = await SeedResponseAsync(harness.Db, "success-report-update");
+        var card = NewCard(response.Id, manager.Id);
+        harness.Db.CrmCandidateCards.Add(card);
+        await harness.Db.SaveChangesAsync();
+
+        var initialUploads = new[]
+        {
+            SuccessUpload(CrmSuccessDocumentCategories.Correspondence, "chat.png", [1, 2, 3]),
+            SuccessUpload(CrmSuccessDocumentCategories.Ticket, "ticket.pdf", "%PDF-test"u8.ToArray(), "application/pdf"),
+            SuccessUpload(CrmSuccessDocumentCategories.TicketReceipt, "receipt.jpg", [4, 5, 6]),
+            SuccessUpload(CrmSuccessDocumentCategories.Contract, "contract.png", [7, 8, 9]),
+            SuccessUpload(CrmSuccessDocumentCategories.CandidateDocument, "passport.jpeg", [10, 11, 12])
+        };
+        Assert.True((await harness.Sut.CloseSuccessAsync(
+            card.Id,
+            "Кандидат подписался",
+            null,
+            initialUploads,
+            manager.Id,
+            isAdmin: false)).Ok);
+
+        var initialDocuments = await harness.Db.CrmSuccessDocuments
+            .Where(document => document.CardId == card.Id)
+            .ToListAsync();
+        var initialPaths = initialDocuments.ToDictionary(
+            document => document.Category,
+            document => Path.Combine(harness.SuccessDocumentRoot, document.RelativePath.Replace('/', Path.DirectorySeparatorChar)));
+        var keptWithoutContract = initialDocuments
+            .Where(document => document.Category != CrmSuccessDocumentCategories.Contract)
+            .Select(document => document.Id)
+            .ToArray();
+
+        var denied = await harness.Sut.UpdateSuccessReportAsync(
+            card.Id,
+            keptWithoutContract,
+            "Фото будет позже",
+            [],
+            manager.Id,
+            canEditReport: false);
+        Assert.False(denied.Ok);
+        Assert.Equal(initialDocuments.Count, await harness.Db.CrmSuccessDocuments.CountAsync(document => document.CardId == card.Id));
+
+        var missingRequired = await harness.Sut.UpdateSuccessReportAsync(
+            card.Id,
+            keptWithoutContract.Where(id => id != initialDocuments.Single(document => document.Category == CrmSuccessDocumentCategories.Ticket).Id).ToArray(),
+            "Фото будет позже",
+            [],
+            officeLead.Id,
+            canEditReport: true);
+        Assert.False(missingRequired.Ok);
+        Assert.Contains("Билеты", missingRequired.Error, StringComparison.OrdinalIgnoreCase);
+
+        var updated = await harness.Sut.UpdateSuccessReportAsync(
+            card.Id,
+            keptWithoutContract,
+            "Кандидат пришлёт фото после получения оригинала",
+            [SuccessUpload(CrmSuccessDocumentCategories.Relationship, "relation.png", [13, 14, 15])],
+            officeLead.Id,
+            canEditReport: true);
+        Assert.True(updated.Ok, updated.Error);
+
+        var finalDocuments = await harness.Db.CrmSuccessDocuments
+            .Where(document => document.CardId == card.Id)
+            .ToListAsync();
+        Assert.DoesNotContain(finalDocuments, document => document.Category == CrmSuccessDocumentCategories.Contract);
+        Assert.Contains(finalDocuments, document => document.Category == CrmSuccessDocumentCategories.Relationship);
+        Assert.Equal("Кандидат пришлёт фото после получения оригинала", card.SuccessContractMissingReason);
+        Assert.False(File.Exists(initialPaths[CrmSuccessDocumentCategories.Contract]));
+        Assert.Contains(harness.Db.CrmCandidateHistory, history =>
+            history.CardId == card.Id && history.Action == "SuccessReportUpdated");
+    }
+
+    [Fact]
+    public async Task OpenSuccessReportArchive_CreatesStructuredZipForElevatedOfficeUser()
+    {
+        await using var harness = await Harness.CreateAsync();
+        SeedOffice(harness.Db, crmEnabled: true);
+        var manager = await harness.CreateManagerAsync("archive-owner@test.local", capacity: 5, onShift: true);
+        var senior = await harness.CreateDeskUserAsync(
+            "archive-senior@test.local",
+            capacity: 5,
+            onShift: true,
+            PanelRoles.SeniorManager);
+        var response = await SeedResponseAsync(harness.Db, "archive-report");
+        response.FullName = "Иванов Иван";
+        var card = NewCard(response.Id, manager.Id);
+        harness.Db.CrmCandidateCards.Add(card);
+        await harness.Db.SaveChangesAsync();
+
+        const string missingContractReason = "Кандидат пришлёт контракт после получения оригинала.";
+        var chatBytes = new byte[] { 1, 2, 3, 4 };
+        var uploads = new[]
+        {
+            SuccessUpload(CrmSuccessDocumentCategories.Correspondence, "chat.png", chatBytes),
+            SuccessUpload(CrmSuccessDocumentCategories.Ticket, "ticket.pdf", "%PDF-test"u8.ToArray(), "application/pdf"),
+            SuccessUpload(CrmSuccessDocumentCategories.TicketReceipt, "receipt.jpg", [5, 6, 7]),
+            SuccessUpload(CrmSuccessDocumentCategories.CandidateDocument, "passport.jpeg", [8, 9, 10])
+        };
+        var close = await harness.Sut.CloseSuccessAsync(
+            card.Id,
+            "Кандидат подписался",
+            missingContractReason,
+            uploads,
+            manager.Id,
+            isAdmin: false);
+        Assert.True(close.Ok, close.Error);
+
+        var result = await harness.Sut.OpenSuccessReportArchiveAsync(
+            card.Id,
+            senior.Id,
+            isElevated: true);
+        Assert.NotNull(result.Stream);
+        Assert.Contains("Иванов Иван", result.FileName, StringComparison.Ordinal);
+
+        await using var archiveStream = result.Stream!;
+        using var archive = new ZipArchive(archiveStream, ZipArchiveMode.Read);
+        Assert.Equal(uploads.Length + 1, archive.Entries.Count);
+        Assert.Contains(archive.Entries, entry => entry.FullName == "Отчёт.txt");
+        Assert.Contains(archive.Entries, entry => entry.FullName == "01 Переписка/chat.png");
+        Assert.Contains(archive.Entries, entry => entry.FullName == "02 Билеты/ticket.pdf");
+        Assert.Contains(archive.Entries, entry => entry.FullName == "03 Чеки на билеты/receipt.jpg");
+        Assert.Contains(archive.Entries, entry => entry.FullName == "06 Документы и прочие файлы/Документы кандидата/passport.jpeg");
+
+        await using (var chatStream = archive.GetEntry("01 Переписка/chat.png")!.Open())
+        {
+            using var copied = new MemoryStream();
+            await chatStream.CopyToAsync(copied);
+            Assert.Equal(chatBytes, copied.ToArray());
+        }
+
+        using var manifestReader = new StreamReader(archive.GetEntry("Отчёт.txt")!.Open());
+        var manifest = await manifestReader.ReadToEndAsync();
+        Assert.Contains("Иванов Иван", manifest, StringComparison.Ordinal);
+        Assert.Contains(missingContractReason, manifest, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -2108,6 +2368,13 @@ public sealed class CrmWorkspaceServiceTests
         StageChangedAtUtc = DateTime.UtcNow
     };
 
+    private static CrmSuccessDocumentUpload SuccessUpload(
+        string category,
+        string fileName,
+        byte[] content,
+        string contentType = "image/png") =>
+        new(category, fileName, contentType, content.LongLength, () => new MemoryStream(content, writable: false));
+
     private static CrmCandidateHistoryEntity NewAssignmentHistory(
         Guid cardId,
         DateTime createdAtUtc,
@@ -2177,6 +2444,7 @@ public sealed class CrmWorkspaceServiceTests
         public CrmWorkspaceService Sut { get; }
         public ManualTimeProvider Clock { get; }
         public string AttachmentRoot { get; }
+        public string SuccessDocumentRoot { get; }
 
         private Harness(
             ServiceProvider services,
@@ -2184,7 +2452,8 @@ public sealed class CrmWorkspaceServiceTests
             UserManager<IdentityUser> users,
             CrmWorkspaceService sut,
             ManualTimeProvider clock,
-            string attachmentRoot)
+            string attachmentRoot,
+            string successDocumentRoot)
         {
             _services = services;
             Db = db;
@@ -2192,6 +2461,7 @@ public sealed class CrmWorkspaceServiceTests
             Sut = sut;
             Clock = clock;
             AttachmentRoot = attachmentRoot;
+            SuccessDocumentRoot = successDocumentRoot;
         }
 
         public static async Task<Harness> CreateAsync()
@@ -2234,6 +2504,11 @@ public sealed class CrmWorkspaceServiceTests
             {
                 DataPath = attachmentRoot
             }));
+            var successDocumentRoot = Path.Combine(Path.GetTempPath(), "orbita-crm-success-tests", Guid.NewGuid().ToString("N"));
+            var successDocuments = new CrmSuccessDocumentStorageService(Options.Create(new CrmSuccessDocumentOptions
+            {
+                DataPath = successDocumentRoot
+            }));
             var deadlineNotifications = new CrmDeadlineNotificationService(
                 db,
                 TimeProvider.System,
@@ -2245,8 +2520,9 @@ public sealed class CrmWorkspaceServiceTests
                 users,
                 distribution,
                 taskAttachments: attachments,
+                successDocuments: successDocuments,
                 deadlineNotifications: deadlineNotifications);
-            return new Harness(sp, db, users, sut, clock, attachmentRoot);
+            return new Harness(sp, db, users, sut, clock, attachmentRoot, successDocumentRoot);
         }
 
         public Task<IdentityUser> CreateManagerAsync(string email, int capacity, bool onShift) =>
@@ -2282,6 +2558,10 @@ public sealed class CrmWorkspaceServiceTests
             if (Directory.Exists(AttachmentRoot))
             {
                 Directory.Delete(AttachmentRoot, recursive: true);
+            }
+            if (Directory.Exists(SuccessDocumentRoot))
+            {
+                Directory.Delete(SuccessDocumentRoot, recursive: true);
             }
         }
     }

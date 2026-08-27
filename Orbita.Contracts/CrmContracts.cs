@@ -188,6 +188,58 @@ public static class CrmTaskAttachmentLimits
     public const long MaxFileSizeBytes = 20 * 1024 * 1024;
 }
 
+public static class CrmSuccessDocumentLimits
+{
+    public const long MaxFileSizeBytes = 20 * 1024 * 1024;
+    public const long MaxReportSizeBytes = 200 * 1024 * 1024;
+    public const int MaxFilesPerReport = 50;
+}
+
+public static class CrmSuccessDocumentCategories
+{
+    public const string Correspondence = "correspondence";
+    public const string Ticket = "ticket";
+    public const string TicketReceipt = "ticket_receipt";
+    public const string Contract = "contract";
+    public const string Relationship = "relationship";
+    public const string CandidateDocument = "candidate_document";
+    public const string Other = "other";
+
+    public static readonly IReadOnlyList<string> All =
+    [
+        Correspondence,
+        Ticket,
+        TicketReceipt,
+        Contract,
+        Relationship,
+        CandidateDocument,
+        Other
+    ];
+
+    public static readonly IReadOnlyList<string> Required =
+    [
+        Correspondence,
+        Ticket,
+        TicketReceipt,
+        CandidateDocument
+    ];
+
+    public static bool IsValid(string? category) =>
+        All.Contains(category ?? string.Empty, StringComparer.Ordinal);
+
+    public static string GetLabel(string? category) => category switch
+    {
+        Correspondence => "Переписка",
+        Ticket => "Билеты",
+        TicketReceipt => "Чеки на билеты",
+        Contract => "Контракт",
+        Relationship => "Отношение",
+        CandidateDocument => "Документы кандидата",
+        Other => "Прочие файлы",
+        _ => "Файл отчёта"
+    };
+}
+
 public static class CrmCloseReasons
 {
     public const string NoAnswer = "НДЗ";
@@ -479,7 +531,9 @@ public sealed record CrmCandidateDetailDto(
     IReadOnlyList<CrmContactPhoneDto> ContactPhones = null!,
     int ChatUnreadCount = 0,
     IReadOnlyList<CrmTaskCommentDto>? TaskComments = null,
-    CrmClientTimeDto? ClientTime = null);
+    CrmClientTimeDto? ClientTime = null,
+    IReadOnlyList<CrmSuccessDocumentDto>? SuccessDocuments = null,
+    string? SuccessContractMissingReason = null);
 
 public sealed record CrmClientTimeDto(
     int UtcOffsetMinutes,
@@ -606,6 +660,15 @@ public sealed record CrmTaskCommentDto(
 
 public sealed record CrmTaskAttachmentDto(
     Guid Id,
+    string FileName,
+    string ContentType,
+    long SizeBytes,
+    string UploadedByName,
+    DateTime CreatedAtUtc);
+
+public sealed record CrmSuccessDocumentDto(
+    Guid Id,
+    string Category,
     string FileName,
     string ContentType,
     long SizeBytes,

@@ -1301,6 +1301,10 @@ namespace Orbita.Api.Data.Migrations
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
 
+                    b.Property<string>("SuccessContractMissingReason")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
                     b.Property<DateTime>("StageChangedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
@@ -1640,6 +1644,58 @@ namespace Orbita.Api.Data.Migrations
                     b.HasIndex("ResponseId", "Status", "CreatedAtUtc");
 
                     b.ToTable("CrmOutboundChatMessages");
+                });
+
+            modelBuilder.Entity("Orbita.Api.Data.CrmSuccessDocumentEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("CardId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)");
+
+                    b.Property<string>("RelativePath")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.Property<long>("SizeBytes")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("UploadedByName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<string>("UploadedByUserId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CardId", "Category", "CreatedAtUtc");
+
+                    b.ToTable("CrmSuccessDocuments");
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.CrmTaskAttachmentEntity", b =>
@@ -3287,6 +3343,15 @@ namespace Orbita.Api.Data.Migrations
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.CrmOutboundChatMessageEntity", b =>
+                {
+                    b.HasOne("Orbita.Api.Data.CrmCandidateCardEntity", null)
+                        .WithMany()
+                        .HasForeignKey("CardId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Orbita.Api.Data.CrmSuccessDocumentEntity", b =>
                 {
                     b.HasOne("Orbita.Api.Data.CrmCandidateCardEntity", null)
                         .WithMany()

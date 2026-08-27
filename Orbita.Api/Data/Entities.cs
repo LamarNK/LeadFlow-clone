@@ -801,6 +801,7 @@ public sealed class CrmCandidateCardEntity
     public bool IsClosed { get; set; }
     public string? CloseReason { get; set; }
     public DateTime? ClosedAtUtc { get; set; }
+    public string? SuccessContractMissingReason { get; set; }
     public CandidateResponseEntity Response { get; set; } = null!;
 }
 
@@ -866,6 +867,20 @@ public sealed class CrmTaskAttachmentEntity
 {
     public Guid Id { get; set; }
     public Guid TaskId { get; set; }
+    public string FileName { get; set; } = string.Empty;
+    public string ContentType { get; set; } = "application/octet-stream";
+    public long SizeBytes { get; set; }
+    public string UploadedByUserId { get; set; } = string.Empty;
+    public string UploadedByName { get; set; } = string.Empty;
+    public string RelativePath { get; set; } = string.Empty;
+    public DateTime CreatedAtUtc { get; set; }
+}
+
+public sealed class CrmSuccessDocumentEntity
+{
+    public Guid Id { get; set; }
+    public Guid CardId { get; set; }
+    public string Category { get; set; } = string.Empty;
     public string FileName { get; set; } = string.Empty;
     public string ContentType { get; set; } = "application/octet-stream";
     public long SizeBytes { get; set; }
