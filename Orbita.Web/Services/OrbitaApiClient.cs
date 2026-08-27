@@ -2261,6 +2261,7 @@ public sealed class OrbitaApiClient(
         url = AppendQuery(url, "overdueOnly", query.OverdueOnly ? "true" : "false");
         url = AppendQuery(url, "activeLoadOnly", query.ActiveLoadOnly ? "true" : "false");
         url = AppendQuery(url, "includeClosed", query.IncludeClosed ? "true" : "false");
+        url = AppendQuery(url, "timeZoneOffsetMinutes", query.TimeZoneOffsetMinutes.ToString());
 
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
         using var response = await SendAuthenticatedAsync(request, ct);

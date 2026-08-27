@@ -257,7 +257,10 @@ public sealed class CrmSipRuntimeConfigWriter(IOptions<CrmSipRuntimeOptions> con
             forbidden_retry_interval=300
             fatal_retry_interval=60
             expiration=300
-            auth_rejection_permanent=yes
+            ; Let Asterisk retry a transient authentication failure. The
+            ; runtime watcher additionally self-heals previously healthy lines
+            ; with a provider-safe backoff.
+            auth_rejection_permanent=no
             """);
         }
 

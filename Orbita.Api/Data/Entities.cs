@@ -790,6 +790,8 @@ public sealed class CrmCandidateCardEntity
     public Guid OfficeId { get; set; }
     public string Stage { get; set; } = CrmStages.Lead;
     public string? ManagerUserId { get; set; }
+    public string? InitialManagerUserId { get; set; }
+    public DateTime? InitialAssignedAtUtc { get; set; }
     public bool IsInActiveLoad { get; set; } = true;
     public DateTime CreatedAtUtc { get; set; }
     public DateTime UpdatedAtUtc { get; set; }

@@ -459,6 +459,50 @@ public sealed class CrmWorkspaceServiceTests
     }
 
     [Fact]
+    public async Task DailyDistribution_DoesNotTakeEmptyStageIntoNdzPool()
+    {
+        await using var harness = await Harness.CreateAsync();
+        SeedOffice(
+            harness.Db,
+            crmEnabled: true,
+            stages: ["Лид", "НДЗ", "НДЗ 2", "Пустые", "Переговоры"]);
+        var first = await harness.CreateManagerAsync("empty-pool-1@test.local", capacity: 1, onShift: false);
+        var second = await harness.CreateManagerAsync("empty-pool-2@test.local", capacity: 1, onShift: false);
+        Assert.True(await harness.Sut.StartShiftAsync(OfficeId, first.Id));
+        Assert.True(await harness.Sut.StartShiftAsync(OfficeId, second.Id));
+
+        var leadResponse = await SeedResponseAsync(harness.Db, "empty-pool-lead");
+        var ndzResponse = await SeedResponseAsync(harness.Db, "empty-pool-ndz");
+        var emptyResponse = await SeedResponseAsync(harness.Db, "empty-pool-empty");
+        var leadCard = NewCard(leadResponse.Id);
+        var ndzCard = NewCard(ndzResponse.Id);
+        ndzCard.Stage = "НДЗ 2";
+        var emptyCard = NewCard(emptyResponse.Id);
+        emptyCard.Stage = "Пустые";
+        emptyCard.IsInActiveLoad = false;
+        harness.Db.CrmCandidateCards.AddRange(leadCard, ndzCard, emptyCard);
+        await harness.Db.SaveChangesAsync();
+
+        harness.Clock.Advance(TimeSpan.FromMinutes(6));
+        await harness.Sut.ProcessDueDailyDistributionsAsync();
+
+        await harness.Db.Entry(leadCard).ReloadAsync();
+        await harness.Db.Entry(ndzCard).ReloadAsync();
+        await harness.Db.Entry(emptyCard).ReloadAsync();
+        Assert.NotNull(leadCard.ManagerUserId);
+        Assert.NotNull(ndzCard.ManagerUserId);
+        Assert.Equal("НДЗ", ndzCard.Stage);
+        Assert.Null(emptyCard.ManagerUserId);
+        Assert.Equal("Пустые", emptyCard.Stage);
+        Assert.False(emptyCard.IsInActiveLoad);
+        Assert.DoesNotContain(
+            await harness.Db.CrmCandidateHistory
+                .Where(x => x.CardId == emptyCard.Id)
+                .ToListAsync(),
+            item => item.Action is "Assigned" or "StageChanged");
+    }
+
+    [Fact]
     public async Task NewLeadsDuringDay_ContinueByDailyReceivedCount()
     {
         await using var harness = await Harness.CreateAsync();
@@ -702,6 +746,8 @@ public sealed class CrmWorkspaceServiceTests
         Assert.True(cardId is not null, error);
         var card = await harness.Db.CrmCandidateCards.Include(x => x.Response).SingleAsync(x => x.Id == cardId);
         Assert.Equal(seniorManager.Id, card.ManagerUserId);
+        Assert.Equal(seniorManager.Id, card.InitialManagerUserId);
+        Assert.NotNull(card.InitialAssignedAtUtc);
         Assert.Equal("Сидоров Сидор", card.Response.FullName);
         Assert.Equal("79001234567", card.Response.PhoneNormalized);
         Assert.Equal("Manual", card.Response.Source);
@@ -731,6 +777,8 @@ public sealed class CrmWorkspaceServiceTests
             .Include(x => x.Response)
             .SingleAsync(x => x.Id == cardId);
         Assert.Equal(manager.Id, card.ManagerUserId);
+        Assert.Equal(manager.Id, card.InitialManagerUserId);
+        Assert.NotNull(card.InitialAssignedAtUtc);
         Assert.Equal("Сидоров Сидор", card.Response.FullName);
         Assert.Contains(
             harness.Db.CrmCandidateHistory,
@@ -1039,6 +1087,48 @@ public sealed class CrmWorkspaceServiceTests
     }
 
     [Fact]
+    public async Task GetBoard_TodayAssignmentStats_SeparateInitialAndRedistributedCards()
+    {
+        await using var harness = await Harness.CreateAsync();
+        SeedOffice(harness.Db, crmEnabled: true);
+        var manager = await harness.CreateManagerAsync("today-stats@test.local", capacity: 10, onShift: true);
+        var now = DateTime.UtcNow;
+        var firstAssignedAt = now.Date;
+        var sameDayAssignedAt = now.Date.AddTicks(1);
+        var oldAssignedAt = now.AddDays(-2);
+
+        var firstResponse = await SeedResponseAsync(harness.Db, "today-first");
+        var sameDayResponse = await SeedResponseAsync(harness.Db, "today-reassigned");
+        var ndzResponse = await SeedResponseAsync(harness.Db, "today-ndz");
+        var firstCard = NewCard(firstResponse.Id, manager.Id);
+        firstCard.InitialAssignedAtUtc = firstAssignedAt;
+        var sameDayCard = NewCard(sameDayResponse.Id, manager.Id);
+        sameDayCard.InitialAssignedAtUtc = sameDayAssignedAt;
+        var ndzCard = NewCard(ndzResponse.Id, manager.Id);
+        ndzCard.InitialAssignedAtUtc = oldAssignedAt;
+        harness.Db.CrmCandidateCards.AddRange(firstCard, sameDayCard, ndzCard);
+        harness.Db.CrmCandidateHistory.AddRange(
+            NewAssignmentHistory(firstCard.Id, firstAssignedAt, CrmLeadDistributionService.ReasonAuto),
+            NewAssignmentHistory(sameDayCard.Id, sameDayAssignedAt, CrmLeadDistributionService.ReasonAuto),
+            NewAssignmentHistory(sameDayCard.Id, now.AddMinutes(-10), CrmLeadDistributionService.ReasonManual),
+            NewAssignmentHistory(ndzCard.Id, now.AddMinutes(-5), CrmLeadDistributionService.ReasonDailyNdz));
+        await harness.Db.SaveChangesAsync();
+
+        var board = await harness.Sut.GetBoardAsync(
+            OfficeId,
+            manager.Id,
+            isAdmin: true,
+            new CrmBoardQuery(
+                Scope: CrmBoardScopes.Team,
+                TimeZoneOffsetMinutes: 0));
+
+        Assert.NotNull(board);
+        Assert.Equal(2, board.TeamStats.AssignedToday);
+        Assert.Equal(2, board.TeamStats.RedistributedToday);
+        Assert.Equal(1, board.TeamStats.RedistributedNdzToday);
+    }
+
+    [Fact]
     public async Task GetBoard_ListView_PaginatesCurrentPageAndKeepsDateOrder()
     {
         await using var harness = await Harness.CreateAsync();
@@ -1296,6 +1386,32 @@ public sealed class CrmWorkspaceServiceTests
 
         Assert.Empty(await harness.Db.CrmCandidateHistory.Where(x => x.CardId == card.Id).ToListAsync());
         Assert.Equal(updatedAt, card.UpdatedAtUtc);
+    }
+
+    [Fact]
+    public async Task Assign_ToAnotherManager_PreservesInitialManagerAttribution()
+    {
+        await using var harness = await Harness.CreateAsync();
+        SeedOffice(harness.Db, crmEnabled: true);
+        var firstManager = await harness.CreateManagerAsync("first-owner@test.local", capacity: 5, onShift: true);
+        var secondManager = await harness.CreateManagerAsync("second-owner@test.local", capacity: 5, onShift: true);
+        var response = await SeedResponseAsync(harness.Db, "reassigned-card");
+        var initialAssignedAtUtc = DateTime.UtcNow.AddMinutes(-10);
+        var card = NewCard(response.Id, firstManager.Id);
+        card.InitialManagerUserId = firstManager.Id;
+        card.InitialAssignedAtUtc = initialAssignedAtUtc;
+        harness.Db.CrmCandidateCards.Add(card);
+        await harness.Db.SaveChangesAsync();
+
+        Assert.True(await harness.Sut.AssignAsync(
+            card.Id,
+            secondManager.Id,
+            firstManager.Id,
+            isAdmin: true));
+
+        Assert.Equal(secondManager.Id, card.ManagerUserId);
+        Assert.Equal(firstManager.Id, card.InitialManagerUserId);
+        Assert.Equal(initialAssignedAtUtc, card.InitialAssignedAtUtc);
     }
 
     [Fact]
@@ -1895,11 +2011,27 @@ public sealed class CrmWorkspaceServiceTests
         ResponseId = responseId,
         OfficeId = OfficeId,
         ManagerUserId = managerId,
+        InitialManagerUserId = managerId,
+        InitialAssignedAtUtc = managerId is null ? null : DateTime.UtcNow,
         IsInActiveLoad = true,
         CreatedAtUtc = DateTime.UtcNow,
         UpdatedAtUtc = DateTime.UtcNow,
         StageChangedAtUtc = DateTime.UtcNow
     };
+
+    private static CrmCandidateHistoryEntity NewAssignmentHistory(
+        Guid cardId,
+        DateTime createdAtUtc,
+        string details) => new()
+        {
+            Id = Guid.NewGuid(),
+            CardId = cardId,
+            Action = "Assigned",
+            Details = details,
+            ActorUserId = "system",
+            ActorName = "Система",
+            CreatedAtUtc = createdAtUtc
+        };
 
     private static void SeedOffice(
         OrbitaDbContext db,

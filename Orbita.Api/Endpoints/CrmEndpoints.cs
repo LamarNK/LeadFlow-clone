@@ -79,7 +79,8 @@ public static class CrmEndpoints
             // Defaults: missing non-nullable bool query params otherwise → HTTP 400.
             bool overdueOnly = false,
             bool activeLoadOnly = false,
-            bool includeClosed = false) =>
+            bool includeClosed = false,
+            int timeZoneOffsetMinutes = 0) =>
         {
             var scope = await officeScope.ResolveAsync(principal, ct);
             var effectiveOfficeId = scope.ResolveFilter(officeId);
@@ -141,7 +142,8 @@ public static class CrmEndpoints
                     createdFromUtc,
                     createdToUtc,
                     createdFrom,
-                    createdTo),
+                    createdTo,
+                    timeZoneOffsetMinutes),
                 ct);
             return board is null
                 ? Results.NotFound(new { error = "Офис не найден." })

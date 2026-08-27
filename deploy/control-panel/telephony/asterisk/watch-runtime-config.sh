@@ -5,10 +5,16 @@ runtime_dir="${ASTERISK_RUNTIME_CONFIG_DIR:-/var/lib/orbita/telephony-runtime}"
 asterisk_provider_config="/etc/asterisk/orbita/pjsip.beeline.conf"
 asterisk_webrtc_config="/etc/asterisk/orbita/pjsip.webrtc.conf"
 last_provider_config_hash=""
+last_beeline_config_hash=""
+last_plusofon_config_hash=""
 last_webrtc_config_hash=""
 last_routes_hash=""
+declare -A registration_known_healthy=()
+declare -A registration_recovery_attempts=()
+declare -A registration_next_recovery_at=()
 
 mkdir -p "${runtime_dir}"
+mkdir -p "${runtime_dir}/.registration-health"
 
 is_office_id() {
   [[ "${1:-}" =~ ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$ ]]
@@ -165,9 +171,109 @@ registration_detail() {
   esac
 }
 
+send_registration() {
+  /usr/sbin/asterisk -rx "pjsip send register $1" >/dev/null 2>&1 || true
+}
+
+reload_pjsip() {
+  /usr/sbin/asterisk -rx 'pjsip reload' >/dev/null 2>&1
+}
+
+registration_health_key() {
+  printf '%s:%s:%s' "$1" "$2" "$3"
+}
+
+registration_health_marker() {
+  printf '%s/.registration-health/%s.%s.%s' "${runtime_dir}" "$1" "$2" "$3"
+}
+
+remember_registration_health() {
+  local provider="$1" office_id="$2" account_key="$3" key marker status_path
+  key="$(registration_health_key "${provider}" "${office_id}" "${account_key}")"
+  [[ -n "${registration_known_healthy[${key}]:-}" ]] && return 0
+
+  marker="$(registration_health_marker "${provider}" "${office_id}" "${account_key}")"
+  status_path="${runtime_dir}/${provider}.${office_id}.status"
+  if [[ -f "${marker}" ]] \
+      || { [[ -f "${status_path}" ]] && grep -Fqx "${account_key}=registered" "${status_path}"; }; then
+    registration_known_healthy["${key}"]=1
+  fi
+}
+
+mark_registration_healthy() {
+  local provider="$1" office_id="$2" account_key="$3" key marker
+  key="$(registration_health_key "${provider}" "${office_id}" "${account_key}")"
+  marker="$(registration_health_marker "${provider}" "${office_id}" "${account_key}")"
+  registration_known_healthy["${key}"]=1
+  unset "registration_recovery_attempts[${key}]"
+  unset "registration_next_recovery_at[${key}]"
+  : > "${marker}"
+}
+
+maybe_recover_registration() {
+  local provider="$1" office_id="$2" account_key="$3" registration_name="$4" status="$5"
+  local key now next_at attempt delay
+  key="$(registration_health_key "${provider}" "${office_id}" "${account_key}")"
+
+  remember_registration_health "${provider}" "${office_id}" "${account_key}"
+  if [[ "${status}" == "registered" ]]; then
+    mark_registration_healthy "${provider}" "${office_id}" "${account_key}"
+    return 0
+  fi
+
+  # Only self-heal a line that has previously reached Registered. A newly
+  # entered bad password must remain visibly rejected instead of hammering the
+  # provider forever. Auth. Sent is pending and never reaches this branch.
+  [[ "${status}" == "rejected" || "${status}" == "unregistered" ]] || return 0
+  [[ -n "${registration_known_healthy[${key}]:-}" ]] || return 0
+
+  now="$(date +%s)"
+  next_at="${registration_next_recovery_at[${key}]:-0}"
+  (( now >= next_at )) || return 0
+
+  attempt=$(( ${registration_recovery_attempts[${key}]:-0} + 1 ))
+  case "${attempt}" in
+    1) delay=15 ;;
+    2) delay=60 ;;
+    3) delay=300 ;;
+    *) delay=900 ;;
+  esac
+  registration_recovery_attempts["${key}"]="${attempt}"
+  registration_next_recovery_at["${key}"]=$((now + delay))
+  echo "Recovering ${provider} registration ${account_key} after ${status} (attempt ${attempt}, next retry in ${delay}s)." >&2
+  send_registration "${registration_name}"
+}
+
+register_provider_accounts() {
+  local provider="$1" file office_id account_key registration_name
+  while IFS= read -r -d '' file; do
+    office_id="$(office_from_file "${file}" "${provider}." '.accounts')"
+    [[ -n "${office_id}" ]] || continue
+    while IFS='=' read -r account_key registration_name; do
+      [[ "${account_key}" =~ ^[a-z0-9_-]{1,16}$ ]] || continue
+      [[ "${registration_name}" =~ ^${provider}-[0-9a-f]{32}(-[a-z0-9_-]{1,16})?-registration$ ]] || continue
+      # Capture a persisted Registered status before replacing the status file
+      # with pending. This lets the first watcher run after a deployment recover
+      # a previously healthy line if the global reload knocks it offline.
+      remember_registration_health "${provider}" "${office_id}" "${account_key}"
+      send_registration "${registration_name}"
+    done < "${file}"
+    if [[ "${provider}" == "beeline" ]]; then
+      write_beeline_accounts_status "${office_id}" "pending"
+    else
+      write_plusofon_accounts_status "${office_id}" "pending"
+    fi
+  done < <(find "${runtime_dir}" -maxdepth 1 -type f -name "${provider}.*.accounts" -print0 | sort -z)
+}
+
 apply_configs_if_changed() {
-  local provider_config_hash webrtc_config_hash
-  provider_config_hash="$(hash_files 'beeline.*.conf'):$(hash_files 'plusofon.*.conf')"
+  local provider_config_hash beeline_config_hash plusofon_config_hash webrtc_config_hash
+  local beeline_changed=false plusofon_changed=false
+  beeline_config_hash="$(hash_files 'beeline.*.conf')"
+  plusofon_config_hash="$(hash_files 'plusofon.*.conf')"
+  provider_config_hash="${beeline_config_hash}:${plusofon_config_hash}"
+  [[ "${beeline_config_hash}" == "${last_beeline_config_hash}" ]] || beeline_changed=true
+  [[ "${plusofon_config_hash}" == "${last_plusofon_config_hash}" ]] || plusofon_changed=true
   if [[ "${ASTERISK_WEBRTC_ENABLED:-false}" == "true" ]]; then
     webrtc_config_hash="$(hash_files 'webrtc.*.conf')"
   else
@@ -218,41 +324,35 @@ apply_configs_if_changed() {
   install -o asterisk -g asterisk -m 0600 "${webrtc_temporary}" "${asterisk_webrtc_config}"
   rm -f "${provider_temporary}" "${webrtc_temporary}"
 
-  if /usr/sbin/asterisk -rx 'pjsip reload' >/dev/null 2>&1 && all_provider_auths_loaded; then
+  if reload_pjsip && all_provider_auths_loaded; then
     last_provider_config_hash="${provider_config_hash}"
+    last_beeline_config_hash="${beeline_config_hash}"
+    last_plusofon_config_hash="${plusofon_config_hash}"
     last_webrtc_config_hash="${webrtc_config_hash}"
     last_routes_hash=""
 
-    while IFS= read -r -d '' file; do
-      local office_id account_key registration_name
-      office_id="$(office_from_file "${file}" 'beeline.' '.accounts')"
-      [[ -n "${office_id}" ]] || continue
-      while IFS='=' read -r account_key registration_name; do
-        [[ "${registration_name}" =~ ^beeline-[0-9a-f]{32}(-[a-z0-9_-]{1,16})?-registration$ ]] || continue
-        /usr/sbin/asterisk -rx "pjsip send register ${registration_name}" >/dev/null 2>&1 || true
-      done < "${file}"
-    done < <(find "${runtime_dir}" -maxdepth 1 -type f -name 'beeline.*.accounts' -print0 | sort -z)
+    # A pjsip reload is global, but PJSIPRegister first unregisters the selected
+    # line. Never force an unchanged provider to register again merely because
+    # another provider's config changed.
+    if [[ "${beeline_changed}" == "true" ]]; then
+      register_provider_accounts "beeline"
+    fi
+    if [[ "${plusofon_changed}" == "true" ]]; then
+      register_provider_accounts "plusofon"
+    fi
 
-    while IFS= read -r -d '' file; do
-      local office_id account_key registration_name
-      office_id="$(office_from_file "${file}" 'plusofon.' '.accounts')"
-      [[ -n "${office_id}" ]] || continue
-      write_plusofon_accounts_status "${office_id}" "pending"
-      while IFS='=' read -r account_key registration_name; do
-        [[ "${registration_name}" =~ ^plusofon-[0-9a-f]{32}(-[a-z0-9_-]{1,16})?-registration$ ]] || continue
-        /usr/sbin/asterisk -rx "pjsip send register ${registration_name}" >/dev/null 2>&1 || true
-      done < "${file}"
-    done < <(find "${runtime_dir}" -maxdepth 1 -type f -name 'plusofon.*.accounts' -print0 | sort -z)
-
-    while IFS= read -r -d '' file; do
-      local office_id office_key
-      office_id="$(office_from_file "${file}" 'plusofon.' '.conf')"
-      [[ -n "${office_id}" ]] || continue
-      [[ ! -f "${runtime_dir}/plusofon.${office_id}.accounts" ]] || continue
-      office_key="$(endpoint_key "${office_id}")"
-      write_default_status "plusofon" "${office_id}" "pending"
-      /usr/sbin/asterisk -rx "pjsip send register plusofon-${office_key}-registration" >/dev/null 2>&1 || true
-    done < <(find "${runtime_dir}" -maxdepth 1 -type f -name 'plusofon.*.conf' -print0 | sort -z)
+    if [[ "${plusofon_changed}" == "true" ]]; then
+      while IFS= read -r -d '' file; do
+        local office_id office_key
+        office_id="$(office_from_file "${file}" 'plusofon.' '.conf')"
+        [[ -n "${office_id}" ]] || continue
+        [[ ! -f "${runtime_dir}/plusofon.${office_id}.accounts" ]] || continue
+        office_key="$(endpoint_key "${office_id}")"
+        remember_registration_health "plusofon" "${office_id}" "default"
+        write_default_status "plusofon" "${office_id}" "pending"
+        send_registration "plusofon-${office_key}-registration"
+      done < <(find "${runtime_dir}" -maxdepth 1 -type f -name 'plusofon.*.conf' -print0 | sort -z)
+    fi
   else
     for provider in beeline plusofon; do
       while IFS= read -r -d '' file; do
@@ -532,9 +632,11 @@ update_beeline_registration_statuses() {
       detail=""
       if grep -qiE '(^|[[:space:]])Registered([[:space:]]|$)' <<< "${output}"; then
         status="registered"
-      elif grep -qiE 'Rejected|Forbidden|Auth\. Sent' <<< "${output}"; then
+      elif grep -qiE 'Rejected|Forbidden' <<< "${output}"; then
         status="rejected"
         detail="$(registration_detail "${output}")"
+      elif grep -qiE 'Auth\. Sent' <<< "${output}"; then
+        status="pending"
       elif grep -qiE 'Unregistered|Stopped' <<< "${output}"; then
         status="unregistered"
       else
@@ -542,6 +644,7 @@ update_beeline_registration_statuses() {
       fi
       printf '%s=%s\n' "${account_key}" "${status}" >> "${temporary}"
       [[ -z "${detail}" ]] || printf '%s.detail=%s\n' "${account_key}" "${detail}" >> "${temporary}"
+      maybe_recover_registration "beeline" "${office_id}" "${account_key}" "${registration_name}" "${status}"
     done < "${file}"
     printf '%s\n' "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "${temporary}"
     mv -f "${temporary}" "${status_path}"
@@ -564,9 +667,11 @@ update_plusofon_registration_statuses() {
       detail=""
       if grep -qiE '(^|[[:space:]])Registered([[:space:]]|$)' <<< "${output}"; then
         status="registered"
-      elif grep -qiE 'Rejected|Forbidden|Auth\. Sent' <<< "${output}"; then
+      elif grep -qiE 'Rejected|Forbidden' <<< "${output}"; then
         status="rejected"
         detail="$(registration_detail "${output}")"
+      elif grep -qiE 'Auth\. Sent' <<< "${output}"; then
+        status="pending"
       elif grep -qiE 'Unregistered|Stopped' <<< "${output}"; then
         status="unregistered"
       else
@@ -574,6 +679,7 @@ update_plusofon_registration_statuses() {
       fi
       printf '%s=%s\n' "${account_key}" "${status}" >> "${temporary}"
       [[ -z "${detail}" ]] || printf '%s.detail=%s\n' "${account_key}" "${detail}" >> "${temporary}"
+      maybe_recover_registration "plusofon" "${office_id}" "${account_key}" "${registration_name}" "${status}"
     done < "${file}"
     printf '%s\n' "$(date -u +'%Y-%m-%dT%H:%M:%SZ')" >> "${temporary}"
     mv -f "${temporary}" "${status_path}"
@@ -593,23 +699,37 @@ update_plusofon_registration_statuses() {
     detail=""
     if grep -qiE '(^|[[:space:]])Registered([[:space:]]|$)' <<< "${output}"; then
       status="registered"
-    elif grep -qiE 'Rejected|Forbidden|Auth\. Sent' <<< "${output}"; then
+    elif grep -qiE 'Rejected|Forbidden' <<< "${output}"; then
       status="rejected"
       detail="$(registration_detail "${output}")"
+    elif grep -qiE 'Auth\. Sent' <<< "${output}"; then
+      status="pending"
     elif grep -qiE 'Unregistered|Stopped' <<< "${output}"; then
       status="unregistered"
     else
       status="pending"
     fi
+    maybe_recover_registration \
+      "plusofon" \
+      "${office_id}" \
+      "default" \
+      "plusofon-${office_key}-registration" \
+      "${status}"
     write_default_status "plusofon" "${office_id}" "${status}" "${detail}"
   done < <(find "${runtime_dir}" -maxdepth 1 -type f -name 'plusofon.*.conf' -print0 | sort -z)
 }
 
-wait_for_asterisk
-while true; do
-  apply_configs_if_changed
-  apply_routes_if_changed
-  update_beeline_registration_statuses
-  update_plusofon_registration_statuses
-  sleep 5
-done
+watch_runtime_config_main() {
+  wait_for_asterisk
+  while true; do
+    apply_configs_if_changed
+    apply_routes_if_changed
+    update_beeline_registration_statuses
+    update_plusofon_registration_statuses
+    sleep 5
+  done
+}
+
+if [[ "${BASH_SOURCE[0]}" == "$0" ]]; then
+  watch_runtime_config_main
+fi

@@ -125,7 +125,8 @@ public sealed class CrmController(
                 createdPeriod.FromUtc,
                 createdPeriod.ToUtc,
                 createdPeriod.From,
-                createdPeriod.To),
+                createdPeriod.To,
+                BrowserTimeZone.Resolve(HttpContext)),
             ct);
         if (board is null)
         {
@@ -236,7 +237,8 @@ public sealed class CrmController(
                 createdPeriod.FromUtc,
                 createdPeriod.ToUtc,
                 createdPeriod.From,
-                createdPeriod.To),
+                createdPeriod.To,
+                BrowserTimeZone.Resolve(HttpContext)),
             ct);
         ViewData["CurrentCrmUserId"] = User.FindFirstValue(ClaimTypes.NameIdentifier);
         return board is null ? NoContent() : PartialView("_CrmWorkspace", board);
@@ -435,7 +437,9 @@ public sealed class CrmController(
 
         var boardRequest = api.GetCrmBoardResultAsync(
             officeId,
-            query: new CrmBoardQuery(Scope: CrmBoardScopes.Team),
+            query: new CrmBoardQuery(
+                Scope: CrmBoardScopes.Team,
+                TimeZoneOffsetMinutes: BrowserTimeZone.Resolve(HttpContext)),
             ct: ct);
         var tasksRequest = api.GetCrmTasksAsync(officeId, ct);
         await Task.WhenAll(boardRequest, tasksRequest);

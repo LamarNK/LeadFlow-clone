@@ -428,25 +428,35 @@ public sealed class CrmLeadDistributionService(
             .SingleOrDefaultAsync(ct);
         var ndzStages = CrmDailyDistribution.ResolveNdzStages(
             CrmStages.Resolve(officeStagesJson));
-        var cards = await db.CrmCandidateCards
+        var ndzStageNames = ndzStages.Stages.ToArray();
+        var leadCards = await db.CrmCandidateCards
             .Where(x => x.OfficeId == officeId
                         && !x.IsClosed
-                        && (x.Stage == CrmStages.Lead
-                            || ndzStages.Stages.Contains(x.Stage)))
+                        && x.Stage == CrmStages.Lead)
             .ToListAsync(ct);
+        var ndzCards = ndzStageNames.Length == 0
+            ? []
+            : await db.CrmCandidateCards
+                .Where(x => x.OfficeId == officeId
+                            && !x.IsClosed
+                            && ndzStageNames.Contains(x.Stage))
+                .ToListAsync(ct);
+        var cards = leadCards.Concat(ndzCards).ToList();
         var managerIds = managers.Select(x => x.UserId).ToList();
         var leadPlan = CrmDailyDistribution.BuildBalancedPlan(
-            cards.Where(x => x.Stage == CrmStages.Lead).Select(x => x.Id),
+            leadCards.Select(x => x.Id),
             managerIds,
             officeId,
             session.LocalDate,
             CrmDailyDistribution.LeadPool);
         var ndzPlan = CrmDailyDistribution.BuildBalancedPlan(
-            cards.Where(x => CrmDailyDistribution.IsNdz(x.Stage)).Select(x => x.Id),
+            ndzCards.Select(x => x.Id),
             managerIds,
             officeId,
             session.LocalDate,
             CrmDailyDistribution.NdzPool);
+        IReadOnlySet<string> leadSourceStages = new HashSet<string>([CrmStages.Lead], StringComparer.Ordinal);
+        IReadOnlySet<string> ndzSourceStages = new HashSet<string>(ndzStageNames, StringComparer.Ordinal);
 
         var counters = await db.CrmDailyDistributionCounters
             .Where(x => x.OfficeId == officeId && x.LocalDate == session.LocalDate)
@@ -466,6 +476,7 @@ public sealed class CrmLeadDistributionService(
             session.LocalDate,
             CrmDailyDistribution.LeadPool,
             ReasonDailyLead,
+            leadSourceStages,
             normalizeNdzTo: null,
             now);
         ApplyMorningPlan(
@@ -476,6 +487,7 @@ public sealed class CrmLeadDistributionService(
             session.LocalDate,
             CrmDailyDistribution.NdzPool,
             ReasonDailyNdz,
+            ndzSourceStages,
             normalizeNdzTo: ndzStages.PrimaryStage,
             now);
 
@@ -505,12 +517,21 @@ public sealed class CrmLeadDistributionService(
         DateOnly localDate,
         string pool,
         string reason,
+        IReadOnlySet<string> allowedSourceStages,
         string? normalizeNdzTo,
         DateTime now)
     {
         foreach (var assignment in plan)
         {
             if (!cardsById.TryGetValue(assignment.CardId, out var card))
+            {
+                continue;
+            }
+
+            // The plan is built from an explicit office-stage allowlist. Keep a
+            // second guard at application time so unrelated columns can never
+            // be reassigned or normalized into NDZ by a stale/contaminated plan.
+            if (!allowedSourceStages.Contains(card.Stage))
             {
                 continue;
             }
@@ -672,6 +693,12 @@ public sealed class CrmLeadDistributionService(
 
     private static void ApplyAssignment(CrmCandidateCardEntity card, string managerUserId, DateTime now)
     {
+        if (string.IsNullOrWhiteSpace(card.InitialManagerUserId))
+        {
+            card.InitialManagerUserId = managerUserId;
+            card.InitialAssignedAtUtc = now;
+        }
+
         card.ManagerUserId = managerUserId;
         card.IsInActiveLoad = true;
         card.UpdatedAtUtc = now;

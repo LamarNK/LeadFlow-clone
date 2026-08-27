@@ -121,7 +121,7 @@ public sealed class CrmAnalyticsQueryServiceTests
     }
 
     [Fact]
-    public async Task GetAsync_UsesHalfOpenPeriodAndCurrentOwnerForManagerFilter()
+    public async Task GetAsync_UsesHalfOpenPeriodAndInitialOwnerForManagerFilter()
     {
         await using var harness = await Harness.CreateAsync(Now);
         harness.AddOffice(OfficeOneId, "Основной", ["Новый", "Финиш"]);
@@ -130,10 +130,30 @@ public sealed class CrmAnalyticsQueryServiceTests
 
         var fromUtc = new DateTime(2026, 8, 1, 0, 0, 0, DateTimeKind.Utc);
         var toUtc = fromUtc.AddDays(1);
+        var reassignedCard = NewCard(
+            OfficeOneId,
+            ManagerTwoId,
+            "Финиш",
+            fromUtc.AddDays(-1),
+            initialManagerUserId: ManagerOneId,
+            initialAssignedAtUtc: fromUtc);
         harness.Db.CrmCandidateCards.AddRange(
-            NewCard(OfficeOneId, ManagerOneId, "Новый", fromUtc),
+            reassignedCard,
             NewCard(OfficeOneId, ManagerTwoId, "Новый", fromUtc.AddHours(3)),
             NewCard(OfficeOneId, ManagerOneId, "Новый", toUtc));
+        harness.Db.CrmCandidateHistory.AddRange(
+            NewStageHistory(
+                reassignedCard.Id,
+                "Новый → Финиш",
+                fromUtc.AddHours(1),
+                ManagerOneId,
+                "Анна"),
+            NewStageHistory(
+                reassignedCard.Id,
+                "Финиш → Новый",
+                fromUtc.AddHours(2),
+                ManagerOneId,
+                "Анна"));
         await harness.Db.SaveChangesAsync();
 
         var result = await harness.Sut.GetAsync(
@@ -148,6 +168,75 @@ public sealed class CrmAnalyticsQueryServiceTests
         Assert.Equal(2, data.ManagerOptions.Count);
         Assert.Single(data.Managers);
         Assert.Equal(ManagerOneId, data.Managers[0].UserId);
+        // Current load remains independent of the period and includes the boundary card.
+        Assert.Equal(1, data.Managers[0].CurrentAssignedCards);
+        Assert.Equal(1, data.Managers[0].CardsInPeriod);
+        Assert.Equal(1, data.Managers[0].StageChangedCardsInPeriod);
+        Assert.Equal(2, data.Managers[0].StageChangesInPeriod);
+    }
+
+    [Fact]
+    public async Task GetAsync_AttributesTransitionsAndClosuresToActualActor()
+    {
+        await using var harness = await Harness.CreateAsync(Now);
+        harness.AddOffice(OfficeOneId, "Основной", ["Новый", "Финиш"]);
+        harness.AddManager(ManagerOneId, OfficeOneId, "Анна", capacity: 10, onShift: true);
+        harness.AddManager(ManagerTwoId, OfficeOneId, "Борис", capacity: 10, onShift: true);
+
+        var fromUtc = new DateTime(2026, 8, 1, 0, 0, 0, DateTimeKind.Utc);
+        var toUtc = fromUtc.AddDays(1);
+        var card = NewCard(
+            OfficeOneId,
+            ManagerTwoId,
+            "Новый",
+            fromUtc,
+            isClosed: true,
+            closeReason: CrmCloseReasons.Success,
+            activeLoad: false,
+            initialManagerUserId: ManagerOneId,
+            initialAssignedAtUtc: fromUtc);
+        harness.Db.CrmCandidateCards.Add(card);
+        harness.Db.CrmCandidateHistory.AddRange(
+            NewStageHistory(
+                card.Id,
+                CrmActivityDetails.WithComment("Новый → Финиш", "Дозвонился"),
+                fromUtc.AddHours(1),
+                ManagerTwoId,
+                "Борис"),
+            NewStageHistory(
+                card.Id,
+                "Финиш → Новый (воронка обновлена)",
+                fromUtc.AddHours(2),
+                ManagerTwoId,
+                "Борис"),
+            NewCloseHistory(
+                card.Id,
+                CrmCloseReasons.Success,
+                fromUtc.AddHours(3),
+                ManagerTwoId,
+                "Борис"));
+        await harness.Db.SaveChangesAsync();
+
+        var result = await harness.Sut.GetAsync(
+            OfficeScope.GlobalAdmin,
+            "admin",
+            isAdmin: true,
+            new CrmAnalyticsQuery(fromUtc, toUtc, OfficeOneId));
+
+        var data = Assert.IsType<CrmAnalyticsDto>(result.Data);
+        var firstManager = Assert.Single(data.Managers, x => x.UserId == ManagerOneId);
+        var actualActor = Assert.Single(data.Managers, x => x.UserId == ManagerTwoId);
+        Assert.Equal(1, firstManager.CardsInPeriod);
+        Assert.Equal(0, firstManager.StageChangedCardsInPeriod);
+        Assert.Equal(0, firstManager.ClosedCardsInPeriod);
+        Assert.Equal(0, actualActor.CardsInPeriod);
+        Assert.Equal(1, actualActor.StageChangedCardsInPeriod);
+        Assert.Equal(1, actualActor.StageChangesInPeriod);
+        Assert.Equal(1, actualActor.ClosedCardsInPeriod);
+        Assert.Equal(1, actualActor.SuccessfulClosedCardsInPeriod);
+
+        var funnel = Assert.Single(data.Funnels);
+        Assert.Equal(1, Assert.Single(funnel.Stages, x => x.Stage == "Финиш").ReachedCount);
     }
 
     [Fact]
@@ -315,6 +404,7 @@ public sealed class CrmAnalyticsQueryServiceTests
     {
         await using var harness = await Harness.CreateSqliteAsync(Now);
         harness.AddOffice(OfficeOneId, "Ярославль", ["Новый"]);
+        harness.AddManager(ManagerOneId, OfficeOneId, "Анна", capacity: 10, onShift: true);
         await harness.Db.SaveChangesAsync();
 
         var result = await harness.Sut.GetAsync(
@@ -333,13 +423,19 @@ public sealed class CrmAnalyticsQueryServiceTests
         DateTime createdAtUtc,
         bool isClosed = false,
         string? closeReason = null,
-        bool activeLoad = true) =>
+        bool activeLoad = true,
+        string? initialManagerUserId = null,
+        DateTime? initialAssignedAtUtc = null) =>
         new()
         {
             Id = Guid.NewGuid(),
             ResponseId = Guid.NewGuid(),
             OfficeId = officeId,
             ManagerUserId = managerUserId,
+            InitialManagerUserId = initialManagerUserId ?? managerUserId,
+            InitialAssignedAtUtc = initialManagerUserId is not null || managerUserId is not null
+                ? initialAssignedAtUtc ?? createdAtUtc
+                : null,
             Stage = stage,
             CreatedAtUtc = createdAtUtc,
             UpdatedAtUtc = createdAtUtc,
@@ -350,15 +446,37 @@ public sealed class CrmAnalyticsQueryServiceTests
             IsInActiveLoad = activeLoad && !isClosed
         };
 
-    private static CrmCandidateHistoryEntity NewStageHistory(Guid cardId, string details, DateTime createdAtUtc) =>
+    private static CrmCandidateHistoryEntity NewStageHistory(
+        Guid cardId,
+        string details,
+        DateTime createdAtUtc,
+        string actorUserId = "admin",
+        string actorName = "Администратор") =>
         new()
         {
             Id = Guid.NewGuid(),
             CardId = cardId,
             Action = "StageChanged",
             Details = details,
-            ActorUserId = "admin",
-            ActorName = "Администратор",
+            ActorUserId = actorUserId,
+            ActorName = actorName,
+            CreatedAtUtc = createdAtUtc
+        };
+
+    private static CrmCandidateHistoryEntity NewCloseHistory(
+        Guid cardId,
+        string reason,
+        DateTime createdAtUtc,
+        string actorUserId,
+        string actorName) =>
+        new()
+        {
+            Id = Guid.NewGuid(),
+            CardId = cardId,
+            Action = "Closed",
+            Details = CrmActivityDetails.WithComment(reason, "Комментарий к закрытию"),
+            ActorUserId = actorUserId,
+            ActorName = actorName,
             CreatedAtUtc = createdAtUtc
         };
 
