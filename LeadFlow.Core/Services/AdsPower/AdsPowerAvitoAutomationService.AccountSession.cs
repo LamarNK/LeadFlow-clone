@@ -111,9 +111,14 @@ public sealed partial class AdsPowerAvitoAutomationService
             .ConfigureAwait(false);
         ReportStartupStage(reportStartupStage, 1, "вкладка получена", startupStopwatch);
         ReportStartupStage(reportStartupStage, 1, "прогрев страницы Avito", startupStopwatch);
-        page = await WarmUpSessionPageAsync(page, sessionKey, cancellationToken).ConfigureAwait(false);
+        page = await WarmUpSessionPageAsync(
+                page,
+                sessionKey,
+                cancellationToken,
+                runtimeProvider: "Multilogin")
+            .ConfigureAwait(false);
         ReportStartupStage(reportStartupStage, 1, "страница Avito готова", startupStopwatch);
-        return new AccountSession(this, browser, page, sessionKey, new GeeTestV4TaskOptions());
+        return new AccountSession(this, browser, page, sessionKey, new GeeTestV4TaskOptions(), "Multilogin");
     }
 
     private async Task<IAdsPowerAccountSession> OpenAccountSessionOnceAsync(
@@ -188,7 +193,7 @@ public sealed partial class AdsPowerAvitoAutomationService
                 memberName: nameof(OpenAccountSessionAsync),
                 properties: openedProperties);
 
-            return new AccountSession(this, browser, page, adsPowerUserId, captchaOptions);
+            return new AccountSession(this, browser, page, adsPowerUserId, captchaOptions, "AdsPower");
         }
         catch (Exception ex)
         {
@@ -283,7 +288,8 @@ public sealed partial class AdsPowerAvitoAutomationService
     private async Task<IPage> WarmUpSessionPageAsync(
         IPage page,
         string adsPowerUserId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        string runtimeProvider = "AdsPower")
     {
         await TryBringAutomationPageToFrontAsync(
                 page,
@@ -349,7 +355,29 @@ public sealed partial class AdsPowerAvitoAutomationService
             }
         }
 
-        if (IsOnActiveProfileItemsPage(page.Url)
+        var switchModalBlockingItems =
+            warmupState?.ProfileSwitchModalOpen == true
+            || warmupState?.PageKind == AvitoPageKind.ProfileSwitchModal
+            || AvitoSubProfileSwitchEffect.IsItemsSwitchTrapUrl(currentUrl)
+            || AvitoSubProfileSwitchEffect.IsItemsSwitchTrapUrl(page.Url);
+
+        if (switchModalBlockingItems)
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                "Avito session warmup: profile-switch modal is open; skipping items shell wait.",
+                DeskLinkAuditLogLevel.Info,
+                memberName: nameof(WarmUpSessionPageAsync),
+                properties: new Dictionary<string, object?>
+                {
+                    ["step"] = "warmup_skip_items_shell_switch_modal",
+                    ["runtime.provider"] = runtimeProvider,
+                    ["runtime.profileId"] = adsPowerUserId,
+                    ["page.url"] = page.Url,
+                    ["switch.cardsCount"] = warmupState?.ProfileCardsCount,
+                    ["switch.currentId"] = warmupState?.CurrentSubProfileId
+                });
+        }
+        else if (IsOnActiveProfileItemsPage(page.Url)
             && warmupState?.HasCaptcha != true
             && warmupState?.PageKind != AvitoPageKind.Captcha)
         {
@@ -364,6 +392,8 @@ public sealed partial class AdsPowerAvitoAutomationService
             properties: new Dictionary<string, object?>
             {
                 ["step"] = "session_warmup_done",
+                ["runtime.provider"] = runtimeProvider,
+                ["runtime.profileId"] = adsPowerUserId,
                 ["adsPower.userId"] = adsPowerUserId,
                 ["page.url"] = page.Url
             });
@@ -375,6 +405,7 @@ public sealed partial class AdsPowerAvitoAutomationService
         IPage page,
         string subProfileId,
         string adsPowerUserId,
+        string runtimeProvider,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(subProfileId))
@@ -388,7 +419,12 @@ public sealed partial class AdsPowerAvitoAutomationService
         SubProfileSwitchResult last = new(SubProfileSwitchStatus.Unknown);
         for (var attempt = 1; attempt <= MonitoringTiming.SubProfileSwitchMaxAttempts; attempt++)
         {
-            last = await TrySwitchSubProfileOnPageOnceAsync(page, subProfileId, adsPowerUserId, cancellationToken)
+            last = await TrySwitchSubProfileOnPageOnceAsync(
+                    page,
+                    subProfileId,
+                    adsPowerUserId,
+                    runtimeProvider,
+                    cancellationToken)
                 .ConfigureAwait(false);
             if (last.Ok)
             {
@@ -418,20 +454,22 @@ public sealed partial class AdsPowerAvitoAutomationService
             }
 
             _ = GlobalLogger.Instance.LogAsync(
-                $"AdsPower profile-switch (session): attempt {attempt}/{MonitoringTiming.SubProfileSwitchMaxAttempts} failed for subProfile {subProfileId}, recovering before retry.",
+                $"{runtimeProvider} profile-switch (session): attempt {attempt}/{MonitoringTiming.SubProfileSwitchMaxAttempts} failed for subProfile {subProfileId}, recovering before retry.",
                 DeskLinkAuditLogLevel.Warning,
                 memberName: nameof(SwitchSubProfileOnPageAsync),
                 properties: new Dictionary<string, object?>
                 {
                     ["step"] = "switch_retry",
                     ["attempt"] = attempt,
+                    ["runtime.provider"] = runtimeProvider,
+                    ["runtime.profileId"] = adsPowerUserId,
                     ["adsPower.userId"] = adsPowerUserId,
                     ["avito.subProfileId"] = subProfileId,
                     ["switch.status"] = last.Status.ToString(),
                     ["page.url"] = page.Url
                 });
 
-            await RecoverPageBeforeSubProfileSwitchRetryAsync(page, cancellationToken, attempt)
+            await RecoverPageBeforeSubProfileSwitchRetryAsync(page, cancellationToken, attempt, runtimeProvider)
                 .ConfigureAwait(false);
         }
 
@@ -441,12 +479,13 @@ public sealed partial class AdsPowerAvitoAutomationService
     private async Task RecoverPageBeforeSubProfileSwitchRetryAsync(
         IPage page,
         CancellationToken cancellationToken,
-        int attempt)
+        int attempt,
+        string runtimeProvider)
     {
         await TryRecoverTransientAvitoErrorAsync(page, cancellationToken, nameof(SwitchSubProfileOnPageAsync))
             .ConfigureAwait(false);
         await DismissAvitoBlockingOverlaysAsync(page, cancellationToken).ConfigureAwait(false);
-        await DismissProfileSwitchModalAsync(page, cancellationToken).ConfigureAwait(false);
+        await DismissProfileSwitchModalAsync(page, cancellationToken, runtimeProvider).ConfigureAwait(false);
         await BounceToDashboardBeforeSwitchAsync(page, cancellationToken, nameof(SwitchSubProfileOnPageAsync))
             .ConfigureAwait(false);
         await Task.Delay(attempt * 1200, cancellationToken).ConfigureAwait(false);
@@ -566,15 +605,18 @@ public sealed partial class AdsPowerAvitoAutomationService
         IPage page,
         string subProfileId,
         string adsPowerUserId,
+        string runtimeProvider,
         CancellationToken cancellationToken)
     {
         _ = GlobalLogger.Instance.LogAsync(
-            $"AdsPower profile-switch click started (session): subProfile={subProfileId}.",
+            $"{runtimeProvider} profile-switch click started (session): subProfile={subProfileId}.",
             DeskLinkAuditLogLevel.Info,
             memberName: nameof(TrySwitchSubProfileOnPageOnceAsync),
             properties: new Dictionary<string, object?>
             {
                 ["step"] = "start",
+                ["runtime.provider"] = runtimeProvider,
+                ["runtime.profileId"] = adsPowerUserId,
                 ["adsPower.userId"] = adsPowerUserId,
                 ["avito.subProfileId"] = subProfileId,
                 ["page.url"] = page.Url
@@ -582,7 +624,12 @@ public sealed partial class AdsPowerAvitoAutomationService
 
         if (!IsAvitoProfileAutomationTab(page.Url))
         {
-            page = await WarmUpSessionPageAsync(page, "session", cancellationToken).ConfigureAwait(false);
+            page = await WarmUpSessionPageAsync(
+                    page,
+                    "session",
+                    cancellationToken,
+                    runtimeProvider)
+                .ConfigureAwait(false);
         }
 
         await TryBringAutomationPageToFrontAsync(
@@ -600,7 +647,7 @@ public sealed partial class AdsPowerAvitoAutomationService
             if (await TryRecoverAvitoLoginAsync(page, cancellationToken).ConfigureAwait(false))
             {
                 _ = GlobalLogger.Instance.LogAsync(
-                    $"AdsPower profile-switch (session): auto-login recovered before switch for subProfile {subProfileId}.",
+                    $"{runtimeProvider} profile-switch (session): auto-login recovered before switch for subProfile {subProfileId}.",
                     DeskLinkAuditLogLevel.Info,
                     memberName: nameof(SwitchSubProfileOnPageAsync),
                     properties: new Dictionary<string, object?>
@@ -613,7 +660,7 @@ public sealed partial class AdsPowerAvitoAutomationService
             else
             {
                 _ = GlobalLogger.Instance.LogAsync(
-                    $"AdsPower profile-switch (session): login page detected for subProfile {subProfileId}, skipping.",
+                    $"{runtimeProvider} profile-switch (session): login page detected for subProfile {subProfileId}, skipping.",
                     DeskLinkAuditLogLevel.Warning,
                     memberName: nameof(SwitchSubProfileOnPageAsync),
                     properties: new Dictionary<string, object?>
@@ -638,7 +685,7 @@ public sealed partial class AdsPowerAvitoAutomationService
             if (preSwitchState?.HasCaptcha == true || preSwitchState?.PageKind == AvitoPageKind.Captcha)
             {
                 _ = GlobalLogger.Instance.LogAsync(
-                    $"AdsPower profile-switch (session): captcha/firewall detected for subProfile {subProfileId}, skipping.",
+                    $"{runtimeProvider} profile-switch (session): captcha/firewall detected for subProfile {subProfileId}, skipping.",
                     DeskLinkAuditLogLevel.Warning,
                     memberName: nameof(SwitchSubProfileOnPageAsync),
                     properties: new Dictionary<string, object?>
@@ -661,20 +708,27 @@ public sealed partial class AdsPowerAvitoAutomationService
                 .ConfigureAwait(false);
         }
 
-        await EnsureSwitchModalAsync(page, cancellationToken, nameof(SwitchSubProfileOnPageAsync))
+        await EnsureSwitchModalAsync(
+                page,
+                cancellationToken,
+                nameof(SwitchSubProfileOnPageAsync),
+                runtimeProvider,
+                adsPowerUserId)
             .ConfigureAwait(false);
         if (!await AwaitProfileSwitchModalContentAsync(page, cancellationToken, nameof(SwitchSubProfileOnPageAsync))
                 .ConfigureAwait(false))
         {
             await ThrowIfCaptchaOnPageAsync(page, cancellationToken).ConfigureAwait(false);
-            await DismissProfileSwitchModalAsync(page, cancellationToken).ConfigureAwait(false);
+            await DismissProfileSwitchModalAsync(page, cancellationToken, runtimeProvider).ConfigureAwait(false);
             _ = GlobalLogger.Instance.LogAsync(
-                $"AdsPower profile-switch (session): modal not ready for subProfile {subProfileId}, skipping.",
+                $"{runtimeProvider} profile-switch (session): modal not ready for subProfile {subProfileId}, skipping.",
                 DeskLinkAuditLogLevel.Warning,
                 memberName: nameof(SwitchSubProfileOnPageAsync),
                 properties: new Dictionary<string, object?>
                 {
                     ["step"] = "switch_modal_not_ready",
+                    ["runtime.provider"] = runtimeProvider,
+                    ["runtime.profileId"] = adsPowerUserId,
                     ["avito.subProfileId"] = subProfileId,
                     ["page.url"] = page.Url
                 });
@@ -683,25 +737,32 @@ public sealed partial class AdsPowerAvitoAutomationService
 
         if (await IsTargetSubProfileAlreadyCurrentAsync(page, subProfileId, cancellationToken).ConfigureAwait(false))
         {
-            await DismissProfileSwitchModalAsync(page, cancellationToken).ConfigureAwait(false);
+            await DismissProfileSwitchModalAsync(page, cancellationToken, runtimeProvider).ConfigureAwait(false);
             _ = GlobalLogger.Instance.LogAsync(
-                $"AdsPower profile-switch (session): subProfile {subProfileId} already current.",
+                $"{runtimeProvider} profile-switch (session): subProfile {subProfileId} already current.",
                 DeskLinkAuditLogLevel.Info,
                 memberName: nameof(SwitchSubProfileOnPageAsync),
                 properties: new Dictionary<string, object?>
                 {
                     ["step"] = "already_current",
+                    ["runtime.provider"] = runtimeProvider,
+                    ["runtime.profileId"] = adsPowerUserId,
                     ["adsPower.userId"] = adsPowerUserId,
                     ["avito.subProfileId"] = subProfileId
                 });
             return SubProfileSwitchResult.Succeeded;
         }
 
-        var switched = await TryClickSubProfileCardAndWaitCloseAsync(page, subProfileId, adsPowerUserId, cancellationToken)
+        var switched = await TryClickSubProfileCardAndWaitCloseAsync(
+                page,
+                subProfileId,
+                adsPowerUserId,
+                cancellationToken,
+                runtimeProvider)
             .ConfigureAwait(false);
         if (!switched)
         {
-            await DismissProfileSwitchModalAsync(page, cancellationToken).ConfigureAwait(false);
+            await DismissProfileSwitchModalAsync(page, cancellationToken, runtimeProvider).ConfigureAwait(false);
             return new SubProfileSwitchResult(SubProfileSwitchStatus.ClickFailed);
         }
 
@@ -711,6 +772,8 @@ public sealed partial class AdsPowerAvitoAutomationService
     private async Task<bool> VerifyActiveSubProfileOnPageAsync(
         IPage page,
         string subProfileId,
+        string runtimeProvider,
+        string runtimeProfileId,
         CancellationToken cancellationToken)
     {
         if (string.IsNullOrWhiteSpace(subProfileId))
@@ -725,12 +788,17 @@ public sealed partial class AdsPowerAvitoAutomationService
                 .ConfigureAwait(false);
         }
 
-        await EnsureSwitchModalAsync(page, cancellationToken, nameof(VerifyActiveSubProfileOnPageAsync))
+        await EnsureSwitchModalAsync(
+                page,
+                cancellationToken,
+                nameof(VerifyActiveSubProfileOnPageAsync),
+                runtimeProvider,
+                runtimeProfileId)
             .ConfigureAwait(false);
         if (!await AwaitProfileSwitchModalContentAsync(page, cancellationToken, nameof(VerifyActiveSubProfileOnPageAsync))
                 .ConfigureAwait(false))
         {
-            await DismissProfileSwitchModalAsync(page, cancellationToken).ConfigureAwait(false);
+            await DismissProfileSwitchModalAsync(page, cancellationToken, runtimeProvider).ConfigureAwait(false);
             return false;
         }
 
@@ -743,14 +811,16 @@ public sealed partial class AdsPowerAvitoAutomationService
 
             if (await IsTargetSubProfileAlreadyCurrentAsync(page, subProfileId, cancellationToken).ConfigureAwait(false))
             {
-                await DismissProfileSwitchModalAsync(page, cancellationToken).ConfigureAwait(false);
+                await DismissProfileSwitchModalAsync(page, cancellationToken, runtimeProvider).ConfigureAwait(false);
                 _ = GlobalLogger.Instance.LogAsync(
-                    $"AdsPower profile-switch verify OK for subProfile {subProfileId} ({sw.ElapsedMilliseconds} ms).",
+                    $"{runtimeProvider} profile-switch verify OK for subProfile {subProfileId} ({sw.ElapsedMilliseconds} ms).",
                     DeskLinkAuditLogLevel.Info,
                     memberName: nameof(VerifyActiveSubProfileOnPageAsync),
                     properties: new Dictionary<string, object?>
                     {
                         ["step"] = "verify_ok",
+                        ["runtime.provider"] = runtimeProvider,
+                        ["runtime.profileId"] = runtimeProfileId,
                         ["avito.subProfileId"] = subProfileId,
                         ["verify.waitMs"] = sw.ElapsedMilliseconds
                     });
@@ -760,14 +830,16 @@ public sealed partial class AdsPowerAvitoAutomationService
             await Task.Delay(pollMs, cancellationToken).ConfigureAwait(false);
         }
 
-        await DismissProfileSwitchModalAsync(page, cancellationToken).ConfigureAwait(false);
+        await DismissProfileSwitchModalAsync(page, cancellationToken, runtimeProvider).ConfigureAwait(false);
         _ = GlobalLogger.Instance.LogAsync(
-            $"AdsPower profile-switch verify timed out for subProfile {subProfileId} ({sw.ElapsedMilliseconds} ms).",
+            $"{runtimeProvider} profile-switch verify timed out for subProfile {subProfileId} ({sw.ElapsedMilliseconds} ms).",
             DeskLinkAuditLogLevel.Warning,
             memberName: nameof(VerifyActiveSubProfileOnPageAsync),
             properties: new Dictionary<string, object?>
             {
                 ["step"] = "verify_timeout",
+                ["runtime.provider"] = runtimeProvider,
+                ["runtime.profileId"] = runtimeProfileId,
                 ["avito.subProfileId"] = subProfileId,
                 ["verify.waitMs"] = sw.ElapsedMilliseconds
             });
@@ -1153,9 +1225,12 @@ public sealed partial class AdsPowerAvitoAutomationService
         IBrowser browser,
         IPage page,
         string adsPowerUserId,
-        GeeTestV4TaskOptions captchaOptions) : IAdsPowerAccountSession
+        GeeTestV4TaskOptions captchaOptions,
+        string runtimeProvider) : IAdsPowerAccountSession
     {
         public string AdsPowerUserId { get; } = adsPowerUserId;
+
+        public string RuntimeProvider { get; } = runtimeProvider;
 
         public string? CurrentPageUrl => page.Url;
 
@@ -1172,13 +1247,19 @@ public sealed partial class AdsPowerAvitoAutomationService
         public async Task<SubProfileSwitchResult> SwitchSubProfileAsync(string subProfileId, CancellationToken cancellationToken = default)
         {
             using var _ = AvitoCaptchaTaskContext.Use(captchaOptions);
-            return await owner.SwitchSubProfileOnPageAsync(page, subProfileId, AdsPowerUserId, cancellationToken).ConfigureAwait(false);
+            return await owner.SwitchSubProfileOnPageAsync(page, subProfileId, AdsPowerUserId, RuntimeProvider, cancellationToken).ConfigureAwait(false);
         }
 
         public async Task<bool> VerifyActiveSubProfileAsync(string subProfileId, CancellationToken cancellationToken = default)
         {
             using var _ = AvitoCaptchaTaskContext.Use(captchaOptions);
-            return await owner.VerifyActiveSubProfileOnPageAsync(page, subProfileId, cancellationToken).ConfigureAwait(false);
+            return await owner.VerifyActiveSubProfileOnPageAsync(
+                    page,
+                    subProfileId,
+                    RuntimeProvider,
+                    AdsPowerUserId,
+                    cancellationToken)
+                .ConfigureAwait(false);
         }
 
         public async Task<string> ExtractCandidatesJsonAsync(
