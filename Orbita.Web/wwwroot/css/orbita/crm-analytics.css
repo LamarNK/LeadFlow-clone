@@ -174,22 +174,27 @@
 .crm-analytics-decomposition-step--contracts { --decomposition-tone: #079455; --decomposition-soft: #dcfae6; }
 .crm-analytics-decomposition-connector {
     display: grid;
-    flex: 0 0 58px;
+    flex: 0 0 72px;
     place-content: center;
     justify-items: center;
-    color: #98a2b3;
+    color: #6172f3;
 }
 .crm-analytics-decomposition-connector span {
-    margin-bottom: 5px;
-    padding: 3px 6px;
+    min-width: 52px;
+    margin-bottom: 7px;
+    padding: 5px 8px;
+    border: 1px solid #4338ca;
     border-radius: 999px;
-    background: color-mix(in srgb, #e0e7ff 60%, var(--bg-card));
-    color: #4f46e5;
-    font-size: 9px;
-    font-weight: 800;
+    background: #4f46e5;
+    box-shadow: 0 2px 5px rgb(79 70 229 / 18%);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 850;
+    line-height: 1;
+    text-align: center;
     white-space: nowrap;
 }
-.crm-analytics-decomposition-connector i { color: #b2ccff; font-size: 10px; }
+.crm-analytics-decomposition-connector i { color: #6172f3; font-size: 12px; }
 .crm-analytics-contact-details { border-top: 1px solid var(--border); }
 .crm-analytics-contact-details summary {
     display: flex;
