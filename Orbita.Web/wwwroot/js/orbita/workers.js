@@ -534,7 +534,7 @@
         runtime.setBadge(responsesEl, payload.uniqueResponsesToday, ' уникальных откликов за сегодня');
         var crmNotificationStateKnown = typeof payload.crmTaskNotificationsEnabled === 'boolean';
         if (crmNotificationStateKnown) {
-            runtime.setBadge(crmTasksEl, payload.crmTaskNotificationsUnread, ' непрочитанных уведомлений CRM');
+            runtime.setBadge(crmTasksEl, payload.crmOpenTasks, ' открытых задач CRM');
             if (window.OrbitaNotifications) {
                 if (typeof window.OrbitaNotifications.setEnabled === 'function') {
                     window.OrbitaNotifications.setEnabled(payload.crmTaskNotificationsEnabled);

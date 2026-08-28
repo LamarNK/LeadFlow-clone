@@ -6,4 +6,5 @@ public sealed record NavBadgesDto(
     int ActionRequired,
     DateTime UpdatedAtUtc,
     int CrmTaskNotificationsUnread = 0,
-    bool? CrmTaskNotificationsEnabled = null);
+    bool? CrmTaskNotificationsEnabled = null,
+    int CrmOpenTasks = 0);

@@ -808,11 +808,13 @@ internal static class DesignPreviewData
     {
         lock (CrmSync)
         {
+            var openTaskCount = PreviewCrmTasks.Count(task => task.Status == CrmTaskStatuses.Open);
             return _previewCrmDeadlineNotificationsEnabled
                 ? new CrmTaskNotificationSummaryDto(
                     PreviewCrmTaskNotifications.Count(item => item.ReadAtUtc is null),
-                    true)
-                : new CrmTaskNotificationSummaryDto(0, false);
+                    true,
+                    openTaskCount)
+                : new CrmTaskNotificationSummaryDto(0, false, openTaskCount);
         }
     }
 

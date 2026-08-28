@@ -701,7 +701,8 @@ public sealed record CrmTaskNotificationsDto(
 
 public sealed record CrmTaskNotificationSummaryDto(
     int UnreadCount,
-    bool Enabled = false);
+    bool Enabled = false,
+    int OpenTaskCount = 0);
 
 public sealed record CrmHistoryDto(
     Guid Id,
