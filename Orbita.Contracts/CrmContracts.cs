@@ -110,18 +110,54 @@ public static class CrmStages
 public static class CrmManagerLoadRules
 {
     /// <summary>
-    /// Cards in the office-specific Robot stage remain assigned and visible,
-    /// but do not consume the assigned manager's active capacity.
+    /// Cards in service stages remain assigned and visible, but do not consume
+    /// the assigned manager's active capacity. At the moment these stages are
+    /// used by different office funnels: Robot, Empty and Substitution.
     /// </summary>
     public const string RobotStage = "Робот";
+    public const string EmptyStage = "Пустые";
+    public const string SubstitutionStage = "Подменка";
+    public const string SecondOfficeName = "2 офис";
+    public const string FourthOfficeName = "4 офис";
 
-    public static bool CountsTowardsLoad(string? stage, bool isInActiveLoad, bool isClosed) =>
+    private static readonly IReadOnlyList<string> DefaultExcludedStages = [RobotStage];
+    private static readonly IReadOnlyList<string> SecondOfficeExcludedStages = [RobotStage, EmptyStage];
+    private static readonly IReadOnlyList<string> FourthOfficeExcludedStages = [RobotStage, SubstitutionStage];
+
+    public static bool CountsTowardsLoad(
+        string? stage,
+        bool isInActiveLoad,
+        bool isClosed,
+        string? officeName = null) =>
         isInActiveLoad
         && !isClosed
-        && !string.Equals(stage, RobotStage, StringComparison.Ordinal);
+        && (officeName is null
+            ? !IsExcludedStage(stage)
+            : !IsExcludedStage(stage, officeName));
 
+    /// <summary>Recognizes every service-stage label for UI presentation.</summary>
     public static bool IsExcludedStage(string? stage) =>
-        string.Equals(stage, RobotStage, StringComparison.Ordinal);
+        string.Equals(stage, RobotStage, StringComparison.Ordinal)
+        || string.Equals(stage, EmptyStage, StringComparison.Ordinal)
+        || string.Equals(stage, SubstitutionStage, StringComparison.Ordinal);
+
+    /// <summary>Applies the exclusions only to the office that owns the service stage.</summary>
+    public static bool IsExcludedStage(string? stage, string? officeName) =>
+        string.Equals(stage, RobotStage, StringComparison.Ordinal)
+        || (IsOffice(officeName, SecondOfficeName)
+            && string.Equals(stage, EmptyStage, StringComparison.Ordinal))
+        || (IsOffice(officeName, FourthOfficeName)
+            && string.Equals(stage, SubstitutionStage, StringComparison.Ordinal));
+
+    public static IReadOnlyList<string> GetExcludedStages(string? officeName) =>
+        IsOffice(officeName, SecondOfficeName)
+            ? SecondOfficeExcludedStages
+            : IsOffice(officeName, FourthOfficeName)
+                ? FourthOfficeExcludedStages
+                : DefaultExcludedStages;
+
+    private static bool IsOffice(string? actualName, string expectedName) =>
+        string.Equals(actualName?.Trim(), expectedName, StringComparison.OrdinalIgnoreCase);
 }
 
 public static class CrmTaskStatuses

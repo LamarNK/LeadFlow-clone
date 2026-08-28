@@ -232,8 +232,10 @@ public sealed class CrmWorkspaceService(
 
         if (query.ActiveLoadOnly)
         {
+            var excludedLoadStages = CrmManagerLoadRules.GetExcludedStages(office.Name).ToArray();
             cardsQuery = cardsQuery.Where(x =>
-                x.IsInActiveLoad && x.Stage != CrmManagerLoadRules.RobotStage);
+                x.IsInActiveLoad
+                && !excludedLoadStages.Contains(x.Stage));
         }
 
         if (query.OverdueOnly)
@@ -294,7 +296,14 @@ public sealed class CrmWorkspaceService(
         CrmCandidateCardDto MapCard(CrmCandidateCardEntity x)
         {
             var stats = taskStats.GetValueOrDefault(x.Id);
-            return ToCardDto(x, names, stats.Count, stats.Overdue, now, chatUnreadByCard.GetValueOrDefault(x.Id));
+            return ToCardDto(
+                x,
+                names,
+                stats.Count,
+                stats.Overdue,
+                now,
+                chatUnreadByCard.GetValueOrDefault(x.Id),
+                office.Name);
         }
 
         var officeStages = CrmStages.Resolve(office.CrmStagesJson);
@@ -788,11 +797,11 @@ public sealed class CrmWorkspaceService(
         // Elevated (same office / global admin) or assigned owner may edit.
         var canEdit = isAdmin || string.Equals(card.ManagerUserId, userId, StringComparison.Ordinal);
 
-        var officeStagesJson = await db.Offices.AsNoTracking()
+        var officeInfo = await db.Offices.AsNoTracking()
             .Where(x => x.Id == card.OfficeId)
-            .Select(x => x.CrmStagesJson)
+            .Select(x => new { x.Name, x.CrmStagesJson })
             .FirstOrDefaultAsync(ct);
-        var officeStages = CrmStages.Resolve(officeStagesJson);
+        var officeStages = CrmStages.Resolve(officeInfo?.CrmStagesJson);
         var managers = await GetManagersAsync(card.OfficeId, ct);
         var names = managers.ToDictionary(x => x.Profile.UserId, x => x.Name, StringComparer.Ordinal);
         var loads = await leadDistribution.GetActiveLoadsAsync(card.OfficeId, ct);
@@ -851,7 +860,7 @@ public sealed class CrmWorkspaceService(
             ? chat.Count
             : 0;
         return new CrmCandidateDetailDto(
-            ToCardDto(card, names, openCount, hasOverdue, now, chatUnread),
+            ToCardDto(card, names, openCount, hasOverdue, now, chatUnread, officeInfo?.Name),
             notes.Select(x =>
             {
                 var canManageNote = isAdmin || x.AuthorUserId == userId;
@@ -3900,7 +3909,8 @@ public sealed class CrmWorkspaceService(
         int openTaskCount,
         bool hasOverdue,
         DateTime now,
-        int chatUnreadCount = 0)
+        int chatUnreadCount = 0,
+        string? officeName = null)
     {
         var stageAt = card.StageChangedAtUtc == default ? card.CreatedAtUtc : card.StageChangedAtUtc;
         var hours = Math.Max(0, (now - stageAt).TotalHours);
@@ -3916,7 +3926,7 @@ public sealed class CrmWorkspaceService(
             card.Stage,
             card.ManagerUserId,
             card.ManagerUserId is null ? null : names.GetValueOrDefault(card.ManagerUserId, card.ManagerUserId),
-            CrmManagerLoadRules.CountsTowardsLoad(card.Stage, card.IsInActiveLoad, card.IsClosed),
+            CrmManagerLoadRules.CountsTowardsLoad(card.Stage, card.IsInActiveLoad, card.IsClosed, officeName),
             card.CreatedAtUtc,
             stageAt,
             card.LastContactAtUtc,

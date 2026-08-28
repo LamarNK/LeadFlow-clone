@@ -328,22 +328,34 @@ public sealed class CrmLeadDistributionService(
         AddAssignedHistory(card.Id, managerDisplayName, actorUserId, actorName, now);
     }
 
-    public Task<int> GetActiveLoadAsync(Guid officeId, string managerUserId, CancellationToken ct = default) =>
-        db.CrmCandidateCards.CountAsync(
+    public async Task<int> GetActiveLoadAsync(Guid officeId, string managerUserId, CancellationToken ct = default)
+    {
+        var officeName = await db.Offices.AsNoTracking()
+            .Where(x => x.Id == officeId)
+            .Select(x => x.Name)
+            .FirstOrDefaultAsync(ct);
+        var excludedStages = CrmManagerLoadRules.GetExcludedStages(officeName).ToArray();
+        return await db.CrmCandidateCards.CountAsync(
             x => x.OfficeId == officeId
                  && x.ManagerUserId == managerUserId
                  && x.IsInActiveLoad
-                 && x.Stage != CrmManagerLoadRules.RobotStage
+                 && !excludedStages.Contains(x.Stage)
                  && !x.IsClosed,
             ct);
+    }
 
     public async Task<Dictionary<string, int>> GetActiveLoadsAsync(Guid officeId, CancellationToken ct = default)
     {
+        var officeName = await db.Offices.AsNoTracking()
+            .Where(x => x.Id == officeId)
+            .Select(x => x.Name)
+            .FirstOrDefaultAsync(ct);
+        var excludedStages = CrmManagerLoadRules.GetExcludedStages(officeName).ToArray();
         var managerIds = await db.CrmCandidateCards.AsNoTracking()
             .Where(x => x.OfficeId == officeId
                         && x.ManagerUserId != null
                         && x.IsInActiveLoad
-                        && x.Stage != CrmManagerLoadRules.RobotStage
+                        && !excludedStages.Contains(x.Stage)
                         && !x.IsClosed)
             .Select(x => x.ManagerUserId!)
             .ToListAsync(ct);

@@ -1462,19 +1462,35 @@ public sealed class CrmWorkspaceServiceTests
             card => card.Id == oldestQuestionnaireCard!.Id);
     }
 
-    [Fact]
-    public async Task GetBoard_RobotStage_RemainsVisibleButDoesNotCountTowardsManagerLoad()
+    [Theory]
+    [InlineData(CrmManagerLoadRules.SecondOfficeName, CrmManagerLoadRules.EmptyStage)]
+    [InlineData(CrmManagerLoadRules.FourthOfficeName, CrmManagerLoadRules.SubstitutionStage)]
+    public async Task GetBoard_OfficeServiceStageRemainsVisibleButDoesNotCountTowardsManagerLoad(
+        string officeName,
+        string officeServiceStage)
     {
         await using var harness = await Harness.CreateAsync();
-        SeedOffice(harness.Db, crmEnabled: true, [CrmStages.Lead, CrmManagerLoadRules.RobotStage]);
+        SeedOffice(
+            harness.Db,
+            crmEnabled: true,
+            stages:
+            [
+                CrmStages.Lead,
+                CrmManagerLoadRules.RobotStage,
+                officeServiceStage
+            ],
+            officeName: officeName);
         var manager = await harness.CreateManagerAsync("robot-load@test.local", capacity: 5, onShift: true);
         var leadResponse = await SeedResponseAsync(harness.Db, "robot-load-lead");
         var robotResponse = await SeedResponseAsync(harness.Db, "robot-load-robot");
+        var officeServiceResponse = await SeedResponseAsync(harness.Db, "robot-load-office-service");
         var leadCard = NewCard(leadResponse.Id, manager.Id);
         leadCard.Stage = CrmStages.Lead;
         var robotCard = NewCard(robotResponse.Id, manager.Id);
         robotCard.Stage = CrmManagerLoadRules.RobotStage;
-        harness.Db.CrmCandidateCards.AddRange(leadCard, robotCard);
+        var officeServiceCard = NewCard(officeServiceResponse.Id, manager.Id);
+        officeServiceCard.Stage = officeServiceStage;
+        harness.Db.CrmCandidateCards.AddRange(leadCard, robotCard, officeServiceCard);
         await harness.Db.SaveChangesAsync();
 
         var board = await harness.Sut.GetBoardAsync(
@@ -1489,6 +1505,7 @@ public sealed class CrmWorkspaceServiceTests
         var visibleCards = board.Stages.SelectMany(stage => stage.Cards).ToList();
         Assert.Contains(visibleCards, card => card.Id == leadCard.Id && card.IsInActiveLoad);
         Assert.Contains(visibleCards, card => card.Id == robotCard.Id && !card.IsInActiveLoad);
+        Assert.Contains(visibleCards, card => card.Id == officeServiceCard.Id && !card.IsInActiveLoad);
 
         var activeLoadOnly = await harness.Sut.GetBoardAsync(
             OfficeId,
@@ -1500,6 +1517,7 @@ public sealed class CrmWorkspaceServiceTests
         Assert.Equal(1, activeLoadOnly.TotalItems);
         Assert.Contains(activeLoadOnly.Stages.SelectMany(stage => stage.Cards), card => card.Id == leadCard.Id);
         Assert.DoesNotContain(activeLoadOnly.Stages.SelectMany(stage => stage.Cards), card => card.Id == robotCard.Id);
+        Assert.DoesNotContain(activeLoadOnly.Stages.SelectMany(stage => stage.Cards), card => card.Id == officeServiceCard.Id);
     }
 
     [Fact]
@@ -2487,12 +2505,13 @@ public sealed class CrmWorkspaceServiceTests
     private static void SeedOffice(
         OrbitaDbContext db,
         bool crmEnabled,
-        IReadOnlyList<string>? stages = null)
+        IReadOnlyList<string>? stages = null,
+        string officeName = "CRM Office")
     {
         db.Offices.Add(new OfficeEntity
         {
             Id = OfficeId,
-            Name = "CRM Office",
+            Name = officeName,
             RegistrationSecretHash = "hash",
             CreatedAtUtc = DateTime.UtcNow,
             IsEnabled = true,

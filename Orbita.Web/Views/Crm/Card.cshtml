@@ -300,7 +300,7 @@
                     }
                     <div><dt>Этап</dt><dd>@card.Stage</dd></div>
                     <div><dt>Ответственный</dt><dd>@(card.ManagerName ?? "Не назначен")</dd></div>
-                    <div><dt>Нагрузка</dt><dd>@(card.IsInActiveLoad ? "В активной работе" : CrmManagerLoadRules.IsExcludedStage(card.Stage) ? "Не входит в нагрузку (этап Робот)" : "Вне нагрузки")</dd></div>
+                    <div><dt>Нагрузка</dt><dd>@(card.IsInActiveLoad ? "В активной работе" : CrmManagerLoadRules.IsExcludedStage(card.Stage) ? "Не входит в нагрузку (служебный этап)" : "Вне нагрузки")</dd></div>
                     <div><dt>Создана</dt><dd><time data-orbita-utc="@OrbitaTime.ToIsoUtc(card.CreatedAtUtc)" data-orbita-format="datetime-ru"></time></dd></div>
                     @if (card.LastContactAtUtc is DateTime last)
                     {

@@ -609,20 +609,42 @@ public sealed class CrmAnalyticsQueryService(
         }
 
         var managerIds = managers.Select(x => x.UserId).Distinct(StringComparer.Ordinal).ToArray();
-        var currentCardAggregates = await db.CrmCandidateCards
+        var currentCardStageAggregates = await db.CrmCandidateCards
             .AsNoTracking()
             .Where(x => officeIds.Contains(x.OfficeId)
                         && x.ManagerUserId != null
                         && managerIds.Contains(x.ManagerUserId)
                         && !x.IsClosed)
-            .GroupBy(x => new { x.OfficeId, ManagerUserId = x.ManagerUserId! })
-            .Select(group => new CurrentCardAggregateRow(
+            .GroupBy(x => new
+            {
+                x.OfficeId,
+                ManagerUserId = x.ManagerUserId!,
+                x.Stage,
+                x.IsInActiveLoad
+            })
+            .Select(group => new CurrentCardStageAggregateRow(
                 group.Key.OfficeId,
                 group.Key.ManagerUserId,
-                group.Count(),
-                group.Count(x =>
-                    x.IsInActiveLoad && x.Stage != CrmManagerLoadRules.RobotStage)))
+                group.Key.Stage,
+                group.Key.IsInActiveLoad,
+                group.Count()))
             .ToListAsync(ct);
+        var officeNames = managers
+            .GroupBy(x => x.OfficeId)
+            .ToDictionary(group => group.Key, group => group.First().OfficeName);
+        var currentCardAggregates = currentCardStageAggregates
+            .GroupBy(x => new ManagerKey(x.OfficeId, x.UserId))
+            .Select(group => new CurrentCardAggregateRow(
+                group.Key.OfficeId,
+                group.Key.UserId,
+                group.Sum(x => x.Count),
+                group.Where(x => CrmManagerLoadRules.CountsTowardsLoad(
+                        x.Stage,
+                        x.IsInActiveLoad,
+                        isClosed: false,
+                        officeNames.GetValueOrDefault(x.OfficeId)))
+                    .Sum(x => x.Count)))
+            .ToList();
         var receivedCardAggregates = await db.CrmCandidateCards
             .AsNoTracking()
             .Where(x => officeIds.Contains(x.OfficeId)
@@ -865,6 +887,13 @@ public sealed class CrmAnalyticsQueryService(
         string UserId,
         int CurrentAssignedCards,
         int ActiveLoad);
+
+    private sealed record CurrentCardStageAggregateRow(
+        Guid OfficeId,
+        string UserId,
+        string Stage,
+        bool IsInActiveLoad,
+        int Count);
 
     private sealed record ReceivedCardAggregateRow(Guid OfficeId, string UserId, int Cards);
 

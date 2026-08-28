@@ -133,6 +133,39 @@ public sealed class CrmAnalyticsQueryServiceTests
         Assert.Equal(1, manager.OverdueTasks);
     }
 
+    [Theory]
+    [InlineData(CrmManagerLoadRules.SecondOfficeName, CrmManagerLoadRules.EmptyStage, 1)]
+    [InlineData(CrmManagerLoadRules.FourthOfficeName, CrmManagerLoadRules.SubstitutionStage, 1)]
+    [InlineData("3 офис", CrmManagerLoadRules.EmptyStage, 2)]
+    [InlineData("3 офис", CrmManagerLoadRules.SubstitutionStage, 2)]
+    public async Task GetAsync_AppliesServiceStageExclusionOnlyToConfiguredOffice(
+        string officeName,
+        string serviceStage,
+        int expectedActiveLoad)
+    {
+        await using var harness = await Harness.CreateAsync(Now);
+        harness.AddOffice(OfficeOneId, officeName, [CrmStages.Lead, serviceStage]);
+        harness.AddManager(ManagerOneId, OfficeOneId, "Анна", capacity: 5, onShift: true);
+
+        var fromUtc = new DateTime(2026, 8, 1, 0, 0, 0, DateTimeKind.Utc);
+        var toUtc = fromUtc.AddDays(1);
+        harness.Db.CrmCandidateCards.AddRange(
+            NewCard(OfficeOneId, ManagerOneId, CrmStages.Lead, fromUtc.AddMinutes(1)),
+            NewCard(OfficeOneId, ManagerOneId, serviceStage, fromUtc.AddMinutes(2)));
+        await harness.Db.SaveChangesAsync();
+
+        var result = await harness.Sut.GetAsync(
+            OfficeScope.GlobalAdmin,
+            "admin",
+            isAdmin: true,
+            new CrmAnalyticsQuery(fromUtc, toUtc, OfficeOneId));
+
+        var manager = Assert.Single(Assert.IsType<CrmAnalyticsDto>(result.Data).Managers);
+        Assert.Equal(2, manager.CurrentAssignedCards);
+        Assert.Equal(expectedActiveLoad, manager.ActiveLoad);
+        Assert.Equal(expectedActiveLoad * 20, manager.CapacityUtilizationPercent);
+    }
+
     [Fact]
     public async Task GetAsync_DecompositionCountsConfirmedContactsAndExcludesNdzRobotAndDisappeared()
     {
