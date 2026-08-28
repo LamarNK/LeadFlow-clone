@@ -1408,6 +1408,61 @@ public sealed class CrmWorkspaceServiceTests
     }
 
     [Fact]
+    public async Task GetBoard_BoardView_DoesNotDropCardsBeyondLegacy500Limit()
+    {
+        await using var harness = await Harness.CreateAsync();
+        SeedOffice(harness.Db, crmEnabled: true);
+        var manager = await harness.CreateManagerAsync("large-board@test.local", capacity: 600, onShift: true);
+        var start = DateTime.UtcNow.AddDays(-30);
+        CrmCandidateCardEntity? oldestQuestionnaireCard = null;
+
+        for (var index = 0; index < 501; index++)
+        {
+            var person = TestCandidatePersonFactory.CreatePerson(
+                OfficeId,
+                fullName: $"Кандидат {index}",
+                firstName: "Кандидат",
+                lastName: index.ToString());
+            var response = TestCandidatePersonFactory.CreateResponse(
+                OfficeId,
+                person.Id,
+                WorkerId,
+                phone: $"79{index:000000000}",
+                sourceResponseId: $"large-board-{index}",
+                fullName: $"Кандидат {index}");
+            var card = NewCard(response.Id, manager.Id);
+            card.Stage = index == 0 ? CrmStages.Questionnaire : CrmStages.Lead;
+            card.CreatedAtUtc = start.AddMinutes(index);
+            card.UpdatedAtUtc = card.CreatedAtUtc;
+            card.StageChangedAtUtc = card.CreatedAtUtc;
+
+            harness.Db.CandidatePersons.Add(person);
+            harness.Db.CandidateResponses.Add(response);
+            harness.Db.CrmCandidateCards.Add(card);
+
+            if (index == 0)
+            {
+                oldestQuestionnaireCard = card;
+            }
+        }
+
+        await harness.Db.SaveChangesAsync();
+
+        var board = await harness.Sut.GetBoardAsync(
+            OfficeId,
+            manager.Id,
+            isAdmin: false,
+            new CrmBoardQuery(Scope: CrmBoardScopes.Mine, View: CrmBoardViews.Board));
+
+        Assert.NotNull(board);
+        Assert.Equal(501, board.TotalItems);
+        Assert.Equal(501, board.Stages.Sum(stage => stage.Cards.Count));
+        Assert.Contains(
+            board.Stages.SelectMany(stage => stage.Cards),
+            card => card.Id == oldestQuestionnaireCard!.Id);
+    }
+
+    [Fact]
     public async Task GetBoard_ElevatedTeamManagerFilter_ShowsOnlySelectedManagersCards()
     {
         await using var harness = await Harness.CreateAsync();

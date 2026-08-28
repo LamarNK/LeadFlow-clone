@@ -270,9 +270,12 @@ public sealed class CrmWorkspaceService(
             _ => cardsQuery.OrderByDescending(x => x.CreatedAtUtc).ThenByDescending(x => x.Id)
         };
 
+        // The board must not use a global Take limit: cards from every stage share this
+        // sequence, so older cards silently disappeared even though their stage still
+        // contained them. List view keeps explicit server-side pagination.
         var cards = boardView == CrmBoardViews.List
             ? await orderedCards.Skip((page - 1) * pageSize).Take(pageSize).ToListAsync(ct)
-            : await orderedCards.Take(500).ToListAsync(ct);
+            : await orderedCards.ToListAsync(ct);
 
         var cardIds = cards.Select(x => x.Id).ToList();
         var openTasks = await db.CrmTasks.AsNoTracking()
