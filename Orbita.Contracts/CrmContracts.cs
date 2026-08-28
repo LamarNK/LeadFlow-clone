@@ -107,6 +107,23 @@ public static class CrmStages
         stages.Contains(stage ?? string.Empty, StringComparer.Ordinal);
 }
 
+public static class CrmManagerLoadRules
+{
+    /// <summary>
+    /// Cards in the office-specific Robot stage remain assigned and visible,
+    /// but do not consume the assigned manager's active capacity.
+    /// </summary>
+    public const string RobotStage = "Робот";
+
+    public static bool CountsTowardsLoad(string? stage, bool isInActiveLoad, bool isClosed) =>
+        isInActiveLoad
+        && !isClosed
+        && !string.Equals(stage, RobotStage, StringComparison.Ordinal);
+
+    public static bool IsExcludedStage(string? stage) =>
+        string.Equals(stage, RobotStage, StringComparison.Ordinal);
+}
+
 public static class CrmTaskStatuses
 {
     public const string Open = "Open";

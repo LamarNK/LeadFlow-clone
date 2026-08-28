@@ -158,6 +158,7 @@
                         var adUrl = !string.IsNullOrWhiteSpace(card.VacancyUrl) ? card.VacancyUrl : card.SourceUrl;
                         var hasOverdueTask = !card.IsClosed && card.HasOverdueTask;
                         var hasActiveTask = !card.IsClosed && card.OpenTaskCount > 0 && !hasOverdueTask;
+                        var excludedFromLoadByStage = CrmManagerLoadRules.IsExcludedStage(card.Stage);
                         <article class="crm-tile @(card.IsClosed ? "is-closed" : "") @(hasOverdueTask ? "is-overdue" : "") @(hasActiveTask ? "has-active-task" : "")"
                                  data-card-manager-user-id="@card.ManagerUserId"
                                  @if (Model.CanEdit && !card.IsClosed) { <text>draggable="true" data-card-id="@card.Id" data-card-stage="@card.Stage"</text> }>
@@ -171,7 +172,7 @@
                             <a asp-action="Card" asp-route-id="@card.Id" asp-route-stage="@stage.Name" class="crm-tile__body" data-crm-open-card data-crm-stage="@stage.Name">
                             <div class="crm-tile__top">
                                 <strong>@card.FullName</strong>
-                                @if (!card.IsInActiveLoad && !card.IsClosed) { <span class="crm-tag">Вне нагрузки</span> }
+                                @if (!card.IsInActiveLoad && !card.IsClosed) { <span class="crm-tag">@(excludedFromLoadByStage ? "Не входит в нагрузку" : "Вне нагрузки")</span> }
                                 @if (card.IsClosed) { <span class="crm-tag crm-tag--muted">@card.CloseReason</span> }
                             </div>
                             <div class="crm-tile__meta">@(card.Age?.ToString() ?? "—") лет · @card.City</div>
@@ -198,7 +199,7 @@
                                     }
                                     @if (Model.CanEdit)
                                     {
-                                        @if (!card.IsInActiveLoad)
+                                        @if (!card.IsInActiveLoad && !excludedFromLoadByStage)
                                         {
                                             <form asp-action="SetLoad" method="post"><input type="hidden" name="id" value="@card.Id" /><input type="hidden" name="active" value="true" /><input type="hidden" name="returnUrl" value="@boardReturnUrl" /><button type="submit" title="Вернуть в активную нагрузку"><i class="fa-solid fa-bolt" aria-hidden="true"></i><span>В нагрузку</span></button></form>
                                         }

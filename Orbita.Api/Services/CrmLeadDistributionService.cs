@@ -333,6 +333,7 @@ public sealed class CrmLeadDistributionService(
             x => x.OfficeId == officeId
                  && x.ManagerUserId == managerUserId
                  && x.IsInActiveLoad
+                 && x.Stage != CrmManagerLoadRules.RobotStage
                  && !x.IsClosed,
             ct);
 
@@ -342,6 +343,7 @@ public sealed class CrmLeadDistributionService(
             .Where(x => x.OfficeId == officeId
                         && x.ManagerUserId != null
                         && x.IsInActiveLoad
+                        && x.Stage != CrmManagerLoadRules.RobotStage
                         && !x.IsClosed)
             .Select(x => x.ManagerUserId!)
             .ToListAsync(ct);

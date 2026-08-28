@@ -222,7 +222,8 @@ internal static class DesignPreviewData
 
             if (query.ActiveLoadOnly)
             {
-                cards = cards.Where(c => c.IsInActiveLoad);
+                cards = cards.Where(c =>
+                    c.IsInActiveLoad && !CrmManagerLoadRules.IsExcludedStage(c.Stage));
             }
 
             if (scope == CrmBoardScopes.Unassigned)
@@ -317,7 +318,9 @@ internal static class DesignPreviewData
                     stages.Add(new CrmStageDto("Закрыто", closedCards, closedCards.Count));
                 }
             }
-            var activeLoad = PreviewCrmCandidates.Count(c => c.ManagerUserId == PreviewManagerElena && c.IsInActiveLoad && !c.IsClosed);
+            var activeLoad = PreviewCrmCandidates.Count(c =>
+                c.ManagerUserId == PreviewManagerElena
+                && CrmManagerLoadRules.CountsTowardsLoad(c.Stage, c.IsInActiveLoad, c.IsClosed));
             var openTasks = PreviewCrmTasks.Count(t => t.Status == CrmTaskStatuses.Open);
             var overdue = PreviewCrmTasks.Count(t => t.IsOverdue && t.Status == CrmTaskStatuses.Open);
             var team = new CrmTeamStatsDto(
@@ -1546,7 +1549,9 @@ internal static class DesignPreviewData
                 "Елена Воронцова",
                 _previewCrmShiftActive,
                 10,
-                PreviewCrmCandidates.Count(candidate => candidate.ManagerUserId == PreviewManagerElena && candidate.IsInActiveLoad && !candidate.IsClosed),
+                PreviewCrmCandidates.Count(candidate =>
+                    candidate.ManagerUserId == PreviewManagerElena
+                    && CrmManagerLoadRules.CountsTowardsLoad(candidate.Stage, candidate.IsInActiveLoad, candidate.IsClosed)),
                 _previewCrmShiftActive ? now.AddHours(-3).AddMinutes(-20) : null,
                 _previewCrmShiftActive ? null : now.AddHours(-5)),
             new(
@@ -1554,7 +1559,9 @@ internal static class DesignPreviewData
                 "Игорь Белов",
                 true,
                 10,
-                PreviewCrmCandidates.Count(candidate => candidate.ManagerUserId == PreviewManagerIgor && candidate.IsInActiveLoad && !candidate.IsClosed),
+                PreviewCrmCandidates.Count(candidate =>
+                    candidate.ManagerUserId == PreviewManagerIgor
+                    && CrmManagerLoadRules.CountsTowardsLoad(candidate.Stage, candidate.IsInActiveLoad, candidate.IsClosed)),
                 now.AddHours(-1).AddMinutes(-5),
                 now.AddDays(-1).AddHours(-2))
         ];
@@ -1577,7 +1584,7 @@ internal static class DesignPreviewData
             candidate.Stage,
             candidate.ManagerUserId,
             candidate.ManagerUserId == PreviewManagerElena ? "Елена Воронцова" : candidate.ManagerUserId == PreviewManagerIgor ? "Игорь Белов" : null,
-            candidate.IsInActiveLoad,
+            CrmManagerLoadRules.CountsTowardsLoad(candidate.Stage, candidate.IsInActiveLoad, candidate.IsClosed),
             candidate.CreatedAtUtc,
             candidate.StageChangedAtUtc,
             candidate.LastContactAtUtc,

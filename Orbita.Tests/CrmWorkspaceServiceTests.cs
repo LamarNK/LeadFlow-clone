@@ -1463,6 +1463,46 @@ public sealed class CrmWorkspaceServiceTests
     }
 
     [Fact]
+    public async Task GetBoard_RobotStage_RemainsVisibleButDoesNotCountTowardsManagerLoad()
+    {
+        await using var harness = await Harness.CreateAsync();
+        SeedOffice(harness.Db, crmEnabled: true, [CrmStages.Lead, CrmManagerLoadRules.RobotStage]);
+        var manager = await harness.CreateManagerAsync("robot-load@test.local", capacity: 5, onShift: true);
+        var leadResponse = await SeedResponseAsync(harness.Db, "robot-load-lead");
+        var robotResponse = await SeedResponseAsync(harness.Db, "robot-load-robot");
+        var leadCard = NewCard(leadResponse.Id, manager.Id);
+        leadCard.Stage = CrmStages.Lead;
+        var robotCard = NewCard(robotResponse.Id, manager.Id);
+        robotCard.Stage = CrmManagerLoadRules.RobotStage;
+        harness.Db.CrmCandidateCards.AddRange(leadCard, robotCard);
+        await harness.Db.SaveChangesAsync();
+
+        var board = await harness.Sut.GetBoardAsync(
+            OfficeId,
+            manager.Id,
+            isAdmin: false,
+            new CrmBoardQuery(Scope: CrmBoardScopes.Mine));
+
+        Assert.NotNull(board);
+        Assert.Equal(1, board.ActiveLoad);
+        Assert.Equal(1, Assert.Single(board.Managers, x => x.UserId == manager.Id).ActiveLoad);
+        var visibleCards = board.Stages.SelectMany(stage => stage.Cards).ToList();
+        Assert.Contains(visibleCards, card => card.Id == leadCard.Id && card.IsInActiveLoad);
+        Assert.Contains(visibleCards, card => card.Id == robotCard.Id && !card.IsInActiveLoad);
+
+        var activeLoadOnly = await harness.Sut.GetBoardAsync(
+            OfficeId,
+            manager.Id,
+            isAdmin: false,
+            new CrmBoardQuery(Scope: CrmBoardScopes.Mine, ActiveLoadOnly: true));
+
+        Assert.NotNull(activeLoadOnly);
+        Assert.Equal(1, activeLoadOnly.TotalItems);
+        Assert.Contains(activeLoadOnly.Stages.SelectMany(stage => stage.Cards), card => card.Id == leadCard.Id);
+        Assert.DoesNotContain(activeLoadOnly.Stages.SelectMany(stage => stage.Cards), card => card.Id == robotCard.Id);
+    }
+
+    [Fact]
     public async Task GetBoard_ElevatedTeamManagerFilter_ShowsOnlySelectedManagersCards()
     {
         await using var harness = await Harness.CreateAsync();

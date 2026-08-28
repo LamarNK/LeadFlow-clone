@@ -46,8 +46,21 @@ public sealed class CrmAnalyticsQueryServiceTests
             activeLoad: false);
         var atExclusiveBoundary = NewCard(OfficeOneId, ManagerOneId, "Новый", toUtc);
         var oldCurrent = NewCard(OfficeOneId, ManagerOneId, "Анкета", fromUtc.AddDays(-2), activeLoad: true);
+        var robotCurrent = NewCard(
+            OfficeOneId,
+            ManagerOneId,
+            CrmManagerLoadRules.RobotStage,
+            fromUtc.AddDays(-3),
+            activeLoad: true);
         var otherOffice = NewCard(OfficeTwoId, "other-manager", "Лид", fromUtc.AddHours(1));
-        harness.Db.CrmCandidateCards.AddRange(active, successful, refused, atExclusiveBoundary, oldCurrent, otherOffice);
+        harness.Db.CrmCandidateCards.AddRange(
+            active,
+            successful,
+            refused,
+            atExclusiveBoundary,
+            oldCurrent,
+            robotCurrent,
+            otherOffice);
 
         // The card reached the last stage and was later returned to the first one.
         // The configuration suffix is emitted by CrmWorkspaceService when a funnel changes.
@@ -111,7 +124,7 @@ public sealed class CrmAnalyticsQueryServiceTests
         var manager = Assert.Single(data.Managers, x => x.UserId == ManagerOneId);
         // Current load deliberately includes cards outside the selected cohort,
         // including the card created exactly at the cohort's exclusive boundary.
-        Assert.Equal(3, manager.CurrentAssignedCards);
+        Assert.Equal(4, manager.CurrentAssignedCards);
         Assert.Equal(3, manager.ActiveLoad);
         Assert.Equal(150, manager.CapacityUtilizationPercent);
         Assert.Equal(1, manager.CardsInPeriod);

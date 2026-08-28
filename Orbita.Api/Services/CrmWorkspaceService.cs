@@ -232,7 +232,8 @@ public sealed class CrmWorkspaceService(
 
         if (query.ActiveLoadOnly)
         {
-            cardsQuery = cardsQuery.Where(x => x.IsInActiveLoad);
+            cardsQuery = cardsQuery.Where(x =>
+                x.IsInActiveLoad && x.Stage != CrmManagerLoadRules.RobotStage);
         }
 
         if (query.OverdueOnly)
@@ -3915,7 +3916,7 @@ public sealed class CrmWorkspaceService(
             card.Stage,
             card.ManagerUserId,
             card.ManagerUserId is null ? null : names.GetValueOrDefault(card.ManagerUserId, card.ManagerUserId),
-            card.IsInActiveLoad,
+            CrmManagerLoadRules.CountsTowardsLoad(card.Stage, card.IsInActiveLoad, card.IsClosed),
             card.CreatedAtUtc,
             stageAt,
             card.LastContactAtUtc,

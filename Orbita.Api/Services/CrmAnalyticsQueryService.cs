@@ -507,7 +507,8 @@ public sealed class CrmAnalyticsQueryService(
                 group.Key.OfficeId,
                 group.Key.ManagerUserId,
                 group.Count(),
-                group.Count(x => x.IsInActiveLoad)))
+                group.Count(x =>
+                    x.IsInActiveLoad && x.Stage != CrmManagerLoadRules.RobotStage)))
             .ToListAsync(ct);
         var receivedCardAggregates = await db.CrmCandidateCards
             .AsNoTracking()
