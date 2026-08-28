@@ -384,7 +384,24 @@ public sealed record CrmAnalyticsDto(
     IReadOnlyList<CrmAnalyticsOfficeFunnelDto> Funnels,
     IReadOnlyList<CrmAnalyticsManagerOptionDto> ManagerOptions,
     IReadOnlyList<CrmAnalyticsManagerDto> Managers,
+    CrmAnalyticsDecompositionDto? Decomposition,
     DateTime GeneratedAtUtc);
+
+public sealed record CrmAnalyticsDecompositionDto(
+    int Leads,
+    int Contacts,
+    int Questionnaires,
+    int Tickets,
+    int Contracts,
+    double ContactConversionPercent,
+    double QuestionnaireConversionPercent,
+    double TicketConversionPercent,
+    double ContractConversionPercent,
+    IReadOnlyList<CrmAnalyticsContactBreakdownDto> ContactBreakdown);
+
+public sealed record CrmAnalyticsContactBreakdownDto(
+    string Label,
+    int Count);
 
 public sealed record CrmAnalyticsCardMetricsDto(
     int Received,

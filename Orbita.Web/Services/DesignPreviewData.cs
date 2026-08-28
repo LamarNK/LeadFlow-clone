@@ -523,6 +523,7 @@ internal static class DesignPreviewData
             .OrderBy(x => x.OfficeName, StringComparer.OrdinalIgnoreCase)
             .ThenBy(x => x.DisplayName, StringComparer.OrdinalIgnoreCase)
             .ToList();
+        var decomposition = BuildPreviewCrmDecomposition(cards);
 
         return new CrmAnalyticsDto(
             normalizedFrom,
@@ -534,7 +535,35 @@ internal static class DesignPreviewData
             funnels,
             managerOptions,
             managers,
+            decomposition,
             DateTime.UtcNow);
+    }
+
+    private static CrmAnalyticsDecompositionDto BuildPreviewCrmDecomposition(
+        CrmAnalyticsCardMetricsDto cards)
+    {
+        var contracts = Math.Min(cards.Received, cards.SuccessfulClosed);
+        var tickets = Math.Min(cards.Received, Math.Max(contracts, (int)Math.Round(cards.Received * .12)));
+        var questionnaires = Math.Min(cards.Received, Math.Max(tickets, (int)Math.Round(cards.Received * .27)));
+        var contacts = Math.Min(cards.Received, Math.Max(questionnaires, (int)Math.Round(cards.Received * .61)));
+        var officer = Math.Min(contacts, Math.Max(0, (int)Math.Round(contacts * .04)));
+        var notRelevant = Math.Min(contacts - officer, Math.Max(0, (int)Math.Round(contacts * .08)));
+
+        return new CrmAnalyticsDecompositionDto(
+            cards.Received,
+            contacts,
+            questionnaires,
+            tickets,
+            contracts,
+            PreviewPercent(contacts, cards.Received),
+            PreviewPercent(questionnaires, contacts),
+            PreviewPercent(tickets, questionnaires),
+            PreviewPercent(contracts, tickets),
+            [
+                new("Переговоры и дальше", contacts - officer - notRelevant),
+                new(CrmCloseReasons.NotRelevant, notRelevant),
+                new(CrmCloseReasons.Officer, officer)
+            ]);
     }
 
     private static IReadOnlyList<CrmAnalyticsCloseReasonDto> BuildPreviewCrmCloseReasons(

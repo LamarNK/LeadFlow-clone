@@ -134,6 +134,124 @@ public sealed class CrmAnalyticsQueryServiceTests
     }
 
     [Fact]
+    public async Task GetAsync_DecompositionCountsConfirmedContactsAndExcludesNdzRobotAndDisappeared()
+    {
+        await using var harness = await Harness.CreateAsync(Now);
+        harness.AddOffice(
+            OfficeOneId,
+            "Основной",
+            [
+                CrmStages.Lead,
+                CrmStages.Ndz73,
+                CrmStages.Ndz26,
+                CrmManagerLoadRules.RobotStage,
+                CrmStages.Negotiations,
+                CrmStages.Questionnaire,
+                CrmStages.Ticket,
+                CrmStages.PreparingToSend,
+                CrmStages.InTransit,
+                CrmStages.Signing,
+                CrmStages.DealSuccessful
+            ]);
+        harness.AddManager(ManagerOneId, OfficeOneId, "Анна", capacity: 20, onShift: true);
+
+        var fromUtc = new DateTime(2026, 8, 1, 0, 0, 0, DateTimeKind.Utc);
+        var toUtc = fromUtc.AddDays(1);
+        var negotiationHistoryCard = NewCard(
+            OfficeOneId,
+            ManagerOneId,
+            CrmStages.Lead,
+            fromUtc.AddMinutes(8));
+        harness.Db.CrmCandidateCards.AddRange(
+            NewCard(OfficeOneId, ManagerOneId, CrmStages.Lead, fromUtc.AddMinutes(1)),
+            NewCard(OfficeOneId, ManagerOneId, CrmStages.Ndz73, fromUtc.AddMinutes(2)),
+            NewCard(
+                OfficeOneId,
+                ManagerOneId,
+                CrmStages.Lead,
+                fromUtc.AddMinutes(3),
+                isClosed: true,
+                closeReason: CrmCloseReasons.NoAnswer),
+            NewCard(OfficeOneId, ManagerOneId, CrmManagerLoadRules.RobotStage, fromUtc.AddMinutes(4)),
+            NewCard(
+                OfficeOneId,
+                ManagerOneId,
+                CrmStages.Lead,
+                fromUtc.AddMinutes(5),
+                isClosed: true,
+                closeReason: CrmCloseReasons.Disappeared),
+            NewCard(
+                OfficeOneId,
+                ManagerOneId,
+                CrmStages.Lead,
+                fromUtc.AddMinutes(6),
+                isClosed: true,
+                closeReason: CrmCloseReasons.Officer),
+            NewCard(
+                OfficeOneId,
+                ManagerOneId,
+                CrmStages.Lead,
+                fromUtc.AddMinutes(7),
+                isClosed: true,
+                closeReason: CrmCloseReasons.NotRelevant),
+            negotiationHistoryCard,
+            NewCard(OfficeOneId, ManagerOneId, CrmStages.Questionnaire, fromUtc.AddMinutes(9)),
+            NewCard(OfficeOneId, ManagerOneId, CrmStages.Ticket, fromUtc.AddMinutes(10)),
+            NewCard(
+                OfficeOneId,
+                ManagerOneId,
+                CrmStages.Lead,
+                fromUtc.AddMinutes(11),
+                isClosed: true,
+                closeReason: CrmCloseReasons.Success),
+            NewCard(
+                OfficeOneId,
+                ManagerOneId,
+                CrmStages.Lead,
+                fromUtc.AddMinutes(12),
+                isClosed: true,
+                closeReason: CrmCloseReasons.Contract));
+        harness.Db.CrmCandidateHistory.AddRange(
+            NewStageHistory(
+                negotiationHistoryCard.Id,
+                $"{CrmStages.Lead} → {CrmStages.Negotiations}",
+                fromUtc.AddHours(1)),
+            NewStageHistory(
+                negotiationHistoryCard.Id,
+                $"{CrmStages.Negotiations} → {CrmStages.Lead}",
+                fromUtc.AddHours(2)));
+        await harness.Db.SaveChangesAsync();
+
+        var result = await harness.Sut.GetAsync(
+            OfficeScope.GlobalAdmin,
+            "admin",
+            isAdmin: true,
+            new CrmAnalyticsQuery(fromUtc, toUtc, OfficeOneId));
+
+        var decomposition = Assert.IsType<CrmAnalyticsDecompositionDto>(
+            Assert.IsType<CrmAnalyticsDto>(result.Data).Decomposition);
+        Assert.Equal(12, decomposition.Leads);
+        Assert.Equal(7, decomposition.Contacts);
+        Assert.Equal(3, decomposition.Questionnaires);
+        Assert.Equal(2, decomposition.Tickets);
+        Assert.Equal(1, decomposition.Contracts);
+        Assert.Equal(58.33, decomposition.ContactConversionPercent);
+        Assert.Equal(42.86, decomposition.QuestionnaireConversionPercent);
+        Assert.Equal(66.67, decomposition.TicketConversionPercent);
+        Assert.Equal(50, decomposition.ContractConversionPercent);
+
+        var breakdown = decomposition.ContactBreakdown.ToDictionary(x => x.Label, StringComparer.Ordinal);
+        Assert.Equal(3, breakdown["Переговоры и дальше"].Count);
+        Assert.Equal(1, breakdown["Успешно закрыто"].Count);
+        Assert.Equal(1, breakdown["Отказ: контракт"].Count);
+        Assert.Equal(1, breakdown[CrmCloseReasons.NotRelevant].Count);
+        Assert.Equal(1, breakdown[CrmCloseReasons.Officer].Count);
+        Assert.Equal(decomposition.Contacts, breakdown.Values.Sum(x => x.Count));
+        Assert.DoesNotContain(CrmCloseReasons.NoAnswer, breakdown.Keys);
+        Assert.DoesNotContain(CrmCloseReasons.Disappeared, breakdown.Keys);
+    }
+
+    [Fact]
     public async Task GetAsync_UsesHalfOpenPeriodAndInitialOwnerForManagerFilter()
     {
         await using var harness = await Harness.CreateAsync(Now);

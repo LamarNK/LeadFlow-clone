@@ -44,6 +44,19 @@ public sealed class CrmAnalyticsQueryService(
     private const string RemovedStagesBucket = "Удалённые этапы";
     private const int MaxPeriodDays = LocalCalendarDateRange.MaxCalendarDays;
     private const string FunnelUpdatedSuffix = " (воронка обновлена)";
+    private const string ReachedNegotiationsBreakdown = "Переговоры и дальше";
+    private const string SuccessfulCloseBreakdown = "Успешно закрыто";
+    private static readonly IReadOnlyList<string> ContactCloseReasons =
+    [
+        CrmCloseReasons.Woman,
+        CrmCloseReasons.Contract,
+        CrmCloseReasons.SelectedOthers,
+        CrmCloseReasons.Age,
+        CrmCloseReasons.Health,
+        CrmCloseReasons.AlreadyAtSvo,
+        CrmCloseReasons.NotRelevant,
+        CrmCloseReasons.Officer
+    ];
 
     public async Task<CrmAnalyticsQueryResult> GetAsync(
         OfficeScope scope,
@@ -188,7 +201,9 @@ public sealed class CrmAnalyticsQueryService(
         var generatedAtUtc = DateTimeUtcHelper.EnsureUtc(timeProvider.GetUtcNow().UtcDateTime);
         var cards = BuildCardMetrics(cohort);
         var closeReasons = BuildCloseReasons(cohort, cards.Closed);
-        var funnels = await BuildFunnelsAsync(offices, cohort, ct);
+        var stageHistories = await LoadStageHistoriesAsync(cohort, ct);
+        var decomposition = BuildDecomposition(cohort, stageHistories);
+        var funnels = BuildFunnels(offices, cohort, stageHistories);
         var managerOptions = allManagerProfiles
             .Select(x => new CrmAnalyticsManagerOptionDto(
                 x.UserId,
@@ -216,6 +231,7 @@ public sealed class CrmAnalyticsQueryService(
             funnels,
             managerOptions,
             managers,
+            decomposition,
             generatedAtUtc));
     }
 
@@ -384,31 +400,128 @@ public sealed class CrmAnalyticsQueryService(
         return new ManagerProfilesResult(rows, selected, null);
     }
 
-    private async Task<IReadOnlyList<CrmAnalyticsOfficeFunnelDto>> BuildFunnelsAsync(
-        IReadOnlyList<OfficeRow> offices,
+    private async Task<IReadOnlyList<StageHistoryRow>> LoadStageHistoriesAsync(
         IReadOnlyList<CardRow> cohort,
         CancellationToken ct)
     {
         if (cohort.Count == 0)
         {
-            return offices
-                .Select(office => BuildFunnel(office, [], []))
-                .ToList();
+            return [];
         }
 
         var cardIds = cohort.Select(x => x.Id).ToArray();
-        var histories = await db.CrmCandidateHistory
+        return await db.CrmCandidateHistory
             .AsNoTracking()
             .Where(x => cardIds.Contains(x.CardId) && x.Action == "StageChanged")
             .Select(x => new StageHistoryRow(x.CardId, x.Details))
             .ToListAsync(ct);
+    }
 
-        return offices
+    private static IReadOnlyList<CrmAnalyticsOfficeFunnelDto> BuildFunnels(
+        IReadOnlyList<OfficeRow> offices,
+        IReadOnlyList<CardRow> cohort,
+        IReadOnlyList<StageHistoryRow> histories) =>
+        offices
             .Select(office => BuildFunnel(
                 office,
                 cohort.Where(x => x.OfficeId == office.Id).ToList(),
                 histories))
             .ToList();
+
+    private static CrmAnalyticsDecompositionDto BuildDecomposition(
+        IReadOnlyList<CardRow> cohort,
+        IReadOnlyList<StageHistoryRow> histories)
+    {
+        var historyByCard = histories
+            .GroupBy(history => history.CardId)
+            .ToDictionary(group => group.Key, group => group.ToList());
+        var contacts = 0;
+        var questionnaires = 0;
+        var tickets = 0;
+        var contracts = 0;
+        var breakdown = ContactCloseReasons
+            .Prepend(SuccessfulCloseBreakdown)
+            .Prepend(ReachedNegotiationsBreakdown)
+            .ToDictionary(label => label, _ => 0, StringComparer.Ordinal);
+
+        foreach (var card in cohort)
+        {
+            var reachedStages = new HashSet<string>(StringComparer.Ordinal) { card.Stage };
+            if (historyByCard.TryGetValue(card.Id, out var cardHistories))
+            {
+                foreach (var history in cardHistories)
+                {
+                    var destination = ParseDestinationStage(history.Details);
+                    if (!string.IsNullOrWhiteSpace(destination))
+                    {
+                        reachedStages.Add(destination);
+                    }
+                }
+            }
+
+            var closeReason = string.IsNullOrWhiteSpace(card.CloseReason) ? null : card.CloseReason.Trim();
+            var isContract = string.Equals(closeReason, CrmCloseReasons.Success, StringComparison.Ordinal)
+                             || reachedStages.Contains(CrmStages.DealSuccessful);
+            var isTicket = isContract
+                           || reachedStages.Contains(CrmStages.Ticket)
+                           || reachedStages.Contains(CrmStages.PreparingToSend)
+                           || reachedStages.Contains(CrmStages.InTransit)
+                           || reachedStages.Contains(CrmStages.Signing);
+            var isQuestionnaire = isTicket
+                                  || reachedStages.Contains(CrmStages.Questionnaire);
+            var hasStageContact = isQuestionnaire
+                                  || reachedStages.Any(stage =>
+                                      stage.StartsWith(CrmStages.Negotiations, StringComparison.OrdinalIgnoreCase));
+            var hasContactCloseReason = closeReason is not null
+                                        && ContactCloseReasons.Contains(closeReason, StringComparer.Ordinal);
+            var hasContact = hasStageContact || isContract || hasContactCloseReason;
+
+            if (hasContact)
+            {
+                contacts++;
+                var breakdownLabel = hasStageContact
+                    ? ReachedNegotiationsBreakdown
+                    : isContract
+                        ? SuccessfulCloseBreakdown
+                        : closeReason!;
+                breakdown[breakdownLabel]++;
+            }
+
+            if (isQuestionnaire)
+            {
+                questionnaires++;
+            }
+
+            if (isTicket)
+            {
+                tickets++;
+            }
+
+            if (isContract)
+            {
+                contracts++;
+            }
+        }
+
+        var orderedBreakdown = breakdown
+            .Select(item => new CrmAnalyticsContactBreakdownDto(
+                string.Equals(item.Key, CrmCloseReasons.Contract, StringComparison.Ordinal)
+                    ? "Отказ: контракт"
+                    : item.Key,
+                item.Value))
+            .ToList();
+
+        return new CrmAnalyticsDecompositionDto(
+            cohort.Count,
+            contacts,
+            questionnaires,
+            tickets,
+            contracts,
+            Percent(contacts, cohort.Count),
+            Percent(questionnaires, contacts),
+            Percent(tickets, questionnaires),
+            Percent(contracts, tickets),
+            orderedBreakdown);
     }
 
     private static CrmAnalyticsOfficeFunnelDto BuildFunnel(

@@ -23,6 +23,7 @@
     else
     {
         var cards = analytics.Cards;
+        var decomposition = analytics.Decomposition;
         var selectedManager = analytics.ManagerOptions.FirstOrDefault(x =>
             string.Equals(x.UserId, Model.SelectedManagerUserId, StringComparison.Ordinal));
         var managerLabel = selectedManager?.DisplayName
@@ -91,7 +92,7 @@
 
         <details class="crm-analytics-methodology">
             <summary><i class="fa-solid fa-circle-info" aria-hidden="true"></i>Как считаются показатели</summary>
-            <p>Общие KPI показывают карточки, созданные в выбранный период, и их состояние на сейчас. В таблице менеджеров и при фильтре по менеджеру карточка засчитывается первому получившему её сотруднику в дату первой выдачи, даже если ответственного позже изменили. «Работа с этапами» и «Закрыто сотрудником» считаются по фактическому автору действия; автоматические и служебные переходы не учитываются. Текущие карточки, нагрузка и задачи — снимок на сейчас. «Дошли» определяется по максимальному достигнутому этапу: карточка учитывается на нём и на всех предыдущих этапах воронки.</p>
+            <p>Общие KPI показывают карточки, созданные в выбранный период, и их состояние на сейчас. В таблице менеджеров и при фильтре по менеджеру карточка засчитывается первому получившему её сотруднику в дату первой выдачи, даже если ответственного позже изменили. «Работа с этапами» и «Закрыто сотрудником» считаются по фактическому автору действия; автоматические и служебные переходы не учитываются. Текущие карточки, нагрузка и задачи — снимок на сейчас. «Дошли» определяется по максимальному достигнутому этапу: карточка учитывается на нём и на всех предыдущих этапах воронки. В декомпозиции дозвоном считается достижение «Переговоров», анкеты, билета или успеха, а также закрытие по причинам «Женщина», «Контракт», «Выбрали других», «Возраст», «Здоровье», «Уже был на СВО», «Неактуально» и «Офицер». НДЗ, «Исчез, слился» и «Робот» сами по себе дозвоном не считаются.</p>
         </details>
 
         <section class="crm-analytics-kpis" aria-label="Ключевые показатели CRM">
@@ -108,6 +109,73 @@
                 </article>
             }
         </section>
+
+        @if (decomposition is not null)
+        {
+            var decompositionSteps = new[]
+            {
+                new { Label = "Лиды", Count = decomposition.Leads, Caption = "Получено за период", Icon = "fa-solid fa-user-plus", Tone = "leads", Conversion = (double?)null },
+                new { Label = "Дозвоны", Count = decomposition.Contacts, Caption = "Контакт подтверждён", Icon = "fa-solid fa-phone-volume", Tone = "contacts", Conversion = (double?)decomposition.ContactConversionPercent },
+                new { Label = "Анкеты", Count = decomposition.Questionnaires, Caption = "Дошли до анкеты", Icon = "fa-solid fa-clipboard-list", Tone = "questionnaires", Conversion = (double?)decomposition.QuestionnaireConversionPercent },
+                new { Label = "Билеты", Count = decomposition.Tickets, Caption = "Дошли до билета", Icon = "fa-solid fa-ticket", Tone = "tickets", Conversion = (double?)decomposition.TicketConversionPercent },
+                new { Label = "Контракты", Count = decomposition.Contracts, Caption = "Успешно закрыто", Icon = "fa-solid fa-file-signature", Tone = "contracts", Conversion = (double?)decomposition.ContractConversionPercent }
+            };
+            var contactBreakdown = decomposition.ContactBreakdown.Where(x => x.Count > 0).ToList();
+
+            <section class="card crm-analytics-panel crm-analytics-decomposition" aria-labelledby="crm-decomposition-title">
+            <header class="crm-analytics-panel__header">
+                <div>
+                    <h2 id="crm-decomposition-title">Декомпозиция</h2>
+                    <p>Путь лидов, полученных в выбранный период. Результаты и достигнутые этапы показаны на текущий момент.</p>
+                </div>
+                <span>Конверсия от предыдущего шага</span>
+            </header>
+            <div class="crm-analytics-decomposition-scroll">
+                <div class="crm-analytics-decomposition-flow">
+                    @for (var stepIndex = 0; stepIndex < decompositionSteps.Length; stepIndex++)
+                    {
+                        var step = decompositionSteps[stepIndex];
+                        if (stepIndex > 0)
+                        {
+                            <div class="crm-analytics-decomposition-connector" aria-label="Конверсия @Percent(step.Conversion ?? 0)">
+                                <span>@Percent(step.Conversion ?? 0)</span>
+                                <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
+                            </div>
+                        }
+                        <article class="crm-analytics-decomposition-step crm-analytics-decomposition-step--@step.Tone">
+                            <span class="crm-analytics-decomposition-step__icon"><i class="@step.Icon" aria-hidden="true"></i></span>
+                            <div>
+                                <span>@step.Label</span>
+                                <strong>@step.Count.ToString("N0")</strong>
+                                <small>@step.Caption</small>
+                            </div>
+                        </article>
+                    }
+                </div>
+            </div>
+            <details class="crm-analytics-contact-details">
+                <summary>
+                    <span><i class="fa-solid fa-list-check" aria-hidden="true"></i>Из чего сложились дозвоны</span>
+                    <strong>@decomposition.Contacts.ToString("N0")</strong>
+                    <i class="fa-solid fa-chevron-down" aria-hidden="true"></i>
+                </summary>
+                @if (contactBreakdown.Count == 0)
+                {
+                    <p>В выбранной когорте пока нет подтверждённых дозвонов.</p>
+                }
+                else
+                {
+                    <p>Каждая карточка показана один раз: достигнутый этап имеет приоритет перед причиной закрытия.</p>
+                    <div class="crm-analytics-contact-breakdown">
+                        @foreach (var item in contactBreakdown)
+                        {
+                            <div><span>@item.Label</span><strong>@item.Count.ToString("N0")</strong></div>
+                        }
+                    </div>
+                }
+            </details>
+            </section>
+        }
 
         <div class="crm-analytics-grid">
             <section class="card crm-analytics-panel crm-analytics-panel--reasons">
