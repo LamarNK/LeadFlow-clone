@@ -874,6 +874,276 @@ public sealed class WorkerConfigServiceTests
         Assert.Equal("rucaptcha-test-key", worker.RuCaptchaApiKey);
     }
 
+    [Fact]
+    public async Task SyncAccountsAsync_DoesNotDeleteLocalAccounts()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db);
+        var localId = Guid.Parse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee");
+        db.WorkerAccounts.Add(new WorkerAccountEntity
+        {
+            WorkerId = WorkerId,
+            AccountId = localId,
+            AdsPowerProfileId = string.Empty,
+            LocalUserDataDir = @"D:\Orbita\ChromeProfiles\acc-1",
+            DisplayName = "local-acc",
+            UpdatedAtUtc = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var synced = await CreateService(db).SyncAccountsAsync(
+            WorkerId,
+            new WorkerAccountSyncRequest([new WorkerAccountSyncItemDto("profile-1", "acc-1")]));
+
+        Assert.True(synced);
+        var accounts = await db.WorkerAccounts.ToListAsync();
+        Assert.Contains(accounts, a => a.AccountId == localId && a.LocalUserDataDir == @"D:\Orbita\ChromeProfiles\acc-1");
+        Assert.Contains(accounts, a => a.AdsPowerProfileId == "profile-1");
+    }
+
+    [Fact]
+    public async Task SyncAccountsAsync_EmptyAdsPowerPayload_KeepsLocalAccounts()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db);
+        var localId = Guid.Parse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee");
+        db.WorkerAccounts.Add(new WorkerAccountEntity
+        {
+            WorkerId = WorkerId,
+            AccountId = localId,
+            AdsPowerProfileId = string.Empty,
+            LocalUserDataDir = @"D:\Orbita\ChromeProfiles\acc-1",
+            DisplayName = "local-acc",
+            UpdatedAtUtc = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var synced = await CreateService(db).SyncAccountsAsync(
+            WorkerId,
+            new WorkerAccountSyncRequest([]));
+
+        Assert.True(synced);
+        var accounts = await db.WorkerAccounts.ToListAsync();
+        Assert.DoesNotContain(accounts, a => a.AdsPowerProfileId == "profile-1");
+        Assert.Contains(accounts, a => a.AccountId == localId && a.LocalUserDataDir == @"D:\Orbita\ChromeProfiles\acc-1");
+    }
+
+    [Fact]
+    public async Task SyncAccountsAsync_ReplaceMultiloginCatalog_DoesNotDeleteLocal()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db);
+        var localId = Guid.Parse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee");
+        db.WorkerAccounts.Add(new WorkerAccountEntity
+        {
+            WorkerId = WorkerId,
+            AccountId = localId,
+            AdsPowerProfileId = string.Empty,
+            LocalUserDataDir = @"D:\Orbita\ChromeProfiles\acc-1",
+            DisplayName = "local-acc",
+            UpdatedAtUtc = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var synced = await CreateService(db).SyncAccountsAsync(
+            WorkerId,
+            new WorkerAccountSyncRequest([], Multilogin: true, ReplaceMultiloginCatalog: true));
+
+        Assert.True(synced);
+        var accounts = await db.WorkerAccounts.ToListAsync();
+        Assert.Contains(accounts, a => a.AccountId == localId);
+        Assert.Contains(accounts, a => a.AccountId == AccountId);
+    }
+
+    [Fact]
+    public async Task GetConfigForWorkerAsync_IncludesLocalAccountAndChromePath()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db);
+        var worker = await db.Workers.SingleAsync();
+        worker.LocalChromeExecutablePath = @"C:\Chrome\chrome.exe";
+        var localId = Guid.Parse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee");
+        db.WorkerAccounts.Add(new WorkerAccountEntity
+        {
+            WorkerId = WorkerId,
+            AccountId = localId,
+            AdsPowerProfileId = string.Empty,
+            LocalUserDataDir = @"D:\Orbita\ChromeProfiles\acc-1",
+            DisplayName = "local-acc",
+            IsEnabledInPanel = true,
+            UpdatedAtUtc = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var config = await CreateService(db).GetConfigForWorkerAsync(WorkerId, OfficeScope.ForOffice(OfficeId));
+
+        Assert.NotNull(config);
+        Assert.Equal(@"C:\Chrome\chrome.exe", config!.LocalChromeExecutablePath);
+        var local = Assert.Single(config.Accounts, a => a.AccountId == localId);
+        Assert.Equal("Local", local.ProfileProvider);
+        Assert.Equal(@"D:\Orbita\ChromeProfiles\acc-1", local.LocalUserDataDir);
+        Assert.Equal(string.Empty, local.AdsPowerProfileId);
+        Assert.Null(local.MultiloginProfileId);
+    }
+
+    [Fact]
+    public async Task CreateLocalAccountAsync_PersistsSeparateProfileFolder()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db);
+
+        var (account, error) = await CreateService(db).CreateLocalAccountAsync(
+            WorkerId,
+            new CreateLocalWorkerAccountRequest("Кабинет 1", @"D:\Orbita\ChromeProfiles\acc-1"),
+            OfficeScope.ForOffice(OfficeId));
+
+        Assert.Null(error);
+        Assert.NotNull(account);
+        Assert.Equal("Local", account!.ProfileProvider);
+        Assert.Equal("Кабинет 1", account.DisplayName);
+        Assert.Equal(@"D:\Orbita\ChromeProfiles\acc-1", account.LocalUserDataDir);
+        Assert.Equal(string.Empty, account.AdsPowerProfileId);
+        Assert.NotEqual(AccountId, account.AccountId);
+
+        var stored = await db.WorkerAccounts.SingleAsync(x => x.AccountId == account.AccountId);
+        Assert.Equal(string.Empty, stored.AdsPowerProfileId);
+        Assert.Null(stored.MultiloginProfileId);
+        Assert.Equal(@"D:\Orbita\ChromeProfiles\acc-1", stored.LocalUserDataDir);
+    }
+
+    [Fact]
+    public async Task CreateLocalAccountAsync_RejectsDefaultChromeProfile()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db);
+
+        var (account, error) = await CreateService(db).CreateLocalAccountAsync(
+            WorkerId,
+            new CreateLocalWorkerAccountRequest("bad", @"C:\Users\user\AppData\Local\Google\Chrome\User Data"),
+            OfficeScope.ForOffice(OfficeId));
+
+        Assert.Null(account);
+        Assert.Contains("стандартный профиль Chrome", error, StringComparison.Ordinal);
+        Assert.Equal(1, await db.WorkerAccounts.CountAsync());
+    }
+
+    [Fact]
+    public async Task CreateLocalAccountAsync_RejectsEmptyName()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db);
+
+        var (account, error) = await CreateService(db).CreateLocalAccountAsync(
+            WorkerId,
+            new CreateLocalWorkerAccountRequest("  ", @"D:\Orbita\ChromeProfiles\acc-1"),
+            OfficeScope.ForOffice(OfficeId));
+
+        Assert.Null(account);
+        Assert.Equal("Укажите имя аккаунта.", error);
+    }
+
+    [Fact]
+    public async Task UpdateLocalAccountAsync_ChangesFolder_AndRejectsAdsPower()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db);
+        var localId = Guid.Parse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee");
+        db.WorkerAccounts.Add(new WorkerAccountEntity
+        {
+            WorkerId = WorkerId,
+            AccountId = localId,
+            AdsPowerProfileId = string.Empty,
+            LocalUserDataDir = @"D:\Orbita\ChromeProfiles\acc-1",
+            DisplayName = "local-acc",
+            UpdatedAtUtc = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var sut = CreateService(db);
+        var (updated, error) = await sut.UpdateLocalAccountAsync(
+            WorkerId,
+            localId,
+            new UpdateLocalWorkerAccountRequest("local-2", @"D:\Orbita\ChromeProfiles\acc-2"),
+            OfficeScope.ForOffice(OfficeId));
+
+        Assert.Null(error);
+        Assert.Equal("local-2", updated!.DisplayName);
+        Assert.Equal(@"D:\Orbita\ChromeProfiles\acc-2", updated.LocalUserDataDir);
+
+        var (adsUpdate, adsError) = await sut.UpdateLocalAccountAsync(
+            WorkerId,
+            AccountId,
+            new UpdateLocalWorkerAccountRequest("nope", @"D:\Orbita\ChromeProfiles\acc-3"),
+            OfficeScope.ForOffice(OfficeId));
+        Assert.Null(adsUpdate);
+        Assert.Contains("обычного браузера", adsError, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task DeleteLocalAccountAsync_RemovesDbRow_NotAdsPower()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db);
+        var localId = Guid.Parse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee");
+        db.WorkerAccounts.Add(new WorkerAccountEntity
+        {
+            WorkerId = WorkerId,
+            AccountId = localId,
+            AdsPowerProfileId = string.Empty,
+            LocalUserDataDir = @"D:\Orbita\ChromeProfiles\acc-1",
+            DisplayName = "local-acc",
+            UpdatedAtUtc = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var sut = CreateService(db);
+        var (deleted, error) = await sut.DeleteLocalAccountAsync(WorkerId, localId, OfficeScope.ForOffice(OfficeId));
+        Assert.True(deleted);
+        Assert.Null(error);
+        Assert.DoesNotContain(await db.WorkerAccounts.ToListAsync(), a => a.AccountId == localId);
+
+        var (adsDeleted, adsError) = await sut.DeleteLocalAccountAsync(WorkerId, AccountId, OfficeScope.ForOffice(OfficeId));
+        Assert.False(adsDeleted);
+        Assert.Contains("обычного браузера", adsError, StringComparison.Ordinal);
+        Assert.Contains(await db.WorkerAccounts.ToListAsync(), a => a.AccountId == AccountId);
+    }
+
+    [Fact]
+    public async Task UpdateSettingsAsync_PersistsLocalChromeExecutablePath()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db);
+
+        var (config, error) = await CreateService(db).UpdateSettingsAsync(
+            WorkerId,
+            new UpdateWorkerSettingsRequest(
+                MaxConcurrentAccounts: 1,
+                LocalChromeExecutablePath: @"  C:\Program Files\Chromium\chrome.exe  "),
+            OfficeScope.ForOffice(OfficeId));
+
+        Assert.Null(error);
+        Assert.Equal(@"C:\Program Files\Chromium\chrome.exe", config!.LocalChromeExecutablePath);
+        var worker = await db.Workers.SingleAsync();
+        Assert.Equal(@"C:\Program Files\Chromium\chrome.exe", worker.LocalChromeExecutablePath);
+    }
+
+    [Fact]
+    public void WorkerConfigDto_OldJsonWithoutLocalFields_Deserializes()
+    {
+        const string json = """
+            {"workerId":"bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb","maxConcurrentAccounts":1,"accounts":[{"accountId":"cccccccc-cccc-cccc-cccc-cccccccccccc","adsPowerProfileId":"p1","displayName":"acc","isEnabled":true}]}
+            """;
+        var dto = System.Text.Json.JsonSerializer.Deserialize<WorkerConfigDto>(
+            json,
+            new System.Text.Json.JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+
+        Assert.NotNull(dto);
+        Assert.Null(dto!.LocalChromeExecutablePath);
+        var acc = Assert.Single(dto.Accounts);
+        Assert.Null(acc.LocalUserDataDir);
+        Assert.Null(acc.ProfileProvider);
+    }
+
     private static WorkerConfigService CreateService(
         OrbitaDbContext db,
         AvitoAccountSecretProtector? secrets = null,

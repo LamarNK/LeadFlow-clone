@@ -57,7 +57,10 @@ internal static class WorkerDetailsBuilder
         var normalizedProvider = WorkerAccountCatalogFilter.NormalizeProvider(accountProvider);
         var tableSort = sort ?? TableSortState.Create("account", descending: false);
         var filteredAccounts = FilterAccounts(accounts, normalizedSearch, normalizedGroupId, normalizedProvider);
-        var providerAccounts = accounts.Where(a => WorkerAccountCatalogFilter.MatchesProvider(normalizedProvider, a.MultiloginProfileId));
+        var providerAccounts = accounts.Where(a => WorkerAccountCatalogFilter.MatchesProvider(
+            normalizedProvider,
+            a.MultiloginProfileId,
+            a.LocalUserDataDir));
         var groupOptions = WorkerAccountCatalogFilter.BuildLocationOptions(providerAccounts, worker.AdsPowerGroups);
         var accountChips = FilterChipsBuilder.ForWorkerAccounts(
             worker.Id,
@@ -67,8 +70,9 @@ internal static class WorkerDetailsBuilder
             groupOptions,
             tableSort.Column,
             tableSort.Dir);
-        var adsPowerCount = accounts.Count(a => !a.IsMultilogin);
+        var adsPowerCount = accounts.Count(a => a.ProfileProvider == "AdsPower");
         var multiloginCount = accounts.Count(a => a.IsMultilogin);
+        var localCount = accounts.Count(a => a.IsLocal);
 
         return new WorkerDetailsViewModel
         {
@@ -95,6 +99,7 @@ internal static class WorkerDetailsBuilder
             CatalogAccountCount = accounts.Count,
             AdsPowerAccountCount = adsPowerCount,
             MultiloginAccountCount = multiloginCount,
+            LocalAccountCount = localCount,
             AccountSearchQuery = normalizedSearch,
             AccountGroupId = normalizedGroupId,
             AccountProvider = normalizedProvider,
@@ -111,6 +116,7 @@ internal static class WorkerDetailsBuilder
             MultiloginLauncherUrl = worker.MultiloginLauncherUrl,
             MultiloginCloudApiUrl = worker.MultiloginCloudApiUrl,
             HasMultiloginAutomationToken = worker.HasMultiloginAutomationToken,
+            LocalChromeExecutablePath = worker.LocalChromeExecutablePath,
             AdsPowerGroupId = worker.AdsPowerGroupId,
             AdsPowerGroupName = worker.AdsPowerGroupName,
             AdsPowerGroups = BuildAdsPowerGroupOptions(
@@ -168,12 +174,17 @@ internal static class WorkerDetailsBuilder
                     a.AdsPowerGroupName,
                     a.MultiloginProfileId,
                     a.MultiloginFolderId,
-                    a.ProfileProvider));
+                    a.LocalUserDataDir,
+                    a.ProfileProvider,
+                    a.ProfileProviderLabel));
         }
 
         if (!string.IsNullOrWhiteSpace(provider))
         {
-            query = query.Where(a => WorkerAccountCatalogFilter.MatchesProvider(provider, a.MultiloginProfileId));
+            query = query.Where(a => WorkerAccountCatalogFilter.MatchesProvider(
+                provider,
+                a.MultiloginProfileId,
+                a.LocalUserDataDir));
         }
 
         if (!string.IsNullOrWhiteSpace(groupId))
@@ -229,6 +240,7 @@ internal static class WorkerDetailsBuilder
             AdsPowerGroupName = account.AdsPowerGroupName,
             MultiloginProfileId = account.MultiloginProfileId,
             MultiloginFolderId = account.MultiloginFolderId,
+            LocalUserDataDir = account.LocalUserDataDir,
             HasAvitoCredentials = account.HasAvitoCredentials,
             AvitoLogin = account.AvitoLogin,
             StatusLabel = label,
@@ -247,7 +259,8 @@ internal static class WorkerDetailsBuilder
             SubProfiles = subProfiles,
             SubProfilesSummary = SubProfileViewModelMapper.BuildSummary(subProfiles),
             CanRefreshSubProfiles = !string.IsNullOrWhiteSpace(account.AdsPowerProfileId)
-                || !string.IsNullOrWhiteSpace(account.MultiloginProfileId),
+                || !string.IsNullOrWhiteSpace(account.MultiloginProfileId)
+                || !string.IsNullOrWhiteSpace(account.LocalUserDataDir),
             IsSubProfilesRefreshPending = SubProfileViewModelMapper.IsRefreshPending(
                 account.SubProfilesRefreshRequestedAtUtc,
                 account.SubProfilesRefreshedAtUtc),

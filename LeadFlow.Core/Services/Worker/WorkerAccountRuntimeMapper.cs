@@ -34,6 +34,8 @@ public static class WorkerAccountRuntimeMapper
             MultiloginLauncherUrl = MultiloginUrl.Normalize(config.MultiloginLauncherUrl),
             MultiloginCloudApiUrl = MultiloginUrl.Normalize(config.MultiloginCloudApiUrl),
             MultiloginAutomationToken = NullIfWhiteSpace(config.MultiloginAutomationToken),
+            BrowserProfilePath = NullIfWhiteSpace(dto.LocalUserDataDir) ?? string.Empty,
+            LocalChromeExecutablePath = NullIfWhiteSpace(config.LocalChromeExecutablePath),
             Status = WorkerAccountStatusMapper.ResolveRuntimeStatus(dto.IsEnabled, dto.Status),
             LastErrorMessage = dto.LastErrorMessage ?? string.Empty,
             LastMonitoringAt = dto.LastMonitoringAtUtc,
@@ -83,15 +85,32 @@ public static class WorkerAccountRuntimeMapper
 
     internal static AvitoProfileProvider ResolveProvider(WorkerAccountConfigDto dto)
     {
-        if (Enum.TryParse<AvitoProfileProvider>(dto.ProfileProvider, out var parsed)
-            && parsed == AvitoProfileProvider.Multilogin)
+        if (Enum.TryParse<AvitoProfileProvider>(dto.ProfileProvider, ignoreCase: true, out var parsed))
         {
-            return AvitoProfileProvider.Multilogin;
+            if (parsed == AvitoProfileProvider.Multilogin)
+            {
+                return AvitoProfileProvider.Multilogin;
+            }
+
+            if (parsed == AvitoProfileProvider.Local)
+            {
+                return AvitoProfileProvider.Local;
+            }
+
+            if (parsed == AvitoProfileProvider.AdsPower)
+            {
+                return AvitoProfileProvider.AdsPower;
+            }
         }
 
         if (!string.IsNullOrWhiteSpace(dto.MultiloginProfileId))
         {
             return AvitoProfileProvider.Multilogin;
+        }
+
+        if (!string.IsNullOrWhiteSpace(dto.LocalUserDataDir))
+        {
+            return AvitoProfileProvider.Local;
         }
 
         return AvitoProfileProvider.AdsPower;

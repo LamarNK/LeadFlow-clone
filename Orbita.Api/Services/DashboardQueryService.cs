@@ -464,7 +464,8 @@ public sealed class DashboardQueryService(
             worker.RuCaptchaApiKey,
             worker.MultiloginLauncherUrl,
             worker.MultiloginCloudApiUrl,
-            HasMultiloginAutomationToken: !string.IsNullOrWhiteSpace(worker.MultiloginAutomationToken));
+            HasMultiloginAutomationToken: !string.IsNullOrWhiteSpace(worker.MultiloginAutomationToken),
+            worker.LocalChromeExecutablePath);
     }
 
     public async Task<IReadOnlyList<WorkerAccountDto>> GetWorkerAccountsAsync(
@@ -620,6 +621,7 @@ public sealed class DashboardQueryService(
                 x.AdsPowerGroupName,
                 x.MultiloginProfileId,
                 x.MultiloginFolderId,
+                x.LocalUserDataDir,
                 x.SubProfilesJson,
                 x.SubProfilesRefreshedAtUtc,
                 x.SubProfilesRefreshRequestedAtUtc,
@@ -861,7 +863,8 @@ public sealed class DashboardQueryService(
                         x.AdsPowerGroupId,
                         x.AdsPowerGroupName,
                         string.IsNullOrWhiteSpace(x.MultiloginProfileId) ? null : x.MultiloginProfileId,
-                        string.IsNullOrWhiteSpace(x.MultiloginFolderId) ? null : x.MultiloginFolderId);
+                        string.IsNullOrWhiteSpace(x.MultiloginFolderId) ? null : x.MultiloginFolderId,
+                        string.IsNullOrWhiteSpace(x.LocalUserDataDir) ? null : x.LocalUserDataDir);
                 })
                 .ToList();
 

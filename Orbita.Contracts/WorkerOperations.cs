@@ -32,10 +32,12 @@ public sealed record WorkerAccountConfigDto(
     string? AvitoLogin = null,
     /// <summary>Пароль Avito (plaintext только в защищённом worker config channel).</summary>
     string? AvitoPassword = null,
-    /// <summary>AdsPower или Multilogin. Пусто — AdsPower (обратная совместимость).</summary>
+    /// <summary>AdsPower, Multilogin или Local. Пусто — AdsPower (обратная совместимость).</summary>
     string? ProfileProvider = null,
     string? MultiloginProfileId = null,
-    string? MultiloginFolderId = null);
+    string? MultiloginFolderId = null,
+    /// <summary>Папка User Data обычного Chrome на машине воркера. Только для ProfileProvider=Local.</summary>
+    string? LocalUserDataDir = null);
 
 public sealed record UpdateWorkerSubProfileRequest(bool IsEnabledInPanel);
 
@@ -96,7 +98,9 @@ public sealed record WorkerConfigDto(
     /// <summary>Automation token Multilogin X. Только worker config, не телеметрия панели.</summary>
     string? MultiloginAutomationToken = null,
     /// <summary>URL cloud API Multilogin X (worker config channel).</summary>
-    string? MultiloginCloudApiUrl = null)
+    string? MultiloginCloudApiUrl = null,
+    /// <summary>Путь к chrome.exe / Chromium на машине воркера. Пусто — автопоиск.</summary>
+    string? LocalChromeExecutablePath = null)
 {
     public ResponseCollectionFilters ResponseFilters =>
         ResponseCollectionFilters.NormalizeLegacy(
@@ -266,9 +270,15 @@ public sealed record UpdateWorkerSettingsRequest(
     string? MultiloginLauncherUrl = null,
     string? MultiloginCloudApiUrl = null,
     /// <summary>Пусто — не менять сохранённый token (поле не возвращается в HTML панели).</summary>
-    string? MultiloginAutomationToken = null);
+    string? MultiloginAutomationToken = null,
+    /// <summary>Путь к chrome.exe / Chromium. Пусто — автопоиск на машине воркера.</summary>
+    string? LocalChromeExecutablePath = null);
 
 public sealed record UpdateWorkerAccountRequest(bool IsEnabledInPanel);
+
+public sealed record CreateLocalWorkerAccountRequest(string DisplayName, string LocalUserDataDir);
+
+public sealed record UpdateLocalWorkerAccountRequest(string? DisplayName = null, string? LocalUserDataDir = null);
 
 /// <summary>
 /// Обновление логина/пароля Avito для аккаунта.

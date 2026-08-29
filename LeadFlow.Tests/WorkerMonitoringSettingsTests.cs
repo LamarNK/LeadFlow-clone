@@ -35,6 +35,19 @@ public sealed class WorkerMonitoringSettingsTests
             ProfileProvider = AvitoProfileProvider.Multilogin,
             MultiloginProfileId = "disabled-profile"
         };
+        var local = new AvitoAccount
+        {
+            Id = Guid.NewGuid(),
+            IsEnabled = true,
+            ProfileProvider = AvitoProfileProvider.Local,
+            BrowserProfilePath = @"D:\Orbita\ChromeProfiles\acc-1"
+        };
+        var incompleteLocal = new AvitoAccount
+        {
+            Id = Guid.NewGuid(),
+            IsEnabled = true,
+            ProfileProvider = AvitoProfileProvider.Local
+        };
         var legacy = new AvitoAccount
         {
             Id = Guid.NewGuid(),
@@ -42,9 +55,10 @@ public sealed class WorkerMonitoringSettingsTests
             ProfileProvider = AvitoProfileProvider.Local
         };
 
-        var selected = SelectRunnableAccounts([adsPower, multilogin, disabledMultilogin, legacy]);
+        var selected = SelectRunnableAccounts(
+            [adsPower, multilogin, disabledMultilogin, local, incompleteLocal, legacy]);
 
-        Assert.Equal([adsPower.Id, multilogin.Id], selected.Select(static account => account.Id));
+        Assert.Equal([adsPower.Id, multilogin.Id, local.Id], selected.Select(static account => account.Id));
     }
 
     [Fact]

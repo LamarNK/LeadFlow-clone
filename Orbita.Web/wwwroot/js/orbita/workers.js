@@ -192,6 +192,149 @@
         });
     }
 
+    runtime.ensureLocalAccountModal = function ensureLocalAccountModal() {
+        var existing = document.getElementById('orbita-local-account-modal');
+        if (existing) return existing;
+
+        var wrap = document.createElement('div');
+        wrap.id = 'orbita-local-account-modal';
+        wrap.className = 'orbita-avito-cred-modal';
+        wrap.hidden = true;
+        wrap.innerHTML =
+            '<div class="orbita-avito-cred-modal__backdrop" data-local-account-close></div>' +
+            '<div class="orbita-avito-cred-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="orbita-local-account-title">' +
+            '  <h3 id="orbita-local-account-title" class="orbita-avito-cred-modal__title">Папка профиля Chrome</h3>' +
+            '  <p class="orbita-avito-cred-modal__hint" data-local-account-account></p>' +
+            '  <label class="orbita-avito-cred-modal__label">Имя аккаунта' +
+            '    <input type="text" class="orbita-avito-cred-modal__input" data-local-account-name maxlength="200" autocomplete="off" />' +
+            '  </label>' +
+            '  <label class="orbita-avito-cred-modal__label">Папка профиля (User Data)' +
+            '    <input type="text" class="orbita-avito-cred-modal__input" data-local-account-dir maxlength="1024" autocomplete="off" spellcheck="false" />' +
+            '  </label>' +
+            '  <p class="orbita-avito-cred-modal__status">Отдельная папка на машине воркера. Стандартный профиль Chrome использовать нельзя. Папка на диске не удаляется.</p>' +
+            '  <div class="orbita-avito-cred-modal__actions">' +
+            '    <button type="button" class="orbita-avito-cred-modal__btn" data-local-account-close>Отмена</button>' +
+            '    <button type="button" class="orbita-avito-cred-modal__btn orbita-avito-cred-modal__btn--primary" data-local-account-save>Сохранить</button>' +
+            '  </div>' +
+            '</div>';
+        document.body.appendChild(wrap);
+        return wrap;
+    }
+
+    runtime.openLocalAccountModal = function openLocalAccountModal(opts) {
+        var modal = runtime.ensureLocalAccountModal();
+        var nameInput = modal.querySelector('[data-local-account-name]');
+        var dirInput = modal.querySelector('[data-local-account-dir]');
+        var accountEl = modal.querySelector('[data-local-account-account]');
+        var saveBtn = modal.querySelector('[data-local-account-save]');
+
+        accountEl.textContent = opts.accountName
+            ? ('Аккаунт: ' + opts.accountName)
+            : '';
+        nameInput.value = opts.accountName || '';
+        dirInput.value = opts.userDataDir || '';
+        modal.hidden = false;
+
+        function close() {
+            modal.hidden = true;
+            saveBtn.onclick = null;
+            modal.querySelectorAll('[data-local-account-close]').forEach(function (el) {
+                el.onclick = null;
+            });
+        }
+
+        modal.querySelectorAll('[data-local-account-close]').forEach(function (el) {
+            el.onclick = close;
+        });
+
+        saveBtn.onclick = async function () {
+            var displayName = (nameInput.value || '').trim();
+            var localUserDataDir = (dirInput.value || '').trim();
+            if (!displayName) {
+                runtime.showToast('Укажите имя аккаунта', { variant: 'error' });
+                return;
+            }
+            if (!localUserDataDir) {
+                runtime.showToast('Укажите путь к отдельной папке профиля', { variant: 'error' });
+                return;
+            }
+
+            saveBtn.disabled = true;
+            var result = await runtime.postForm(opts.postUrl, {
+                workerId: opts.workerId,
+                accountId: opts.accountId,
+                displayName: displayName,
+                localUserDataDir: localUserDataDir
+            });
+            saveBtn.disabled = false;
+
+            if (result.ok) {
+                runtime.showToast((result.payload && result.payload.message) || 'Сохранено', { variant: 'success' });
+                close();
+                if (window.OrbitaLive && window.OrbitaLive.scheduleRefresh) {
+                    window.OrbitaLive.scheduleRefresh({ kinds: ['Accounts', 'Workers'] });
+                }
+            } else {
+                runtime.showToast((result.payload && result.payload.error) || 'Не удалось сохранить', { variant: 'error' });
+            }
+        };
+    }
+
+    runtime.initLocalAccountEditButtons = function initLocalAccountEditButtons() {
+        document.querySelectorAll('[data-local-account-edit]').forEach(function (btn) {
+            if (btn.hasAttribute('data-local-account-edit-bound')) return;
+            btn.setAttribute('data-local-account-edit-bound', '1');
+
+            btn.addEventListener('click', function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                runtime.closeAllRowMenus();
+                runtime.openLocalAccountModal({
+                    workerId: btn.getAttribute('data-worker-id'),
+                    accountId: btn.getAttribute('data-account-id'),
+                    accountName: btn.getAttribute('data-account-name') || '',
+                    userDataDir: btn.getAttribute('data-user-data-dir') || '',
+                    postUrl: btn.getAttribute('data-post-url') || '/Workers/UpdateLocalAccount'
+                });
+            });
+        });
+
+        document.querySelectorAll('[data-local-account-delete]').forEach(function (btn) {
+            if (btn.hasAttribute('data-local-account-delete-bound')) return;
+            btn.setAttribute('data-local-account-delete-bound', '1');
+
+            btn.addEventListener('click', async function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                runtime.closeAllRowMenus();
+
+                var confirmed = true;
+                if (window.Orbita && window.Orbita.confirm) {
+                    confirmed = await window.Orbita.confirm({
+                        title: 'Удалить аккаунт из панели?',
+                        message: 'Папка профиля на диске не удалится.',
+                        confirmLabel: 'Удалить',
+                        variant: 'danger'
+                    });
+                }
+                if (!confirmed) return;
+
+                var result = await runtime.postForm(btn.getAttribute('data-post-url') || '/Workers/DeleteLocalAccount', {
+                    workerId: btn.getAttribute('data-worker-id'),
+                    accountId: btn.getAttribute('data-account-id')
+                });
+                if (result.ok) {
+                    runtime.showToast((result.payload && result.payload.message) || 'Аккаунт удалён', { variant: 'success' });
+                    if (window.OrbitaLive && window.OrbitaLive.scheduleRefresh) {
+                        window.OrbitaLive.scheduleRefresh({ kinds: ['Accounts', 'Workers'] });
+                    }
+                } else {
+                    runtime.showToast((result.payload && result.payload.error) || 'Не удалось удалить', { variant: 'error' });
+                }
+            });
+        });
+    }
+
     runtime.initWorkerAccountEnableToggles = function initWorkerAccountEnableToggles() {
         document.querySelectorAll('[data-account-enable-toggle]').forEach(function (input) {
             if (input.hasAttribute('data-account-enable-bound')) return;
@@ -473,6 +616,7 @@
     runtime.initSubProfileEnableToggles();
     runtime.initWorkerAccountEnableToggles();
     runtime.initAvitoCredentialsButtons();
+    runtime.initLocalAccountEditButtons();
     runtime.initSubProfilesRefreshButtons();
     runtime.initSubProfileScreenshotLinks();
     runtime.initUserMenu();

@@ -13,6 +13,8 @@
     var snapshotUrl = Url.Action("DetailsSnapshot", "Workers", workerAccountsSortRoute)!;
     var adsPowerAccountsUrl = Url.Action("Details", "Workers", new { id = Model.WorkerId, q = Model.AccountSearchQuery, provider = "adspower", sort = Model.Sort.Column, dir = Model.Sort.Dir })!;
     var multiloginAccountsUrl = Url.Action("Details", "Workers", new { id = Model.WorkerId, q = Model.AccountSearchQuery, provider = "multilogin", sort = Model.Sort.Column, dir = Model.Sort.Dir })!;
+    var localAccountsUrl = Url.Action("Details", "Workers", new { id = Model.WorkerId, q = Model.AccountSearchQuery, provider = "local", sort = Model.Sort.Column, dir = Model.Sort.Dir })!;
+    var isLocalProvider = string.Equals(Model.AccountProvider, "local", StringComparison.Ordinal);
     var scheduleDayLabels = new Dictionary<string, string>(StringComparer.Ordinal)
     {
         ["Mon"] = "Понедельник",
@@ -203,7 +205,7 @@
         <div class="card card--worker-settings" id="worker-settings">
             <div class="card-header">
                 <h2>Настройки воркера</h2>
-                <p class="worker-settings-subtitle">Параллелизм и подключение к AdsPower Local API и Multilogin X</p>
+                <p class="worker-settings-subtitle">Параллелизм и подключение к AdsPower, Multilogin X и обычному Chrome</p>
             </div>
             <div class="card-body">
                 <form asp-action="UpdateSettings" method="post" class="worker-settings-form">
@@ -414,7 +416,7 @@
                             <div class="worker-highlight-profiles" data-worker-highlight-profiles>
                                 @if (Model.HighlightAccounts.Count == 0)
                                 {
-                                    <p class="worker-settings-hint">Аккаунтов пока нет. Они появятся после синхронизации AdsPower или Multilogin.</p>
+                                    <p class="worker-settings-hint">Аккаунтов пока нет. Они появятся после синхронизации AdsPower или Multilogin, либо добавьте аккаунт обычного браузера.</p>
                                 }
                                 @foreach (var account in Model.HighlightAccounts)
                                 {
@@ -452,7 +454,7 @@
                                                        value="@profileTarget"
                                                        @(isProfileSelected ? "checked" : null) />
                                                 <span>@account.DisplayName</span>
-                                                <span class="worker-provider-chip worker-provider-chip--@account.ProfileProviderTone" title="@account.ProfileIdTitle">@account.ProfileProvider</span>
+                                                <span class="worker-provider-chip worker-provider-chip--@account.ProfileProviderTone" title="@account.ProfileIdTitle">@account.ProfileProviderLabel</span>
                                             </label>
                                             <span class="worker-highlight-profile__meta">
                                                 @if (hasSubProfiles)
@@ -770,6 +772,23 @@
                             <code class="worker-settings-effective-value">@Model.EffectiveMultiloginLauncherUrl</code>
                         </div>
                     </div>
+                    <div class="worker-settings-section">
+                        <span class="worker-settings-section-title">Обычный браузер</span>
+                        <label class="worker-settings-field" for="localChromeExecutablePath">
+                            <span class="worker-settings-label">Путь к Chrome/Chromium (необязательно)</span>
+                            <input type="text"
+                                   id="localChromeExecutablePath"
+                                   name="localChromeExecutablePath"
+                                   class="worker-settings-input"
+                                   value="@Model.LocalChromeExecutablePath"
+                                   placeholder="C:\Program Files\Google\Chrome\Application\chrome.exe"
+                                   autocomplete="off"
+                                   spellcheck="false" />
+                            <span class="worker-settings-hint">
+                                Если поле пустое, воркер сам ищет Chrome в Program Files. Укажите путь, если браузер установлен в нестандартное место.
+                            </span>
+                        </label>
+                    </div>
                     </div>
                         </div>
                     </div>
@@ -879,6 +898,12 @@
                     <span>Multilogin</span>
                     <span class="worker-accounts-tab-count" data-worker-accounts-mlx>@Model.MultiloginAccountCount</span>
                 </a>
+                <a class="worker-accounts-tab@(isLocalProvider ? " is-active" : "")"
+                   href="@localAccountsUrl"
+                   aria-current="@(isLocalProvider ? "page" : null)">
+                    <span>Обычный браузер</span>
+                    <span class="worker-accounts-tab-count" data-worker-accounts-local>@Model.LocalAccountCount</span>
+                </a>
             </nav>
         </div>
         <div class="worker-accounts-toolbar">
@@ -890,7 +915,7 @@
                     <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
                     <input type="search" name="q" value="@Model.AccountSearchQuery" placeholder="Поиск по аккаунтам" aria-label="Поиск по аккаунтам" />
                 </div>
-                <label class="worker-accounts-group-select">
+                <label class="worker-accounts-group-select" @(isLocalProvider ? "hidden" : null)>
                     <span>@(Model.AccountProvider == "multilogin" ? "Папка" : "Группа")</span>
                     <select name="groupId" data-worker-accounts-group-select aria-label="@(Model.AccountProvider == "multilogin" ? "Папка Multilogin" : "Группа AdsPower")">
                         @foreach (var opt in Model.AccountGroupOptions)
@@ -913,6 +938,39 @@
                 }
             </form>
         </div>
+        @if (isLocalProvider)
+        {
+            <form asp-action="CreateLocalAccount" method="post" class="worker-local-account-form">
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="workerId" value="@Model.WorkerId" />
+                <span class="worker-local-account-form-title">Добавить аккаунт обычного браузера</span>
+                <label class="worker-settings-field" for="localAccountDisplayName">
+                    <span class="worker-settings-label">Имя</span>
+                    <input type="text"
+                           id="localAccountDisplayName"
+                           name="displayName"
+                           class="worker-settings-input"
+                           maxlength="200"
+                           required
+                           placeholder="Например, Avito — кабинет 1"
+                           autocomplete="off" />
+                </label>
+                <label class="worker-settings-field" for="localAccountUserDataDir">
+                    <span class="worker-settings-label">Папка профиля (User Data)</span>
+                    <input type="text"
+                           id="localAccountUserDataDir"
+                           name="localUserDataDir"
+                           class="worker-settings-input"
+                           maxlength="1024"
+                           required
+                           placeholder="D:\Orbita\ChromeProfiles\account-1"
+                           autocomplete="off"
+                           spellcheck="false" />
+                    <span class="worker-settings-hint">Отдельная папка на машине воркера. Не используйте стандартный профиль Chrome. Папка создаётся воркером при первом запуске.</span>
+                </label>
+                <button type="submit" class="worker-refresh-btn">Добавить аккаунт</button>
+            </form>
+        }
         <div class="card-body card-body-table worker-accounts-wrap">
             <div data-worker-accounts-empty @(Model.Accounts.Count == 0 ? null : "hidden")>
                 <partial name="_TableEmptyState" model="@(new TableEmptyStateViewModel
@@ -921,7 +979,9 @@
                     Title = Model.HasActiveAccountFilters ? "Аккаунты не найдены" : "Аккаунтов пока нет",
                     Description = Model.HasActiveAccountFilters
                         ? "Измените поисковый запрос."
-                        : "Дождитесь синхронизации профилей AdsPower или Multilogin с воркером.",
+                        : isLocalProvider
+                            ? "Добавьте аккаунт вручную: имя и путь к отдельной папке профиля Chrome на машине воркера."
+                            : "Дождитесь синхронизации профилей AdsPower или Multilogin с воркером.",
                     CtaLabel = Model.HasActiveAccountFilters ? "Сбросить фильтры" : null,
                     CtaUrl = Model.HasActiveAccountFilters
                         ? Url.Action("Details", "Workers", new { id = Model.WorkerId, provider = Model.AccountProvider, sort = Model.Sort.Column, dir = Model.Sort.Dir })
@@ -1042,6 +1102,29 @@
                                         <i class="fa-regular fa-clock" aria-hidden="true"></i>
                                         История откликов
                                     </a>
+                                    @if (account.IsLocal)
+                                    {
+                                        <button type="button"
+                                                class="row-menu-item"
+                                                data-local-account-edit
+                                                data-worker-id="@Model.WorkerId"
+                                                data-account-id="@account.Id"
+                                                data-account-name="@account.DisplayName"
+                                                data-user-data-dir="@(account.LocalUserDataDir ?? "")"
+                                                data-post-url="@Url.Action("UpdateLocalAccount", "Workers")">
+                                            <i class="fa-regular fa-folder-open" aria-hidden="true"></i>
+                                            Папка профиля
+                                        </button>
+                                        <form asp-action="DeleteLocalAccount" method="post" class="row-menu-item-form" onsubmit="return confirm('Удалить аккаунт из панели? Папка профиля на диске не удалится.');">
+                                            @Html.AntiForgeryToken()
+                                            <input type="hidden" name="workerId" value="@Model.WorkerId" />
+                                            <input type="hidden" name="accountId" value="@account.Id" />
+                                            <button type="submit" class="row-menu-item row-menu-item--danger">
+                                                <i class="fa-regular fa-trash-can" aria-hidden="true"></i>
+                                                Удалить аккаунт
+                                            </button>
+                                        </form>
+                                    }
                                 </div>
                             </div>
                         </td>

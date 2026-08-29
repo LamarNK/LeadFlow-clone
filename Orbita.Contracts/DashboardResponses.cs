@@ -111,7 +111,8 @@ public sealed record WorkerDetail(
     string? RuCaptchaApiKey = null,
     string? MultiloginLauncherUrl = null,
     string? MultiloginCloudApiUrl = null,
-    bool HasMultiloginAutomationToken = false);
+    bool HasMultiloginAutomationToken = false,
+    string? LocalChromeExecutablePath = null);
 
 /// <summary>
 /// One row of the office-wide accounts page: account payload plus the worker

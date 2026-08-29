@@ -930,6 +930,7 @@ public sealed class OrbitaApiClient(
         string? multiloginLauncherUrl = null,
         string? multiloginCloudApiUrl = null,
         string? multiloginAutomationToken = null,
+        string? localChromeExecutablePath = null,
         CancellationToken ct = default)
     {
         using var request = new HttpRequestMessage(HttpMethod.Patch, $"api/v1/workers/{workerId}/settings");
@@ -960,7 +961,8 @@ public sealed class OrbitaApiClient(
             ruCaptchaApiKey,
             multiloginLauncherUrl,
             multiloginCloudApiUrl,
-            multiloginAutomationToken));
+            multiloginAutomationToken,
+            localChromeExecutablePath));
         using var response = await SendAuthenticatedAsync(request, ct);
         if (response is null)
         {
@@ -1068,6 +1070,66 @@ public sealed class OrbitaApiClient(
     {
         using var request = new HttpRequestMessage(HttpMethod.Patch, $"api/v1/workers/{workerId}/accounts/{accountId}");
         request.Content = JsonContent.Create(new UpdateWorkerAccountRequest(isEnabledInPanel));
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (false, InvalidApiSessionError);
+        }
+
+        return response.IsSuccessStatusCode
+            ? (true, null)
+            : (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    public async Task<(bool Success, string? Error)> CreateLocalAccountAsync(
+        Guid workerId,
+        string displayName,
+        string localUserDataDir,
+        CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"api/v1/workers/{workerId}/accounts/local");
+        request.Content = JsonContent.Create(new CreateLocalWorkerAccountRequest(displayName, localUserDataDir));
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (false, InvalidApiSessionError);
+        }
+
+        return response.IsSuccessStatusCode
+            ? (true, null)
+            : (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    public async Task<(bool Success, string? Error)> UpdateLocalAccountAsync(
+        Guid workerId,
+        Guid accountId,
+        string? displayName,
+        string? localUserDataDir,
+        CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Patch,
+            $"api/v1/workers/{workerId}/accounts/{accountId}/local");
+        request.Content = JsonContent.Create(new UpdateLocalWorkerAccountRequest(displayName, localUserDataDir));
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (false, InvalidApiSessionError);
+        }
+
+        return response.IsSuccessStatusCode
+            ? (true, null)
+            : (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    public async Task<(bool Success, string? Error)> DeleteLocalAccountAsync(
+        Guid workerId,
+        Guid accountId,
+        CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Delete,
+            $"api/v1/workers/{workerId}/accounts/{accountId}");
         using var response = await SendAuthenticatedAsync(request, ct);
         if (response is null)
         {

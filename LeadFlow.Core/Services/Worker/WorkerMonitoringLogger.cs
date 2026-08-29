@@ -170,8 +170,18 @@ internal static class WorkerMonitoringLogger
         LogInfo($"{who} — страница: {state.DescribeForDiagnostics()}");
     }
 
-    private static string FormatAccount(AvitoAccount account) =>
-        $"Аккаунт «{account.DisplayName}» (AdsPower {account.AdsPowerProfileId ?? "—"})";
+    private static string FormatAccount(AvitoAccount account)
+    {
+        var name = account.DisplayName;
+        return WorkerAccountRuntime.Resolve(account) switch
+        {
+            WorkerAccountRuntimeKind.Multilogin =>
+                $"Аккаунт «{name}» (Multilogin {account.MultiloginProfileId ?? "—"})",
+            WorkerAccountRuntimeKind.Local =>
+                $"Аккаунт «{name}» (обычный браузер)",
+            _ => $"Аккаунт «{name}» (AdsPower {account.AdsPowerProfileId ?? "—"})"
+        };
+    }
 
     private static string DescribeIssueKind(string kind) => kind switch
     {

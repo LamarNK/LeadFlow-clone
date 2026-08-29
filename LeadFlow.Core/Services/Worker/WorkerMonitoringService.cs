@@ -1195,10 +1195,10 @@ public sealed class WorkerMonitoringService(
             return (publishedTotal, false, 1, false);
         }
 
-        var hasAdsPowerCreds =
-            !string.IsNullOrWhiteSpace(account.AdsPowerProfileId)
-            && !string.IsNullOrWhiteSpace(account.AdsPowerApiBaseUrl);
-        var useExternalBrowser = WorkerAccountRuntime.IsMultiloginProvider(account) || hasAdsPowerCreds;
+        var runtimeKind = WorkerAccountRuntime.Resolve(account);
+        var useExternalBrowser = runtimeKind is WorkerAccountRuntimeKind.AdsPower
+            or WorkerAccountRuntimeKind.Multilogin
+            or WorkerAccountRuntimeKind.Local;
 
         if (!useExternalBrowser)
         {
@@ -1222,8 +1222,14 @@ public sealed class WorkerMonitoringService(
                 "Multilogin CDP: не заданы launcher URL, token, folder ID или profile ID.");
         }
 
+        if (WorkerAccountRuntime.IsLocalProvider(account) && !WorkerAccountRuntime.IsLocal(account))
+        {
+            throw new InvalidOperationException(
+                "Обычный браузер: не задан путь к отдельной папке профиля (User Data).");
+        }
+
         var adsOptions = new AdsPowerConnectionOptions(
-            account.AdsPowerApiBaseUrl!,
+            string.IsNullOrWhiteSpace(account.AdsPowerApiBaseUrl) ? string.Empty : account.AdsPowerApiBaseUrl,
             string.IsNullOrWhiteSpace(account.AdsPowerApiKey) ? null : account.AdsPowerApiKey);
 
         if (account.SubProfiles.Count > 0)
@@ -1904,8 +1910,13 @@ public sealed class WorkerMonitoringService(
     {
         var startupStopwatch = Stopwatch.StartNew();
         var lastStage = "ожидание запуска";
-        var isMultilogin = WorkerAccountRuntime.IsMultiloginProvider(account);
-        var startLabel = isMultilogin ? "Запуск Multilogin" : "Запуск AdsPower";
+        var kind = WorkerAccountRuntime.Resolve(account);
+        var startLabel = kind switch
+        {
+            WorkerAccountRuntimeKind.Multilogin => "Запуск Multilogin",
+            WorkerAccountRuntimeKind.Local => "Запуск обычного браузера",
+            _ => "Запуск AdsPower"
+        };
 
         void ReportStage(string stage, TimeSpan elapsed)
         {
@@ -1928,7 +1939,12 @@ public sealed class WorkerMonitoringService(
         }
         catch (Exception ex)
         {
-            var prefix = isMultilogin ? "Multilogin CDP не открыл сессию" : "AdsPower не открыл сессию";
+            var prefix = kind switch
+            {
+                WorkerAccountRuntimeKind.Multilogin => "Multilogin CDP не открыл сессию",
+                WorkerAccountRuntimeKind.Local => "Обычный браузер не открыл сессию",
+                _ => "AdsPower не открыл сессию"
+            };
             throw new InvalidOperationException(
                 $"{prefix}: последний этап «{lastStage}», прошло {startupStopwatch.Elapsed.TotalSeconds:F0} с. {ex.Message}",
                 ex);
@@ -2093,7 +2109,8 @@ public sealed class WorkerMonitoringService(
 
     private static bool HasSupportedRuntime(AvitoAccount account) =>
         WorkerAccountRuntime.Resolve(account) is WorkerAccountRuntimeKind.AdsPower
-            or WorkerAccountRuntimeKind.Multilogin;
+            or WorkerAccountRuntimeKind.Multilogin
+        || WorkerAccountRuntime.IsLocal(account);
 
     private static bool ShouldRefreshSubProfiles(AvitoAccount account)
     {
@@ -2403,7 +2420,9 @@ public sealed class WorkerMonitoringService(
         AvitoAccount account,
         AdsPowerConnectionOptions options)
     {
-        if (string.IsNullOrWhiteSpace(account.AdsPowerProfileId))
+        if (WorkerAccountRuntime.IsLocalProvider(account)
+            || WorkerAccountRuntime.IsMultiloginProvider(account)
+            || string.IsNullOrWhiteSpace(account.AdsPowerProfileId))
         {
             return true;
         }

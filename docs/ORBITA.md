@@ -63,7 +63,22 @@ docker compose -f deploy/control-panel/docker-compose.yml up --build
 
 ## Воркер (Orbita.Worker)
 
-Фоновое приложение Windows (только иконка в трее). Парсит Avito через AdsPower на VDS и отправляет отклики в Орбиту. Bitrix — на стороне портала.
+Фоновое приложение Windows (только иконка в трее). Парсит Avito через AdsPower, Multilogin X или обычный установленный Chrome/Chromium и отправляет отклики в Орбиту. Bitrix — на стороне портала.
+
+Воркер поддерживает три независимых runtime браузера:
+
+| Источник | Как появляется в панели | Как запускается |
+| --- | --- | --- |
+| AdsPower | синхронизация Local API | `browser/start` + CDP |
+| Multilogin X | синхронизация каталога профилей | launcher + CDP |
+| Обычный браузер | ручное добавление в панели | `Puppeteer.LaunchAsync` с отдельным `User Data` |
+
+Для обычного браузера:
+
+- в настройках воркера можно указать путь к `chrome.exe` (необязательно; иначе ищется в Program Files);
+- у каждого аккаунта своя папка профиля на диске воркера — стандартный профиль Chrome пользователя использовать нельзя;
+- cookies и сессия Avito живут в этой папке; воркер создаёт её при первом запуске и никогда не удаляет;
+- синхронизация AdsPower/Multilogin не затирает и не удаляет local-аккаунты.
 
 ### Установка (MSI)
 
@@ -71,7 +86,7 @@ docker compose -f deploy/control-panel/docker-compose.yml up --build
 2. На VDS запустите `Orbita.Worker.Setup-{version}.msi` из `publish/out/orbita-worker/{version}/` (ожидаемый размер ~50–80 МБ, включает .NET runtime).
 3. После установки откроется **мастер настройки** — вставьте API-ключ.
 4. Воркер уходит в **трей** и добавляется в **автозапуск Windows**.
-5. В панели на странице воркера: включите нужные AdsPower-аккаунты, задайте параллелизм.
+5. В панели на странице воркера: включите нужные аккаунты AdsPower, Multilogin или «Обычный браузер», задайте параллелизм.
 
 **Обновление:** повторный запуск MSI той же линейки **заменяет** установленную версию (как DeskLink Agent), а не ставится параллельно. Путь `%LocalAppData%\Orbita\Worker\` и API-ключ в `%LocalAppData%\OrbitaWorker\` сохраняются. Перед апдейтом MSI закрывает запущенный `Orbita.Worker.exe`.
 
@@ -101,7 +116,7 @@ publish\build.bat -Target orbita-worker
 
 - `POST /api/v1/admin/workers/create` — создать воркер (Admin)
 - `GET /api/v1/workers/config` — конфигурация (воркер)
-- `POST /api/v1/workers/accounts/sync` — синхронизация AdsPower-профилей
+- `POST /api/v1/workers/accounts/sync` — синхронизация AdsPower/Multilogin-профилей (local-аккаунты не трогает)
 - `POST /api/v1/workers/candidates` — отправка откликов
 - `POST /api/v1/workers/heartbeat` — heartbeat + CPU/RAM
 - `POST /api/v1/workers/telemetry/snapshot`

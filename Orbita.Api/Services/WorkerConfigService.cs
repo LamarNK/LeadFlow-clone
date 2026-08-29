@@ -121,7 +121,8 @@ public sealed class WorkerConfigService(
             worker.RuCaptchaApiKey,
             worker.MultiloginLauncherUrl,
             worker.MultiloginAutomationToken,
-            worker.MultiloginCloudApiUrl);
+            worker.MultiloginCloudApiUrl,
+            worker.LocalChromeExecutablePath);
     }
 
     public async Task<bool> SyncAccountsAsync(
@@ -233,7 +234,8 @@ public sealed class WorkerConfigService(
         {
             foreach (var stale in existing.Values.Where(x =>
                          !adsPowerSyncedIds.Contains(x.AccountId)
-                         && string.IsNullOrWhiteSpace(x.MultiloginProfileId)))
+                         && string.IsNullOrWhiteSpace(x.MultiloginProfileId)
+                         && !IsLocalAccount(x)))
             {
                 db.WorkerAccounts.Remove(stale);
             }
@@ -339,6 +341,11 @@ public sealed class WorkerConfigService(
             return (null, tokenError);
         }
 
+        if (!TryNormalizeLocalChromeExecutablePath(request.LocalChromeExecutablePath, out var normalizedChromePath, out var chromePathError))
+        {
+            return (null, chromePathError);
+        }
+
         string? normalizedToken = null;
         if (apiToken is not null)
         {
@@ -392,6 +399,7 @@ public sealed class WorkerConfigService(
         {
             worker.MultiloginAutomationToken = normalizedToken;
         }
+        worker.LocalChromeExecutablePath = normalizedChromePath;
         var normalizedGroupId = AdsPowerGroupsJson.NormalizeGroupId(request.AdsPowerGroupId);
         worker.AdsPowerGroupId = normalizedGroupId;
         worker.AdsPowerGroupName = normalizedGroupId is null
@@ -736,9 +744,55 @@ public sealed class WorkerConfigService(
             account.DraftsCount,
             avitoLogin,
             avitoPassword,
-            string.IsNullOrWhiteSpace(account.MultiloginProfileId) ? "AdsPower" : "Multilogin",
+            ResolveProfileProvider(account),
             NullIfWhiteSpace(account.MultiloginProfileId),
-            NullIfWhiteSpace(account.MultiloginFolderId));
+            NullIfWhiteSpace(account.MultiloginFolderId),
+            NullIfWhiteSpace(account.LocalUserDataDir));
+    }
+
+    private static bool TryNormalizeLocalChromeExecutablePath(
+        string? value,
+        out string? normalized,
+        out string? error)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            normalized = null;
+            error = null;
+            return true;
+        }
+
+        var trimmed = value.Trim();
+        if (trimmed.Length > 512)
+        {
+            normalized = null;
+            error = "Путь к Chrome/Chromium не должен превышать 512 символов.";
+            return false;
+        }
+
+        normalized = trimmed;
+        error = null;
+        return true;
+    }
+
+    internal static bool IsLocalAccount(WorkerAccountEntity account) =>
+        !string.IsNullOrWhiteSpace(account.LocalUserDataDir)
+        && string.IsNullOrWhiteSpace(account.MultiloginProfileId)
+        && string.IsNullOrWhiteSpace(account.AdsPowerProfileId);
+
+    internal static string ResolveProfileProvider(WorkerAccountEntity account)
+    {
+        if (!string.IsNullOrWhiteSpace(account.MultiloginProfileId))
+        {
+            return "Multilogin";
+        }
+
+        if (IsLocalAccount(account) || !string.IsNullOrWhiteSpace(account.LocalUserDataDir))
+        {
+            return "Local";
+        }
+
+        return "AdsPower";
     }
 
     private static string? NullIfWhiteSpace(string? value) =>
@@ -845,9 +899,11 @@ public sealed class WorkerConfigService(
             return (false, "Аккаунт не найден.");
         }
 
-        if (string.IsNullOrWhiteSpace(account.AdsPowerProfileId))
+        if (string.IsNullOrWhiteSpace(account.AdsPowerProfileId)
+            && string.IsNullOrWhiteSpace(account.MultiloginProfileId)
+            && string.IsNullOrWhiteSpace(account.LocalUserDataDir))
         {
-            return (false, "Аккаунт не привязан к AdsPower.");
+            return (false, "Аккаунт не привязан к браузерному профилю.");
         }
 
         account.SubProfilesRefreshRequestedAtUtc = DateTime.UtcNow;
@@ -868,5 +924,240 @@ public sealed class WorkerConfigService(
         }
 
         return (true, null);
+    }
+
+    public async Task<(WorkerAccountConfigDto? Account, string? Error)> CreateLocalAccountAsync(
+        Guid workerId,
+        CreateLocalWorkerAccountRequest request,
+        OfficeScope scope,
+        CancellationToken ct = default)
+    {
+        if (!TryNormalizeDisplayName(request.DisplayName, out var displayName, out var nameError))
+        {
+            return (null, nameError);
+        }
+
+        if (!TryNormalizeLocalUserDataDir(request.LocalUserDataDir, out var userDataDir, out var pathError))
+        {
+            return (null, pathError);
+        }
+
+        if (!await officeScope.CanAccessWorkerAsync(scope, workerId, ct))
+        {
+            return (null, "Воркер не найден.");
+        }
+
+        var worker = await db.Workers.FirstOrDefaultAsync(x => x.Id == workerId, ct);
+        if (worker is null)
+        {
+            return (null, "Воркер не найден.");
+        }
+
+        var duplicate = await db.WorkerAccounts.AnyAsync(
+            x => x.WorkerId == workerId && x.LocalUserDataDir == userDataDir,
+            ct);
+        if (duplicate)
+        {
+            return (null, "Аккаунт с этой папкой профиля уже добавлен.");
+        }
+
+        var now = DateTime.UtcNow;
+        var created = new WorkerAccountEntity
+        {
+            WorkerId = workerId,
+            AccountId = Guid.NewGuid(),
+            AdsPowerProfileId = string.Empty,
+            LocalUserDataDir = userDataDir,
+            DisplayName = displayName,
+            Status = string.Empty,
+            IsEnabled = false,
+            IsEnabledInPanel = false,
+            UpdatedAtUtc = now
+        };
+        db.WorkerAccounts.Add(created);
+        await db.SaveChangesAsync(ct);
+
+        panelRealtime.Notify(
+            [PanelChangeKind.Workers, PanelChangeKind.Accounts, PanelChangeKind.Dashboard],
+            worker.OfficeId,
+            workerId);
+        await workerPushNotifier.PushConfigChangedAsync(workerId, ct).ConfigureAwait(false);
+
+        return (ToAccountConfigDto(created, worker.AdsPowerApiBaseUrl, worker.AdsPowerApiKey, includeCredentials: false), null);
+    }
+
+    public async Task<(WorkerAccountConfigDto? Account, string? Error)> UpdateLocalAccountAsync(
+        Guid workerId,
+        Guid accountId,
+        UpdateLocalWorkerAccountRequest request,
+        OfficeScope scope,
+        CancellationToken ct = default)
+    {
+        if (!await officeScope.CanAccessWorkerAsync(scope, workerId, ct))
+        {
+            return (null, "Воркер не найден.");
+        }
+
+        var worker = await db.Workers.AsNoTracking().FirstOrDefaultAsync(x => x.Id == workerId, ct);
+        if (worker is null)
+        {
+            return (null, "Воркер не найден.");
+        }
+
+        var account = await db.WorkerAccounts.FirstOrDefaultAsync(
+            x => x.WorkerId == workerId && x.AccountId == accountId,
+            ct);
+        if (account is null)
+        {
+            return (null, "Аккаунт не найден.");
+        }
+
+        if (!IsLocalAccount(account))
+        {
+            return (null, "Редактирование папки профиля доступно только для обычного браузера.");
+        }
+
+        if (request.DisplayName is not null)
+        {
+            if (!TryNormalizeDisplayName(request.DisplayName, out var displayName, out var nameError))
+            {
+                return (null, nameError);
+            }
+
+            account.DisplayName = displayName;
+        }
+
+        if (request.LocalUserDataDir is not null)
+        {
+            if (!TryNormalizeLocalUserDataDir(request.LocalUserDataDir, out var userDataDir, out var pathError))
+            {
+                return (null, pathError);
+            }
+
+            var duplicate = await db.WorkerAccounts.AnyAsync(
+                x => x.WorkerId == workerId
+                    && x.AccountId != accountId
+                    && x.LocalUserDataDir == userDataDir,
+                ct);
+            if (duplicate)
+            {
+                return (null, "Аккаунт с этой папкой профиля уже добавлен.");
+            }
+
+            account.LocalUserDataDir = userDataDir;
+        }
+
+        account.UpdatedAtUtc = DateTime.UtcNow;
+        await db.SaveChangesAsync(ct);
+
+        panelRealtime.Notify(
+            [PanelChangeKind.Workers, PanelChangeKind.Accounts, PanelChangeKind.Dashboard],
+            worker.OfficeId,
+            workerId);
+        await workerPushNotifier.PushConfigChangedAsync(workerId, ct).ConfigureAwait(false);
+
+        return (ToAccountConfigDto(account, worker.AdsPowerApiBaseUrl, worker.AdsPowerApiKey, includeCredentials: false), null);
+    }
+
+    public async Task<(bool Success, string? Error)> DeleteLocalAccountAsync(
+        Guid workerId,
+        Guid accountId,
+        OfficeScope scope,
+        CancellationToken ct = default)
+    {
+        if (!await officeScope.CanAccessWorkerAsync(scope, workerId, ct))
+        {
+            return (false, "Воркер не найден.");
+        }
+
+        var worker = await db.Workers.AsNoTracking()
+            .Where(x => x.Id == workerId)
+            .Select(x => new { x.OfficeId })
+            .FirstOrDefaultAsync(ct);
+        if (worker is null)
+        {
+            return (false, "Воркер не найден.");
+        }
+
+        var account = await db.WorkerAccounts.FirstOrDefaultAsync(
+            x => x.WorkerId == workerId && x.AccountId == accountId,
+            ct);
+        if (account is null)
+        {
+            return (false, "Аккаунт не найден.");
+        }
+
+        if (!IsLocalAccount(account))
+        {
+            return (false, "Удаление доступно только для аккаунтов обычного браузера. Папка профиля на диске не удаляется.");
+        }
+
+        db.WorkerAccounts.Remove(account);
+        await db.SaveChangesAsync(ct);
+
+        panelRealtime.Notify(
+            [PanelChangeKind.Workers, PanelChangeKind.Accounts, PanelChangeKind.Dashboard],
+            worker.OfficeId,
+            workerId);
+        await workerPushNotifier.PushConfigChangedAsync(workerId, ct).ConfigureAwait(false);
+
+        return (true, null);
+    }
+
+    private static bool TryNormalizeDisplayName(string? value, out string normalized, out string? error)
+    {
+        normalized = string.Empty;
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            error = "Укажите имя аккаунта.";
+            return false;
+        }
+
+        var trimmed = value.Trim();
+        if (trimmed.Length > 200)
+        {
+            error = "Имя аккаунта не должно превышать 200 символов.";
+            return false;
+        }
+
+        normalized = trimmed;
+        error = null;
+        return true;
+    }
+
+    private static bool TryNormalizeLocalUserDataDir(string? value, out string normalized, out string? error)
+    {
+        normalized = string.Empty;
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            error = "Укажите путь к отдельной папке профиля Chrome на машине воркера.";
+            return false;
+        }
+
+        var trimmed = value.Trim();
+        if (trimmed.Length > 1024)
+        {
+            error = "Путь к папке профиля не должен превышать 1024 символов.";
+            return false;
+        }
+
+        if (LooksLikeDefaultChromeProfile(trimmed))
+        {
+            error = "Нельзя использовать стандартный профиль Chrome пользователя. Укажите отдельную папку профиля.";
+            return false;
+        }
+
+        normalized = trimmed;
+        error = null;
+        return true;
+    }
+
+    private static bool LooksLikeDefaultChromeProfile(string path)
+    {
+        var normalized = path.Replace('/', '\\').Trim().TrimEnd('\\');
+        return normalized.EndsWith(@"\Google\Chrome\User Data", StringComparison.OrdinalIgnoreCase)
+            || normalized.EndsWith(@"\Google\Chrome\User Data\Default", StringComparison.OrdinalIgnoreCase)
+            || normalized.EndsWith(@"\Chromium\User Data", StringComparison.OrdinalIgnoreCase)
+            || normalized.EndsWith(@"\Chromium\User Data\Default", StringComparison.OrdinalIgnoreCase);
     }
 }

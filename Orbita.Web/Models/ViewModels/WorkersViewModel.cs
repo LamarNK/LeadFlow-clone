@@ -159,6 +159,7 @@ public sealed class WorkerDetailsViewModel
     public string? MultiloginLauncherUrl { get; init; }
     public string? MultiloginCloudApiUrl { get; init; }
     public bool HasMultiloginAutomationToken { get; init; }
+    public string? LocalChromeExecutablePath { get; init; }
     public string? AdsPowerGroupId { get; init; }
     public string? AdsPowerGroupName { get; init; }
     public IReadOnlyList<AdsPowerGroupDto> AdsPowerGroups { get; init; } = [];
@@ -210,6 +211,7 @@ public sealed class WorkerDetailsViewModel
     public int CatalogAccountCount { get; init; }
     public int AdsPowerAccountCount { get; init; }
     public int MultiloginAccountCount { get; init; }
+    public int LocalAccountCount { get; init; }
     public string? AccountSearchQuery { get; init; }
     public string? AccountGroupId { get; init; }
     public string? AccountProvider { get; init; }
@@ -261,13 +263,25 @@ public sealed class WorkerAccountRowViewModel
     public string? AdsPowerGroupName { get; init; }
     public string? MultiloginProfileId { get; init; }
     public string? MultiloginFolderId { get; init; }
+    public string? LocalUserDataDir { get; init; }
     public bool IsMultilogin => !string.IsNullOrWhiteSpace(MultiloginProfileId);
-    public string ProfileProvider => IsMultilogin ? "Multilogin" : "AdsPower";
-    public string ProfileProviderTone => IsMultilogin ? "mlx" : "ads";
+    public bool IsLocal =>
+        !string.IsNullOrWhiteSpace(LocalUserDataDir) && string.IsNullOrWhiteSpace(MultiloginProfileId);
+    public string ProfileProvider =>
+        IsMultilogin ? "Multilogin" : IsLocal ? "Local" : "AdsPower";
+    public string ProfileProviderLabel =>
+        IsLocal ? "Обычный браузер" : ProfileProvider;
+    public string ProfileProviderTone =>
+        IsMultilogin ? "mlx" : IsLocal ? "local" : "ads";
     public string? LocationLabel
     {
         get
         {
+            if (IsLocal)
+            {
+                return ShortPath(LocalUserDataDir);
+            }
+
             if (IsMultilogin)
             {
                 if (string.IsNullOrWhiteSpace(MultiloginFolderId))
@@ -286,6 +300,13 @@ public sealed class WorkerAccountRowViewModel
     {
         get
         {
+            if (IsLocal)
+            {
+                return string.IsNullOrWhiteSpace(LocalUserDataDir)
+                    ? null
+                    : $"Папка профиля: {LocalUserDataDir}";
+            }
+
             if (IsMultilogin)
             {
                 return string.IsNullOrWhiteSpace(MultiloginFolderId)
@@ -302,9 +323,11 @@ public sealed class WorkerAccountRowViewModel
         }
     }
     public string? ProfileIdTitle =>
-        IsMultilogin
-            ? (string.IsNullOrWhiteSpace(MultiloginProfileId) ? "Multilogin" : $"Профиль Multilogin: {MultiloginProfileId}")
-            : (string.IsNullOrWhiteSpace(AdsPowerProfileId) ? "AdsPower" : $"Профиль AdsPower: {AdsPowerProfileId}");
+        IsLocal
+            ? (string.IsNullOrWhiteSpace(LocalUserDataDir) ? "Обычный браузер" : $"Профиль: {LocalUserDataDir}")
+            : IsMultilogin
+                ? (string.IsNullOrWhiteSpace(MultiloginProfileId) ? "Multilogin" : $"Профиль Multilogin: {MultiloginProfileId}")
+                : (string.IsNullOrWhiteSpace(AdsPowerProfileId) ? "AdsPower" : $"Профиль AdsPower: {AdsPowerProfileId}");
     public bool HasAvitoCredentials { get; init; }
     public string? AvitoLogin { get; init; }
     public string StatusLabel { get; init; } = string.Empty;
@@ -327,6 +350,19 @@ public sealed class WorkerAccountRowViewModel
     public string? ProcessingLabel { get; init; }
     public string ProcessingTone { get; init; } = "live";
     public string? ProcessingSubProfileId { get; init; }
+
+    private static string? ShortPath(string? path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return null;
+        }
+
+        var trimmed = path.Trim();
+        var name = trimmed.Replace('/', '\\');
+        var slash = name.LastIndexOf('\\');
+        return slash >= 0 && slash < name.Length - 1 ? name[(slash + 1)..] : trimmed;
+    }
 }
 
 public sealed class WorkerExtraInfoViewModel

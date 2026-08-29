@@ -274,6 +274,11 @@ public sealed class TelemetryService(
             target.MultiloginFolderId = account.MultiloginFolderId.Trim();
         }
 
+        if (!string.IsNullOrWhiteSpace(account.LocalUserDataDir))
+        {
+            target.LocalUserDataDir = account.LocalUserDataDir.Trim();
+        }
+
         target.ActiveAdsCount = account.ActiveAdsCount;
         target.BlockedCount = account.BlockedCount;
         target.DraftsCount = account.DraftsCount;

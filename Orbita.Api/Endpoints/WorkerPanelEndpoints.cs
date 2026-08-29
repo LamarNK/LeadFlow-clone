@@ -198,5 +198,81 @@ public static class WorkerPanelEndpoints
             return Results.Ok(new { message = request.IsEnabledInPanel ? "Субпрофиль включён." : "Субпрофиль отключён." });
         });
 
+        workerPanel.MapPost("/{id:guid}/accounts/local", async (
+            Guid id,
+            CreateLocalWorkerAccountRequest request,
+            WorkerConfigService configService,
+            OfficeScopeService officeScope,
+            ClaimsPrincipal principal,
+            CancellationToken ct) =>
+        {
+            var scope = await officeScope.ResolveAsync(principal, ct);
+            if (!scope.HasAccess)
+            {
+                return Results.Forbid();
+            }
+
+            var (account, error) = await configService.CreateLocalAccountAsync(id, request, scope, ct);
+            if (error is not null)
+            {
+                return error.Contains("не найден", StringComparison.OrdinalIgnoreCase)
+                    ? Results.NotFound(new { error })
+                    : Results.BadRequest(new { error });
+            }
+
+            return Results.Ok(account);
+        });
+
+        workerPanel.MapPatch("/{id:guid}/accounts/{accountId:guid}/local", async (
+            Guid id,
+            Guid accountId,
+            UpdateLocalWorkerAccountRequest request,
+            WorkerConfigService configService,
+            OfficeScopeService officeScope,
+            ClaimsPrincipal principal,
+            CancellationToken ct) =>
+        {
+            var scope = await officeScope.ResolveAsync(principal, ct);
+            if (!scope.HasAccess)
+            {
+                return Results.Forbid();
+            }
+
+            var (account, error) = await configService.UpdateLocalAccountAsync(id, accountId, request, scope, ct);
+            if (error is not null)
+            {
+                return error.Contains("не найден", StringComparison.OrdinalIgnoreCase)
+                    ? Results.NotFound(new { error })
+                    : Results.BadRequest(new { error });
+            }
+
+            return Results.Ok(account);
+        });
+
+        workerPanel.MapDelete("/{id:guid}/accounts/{accountId:guid}", async (
+            Guid id,
+            Guid accountId,
+            WorkerConfigService configService,
+            OfficeScopeService officeScope,
+            ClaimsPrincipal principal,
+            CancellationToken ct) =>
+        {
+            var scope = await officeScope.ResolveAsync(principal, ct);
+            if (!scope.HasAccess)
+            {
+                return Results.Forbid();
+            }
+
+            var (success, error) = await configService.DeleteLocalAccountAsync(id, accountId, scope, ct);
+            if (!success)
+            {
+                return error is not null && error.Contains("не найден", StringComparison.OrdinalIgnoreCase)
+                    ? Results.NotFound(new { error })
+                    : Results.BadRequest(new { error });
+            }
+
+            return Results.Ok(new { message = "Аккаунт удалён. Папка профиля на диске не удалялась." });
+        });
+
     }
 }

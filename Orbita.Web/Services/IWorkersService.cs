@@ -53,8 +53,21 @@ public interface IWorkersService
         string? multiloginLauncherUrl = null,
         string? multiloginCloudApiUrl = null,
         string? multiloginAutomationToken = null,
+        string? localChromeExecutablePath = null,
         CancellationToken ct = default);
     Task<(bool Success, string? Error)> UpdateWorkerAccountAsync(Guid workerId, Guid accountId, bool isEnabled, CancellationToken ct = default);
+    Task<(bool Success, string? Error)> CreateLocalAccountAsync(
+        Guid workerId,
+        string displayName,
+        string localUserDataDir,
+        CancellationToken ct = default);
+    Task<(bool Success, string? Error)> UpdateLocalAccountAsync(
+        Guid workerId,
+        Guid accountId,
+        string? displayName,
+        string? localUserDataDir,
+        CancellationToken ct = default);
+    Task<(bool Success, string? Error)> DeleteLocalAccountAsync(Guid workerId, Guid accountId, CancellationToken ct = default);
     Task<(bool Success, string? Error)> UpdateWorkerAccountCredentialsAsync(
         Guid workerId,
         Guid accountId,

@@ -218,6 +218,7 @@ public sealed class WorkersService(
         string? multiloginLauncherUrl = null,
         string? multiloginCloudApiUrl = null,
         string? multiloginAutomationToken = null,
+        string? localChromeExecutablePath = null,
         CancellationToken ct = default) =>
         api.UpdateWorkerSettingsAsync(
             workerId,
@@ -247,6 +248,7 @@ public sealed class WorkersService(
             multiloginLauncherUrl,
             multiloginCloudApiUrl,
             multiloginAutomationToken,
+            localChromeExecutablePath,
             ct);
 
     public Task<(bool Success, string? Error)> UpdateWorkerAccountAsync(
@@ -255,6 +257,27 @@ public sealed class WorkersService(
         bool isEnabled,
         CancellationToken ct = default) =>
         api.UpdateWorkerAccountAsync(workerId, accountId, isEnabled, ct);
+
+    public Task<(bool Success, string? Error)> CreateLocalAccountAsync(
+        Guid workerId,
+        string displayName,
+        string localUserDataDir,
+        CancellationToken ct = default) =>
+        api.CreateLocalAccountAsync(workerId, displayName, localUserDataDir, ct);
+
+    public Task<(bool Success, string? Error)> UpdateLocalAccountAsync(
+        Guid workerId,
+        Guid accountId,
+        string? displayName,
+        string? localUserDataDir,
+        CancellationToken ct = default) =>
+        api.UpdateLocalAccountAsync(workerId, accountId, displayName, localUserDataDir, ct);
+
+    public Task<(bool Success, string? Error)> DeleteLocalAccountAsync(
+        Guid workerId,
+        Guid accountId,
+        CancellationToken ct = default) =>
+        api.DeleteLocalAccountAsync(workerId, accountId, ct);
 
     public Task<(bool Success, string? Error)> UpdateWorkerAccountCredentialsAsync(
         Guid workerId,

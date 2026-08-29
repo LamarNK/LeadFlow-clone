@@ -82,7 +82,8 @@ public sealed class WorkerTelemetryCollector(
             EnsureUtc(local?.SubProfilesRefreshedAt ?? cfg.SubProfilesRefreshedAtUtc),
             SubProfilesRefreshRequestedAtUtc: cfg.SubProfilesRefreshRequestedAtUtc,
             MultiloginProfileId: cfg.MultiloginProfileId,
-            MultiloginFolderId: cfg.MultiloginFolderId);
+            MultiloginFolderId: cfg.MultiloginFolderId,
+            LocalUserDataDir: cfg.LocalUserDataDir);
     }
 
     private static WorkerBalanceDto MapBalance(

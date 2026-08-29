@@ -6,7 +6,8 @@ public enum WorkerAccountRuntimeKind
 {
     Legacy = 0,
     AdsPower = 1,
-    Multilogin = 2
+    Multilogin = 2,
+    Local = 3
 }
 
 public static class WorkerAccountRuntime
@@ -26,6 +27,13 @@ public static class WorkerAccountRuntime
         && !string.IsNullOrWhiteSpace(account.MultiloginLauncherUrl)
         && !string.IsNullOrWhiteSpace(account.MultiloginAutomationToken);
 
+    public static bool IsLocalProvider(AvitoAccount account) =>
+        account.ProfileProvider == AvitoProfileProvider.Local;
+
+    public static bool IsLocal(AvitoAccount account) =>
+        IsLocalProvider(account)
+        && !string.IsNullOrWhiteSpace(account.BrowserProfilePath);
+
     public static WorkerAccountRuntimeKind Resolve(AvitoAccount account)
     {
         if (IsMultiloginProvider(account))
@@ -38,11 +46,26 @@ public static class WorkerAccountRuntime
             return WorkerAccountRuntimeKind.AdsPower;
         }
 
+        if (IsLocalProvider(account))
+        {
+            return WorkerAccountRuntimeKind.Local;
+        }
+
         return WorkerAccountRuntimeKind.Legacy;
     }
 
-    public static string MonitorProfileId(AvitoAccount account) =>
-        IsMultiloginProvider(account)
-            ? account.MultiloginProfileId ?? string.Empty
-            : account.AdsPowerProfileId ?? string.Empty;
+    public static string MonitorProfileId(AvitoAccount account)
+    {
+        if (IsMultiloginProvider(account))
+        {
+            return account.MultiloginProfileId ?? string.Empty;
+        }
+
+        if (IsLocalProvider(account))
+        {
+            return account.Id.ToString("D");
+        }
+
+        return account.AdsPowerProfileId ?? string.Empty;
+    }
 }

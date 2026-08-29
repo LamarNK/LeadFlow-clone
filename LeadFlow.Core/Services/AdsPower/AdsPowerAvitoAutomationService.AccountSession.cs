@@ -95,10 +95,12 @@ public sealed partial class AdsPowerAvitoAutomationService
         IBrowser browser,
         string sessionKey,
         Action<string, TimeSpan>? reportStartupStage = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        string runtimeProvider = "Multilogin")
     {
         ArgumentNullException.ThrowIfNull(browser);
         ArgumentException.ThrowIfNullOrWhiteSpace(sessionKey);
+        var provider = string.IsNullOrWhiteSpace(runtimeProvider) ? "Multilogin" : runtimeProvider.Trim();
 
         var startupStopwatch = Stopwatch.StartNew();
         ReportStartupStage(reportStartupStage, 1, "поиск рабочей вкладки", startupStopwatch);
@@ -115,10 +117,10 @@ public sealed partial class AdsPowerAvitoAutomationService
                 page,
                 sessionKey,
                 cancellationToken,
-                runtimeProvider: "Multilogin")
+                runtimeProvider: provider)
             .ConfigureAwait(false);
         ReportStartupStage(reportStartupStage, 1, "страница Avito готова", startupStopwatch);
-        return new AccountSession(this, browser, page, sessionKey, new GeeTestV4TaskOptions(), "Multilogin");
+        return new AccountSession(this, browser, page, sessionKey, new GeeTestV4TaskOptions(), provider);
     }
 
     private async Task<IAdsPowerAccountSession> OpenAccountSessionOnceAsync(

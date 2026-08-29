@@ -2599,6 +2599,10 @@ namespace Orbita.Api.Data.Migrations
                     b.Property<DateTime?>("LastMonitoringAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("LocalUserDataDir")
+                        .HasMaxLength(1024)
+                        .HasColumnType("character varying(1024)");
+
                     b.Property<string>("MultiloginFolderId")
                         .HasMaxLength(128)
                         .HasColumnType("character varying(128)");
@@ -2830,6 +2834,10 @@ namespace Orbita.Api.Data.Migrations
                     b.Property<string>("LastUpdateVersion")
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)");
+
+                    b.Property<string>("LocalChromeExecutablePath")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
 
                     b.Property<string>("MachineName")
                         .IsRequired()

@@ -43,6 +43,7 @@ public sealed class WorkerDetailsLiveSnapshotViewModel
     public int CatalogAccountCount { get; init; }
     public int AdsPowerAccountCount { get; init; }
     public int MultiloginAccountCount { get; init; }
+    public int LocalAccountCount { get; init; }
 }
 
 public sealed class EventsLiveSnapshotViewModel

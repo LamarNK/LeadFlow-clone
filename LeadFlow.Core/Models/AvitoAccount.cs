@@ -103,6 +103,11 @@ public sealed partial class AvitoAccount : ObservableObject
     [ObservableProperty] private string? multiloginAutomationToken;
 
     /// <summary>
+    /// Путь к chrome.exe / Chromium на машине воркера (runtime из config, не SQLite).
+    /// </summary>
+    public string? LocalChromeExecutablePath { get; set; }
+
+    /// <summary>
     /// Логин Avito из панели Орбиты (не сохраняется в SQLite воркера, только runtime из config).
     /// </summary>
     public string? AvitoLogin { get; set; }

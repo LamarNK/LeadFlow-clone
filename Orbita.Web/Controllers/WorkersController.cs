@@ -73,6 +73,7 @@ public sealed class WorkersController(IWorkersService workers) : Controller
             AccountGroupOptions = model.AccountGroupOptions,
             AdsPowerAccountCount = model.AdsPowerAccountCount,
             MultiloginAccountCount = model.MultiloginAccountCount,
+            LocalAccountCount = model.LocalAccountCount,
             CatalogAccountCount = model.CatalogAccountCount
         });
     }
@@ -193,6 +194,7 @@ public sealed class WorkersController(IWorkersService workers) : Controller
         string? multiloginLauncherUrl = null,
         string? multiloginCloudApiUrl = null,
         string? multiloginAutomationToken = null,
+        string? localChromeExecutablePath = null,
         CancellationToken ct = default)
     {
         var responseHighlightAgeBucketsCsv = responseHighlightAgeBuckets is { Length: > 0 }
@@ -235,6 +237,7 @@ public sealed class WorkersController(IWorkersService workers) : Controller
             multiloginLauncherUrl,
             multiloginCloudApiUrl,
             multiloginAutomationToken,
+            localChromeExecutablePath,
             ct);
         if (!success)
         {
@@ -392,6 +395,60 @@ public sealed class WorkersController(IWorkersService workers) : Controller
         }
 
         return RedirectToAction(nameof(Details), WorkerDetailsRoute(workerId, Request.Form["sort"], Request.Form["dir"]));
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> CreateLocalAccount(
+        Guid workerId,
+        string displayName,
+        string localUserDataDir,
+        CancellationToken ct)
+    {
+        var (success, error) = await workers.CreateLocalAccountAsync(
+            workerId,
+            displayName,
+            localUserDataDir,
+            ct);
+        TempData[success ? "WorkersSuccess" : "WorkersError"] = success
+            ? "Аккаунт обычного браузера добавлен."
+            : error;
+        return RedirectToAction(nameof(Details), new { id = workerId, provider = WorkerAccountCatalogFilter.LocalProvider });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> UpdateLocalAccount(
+        Guid workerId,
+        Guid accountId,
+        string? displayName,
+        string? localUserDataDir,
+        CancellationToken ct)
+    {
+        var (success, error) = await workers.UpdateLocalAccountAsync(
+            workerId,
+            accountId,
+            displayName,
+            localUserDataDir,
+            ct);
+        TempData[success ? "WorkersSuccess" : "WorkersError"] = success
+            ? "Аккаунт обычного браузера сохранён."
+            : error;
+        return RedirectToAction(nameof(Details), new { id = workerId, provider = WorkerAccountCatalogFilter.LocalProvider });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> DeleteLocalAccount(
+        Guid workerId,
+        Guid accountId,
+        CancellationToken ct)
+    {
+        var (success, error) = await workers.DeleteLocalAccountAsync(workerId, accountId, ct);
+        TempData[success ? "WorkersSuccess" : "WorkersError"] = success
+            ? "Аккаунт удалён. Папка профиля на диске не удалялась."
+            : error;
+        return RedirectToAction(nameof(Details), new { id = workerId, provider = WorkerAccountCatalogFilter.LocalProvider });
     }
 
     [HttpPost]

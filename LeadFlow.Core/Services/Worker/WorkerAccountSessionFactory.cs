@@ -1,6 +1,8 @@
 using LeadFlow.Core.Models;
 using LeadFlow.Core.Services.AdsPower;
+using LeadFlow.Core.Services.LocalChrome;
 using LeadFlow.Core.Services.Multilogin;
+using PuppeteerSharp;
 
 namespace LeadFlow.Core.Services.Worker;
 
@@ -38,11 +40,12 @@ public sealed class WorkerOpenedAccountSession : IAsyncDisposable
 }
 
 /// <summary>
-/// Открывает AdsPower или Multilogin runtime и гарантированно закрывает провайдерский браузер.
+/// Открывает AdsPower, Multilogin или обычный Chrome и гарантированно закрывает провайдерский браузер.
 /// </summary>
 public sealed class WorkerAccountSessionFactory(
     IAdsPowerAvitoAutomationService adsPowerAvitoAutomationService,
-    IMultiloginCdpConnector? multiloginCdpConnector = null)
+    IMultiloginCdpConnector? multiloginCdpConnector = null,
+    ILocalChromeBrowserLauncher? localChromeLauncher = null)
 {
     public async Task<WorkerOpenedAccountSession> OpenAsync(
         AvitoAccount account,
@@ -59,9 +62,15 @@ public sealed class WorkerAccountSessionFactory(
                 .ConfigureAwait(false);
         }
 
+        if (kind == WorkerAccountRuntimeKind.Local)
+        {
+            return await OpenLocalChromeAsync(account, reportStartupStage, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         if (kind != WorkerAccountRuntimeKind.AdsPower)
         {
-            throw new InvalidOperationException("Worker runtime: нет browser-профиля AdsPower или Multilogin.");
+            throw new InvalidOperationException("Worker runtime: нет browser-профиля AdsPower, Multilogin или обычного браузера.");
         }
 
         var session = await adsPowerAvitoAutomationService
@@ -88,6 +97,82 @@ public sealed class WorkerAccountSessionFactory(
                     // Same swallow as TryCloseAdsPowerBrowserForAccountAsync.
                 }
             });
+    }
+
+    private async Task<WorkerOpenedAccountSession> OpenLocalChromeAsync(
+        AvitoAccount account,
+        Action<string, TimeSpan>? reportStartupStage,
+        CancellationToken cancellationToken)
+    {
+        if (!WorkerAccountRuntime.IsLocal(account))
+        {
+            throw new InvalidOperationException(
+                "Обычный браузер: не задан путь к отдельной папке профиля (User Data).");
+        }
+
+        if (localChromeLauncher is null)
+        {
+            throw new InvalidOperationException("Обычный браузер: launcher не зарегистрирован.");
+        }
+
+        IBrowser? browser = null;
+        try
+        {
+            reportStartupStage?.Invoke("запуск Chrome", TimeSpan.Zero);
+            browser = await localChromeLauncher
+                .LaunchAsync(
+                    new LocalChromeLaunchOptions
+                    {
+                        UserDataDir = account.BrowserProfilePath,
+                        ExecutablePath = account.LocalChromeExecutablePath
+                    },
+                    cancellationToken)
+                .ConfigureAwait(false);
+
+            var session = await adsPowerAvitoAutomationService
+                .OpenAccountSessionOnConnectedBrowserAsync(
+                    browser,
+                    account.Id.ToString("D"),
+                    reportStartupStage,
+                    cancellationToken,
+                    runtimeProvider: "Local")
+                .ConfigureAwait(false);
+
+            var owned = browser;
+            browser = null;
+            return new WorkerOpenedAccountSession(
+                session,
+                WorkerAccountRuntimeKind.Local,
+                () => CloseOwnedBrowserAsync(owned));
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            if (browser is not null)
+            {
+                await CloseOwnedBrowserAsync(browser).ConfigureAwait(false);
+            }
+
+            if (ex.Message.StartsWith("Обычный браузер", StringComparison.Ordinal)
+                || ex.Message.StartsWith("Не найден установленный Chrome", StringComparison.Ordinal)
+                || ex.Message.StartsWith("Файл браузера не найден", StringComparison.Ordinal)
+                || ex.Message.StartsWith("Нельзя использовать стандартный профиль", StringComparison.Ordinal)
+                || ex.Message.StartsWith("Укажите путь", StringComparison.Ordinal)
+                || ex.Message.StartsWith("Путь к", StringComparison.Ordinal))
+            {
+                throw;
+            }
+
+            throw new InvalidOperationException($"Обычный браузер: {ex.Message}", ex);
+        }
+        catch
+        {
+            if (browser is not null)
+            {
+                await CloseOwnedBrowserAsync(browser).ConfigureAwait(false);
+            }
+
+            throw;
+        }
     }
 
     private async Task<WorkerOpenedAccountSession> OpenMultiloginAsync(
@@ -163,6 +248,30 @@ public sealed class WorkerAccountSessionFactory(
             }
 
             throw;
+        }
+    }
+
+    private static async ValueTask CloseOwnedBrowserAsync(IBrowser browser)
+    {
+        try
+        {
+            if (browser.IsConnected)
+            {
+                await browser.CloseAsync().ConfigureAwait(false);
+            }
+        }
+        catch
+        {
+            // Close must never hide the original error.
+        }
+
+        try
+        {
+            browser.Dispose();
+        }
+        catch
+        {
+            // Dispose must never throw out of cleanup.
         }
     }
 }

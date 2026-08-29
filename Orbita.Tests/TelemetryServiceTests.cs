@@ -533,6 +533,47 @@ public sealed class TelemetryServiceTests
         Assert.Equal(string.Empty, account.AdsPowerProfileId);
     }
 
+    [Fact]
+    public async Task SaveSnapshotAsync_NullLocalUserDataDir_DoesNotWipeExisting()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db, disabledIdsJson: "[]");
+        var account = await db.WorkerAccounts.SingleAsync();
+        account.AdsPowerProfileId = string.Empty;
+        account.LocalUserDataDir = @"D:\Orbita\ChromeProfiles\acc-1";
+        await db.SaveChangesAsync();
+
+        var sut = new TelemetryService(db, new OfficeAdminService(db), new NoopPanelRealtimeNotifier());
+        var capturedAt = DateTime.UtcNow;
+        var saved = await sut.SaveSnapshotAsync(
+            new WorkerSnapshotRequest(
+                WorkerId,
+                capturedAt,
+                CreateNonEmptyStats(),
+                [
+                    new WorkerAccountDto(
+                        AccountId,
+                        "acc-1",
+                        "Ok",
+                        true,
+                        1,
+                        0,
+                        0,
+                        null,
+                        capturedAt,
+                        SubProfiles: null)
+                ],
+                [
+                    new WorkerBalanceDto(AccountId, "acc-1", 0m, [])
+                ]),
+            CancellationToken.None);
+
+        Assert.True(saved);
+        account = await db.WorkerAccounts.SingleAsync();
+        Assert.Equal(@"D:\Orbita\ChromeProfiles\acc-1", account.LocalUserDataDir);
+        Assert.Equal(string.Empty, account.AdsPowerProfileId);
+    }
+
     private static DashboardStatsDto CreateNonEmptyStats() =>
         new(
             NewResponses: 0,

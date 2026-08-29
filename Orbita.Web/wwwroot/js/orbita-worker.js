@@ -551,6 +551,7 @@
         var workerId = getWorkerId();
         var hasPassword = !!account.hasAvitoCredentials;
         var login = account.avitoLogin || '';
+        var isLocal = !!(account.isLocal || account.localUserDataDir);
         var items = '<a class="row-menu-item" href="' + shared.escapeHtml(accountSearchUrl(account.displayName)) + '">' +
             '<i class="fa-regular fa-eye" aria-hidden="true"></i>Просмотр</a>' +
             '<a class="row-menu-item" href="#worker-accounts">' +
@@ -565,22 +566,41 @@
             '<i class="fa-solid fa-key" aria-hidden="true"></i>Логин / пароль Avito</button>' +
             '<a class="row-menu-item" href="' + shared.escapeHtml(responsesFilterUrl(account.id)) + '">' +
             '<i class="fa-regular fa-clock" aria-hidden="true"></i>История откликов</a>';
+        if (isLocal) {
+            items += '<button type="button" class="row-menu-item" data-local-account-edit' +
+                ' data-worker-id="' + shared.escapeHtml(workerId) + '"' +
+                ' data-account-id="' + shared.escapeHtml(account.id) + '"' +
+                ' data-account-name="' + shared.escapeHtml(account.displayName || '') + '"' +
+                ' data-user-data-dir="' + shared.escapeHtml(account.localUserDataDir || '') + '"' +
+                ' data-post-url="/Workers/UpdateLocalAccount">' +
+                '<i class="fa-regular fa-folder-open" aria-hidden="true"></i>Папка профиля</button>' +
+                '<button type="button" class="row-menu-item row-menu-item--danger" data-local-account-delete' +
+                ' data-worker-id="' + shared.escapeHtml(workerId) + '"' +
+                ' data-account-id="' + shared.escapeHtml(account.id) + '"' +
+                ' data-post-url="/Workers/DeleteLocalAccount">' +
+                '<i class="fa-regular fa-trash-can" aria-hidden="true"></i>Удалить аккаунт</button>';
+        }
         return shared.rowMenuShell('', items);
     }
 
     function renderWorkerAccountIdentity(account) {
         var isMlx = !!(account.isMultilogin || account.multiloginProfileId);
+        var isLocal = !!(account.isLocal || account.localUserDataDir);
         var location = account.locationLabel || '';
         if (!location) {
-            location = isMlx
-                ? (account.multiloginFolderId || '')
-                : (account.adsPowerGroupName || account.adsPowerGroupId || '');
+            location = isLocal
+                ? (account.localUserDataDir || '')
+                : (isMlx
+                    ? (account.multiloginFolderId || '')
+                    : (account.adsPowerGroupName || account.adsPowerGroupId || ''));
         }
-        var locationTitle = account.locationTitle || (isMlx
-            ? (account.multiloginFolderId ? 'Папка Multilogin: ' + account.multiloginFolderId : '')
-            : (account.adsPowerGroupName || account.adsPowerGroupId
-                ? 'Группа AdsPower: ' + (account.adsPowerGroupName || account.adsPowerGroupId)
-                : ''));
+        var locationTitle = account.locationTitle || (isLocal
+            ? (account.localUserDataDir ? 'Папка профиля: ' + account.localUserDataDir : '')
+            : (isMlx
+                ? (account.multiloginFolderId ? 'Папка Multilogin: ' + account.multiloginFolderId : '')
+                : (account.adsPowerGroupName || account.adsPowerGroupId
+                    ? 'Группа AdsPower: ' + (account.adsPowerGroupName || account.adsPowerGroupId)
+                    : '')));
         var html = '<div class="worker-account-identity">' +
             '<a class="worker-account-name" href="' + shared.escapeHtml(accountSearchUrl(account.displayName)) + '">' +
             shared.escapeHtml(account.displayName) + '</a>' +
@@ -620,19 +640,25 @@
         var totalEl = document.querySelector('[data-worker-accounts-total]');
         var adsEl = document.querySelector('[data-worker-accounts-ads]');
         var mlxEl = document.querySelector('[data-worker-accounts-mlx]');
+        var localEl = document.querySelector('[data-worker-accounts-local]');
         if (!snapshot) return;
         var total = snapshot.catalogAccountCount;
         if (typeof total !== 'number') {
-            total = (snapshot.adsPowerAccountCount || 0) + (snapshot.multiloginAccountCount || 0);
+            total = (snapshot.adsPowerAccountCount || 0)
+                + (snapshot.multiloginAccountCount || 0)
+                + (snapshot.localAccountCount || 0);
         }
         if (totalEl && typeof total === 'number') {
             totalEl.textContent = total + ' ' + accountNoun(total);
         }
         if (adsEl && typeof snapshot.adsPowerAccountCount === 'number') {
-            adsEl.textContent = snapshot.adsPowerAccountCount + ' AdsPower';
+            adsEl.textContent = snapshot.adsPowerAccountCount;
         }
         if (mlxEl && typeof snapshot.multiloginAccountCount === 'number') {
-            mlxEl.textContent = snapshot.multiloginAccountCount + ' Multilogin';
+            mlxEl.textContent = snapshot.multiloginAccountCount;
+        }
+        if (localEl && typeof snapshot.localAccountCount === 'number') {
+            localEl.textContent = snapshot.localAccountCount;
         }
     }
 
@@ -696,6 +722,10 @@
         var current = select.value || '';
         var provider = document.querySelector('.worker-accounts-controls input[name="provider"]');
         var isMultilogin = provider && provider.value === 'multilogin';
+        var isLocal = provider && provider.value === 'local';
+        var groupWrap = select.closest('.worker-accounts-group-select') || select.closest('label');
+        if (groupWrap) groupWrap.hidden = !!isLocal;
+        if (isLocal) return;
         var html = '';
         (options || []).forEach(function (opt) {
             var value = opt.value || '';
@@ -814,6 +844,12 @@
         shared.reinitLiveContent();
         if (window.Orbita && typeof window.Orbita.initWorkerAccountEnableToggles === 'function') {
             window.Orbita.initWorkerAccountEnableToggles();
+        }
+        if (window.Orbita && typeof window.Orbita.initAvitoCredentialsButtons === 'function') {
+            window.Orbita.initAvitoCredentialsButtons();
+        }
+        if (window.Orbita && typeof window.Orbita.initLocalAccountEditButtons === 'function') {
+            window.Orbita.initLocalAccountEditButtons();
         }
         initAccountRowNavigation();
     }

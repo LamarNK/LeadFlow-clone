@@ -230,6 +230,8 @@ public sealed class WorkerEntity
     public string? MultiloginCloudApiUrl { get; set; }
     /// <summary>Automation token Multilogin X. Не отдаётся в телеметрию панели.</summary>
     public string? MultiloginAutomationToken { get; set; }
+    /// <summary>Путь к chrome.exe / Chromium на машине воркера. Пусто — автопоиск.</summary>
+    public string? LocalChromeExecutablePath { get; set; }
     public string? LastUpdateVersion { get; set; }
     public bool? LastUpdateSuccess { get; set; }
     public string? LastUpdateMessage { get; set; }
@@ -281,6 +283,8 @@ public sealed class WorkerAccountEntity
     public string? MultiloginProfileId { get; set; }
     public string? MultiloginProfileName { get; set; }
     public string? MultiloginFolderId { get; set; }
+    /// <summary>Папка User Data обычного Chrome на машине воркера.</summary>
+    public string? LocalUserDataDir { get; set; }
     public string DisplayName { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
     public bool IsEnabled { get; set; }

@@ -106,7 +106,8 @@ public sealed record WorkerAccountDto(
     string? AdsPowerGroupId = null,
     string? AdsPowerGroupName = null,
     string? MultiloginProfileId = null,
-    string? MultiloginFolderId = null);
+    string? MultiloginFolderId = null,
+    string? LocalUserDataDir = null);
 
 public sealed record WorkerBalanceDto(
     Guid AccountId,

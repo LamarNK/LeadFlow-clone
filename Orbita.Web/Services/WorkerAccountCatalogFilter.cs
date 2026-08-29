@@ -7,6 +7,7 @@ internal static class WorkerAccountCatalogFilter
 {
     public const string AdsPowerProvider = "adspower";
     public const string MultiloginProvider = "multilogin";
+    public const string LocalProvider = "local";
     public const string MultiloginFolderPrefix = "mlx:";
     public const string UngroupedValue = AdsPowerAccountGroupFilter.UngroupedValue;
 
@@ -14,7 +15,8 @@ internal static class WorkerAccountCatalogFilter
     [
         new() { Value = "", Label = "Все источники" },
         new() { Value = AdsPowerProvider, Label = "AdsPower" },
-        new() { Value = MultiloginProvider, Label = "Multilogin" }
+        new() { Value = MultiloginProvider, Label = "Multilogin" },
+        new() { Value = LocalProvider, Label = "Обычный браузер" }
     ];
 
     public static string? NormalizeProvider(string? provider)
@@ -38,13 +40,45 @@ internal static class WorkerAccountCatalogFilter
             return MultiloginProvider;
         }
 
+        if (value.Equals("local", StringComparison.OrdinalIgnoreCase)
+            || value.Equals("chrome", StringComparison.OrdinalIgnoreCase)
+            || value.Equals("localchrome", StringComparison.OrdinalIgnoreCase)
+            || value.Contains("обычн", StringComparison.OrdinalIgnoreCase))
+        {
+            return LocalProvider;
+        }
+
         return null;
     }
 
     public static bool IsMultilogin(string? multiloginProfileId) =>
         !string.IsNullOrWhiteSpace(multiloginProfileId);
 
-    public static bool MatchesProvider(string? selectedProvider, string? multiloginProfileId)
+    public static bool IsLocal(string? localUserDataDir, string? multiloginProfileId) =>
+        !string.IsNullOrWhiteSpace(localUserDataDir) && string.IsNullOrWhiteSpace(multiloginProfileId);
+
+    public static string ResolveAccountProvider(string? multiloginProfileId, string? localUserDataDir)
+    {
+        if (IsMultilogin(multiloginProfileId))
+        {
+            return MultiloginProvider;
+        }
+
+        if (IsLocal(localUserDataDir, multiloginProfileId))
+        {
+            return LocalProvider;
+        }
+
+        return AdsPowerProvider;
+    }
+
+    public static bool MatchesProvider(string? selectedProvider, string? multiloginProfileId) =>
+        MatchesProvider(selectedProvider, multiloginProfileId, localUserDataDir: null);
+
+    public static bool MatchesProvider(
+        string? selectedProvider,
+        string? multiloginProfileId,
+        string? localUserDataDir)
     {
         var selected = NormalizeProvider(selectedProvider);
         if (selected is null)
@@ -52,8 +86,7 @@ internal static class WorkerAccountCatalogFilter
             return true;
         }
 
-        var isMultilogin = IsMultilogin(multiloginProfileId);
-        return selected == MultiloginProvider ? isMultilogin : !isMultilogin;
+        return selected == ResolveAccountProvider(multiloginProfileId, localUserDataDir);
     }
 
     public static string? NormalizeLocation(string? groupId) =>
@@ -186,6 +219,7 @@ internal static class WorkerAccountCatalogFilter
         NormalizeProvider(selectedProvider) switch
         {
             MultiloginProvider => "Multilogin",
+            LocalProvider => "Обычный браузер",
             AdsPowerProvider => "AdsPower",
             _ => "Все источники"
         };
