@@ -131,7 +131,15 @@ public sealed class WorkersService(
             accounts.Select(a =>
             {
                 var balance = apiWorker.Balances.FirstOrDefault(b => b.AccountId == a.AccountId);
-                return WorkerDetailsBuilder.MapAccount(a, balance, id, activeAccounts, apiWorker.IsOnline);
+                return WorkerDetailsBuilder.MapAccount(
+                    a,
+                    balance,
+                    id,
+                    activeAccounts,
+                    apiWorker.IsOnline,
+                    apiWorker.AdsPowerEnabled,
+                    apiWorker.MultiloginEnabled,
+                    apiWorker.LocalChromeEnabled);
             }),
             tableSort).ToList();
 
@@ -219,6 +227,9 @@ public sealed class WorkersService(
         string? multiloginCloudApiUrl = null,
         string? multiloginAutomationToken = null,
         string? localChromeExecutablePath = null,
+        bool adsPowerEnabled = true,
+        bool multiloginEnabled = true,
+        bool localChromeEnabled = true,
         CancellationToken ct = default) =>
         api.UpdateWorkerSettingsAsync(
             workerId,
@@ -249,6 +260,9 @@ public sealed class WorkersService(
             multiloginCloudApiUrl,
             multiloginAutomationToken,
             localChromeExecutablePath,
+            adsPowerEnabled,
+            multiloginEnabled,
+            localChromeEnabled,
             ct);
 
     public Task<(bool Success, string? Error)> UpdateWorkerAccountAsync(

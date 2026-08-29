@@ -100,8 +100,34 @@ public sealed record WorkerConfigDto(
     /// <summary>URL cloud API Multilogin X (worker config channel).</summary>
     string? MultiloginCloudApiUrl = null,
     /// <summary>Путь к chrome.exe / Chromium на машине воркера. Пусто — автопоиск.</summary>
-    string? LocalChromeExecutablePath = null)
+    string? LocalChromeExecutablePath = null,
+    /// <summary>Запускать и синхронизировать AdsPower. По умолчанию включено.</summary>
+    bool AdsPowerEnabled = true,
+    /// <summary>Запускать и синхронизировать Multilogin. По умолчанию включено.</summary>
+    bool MultiloginEnabled = true,
+    /// <summary>Запускать аккаунты обычного Chrome. По умолчанию включено.</summary>
+    bool LocalChromeEnabled = true)
 {
+    public bool ShouldSyncAdsPowerCatalog => AdsPowerEnabled;
+
+    public bool ShouldSyncMultiloginCatalog => MultiloginEnabled;
+
+    public bool IsBrowserProviderEnabled(WorkerAccountConfigDto account)
+    {
+        ArgumentNullException.ThrowIfNull(account);
+        if (!string.IsNullOrWhiteSpace(account.MultiloginProfileId))
+        {
+            return MultiloginEnabled;
+        }
+
+        if (!string.IsNullOrWhiteSpace(account.LocalUserDataDir))
+        {
+            return LocalChromeEnabled;
+        }
+
+        return AdsPowerEnabled;
+    }
+
     public ResponseCollectionFilters ResponseFilters =>
         ResponseCollectionFilters.NormalizeLegacy(
             ResponseFilterEnabled,
@@ -272,9 +298,19 @@ public sealed record UpdateWorkerSettingsRequest(
     /// <summary>Пусто — не менять сохранённый token (поле не возвращается в HTML панели).</summary>
     string? MultiloginAutomationToken = null,
     /// <summary>Путь к chrome.exe / Chromium. Пусто — автопоиск на машине воркера.</summary>
-    string? LocalChromeExecutablePath = null);
+    string? LocalChromeExecutablePath = null,
+    bool AdsPowerEnabled = true,
+    bool MultiloginEnabled = true,
+    bool LocalChromeEnabled = true);
 
 public sealed record UpdateWorkerAccountRequest(bool IsEnabledInPanel);
+
+public static class WorkerBrowserProviderMessages
+{
+    public const string DisabledStatusLabel = "Провайдер выключен";
+    public const string DisabledHint =
+        "Провайдер выключен: аккаунты сохранены, но не синхронизируются и не запускаются";
+}
 
 public sealed record CreateLocalWorkerAccountRequest(string DisplayName, string LocalUserDataDir);
 

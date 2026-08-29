@@ -122,7 +122,10 @@ public sealed class WorkerConfigService(
             worker.MultiloginLauncherUrl,
             worker.MultiloginAutomationToken,
             worker.MultiloginCloudApiUrl,
-            worker.LocalChromeExecutablePath);
+            worker.LocalChromeExecutablePath,
+            worker.AdsPowerEnabled,
+            worker.MultiloginEnabled,
+            worker.LocalChromeEnabled);
     }
 
     public async Task<bool> SyncAccountsAsync(
@@ -400,6 +403,9 @@ public sealed class WorkerConfigService(
             worker.MultiloginAutomationToken = normalizedToken;
         }
         worker.LocalChromeExecutablePath = normalizedChromePath;
+        worker.AdsPowerEnabled = request.AdsPowerEnabled;
+        worker.MultiloginEnabled = request.MultiloginEnabled;
+        worker.LocalChromeEnabled = request.LocalChromeEnabled;
         var normalizedGroupId = AdsPowerGroupsJson.NormalizeGroupId(request.AdsPowerGroupId);
         worker.AdsPowerGroupId = normalizedGroupId;
         worker.AdsPowerGroupName = normalizedGroupId is null
@@ -604,6 +610,11 @@ public sealed class WorkerConfigService(
             return (null, "Аккаунт не найден.");
         }
 
+        if (request.IsEnabledInPanel && !IsBrowserProviderEnabled(account, worker))
+        {
+            return (null, WorkerBrowserProviderMessages.DisabledHint);
+        }
+
         account.IsEnabledInPanel = request.IsEnabledInPanel;
         if (request.IsEnabledInPanel
             && string.Equals(account.Status, "Paused", StringComparison.OrdinalIgnoreCase))
@@ -794,6 +805,14 @@ public sealed class WorkerConfigService(
 
         return "AdsPower";
     }
+
+    internal static bool IsBrowserProviderEnabled(WorkerAccountEntity account, WorkerEntity worker) =>
+        ResolveProfileProvider(account) switch
+        {
+            "Multilogin" => worker.MultiloginEnabled,
+            "Local" => worker.LocalChromeEnabled,
+            _ => worker.AdsPowerEnabled
+        };
 
     private static string? NullIfWhiteSpace(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();

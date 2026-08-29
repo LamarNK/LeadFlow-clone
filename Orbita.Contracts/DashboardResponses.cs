@@ -112,7 +112,10 @@ public sealed record WorkerDetail(
     string? MultiloginLauncherUrl = null,
     string? MultiloginCloudApiUrl = null,
     bool HasMultiloginAutomationToken = false,
-    string? LocalChromeExecutablePath = null);
+    string? LocalChromeExecutablePath = null,
+    bool AdsPowerEnabled = true,
+    bool MultiloginEnabled = true,
+    bool LocalChromeEnabled = true);
 
 /// <summary>
 /// One row of the office-wide accounts page: account payload plus the worker

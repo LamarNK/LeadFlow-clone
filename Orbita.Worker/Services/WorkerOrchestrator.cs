@@ -132,7 +132,7 @@ public sealed class WorkerOrchestrator(
                         return;
                     }
 
-                    var enabledCount = config.Accounts.Count(a => a.IsEnabled);
+                    var enabledCount = config.Accounts.Count(a => a.IsEnabled && config.IsBrowserProviderEnabled(a));
                     runtimeState.Status = "Онлайн";
 
                     var groupChanged = !string.Equals(
@@ -141,8 +141,16 @@ public sealed class WorkerOrchestrator(
                         StringComparison.Ordinal);
                     if (groupChanged || DateTime.UtcNow - _lastAccountSyncUtc >= AccountSyncInterval)
                     {
-                        await SyncAdsPowerProfilesAsync(config, stoppingToken).ConfigureAwait(false);
-                        await SyncMultiloginProfilesAsync(config, stoppingToken).ConfigureAwait(false);
+                        if (config.ShouldSyncAdsPowerCatalog)
+                        {
+                            await SyncAdsPowerProfilesAsync(config, stoppingToken).ConfigureAwait(false);
+                        }
+
+                        if (config.ShouldSyncMultiloginCatalog)
+                        {
+                            await SyncMultiloginProfilesAsync(config, stoppingToken).ConfigureAwait(false);
+                        }
+
                         _lastAccountSyncUtc = DateTime.UtcNow;
                         _lastSyncedAdsPowerGroupId = config.AdsPowerGroupId;
                     }
@@ -391,7 +399,7 @@ public sealed class WorkerOrchestrator(
         int enabledCount,
         CancellationToken stoppingToken)
     {
-        var fingerprint = BuildEnabledAccountsFingerprint(config.Accounts);
+        var fingerprint = BuildEnabledAccountsFingerprint(config);
         if (!string.Equals(fingerprint, _enabledAccountsFingerprint, StringComparison.Ordinal))
         {
             _enabledAccountsFingerprint = fingerprint;
@@ -461,13 +469,14 @@ public sealed class WorkerOrchestrator(
         runtimeState.Detail = $"{enabledCount} акк.";
     }
 
-    private static string BuildEnabledAccountsFingerprint(IReadOnlyList<WorkerAccountConfigDto> accounts)
+    private static string BuildEnabledAccountsFingerprint(WorkerConfigDto config)
     {
-        var enabledIds = accounts
-            .Where(static a => a.IsEnabled)
+        var enabledIds = config.Accounts
+            .Where(a => a.IsEnabled && config.IsBrowserProviderEnabled(a))
             .Select(static a => a.AccountId)
             .OrderBy(static x => x);
-        return string.Join(',', enabledIds);
+        return string.Join(',', enabledIds)
+            + $"|ads:{config.AdsPowerEnabled}|mlx:{config.MultiloginEnabled}|local:{config.LocalChromeEnabled}";
     }
 
     private async Task SyncAdsPowerProfilesAsync(WorkerConfigDto config, CancellationToken ct)

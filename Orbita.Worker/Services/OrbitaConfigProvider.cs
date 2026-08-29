@@ -54,7 +54,10 @@ public sealed class OrbitaConfigProvider(
             PhoneUnchangedHours = _cached.EffectivePhoneUnchangedHours,
             RuCaptchaApiKey = string.IsNullOrWhiteSpace(_cached.RuCaptchaApiKey)
                 ? null
-                : _cached.RuCaptchaApiKey.Trim()
+                : _cached.RuCaptchaApiKey.Trim(),
+            AdsPowerEnabled = _cached.AdsPowerEnabled,
+            MultiloginEnabled = _cached.MultiloginEnabled,
+            LocalChromeEnabled = _cached.LocalChromeEnabled
         };
     }
 

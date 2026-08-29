@@ -209,7 +209,7 @@ public sealed class WorkerMonitoringService(
                     configProvider.InvalidateConfigCache();
                     var config = await configProvider.GetConfigAsync(cancellationToken).ConfigureAwait(false);
                     var settings = ToAppSettings(config);
-                    var accounts = SelectRunnableAccounts(config.Accounts);
+                    var accounts = SelectRunnableAccounts(config);
 
                     if (accounts.Count == 0)
                     {
@@ -2101,10 +2101,15 @@ public sealed class WorkerMonitoringService(
     private static bool IsAdsPowerAccount(AvitoAccount account) =>
         WorkerAccountRuntime.IsAdsPower(account);
 
-    private static List<AvitoAccount> SelectRunnableAccounts(IEnumerable<AvitoAccount> accounts) =>
-        accounts
+    private static List<AvitoAccount> SelectRunnableAccounts(WorkerMonitoringConfig config) =>
+        config.Accounts
             .Where(static account => account.IsEnabled)
             .Where(HasSupportedRuntime)
+            .Where(account => WorkerAccountRuntime.IsBrowserProviderEnabled(
+                account,
+                config.AdsPowerEnabled,
+                config.MultiloginEnabled,
+                config.LocalChromeEnabled))
             .ToList();
 
     private static bool HasSupportedRuntime(AvitoAccount account) =>

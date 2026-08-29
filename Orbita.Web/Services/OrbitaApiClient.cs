@@ -931,6 +931,9 @@ public sealed class OrbitaApiClient(
         string? multiloginCloudApiUrl = null,
         string? multiloginAutomationToken = null,
         string? localChromeExecutablePath = null,
+        bool adsPowerEnabled = true,
+        bool multiloginEnabled = true,
+        bool localChromeEnabled = true,
         CancellationToken ct = default)
     {
         using var request = new HttpRequestMessage(HttpMethod.Patch, $"api/v1/workers/{workerId}/settings");
@@ -962,7 +965,10 @@ public sealed class OrbitaApiClient(
             multiloginLauncherUrl,
             multiloginCloudApiUrl,
             multiloginAutomationToken,
-            localChromeExecutablePath));
+            localChromeExecutablePath,
+            adsPowerEnabled,
+            multiloginEnabled,
+            localChromeEnabled));
         using var response = await SendAuthenticatedAsync(request, ct);
         if (response is null)
         {

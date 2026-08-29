@@ -117,6 +117,9 @@ internal static class WorkerDetailsBuilder
             MultiloginCloudApiUrl = worker.MultiloginCloudApiUrl,
             HasMultiloginAutomationToken = worker.HasMultiloginAutomationToken,
             LocalChromeExecutablePath = worker.LocalChromeExecutablePath,
+            AdsPowerEnabled = worker.AdsPowerEnabled,
+            MultiloginEnabled = worker.MultiloginEnabled,
+            LocalChromeEnabled = worker.LocalChromeEnabled,
             AdsPowerGroupId = worker.AdsPowerGroupId,
             AdsPowerGroupName = worker.AdsPowerGroupName,
             AdsPowerGroups = BuildAdsPowerGroupOptions(
@@ -201,9 +204,20 @@ internal static class WorkerDetailsBuilder
         WorkerBalanceDto? balance,
         Guid workerId,
         IReadOnlyList<WorkerActiveAccountDto>? activeAccounts = null,
-        bool workerIsOnline = false)
+        bool workerIsOnline = false,
+        bool adsPowerEnabled = true,
+        bool multiloginEnabled = true,
+        bool localChromeEnabled = true)
     {
-        var (label, tone) = AccountStatusMapper.ForWorkerDetails(account.Status, account.IsEnabledInPanel);
+        var providerEnabled = IsAccountProviderEnabled(
+            account,
+            adsPowerEnabled,
+            multiloginEnabled,
+            localChromeEnabled);
+        var (label, tone) = AccountStatusMapper.ForWorkerDetails(
+            account.Status,
+            account.IsEnabledInPanel,
+            providerEnabled);
         var responses = account.TodayResponses;
         var metricLinks = AccountMetricLinks.Hrefs(workerId, account.AccountId);
         var subProfiles = SubProfileViewModelMapper.Map(
@@ -241,6 +255,7 @@ internal static class WorkerDetailsBuilder
             MultiloginProfileId = account.MultiloginProfileId,
             MultiloginFolderId = account.MultiloginFolderId,
             LocalUserDataDir = account.LocalUserDataDir,
+            IsProviderEnabled = providerEnabled,
             HasAvitoCredentials = account.HasAvitoCredentials,
             AvitoLogin = account.AvitoLogin,
             StatusLabel = label,
@@ -258,9 +273,10 @@ internal static class WorkerDetailsBuilder
             ErrorHint = errorHint,
             SubProfiles = subProfiles,
             SubProfilesSummary = SubProfileViewModelMapper.BuildSummary(subProfiles),
-            CanRefreshSubProfiles = !string.IsNullOrWhiteSpace(account.AdsPowerProfileId)
-                || !string.IsNullOrWhiteSpace(account.MultiloginProfileId)
-                || !string.IsNullOrWhiteSpace(account.LocalUserDataDir),
+            CanRefreshSubProfiles = providerEnabled
+                && (!string.IsNullOrWhiteSpace(account.AdsPowerProfileId)
+                    || !string.IsNullOrWhiteSpace(account.MultiloginProfileId)
+                    || !string.IsNullOrWhiteSpace(account.LocalUserDataDir)),
             IsSubProfilesRefreshPending = SubProfileViewModelMapper.IsRefreshPending(
                 account.SubProfilesRefreshRequestedAtUtc,
                 account.SubProfilesRefreshedAtUtc),
@@ -269,6 +285,25 @@ internal static class WorkerDetailsBuilder
             ProcessingTone = processing.Tone,
             ProcessingSubProfileId = processing.SubProfileId
         };
+    }
+
+    private static bool IsAccountProviderEnabled(
+        WorkerAccountDto account,
+        bool adsPowerEnabled,
+        bool multiloginEnabled,
+        bool localChromeEnabled)
+    {
+        if (!string.IsNullOrWhiteSpace(account.MultiloginProfileId))
+        {
+            return multiloginEnabled;
+        }
+
+        if (!string.IsNullOrWhiteSpace(account.LocalUserDataDir))
+        {
+            return localChromeEnabled;
+        }
+
+        return adsPowerEnabled;
     }
 
     private static IReadOnlyList<AdsPowerGroupDto> BuildAdsPowerGroupOptions(

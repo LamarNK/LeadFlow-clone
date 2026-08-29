@@ -26,4 +26,10 @@ public sealed class WorkerMonitoringConfig
 
     /// <summary>Ключ RuCaptcha / 2captcha для автопрохождения GeeTest v4. Пусто — выкл.</summary>
     public string? RuCaptchaApiKey { get; init; }
+
+    public bool AdsPowerEnabled { get; init; } = true;
+
+    public bool MultiloginEnabled { get; init; } = true;
+
+    public bool LocalChromeEnabled { get; init; } = true;
 }

@@ -190,6 +190,18 @@
     color: var(--text-secondary, var(--text-primary));
 }
 
+[data-theme="dark"] .worker-provider-toggle-label {
+    color: var(--text-muted, var(--text-secondary));
+}
+
+[data-theme="dark"] .worker-provider-off-hint {
+    color: #fbbf24;
+}
+
+[data-theme="dark"] .worker-settings-section + .worker-settings-section {
+    border-top-color: var(--border, rgba(255, 255, 255, 0.08));
+}
+
 [data-theme="dark"] .worker-settings-subsection-title {
     color: var(--text-muted, var(--text-secondary));
 }
@@ -732,6 +744,14 @@
 
 .account-status--blocked .account-status-dot {
     color: #94a3b8;
+}
+
+.account-status--inactive {
+    color: #98a2b3;
+}
+
+.account-status--inactive .account-status-dot {
+    color: #98a2b3;
 }
 
 .account-error-hint {

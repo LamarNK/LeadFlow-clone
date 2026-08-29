@@ -60,6 +60,17 @@ public sealed class WorkerAccountRuntimeTests
     }
 
     [Fact]
+    public void IsBrowserProviderEnabled_FollowsProviderFlags()
+    {
+        Assert.True(WorkerAccountRuntime.IsBrowserProviderEnabled(AdsPowerAccount(), true, false, false));
+        Assert.False(WorkerAccountRuntime.IsBrowserProviderEnabled(AdsPowerAccount(), false, true, true));
+        Assert.True(WorkerAccountRuntime.IsBrowserProviderEnabled(MultiloginAccount(), false, true, false));
+        Assert.False(WorkerAccountRuntime.IsBrowserProviderEnabled(MultiloginAccount(), true, false, true));
+        Assert.True(WorkerAccountRuntime.IsBrowserProviderEnabled(LocalAccount(), false, false, true));
+        Assert.False(WorkerAccountRuntime.IsBrowserProviderEnabled(LocalAccount(), true, true, false));
+    }
+
+    [Fact]
     public void Mapper_CopiesMultiloginProfileAndFolder_FromConfig()
     {
         var dto = new WorkerAccountConfigDto(

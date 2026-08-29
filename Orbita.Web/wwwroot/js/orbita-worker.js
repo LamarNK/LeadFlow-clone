@@ -296,6 +296,36 @@
             });
         });
 
+        function syncProviderSection(section) {
+            var toggle = section.querySelector('[data-provider-toggle]');
+            if (!toggle) return;
+
+            var enabled = !!toggle.checked;
+            section.classList.toggle('is-provider-off', !enabled);
+            var hint = section.querySelector('[data-provider-off-hint]');
+            if (hint) hint.hidden = enabled;
+
+            section.querySelectorAll('input, select, textarea').forEach(function (el) {
+                if (el.hasAttribute('data-provider-toggle') || el.closest('[data-provider-keep]')) return;
+                el.disabled = !enabled;
+            });
+        }
+
+        form.querySelectorAll('[data-provider-section]').forEach(function (section) {
+            syncProviderSection(section);
+            var toggle = section.querySelector('[data-provider-toggle]');
+            if (!toggle) return;
+            toggle.addEventListener('change', function () {
+                syncProviderSection(section);
+            });
+        });
+
+        form.addEventListener('submit', function () {
+            form.querySelectorAll('[data-provider-section] input, [data-provider-section] select, [data-provider-section] textarea').forEach(function (el) {
+                el.disabled = false;
+            });
+        });
+
         form.querySelectorAll('[data-worker-highlight-profile]').forEach(function (profile) {
             var toggle = profile.querySelector('[data-worker-highlight-profile-toggle]');
             var panel = profile.querySelector('[data-worker-highlight-profile-panel]');
@@ -776,10 +806,13 @@
             var identityHtml = renderWorkerAccountIdentity(account);
             var subProfiles = shared.renderSubProfilesToolbar(workerId, account, 'subprofiles');
             var checked = account.isEnabledInPanel ? ' checked' : '';
-
+            var providerEnabled = account.isProviderEnabled !== false;
+            var disabled = providerEnabled ? '' : ' disabled';
+            var toggleTitle = providerEnabled
+                ? (account.isEnabledInPanel ? 'Отключить аккаунт в панели' : 'Включить аккаунт в панели')
+                : 'Провайдер выключен: аккаунты сохранены, но не синхронизируются и не запускаются';
+            var toggleClass = 'worker-toggle' + (providerEnabled ? '' : ' is-disabled');
             var rowClass = 'worker-account-row' + (account.isProcessingNow ? ' worker-account-row--processing' : '');
-
-            var toggleTitle = account.isEnabledInPanel ? 'Отключить аккаунт в панели' : 'Включить аккаунт в панели';
             var subProfilesJson = shared.escapeHtml(JSON.stringify(account.subProfiles || []));
             var processingSubProfileId = account.isProcessingNow && account.processingSubProfileId
                 ? shared.escapeHtml(account.processingSubProfileId)
@@ -789,8 +822,8 @@
                 ' data-subprofiles-layout="worker"' +
                 (processingSubProfileId ? ' data-processing-subprofile-id="' + processingSubProfileId + '"' : '') +
                 ' data-subprofiles-json="' + subProfilesJson + '">' +
-                '<td class="cell-toggle" data-label="Вкл"><label class="worker-toggle" title="' + shared.escapeHtml(toggleTitle) + '">' +
-                '<input type="checkbox" data-account-enable-toggle data-worker-id="' + shared.escapeHtml(workerId) + '" data-account-id="' + shared.escapeHtml(account.id) + '"' + checked + ' />' +
+                '<td class="cell-toggle" data-label="Вкл"><label class="' + toggleClass + '" title="' + shared.escapeHtml(toggleTitle) + '">' +
+                '<input type="checkbox" data-account-enable-toggle data-worker-id="' + shared.escapeHtml(workerId) + '" data-account-id="' + shared.escapeHtml(account.id) + '"' + checked + disabled + ' />' +
                 '<span class="worker-toggle-slider"></span></label></td>' +
                 '<td class="cell-name" data-label="Аккаунт">' + identityHtml + subProfiles + '</td>' +
                 '<td data-label="Статус">' + statusHtml + '</td>' +

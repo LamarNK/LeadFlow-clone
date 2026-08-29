@@ -881,6 +881,42 @@
     letter-spacing: 0.04em;
 }
 
+.worker-settings-section-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.worker-provider-toggle-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    color: #667085;
+    letter-spacing: 0;
+    text-transform: none;
+    cursor: pointer;
+    user-select: none;
+}
+
+.worker-provider-off-hint {
+    margin: 0;
+    color: #b45309;
+}
+
+.worker-settings-section.is-provider-off > .worker-settings-field:not([data-provider-keep]),
+.worker-settings-section.is-provider-off > .worker-settings-effective {
+    opacity: 0.45;
+}
+
+.worker-settings-section.is-provider-off > .worker-settings-field:not([data-provider-keep]) input,
+.worker-settings-section.is-provider-off > .worker-settings-field:not([data-provider-keep]) select {
+    cursor: not-allowed;
+}
+
 .worker-settings-subsection-title {
     display: block;
     margin: 0.85rem 0 0.45rem;
@@ -1336,6 +1372,12 @@
 
 .worker-toggle input:checked + .worker-toggle-slider::before {
     transform: translateX(20px);
+}
+
+.worker-toggle.is-disabled .worker-toggle-slider,
+.worker-toggle input:disabled + .worker-toggle-slider {
+    opacity: 0.45;
+    cursor: not-allowed;
 }
 
 .worker-account-sub {

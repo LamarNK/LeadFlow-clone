@@ -68,4 +68,17 @@ public static class WorkerAccountRuntime
 
         return account.AdsPowerProfileId ?? string.Empty;
     }
+
+    public static bool IsBrowserProviderEnabled(
+        AvitoAccount account,
+        bool adsPowerEnabled,
+        bool multiloginEnabled,
+        bool localChromeEnabled) =>
+        Resolve(account) switch
+        {
+            WorkerAccountRuntimeKind.Multilogin => multiloginEnabled,
+            WorkerAccountRuntimeKind.Local => localChromeEnabled,
+            WorkerAccountRuntimeKind.AdsPower => adsPowerEnabled,
+            _ => false
+        };
 }

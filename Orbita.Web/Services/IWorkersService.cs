@@ -54,6 +54,9 @@ public interface IWorkersService
         string? multiloginCloudApiUrl = null,
         string? multiloginAutomationToken = null,
         string? localChromeExecutablePath = null,
+        bool adsPowerEnabled = true,
+        bool multiloginEnabled = true,
+        bool localChromeEnabled = true,
         CancellationToken ct = default);
     Task<(bool Success, string? Error)> UpdateWorkerAccountAsync(Guid workerId, Guid accountId, bool isEnabled, CancellationToken ct = default);
     Task<(bool Success, string? Error)> CreateLocalAccountAsync(

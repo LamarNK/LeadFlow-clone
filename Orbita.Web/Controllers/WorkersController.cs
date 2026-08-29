@@ -208,6 +208,9 @@ public sealed class WorkersController(IWorkersService workers) : Controller
         // Unchecked checkboxes are omitted from form posts.
         autoDeliverToCrm = FormBindingHelper.ReadCheckbox(Request.Form, "autoDeliverToCrm");
         autoDeliverToBitrix = FormBindingHelper.ReadCheckbox(Request.Form, "autoDeliverToBitrix");
+        var adsPowerEnabled = FormBindingHelper.ReadCheckbox(Request.Form, "adsPowerEnabled");
+        var multiloginEnabled = FormBindingHelper.ReadCheckbox(Request.Form, "multiloginEnabled");
+        var localChromeEnabled = FormBindingHelper.ReadCheckbox(Request.Form, "localChromeEnabled");
 
         var (success, error) = await workers.UpdateWorkerSettingsAsync(
             workerId,
@@ -238,6 +241,9 @@ public sealed class WorkersController(IWorkersService workers) : Controller
             multiloginCloudApiUrl,
             multiloginAutomationToken,
             localChromeExecutablePath,
+            adsPowerEnabled,
+            multiloginEnabled,
+            localChromeEnabled,
             ct);
         if (!success)
         {

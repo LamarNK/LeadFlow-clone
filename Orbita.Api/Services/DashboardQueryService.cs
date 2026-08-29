@@ -465,7 +465,10 @@ public sealed class DashboardQueryService(
             worker.MultiloginLauncherUrl,
             worker.MultiloginCloudApiUrl,
             HasMultiloginAutomationToken: !string.IsNullOrWhiteSpace(worker.MultiloginAutomationToken),
-            worker.LocalChromeExecutablePath);
+            worker.LocalChromeExecutablePath,
+            worker.AdsPowerEnabled,
+            worker.MultiloginEnabled,
+            worker.LocalChromeEnabled);
     }
 
     public async Task<IReadOnlyList<WorkerAccountDto>> GetWorkerAccountsAsync(

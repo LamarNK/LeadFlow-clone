@@ -144,6 +144,9 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
             entity.Property(x => x.MultiloginCloudApiUrl).HasMaxLength(512);
             entity.Property(x => x.MultiloginAutomationToken).HasMaxLength(2048);
             entity.Property(x => x.LocalChromeExecutablePath).HasMaxLength(512);
+            entity.Property(x => x.AdsPowerEnabled).HasDefaultValue(true);
+            entity.Property(x => x.MultiloginEnabled).HasDefaultValue(true);
+            entity.Property(x => x.LocalChromeEnabled).HasDefaultValue(true);
             entity.Property(x => x.ResponseHighlightAgeBuckets).HasMaxLength(256);
             entity.Property(x => x.ResponseHighlightTargetsJson).HasMaxLength(16000);
             entity.Property(x => x.AutoScheduleDays).HasMaxLength(64);

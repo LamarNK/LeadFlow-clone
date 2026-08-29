@@ -2738,6 +2738,11 @@ namespace Orbita.Api.Data.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("character varying(256)");
 
+                    b.Property<bool>("AdsPowerEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
+
                     b.Property<string>("AdsPowerGroupId")
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
@@ -2839,6 +2844,11 @@ namespace Orbita.Api.Data.Migrations
                         .HasMaxLength(512)
                         .HasColumnType("character varying(512)");
 
+                    b.Property<bool>("LocalChromeEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
+
                     b.Property<string>("MachineName")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -2869,6 +2879,11 @@ namespace Orbita.Api.Data.Migrations
                     b.Property<string>("MultiloginCloudApiUrl")
                         .HasMaxLength(512)
                         .HasColumnType("character varying(512)");
+
+                    b.Property<bool>("MultiloginEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
 
                     b.Property<string>("MultiloginLauncherUrl")
                         .HasMaxLength(512)

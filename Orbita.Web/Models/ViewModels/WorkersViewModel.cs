@@ -160,6 +160,9 @@ public sealed class WorkerDetailsViewModel
     public string? MultiloginCloudApiUrl { get; init; }
     public bool HasMultiloginAutomationToken { get; init; }
     public string? LocalChromeExecutablePath { get; init; }
+    public bool AdsPowerEnabled { get; init; } = true;
+    public bool MultiloginEnabled { get; init; } = true;
+    public bool LocalChromeEnabled { get; init; } = true;
     public string? AdsPowerGroupId { get; init; }
     public string? AdsPowerGroupName { get; init; }
     public IReadOnlyList<AdsPowerGroupDto> AdsPowerGroups { get; init; } = [];
@@ -264,6 +267,7 @@ public sealed class WorkerAccountRowViewModel
     public string? MultiloginProfileId { get; init; }
     public string? MultiloginFolderId { get; init; }
     public string? LocalUserDataDir { get; init; }
+    public bool IsProviderEnabled { get; init; } = true;
     public bool IsMultilogin => !string.IsNullOrWhiteSpace(MultiloginProfileId);
     public bool IsLocal =>
         !string.IsNullOrWhiteSpace(LocalUserDataDir) && string.IsNullOrWhiteSpace(MultiloginProfileId);

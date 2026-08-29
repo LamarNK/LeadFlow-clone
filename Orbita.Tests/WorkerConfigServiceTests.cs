@@ -1128,6 +1128,144 @@ public sealed class WorkerConfigServiceTests
     }
 
     [Fact]
+    public async Task GetConfigForWorkerAsync_NewWorker_EnablesAllBrowserProviders()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db);
+
+        var config = await CreateService(db).GetConfigForWorkerAsync(WorkerId, OfficeScope.ForOffice(OfficeId));
+
+        Assert.NotNull(config);
+        Assert.True(config!.AdsPowerEnabled);
+        Assert.True(config.MultiloginEnabled);
+        Assert.True(config.LocalChromeEnabled);
+        Assert.True(config.ShouldSyncAdsPowerCatalog);
+        Assert.True(config.ShouldSyncMultiloginCatalog);
+        Assert.True(config.IsBrowserProviderEnabled(Assert.Single(config.Accounts)));
+    }
+
+    [Fact]
+    public async Task UpdateSettingsAsync_PersistsBrowserProviderToggles_AndKeepsAccounts()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db);
+
+        var (config, error) = await CreateService(db).UpdateSettingsAsync(
+            WorkerId,
+            new UpdateWorkerSettingsRequest(
+                MaxConcurrentAccounts: 1,
+                AdsPowerEnabled: false,
+                MultiloginEnabled: true,
+                LocalChromeEnabled: false),
+            OfficeScope.ForOffice(OfficeId));
+
+        Assert.Null(error);
+        Assert.NotNull(config);
+        Assert.False(config!.AdsPowerEnabled);
+        Assert.True(config.MultiloginEnabled);
+        Assert.False(config.LocalChromeEnabled);
+        Assert.False(config.ShouldSyncAdsPowerCatalog);
+        Assert.True(config.ShouldSyncMultiloginCatalog);
+
+        var worker = await db.Workers.SingleAsync();
+        Assert.False(worker.AdsPowerEnabled);
+        Assert.True(worker.MultiloginEnabled);
+        Assert.False(worker.LocalChromeEnabled);
+        Assert.Single(await db.WorkerAccounts.ToListAsync());
+        Assert.Equal("profile-1", (await db.WorkerAccounts.SingleAsync()).AdsPowerProfileId);
+    }
+
+    [Fact]
+    public async Task UpdateAccountEnabledAsync_RejectsEnable_WhenProviderDisabled()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db);
+        var worker = await db.Workers.SingleAsync();
+        worker.AdsPowerEnabled = false;
+        var account = await db.WorkerAccounts.SingleAsync();
+        account.IsEnabledInPanel = false;
+        await db.SaveChangesAsync();
+
+        var (updated, error) = await CreateService(db).UpdateAccountEnabledAsync(
+            WorkerId,
+            AccountId,
+            new UpdateWorkerAccountRequest(true),
+            OfficeScope.ForOffice(OfficeId));
+
+        Assert.Null(updated);
+        Assert.Equal(WorkerBrowserProviderMessages.DisabledHint, error);
+        Assert.False((await db.WorkerAccounts.SingleAsync()).IsEnabledInPanel);
+    }
+
+    [Fact]
+    public async Task UpdateAccountEnabledAsync_AllowsDisable_WhenProviderDisabled()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db);
+        var worker = await db.Workers.SingleAsync();
+        worker.AdsPowerEnabled = false;
+        var account = await db.WorkerAccounts.SingleAsync();
+        account.IsEnabledInPanel = true;
+        await db.SaveChangesAsync();
+
+        var (updated, error) = await CreateService(db).UpdateAccountEnabledAsync(
+            WorkerId,
+            AccountId,
+            new UpdateWorkerAccountRequest(false),
+            OfficeScope.ForOffice(OfficeId));
+
+        Assert.Null(error);
+        Assert.NotNull(updated);
+        Assert.False(updated!.IsEnabled);
+        Assert.False((await db.WorkerAccounts.SingleAsync()).IsEnabledInPanel);
+    }
+
+    [Fact]
+    public void WorkerConfigDto_ProviderFlags_DefaultTrue_AndFilterByKind()
+    {
+        var ads = new WorkerAccountConfigDto(
+            Guid.NewGuid(),
+            "ads-profile",
+            "ads",
+            true,
+            null,
+            null);
+        var mlx = new WorkerAccountConfigDto(
+            Guid.NewGuid(),
+            AdsPowerProfileId: "",
+            DisplayName: "mlx",
+            IsEnabled: true,
+            AdsPowerApiBaseUrl: null,
+            AdsPowerApiKey: null,
+            MultiloginProfileId: "mlx-profile");
+        var local = new WorkerAccountConfigDto(
+            Guid.NewGuid(),
+            AdsPowerProfileId: "",
+            DisplayName: "chrome",
+            IsEnabled: true,
+            AdsPowerApiBaseUrl: null,
+            AdsPowerApiKey: null,
+            LocalUserDataDir: @"D:\Orbita\ChromeProfiles\acc-1");
+
+        var enabled = new WorkerConfigDto(Guid.NewGuid(), 1, null, null, [ads, mlx, local]);
+        Assert.True(enabled.AdsPowerEnabled);
+        Assert.True(enabled.MultiloginEnabled);
+        Assert.True(enabled.LocalChromeEnabled);
+        Assert.True(enabled.ShouldSyncAdsPowerCatalog);
+        Assert.True(enabled.ShouldSyncMultiloginCatalog);
+        Assert.True(enabled.IsBrowserProviderEnabled(ads));
+        Assert.True(enabled.IsBrowserProviderEnabled(mlx));
+        Assert.True(enabled.IsBrowserProviderEnabled(local));
+
+        var filtered = enabled with { AdsPowerEnabled = false, LocalChromeEnabled = false };
+        Assert.False(filtered.ShouldSyncAdsPowerCatalog);
+        Assert.True(filtered.ShouldSyncMultiloginCatalog);
+        Assert.False(filtered.IsBrowserProviderEnabled(ads));
+        Assert.True(filtered.IsBrowserProviderEnabled(mlx));
+        Assert.False(filtered.IsBrowserProviderEnabled(local));
+    }
+
+    [Fact]
     public void WorkerConfigDto_OldJsonWithoutLocalFields_Deserializes()
     {
         const string json = """
@@ -1139,6 +1277,11 @@ public sealed class WorkerConfigServiceTests
 
         Assert.NotNull(dto);
         Assert.Null(dto!.LocalChromeExecutablePath);
+        Assert.True(dto.AdsPowerEnabled);
+        Assert.True(dto.MultiloginEnabled);
+        Assert.True(dto.LocalChromeEnabled);
+        Assert.True(dto.ShouldSyncAdsPowerCatalog);
+        Assert.True(dto.ShouldSyncMultiloginCatalog);
         var acc = Assert.Single(dto.Accounts);
         Assert.Null(acc.LocalUserDataDir);
         Assert.Null(acc.ProfileProvider);

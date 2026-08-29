@@ -232,6 +232,12 @@ public sealed class WorkerEntity
     public string? MultiloginAutomationToken { get; set; }
     /// <summary>Путь к chrome.exe / Chromium на машине воркера. Пусто — автопоиск.</summary>
     public string? LocalChromeExecutablePath { get; set; }
+    /// <summary>Запускать AdsPower и синхронизировать каталог. Выключение не удаляет аккаунты.</summary>
+    public bool AdsPowerEnabled { get; set; } = true;
+    /// <summary>Запускать Multilogin и синхронизировать каталог. Выключение не удаляет аккаунты.</summary>
+    public bool MultiloginEnabled { get; set; } = true;
+    /// <summary>Запускать аккаунты обычного Chrome. Выключение не удаляет аккаунты и папки.</summary>
+    public bool LocalChromeEnabled { get; set; } = true;
     public string? LastUpdateVersion { get; set; }
     public bool? LastUpdateSuccess { get; set; }
     public string? LastUpdateMessage { get; set; }

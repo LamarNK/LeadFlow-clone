@@ -95,6 +95,108 @@ public sealed class WorkerDetailsAccountsTests
         Assert.Contains("acc-1", mapped.LocationLabel, StringComparison.Ordinal);
         Assert.True(mapped.CanRefreshSubProfiles);
         Assert.Contains(@"D:\Orbita\ChromeProfiles\acc-1", mapped.ProfileIdTitle, StringComparison.Ordinal);
+        Assert.True(mapped.IsProviderEnabled);
+    }
+
+    [Fact]
+    public void MapAccount_ProviderDisabled_SetsStatusAndBlocksEnableRefresh()
+    {
+        var ads = WorkerDetailsBuilder.MapAccount(
+            new WorkerAccountDto(
+                AdsId,
+                "ads-user",
+                "Active",
+                true,
+                1,
+                0,
+                0,
+                null,
+                null,
+                true,
+                AdsPowerProfileId: "k19001"),
+            balance: null,
+            WorkerId,
+            adsPowerEnabled: false);
+
+        Assert.False(ads.IsProviderEnabled);
+        Assert.Equal(WorkerBrowserProviderMessages.DisabledStatusLabel, ads.StatusLabel);
+        Assert.Equal("inactive", ads.StatusTone);
+        Assert.False(ads.CanRefreshSubProfiles);
+
+        var mlx = WorkerDetailsBuilder.MapAccount(
+            new WorkerAccountDto(
+                MlxId,
+                "mlx-pro",
+                "Active",
+                true,
+                1,
+                0,
+                0,
+                null,
+                null,
+                true,
+                AdsPowerProfileId: "",
+                MultiloginProfileId: "mlx-profile",
+                MultiloginFolderId: "folder-pro"),
+            balance: null,
+            WorkerId,
+            adsPowerEnabled: false,
+            multiloginEnabled: false,
+            localChromeEnabled: true);
+
+        Assert.False(mlx.IsProviderEnabled);
+        Assert.Equal(WorkerBrowserProviderMessages.DisabledStatusLabel, mlx.StatusLabel);
+        Assert.False(mlx.CanRefreshSubProfiles);
+
+        var local = WorkerDetailsBuilder.MapAccount(
+            new WorkerAccountDto(
+                LocalId,
+                "chrome-acc",
+                "Active",
+                true,
+                1,
+                0,
+                0,
+                null,
+                null,
+                true,
+                AdsPowerProfileId: "",
+                LocalUserDataDir: @"D:\Orbita\ChromeProfiles\acc-1"),
+            balance: null,
+            WorkerId,
+            adsPowerEnabled: true,
+            multiloginEnabled: true,
+            localChromeEnabled: false);
+
+        Assert.False(local.IsProviderEnabled);
+        Assert.Equal(WorkerBrowserProviderMessages.DisabledStatusLabel, local.StatusLabel);
+        Assert.False(local.CanRefreshSubProfiles);
+    }
+
+    [Fact]
+    public void Build_CopiesBrowserProviderToggles()
+    {
+        var worker = new WorkerDetail(
+            WorkerId,
+            "worker-1",
+            "pc",
+            "1.0",
+            "Stopped",
+            null,
+            false,
+            false,
+            null,
+            null,
+            null,
+            [],
+            AdsPowerEnabled: false,
+            MultiloginEnabled: true,
+            LocalChromeEnabled: false);
+
+        var model = WorkerDetailsBuilder.Build(worker, [], []);
+        Assert.False(model.AdsPowerEnabled);
+        Assert.True(model.MultiloginEnabled);
+        Assert.False(model.LocalChromeEnabled);
     }
 
     [Fact]

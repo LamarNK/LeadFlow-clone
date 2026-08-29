@@ -18,8 +18,16 @@ internal static class AccountStatusMapper
         };
     }
 
-    public static (string Label, string Tone) ForWorkerDetails(string status, bool isEnabledInPanel)
+    public static (string Label, string Tone) ForWorkerDetails(
+        string status,
+        bool isEnabledInPanel,
+        bool providerEnabled = true)
     {
+        if (!providerEnabled)
+        {
+            return (WorkerBrowserProviderMessages.DisabledStatusLabel, "inactive");
+        }
+
         if (status.Equals("Blocked", StringComparison.OrdinalIgnoreCase))
             return ("Заблокирован", "inactive");
 

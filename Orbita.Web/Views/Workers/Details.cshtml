@@ -645,8 +645,25 @@
                     </div>
 
                     <div class="worker-settings-group worker-settings-group--advanced" id="worker-settings-connection" role="tabpanel" aria-labelledby="worker-settings-tab-connection" data-worker-settings-panel="connection">
-                    <div class="worker-settings-section">
-                        <span class="worker-settings-section-title">AdsPower Local API</span>
+                    <div class="worker-settings-section@(Model.AdsPowerEnabled ? "" : " is-provider-off")" data-provider-section="adspower">
+                        <div class="worker-settings-section-head">
+                            <span class="worker-settings-section-title">AdsPower Local API</span>
+                            <label class="worker-provider-toggle-label" title="Использовать AdsPower">
+                                <span>Использовать AdsPower</span>
+                                <span class="worker-toggle">
+                                    <input type="checkbox"
+                                           id="adsPowerEnabled"
+                                           name="adsPowerEnabled"
+                                           value="true"
+                                           data-provider-toggle="adspower"
+                                           @(Model.AdsPowerEnabled ? "checked" : null) />
+                                    <span class="worker-toggle-slider"></span>
+                                </span>
+                            </label>
+                        </div>
+                        <p class="worker-settings-hint worker-provider-off-hint" data-provider-off-hint @(Model.AdsPowerEnabled ? "hidden" : null)>
+                            @WorkerBrowserProviderMessages.DisabledHint
+                        </p>
                         <label class="worker-settings-field" for="adsPowerApiBaseUrl">
                             <span class="worker-settings-label">URL API</span>
                             <input type="url"
@@ -656,7 +673,8 @@
                                    value="@Model.AdsPowerApiBaseUrl"
                                    placeholder="@WorkerDetailsViewModel.DefaultAdsPowerApiBaseUrl"
                                    autocomplete="off"
-                                   spellcheck="false" />
+                                   spellcheck="false"
+                                   @(Model.AdsPowerEnabled ? null : "disabled") />
                             <span class="worker-settings-hint">
                                 Если поле пустое, воркер использует @WorkerDetailsViewModel.DefaultAdsPowerApiBaseUrl
                             </span>
@@ -670,12 +688,13 @@
                                    value="@Model.AdsPowerApiKey"
                                    placeholder="@(string.IsNullOrWhiteSpace(Model.AdsPowerApiKey) ? "Не задан — запросы без Authorization" : "Ключ задан")"
                                    autocomplete="new-password"
-                                   spellcheck="false" />
+                                   spellcheck="false"
+                                   @(Model.AdsPowerEnabled ? null : "disabled") />
                             <span class="worker-settings-hint">
                                 Ключ из настроек AdsPower на VDS. Оставьте пустым, если Local API без авторизации.
                             </span>
                         </label>
-                        <label class="worker-settings-field" for="ruCaptchaApiKey">
+                        <label class="worker-settings-field" for="ruCaptchaApiKey" data-provider-keep>
                             <span class="worker-settings-label">RuCaptcha API Key</span>
                             <input type="password"
                                    id="ruCaptchaApiKey"
@@ -693,7 +712,8 @@
                             <span class="worker-settings-label">Группа AdsPower</span>
                             <select id="adsPowerGroupId"
                                     name="adsPowerGroupId"
-                                    class="worker-settings-input">
+                                    class="worker-settings-input"
+                                    @(Model.AdsPowerEnabled ? null : "disabled")>
                                 <option value="">Все группы</option>
                                 @foreach (var group in Model.AdsPowerGroups)
                                 {
@@ -723,8 +743,25 @@
                             <code class="worker-settings-effective-value">@Model.EffectiveAdsPowerApiBaseUrl</code>
                         </div>
                     </div>
-                    <div class="worker-settings-section">
-                        <span class="worker-settings-section-title">Multilogin X</span>
+                    <div class="worker-settings-section@(Model.MultiloginEnabled ? "" : " is-provider-off")" data-provider-section="multilogin">
+                        <div class="worker-settings-section-head">
+                            <span class="worker-settings-section-title">Multilogin X</span>
+                            <label class="worker-provider-toggle-label" title="Использовать Multilogin">
+                                <span>Использовать Multilogin</span>
+                                <span class="worker-toggle">
+                                    <input type="checkbox"
+                                           id="multiloginEnabled"
+                                           name="multiloginEnabled"
+                                           value="true"
+                                           data-provider-toggle="multilogin"
+                                           @(Model.MultiloginEnabled ? "checked" : null) />
+                                    <span class="worker-toggle-slider"></span>
+                                </span>
+                            </label>
+                        </div>
+                        <p class="worker-settings-hint worker-provider-off-hint" data-provider-off-hint @(Model.MultiloginEnabled ? "hidden" : null)>
+                            @WorkerBrowserProviderMessages.DisabledHint
+                        </p>
                         <label class="worker-settings-field" for="multiloginLauncherUrl">
                             <span class="worker-settings-label">Launcher URL</span>
                             <input type="url"
@@ -734,7 +771,8 @@
                                    value="@Model.MultiloginLauncherUrl"
                                    placeholder="@WorkerDetailsViewModel.DefaultMultiloginLauncherUrl"
                                    autocomplete="off"
-                                   spellcheck="false" />
+                                   spellcheck="false"
+                                   @(Model.MultiloginEnabled ? null : "disabled") />
                             <span class="worker-settings-hint">
                                 Если поле пустое, сохраняется @WorkerDetailsViewModel.DefaultMultiloginLauncherUrl
                             </span>
@@ -748,7 +786,8 @@
                                    value="@Model.MultiloginCloudApiUrl"
                                    placeholder="@WorkerDetailsViewModel.DefaultMultiloginCloudApiUrl"
                                    autocomplete="off"
-                                   spellcheck="false" />
+                                   spellcheck="false"
+                                   @(Model.MultiloginEnabled ? null : "disabled") />
                             <span class="worker-settings-hint">
                                 Необязательно. Пустое поле не заполняется значением по умолчанию.
                             </span>
@@ -762,7 +801,8 @@
                                    value=""
                                    placeholder="@(Model.HasMultiloginAutomationToken ? "Токен задан — оставьте пустым, чтобы не менять" : "Скопируйте в Multilogin → Информация → Токен API")"
                                    autocomplete="new-password"
-                                   spellcheck="false" />
+                                   spellcheck="false"
+                                   @(Model.MultiloginEnabled ? null : "disabled") />
                             <span class="worker-settings-hint">
                                 Вставьте Token API из Multilogin → Информация. Orbita сама получит и сохранит долгоживущий automation token; ID проекта не нужен.
                             </span>
@@ -772,8 +812,25 @@
                             <code class="worker-settings-effective-value">@Model.EffectiveMultiloginLauncherUrl</code>
                         </div>
                     </div>
-                    <div class="worker-settings-section">
-                        <span class="worker-settings-section-title">Обычный браузер</span>
+                    <div class="worker-settings-section@(Model.LocalChromeEnabled ? "" : " is-provider-off")" data-provider-section="local">
+                        <div class="worker-settings-section-head">
+                            <span class="worker-settings-section-title">Обычный браузер</span>
+                            <label class="worker-provider-toggle-label" title="Использовать обычный браузер">
+                                <span>Использовать обычный браузер</span>
+                                <span class="worker-toggle">
+                                    <input type="checkbox"
+                                           id="localChromeEnabled"
+                                           name="localChromeEnabled"
+                                           value="true"
+                                           data-provider-toggle="local"
+                                           @(Model.LocalChromeEnabled ? "checked" : null) />
+                                    <span class="worker-toggle-slider"></span>
+                                </span>
+                            </label>
+                        </div>
+                        <p class="worker-settings-hint worker-provider-off-hint" data-provider-off-hint @(Model.LocalChromeEnabled ? "hidden" : null)>
+                            @WorkerBrowserProviderMessages.DisabledHint
+                        </p>
                         <label class="worker-settings-field" for="localChromeExecutablePath">
                             <span class="worker-settings-label">Путь к Chrome/Chromium (необязательно)</span>
                             <input type="text"
@@ -783,7 +840,8 @@
                                    value="@Model.LocalChromeExecutablePath"
                                    placeholder="C:\Program Files\Google\Chrome\Application\chrome.exe"
                                    autocomplete="off"
-                                   spellcheck="false" />
+                                   spellcheck="false"
+                                   @(Model.LocalChromeEnabled ? null : "disabled") />
                             <span class="worker-settings-hint">
                                 Если поле пустое, воркер сам ищет Chrome в Program Files. Укажите путь, если браузер установлен в нестандартное место.
                             </span>
@@ -1012,12 +1070,13 @@
                         data-processing-subprofile-id="@(account.IsProcessingNow ? account.ProcessingSubProfileId : null)"
                         data-subprofiles-json="@JsonSerializer.Serialize(account.SubProfiles, subProfileJsonOptions)">
                         <td class="cell-toggle" data-label="Вкл">
-                            <label class="worker-toggle" title="@(account.IsEnabledInPanel ? "Отключить аккаунт в панели" : "Включить аккаунт в панели")">
+                            <label class="worker-toggle@(account.IsProviderEnabled ? "" : " is-disabled")" title="@(account.IsProviderEnabled ? (account.IsEnabledInPanel ? "Отключить аккаунт в панели" : "Включить аккаунт в панели") : WorkerBrowserProviderMessages.DisabledHint)">
                                 <input type="checkbox"
                                        data-account-enable-toggle
                                        data-worker-id="@Model.WorkerId"
                                        data-account-id="@account.Id"
-                                       @(account.IsEnabledInPanel ? "checked" : null) />
+                                       @(account.IsEnabledInPanel ? "checked" : null)
+                                       @(account.IsProviderEnabled ? null : "disabled") />
                                 <span class="worker-toggle-slider"></span>
                             </label>
                         </td>
