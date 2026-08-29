@@ -840,6 +840,32 @@ public sealed class CrmWorkspaceServiceTests
     }
 
     [Fact]
+    public async Task ImportLeadFile_SameSingleWordWithDifferentPhones_CreatesSeparateCards()
+    {
+        await using var harness = await Harness.CreateAsync();
+        SeedOffice(harness.Db, crmEnabled: true);
+        var manager = await harness.CreateManagerAsync("file-import-single-word@test.local", capacity: 300, onShift: true);
+        var request = new CrmLeadFileImportRequest(
+            "dirty.txt",
+            [
+                new CrmLeadFileImportEntry("Охранник", "+7 989 493-42-12", "Разнорабочий", 7),
+                new CrmLeadFileImportEntry("Охранник", "+7 989 492-81-97", "Охранник", 13)
+            ]);
+
+        var (result, error) = await harness.Sut.ImportLeadFileAsync(OfficeId, request, manager.Id);
+
+        Assert.Null(error);
+        Assert.NotNull(result);
+        Assert.Equal(2, result.RecognizedCount);
+        Assert.Equal(2, result.CreatedCount);
+        Assert.Equal(2, await harness.Db.CrmCandidateCards.CountAsync());
+        Assert.Equal(2, await harness.Db.CandidateContactPhones.CountAsync());
+        Assert.All(
+            await harness.Db.CandidateContactPhones.ToListAsync(),
+            phone => Assert.True(phone.IsPrimary));
+    }
+
+    [Fact]
     public async Task ImportLeadFile_ExistingAdditionalPhone_DoesNotCreateDuplicateCard()
     {
         await using var harness = await Harness.CreateAsync();

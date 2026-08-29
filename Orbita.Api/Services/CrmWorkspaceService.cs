@@ -2139,7 +2139,7 @@ public sealed class CrmWorkspaceService(
         // while every unique phone remains available in the card contacts.
         var entryGroups = normalizedEntries
             .GroupBy(
-                x => NormalizeLeadImportFullNameKey(x.Entry.FullName),
+                x => BuildLeadImportGroupKey(x.Entry.FullName, x.PhoneNormalized),
                 StringComparer.Ordinal)
             .Select(x => x.ToList())
             .ToList();
@@ -2333,6 +2333,19 @@ public sealed class CrmWorkspaceService(
             .Replace('ё', 'е')
             .Replace('Ё', 'Е')
             .ToUpperInvariant();
+
+    private static string BuildLeadImportGroupKey(string fullName, string phoneNormalized)
+    {
+        var collapsedName = CollapseLeadImportWhitespace(fullName);
+        var words = collapsedName.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+
+        // A single word is not a reliable full-name identity: it may be a first name,
+        // a profession or another annotation. Keep such rows independent so malformed
+        // input can never merge several people and their phones into one card.
+        return words.Length >= 2
+            ? $"name:{NormalizeLeadImportFullNameKey(collapsedName)}"
+            : $"phone:{phoneNormalized}";
+    }
 
     public async Task<(bool Ok, string? Error)> UpdateNoteAsync(
         Guid cardId,

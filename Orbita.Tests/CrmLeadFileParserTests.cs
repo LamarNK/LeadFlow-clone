@@ -122,6 +122,38 @@ public sealed class CrmLeadFileParserTests
             });
     }
 
+    [Fact]
+    public void Parse_ProfessionBeforeImperfectName_UsesLineClosestToPhone()
+    {
+        const string content = """
+            Разнорабочий
+            Дудников Денис Андреевич
+            8 914 470-60-55
+            Охранник
+            КК
+            +7 989 493-42-12
+            Охранник
+            wertul
+            +7 989 492-81-97
+            Охранник
+            Семедов. Мурад. Селимбекович
+            8 912 096-07-08
+            Охранник
+            василий
+            +7 958 611-98-35
+            """;
+
+        var result = CrmLeadFileParser.Parse(content);
+
+        Assert.Equal(5, result.Entries.Count);
+        Assert.Equal("КК", result.Entries[1].FullName);
+        Assert.Equal("Охранник", result.Entries[1].Vacancy);
+        Assert.Equal("wertul", result.Entries[2].FullName);
+        Assert.Equal("Семедов Мурад Селимбекович", result.Entries[3].FullName);
+        Assert.Equal("василий", result.Entries[4].FullName);
+        Assert.DoesNotContain(result.Entries, entry => entry.FullName == "Охранник");
+    }
+
     [Theory]
     [InlineData("+7 999 111-22-33", "79991112233")]
     [InlineData("8 (999) 111 22 33", "79991112233")]

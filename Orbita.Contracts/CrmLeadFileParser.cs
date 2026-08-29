@@ -33,8 +33,8 @@ public static partial class CrmLeadFileParser
                 continue;
             }
 
-            var candidateIndex = FindCandidateIndex(tokens, blockStart, index);
-            if (candidateIndex is null)
+            var candidate = FindCandidate(tokens, blockStart, index);
+            if (candidate is null)
             {
                 blockStart = index + 1;
                 continue;
@@ -43,9 +43,9 @@ public static partial class CrmLeadFileParser
             // Everything before the selected candidate belongs to the section.
             // Taking the last such line preserves the most specific heading when
             // a file contains several headings before its first candidate.
-            if (candidateIndex.Value > blockStart)
+            if (candidate.Index > blockStart)
             {
-                vacancy = Truncate(tokens[candidateIndex.Value - 1].Value, 512);
+                vacancy = Truncate(tokens[candidate.Index - 1].Value, 512);
             }
 
             if (!seenPhones.Add(normalizedPhone!))
@@ -56,10 +56,10 @@ public static partial class CrmLeadFileParser
             }
 
             entries.Add(new CrmLeadFileImportEntry(
-                Truncate(tokens[candidateIndex.Value].Value, 256),
+                Truncate(candidate.Name, 256),
                 tokens[index].Value,
                 vacancy,
-                tokens[candidateIndex.Value].Line));
+                tokens[candidate.Index].Line));
             blockStart = index + 1;
 
             if (entries.Count > MaximumEntries)
@@ -101,53 +101,53 @@ public static partial class CrmLeadFileParser
     private static string Truncate(string value, int maximumLength) =>
         value.Length <= maximumLength ? value : value[..maximumLength];
 
-    private static int? FindCandidateIndex(Token[] tokens, int start, int phoneIndex)
+    private static CandidateMatch? FindCandidate(Token[] tokens, int start, int phoneIndex)
     {
-        int? result = null;
-        var bestScore = int.MinValue;
-
-        for (var index = start; index < phoneIndex; index++)
+        // Lead files are structured as heading -> candidate -> optional annotations -> phone.
+        // Walking backwards prevents a better-capitalized heading/profession from winning over
+        // a short, lowercase or otherwise imperfect candidate name closer to the phone.
+        for (var index = phoneIndex - 1; index >= start; index--)
         {
-            var score = ScoreCandidateName(tokens[index].Value);
-            // On an equal score prefer the line closest to the phone. This keeps
-            // one-word names working while an uppercase section remains a heading.
-            if (score >= bestScore)
+            if (TryNormalizeCandidateName(tokens[index].Value, out var normalizedName))
             {
-                bestScore = score;
-                result = index;
+                return new CandidateMatch(index, normalizedName!);
             }
         }
 
-        return bestScore > int.MinValue ? result : null;
+        return null;
     }
 
-    private static int ScoreCandidateName(string value)
+    private static bool TryNormalizeCandidateName(string value, out string? normalized)
     {
+        normalized = null;
         if (CandidateAnnotationWords().IsMatch(value))
         {
-            return int.MinValue;
+            return false;
         }
 
-        var words = value.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var rawWords = value.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var words = rawWords
+            .Select(word => word.TrimEnd('.', ',', ';', ':'))
+            .ToArray();
         if (words.Length == 0 || words.Length > 6
             || words.Any(word => !word.Any(char.IsLetter)
                                  || word.Any(character => !char.IsLetter(character)
                                                           && character is not '-' and not '\'')))
         {
-            return int.MinValue;
+            return false;
         }
 
-        var score = Math.Min(words.Length, 4);
-        score += words.Count(word => char.IsUpper(word[0]));
-
-        // Section headings are commonly written in uppercase. They remain valid
-        // fallbacks, but lose to a following name even when that name has one word.
-        if (value.Any(char.IsLetter) && value.Where(char.IsLetter).All(char.IsUpper))
+        // Dots and similar separators are common in manually prepared full names
+        // ("Иванов. Иван. Иванович"). Do not let them invalidate the name, but avoid
+        // treating a single punctuated abbreviation such as "г." as a candidate.
+        if (rawWords.Any(word => !string.Equals(word, word.TrimEnd('.', ',', ';', ':'), StringComparison.Ordinal))
+            && words.Length < 2)
         {
-            score -= 2;
+            return false;
         }
 
-        return score;
+        normalized = string.Join(' ', words);
+        return true;
     }
 
     [GeneratedRegex(@"^\s*\+?[\d\s()\-]+\s*$", RegexOptions.CultureInvariant)]
@@ -155,6 +155,8 @@ public static partial class CrmLeadFileParser
 
     [GeneratedRegex(@"\b(?:номер|телефон|контакт|пометк\w*|примечани\w*|комментари\w*|временн\w*|дополнительн\w*|основн\w*)\b", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
     private static partial Regex CandidateAnnotationWords();
+
+    private sealed record CandidateMatch(int Index, string Name);
 
     private sealed record Token(string Value, int Line);
 }
