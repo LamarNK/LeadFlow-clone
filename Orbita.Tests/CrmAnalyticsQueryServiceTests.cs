@@ -28,6 +28,7 @@ public sealed class CrmAnalyticsQueryServiceTests
 
         var fromUtc = new DateTime(2026, 8, 1, 0, 0, 0, DateTimeKind.Utc);
         var toUtc = new DateTime(2026, 8, 5, 0, 0, 0, DateTimeKind.Utc);
+        harness.AddShift(ManagerOneId, OfficeOneId, fromUtc.AddHours(-1), fromUtc.AddHours(8));
         var active = NewCard(OfficeOneId, ManagerOneId, "Звонок", fromUtc, activeLoad: true);
         var successful = NewCard(
             OfficeOneId,
@@ -294,6 +295,7 @@ public sealed class CrmAnalyticsQueryServiceTests
 
         var fromUtc = new DateTime(2026, 8, 1, 0, 0, 0, DateTimeKind.Utc);
         var toUtc = fromUtc.AddDays(1);
+        harness.AddShift(ManagerOneId, OfficeOneId, fromUtc.AddHours(-1), toUtc);
         var reassignedCard = NewCard(
             OfficeOneId,
             ManagerTwoId,
@@ -349,6 +351,8 @@ public sealed class CrmAnalyticsQueryServiceTests
 
         var fromUtc = new DateTime(2026, 8, 1, 0, 0, 0, DateTimeKind.Utc);
         var toUtc = fromUtc.AddDays(1);
+        harness.AddShift(ManagerOneId, OfficeOneId, fromUtc.AddHours(-1), toUtc);
+        harness.AddShift(ManagerTwoId, OfficeOneId, fromUtc.AddHours(-1), toUtc);
         var card = NewCard(
             OfficeOneId,
             ManagerTwoId,
@@ -404,6 +408,82 @@ public sealed class CrmAnalyticsQueryServiceTests
     }
 
     [Fact]
+    public async Task GetAsync_SelectedManagerCountsOnlyReceiptAndActionsInsideRecordedShift()
+    {
+        await using var harness = await Harness.CreateAsync(Now);
+        harness.AddOffice(
+            OfficeOneId,
+            "Основной",
+            [CrmStages.Lead, CrmStages.Negotiations, CrmStages.Questionnaire]);
+        harness.AddManager(ManagerOneId, OfficeOneId, "Анна", capacity: 10, onShift: false);
+        harness.AddManager(ManagerTwoId, OfficeOneId, "Борис", capacity: 10, onShift: false);
+
+        var fromUtc = new DateTime(2026, 8, 17, 0, 0, 0, DateTimeKind.Utc);
+        var toUtc = fromUtc.AddDays(1);
+        harness.AddShift(ManagerTwoId, OfficeOneId, fromUtc, toUtc);
+
+        var card = NewCard(
+            OfficeOneId,
+            ManagerTwoId,
+            CrmStages.Questionnaire,
+            fromUtc.AddMinutes(30),
+            isClosed: true,
+            closeReason: CrmCloseReasons.NotRelevant,
+            activeLoad: false,
+            initialManagerUserId: ManagerOneId,
+            initialAssignedAtUtc: fromUtc.AddMinutes(30));
+        harness.Db.CrmCandidateCards.Add(card);
+        harness.Db.CrmCandidateHistory.AddRange(
+            NewStageHistory(
+                card.Id,
+                $"{CrmStages.Lead} → {CrmStages.Negotiations}",
+                fromUtc.AddHours(1),
+                ManagerOneId,
+                "Анна"),
+            NewCloseHistory(
+                card.Id,
+                CrmCloseReasons.NotRelevant,
+                fromUtc.AddHours(2),
+                ManagerOneId,
+                "Анна"),
+            NewStageHistory(
+                card.Id,
+                $"{CrmStages.Negotiations} → {CrmStages.Questionnaire}",
+                fromUtc.AddHours(3),
+                ManagerTwoId,
+                "Борис"));
+        await harness.Db.SaveChangesAsync();
+
+        var absentResult = await harness.Sut.GetAsync(
+            OfficeScope.GlobalAdmin,
+            "admin",
+            isAdmin: true,
+            new CrmAnalyticsQuery(fromUtc, toUtc, OfficeOneId, ManagerOneId));
+        var absent = Assert.IsType<CrmAnalyticsDto>(absentResult.Data);
+        var absentDecomposition = Assert.IsType<CrmAnalyticsDecompositionDto>(absent.Decomposition);
+        Assert.Equal(0, absent.Cards.Received);
+        Assert.Equal(0, absentDecomposition.Leads);
+        Assert.Equal(0, absentDecomposition.Contacts);
+        Assert.Equal(0, absentDecomposition.Questionnaires);
+        var absentManager = Assert.Single(absent.Managers);
+        Assert.Equal(0, absentManager.CardsInPeriod);
+        Assert.Equal(0, absentManager.StageChangedCardsInPeriod);
+        Assert.Equal(0, absentManager.ClosedCardsInPeriod);
+
+        var actualActorResult = await harness.Sut.GetAsync(
+            OfficeScope.GlobalAdmin,
+            "admin",
+            isAdmin: true,
+            new CrmAnalyticsQuery(fromUtc, toUtc, OfficeOneId, ManagerTwoId));
+        var actualActor = Assert.IsType<CrmAnalyticsDto>(actualActorResult.Data);
+        var actualActorDecomposition = Assert.IsType<CrmAnalyticsDecompositionDto>(actualActor.Decomposition);
+        Assert.Equal(0, actualActor.Cards.Received);
+        Assert.Equal(1, actualActorDecomposition.Contacts);
+        Assert.Equal(1, actualActorDecomposition.Questionnaires);
+        Assert.Equal(0, actualActorDecomposition.Tickets);
+    }
+
+    [Fact]
     public async Task GetAsync_KeepsClosedCardsFromRemovedStagesInArchiveBucket()
     {
         await using var harness = await Harness.CreateAsync(Now);
@@ -451,6 +531,7 @@ public sealed class CrmAnalyticsQueryServiceTests
         const string unknownUserId = "legacy-user-without-profile";
         var fromUtc = Now.UtcDateTime.AddDays(-7);
         var toUtc = Now.UtcDateTime.AddDays(1);
+        harness.AddShift(FormerManagerId, OfficeOneId, fromUtc, fromUtc.AddHours(8));
         harness.Db.CrmCandidateCards.Add(
             NewCard(OfficeOneId, FormerManagerId, "Новый", fromUtc.AddHours(1), activeLoad: true));
         harness.Db.CrmTasks.Add(
@@ -503,6 +584,8 @@ public sealed class CrmAnalyticsQueryServiceTests
         harness.AddManager(ManagerTwoId, OfficeOneId, "Борис", capacity: 10, onShift: true);
         var fromUtc = Now.UtcDateTime.AddDays(-7);
         var toUtc = Now.UtcDateTime.AddDays(1);
+        harness.AddShift(ManagerOneId, OfficeOneId, fromUtc, fromUtc.AddHours(8));
+        harness.AddShift(ManagerTwoId, OfficeOneId, fromUtc, fromUtc.AddHours(8));
         harness.Db.CrmCandidateCards.AddRange(
             NewCard(OfficeOneId, ManagerOneId, "Новый", fromUtc.AddHours(1)),
             NewCard(OfficeOneId, ManagerTwoId, "Новый", fromUtc.AddHours(2)));
@@ -737,6 +820,24 @@ public sealed class CrmAnalyticsQueryServiceTests
         public void AddFormerManager(string userId, Guid officeId, string fullName, int capacity)
         {
             AddProfiledUser(userId, officeId, fullName, capacity, onShift: false);
+        }
+
+        public void AddShift(
+            string userId,
+            Guid officeId,
+            DateTime startedAtUtc,
+            DateTime endedAtUtc)
+        {
+            Db.CrmManagerShifts.Add(new CrmManagerShiftEntity
+            {
+                Id = Guid.NewGuid(),
+                OfficeId = officeId,
+                ManagerUserId = userId,
+                StartedAtUtc = DateTime.SpecifyKind(startedAtUtc, DateTimeKind.Utc),
+                EndedAtUtc = DateTime.SpecifyKind(endedAtUtc, DateTimeKind.Utc),
+                EndReason = CrmShiftEndReasons.Manual,
+                EndedByUserId = userId
+            });
         }
 
         private void AddProfiledUser(

@@ -92,7 +92,7 @@
 
         <details class="crm-analytics-methodology">
             <summary><i class="fa-solid fa-circle-info" aria-hidden="true"></i>Как считаются показатели</summary>
-            <p>Общие KPI показывают карточки, созданные в выбранный период, и их состояние на сейчас. В таблице менеджеров и при фильтре по менеджеру карточка засчитывается первому получившему её сотруднику в дату первой выдачи, даже если ответственного позже изменили. «Работа с этапами» и «Закрыто сотрудником» считаются по фактическому автору действия; автоматические и служебные переходы не учитываются. Текущие карточки, нагрузка и задачи — снимок на сейчас. «Дошли» определяется по максимальному достигнутому этапу: карточка учитывается на нём и на всех предыдущих этапах воронки. В декомпозиции дозвоном считается достижение «Переговоров», анкеты, билета или успеха, а также закрытие по причинам «Женщина», «Контракт», «Выбрали других», «Возраст», «Здоровье», «Уже был на СВО», «Неактуально» и «Офицер». НДЗ, «Исчез, слился» и «Робот» сами по себе дозвоном не считаются.</p>
+            <p>Общие KPI показывают карточки, созданные в выбранный период, и их состояние на сейчас. Личное «Получено» считается по первой выдаче карточки конкретному менеджеру только внутри его записанной смены. Личные дозвоны, анкеты, билеты, контракты, переходы и закрытия засчитываются фактическому автору действия, если действие совершено в выбранном периоде и во время его смены; одна карточка — не более одного раза на каждом шаге. Автоматические и служебные переходы не учитываются. Текущие карточки, нагрузка и задачи — снимок на сейчас. Дозвоном считается достижение «Переговоров», анкеты, билета или успеха, а также закрытие по причинам «Женщина», «Контракт», «Выбрали других», «Возраст», «Здоровье», «Уже был на СВО», «Неактуально» и «Офицер». НДЗ, «Исчез, слился» и «Робот» сами по себе дозвоном не считаются.</p>
         </details>
 
         <section class="crm-analytics-kpis" aria-label="Ключевые показатели CRM">
@@ -114,8 +114,8 @@
         {
             var decompositionSteps = new[]
             {
-                new { Label = "Лиды", Count = decomposition.Leads, Caption = "Получено за период", Icon = "fa-solid fa-user-plus", Tone = "leads", Conversion = (double?)null },
-                new { Label = "Дозвоны", Count = decomposition.Contacts, Caption = "Контакт подтверждён", Icon = "fa-solid fa-phone-volume", Tone = "contacts", Conversion = (double?)decomposition.ContactConversionPercent },
+                new { Label = "Лиды", Count = decomposition.Leads, Caption = managerCohortSelected ? "Выдано во время смены" : "Получено за период", Icon = "fa-solid fa-user-plus", Tone = "leads", Conversion = (double?)null },
+                new { Label = "Дозвоны", Count = decomposition.Contacts, Caption = managerCohortSelected ? "Подтвердил сотрудник" : "Контакт подтверждён", Icon = "fa-solid fa-phone-volume", Tone = "contacts", Conversion = (double?)decomposition.ContactConversionPercent },
                 new { Label = "Анкеты", Count = decomposition.Questionnaires, Caption = "Дошли до анкеты", Icon = "fa-solid fa-clipboard-list", Tone = "questionnaires", Conversion = (double?)decomposition.QuestionnaireConversionPercent },
                 new { Label = "Билеты", Count = decomposition.Tickets, Caption = "Дошли до билета", Icon = "fa-solid fa-ticket", Tone = "tickets", Conversion = (double?)decomposition.TicketConversionPercent },
                 new { Label = "Контракты", Count = decomposition.Contracts, Caption = "Успешно закрыто", Icon = "fa-solid fa-file-signature", Tone = "contracts", Conversion = (double?)decomposition.ContractConversionPercent }
@@ -126,7 +126,9 @@
             <header class="crm-analytics-panel__header">
                 <div>
                     <h2 id="crm-decomposition-title">Декомпозиция</h2>
-                    <p>Путь лидов, полученных в выбранный период. Результаты и достигнутые этапы показаны на текущий момент.</p>
+                    <p>@(managerCohortSelected
+                        ? "Лиды — выдача во время смены; остальные шаги — фактические действия сотрудника в выбранном периоде."
+                        : "Путь лидов, полученных в выбранный период. Результаты и достигнутые этапы показаны на текущий момент.")</p>
                 </div>
                 <span>Конверсия от предыдущего шага</span>
             </header>
@@ -299,7 +301,7 @@
             <header class="crm-analytics-panel__header">
                 <div>
                     <h2>Нагрузка менеджеров</h2>
-                    <p>Полученные лиды закреплены за первым менеджером; переходы и закрытия — за фактическим автором действия; нагрузка и задачи показаны на сейчас.</p>
+                    <p>Полученные лиды закреплены за первым менеджером и считаются только внутри его смены; переходы и закрытия — за фактическим автором во время его смены; нагрузка и задачи показаны на сейчас.</p>
                 </div>
                 <span>@analytics.Managers.Count менеджеров</span>
             </header>
