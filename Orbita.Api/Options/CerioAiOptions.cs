@@ -8,6 +8,7 @@ public sealed class CerioAiOptions
     public string BaseUrl { get; set; } = "https://api.cerio.ru/";
     public string Token { get; set; } = string.Empty;
     public int BatchSize { get; set; } = 3;
+    public int MaxParallelism { get; set; } = 3;
     public int MaxAttempts { get; set; } = 8;
     public int PollIntervalSeconds { get; set; } = 30;
     public int RequestTimeoutSeconds { get; set; } = 300;

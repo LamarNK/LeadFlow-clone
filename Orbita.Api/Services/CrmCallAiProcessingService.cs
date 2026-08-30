@@ -21,11 +21,22 @@ public sealed class CrmCallAiProcessingService(
 
     public async Task<int> ProcessDueAsync(CancellationToken ct = default)
     {
-        if (!_options.Enabled || string.IsNullOrWhiteSpace(_options.Token)) return 0;
+        var callIds = await ClaimDueAsync(Math.Clamp(_options.BatchSize, 1, 20), ct);
+        var completed = 0;
+        foreach (var callId in callIds)
+        {
+            if (await ProcessClaimedAsync(callId, ct)) completed++;
+        }
+        return completed;
+    }
+
+    internal async Task<IReadOnlyList<Guid>> ClaimDueAsync(int requestedCount, CancellationToken ct = default)
+    {
+        if (!_options.Enabled || string.IsNullOrWhiteSpace(_options.Token)) return [];
 
         var now = timeProvider.GetUtcNow().UtcDateTime;
         var processFromUtc = _options.ProcessRecordingsFromUtc?.ToUniversalTime();
-        var batchSize = Math.Clamp(_options.BatchSize, 1, 20);
+        var batchSize = Math.Clamp(requestedCount, 1, 20);
         var maxAttempts = Math.Clamp(_options.MaxAttempts, 1, 25);
         var zeroDurationInsights = await db.CrmCallAiInsights
             .Include(x => x.Call)
@@ -96,15 +107,21 @@ public sealed class CrmCallAiProcessingService(
                 db.CrmCallAiInsights.Add(insight);
                 existing.Add(insight);
             }
-            if (missingCalls.Count > 0) await db.SaveChangesAsync(ct);
         }
 
-        var completed = 0;
         foreach (var insight in existing)
         {
-            if (await ProcessOneAsync(insight, maxAttempts, ct)) completed++;
+            insight.Attempts++;
+            insight.NextAttemptAtUtc = now.AddMinutes(15);
+            insight.LastErrorCode = null;
+            insight.LastErrorMessage = null;
+            insight.Status = string.IsNullOrWhiteSpace(insight.TranscriptText)
+                ? CrmCallAiStatuses.Transcribing
+                : CrmCallAiStatuses.Analyzing;
+            insight.UpdatedAtUtc = now;
         }
-        return completed;
+        if (existing.Count > 0) await db.SaveChangesAsync(ct);
+        return existing.Select(x => x.CallId).ToList();
     }
 
     public async Task<bool> RetryAsync(Guid callId, CancellationToken ct = default)
@@ -123,24 +140,22 @@ public sealed class CrmCallAiProcessingService(
         return true;
     }
 
-    private async Task<bool> ProcessOneAsync(
-        CrmCallAiInsightEntity insight,
-        int maxAttempts,
-        CancellationToken ct)
+    internal async Task<bool> ProcessClaimedAsync(Guid callId, CancellationToken ct = default)
     {
-        var now = timeProvider.GetUtcNow().UtcDateTime;
-        insight.Attempts++;
-        insight.NextAttemptAtUtc = now.AddMinutes(15);
-        insight.LastErrorCode = null;
-        insight.LastErrorMessage = null;
-        insight.UpdatedAtUtc = now;
+        var insight = await db.CrmCallAiInsights
+            .Include(x => x.Call)
+            .FirstOrDefaultAsync(x => x.CallId == callId, ct);
+        if (insight is null
+            || insight.Status is CrmCallAiStatuses.Completed or CrmCallAiStatuses.Skipped)
+        {
+            return false;
+        }
+        var maxAttempts = Math.Clamp(_options.MaxAttempts, 1, 25);
 
         try
         {
             if (string.IsNullOrWhiteSpace(insight.TranscriptText))
             {
-                insight.Status = CrmCallAiStatuses.Transcribing;
-                await db.SaveChangesAsync(ct);
                 await using var audio = recordingStorage.OpenRead(insight.Call.RecordingStoragePath!)
                                         ?? throw new CerioAiException(
                                             "recording_missing",
@@ -254,14 +269,21 @@ public sealed class CrmCallAiProcessingHostedService(
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         var interval = TimeSpan.FromSeconds(Math.Clamp(_options.PollIntervalSeconds, 10, 3600));
+        var parallelism = Math.Clamp(_options.MaxParallelism, 1, 10);
+        var batchSize = Math.Min(Math.Clamp(_options.BatchSize, 1, 20), parallelism);
         using var timer = new PeriodicTimer(interval);
         do
         {
             try
             {
-                await using var scope = scopeFactory.CreateAsyncScope();
-                await scope.ServiceProvider.GetRequiredService<CrmCallAiProcessingService>()
-                    .ProcessDueAsync(stoppingToken);
+                IReadOnlyList<Guid> callIds;
+                await using (var scope = scopeFactory.CreateAsyncScope())
+                {
+                    callIds = await scope.ServiceProvider.GetRequiredService<CrmCallAiProcessingService>()
+                        .ClaimDueAsync(batchSize, stoppingToken);
+                }
+
+                await Task.WhenAll(callIds.Select(callId => ProcessClaimedInScopeAsync(callId, stoppingToken)));
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -273,5 +295,12 @@ public sealed class CrmCallAiProcessingHostedService(
             }
         }
         while (await timer.WaitForNextTickAsync(stoppingToken));
+    }
+
+    private async Task ProcessClaimedInScopeAsync(Guid callId, CancellationToken ct)
+    {
+        await using var scope = scopeFactory.CreateAsyncScope();
+        await scope.ServiceProvider.GetRequiredService<CrmCallAiProcessingService>()
+            .ProcessClaimedAsync(callId, ct);
     }
 }

@@ -235,6 +235,92 @@ public sealed class CrmCallAiProcessingServiceTests
         };
     }
 
+    [Fact]
+    public async Task ClaimedRecordings_CanBeProcessedThreeAtATimeWithSeparateDbContexts()
+    {
+        var dbOptions = new DbContextOptionsBuilder<OrbitaDbContext>()
+            .UseInMemoryDatabase($"crm-call-ai-parallel-{Guid.NewGuid():N}")
+            .Options;
+        var dataPath = Path.Combine(Path.GetTempPath(), $"orbita-ai-parallel-tests-{Guid.NewGuid():N}");
+        try
+        {
+            var storage = new CrmCallRecordingStorageService(Options.Create(new CrmCallRecordingOptions
+            {
+                DataPath = dataPath,
+                MaxUploadBytes = 1024 * 1024
+            }));
+            var now = DateTime.UtcNow;
+            await using (var setupDb = new OrbitaDbContext(dbOptions))
+            {
+                for (var index = 0; index < 3; index++)
+                {
+                    var id = Guid.NewGuid();
+                    await using var audio = new MemoryStream([1, 2, 3, 4]);
+                    var path = await storage.SaveAsync(id, audio, CancellationToken.None);
+                    setupDb.CrmCalls.Add(new CrmCallEntity
+                    {
+                        Id = id,
+                        OfficeId = Guid.NewGuid(),
+                        CardId = Guid.NewGuid(),
+                        Provider = CrmTelephonyProviders.Asterisk,
+                        ExternalCallId = Guid.NewGuid().ToString("N"),
+                        Direction = CrmCallDirections.Outgoing,
+                        CallerPhone = "79000000001",
+                        CalledPhone = "79000000002",
+                        ClientPhoneNormalized = "79000000002",
+                        StartedAtUtc = now.AddSeconds(-index),
+                        DurationSeconds = 30,
+                        RecordingStoragePath = path,
+                        RecordingContentType = "audio/wav",
+                        RecordingFileName = "call.wav",
+                        ReceivedAtUtc = now,
+                        UpdatedAtUtc = now
+                    });
+                }
+                await setupDb.SaveChangesAsync();
+            }
+
+            var fake = new ConcurrentCerioClient();
+            var options = Options.Create(new CerioAiOptions
+            {
+                Enabled = true,
+                Token = "test-token",
+                BatchSize = 3,
+                MaxParallelism = 3
+            });
+            IReadOnlyList<Guid> callIds;
+            await using (var claimDb = new OrbitaDbContext(dbOptions))
+            {
+                var coordinator = NewService(claimDb);
+                callIds = await coordinator.ClaimDueAsync(3);
+            }
+            Assert.Equal(3, callIds.Count);
+
+            await Task.WhenAll(callIds.Select(async callId =>
+            {
+                await using var workerDb = new OrbitaDbContext(dbOptions);
+                await NewService(workerDb).ProcessClaimedAsync(callId);
+            }));
+
+            Assert.Equal(3, fake.MaxConcurrentTranscriptions);
+            await using var verifyDb = new OrbitaDbContext(dbOptions);
+            Assert.All(await verifyDb.CrmCallAiInsights.ToListAsync(), insight =>
+                Assert.Equal(CrmCallAiStatuses.Completed, insight.Status));
+
+            CrmCallAiProcessingService NewService(OrbitaDbContext context) => new(
+                context,
+                storage,
+                fake,
+                options,
+                TimeProvider.System,
+                NullLogger<CrmCallAiProcessingService>.Instance);
+        }
+        finally
+        {
+            if (Directory.Exists(dataPath)) Directory.Delete(dataPath, recursive: true);
+        }
+    }
+
     private static OrbitaDbContext CreateDb()
     {
         var options = new DbContextOptionsBuilder<OrbitaDbContext>()
@@ -279,6 +365,64 @@ public sealed class CrmCallAiProcessingServiceTests
                     ["Что для вас важно?"],
                     ["Проверить карточку кандидата"]),
                 "{}"));
+        }
+    }
+
+    private sealed class ConcurrentCerioClient : ICerioAiClient
+    {
+        private int activeTranscriptions;
+        private int maxConcurrentTranscriptions;
+
+        public int MaxConcurrentTranscriptions => Volatile.Read(ref maxConcurrentTranscriptions);
+
+        public async Task<CerioTranscriptionResult> TranscribeAsync(
+            Stream audio,
+            string fileName,
+            string contentType,
+            CancellationToken ct)
+        {
+            var active = Interlocked.Increment(ref activeTranscriptions);
+            UpdateMaximum(active);
+            try
+            {
+                await Task.Delay(75, ct);
+                return new CerioTranscriptionResult("Тестовый разговор", []);
+            }
+            finally
+            {
+                Interlocked.Decrement(ref activeTranscriptions);
+            }
+        }
+
+        public Task<CerioAnalysisResult> AnalyzeAsync(string transcript, CancellationToken ct) =>
+            Task.FromResult(new CerioAnalysisResult(
+                new CrmCallAiAnalysisDto(
+                    1,
+                    8,
+                    "Проверка параллельной обработки.",
+                    "Связаться",
+                    "Контакт состоялся",
+                    "Перезвонить",
+                    "medium",
+                    [],
+                    [],
+                    [],
+                    [],
+                    [],
+                    []),
+                "{}"));
+
+        private void UpdateMaximum(int candidate)
+        {
+            while (true)
+            {
+                var current = Volatile.Read(ref maxConcurrentTranscriptions);
+                if (candidate <= current
+                    || Interlocked.CompareExchange(ref maxConcurrentTranscriptions, candidate, current) == current)
+                {
+                    return;
+                }
+            }
         }
     }
 
