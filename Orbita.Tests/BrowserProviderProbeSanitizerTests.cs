@@ -69,10 +69,10 @@ public sealed class BrowserProviderProbeSanitizerTests
     public void FromException_MapsConnectionError()
     {
         var ex = new HttpRequestException(
+            HttpRequestError.ConnectionError,
             "No connection could be made",
             inner: null,
-            statusCode: null,
-            httpRequestError: HttpRequestError.ConnectionError);
+            statusCode: null);
         Assert.Equal("Сервис недоступен.", BrowserProviderProbeSanitizer.FromException(ex));
     }
 
