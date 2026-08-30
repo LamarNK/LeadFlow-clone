@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using System.Text.Json;
 using Orbita.Api.Data;
 using Orbita.Api.Helpers;
 using Orbita.Contracts;
@@ -259,6 +260,13 @@ public sealed class CrmAnalyticsQueryService(
                 toUtc,
                 activityShifts,
                 ct));
+        var callQuality = await BuildCallQualityAsync(
+            officeIds,
+            selectedManagerProfiles,
+            effectiveManagerUserId,
+            fromUtc,
+            toUtc,
+            ct);
 
         return CrmAnalyticsQueryResult.Ok(new CrmAnalyticsDto(
             fromUtc,
@@ -271,8 +279,130 @@ public sealed class CrmAnalyticsQueryService(
             managerOptions,
             managers,
             decomposition,
-            generatedAtUtc));
+            generatedAtUtc,
+            callQuality));
     }
+
+    private async Task<CrmCallQualityAnalyticsDto> BuildCallQualityAsync(
+        IReadOnlyCollection<Guid> officeIds,
+        IReadOnlyList<ManagerProfileRow> managers,
+        string? managerUserId,
+        DateTime fromUtc,
+        DateTime toUtc,
+        CancellationToken ct)
+    {
+        var callsQuery = db.CrmCalls.AsNoTracking()
+            .Where(x => officeIds.Contains(x.OfficeId)
+                        && x.RecordingStoragePath != null
+                        && x.CardId != null
+                        && x.StartedAtUtc >= fromUtc
+                        && x.StartedAtUtc < toUtc);
+        if (managerUserId is not null)
+        {
+            callsQuery = callsQuery.Where(x => x.ManagerUserId == managerUserId);
+        }
+
+        var calls = await callsQuery
+            .Select(x => new CallQualityCallRow(x.Id, x.ManagerUserId))
+            .ToListAsync(ct);
+        if (calls.Count == 0)
+        {
+            return new CrmCallQualityAnalyticsDto(0, 0, 0, 0, null, [], [], []);
+        }
+
+        var callIds = calls.Select(x => x.Id).ToArray();
+        var insightRows = await db.CrmCallAiInsights.AsNoTracking()
+            .Where(x => callIds.Contains(x.CallId))
+            .Select(x => new CallQualityInsightRow(
+                x.CallId,
+                x.TranscriptText,
+                x.AnalysisJson,
+                x.Score))
+            .ToListAsync(ct);
+        var insights = insightRows.ToDictionary(x => x.CallId);
+        var analyses = new Dictionary<Guid, CrmCallAiAnalysisDto>();
+        foreach (var row in insightRows.Where(x => !string.IsNullOrWhiteSpace(x.AnalysisJson)))
+        {
+            var parsed = CerioAiClient.TryParseAnalysis(row.AnalysisJson!);
+            if (parsed is not null) analyses[row.CallId] = parsed;
+        }
+
+        var transcribed = insightRows.Count(x => !string.IsNullOrWhiteSpace(x.TranscriptText));
+        var analyzed = analyses.Count;
+        var managerNames = managers
+            .GroupBy(x => x.UserId, StringComparer.Ordinal)
+            .ToDictionary(x => x.Key, x => x.First().DisplayName, StringComparer.Ordinal);
+        var managerRows = calls
+            .GroupBy(x => x.ManagerUserId ?? string.Empty, StringComparer.Ordinal)
+            .Select(group =>
+            {
+                var groupCalls = group.ToList();
+                var groupTranscribed = groupCalls.Count(call =>
+                    insights.TryGetValue(call.Id, out var insight)
+                    && !string.IsNullOrWhiteSpace(insight.TranscriptText));
+                var groupAnalyses = groupCalls
+                    .Where(call => analyses.ContainsKey(call.Id))
+                    .Select(call => analyses[call.Id])
+                    .ToList();
+                var normalizedUserId = string.IsNullOrWhiteSpace(group.Key) ? null : group.Key;
+                return new CrmCallQualityManagerDto(
+                    normalizedUserId,
+                    normalizedUserId is null
+                        ? "Менеджер не определён"
+                        : managerNames.GetValueOrDefault(normalizedUserId, normalizedUserId),
+                    groupCalls.Count,
+                    groupTranscribed,
+                    groupAnalyses.Count,
+                    Percent(groupAnalyses.Count, groupCalls.Count),
+                    AverageScore(groupAnalyses));
+            })
+            .OrderByDescending(x => x.AnalyzedCalls)
+            .ThenBy(x => x.DisplayName, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+
+        var analysisValues = analyses.Values.ToList();
+        return new CrmCallQualityAnalyticsDto(
+            calls.Count,
+            transcribed,
+            analyzed,
+            Percent(analyzed, calls.Count),
+            AverageScore(analysisValues),
+            BuildCommonFindings(analysisValues, strength: true),
+            BuildCommonFindings(analysisValues, strength: false),
+            managerRows);
+    }
+
+    private static double? AverageScore(IReadOnlyCollection<CrmCallAiAnalysisDto> analyses) =>
+        analyses.Count == 0
+            ? null
+            : Math.Round(analyses.Average(x => x.Score), 2);
+
+    private static IReadOnlyList<CrmCallQualityFindingDto> BuildCommonFindings(
+        IReadOnlyCollection<CrmCallAiAnalysisDto> analyses,
+        bool strength)
+    {
+        if (analyses.Count == 0) return [];
+        return analyses
+            .SelectMany(analysis => (strength ? analysis.Strengths : analysis.Weaknesses)
+                .Where(point => !string.IsNullOrWhiteSpace(point.Title))
+                .GroupBy(point => FindingKey(point), StringComparer.OrdinalIgnoreCase)
+                .Select(group => group.First()))
+            .GroupBy(FindingKey, StringComparer.OrdinalIgnoreCase)
+            .Select(group => new CrmCallQualityFindingDto(
+                group.Key,
+                group.Select(x => x.Title).First(),
+                group.Count(),
+                Percent(group.Count(), analyses.Count)))
+            .OrderByDescending(x => x.Count)
+            .ThenBy(x => x.Label, StringComparer.OrdinalIgnoreCase)
+            .Take(5)
+            .ToList();
+    }
+
+    private static string FindingKey(CrmCallAiAnalysisPointDto point) =>
+        string.IsNullOrWhiteSpace(point.Code)
+            ? point.Title.Trim().ToLowerInvariant()
+            : point.Code.Trim().ToLowerInvariant();
 
     private async Task<ManagerProfilesResult> LoadManagerProfilesAsync(
         IReadOnlyCollection<Guid> officeIds,
@@ -1043,6 +1173,14 @@ public sealed class CrmAnalyticsQueryService(
         string Action,
         string? Details,
         DateTime CreatedAtUtc);
+
+    private sealed record CallQualityCallRow(Guid Id, string? ManagerUserId);
+
+    private sealed record CallQualityInsightRow(
+        Guid CallId,
+        string? TranscriptText,
+        string? AnalysisJson,
+        double? Score);
 
     private sealed record ManagerCardKey(string UserId, Guid CardId);
 

@@ -40,6 +40,11 @@ services:
       WorkerReleases__PublishToken: ${WORKER_RELEASE_PUBLISH_TOKEN:-}
       DataProtection__KeysPath: /app/Data/dataprotection-api
       CrmCallRecordings__DataPath: /app/Data/crm/call-recordings
+      CerioAi__Enabled: ${CERIO_AI_ENABLED:-false}
+      CerioAi__Token: ${CERIO_AI_TOKEN:-}
+      CerioAi__ProcessRecordingsFromUtc: ${CERIO_AI_PROCESS_FROM_UTC:-}
+      CerioAi__PromptVersion: ${CERIO_AI_PROMPT_VERSION:-recruiting-v1}
+      CerioAi__AnalysisPrompt: ${CERIO_AI_ANALYSIS_PROMPT:-}
       CrmSuccessDocuments__DataPath: /app/Data/crm/success-documents
       CrmSipRuntime__ConfigPath: /app/Data/telephony-runtime
       BitrixWorkforce__PublicBaseUrl: ${BITRIX_WORKFORCE_PUBLIC_BASE_URL:-https://api.orbitsu.ru}

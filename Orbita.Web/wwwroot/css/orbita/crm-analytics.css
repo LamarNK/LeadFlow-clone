@@ -249,6 +249,23 @@
 .crm-analytics-panel__header > span { flex: 0 0 auto; padding: 4px 8px; border-radius: 999px; background: color-mix(in srgb, var(--border) 55%, transparent); color: var(--text-secondary); font-size: 10px; font-weight: 700; }
 .crm-analytics-panel-empty { display: grid; place-items: center; gap: 8px; min-height: 150px; padding: 28px; color: var(--text-secondary); font-size: 12px; text-align: center; }
 .crm-analytics-panel-empty i { color: #b2ccff; font-size: 23px; }
+.crm-call-quality__kpis { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; padding: 16px 18px 0; }
+.crm-call-quality__kpis > div { display: grid; gap: 3px; padding: 13px; border: 1px solid var(--border); border-radius: 11px; background: color-mix(in srgb, var(--surface) 92%, #eef4ff); }
+.crm-call-quality__kpis span { color: var(--text-secondary); font-size: 10px; font-weight: 700; }
+.crm-call-quality__kpis strong { color: var(--text-primary); font-size: 23px; line-height: 1; }
+.crm-call-quality__kpis small { color: var(--text-secondary); font-size: 9px; }
+.crm-call-quality__findings { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; padding: 12px 18px 18px; }
+.crm-call-quality__finding { padding: 13px; border-radius: 11px; }
+.crm-call-quality__finding--strength { border: 1px solid #a9efc5; background: #ecfdf3; }
+.crm-call-quality__finding--weakness { border: 1px solid #fecdca; background: #fff1f0; }
+.crm-call-quality__finding h3 { display: flex; align-items: center; gap: 7px; margin: 0 0 9px; color: #344054; font-size: 11px; }
+.crm-call-quality__finding--strength h3 i { color: #079455; }
+.crm-call-quality__finding--weakness h3 i { color: #d92d20; }
+.crm-call-quality__finding p { margin: 0; color: #667085; font-size: 10px; }
+.crm-call-quality__finding ul { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.crm-call-quality__finding li { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 8px; color: #344054; font-size: 10px; }
+.crm-call-quality__finding li small { color: #667085; }
+.crm-call-quality__table { border-top: 1px solid var(--border); }
 
 .crm-analytics-reasons { display: grid; gap: 14px; padding: 18px 19px 20px; }
 .crm-analytics-reason__line { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin-bottom: 7px; }
@@ -355,6 +372,8 @@
     .crm-analytics-path > i { display: none; }
     .crm-analytics-panel__header { padding: 15px; }
     .crm-analytics-panel__header > span { display: none; }
+    .crm-call-quality__kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 14px; }
+    .crm-call-quality__findings { grid-template-columns: 1fr; padding: 0 14px 14px; }
     .crm-analytics-funnel > header { align-items: flex-start; flex-direction: column; padding-right: 15px; padding-left: 15px; }
     .crm-analytics-funnel-scroll { padding-right: 15px; padding-left: 15px; }
     .crm-analytics-table,

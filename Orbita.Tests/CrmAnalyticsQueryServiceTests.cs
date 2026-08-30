@@ -168,6 +168,67 @@ public sealed class CrmAnalyticsQueryServiceTests
     }
 
     [Fact]
+    public async Task GetAsync_BuildsCallQualityFromAttachedStoredRecordingsInPeriod()
+    {
+        await using var harness = await Harness.CreateAsync(Now);
+        harness.AddOffice(OfficeOneId, "Основной", [CrmStages.Lead]);
+        harness.AddManager(ManagerOneId, OfficeOneId, "Анна", capacity: 5, onShift: true);
+        var fromUtc = new DateTime(2026, 8, 1, 0, 0, 0, DateTimeKind.Utc);
+        var toUtc = fromUtc.AddDays(2);
+        var analyzedCall = NewRecordedCall(ManagerOneId, fromUtc.AddHours(1), attached: true);
+        var waitingCall = NewRecordedCall(ManagerOneId, fromUtc.AddHours(2), attached: true);
+        var unattachedCall = NewRecordedCall(ManagerOneId, fromUtc.AddHours(3), attached: false);
+        var outsideCall = NewRecordedCall(ManagerOneId, toUtc, attached: true);
+        harness.Db.CrmCalls.AddRange(analyzedCall, waitingCall, unattachedCall, outsideCall);
+        var analysis = new CrmCallAiAnalysisDto(
+            1,
+            8,
+            "Следующий шаг зафиксирован.",
+            "Связаться",
+            "Контакт состоялся",
+            "Перезвонить",
+            "medium",
+            [new CrmCallAiAnalysisPointDto("next_step", "Зафиксирован следующий шаг")],
+            [new CrmCallAiAnalysisPointDto("motivation", "Не уточнена мотивация")],
+            [],
+            [],
+            [],
+            []);
+        harness.Db.CrmCallAiInsights.Add(new CrmCallAiInsightEntity
+        {
+            CallId = analyzedCall.Id,
+            Status = CrmCallAiStatuses.Completed,
+            TranscriptText = "Тестовая расшифровка",
+            AnalysisJson = System.Text.Json.JsonSerializer.Serialize(
+                analysis,
+                new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web)),
+            Score = analysis.Score,
+            PromptVersion = "test",
+            CreatedAtUtc = fromUtc,
+            UpdatedAtUtc = fromUtc,
+            TranscribedAtUtc = fromUtc,
+            AnalyzedAtUtc = fromUtc
+        });
+        await harness.Db.SaveChangesAsync();
+
+        var result = await harness.Sut.GetAsync(
+            OfficeScope.GlobalAdmin,
+            "admin",
+            isAdmin: true,
+            new CrmAnalyticsQuery(fromUtc, toUtc, OfficeOneId, ManagerOneId));
+
+        var quality = Assert.IsType<CrmCallQualityAnalyticsDto>(
+            Assert.IsType<CrmAnalyticsDto>(result.Data).CallQuality);
+        Assert.Equal(2, quality.RecordedCalls);
+        Assert.Equal(1, quality.TranscribedCalls);
+        Assert.Equal(1, quality.AnalyzedCalls);
+        Assert.Equal(50, quality.CoveragePercent);
+        Assert.Equal(8, quality.AverageScore);
+        Assert.Equal("next_step", Assert.Single(quality.CommonStrengths).Code);
+        Assert.Equal("motivation", Assert.Single(quality.CommonWeaknesses).Code);
+    }
+
+    [Fact]
     public async Task GetAsync_DecompositionCountsConfirmedContactsAndExcludesNdzRobotAndDisappeared()
     {
         await using var harness = await Harness.CreateAsync(Now);
@@ -908,6 +969,28 @@ public sealed class CrmAnalyticsQueryServiceTests
             DueAtUtc = dueAtUtc,
             CreatedAtUtc = Now.UtcDateTime.AddDays(-2),
             CompletedAtUtc = status == CrmTaskStatuses.Open ? null : Now.UtcDateTime.AddDays(-1)
+        };
+
+    private static CrmCallEntity NewRecordedCall(string managerUserId, DateTime startedAtUtc, bool attached) =>
+        new()
+        {
+            Id = Guid.NewGuid(),
+            OfficeId = OfficeOneId,
+            CardId = attached ? Guid.NewGuid() : null,
+            Provider = CrmTelephonyProviders.Asterisk,
+            ExternalCallId = Guid.NewGuid().ToString("N"),
+            Direction = CrmCallDirections.Outgoing,
+            CallerPhone = "79000000001",
+            CalledPhone = "79000000002",
+            ClientPhoneNormalized = "79000000002",
+            ManagerUserId = managerUserId,
+            StartedAtUtc = startedAtUtc,
+            DurationSeconds = 60,
+            RecordingStoragePath = $"{Guid.NewGuid():N}.bin",
+            RecordingContentType = "audio/mpeg",
+            RecordingFileName = "call.mp3",
+            ReceivedAtUtc = startedAtUtc,
+            UpdatedAtUtc = startedAtUtc
         };
 
     private sealed class Harness : IAsyncDisposable

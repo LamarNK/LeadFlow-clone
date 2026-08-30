@@ -704,6 +704,51 @@
 .crm-feed-item__call-player { display: block; width: min(100%, 520px); height: 36px; margin-top: 9px; }
 .crm-feed-item__call-link { display: inline-flex; align-items: center; gap: 6px; margin-top: 7px; color: #187452; font-size: 11px; font-weight: 700; text-decoration: none; }
 .crm-feed-item__call-pending { color: #7d899c !important; font-size: 11px !important; }
+.crm-call-ai { width: min(100%, 920px); margin-top: 10px; }
+.crm-call-ai__load { display: inline-flex; align-items: center; gap: 7px; min-height: 34px; padding: 7px 12px; border: 1px solid #c7d7fe; border-radius: 9px; background: #f4f7ff; color: #315bd6; font: inherit; font-size: 12px; font-weight: 750; cursor: pointer; }
+.crm-call-ai__load:hover { border-color: #8eabfb; background: #edf2ff; }
+.crm-call-ai__load.is-loading i { animation: crm-call-ai-spin 1s linear infinite; }
+@keyframes crm-call-ai-spin { to { transform: rotate(360deg); } }
+.crm-call-ai__state { display: flex; align-items: center; gap: 7px; margin: 9px 0 0 !important; color: #667085 !important; font-size: 11px !important; }
+.crm-call-ai__state .fa-spinner { animation: crm-call-ai-spin 1s linear infinite; }
+.crm-call-ai__state--failed { color: #b42318 !important; }
+.crm-call-ai__content { display: grid; gap: 9px; }
+.crm-call-ai__section { overflow: hidden; border: 1px solid #dce4f2; border-radius: 10px; background: #fff; }
+.crm-call-ai__section > summary { display: flex; align-items: center; gap: 8px; padding: 10px 12px; color: #243b64; font-size: 12px; font-weight: 800; cursor: pointer; list-style: none; }
+.crm-call-ai__section > summary::-webkit-details-marker { display: none; }
+.crm-call-ai__section > summary::after { content: '\f078'; margin-left: auto; font-family: "Font Awesome 6 Free"; font-size: 10px; font-weight: 900; transition: transform .18s ease; }
+.crm-call-ai__section[open] > summary::after { transform: rotate(180deg); }
+.crm-call-ai__segments { display: grid; gap: 8px; max-height: 390px; margin: 0; padding: 4px 12px 12px; overflow: auto; list-style: none; }
+.crm-call-ai__segments li { display: grid; grid-template-columns: 46px 1fr; gap: 8px; align-items: start; }
+.crm-call-ai__segments button { padding: 3px 5px; border: 0; border-radius: 6px; background: #eaf0ff; color: #315bd6; font-size: 10px; font-weight: 800; cursor: pointer; }
+.crm-call-ai__segments p, .crm-call-ai__transcript-text, .crm-call-ai__raw { margin: 0; color: #344054; font-size: 12px; line-height: 1.55; white-space: pre-wrap; }
+.crm-call-ai__transcript-text, .crm-call-ai__raw { max-height: 390px; padding: 2px 12px 12px; overflow: auto; }
+.crm-call-ai__score-row { display: grid; grid-template-columns: auto minmax(150px, 1fr) auto; gap: 10px; align-items: center; margin: 0 12px 10px; padding: 10px; border-radius: 9px; background: #f6f8fc; }
+.crm-call-ai__score { display: inline-flex; align-items: baseline; gap: 2px; color: #254bc4; }
+.crm-call-ai__score strong { font-size: 23px; }
+.crm-call-ai__score small, .crm-call-ai__score-row > span > small { display: block; color: #667085; font-size: 10px; font-weight: 500; }
+.crm-call-ai__confidence { padding: 4px 7px; border-radius: 999px; background: #fff0c7; color: #8b5e00; font-size: 9px; font-style: normal; font-weight: 750; }
+.crm-call-ai__confidence--high { background: #dcfae6; color: #087443; }
+.crm-call-ai__confidence--medium { background: #eef2ff; color: #4758b8; }
+.crm-call-ai__summary { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 0 12px 10px; }
+.crm-call-ai__summary div { padding: 9px; border: 1px solid #e4e9f2; border-radius: 8px; }
+.crm-call-ai__summary dt { color: #667085; font-size: 9px; font-weight: 750; text-transform: uppercase; }
+.crm-call-ai__summary dd { margin: 4px 0 0; color: #1d2939; font-size: 11px; line-height: 1.45; }
+.crm-call-ai__findings, .crm-call-ai__phrases, .crm-call-ai__checklist { margin: 8px 12px 10px; padding: 10px; border-radius: 9px; }
+.crm-call-ai__findings h4, .crm-call-ai__phrases h4, .crm-call-ai__checklist h4 { display: flex; align-items: center; gap: 7px; margin: 0 0 7px; font-size: 11px; }
+.crm-call-ai__findings ul, .crm-call-ai__phrases ul, .crm-call-ai__checklist ul { display: grid; gap: 7px; margin: 0; padding: 0; list-style: none; }
+.crm-call-ai__findings li { display: grid; gap: 2px; color: #344054; font-size: 11px; }
+.crm-call-ai__findings li span, .crm-call-ai__findings li small { color: #667085; line-height: 1.4; }
+.crm-call-ai__findings--strength { background: #ecfdf3; color: #087443; }
+.crm-call-ai__findings--weakness { background: #fff1f0; color: #b42318; }
+.crm-call-ai__findings--risk { background: #fff8e6; color: #925d00; }
+.crm-call-ai__findings--recommendation, .crm-call-ai__phrases { background: #eef4ff; color: #254bc4; }
+.crm-call-ai__findings--recommendation li, .crm-call-ai__phrases li, .crm-call-ai__checklist li { color: #344054; font-size: 11px; line-height: 1.45; }
+.crm-call-ai__checklist { background: #f6f8fc; }
+.crm-call-ai__checklist li { display: flex; gap: 7px; }
+.crm-call-ai__notice { display: flex; align-items: center; gap: 7px; margin: 7px 0 0 !important; padding: 8px 10px; border-radius: 8px; background: #f6f8fc; color: #667085 !important; font-size: 11px !important; }
+.crm-call-ai__notice--warning { background: #fff8e6; color: #925d00 !important; }
+@media (max-width: 760px) { .crm-call-ai__score-row { grid-template-columns: auto 1fr; } .crm-call-ai__confidence { grid-column: 1 / -1; justify-self: start; } .crm-call-ai__summary { grid-template-columns: 1fr; } }
 .crm-feed-item--completed { grid-template-columns: minmax(0, 1fr); padding: 10px 16px; border: 0; border-bottom: 1px solid #edf0f4; border-radius: 0; background: transparent; opacity: .78; box-shadow: none; }
 .crm-feed-item--completed strong, .crm-feed-item--system strong { color: #667085; font-size: 12px; font-weight: 650; }
 .crm-feed-item--completed p, .crm-feed-item--system p { color: #7d899c; font-size: 12px; }
@@ -956,6 +1001,9 @@
 [data-theme="dark"] .crm-feed-item--call { border-color: #2f6655; background: color-mix(in srgb, #187452 15%, var(--bg-card)); box-shadow: inset 3px 0 0 #49b98e; }
 [data-theme="dark"] .crm-feed-item--call .crm-feed-item__icon { background: #214f40; color: #70d7af; }
 [data-theme="dark"] .crm-feed-item__call-link { color: #70d7af; }
+[data-theme="dark"] .crm-call-ai__section { border-color: #344054; background: #182230; }
+[data-theme="dark"] .crm-call-ai__section > summary, [data-theme="dark"] .crm-call-ai__segments p, [data-theme="dark"] .crm-call-ai__transcript-text, [data-theme="dark"] .crm-call-ai__raw { color: #e4e7ec; }
+[data-theme="dark"] .crm-call-ai__score-row, [data-theme="dark"] .crm-call-ai__checklist { background: #202b3c; }
 [data-theme="dark"] .crm-note-inline-editor textarea { border-color: #52699e; background: color-mix(in srgb, var(--bg-card) 82%, #16264d); color: var(--text-primary); }
 [data-theme="dark"] .crm-feed-item--completed, [data-theme="dark"] .crm-feed-item--system { background: transparent; }
 [data-theme="dark"] .crm-card-persistent-feed { border-color: var(--border); }

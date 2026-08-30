@@ -1,0 +1,131 @@
+@model Orbita.Contracts.CrmCallAiInsightDto
+@using Orbita.Contracts
+@{
+    var analysis = Model.Analysis;
+    var confidenceLabel = analysis?.AttributionConfidence switch
+    {
+        "high" => "Роли определены уверенно",
+        "medium" => "Роли определены с умеренной уверенностью",
+        _ => "Роли определены по контексту — проверьте выводы"
+    };
+    string Timestamp(double seconds) => TimeSpan.FromSeconds(Math.Max(0, seconds)).ToString(@"mm\:ss");
+}
+
+<div class="crm-call-ai__content">
+    @if (!string.IsNullOrWhiteSpace(Model.TranscriptText))
+    {
+        <details class="crm-call-ai__section crm-call-ai__section--transcript" open>
+            <summary><i class="fa-solid fa-align-left" aria-hidden="true"></i>Расшифровка звонка</summary>
+            @if (Model.Segments.Count > 0)
+            {
+                <ol class="crm-call-ai__segments">
+                    @foreach (var segment in Model.Segments)
+                    {
+                        <li>
+                            <button type="button" data-call-ai-seek="@segment.StartSeconds.ToString(System.Globalization.CultureInfo.InvariantCulture)" title="Перейти к этому месту записи">@Timestamp(segment.StartSeconds)</button>
+                            <p>
+                                @if (!string.IsNullOrWhiteSpace(segment.Speaker))
+                                {
+                                    <strong>@segment.Speaker:</strong>
+                                }
+                                @segment.Text
+                            </p>
+                        </li>
+                    }
+                </ol>
+            }
+            else
+            {
+                <p class="crm-call-ai__transcript-text">@Model.TranscriptText</p>
+            }
+        </details>
+    }
+
+    <details class="crm-call-ai__section crm-call-ai__section--analysis">
+        <summary><i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i>Анализ звонка</summary>
+        @if (analysis is not null)
+        {
+            <div class="crm-call-ai__score-row">
+                <span class="crm-call-ai__score"><strong>@analysis.Score.ToString("0.0")</strong><small>/ 10</small></span>
+                <span><strong>Оценка разговора</strong><small>@analysis.ScoreReason</small></span>
+                <em class="crm-call-ai__confidence crm-call-ai__confidence--@analysis.AttributionConfidence">@confidenceLabel</em>
+            </div>
+            <dl class="crm-call-ai__summary">
+                <div><dt>Цель</dt><dd>@analysis.Goal</dd></div>
+                <div><dt>Итог</dt><dd>@analysis.Outcome</dd></div>
+                <div><dt>Следующий шаг</dt><dd>@analysis.NextStep</dd></div>
+            </dl>
+
+            @if (analysis.Strengths.Count > 0)
+            {
+                <section class="crm-call-ai__findings crm-call-ai__findings--strength">
+                    <h4><i class="fa-solid fa-circle-check" aria-hidden="true"></i>Сильные стороны менеджера</h4>
+                    <ul>
+                        @foreach (var point in analysis.Strengths)
+                        {
+                            <li><strong>@point.Title</strong>@if (!string.IsNullOrWhiteSpace(point.Evidence)) { <span>@point.Evidence</span> }</li>
+                        }
+                    </ul>
+                </section>
+            }
+            @if (analysis.Weaknesses.Count > 0)
+            {
+                <section class="crm-call-ai__findings crm-call-ai__findings--weakness">
+                    <h4><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i>Зоны роста</h4>
+                    <ul>
+                        @foreach (var point in analysis.Weaknesses)
+                        {
+                            <li><strong>@point.Title</strong>@if (!string.IsNullOrWhiteSpace(point.Evidence)) { <span>@point.Evidence</span> }@if (!string.IsNullOrWhiteSpace(point.Impact)) { <small>@point.Impact</small> }</li>
+                        }
+                    </ul>
+                </section>
+            }
+            @if (analysis.Risks.Count > 0)
+            {
+                <section class="crm-call-ai__findings crm-call-ai__findings--risk">
+                    <h4><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>Риски</h4>
+                    <ul>
+                        @foreach (var point in analysis.Risks)
+                        {
+                            <li><strong>@point.Title</strong>@if (!string.IsNullOrWhiteSpace(point.Evidence)) { <span>@point.Evidence</span> }@if (!string.IsNullOrWhiteSpace(point.Impact)) { <small>@point.Impact</small> }</li>
+                        }
+                    </ul>
+                </section>
+            }
+            @if (analysis.Recommendations.Count > 0)
+            {
+                <section class="crm-call-ai__findings crm-call-ai__findings--recommendation">
+                    <h4><i class="fa-solid fa-lightbulb" aria-hidden="true"></i>Рекомендации</h4>
+                    <ul>@foreach (var item in analysis.Recommendations) { <li>@item</li> }</ul>
+                </section>
+            }
+            @if (analysis.SuggestedPhrases.Count > 0)
+            {
+                <section class="crm-call-ai__phrases">
+                    <h4>Что можно сказать в похожем звонке</h4>
+                    <ul>@foreach (var item in analysis.SuggestedPhrases) { <li>«@item»</li> }</ul>
+                </section>
+            }
+            @if (analysis.Checklist.Count > 0)
+            {
+                <section class="crm-call-ai__checklist">
+                    <h4>Чек-лист следующего звонка</h4>
+                    <ul>@foreach (var item in analysis.Checklist) { <li><i class="fa-regular fa-square-check" aria-hidden="true"></i>@item</li> }</ul>
+                </section>
+            }
+        }
+        else if (!string.IsNullOrWhiteSpace(Model.AnalysisRawText))
+        {
+            <p class="crm-call-ai__raw">@Model.AnalysisRawText</p>
+        }
+        else
+        {
+            <p class="crm-call-ai__notice">Анализ ещё не готов.</p>
+        }
+    </details>
+
+    @if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
+    {
+        <p class="crm-call-ai__notice crm-call-ai__notice--warning"><i class="fa-solid fa-circle-info" aria-hidden="true"></i>@Model.ErrorMessage</p>
+    }
+</div>

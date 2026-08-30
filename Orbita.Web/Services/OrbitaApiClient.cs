@@ -2627,6 +2627,13 @@ public sealed class OrbitaApiClient(
         return (stream, fileName, contentType, error);
     }
 
+    public Task<CrmCallAiInsightDto?> GetCrmCallAiInsightAsync(
+        Guid callId,
+        CancellationToken ct = default) =>
+        _preview.Enabled
+            ? Task.FromResult<CrmCallAiInsightDto?>(null)
+            : GetAsync<CrmCallAiInsightDto>($"api/v1/crm/calls/{callId:D}/ai-insight", ct);
+
     public Task<(bool Success, string? Error)> StartCrmShiftAsync(CancellationToken ct = default) =>
         _preview.Enabled
             ? Task.FromResult(DesignPreviewData.StartCrmShift())

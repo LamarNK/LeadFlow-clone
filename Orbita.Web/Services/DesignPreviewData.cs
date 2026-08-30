@@ -524,6 +524,32 @@ internal static class DesignPreviewData
             .ThenBy(x => x.DisplayName, StringComparer.OrdinalIgnoreCase)
             .ToList();
         var decomposition = BuildPreviewCrmDecomposition(cards);
+        var qualityManagers = managers
+            .Take(5)
+            .Select((manager, index) => new CrmCallQualityManagerDto(
+                manager.UserId,
+                manager.DisplayName,
+                12 + index * 3,
+                10 + index * 2,
+                8 + index * 2,
+                PreviewPercent(8 + index * 2, 12 + index * 3),
+                Math.Round(8.4 - index * .35, 1)))
+            .ToList();
+        var quality = new CrmCallQualityAnalyticsDto(
+            qualityManagers.Sum(x => x.RecordedCalls),
+            qualityManagers.Sum(x => x.TranscribedCalls),
+            qualityManagers.Sum(x => x.AnalyzedCalls),
+            PreviewPercent(qualityManagers.Sum(x => x.AnalyzedCalls), qualityManagers.Sum(x => x.RecordedCalls)),
+            qualityManagers.Count == 0 ? null : Math.Round(qualityManagers.Average(x => x.AverageScore ?? 0), 1),
+            [
+                new("next_step", "Зафиксирован следующий шаг", 14, 73.7),
+                new("clear_offer", "Понятно объяснены условия", 11, 57.9)
+            ],
+            [
+                new("motivation", "Не полностью выявлена мотивация", 8, 42.1),
+                new("objections", "Возражение осталось без уточнения", 5, 26.3)
+            ],
+            qualityManagers);
 
         return new CrmAnalyticsDto(
             normalizedFrom,
@@ -536,7 +562,8 @@ internal static class DesignPreviewData
             managerOptions,
             managers,
             decomposition,
-            DateTime.UtcNow);
+            DateTime.UtcNow,
+            quality);
     }
 
     private static CrmAnalyticsDecompositionDto BuildPreviewCrmDecomposition(

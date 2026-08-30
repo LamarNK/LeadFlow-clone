@@ -130,6 +130,40 @@
         if (cardId && window.Orbita && typeof window.Orbita.postForm === 'function') {
             window.Orbita.postForm('/Crm/MarkChatRead', { id: cardId }).catch(function () { });
         }
+
+        page.querySelectorAll('[data-call-ai]').forEach(function (container) {
+            var loadButton = container.querySelector('[data-call-ai-load]');
+            if (!loadButton || loadButton.dataset.callAiBound === '1') return;
+            loadButton.dataset.callAiBound = '1';
+            loadButton.addEventListener('click', async function () {
+                loadButton.disabled = true;
+                loadButton.classList.add('is-loading');
+                try {
+                    var response = await fetch(container.dataset.callAiUrl, {
+                        credentials: 'same-origin',
+                        headers: { 'X-Requested-With': 'XMLHttpRequest' }
+                    });
+                    if (!response.ok) throw new Error('Не удалось загрузить расшифровку.');
+                    container.innerHTML = await response.text();
+                    container.querySelectorAll('[data-call-ai-seek]').forEach(function (seekButton) {
+                        seekButton.addEventListener('click', function () {
+                            var player = container.closest('.crm-feed-item')?.querySelector('audio');
+                            var seconds = Number.parseFloat(seekButton.dataset.callAiSeek || '0');
+                            if (!player || !Number.isFinite(seconds)) return;
+                            player.currentTime = Math.max(0, seconds);
+                            player.play().catch(function () { });
+                        });
+                    });
+                } catch (error) {
+                    loadButton.disabled = false;
+                    loadButton.classList.remove('is-loading');
+                    var message = document.createElement('p');
+                    message.className = 'crm-call-ai__notice crm-call-ai__notice--warning';
+                    message.textContent = error.message || 'Не удалось загрузить расшифровку.';
+                    container.appendChild(message);
+                }
+            });
+        });
     }
 
     initCrmCardPage();

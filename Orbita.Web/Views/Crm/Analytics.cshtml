@@ -24,6 +24,7 @@
     {
         var cards = analytics.Cards;
         var decomposition = analytics.Decomposition;
+        var callQuality = analytics.CallQuality;
         var selectedManager = analytics.ManagerOptions.FirstOrDefault(x =>
             string.Equals(x.UserId, Model.SelectedManagerUserId, StringComparison.Ordinal));
         var managerLabel = selectedManager?.DisplayName
@@ -296,6 +297,77 @@
                 }
             }
         </section>
+
+        @if (callQuality is not null)
+        {
+            <section class="card crm-analytics-panel crm-call-quality">
+                <header class="crm-analytics-panel__header">
+                    <div>
+                        <h2>Качество звонков</h2>
+                        <p>Отдельный отчёт по завершённым звонкам с сохранённой записью. Не влияет на лиды, дозвоны и воронку выше.</p>
+                    </div>
+                    <span>@callQuality.AnalyzedCalls проанализировано</span>
+                </header>
+                @if (callQuality.RecordedCalls == 0)
+                {
+                    <div class="crm-analytics-panel-empty"><i class="fa-solid fa-headphones" aria-hidden="true"></i><span>За выбранный период записей звонков нет</span></div>
+                }
+                else
+                {
+                    <div class="crm-call-quality__kpis">
+                        <div><span>Записей</span><strong>@callQuality.RecordedCalls.ToString("N0")</strong><small>завершённые звонки</small></div>
+                        <div><span>Расшифровано</span><strong>@callQuality.TranscribedCalls.ToString("N0")</strong><small>текст уже доступен</small></div>
+                        <div><span>Проанализировано</span><strong>@callQuality.AnalyzedCalls.ToString("N0")</strong><small>@Percent(callQuality.CoveragePercent) покрытия</small></div>
+                        <div><span>Средняя оценка</span><strong>@(callQuality.AverageScore?.ToString("0.0") ?? "—")</strong><small>из 10 баллов</small></div>
+                    </div>
+                    <div class="crm-call-quality__findings">
+                        <section class="crm-call-quality__finding crm-call-quality__finding--strength">
+                            <h3><i class="fa-solid fa-circle-check" aria-hidden="true"></i>Частые сильные стороны</h3>
+                            @if (callQuality.CommonStrengths.Count == 0)
+                            {
+                                <p>Пока недостаточно структурированных анализов.</p>
+                            }
+                            else
+                            {
+                                <ul>@foreach (var item in callQuality.CommonStrengths) { <li><span>@item.Label</span><strong>@item.Count</strong><small>@Percent(item.PercentOfAnalyzed)</small></li> }</ul>
+                            }
+                        </section>
+                        <section class="crm-call-quality__finding crm-call-quality__finding--weakness">
+                            <h3><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i>Частые зоны роста</h3>
+                            @if (callQuality.CommonWeaknesses.Count == 0)
+                            {
+                                <p>Пока недостаточно структурированных анализов.</p>
+                            }
+                            else
+                            {
+                                <ul>@foreach (var item in callQuality.CommonWeaknesses) { <li><span>@item.Label</span><strong>@item.Count</strong><small>@Percent(item.PercentOfAnalyzed)</small></li> }</ul>
+                            }
+                        </section>
+                    </div>
+                    @if (callQuality.Managers.Count > 0)
+                    {
+                        <div class="crm-analytics-table-wrap crm-call-quality__table">
+                            <table class="crm-analytics-table">
+                                <thead><tr><th>Менеджер</th><th>Записи</th><th>Расшифровано</th><th>Анализы</th><th>Покрытие</th><th>Средняя оценка</th></tr></thead>
+                                <tbody>
+                                    @foreach (var manager in callQuality.Managers)
+                                    {
+                                        <tr>
+                                            <td data-label="Менеджер"><strong>@manager.DisplayName</strong></td>
+                                            <td data-label="Записи">@manager.RecordedCalls</td>
+                                            <td data-label="Расшифровано">@manager.TranscribedCalls</td>
+                                            <td data-label="Анализы">@manager.AnalyzedCalls</td>
+                                            <td data-label="Покрытие">@Percent(manager.CoveragePercent)</td>
+                                            <td data-label="Средняя оценка">@(manager.AverageScore?.ToString("0.0") ?? "—")</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                }
+            </section>
+        }
 
         <section class="card crm-analytics-panel crm-analytics-managers">
             <header class="crm-analytics-panel__header">

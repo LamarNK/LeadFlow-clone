@@ -54,6 +54,43 @@ public static class CrmEndpoints
                     enableRangeProcessing: true);
         });
 
+        crmBoard.MapGet("/calls/{callId:guid}/ai-insight", async (
+            Guid callId,
+            CrmWorkspaceService workspace,
+            ClaimsPrincipal principal,
+            CancellationToken ct) =>
+        {
+            var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier)
+                         ?? principal.FindFirstValue("sub");
+            if (string.IsNullOrWhiteSpace(userId)) return Results.Forbid();
+
+            var insight = await workspace.GetCallAiInsightAsync(
+                callId,
+                userId,
+                PanelRoles.HasElevatedOfficeAccess(principal),
+                ct);
+            return insight is null ? Results.NotFound() : Results.Ok(insight);
+        });
+
+        crmAdmin.MapPost("/calls/{callId:guid}/ai-insight/retry", async (
+            Guid callId,
+            CrmWorkspaceService workspace,
+            CrmCallAiProcessingService processing,
+            ClaimsPrincipal principal,
+            CancellationToken ct) =>
+        {
+            if (!PanelRoles.HasElevatedOfficeAccess(principal)) return Results.Forbid();
+            var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier)
+                         ?? principal.FindFirstValue("sub");
+            if (string.IsNullOrWhiteSpace(userId)) return Results.Forbid();
+
+            var accessible = await workspace.GetCallAiInsightAsync(callId, userId, true, ct);
+            if (accessible is null) return Results.NotFound();
+            return await processing.RetryAsync(callId, ct)
+                ? Results.Ok(new { status = CrmCallAiStatuses.Pending })
+                : Results.NotFound();
+        });
+
         crmBoard.MapGet("/board", async (
             CrmWorkspaceService workspace,
             OfficeScopeService officeScope,

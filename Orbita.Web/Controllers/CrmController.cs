@@ -1416,6 +1416,16 @@ public sealed class CrmController(
         };
     }
 
+    [HttpGet]
+    [Authorize(Policy = PanelPermissions.CrmBoard)]
+    public async Task<IActionResult> CallAiInsight(Guid callId, CancellationToken ct = default)
+    {
+        var insight = await api.GetCrmCallAiInsightAsync(callId, ct);
+        return insight is null
+            ? NotFound()
+            : PartialView("_CrmCallAiInsight", insight);
+    }
+
     private Guid? ResolveOfficeId(Guid? officeId) =>
         officeId
         ?? officeContext.EffectiveOfficeId

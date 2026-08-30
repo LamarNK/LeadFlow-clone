@@ -831,10 +831,16 @@ public sealed class CrmWorkspaceService(
             .Where(x => x.CardId == cardId)
             .OrderByDescending(x => x.StartedAtUtc)
             .ToListAsync(ct);
+        var callIds = calls.Select(x => x.Id).ToArray();
+        var callAiStatuses = callIds.Length == 0
+            ? new Dictionary<Guid, string>()
+            : await db.CrmCallAiInsights.AsNoTracking()
+                .Where(x => callIds.Contains(x.CallId))
+                .ToDictionaryAsync(x => x.CallId, x => x.Status, ct);
         var openCount = tasks.Count(x => x.Status == CrmTaskStatuses.Open);
         var hasOverdue = tasks.Any(x => x.Status == CrmTaskStatuses.Open && x.DueAtUtc is DateTime due && due < now);
 
-        var activity = BuildActivity(notes, tasks, taskComments, history, calls, names, userId, isAdmin, canEdit);
+        var activity = BuildActivity(notes, tasks, taskComments, history, calls, callAiStatuses, names, userId, isAdmin, canEdit);
         var avitoChat = ParseChatMessages(card.Response.ChatMessagesJson);
         var outboundChat = await LoadOutboundChatAsync(cardId, userId, isAdmin, ct);
         var chat = CrmChatThreadMerger.Merge(avitoChat, outboundChat);
@@ -3469,6 +3475,42 @@ public sealed class CrmWorkspaceService(
             string.IsNullOrWhiteSpace(call.RecordingContentType) ? "audio/wav" : call.RecordingContentType);
     }
 
+    public async Task<CrmCallAiInsightDto?> GetCallAiInsightAsync(
+        Guid callId,
+        string userId,
+        bool isAdmin,
+        CancellationToken ct = default)
+    {
+        var call = await db.CrmCalls.AsNoTracking()
+            .Where(x => x.Id == callId)
+            .Select(x => new { x.CardId })
+            .FirstOrDefaultAsync(ct);
+        if (call?.CardId is not Guid cardId) return null;
+
+        var card = await db.CrmCandidateCards.AsNoTracking()
+            .Where(x => x.Id == cardId)
+            .Select(x => new { x.OfficeId, x.ManagerUserId })
+            .FirstOrDefaultAsync(ct);
+        if (card is null || !await CanAccessCardAsync(card.OfficeId, card.ManagerUserId, userId, isAdmin, ct))
+        {
+            return null;
+        }
+
+        var insight = await db.CrmCallAiInsights.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.CallId == callId, ct);
+        if (insight is null) return null;
+
+        return new CrmCallAiInsightDto(
+            insight.CallId,
+            insight.Status,
+            insight.TranscriptText,
+            DeserializeOrEmpty<CrmCallTranscriptSegmentDto>(insight.SegmentsJson),
+            DeserializeOrDefault<CrmCallAiAnalysisDto>(insight.AnalysisJson),
+            insight.AnalysisRawText,
+            insight.LastErrorMessage,
+            insight.UpdatedAtUtc);
+    }
+
     public async Task<CrmTaskCommentDto?> AddTaskCommentAsync(
         Guid taskId,
         string text,
@@ -3979,6 +4021,7 @@ public sealed class CrmWorkspaceService(
         IReadOnlyList<CrmTaskCommentEntity> taskComments,
         IReadOnlyList<CrmCandidateHistoryEntity> history,
         IReadOnlyList<CrmCallEntity> calls,
+        IReadOnlyDictionary<Guid, string> callAiStatuses,
         IReadOnlyDictionary<string, string> names,
         string userId,
         bool isAdmin,
@@ -4071,7 +4114,8 @@ public sealed class CrmWorkspaceService(
                 CallDurationSeconds: call.DurationSeconds,
                 CallRecordingUrl: call.RecordingUrl,
                 CallRecordingStored: !string.IsNullOrWhiteSpace(call.RecordingStoragePath),
-                CallClientPhone: call.ClientPhoneNormalized);
+                CallClientPhone: call.ClientPhoneNormalized,
+                CallAiStatus: callAiStatuses.GetValueOrDefault(call.Id));
         }));
         return items
             .OrderByDescending(x => x.IsPinned)
@@ -4079,6 +4123,22 @@ public sealed class CrmWorkspaceService(
             .Take(80)
             .ToList();
     }
+
+    private static T? DeserializeOrDefault<T>(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return default;
+        try
+        {
+            return JsonSerializer.Deserialize<T>(json, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        }
+        catch (JsonException)
+        {
+            return default;
+        }
+    }
+
+    private static IReadOnlyList<T> DeserializeOrEmpty<T>(string? json) =>
+        DeserializeOrDefault<IReadOnlyList<T>>(json) ?? [];
 
     private static CrmTaskCommentEntity? FindCompletionComment(
         CrmTaskEntity task,

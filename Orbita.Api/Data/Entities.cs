@@ -1015,6 +1015,28 @@ public sealed class CrmCallEntity
     public DateTime UpdatedAtUtc { get; set; }
 }
 
+/// <summary>Provider-independent transcription and quality analysis for a stored CRM call.</summary>
+public sealed class CrmCallAiInsightEntity
+{
+    public Guid CallId { get; set; }
+    public string Status { get; set; } = CrmCallAiStatuses.Pending;
+    public string? TranscriptText { get; set; }
+    public string? SegmentsJson { get; set; }
+    public string? AnalysisJson { get; set; }
+    public string? AnalysisRawText { get; set; }
+    public double? Score { get; set; }
+    public string PromptVersion { get; set; } = string.Empty;
+    public int Attempts { get; set; }
+    public DateTime? NextAttemptAtUtc { get; set; }
+    public string? LastErrorCode { get; set; }
+    public string? LastErrorMessage { get; set; }
+    public DateTime CreatedAtUtc { get; set; }
+    public DateTime UpdatedAtUtc { get; set; }
+    public DateTime? TranscribedAtUtc { get; set; }
+    public DateTime? AnalyzedAtUtc { get; set; }
+    public CrmCallEntity Call { get; set; } = null!;
+}
+
 /// <summary>Additional active contact phones for a candidate person (beyond primary on response).</summary>
 public sealed class CandidateContactPhoneEntity
 {

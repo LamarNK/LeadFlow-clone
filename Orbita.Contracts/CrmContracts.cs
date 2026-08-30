@@ -421,7 +421,33 @@ public sealed record CrmAnalyticsDto(
     IReadOnlyList<CrmAnalyticsManagerOptionDto> ManagerOptions,
     IReadOnlyList<CrmAnalyticsManagerDto> Managers,
     CrmAnalyticsDecompositionDto? Decomposition,
-    DateTime GeneratedAtUtc);
+    DateTime GeneratedAtUtc,
+    CrmCallQualityAnalyticsDto? CallQuality = null);
+
+public sealed record CrmCallQualityAnalyticsDto(
+    int RecordedCalls,
+    int TranscribedCalls,
+    int AnalyzedCalls,
+    double CoveragePercent,
+    double? AverageScore,
+    IReadOnlyList<CrmCallQualityFindingDto> CommonStrengths,
+    IReadOnlyList<CrmCallQualityFindingDto> CommonWeaknesses,
+    IReadOnlyList<CrmCallQualityManagerDto> Managers);
+
+public sealed record CrmCallQualityFindingDto(
+    string Code,
+    string Label,
+    int Count,
+    double PercentOfAnalyzed);
+
+public sealed record CrmCallQualityManagerDto(
+    string? UserId,
+    string DisplayName,
+    int RecordedCalls,
+    int TranscribedCalls,
+    int AnalyzedCalls,
+    double CoveragePercent,
+    double? AverageScore);
 
 public sealed record CrmAnalyticsDecompositionDto(
     int Leads,
@@ -802,7 +828,55 @@ public sealed record CrmActivityItemDto(
     int? CallDurationSeconds = null,
     string? CallRecordingUrl = null,
     bool CallRecordingStored = false,
-    string? CallClientPhone = null);
+    string? CallClientPhone = null,
+    string? CallAiStatus = null);
+
+public static class CrmCallAiStatuses
+{
+    public const string Pending = "pending";
+    public const string Transcribing = "transcribing";
+    public const string Analyzing = "analyzing";
+    public const string Completed = "completed";
+    public const string Partial = "partial";
+    public const string Failed = "failed";
+}
+
+public sealed record CrmCallTranscriptSegmentDto(
+    double StartSeconds,
+    double EndSeconds,
+    string Text,
+    string? Speaker = null);
+
+public sealed record CrmCallAiAnalysisPointDto(
+    string Code,
+    string Title,
+    string? Evidence = null,
+    string? Impact = null);
+
+public sealed record CrmCallAiAnalysisDto(
+    int Version,
+    double Score,
+    string? ScoreReason,
+    string? Goal,
+    string? Outcome,
+    string? NextStep,
+    string AttributionConfidence,
+    IReadOnlyList<CrmCallAiAnalysisPointDto> Strengths,
+    IReadOnlyList<CrmCallAiAnalysisPointDto> Weaknesses,
+    IReadOnlyList<CrmCallAiAnalysisPointDto> Risks,
+    IReadOnlyList<string> Recommendations,
+    IReadOnlyList<string> SuggestedPhrases,
+    IReadOnlyList<string> Checklist);
+
+public sealed record CrmCallAiInsightDto(
+    Guid CallId,
+    string Status,
+    string? TranscriptText,
+    IReadOnlyList<CrmCallTranscriptSegmentDto> Segments,
+    CrmCallAiAnalysisDto? Analysis,
+    string? AnalysisRawText,
+    string? ErrorMessage,
+    DateTime UpdatedAtUtc);
 
 public static class CrmActivityDetails
 {

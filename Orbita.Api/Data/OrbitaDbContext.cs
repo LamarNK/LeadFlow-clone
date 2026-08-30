@@ -37,6 +37,7 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
     public DbSet<CrmTelephonyProviderAccountBindingEntity> CrmTelephonyProviderAccountBindings => Set<CrmTelephonyProviderAccountBindingEntity>();
     public DbSet<CrmTelephonyUserBindingEntity> CrmTelephonyUserBindings => Set<CrmTelephonyUserBindingEntity>();
     public DbSet<CrmCallEntity> CrmCalls => Set<CrmCallEntity>();
+    public DbSet<CrmCallAiInsightEntity> CrmCallAiInsights => Set<CrmCallAiInsightEntity>();
     public DbSet<CrmCardChatReadEntity> CrmCardChatReads => Set<CrmCardChatReadEntity>();
     public DbSet<CrmOutboundChatMessageEntity> CrmOutboundChatMessages => Set<CrmOutboundChatMessageEntity>();
     public DbSet<CrmDeskAlertEntity> CrmDeskAlerts => Set<CrmDeskAlertEntity>();
@@ -501,6 +502,24 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
                 .WithMany()
                 .HasForeignKey(x => x.CardId)
                 .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<CrmCallAiInsightEntity>(entity =>
+        {
+            entity.HasKey(x => x.CallId);
+            entity.HasIndex(x => new { x.Status, x.NextAttemptAtUtc });
+            entity.Property(x => x.Status).HasMaxLength(32);
+            entity.Property(x => x.TranscriptText).HasColumnType("text");
+            entity.Property(x => x.SegmentsJson).HasColumnType("jsonb");
+            entity.Property(x => x.AnalysisJson).HasColumnType("jsonb");
+            entity.Property(x => x.AnalysisRawText).HasColumnType("text");
+            entity.Property(x => x.PromptVersion).HasMaxLength(32);
+            entity.Property(x => x.LastErrorCode).HasMaxLength(64);
+            entity.Property(x => x.LastErrorMessage).HasMaxLength(500);
+            entity.HasOne(x => x.Call)
+                .WithOne()
+                .HasForeignKey<CrmCallAiInsightEntity>(x => x.CallId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<CrmCardChatReadEntity>(entity =>
