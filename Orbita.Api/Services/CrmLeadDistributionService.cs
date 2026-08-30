@@ -9,7 +9,8 @@ namespace Orbita.Api.Services;
 
 /// <summary>
 /// Daily native-CRM distribution. The first eligible shift opens a persisted
-/// five-minute collection window. Leads and NDZ are then balanced separately;
+/// five-minute collection window. Leads, NDZ and configured office-specific
+/// service pools are then balanced separately;
 /// later leads use round-robin among the managers currently on shift, without
 /// compensating for cards assigned before the active roster changed.
 /// </summary>
@@ -26,6 +27,8 @@ public sealed class CrmLeadDistributionService(
     public const string ReasonManual = "Ручное назначение";
     public const string ReasonDailyLead = "Ежедневное распределение: Лиды";
     public const string ReasonDailyNdz = "Ежедневное распределение: НДЗ";
+    public const string ReasonDailyUnavailableSubstitute =
+        "Ежедневное распределение: Недоступные подменные";
     public const string ReasonFileImport = "Импорт лидов из файла";
 
     /// <summary>
@@ -436,12 +439,16 @@ public sealed class CrmLeadDistributionService(
             return false;
         }
 
-        var officeStagesJson = await db.Offices.AsNoTracking()
+        var office = await db.Offices.AsNoTracking()
             .Where(x => x.Id == officeId)
-            .Select(x => x.CrmStagesJson)
+            .Select(x => new { x.Name, x.CrmStagesJson })
             .SingleOrDefaultAsync(ct);
+        var officeStages = CrmStages.Resolve(office?.CrmStagesJson);
         var ndzStages = CrmDailyDistribution.ResolveNdzStages(
-            CrmStages.Resolve(officeStagesJson));
+            officeStages);
+        var unavailableSubstituteStage = CrmDailyDistribution.ResolveUnavailableSubstituteStage(
+            office?.Name,
+            officeStages);
         var ndzStageNames = ndzStages.Stages.ToArray();
         var leadCards = await db.CrmCandidateCards
             .Where(x => x.OfficeId == officeId
@@ -455,7 +462,17 @@ public sealed class CrmLeadDistributionService(
                             && !x.IsClosed
                             && ndzStageNames.Contains(x.Stage))
                 .ToListAsync(ct);
-        var cards = leadCards.Concat(ndzCards).ToList();
+        var unavailableSubstituteCards = unavailableSubstituteStage is null
+            ? []
+            : await db.CrmCandidateCards
+                .Where(x => x.OfficeId == officeId
+                            && !x.IsClosed
+                            && x.Stage == unavailableSubstituteStage)
+                .ToListAsync(ct);
+        var cards = leadCards
+            .Concat(ndzCards)
+            .Concat(unavailableSubstituteCards)
+            .ToList();
         var managerIds = managers.Select(x => x.UserId).ToList();
         var leadPlan = CrmDailyDistribution.BuildBalancedPlan(
             leadCards.Select(x => x.Id),
@@ -469,8 +486,17 @@ public sealed class CrmLeadDistributionService(
             officeId,
             session.LocalDate,
             CrmDailyDistribution.NdzPool);
+        var unavailableSubstitutePlan = CrmDailyDistribution.BuildBalancedPlan(
+            unavailableSubstituteCards.Select(x => x.Id),
+            managerIds,
+            officeId,
+            session.LocalDate,
+            CrmDailyDistribution.UnavailableSubstitutePool);
         IReadOnlySet<string> leadSourceStages = new HashSet<string>([CrmStages.Lead], StringComparer.Ordinal);
         IReadOnlySet<string> ndzSourceStages = new HashSet<string>(ndzStageNames, StringComparer.Ordinal);
+        IReadOnlySet<string> unavailableSubstituteSourceStages = unavailableSubstituteStage is null
+            ? new HashSet<string>(StringComparer.Ordinal)
+            : new HashSet<string>([unavailableSubstituteStage], StringComparer.Ordinal);
 
         var counters = await db.CrmDailyDistributionCounters
             .Where(x => x.OfficeId == officeId && x.LocalDate == session.LocalDate)
@@ -503,6 +529,17 @@ public sealed class CrmLeadDistributionService(
             ReasonDailyNdz,
             ndzSourceStages,
             normalizeNdzTo: ndzStages.PrimaryStage,
+            now);
+        ApplyMorningPlan(
+            unavailableSubstitutePlan,
+            cardsById,
+            counters,
+            officeId,
+            session.LocalDate,
+            CrmDailyDistribution.UnavailableSubstitutePool,
+            ReasonDailyUnavailableSubstitute,
+            unavailableSubstituteSourceStages,
+            normalizeNdzTo: null,
             now);
 
         session.ManagerRosterJson = JsonSerializer.Serialize(managerIds.OrderBy(x => x, StringComparer.Ordinal));

@@ -504,6 +504,99 @@ public sealed class CrmWorkspaceServiceTests
     }
 
     [Fact]
+    public async Task DailyDistribution_ThirdOfficeBalancesUnavailableSubstitutesWithoutChangingStage()
+    {
+        await using var harness = await Harness.CreateAsync();
+        SeedOffice(
+            harness.Db,
+            crmEnabled: true,
+            stages: ["Лид", "Недоступные подменные", "НДЗ", "НДЗ 2", "Переговоры"],
+            officeName: CrmDailyDistribution.ThirdOfficeName);
+        var first = await harness.CreateManagerAsync("third-office-pool-1@test.local", capacity: 1, onShift: false);
+        var second = await harness.CreateManagerAsync("third-office-pool-2@test.local", capacity: 1, onShift: false);
+        Assert.True(await harness.Sut.StartShiftAsync(OfficeId, first.Id));
+        Assert.True(await harness.Sut.StartShiftAsync(OfficeId, second.Id));
+
+        var originalStageChangedAt = DateTime.UtcNow.AddDays(-2);
+        var cards = new List<CrmCandidateCardEntity>();
+        for (var index = 0; index < 5; index++)
+        {
+            var response = await SeedResponseAsync(harness.Db, $"unavailable-substitute-{index}");
+            var card = NewCard(response.Id);
+            card.Stage = CrmDailyDistribution.UnavailableSubstituteStage;
+            card.StageChangedAtUtc = originalStageChangedAt;
+            card.ManagerUserId = index == 0 ? first.Id : "former-manager";
+            card.IsInActiveLoad = false;
+            cards.Add(card);
+            harness.Db.CrmCandidateCards.Add(card);
+        }
+
+        await harness.Db.SaveChangesAsync();
+        harness.Clock.Advance(TimeSpan.FromMinutes(6));
+        await harness.Sut.ProcessDueDailyDistributionsAsync();
+
+        var distributed = await harness.Db.CrmCandidateCards
+            .Where(card => cards.Select(item => item.Id).Contains(card.Id))
+            .ToListAsync();
+        Assert.All(distributed, card =>
+        {
+            Assert.Equal(CrmDailyDistribution.UnavailableSubstituteStage, card.Stage);
+            Assert.Equal(originalStageChangedAt, card.StageChangedAtUtc);
+            Assert.True(card.IsInActiveLoad);
+            Assert.Contains(card.ManagerUserId, new[] { first.Id, second.Id });
+        });
+        Assert.Equal(
+            [2, 3],
+            distributed
+                .GroupBy(card => card.ManagerUserId)
+                .Select(group => group.Count())
+                .OrderBy(count => count)
+                .ToList());
+        Assert.Empty(await harness.Db.CrmCandidateHistory
+            .Where(item => cards.Select(card => card.Id).Contains(item.CardId)
+                           && item.Action == "StageChanged")
+            .ToListAsync());
+        Assert.Equal(
+            [2, 3],
+            await harness.Db.CrmDailyDistributionCounters
+                .Where(counter => counter.Pool == CrmDailyDistribution.UnavailableSubstitutePool)
+                .Select(counter => counter.AssignedCount)
+                .OrderBy(count => count)
+                .ToListAsync());
+    }
+
+    [Fact]
+    public async Task DailyDistribution_OtherOfficeDoesNotRedistributeUnavailableSubstitutes()
+    {
+        await using var harness = await Harness.CreateAsync();
+        SeedOffice(
+            harness.Db,
+            crmEnabled: true,
+            stages: ["Лид", "Недоступные подменные", "НДЗ"],
+            officeName: "2 офис");
+        var manager = await harness.CreateManagerAsync("other-office-pool@test.local", capacity: 1, onShift: false);
+        Assert.True(await harness.Sut.StartShiftAsync(OfficeId, manager.Id));
+        var response = await SeedResponseAsync(harness.Db, "other-office-unavailable-substitute");
+        var card = NewCard(response.Id);
+        card.Stage = CrmDailyDistribution.UnavailableSubstituteStage;
+        card.ManagerUserId = "former-manager";
+        card.IsInActiveLoad = false;
+        harness.Db.CrmCandidateCards.Add(card);
+        await harness.Db.SaveChangesAsync();
+
+        harness.Clock.Advance(TimeSpan.FromMinutes(6));
+        await harness.Sut.ProcessDueDailyDistributionsAsync();
+        await harness.Db.Entry(card).ReloadAsync();
+
+        Assert.Equal("former-manager", card.ManagerUserId);
+        Assert.False(card.IsInActiveLoad);
+        Assert.Equal(CrmDailyDistribution.UnavailableSubstituteStage, card.Stage);
+        Assert.Empty(await harness.Db.CrmDailyDistributionCounters
+            .Where(counter => counter.Pool == CrmDailyDistribution.UnavailableSubstitutePool)
+            .ToListAsync());
+    }
+
+    [Fact]
     public async Task NewLeadsDuringDay_ContinueByDailyReceivedCount()
     {
         await using var harness = await Harness.CreateAsync();

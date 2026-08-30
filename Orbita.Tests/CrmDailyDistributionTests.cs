@@ -148,6 +148,18 @@ public sealed class CrmDailyDistributionTests
     }
 
     [Fact]
+    public void ResolveUnavailableSubstituteStage_OnlyEnablesConfiguredThirdOfficeStage()
+    {
+        var stages = new[] { "Лид", "Недоступные подменные", "НДЗ" };
+
+        Assert.Equal(
+            "Недоступные подменные",
+            CrmDailyDistribution.ResolveUnavailableSubstituteStage(" 3 ОФИС ", stages));
+        Assert.Null(CrmDailyDistribution.ResolveUnavailableSubstituteStage("2 офис", stages));
+        Assert.Null(CrmDailyDistribution.ResolveUnavailableSubstituteStage("3 офис", ["Лид", "НДЗ"]));
+    }
+
+    [Fact]
     public void BusinessDate_UsesYekaterinburgDayBoundary()
     {
         Assert.Equal(
