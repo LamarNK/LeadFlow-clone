@@ -110,16 +110,16 @@ public sealed class CrmAnalyticsQueryServiceTests
             stage =>
             {
                 Assert.Equal("Звонок", stage.Stage);
-                Assert.Equal(2, stage.ReachedCount);
+                Assert.Equal(1, stage.ReachedCount);
                 Assert.Equal(1, stage.CurrentCount);
-                Assert.Equal(66.67, stage.ConversionFromPreviousPercent);
+                Assert.Equal(33.33, stage.ConversionFromPreviousPercent);
             },
             stage =>
             {
                 Assert.Equal("Анкета", stage.Stage);
-                Assert.Equal(1, stage.ReachedCount);
+                Assert.Equal(0, stage.ReachedCount);
                 Assert.Equal(0, stage.CurrentCount);
-                Assert.Equal(50, stage.ConversionFromPreviousPercent);
+                Assert.Equal(0, stage.ConversionFromPreviousPercent);
             });
 
         var manager = Assert.Single(data.Managers, x => x.UserId == ManagerOneId);
@@ -191,11 +191,50 @@ public sealed class CrmAnalyticsQueryServiceTests
 
         var fromUtc = new DateTime(2026, 8, 1, 0, 0, 0, DateTimeKind.Utc);
         var toUtc = fromUtc.AddDays(1);
+        harness.AddShift(ManagerOneId, OfficeOneId, fromUtc.AddHours(-1), toUtc);
         var negotiationHistoryCard = NewCard(
             OfficeOneId,
             ManagerOneId,
             CrmStages.Lead,
             fromUtc.AddMinutes(8));
+        var officerCard = NewCard(
+            OfficeOneId,
+            ManagerOneId,
+            CrmStages.Lead,
+            fromUtc.AddMinutes(6),
+            isClosed: true,
+            closeReason: CrmCloseReasons.Officer);
+        var notRelevantCard = NewCard(
+            OfficeOneId,
+            ManagerOneId,
+            CrmStages.Lead,
+            fromUtc.AddMinutes(7),
+            isClosed: true,
+            closeReason: CrmCloseReasons.NotRelevant);
+        var questionnaireCard = NewCard(
+            OfficeOneId,
+            ManagerOneId,
+            CrmStages.Questionnaire,
+            fromUtc.AddMinutes(9));
+        var ticketCard = NewCard(
+            OfficeOneId,
+            ManagerOneId,
+            CrmStages.Ticket,
+            fromUtc.AddMinutes(10));
+        var successfulCard = NewCard(
+            OfficeOneId,
+            ManagerOneId,
+            CrmStages.Lead,
+            fromUtc.AddMinutes(11),
+            isClosed: true,
+            closeReason: CrmCloseReasons.Success);
+        var contractCard = NewCard(
+            OfficeOneId,
+            ManagerOneId,
+            CrmStages.Lead,
+            fromUtc.AddMinutes(12),
+            isClosed: true,
+            closeReason: CrmCloseReasons.Contract);
         harness.Db.CrmCandidateCards.AddRange(
             NewCard(OfficeOneId, ManagerOneId, CrmStages.Lead, fromUtc.AddMinutes(1)),
             NewCard(OfficeOneId, ManagerOneId, CrmStages.Ndz73, fromUtc.AddMinutes(2)),
@@ -214,46 +253,62 @@ public sealed class CrmAnalyticsQueryServiceTests
                 fromUtc.AddMinutes(5),
                 isClosed: true,
                 closeReason: CrmCloseReasons.Disappeared),
-            NewCard(
-                OfficeOneId,
-                ManagerOneId,
-                CrmStages.Lead,
-                fromUtc.AddMinutes(6),
-                isClosed: true,
-                closeReason: CrmCloseReasons.Officer),
-            NewCard(
-                OfficeOneId,
-                ManagerOneId,
-                CrmStages.Lead,
-                fromUtc.AddMinutes(7),
-                isClosed: true,
-                closeReason: CrmCloseReasons.NotRelevant),
+            officerCard,
+            notRelevantCard,
             negotiationHistoryCard,
-            NewCard(OfficeOneId, ManagerOneId, CrmStages.Questionnaire, fromUtc.AddMinutes(9)),
-            NewCard(OfficeOneId, ManagerOneId, CrmStages.Ticket, fromUtc.AddMinutes(10)),
-            NewCard(
-                OfficeOneId,
-                ManagerOneId,
-                CrmStages.Lead,
-                fromUtc.AddMinutes(11),
-                isClosed: true,
-                closeReason: CrmCloseReasons.Success),
-            NewCard(
-                OfficeOneId,
-                ManagerOneId,
-                CrmStages.Lead,
-                fromUtc.AddMinutes(12),
-                isClosed: true,
-                closeReason: CrmCloseReasons.Contract));
+            questionnaireCard,
+            ticketCard,
+            successfulCard,
+            contractCard);
         harness.Db.CrmCandidateHistory.AddRange(
             NewStageHistory(
                 negotiationHistoryCard.Id,
                 $"{CrmStages.Lead} → {CrmStages.Negotiations}",
-                fromUtc.AddHours(1)),
+                fromUtc.AddHours(1),
+                ManagerOneId,
+                "Анна"),
             NewStageHistory(
                 negotiationHistoryCard.Id,
                 $"{CrmStages.Negotiations} → {CrmStages.Lead}",
-                fromUtc.AddHours(2)));
+                fromUtc.AddHours(2),
+                ManagerOneId,
+                "Анна"),
+            NewStageHistory(
+                questionnaireCard.Id,
+                $"{CrmStages.Lead} → {CrmStages.Questionnaire}",
+                fromUtc.AddHours(3),
+                ManagerOneId,
+                "Анна"),
+            NewStageHistory(
+                ticketCard.Id,
+                $"{CrmStages.Lead} → {CrmStages.Ticket}",
+                fromUtc.AddHours(4),
+                ManagerOneId,
+                "Анна"),
+            NewCloseHistory(
+                successfulCard.Id,
+                CrmCloseReasons.Success,
+                fromUtc.AddHours(5),
+                ManagerOneId,
+                "Анна"),
+            NewCloseHistory(
+                contractCard.Id,
+                CrmCloseReasons.Contract,
+                fromUtc.AddHours(6),
+                ManagerOneId,
+                "Анна"),
+            NewCloseHistory(
+                notRelevantCard.Id,
+                CrmCloseReasons.NotRelevant,
+                fromUtc.AddHours(7),
+                ManagerOneId,
+                "Анна"),
+            NewCloseHistory(
+                officerCard.Id,
+                CrmCloseReasons.Officer,
+                fromUtc.AddHours(8),
+                ManagerOneId,
+                "Анна"));
         await harness.Db.SaveChangesAsync();
 
         var result = await harness.Sut.GetAsync(
@@ -283,6 +338,119 @@ public sealed class CrmAnalyticsQueryServiceTests
         Assert.Equal(decomposition.Contacts, breakdown.Values.Sum(x => x.Count));
         Assert.DoesNotContain(CrmCloseReasons.NoAnswer, breakdown.Keys);
         Assert.DoesNotContain(CrmCloseReasons.Disappeared, breakdown.Keys);
+    }
+
+    [Fact]
+    public async Task GetAsync_AllManagersDecompositionEqualsSumOfManagerResults()
+    {
+        await using var harness = await Harness.CreateAsync(Now);
+        harness.AddOffice(
+            OfficeOneId,
+            "Основной",
+            [CrmStages.Lead, CrmStages.Negotiations, CrmStages.Questionnaire]);
+        harness.AddManager(ManagerOneId, OfficeOneId, "Анна", capacity: 10, onShift: true);
+        harness.AddManager(ManagerTwoId, OfficeOneId, "Борис", capacity: 10, onShift: true);
+
+        var fromUtc = new DateTime(2026, 8, 1, 0, 0, 0, DateTimeKind.Utc);
+        var toUtc = fromUtc.AddDays(1);
+        harness.AddShift(ManagerOneId, OfficeOneId, fromUtc, toUtc);
+        harness.AddShift(ManagerTwoId, OfficeOneId, fromUtc, toUtc);
+        var firstCard = NewCard(OfficeOneId, ManagerOneId, CrmStages.Questionnaire, fromUtc.AddMinutes(1));
+        var secondCard = NewCard(OfficeOneId, ManagerTwoId, CrmStages.Negotiations, fromUtc.AddMinutes(2));
+        harness.Db.CrmCandidateCards.AddRange(firstCard, secondCard);
+        harness.Db.CrmCandidateHistory.AddRange(
+            NewStageHistory(
+                firstCard.Id,
+                $"{CrmStages.Lead} → {CrmStages.Negotiations}",
+                fromUtc.AddHours(1),
+                ManagerOneId,
+                "Анна"),
+            NewStageHistory(
+                firstCard.Id,
+                $"{CrmStages.Negotiations} → {CrmStages.Questionnaire}",
+                fromUtc.AddHours(2),
+                ManagerTwoId,
+                "Борис"),
+            NewStageHistory(
+                secondCard.Id,
+                $"{CrmStages.Lead} → {CrmStages.Negotiations}",
+                fromUtc.AddHours(3),
+                ManagerTwoId,
+                "Борис"));
+        await harness.Db.SaveChangesAsync();
+
+        var all = Assert.IsType<CrmAnalyticsDto>((await harness.Sut.GetAsync(
+            OfficeScope.GlobalAdmin,
+            "admin",
+            isAdmin: true,
+            new CrmAnalyticsQuery(fromUtc, toUtc, OfficeOneId))).Data);
+        var managerOne = Assert.IsType<CrmAnalyticsDto>((await harness.Sut.GetAsync(
+            OfficeScope.GlobalAdmin,
+            "admin",
+            isAdmin: true,
+            new CrmAnalyticsQuery(fromUtc, toUtc, OfficeOneId, ManagerOneId))).Data);
+        var managerTwo = Assert.IsType<CrmAnalyticsDto>((await harness.Sut.GetAsync(
+            OfficeScope.GlobalAdmin,
+            "admin",
+            isAdmin: true,
+            new CrmAnalyticsQuery(fromUtc, toUtc, OfficeOneId, ManagerTwoId))).Data);
+
+        var allDecomposition = Assert.IsType<CrmAnalyticsDecompositionDto>(all.Decomposition);
+        var individual = new[]
+        {
+            Assert.IsType<CrmAnalyticsDecompositionDto>(managerOne.Decomposition),
+            Assert.IsType<CrmAnalyticsDecompositionDto>(managerTwo.Decomposition)
+        };
+        Assert.Equal(individual.Sum(x => x.Leads), allDecomposition.Leads);
+        Assert.Equal(individual.Sum(x => x.Contacts), allDecomposition.Contacts);
+        Assert.Equal(individual.Sum(x => x.Questionnaires), allDecomposition.Questionnaires);
+        Assert.Equal(individual.Sum(x => x.Tickets), allDecomposition.Tickets);
+        Assert.Equal(individual.Sum(x => x.Contracts), allDecomposition.Contracts);
+        Assert.Equal(2, allDecomposition.Leads);
+        Assert.Equal(3, allDecomposition.Contacts);
+        Assert.Equal(1, allDecomposition.Questionnaires);
+    }
+
+    [Fact]
+    public async Task GetAsync_FunnelReachedCountsOnlyTransitionsInsideSelectedPeriod()
+    {
+        await using var harness = await Harness.CreateAsync(Now);
+        harness.AddOffice(
+            OfficeOneId,
+            "Основной",
+            [CrmStages.Lead, CrmStages.Negotiations, CrmStages.Questionnaire]);
+        harness.AddManager(ManagerOneId, OfficeOneId, "Анна", capacity: 10, onShift: true);
+
+        var fromUtc = new DateTime(2026, 8, 1, 0, 0, 0, DateTimeKind.Utc);
+        var toUtc = fromUtc.AddDays(1);
+        var card = NewCard(OfficeOneId, ManagerOneId, CrmStages.Questionnaire, fromUtc.AddMinutes(1));
+        harness.Db.CrmCandidateCards.Add(card);
+        harness.Db.CrmCandidateHistory.AddRange(
+            NewStageHistory(
+                card.Id,
+                $"{CrmStages.Lead} → {CrmStages.Negotiations}",
+                fromUtc.AddHours(1),
+                ManagerOneId,
+                "Анна"),
+            NewStageHistory(
+                card.Id,
+                $"{CrmStages.Negotiations} → {CrmStages.Questionnaire}",
+                toUtc.AddHours(1),
+                ManagerOneId,
+                "Анна"));
+        await harness.Db.SaveChangesAsync();
+
+        var data = Assert.IsType<CrmAnalyticsDto>((await harness.Sut.GetAsync(
+            OfficeScope.GlobalAdmin,
+            "admin",
+            isAdmin: true,
+            new CrmAnalyticsQuery(fromUtc, toUtc, OfficeOneId))).Data);
+
+        var funnel = Assert.Single(data.Funnels);
+        Assert.Equal(1, funnel.Stages.Single(x => x.Stage == CrmStages.Negotiations).ReachedCount);
+        var questionnaire = funnel.Stages.Single(x => x.Stage == CrmStages.Questionnaire);
+        Assert.Equal(0, questionnaire.ReachedCount);
+        Assert.Equal(1, questionnaire.CurrentCount);
     }
 
     [Fact]

@@ -92,7 +92,7 @@
 
         <details class="crm-analytics-methodology">
             <summary><i class="fa-solid fa-circle-info" aria-hidden="true"></i>Как считаются показатели</summary>
-            <p>Общие KPI показывают карточки, созданные в выбранный период, и их состояние на сейчас. Личное «Получено» считается по первой выдаче карточки конкретному менеджеру только внутри его записанной смены. Личные дозвоны, анкеты, билеты, контракты, переходы и закрытия засчитываются фактическому автору действия, если действие совершено в выбранном периоде и во время его смены; одна карточка — не более одного раза на каждом шаге. Автоматические и служебные переходы не учитываются. Текущие карточки, нагрузка и задачи — снимок на сейчас. Дозвоном считается достижение «Переговоров», анкеты, билета или успеха, а также закрытие по причинам «Женщина», «Контракт», «Выбрали других», «Возраст», «Здоровье», «Уже был на СВО», «Неактуально» и «Офицер». НДЗ, «Исчез, слился» и «Робот» сами по себе дозвоном не считаются.</p>
+            <p>Общие KPI показывают карточки, созданные в выбранный период, и их состояние на сейчас. В декомпозиции «Получено» считается по первой выдаче карточки менеджеру только внутри его записанной смены. Дозвоны, анкеты, билеты и контракты засчитываются фактическому автору действия, если оно совершено в выбранном периоде и во время его смены; общий результат равен сумме результатов сотрудников. Одна карточка учитывается не более одного раза на каждом шаге у каждого сотрудника. Автоматические и служебные переходы не учитываются. Текущие карточки, нагрузка и задачи — снимок на сейчас. Дозвоном считается достижение «Переговоров», анкеты, билета или успеха, а также закрытие по причинам «Женщина», «Контракт», «Выбрали других», «Возраст», «Здоровье», «Уже был на СВО», «Неактуально» и «Офицер». НДЗ, «Исчез, слился» и «Робот» сами по себе дозвоном не считаются.</p>
         </details>
 
         <section class="crm-analytics-kpis" aria-label="Ключевые показатели CRM">
@@ -114,8 +114,8 @@
         {
             var decompositionSteps = new[]
             {
-                new { Label = "Лиды", Count = decomposition.Leads, Caption = managerCohortSelected ? "Выдано во время смены" : "Получено за период", Icon = "fa-solid fa-user-plus", Tone = "leads", Conversion = (double?)null },
-                new { Label = "Дозвоны", Count = decomposition.Contacts, Caption = managerCohortSelected ? "Подтвердил сотрудник" : "Контакт подтверждён", Icon = "fa-solid fa-phone-volume", Tone = "contacts", Conversion = (double?)decomposition.ContactConversionPercent },
+                new { Label = "Лиды", Count = decomposition.Leads, Caption = "Выдано во время смены", Icon = "fa-solid fa-user-plus", Tone = "leads", Conversion = (double?)null },
+                new { Label = "Дозвоны", Count = decomposition.Contacts, Caption = managerCohortSelected ? "Подтвердил сотрудник" : "Подтвердили сотрудники", Icon = "fa-solid fa-phone-volume", Tone = "contacts", Conversion = (double?)decomposition.ContactConversionPercent },
                 new { Label = "Анкеты", Count = decomposition.Questionnaires, Caption = "Дошли до анкеты", Icon = "fa-solid fa-clipboard-list", Tone = "questionnaires", Conversion = (double?)decomposition.QuestionnaireConversionPercent },
                 new { Label = "Билеты", Count = decomposition.Tickets, Caption = "Дошли до билета", Icon = "fa-solid fa-ticket", Tone = "tickets", Conversion = (double?)decomposition.TicketConversionPercent },
                 new { Label = "Контракты", Count = decomposition.Contracts, Caption = "Успешно закрыто", Icon = "fa-solid fa-file-signature", Tone = "contracts", Conversion = (double?)decomposition.ContractConversionPercent }
@@ -128,7 +128,7 @@
                     <h2 id="crm-decomposition-title">Декомпозиция</h2>
                     <p>@(managerCohortSelected
                         ? "Лиды — выдача во время смены; остальные шаги — фактические действия сотрудника в выбранном периоде."
-                        : "Путь лидов, полученных в выбранный период. Результаты и достигнутые этапы показаны на текущий момент.")</p>
+                        : "Сумма результатов сотрудников: выдачи и фактические действия в выбранном периоде, только внутри смен.")</p>
                 </div>
                 <span>Конверсия от предыдущего шага</span>
             </header>
@@ -163,11 +163,11 @@
                 </summary>
                 @if (contactBreakdown.Count == 0)
                 {
-                    <p>В выбранной когорте пока нет подтверждённых дозвонов.</p>
+                    <p>В выбранном периоде нет подтверждённых дозвонов, совершённых во время смен.</p>
                 }
                 else
                 {
-                    <p>Каждая карточка показана один раз: достигнутый этап имеет приоритет перед причиной закрытия.</p>
+                    <p>Каждая карточка учитывается один раз у каждого сотрудника: достигнутый этап имеет приоритет перед причиной закрытия.</p>
                     <div class="crm-analytics-contact-breakdown">
                         @foreach (var item in contactBreakdown)
                         {
@@ -234,7 +234,7 @@
             <header class="crm-analytics-panel__header">
                 <div>
                     <h2>Воронка по этапам</h2>
-                    <p>«Дошли» — карточка достигла этого этапа или прошла дальше; «сейчас» — её текущий или последний этап, включая закрытые.</p>
+                    <p>«Дошли» — карточка достигла этапа в выбранном периоде; «сейчас» — её текущий или последний этап, включая закрытые.</p>
                 </div>
             </header>
             @if (visibleFunnels.Count == 0)
