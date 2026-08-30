@@ -343,11 +343,19 @@
                 btn.addEventListener('click', async function (e) {
                     e.preventDefault();
                     e.stopPropagation();
+                    var dirty = document.querySelector('[data-worker-settings-dirty]');
+                    if (dirty && !dirty.hidden) {
+                        runtime.showToast('Сначала сохраните настройки', { variant: 'error' });
+                        return;
+                    }
                     if (btn.disabled) return;
                     var workerId = btn.getAttribute('data-worker-id');
                     var provider = btn.getAttribute('data-provider-check') || btn.getAttribute('data-provider-sync');
                     if (!workerId || !provider) return;
-                    btn.disabled = true;
+                    var isCheck = btn.hasAttribute('data-provider-check');
+                    document.querySelectorAll(isCheck ? '[data-provider-check]' : '[data-provider-sync]').forEach(function (other) {
+                        other.disabled = true;
+                    });
                     var card = btn.closest('[data-provider-card]');
                     if (card && selector.indexOf('provider-check') >= 0) {
                         card.setAttribute('data-provider-status', 'checking');
@@ -366,7 +374,10 @@
                             window.OrbitaLive.scheduleRefresh({ kinds: ['Workers'] });
                         }
                     } else {
-                        btn.disabled = false;
+                        document.querySelectorAll(isCheck ? '[data-provider-check]' : '[data-provider-sync]').forEach(function (other) {
+                            var allowed = other.getAttribute(isCheck ? 'data-can-check' : 'data-can-sync') === 'true';
+                            other.disabled = !allowed;
+                        });
                         runtime.showToast((result.payload && result.payload.error) || 'Не удалось отправить запрос', { variant: 'error' });
                     }
                 });

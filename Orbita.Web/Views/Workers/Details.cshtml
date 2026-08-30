@@ -696,7 +696,7 @@
                                     @if (card.CheckedAtUtc is not null)
                                     {
                                         <span>Проверено: </span>
-                                        <partial name="_UtcTime" model="new UtcTimeDisplayModel(card.CheckedAtUtc, "activity")" />
+                                        <partial name="_UtcTime" model="@(new UtcTimeDisplayModel(card.CheckedAtUtc.Value, "activity"))" />
                                     }
                                 </p>
                                 <div class="worker-provider-card__actions">
@@ -704,6 +704,14 @@
                                             class="worker-provider-btn"
                                             data-provider-check="@card.Provider"
                                             data-worker-id="@Model.WorkerId"
+                                            data-can-check="@(card.CanCheck ? "true" : "false")"
+                                            title="@(card.CanCheck ? null : card.Status == WorkerBrowserProviderStatus.Checking
+                                                ? WorkerBrowserProviderMessages.CheckingMessage
+                                                : card.Status == WorkerBrowserProviderStatus.NeedsSetup
+                                                    ? WorkerBrowserProviderMessages.NeedsToken
+                                                    : card.Status == WorkerBrowserProviderStatus.Disabled
+                                                        ? WorkerBrowserProviderMessages.DisabledHint
+                                                        : WorkerBrowserProviderMessages.CheckAlreadyQueued)"
                                             @(card.CanCheck ? null : "disabled")>
                                         Проверить подключение
                                     </button>
@@ -713,6 +721,8 @@
                                                 class="worker-provider-btn worker-provider-btn--secondary"
                                                 data-provider-sync="@card.Provider"
                                                 data-worker-id="@Model.WorkerId"
+                                                data-can-sync="@(card.CanSync ? "true" : "false")"
+                                                title="@(card.CanSync ? null : WorkerBrowserProviderMessages.SyncAlreadyQueued)"
                                                 @(card.CanSync ? null : "hidden")>
                                             Синхронизировать сейчас
                                         </button>

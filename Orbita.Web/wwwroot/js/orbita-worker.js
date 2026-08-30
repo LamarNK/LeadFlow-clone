@@ -222,6 +222,52 @@
         });
     }
 
+    function isWorkerSettingsDirty() {
+        var dirty = document.querySelector('[data-worker-settings-dirty]');
+        return !!(dirty && !dirty.hidden);
+    }
+
+    function gateProviderButton(btn, allowed, busyTitle) {
+        if (!btn) return;
+        if (isWorkerSettingsDirty()) {
+            btn.disabled = true;
+            btn.setAttribute('data-needs-save', '1');
+            btn.title = 'Сначала сохраните настройки';
+            return;
+        }
+        btn.removeAttribute('data-needs-save');
+        btn.disabled = !allowed;
+        if (allowed) {
+            btn.removeAttribute('title');
+        } else if (busyTitle) {
+            btn.title = busyTitle;
+        }
+    }
+
+    function gateAllProviderButtons() {
+        document.querySelectorAll('[data-provider-card]').forEach(function (card) {
+            var status = card.getAttribute('data-provider-status') || 'unchecked';
+            var checkBtn = card.querySelector('[data-provider-check]');
+            var checkAllowed = status !== 'disabled' && status !== 'checking' && status !== 'needsSetup';
+            if (checkBtn && checkBtn.hasAttribute('data-can-check')) {
+                checkAllowed = checkBtn.getAttribute('data-can-check') === 'true';
+            }
+            gateProviderButton(
+                checkBtn,
+                checkAllowed,
+                status === 'checking' ? 'Проверка на воркере…' : 'Дождитесь текущей проверки на воркере.'
+            );
+            var syncBtn = card.querySelector('[data-provider-sync]');
+            if (syncBtn) {
+                var syncAllowed = !syncBtn.hidden && status === 'connected';
+                if (syncBtn.hasAttribute('data-can-sync')) {
+                    syncAllowed = syncBtn.getAttribute('data-can-sync') === 'true';
+                }
+                gateProviderButton(syncBtn, syncAllowed, 'Дождитесь текущей синхронизации на воркере.');
+            }
+        });
+    }
+
     function initWorkerSettings() {
         var form = document.querySelector('.worker-settings-form');
         if (!form || form.hasAttribute('data-worker-settings-bound')) return;
@@ -321,9 +367,16 @@
                 if (messageEl) messageEl.textContent = message;
             }
             var checkBtn = card.querySelector('[data-provider-check]');
-            if (checkBtn) checkBtn.disabled = resolved === 'disabled' || resolved === 'checking' || resolved === 'needsSetup';
+            gateProviderButton(
+                checkBtn,
+                resolved !== 'disabled' && resolved !== 'checking' && resolved !== 'needsSetup',
+                resolved === 'checking' ? 'Проверка на воркере…' : 'Дождитесь текущей проверки на воркере.'
+            );
             var syncBtn = card.querySelector('[data-provider-sync]');
-            if (syncBtn) syncBtn.hidden = resolved !== 'connected';
+            if (syncBtn) {
+                syncBtn.hidden = resolved !== 'connected';
+                gateProviderButton(syncBtn, resolved === 'connected', 'Дождитесь текущей синхронизации на воркере.');
+            }
         }
 
         function syncProviderSection(kind) {
@@ -404,7 +457,24 @@
         function markDirty() {
             if (dirty) dirty.hidden = false;
             if (saveButton) saveButton.textContent = 'Сохранить изменения';
+            gateAllProviderButtons();
         }
+
+        form.querySelectorAll('.worker-provider-card__actions').forEach(function (actions) {
+            if (actions.hasAttribute('data-dirty-gate-bound')) return;
+            actions.setAttribute('data-dirty-gate-bound', '1');
+            actions.addEventListener('click', function (e) {
+                if (!isWorkerSettingsDirty()) return;
+                if (!e.target.closest('[data-provider-check], [data-provider-sync], .worker-provider-card__actions')) return;
+                e.preventDefault();
+                e.stopPropagation();
+                var toast = (window.Orbita && (window.Orbita.toast || window.Orbita.showToast))
+                    || (window.OrbitaRuntime && window.OrbitaRuntime.showToast);
+                if (typeof toast === 'function') {
+                    toast('Сначала сохраните настройки', { variant: 'error' });
+                }
+            });
+        });
 
         form.addEventListener('input', markDirty);
         form.addEventListener('change', markDirty);
@@ -999,9 +1069,23 @@
             }
         }
         var checkBtn = card.querySelector('[data-provider-check]');
-        if (checkBtn) checkBtn.disabled = !check.canCheck;
+        if (checkBtn) {
+            checkBtn.setAttribute('data-can-check', check.canCheck ? 'true' : 'false');
+            gateProviderButton(
+                checkBtn,
+                !!check.canCheck,
+                check.status === 'checking' ? 'Проверка на воркере…' : 'Дождитесь текущей проверки на воркере.'
+            );
+        }
         var syncBtn = card.querySelector('[data-provider-sync]');
-        if (syncBtn) syncBtn.hidden = !check.canSync;
+        if (syncBtn) {
+            syncBtn.hidden = !check.canSync;
+            syncBtn.setAttribute('data-can-sync', check.canSync ? 'true' : 'false');
+            gateProviderButton(
+                syncBtn,
+                !!check.canSync,
+                'Дождитесь текущей синхронизации на воркере.');
+        }
     }
 
     function applySnapshot(snapshot, highlightChanged) {

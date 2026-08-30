@@ -1,5 +1,4 @@
 using System.Text.Json;
-using LeadFlow.Core.Services.Worker;
 using Orbita.Contracts;
 
 namespace Orbita.Api.Helpers;
@@ -119,18 +118,21 @@ internal static class BrowserProviderChecksJson
         bool enabled,
         bool needsSetup,
         string? pendingCheckProvider,
+        string? pendingSyncProvider,
         BrowserProviderCheckSnapshot? last)
     {
-        var checking = string.Equals(pendingCheckProvider, provider, StringComparison.OrdinalIgnoreCase);
+        var thisChecking = string.Equals(pendingCheckProvider, provider, StringComparison.OrdinalIgnoreCase);
+        var checkBusy = !string.IsNullOrWhiteSpace(pendingCheckProvider);
+        var syncBusy = !string.IsNullOrWhiteSpace(pendingSyncProvider);
         var status = WorkerBrowserProviderStatus.Resolve(
             enabled,
             needsSetup,
-            checking,
+            thisChecking,
             last is null ? null : last.Ok);
-        var canCheck = enabled && !needsSetup && !checking;
+        var canCheck = enabled && !needsSetup && !checkBusy;
         var canSync = enabled
             && !needsSetup
-            && !checking
+            && !syncBusy
             && status == WorkerBrowserProviderStatus.Connected
             && WorkerBrowserProviderKinds.SupportsCatalogSync(provider);
         var message = status switch
@@ -148,7 +150,7 @@ internal static class BrowserProviderChecksJson
             status,
             WorkerBrowserProviderStatus.Label(status),
             message,
-            checking ? null : last?.AtUtc,
+            thisChecking ? null : last?.AtUtc,
             last?.Profiles,
             last?.Groups,
             last?.Path,

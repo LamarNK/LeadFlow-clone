@@ -908,6 +908,7 @@ public sealed class WorkerConfigService(
             enabled,
             needsSetup,
             worker.PendingBrowserProviderCheck,
+            worker.PendingBrowserProviderSync,
             BrowserProviderChecksJson.Get(state, provider));
     }
 
@@ -1030,6 +1031,11 @@ public sealed class WorkerConfigService(
             return (null, WorkerBrowserProviderMessages.NeedsToken);
         }
 
+        if (!string.IsNullOrWhiteSpace(worker.PendingBrowserProviderCheck))
+        {
+            return (null, WorkerBrowserProviderMessages.CheckAlreadyQueued);
+        }
+
         worker.PendingBrowserProviderCheck = kind;
         worker.PendingBrowserProviderCheckAtUtc = DateTime.UtcNow;
         await db.SaveChangesAsync(ct);
@@ -1070,6 +1076,11 @@ public sealed class WorkerConfigService(
             && string.IsNullOrWhiteSpace(worker.MultiloginAutomationToken))
         {
             return (null, WorkerBrowserProviderMessages.NeedsToken);
+        }
+
+        if (!string.IsNullOrWhiteSpace(worker.PendingBrowserProviderSync))
+        {
+            return (null, WorkerBrowserProviderMessages.SyncAlreadyQueued);
         }
 
         worker.PendingBrowserProviderSync = kind;

@@ -1427,6 +1427,113 @@ public sealed class WorkerConfigServiceTests
 
         var again = await sut.GetConfigForWorkerAsync(WorkerId, OfficeScope.ForOffice(OfficeId));
         Assert.Equal(WorkerBrowserProviderKinds.AdsPower, again!.PendingProviderCheck!.Provider);
+
+        var worker = await db.Workers.SingleAsync();
+        var localWhileBusy = WorkerConfigService.MapProviderCheck(worker, WorkerBrowserProviderKinds.Local);
+        Assert.False(localWhileBusy.CanCheck);
+        Assert.NotEqual(WorkerBrowserProviderStatus.Checking, localWhileBusy.Status);
+    }
+
+    [Fact]
+    public async Task RequestProviderCheckAsync_SecondRequest_DoesNotOverwritePending_EvenForOtherProvider()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db);
+        var queuedAt = DateTime.UtcNow.AddMinutes(-5);
+        var worker = await db.Workers.SingleAsync();
+        worker.PendingBrowserProviderCheck = WorkerBrowserProviderKinds.AdsPower;
+        worker.PendingBrowserProviderCheckAtUtc = queuedAt;
+        await db.SaveChangesAsync();
+
+        var sut = CreateService(db);
+        var same = await sut.RequestProviderCheckAsync(WorkerId, "AdsPower", OfficeScope.ForOffice(OfficeId));
+        Assert.Null(same.Check);
+        Assert.Equal(WorkerBrowserProviderMessages.CheckAlreadyQueued, same.Error);
+
+        var other = await sut.RequestProviderCheckAsync(WorkerId, "Local", OfficeScope.ForOffice(OfficeId));
+        Assert.Null(other.Check);
+        Assert.Equal(WorkerBrowserProviderMessages.CheckAlreadyQueued, other.Error);
+
+        worker = await db.Workers.SingleAsync();
+        Assert.Equal(WorkerBrowserProviderKinds.AdsPower, worker.PendingBrowserProviderCheck);
+        Assert.Equal(queuedAt, worker.PendingBrowserProviderCheckAtUtc);
+    }
+
+    [Fact]
+    public async Task RequestProviderSyncAsync_SecondRequest_DoesNotOverwritePending_EvenForOtherProvider()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db);
+        var queuedAt = DateTime.UtcNow.AddMinutes(-4);
+        var worker = await db.Workers.SingleAsync();
+        worker.MultiloginAutomationToken = "keep-mlx-token";
+        worker.PendingBrowserProviderSync = WorkerBrowserProviderKinds.AdsPower;
+        worker.PendingBrowserProviderSyncAtUtc = queuedAt;
+        await db.SaveChangesAsync();
+
+        var sut = CreateService(db);
+        var same = await sut.RequestProviderSyncAsync(WorkerId, "AdsPower", OfficeScope.ForOffice(OfficeId));
+        Assert.Null(same.Check);
+        Assert.Equal(WorkerBrowserProviderMessages.SyncAlreadyQueued, same.Error);
+
+        var other = await sut.RequestProviderSyncAsync(WorkerId, "Multilogin", OfficeScope.ForOffice(OfficeId));
+        Assert.Null(other.Check);
+        Assert.Equal(WorkerBrowserProviderMessages.SyncAlreadyQueued, other.Error);
+
+        worker = await db.Workers.SingleAsync();
+        Assert.Equal(WorkerBrowserProviderKinds.AdsPower, worker.PendingBrowserProviderSync);
+        Assert.Equal(queuedAt, worker.PendingBrowserProviderSyncAtUtc);
+    }
+
+    [Fact]
+    public async Task MapProviderCheck_PendingCheck_BlocksCanCheckOnOtherProviders()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db);
+        var worker = await db.Workers.SingleAsync();
+        worker.PendingBrowserProviderCheck = WorkerBrowserProviderKinds.AdsPower;
+        worker.PendingBrowserProviderCheckAtUtc = DateTime.UtcNow;
+        worker.MultiloginAutomationToken = "mlx";
+        await db.SaveChangesAsync();
+
+        var ads = WorkerConfigService.MapProviderCheck(worker, WorkerBrowserProviderKinds.AdsPower);
+        var mlx = WorkerConfigService.MapProviderCheck(worker, WorkerBrowserProviderKinds.Multilogin);
+        var local = WorkerConfigService.MapProviderCheck(worker, WorkerBrowserProviderKinds.Local);
+
+        Assert.Equal(WorkerBrowserProviderStatus.Checking, ads.Status);
+        Assert.False(ads.CanCheck);
+        Assert.False(mlx.CanCheck);
+        Assert.False(local.CanCheck);
+        Assert.NotEqual(WorkerBrowserProviderStatus.Checking, mlx.Status);
+        Assert.NotEqual(WorkerBrowserProviderStatus.Checking, local.Status);
+        Assert.NotEqual(WorkerBrowserProviderStatus.Connected, ads.Status);
+    }
+
+    [Fact]
+    public async Task MapProviderCheck_PendingSync_BlocksCanSyncOnOtherProviders()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db);
+        var worker = await db.Workers.SingleAsync();
+        worker.MultiloginAutomationToken = "mlx";
+        worker.PendingBrowserProviderSync = WorkerBrowserProviderKinds.AdsPower;
+        worker.PendingBrowserProviderSyncAtUtc = DateTime.UtcNow;
+        worker.BrowserProviderChecksJson = BrowserProviderChecksJson.Serialize(new BrowserProviderChecksState
+        {
+            AdsPower = new BrowserProviderCheckSnapshot { Ok = true, AtUtc = DateTime.UtcNow, Message = "ok", Profiles = 1 },
+            Multilogin = new BrowserProviderCheckSnapshot { Ok = true, AtUtc = DateTime.UtcNow, Message = "ok", Profiles = 1 }
+        });
+        await db.SaveChangesAsync();
+
+        var ads = WorkerConfigService.MapProviderCheck(worker, WorkerBrowserProviderKinds.AdsPower);
+        var mlx = WorkerConfigService.MapProviderCheck(worker, WorkerBrowserProviderKinds.Multilogin);
+
+        Assert.Equal(WorkerBrowserProviderStatus.Connected, ads.Status);
+        Assert.Equal(WorkerBrowserProviderStatus.Connected, mlx.Status);
+        Assert.False(ads.CanSync);
+        Assert.False(mlx.CanSync);
+        Assert.True(ads.CanCheck);
+        Assert.True(mlx.CanCheck);
     }
 
     [Fact]

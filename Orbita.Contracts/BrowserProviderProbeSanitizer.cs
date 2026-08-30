@@ -1,7 +1,6 @@
-using System.Net;
 using System.Text.RegularExpressions;
 
-namespace LeadFlow.Core.Services.Worker;
+namespace Orbita.Contracts;
 
 public static class BrowserProviderProbeSanitizer
 {
@@ -28,7 +27,7 @@ public static class BrowserProviderProbeSanitizer
 
         foreach (var secret in secrets)
         {
-            if (string.IsNullOrWhiteSpace(secret) || secret.Length < 4)
+            if (string.IsNullOrEmpty(secret))
             {
                 continue;
             }

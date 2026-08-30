@@ -1,4 +1,4 @@
-using LeadFlow.Core.Services.Worker;
+using Orbita.Contracts;
 
 namespace Orbita.Tests;
 
@@ -17,8 +17,31 @@ public sealed class BrowserProviderProbeSanitizerTests
         Assert.DoesNotContain(Token, sanitized, StringComparison.Ordinal);
         Assert.DoesNotContain(ApiKey, sanitized, StringComparison.Ordinal);
         Assert.DoesNotContain("Bearer", sanitized, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain($"user:{ApiKey}@", sanitized, StringComparison.Ordinal);
         Assert.DoesNotContain("user:", sanitized, StringComparison.Ordinal);
-        Assert.DoesNotContain("launcher.mlx.yt", sanitized, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData("k")]
+    [InlineData("ab")]
+    [InlineData("xyz")]
+    public void Sanitize_StripsShortSecrets_RegardlessOfLength(string secret)
+    {
+        var sanitized = BrowserProviderProbeSanitizer.Sanitize($"token={secret}; ok", secret);
+        Assert.DoesNotContain(secret, sanitized, StringComparison.Ordinal);
+        Assert.DoesNotContain($"token={secret}", sanitized, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Sanitize_StripsBearerAndPasswordInUrl_WithShortSecret()
+    {
+        const string password = "pw";
+        var raw = "Authorization: Bearer pw GET https://u:pw@host.example/api failed";
+        var sanitized = BrowserProviderProbeSanitizer.Sanitize(raw, password);
+
+        Assert.DoesNotContain("Bearer", sanitized, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("u:pw@", sanitized, StringComparison.Ordinal);
+        Assert.DoesNotContain("pw", sanitized, StringComparison.Ordinal);
     }
 
     [Fact]

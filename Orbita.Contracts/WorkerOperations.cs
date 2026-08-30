@@ -318,6 +318,9 @@ public static class WorkerBrowserProviderMessages
     public const string UnknownProvider = "Неизвестный провайдер.";
     public const string CheckQueued = "Запрос отправлен воркеру.";
     public const string SyncQueued = "Синхронизация запущена на воркере.";
+    public const string CheckAlreadyQueued = "Дождитесь текущей проверки на воркере.";
+    public const string SyncAlreadyQueued = "Дождитесь текущей синхронизации на воркере.";
+    public const string SaveSettingsFirst = "Сначала сохраните настройки.";
 }
 
 public static class WorkerBrowserProviderKinds
