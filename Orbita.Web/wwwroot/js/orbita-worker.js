@@ -460,12 +460,12 @@
             gateAllProviderButtons();
         }
 
-        form.querySelectorAll('.worker-provider-card__actions').forEach(function (actions) {
+        form.querySelectorAll('[data-provider-actions]').forEach(function (actions) {
             if (actions.hasAttribute('data-dirty-gate-bound')) return;
             actions.setAttribute('data-dirty-gate-bound', '1');
             actions.addEventListener('click', function (e) {
                 if (!isWorkerSettingsDirty()) return;
-                if (!e.target.closest('[data-provider-check], [data-provider-sync], .worker-provider-card__actions')) return;
+                if (!e.target.closest('[data-provider-check], [data-provider-sync], [data-provider-actions]')) return;
                 e.preventDefault();
                 e.stopPropagation();
                 var toast = (window.Orbita && (window.Orbita.toast || window.Orbita.showToast))
@@ -1064,7 +1064,7 @@
         if (time) {
             time.hidden = !check.checkedAtUtc;
             if (check.checkedAtUtc) {
-                time.innerHTML = '<span>Проверено: </span><time data-orbita-utc="' + shared.escapeHtml(check.checkedAtUtc) + '" data-orbita-format="activity"></time>';
+                time.innerHTML = '<time data-orbita-utc="' + shared.escapeHtml(check.checkedAtUtc) + '" data-orbita-format="activity"></time>';
                 if (window.OrbitaTime) window.OrbitaTime.localizeAll(time);
             }
         }

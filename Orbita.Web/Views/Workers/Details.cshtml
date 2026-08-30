@@ -646,7 +646,9 @@
                     </div>
 
                     <div class="worker-settings-group worker-settings-group--advanced" id="worker-settings-connection" role="tabpanel" aria-labelledby="worker-settings-tab-connection" data-worker-settings-panel="connection">
-                    <div class="worker-provider-cards">
+                    <div class="worker-settings-section worker-settings-section--sources">
+                        <span class="worker-settings-section-title">Источники браузеров</span>
+                        <div class="worker-provider-sources" data-provider-sources>
                         @foreach (var card in new[] { Model.AdsPowerCheck, Model.MultiloginCheck, Model.LocalChromeCheck })
                         {
                             var enabledName = card.Provider switch
@@ -673,33 +675,50 @@
                                 "Local" => "Использовать обычный браузер",
                                 _ => "Использовать AdsPower"
                             };
-                            <article class="worker-provider-card" data-provider-card="@card.Provider" data-provider-status="@card.Status">
-                                <div class="worker-provider-card__head">
-                                    <div>
-                                        <h3 class="worker-provider-card__title">@title</h3>
-                                        <span class="worker-provider-status worker-provider-status--@card.Status" data-provider-status-label>@card.StatusLabel</span>
-                                    </div>
-                                    <label class="worker-provider-toggle-label" title="@toggleTitle">
-                                        <span>@toggleTitle</span>
-                                        <span class="worker-toggle">
-                                            <input type="checkbox"
-                                                   name="@enabledName"
-                                                   value="true"
-                                                   data-provider-toggle="@card.Provider"
-                                                   @(enabled ? "checked" : null) />
-                                            <span class="worker-toggle-slider"></span>
-                                        </span>
-                                    </label>
-                                </div>
-                                <p class="worker-provider-card__message" data-provider-message>@(card.Message ?? "")</p>
-                                <p class="worker-provider-card__time" data-provider-checked-at @(card.CheckedAtUtc is null ? "hidden" : null)>
-                                    @if (card.CheckedAtUtc is not null)
-                                    {
-                                        <span>Проверено: </span>
-                                        <partial name="_UtcTime" model="@(new UtcTimeDisplayModel(card.CheckedAtUtc.Value, "activity"))" />
-                                    }
-                                </p>
-                                <div class="worker-provider-card__actions">
+                            var iconClass = card.Provider switch
+                            {
+                                "Multilogin" => "fa-solid fa-layer-group",
+                                "Local" => "fa-brands fa-chrome",
+                                _ => "fa-solid fa-window-restore"
+                            };
+                            var iconTone = card.Provider switch
+                            {
+                                "Multilogin" => "mlx",
+                                "Local" => "local",
+                                _ => "ads"
+                            };
+                            var resultMessage = card.Status == WorkerBrowserProviderStatus.Disabled
+                                ? ""
+                                : (card.Message ?? "");
+                            <div class="worker-provider-row"
+                                 data-provider-card="@card.Provider"
+                                 data-provider-status="@card.Status">
+                                <span class="worker-provider-row__icon worker-provider-row__icon--@iconTone" aria-hidden="true">
+                                    <i class="@iconClass"></i>
+                                </span>
+                                <span class="worker-provider-row__name">@title</span>
+                                <span class="worker-provider-status worker-provider-status--@card.Status" data-provider-status-label>@card.StatusLabel</span>
+                                <span class="worker-provider-row__result">
+                                    <span class="worker-provider-row__message" data-provider-message>@resultMessage</span>
+                                    <span class="worker-provider-row__time" data-provider-checked-at @(card.CheckedAtUtc is null ? "hidden" : null)>
+                                        @if (card.CheckedAtUtc is not null)
+                                        {
+                                            <partial name="_UtcTime" model="@(new UtcTimeDisplayModel(card.CheckedAtUtc.Value, "activity"))" />
+                                        }
+                                    </span>
+                                </span>
+                                <label class="worker-provider-row__toggle" title="@toggleTitle">
+                                    <span class="worker-toggle">
+                                        <input type="checkbox"
+                                               name="@enabledName"
+                                               value="true"
+                                               aria-label="@toggleTitle"
+                                               data-provider-toggle="@card.Provider"
+                                               @(enabled ? "checked" : null) />
+                                        <span class="worker-toggle-slider"></span>
+                                    </span>
+                                </label>
+                                <span class="worker-provider-row__actions" data-provider-actions>
                                     <button type="button"
                                             class="worker-provider-btn"
                                             data-provider-check="@card.Provider"
@@ -713,7 +732,7 @@
                                                         ? WorkerBrowserProviderMessages.DisabledHint
                                                         : WorkerBrowserProviderMessages.CheckAlreadyQueued)"
                                             @(card.CanCheck ? null : "disabled")>
-                                        Проверить подключение
+                                        Проверить
                                     </button>
                                     @if (WorkerBrowserProviderKinds.SupportsCatalogSync(card.Provider))
                                     {
@@ -724,16 +743,16 @@
                                                 data-can-sync="@(card.CanSync ? "true" : "false")"
                                                 title="@(card.CanSync ? null : WorkerBrowserProviderMessages.SyncAlreadyQueued)"
                                                 @(card.CanSync ? null : "hidden")>
-                                            Синхронизировать сейчас
+                                            Синхронизировать
                                         </button>
                                     }
-                                </div>
-                            </article>
+                                </span>
+                            </div>
                         }
+                        </div>
                     </div>
 
                     <div class="worker-settings-section" data-provider-section="AdsPower" @(Model.AdsPowerEnabled ? null : "hidden")>
-                        <span class="worker-settings-section-title">AdsPower Local API</span>
                         <div data-provider-fields="AdsPower">
                         <label class="worker-settings-field" for="adsPowerApiBaseUrl">
                             <span class="worker-settings-label">URL API</span>
@@ -800,7 +819,6 @@
                     </div>
 
                     <div class="worker-settings-section" data-provider-section="Multilogin" @(Model.MultiloginEnabled ? null : "hidden")>
-                        <span class="worker-settings-section-title">Multilogin X</span>
                         <div data-provider-fields="Multilogin">
                         <label class="worker-settings-field" for="multiloginAutomationToken">
                             <span class="worker-settings-label">API Token</span>
@@ -851,7 +869,6 @@
                     </div>
 
                     <div class="worker-settings-section" data-provider-section="Local" @(Model.LocalChromeEnabled ? null : "hidden")>
-                        <span class="worker-settings-section-title">Обычный браузер</span>
                         <div data-provider-fields="Local">
                         <p class="worker-settings-hint">Chrome будет найден автоматически. Для каждого аккаунта нужна отдельная папка User Data — стандартный профиль Default обычного Chrome использовать нельзя.</p>
                         <details class="worker-settings-advanced">
