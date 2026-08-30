@@ -2,6 +2,8 @@ using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using System.Security.Cryptography;
+using System.Text;
 using Orbita.Api.Data;
 using Orbita.Api.Options;
 using Orbita.Api.Services;
@@ -1200,6 +1202,36 @@ public sealed class CrmTelephonyServiceTests
     }
 
     [Fact]
+    public async Task ProviderAccounts_WithSameExternalCallId_RemainIndependent()
+    {
+        await using var harness = await Harness.CreateAsync();
+        var first = await AddProviderAccountAsync(harness, "SIPOUT main", "first-secret", "74950000001");
+        var second = await AddProviderAccountAsync(harness, "SIPOUT reserve", "second-secret", "74950000002");
+
+        var firstResult = await harness.Sut.ReceiveSipoutCallAsync(
+            first,
+            "first-secret",
+            new SipoutCallWebhookPayload(
+                "provider-call-1", "+7 999 111-22-33", "+7 495 000-00-01", "incoming",
+                "201", null, "1786968000", "60", "https://records.sipout.net/first.mp3"));
+        var secondResult = await harness.Sut.ReceiveSipoutCallAsync(
+            second,
+            "second-secret",
+            new SipoutCallWebhookPayload(
+                "provider-call-1", "202", "+7 999 111-22-33", "outgoing",
+                "202", null, "1786968060", "45", "https://records.sipout.net/second.mp3"));
+
+        Assert.Equal(SipoutCallReceiveOutcome.Accepted, firstResult.Outcome);
+        Assert.Equal(SipoutCallReceiveOutcome.Accepted, secondResult.Outcome);
+        var calls = await harness.Db.CrmCalls.OrderBy(x => x.StartedAtUtc).ToListAsync();
+        Assert.Equal(2, calls.Count);
+        Assert.NotEqual(calls[0].ProviderAccountId, calls[1].ProviderAccountId);
+        Assert.All(calls, call => Assert.Equal("79991112233", call.ClientPhoneNormalized));
+        Assert.All(calls, call => Assert.Equal(harness.CardId, call.CardId));
+        Assert.All(calls, call => Assert.NotNull(call.NextRecordingArchiveAtUtc));
+    }
+
+    [Fact]
     public async Task PlusofonCall_MatchesCardAndInternalNumber_WithoutMixingProviders()
     {
         await using var harness = await Harness.CreateAsync();
@@ -1644,6 +1676,42 @@ public sealed class CrmTelephonyServiceTests
                 Directory.Delete(RecordingPath, recursive: true);
             }
         }
+    }
+
+    private static async Task<Guid> AddProviderAccountAsync(
+        Harness harness,
+        string name,
+        string secret,
+        string ownedNumber)
+    {
+        var id = Guid.NewGuid();
+        var publicId = Guid.NewGuid();
+        harness.Db.CrmTelephonyProviderAccounts.Add(new CrmTelephonyProviderAccountEntity
+        {
+            Id = id,
+            OfficeId = harness.OfficeId,
+            Provider = CrmTelephonyProviders.Sipout,
+            Name = name,
+            OwnedNumbersJson = $"[\"{ownedNumber}\"]",
+            PublicId = publicId,
+            SecretHash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(secret))),
+            IsEnabled = true,
+            SyncFromUtc = harness.Now.UtcDateTime.AddDays(-1),
+            SyncStatus = "webhook",
+            CreatedAtUtc = harness.Now.UtcDateTime,
+            UpdatedAtUtc = harness.Now.UtcDateTime
+        });
+        harness.Db.CrmTelephonyProviderAccountBindings.Add(new CrmTelephonyProviderAccountBindingEntity
+        {
+            Id = Guid.NewGuid(),
+            ProviderAccountId = id,
+            ProviderUserKey = name.Contains("main", StringComparison.Ordinal) ? "201" : "202",
+            UserId = Harness.ManagerId,
+            CreatedAtUtc = harness.Now.UtcDateTime,
+            UpdatedAtUtc = harness.Now.UtcDateTime
+        });
+        await harness.Db.SaveChangesAsync();
+        return publicId;
     }
 
     private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider

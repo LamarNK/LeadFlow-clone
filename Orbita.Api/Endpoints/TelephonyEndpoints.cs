@@ -340,6 +340,81 @@ public static class TelephonyEndpoints
             return error is null ? Results.Ok(receiver) : Results.BadRequest(new { error });
         });
 
+        admin.MapPost("/offices/{officeId:guid}/{provider}/accounts", async (
+            Guid officeId,
+            string provider,
+            CreateCrmTelephonyProviderAccountRequest account,
+            HttpRequest httpRequest,
+            IOptions<BitrixWorkforceOptions> publicEndpointOptions,
+            IOptions<TelephonyGatewayPublicOptions> telephonyGatewayOptions,
+            CrmTelephonyProviderAccountService accounts,
+            OfficeScopeService officeScope,
+            ClaimsPrincipal principal,
+            CancellationToken ct) =>
+        {
+            if (!await CanManageTelephonyAsync(officeId, officeScope, principal, ct)) return Results.Forbid();
+            if (!CrmTelephonyProviders.IsSupported(provider)) return Results.BadRequest();
+            var publicBaseUrl = ResolvePublicBaseUrl(
+                telephonyGatewayOptions.Value.PublicBaseUrl,
+                publicEndpointOptions.Value.PublicBaseUrl,
+                httpRequest);
+            var (result, error) = await accounts.CreateAsync(
+                officeId, provider, account, publicBaseUrl, ct);
+            return result is null ? Results.BadRequest(new { error }) : Results.Ok(result);
+        });
+
+        admin.MapPut("/offices/{officeId:guid}/{provider}/accounts/{accountId:guid}", async (
+            Guid officeId,
+            string provider,
+            Guid accountId,
+            UpdateCrmTelephonyProviderAccountRequest account,
+            CrmTelephonyProviderAccountService accounts,
+            OfficeScopeService officeScope,
+            ClaimsPrincipal principal,
+            CancellationToken ct) =>
+        {
+            if (!await CanManageTelephonyAsync(officeId, officeScope, principal, ct)) return Results.Forbid();
+            var (result, error) = await accounts.UpdateAsync(officeId, provider, accountId, account, ct);
+            return result is null ? Results.BadRequest(new { error }) : Results.Ok(result);
+        });
+
+        admin.MapPost("/offices/{officeId:guid}/{provider}/accounts/{accountId:guid}/receiver", async (
+            Guid officeId,
+            string provider,
+            Guid accountId,
+            HttpRequest httpRequest,
+            IOptions<BitrixWorkforceOptions> publicEndpointOptions,
+            IOptions<TelephonyGatewayPublicOptions> telephonyGatewayOptions,
+            CrmTelephonyProviderAccountService accounts,
+            OfficeScopeService officeScope,
+            ClaimsPrincipal principal,
+            CancellationToken ct) =>
+        {
+            if (!await CanManageTelephonyAsync(officeId, officeScope, principal, ct)) return Results.Forbid();
+            var publicBaseUrl = ResolvePublicBaseUrl(
+                telephonyGatewayOptions.Value.PublicBaseUrl,
+                publicEndpointOptions.Value.PublicBaseUrl,
+                httpRequest);
+            var (result, error) = await accounts.RotateReceiverAsync(
+                officeId, provider, accountId, publicBaseUrl, ct);
+            return result is null ? Results.BadRequest(new { error }) : Results.Ok(result);
+        });
+
+        admin.MapPut("/offices/{officeId:guid}/{provider}/accounts/{accountId:guid}/bindings", async (
+            Guid officeId,
+            string provider,
+            Guid accountId,
+            UpdateCrmTelephonyProviderAccountBindingRequest binding,
+            CrmTelephonyProviderAccountService accounts,
+            OfficeScopeService officeScope,
+            ClaimsPrincipal principal,
+            CancellationToken ct) =>
+        {
+            if (!await CanManageTelephonyAsync(officeId, officeScope, principal, ct)) return Results.Forbid();
+            var (success, error) = await accounts.SetBindingAsync(officeId, provider, accountId, binding, ct);
+            return success ? Results.NoContent() : Results.BadRequest(new { error });
+        });
+
         admin.MapPut("/offices/{officeId:guid}/{provider}/enabled", async (
             Guid officeId,
             string provider,

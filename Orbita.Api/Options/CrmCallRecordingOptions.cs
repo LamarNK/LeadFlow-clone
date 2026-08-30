@@ -6,4 +6,5 @@ public sealed class CrmCallRecordingOptions
 
     public string DataPath { get; set; } = "Data/crm/call-recordings";
     public long MaxUploadBytes { get; set; } = 100L * 1024 * 1024;
+    public string[] AllowedProviderHostSuffixes { get; set; } = ["plusofon.ru", "sipout.net"];
 }

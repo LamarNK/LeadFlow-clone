@@ -33,6 +33,8 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
     public DbSet<CrmSuccessDocumentEntity> CrmSuccessDocuments => Set<CrmSuccessDocumentEntity>();
     public DbSet<CrmCandidateHistoryEntity> CrmCandidateHistory => Set<CrmCandidateHistoryEntity>();
     public DbSet<CrmTelephonyWebhookEntity> CrmTelephonyWebhooks => Set<CrmTelephonyWebhookEntity>();
+    public DbSet<CrmTelephonyProviderAccountEntity> CrmTelephonyProviderAccounts => Set<CrmTelephonyProviderAccountEntity>();
+    public DbSet<CrmTelephonyProviderAccountBindingEntity> CrmTelephonyProviderAccountBindings => Set<CrmTelephonyProviderAccountBindingEntity>();
     public DbSet<CrmTelephonyUserBindingEntity> CrmTelephonyUserBindings => Set<CrmTelephonyUserBindingEntity>();
     public DbSet<CrmCallEntity> CrmCalls => Set<CrmCallEntity>();
     public DbSet<CrmCardChatReadEntity> CrmCardChatReads => Set<CrmCardChatReadEntity>();
@@ -405,6 +407,42 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
                 .OnDelete(DeleteBehavior.Cascade);
         });
 
+        modelBuilder.Entity<CrmTelephonyProviderAccountEntity>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => x.PublicId).IsUnique();
+            entity.HasIndex(x => new { x.OfficeId, x.Provider, x.Name }).IsUnique();
+            entity.HasIndex(x => new { x.OfficeId, x.Provider, x.ExternalAccountId })
+                .IsUnique()
+                .HasFilter("\"ExternalAccountId\" IS NOT NULL");
+            entity.HasIndex(x => new { x.Provider, x.IsEnabled, x.SyncCursorUtc });
+            entity.Property(x => x.Provider).HasMaxLength(32);
+            entity.Property(x => x.Name).HasMaxLength(128);
+            entity.Property(x => x.ExternalAccountId).HasMaxLength(128);
+            entity.Property(x => x.AccessTokenProtected).HasMaxLength(8192);
+            entity.Property(x => x.OwnedNumbersJson).HasMaxLength(8192);
+            entity.Property(x => x.SecretHash).HasMaxLength(128);
+            entity.Property(x => x.SyncStatus).HasMaxLength(32);
+            entity.Property(x => x.LastSyncError).HasMaxLength(1024);
+            entity.HasOne<OfficeEntity>()
+                .WithMany()
+                .HasForeignKey(x => x.OfficeId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<CrmTelephonyProviderAccountBindingEntity>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => new { x.ProviderAccountId, x.ProviderUserKey }).IsUnique();
+            entity.HasIndex(x => new { x.ProviderAccountId, x.UserId }).IsUnique();
+            entity.Property(x => x.ProviderUserKey).HasMaxLength(128);
+            entity.Property(x => x.UserId).HasMaxLength(128);
+            entity.HasOne<CrmTelephonyProviderAccountEntity>()
+                .WithMany()
+                .HasForeignKey(x => x.ProviderAccountId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
         modelBuilder.Entity<CrmTelephonyUserBindingEntity>(entity =>
         {
             entity.HasKey(x => x.Id);
@@ -429,10 +467,16 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
         modelBuilder.Entity<CrmCallEntity>(entity =>
         {
             entity.HasKey(x => x.Id);
-            entity.HasIndex(x => new { x.OfficeId, x.Provider, x.ExternalCallId }).IsUnique();
+            entity.HasIndex(x => new { x.OfficeId, x.Provider, x.ExternalCallId })
+                .HasFilter("\"ProviderAccountId\" IS NULL")
+                .IsUnique();
+            entity.HasIndex(x => new { x.ProviderAccountId, x.ExternalCallId })
+                .HasFilter("\"ProviderAccountId\" IS NOT NULL")
+                .IsUnique();
             entity.HasIndex(x => new { x.CardId, x.StartedAtUtc });
             entity.HasIndex(x => new { x.OfficeId, x.ClientPhoneNormalized, x.StartedAtUtc });
             entity.HasIndex(x => new { x.Provider, x.NextRecordingFetchAtUtc });
+            entity.HasIndex(x => new { x.Provider, x.NextRecordingArchiveAtUtc });
             entity.Property(x => x.Provider).HasMaxLength(32);
             entity.Property(x => x.ExternalCallId).HasMaxLength(128);
             entity.Property(x => x.Direction).HasMaxLength(32);
@@ -441,6 +485,10 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
             entity.Property(x => x.ClientPhoneNormalized).HasMaxLength(32);
             entity.Property(x => x.ProviderUserKey).HasMaxLength(128);
             entity.Property(x => x.ManagerUserId).HasMaxLength(128);
+            entity.HasOne<CrmTelephonyProviderAccountEntity>()
+                .WithMany()
+                .HasForeignKey(x => x.ProviderAccountId)
+                .OnDelete(DeleteBehavior.SetNull);
             entity.Property(x => x.RecordingUrl).HasMaxLength(2048);
             entity.Property(x => x.RecordingStoragePath).HasMaxLength(512);
             entity.Property(x => x.RecordingContentType).HasMaxLength(128);
