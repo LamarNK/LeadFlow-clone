@@ -935,6 +935,42 @@ public sealed class CrmTelephonyWebhookEntity
     public DateTime UpdatedAtUtc { get; set; }
 }
 
+/// <summary>
+/// One provider cabinet connected to an office. A cabinet may contain many public
+/// numbers and SIP accounts and is synchronized independently from other cabinets.
+/// </summary>
+public sealed class CrmTelephonyProviderAccountEntity
+{
+    public Guid Id { get; set; }
+    public Guid OfficeId { get; set; }
+    public string Provider { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+    public string? ExternalAccountId { get; set; }
+    public string? AccessTokenProtected { get; set; }
+    public string OwnedNumbersJson { get; set; } = "[]";
+    public Guid PublicId { get; set; }
+    public string SecretHash { get; set; } = string.Empty;
+    public bool IsEnabled { get; set; } = true;
+    public DateTime SyncFromUtc { get; set; }
+    public DateTime? SyncCursorUtc { get; set; }
+    public DateTime? LastSyncedAtUtc { get; set; }
+    public string SyncStatus { get; set; } = "pending";
+    public string? LastSyncError { get; set; }
+    public DateTime CreatedAtUtc { get; set; }
+    public DateTime UpdatedAtUtc { get; set; }
+}
+
+/// <summary>Maps a cabinet-side SIP identity or extension to an Orbita user.</summary>
+public sealed class CrmTelephonyProviderAccountBindingEntity
+{
+    public Guid Id { get; set; }
+    public Guid ProviderAccountId { get; set; }
+    public string ProviderUserKey { get; set; } = string.Empty;
+    public string UserId { get; set; } = string.Empty;
+    public DateTime CreatedAtUtc { get; set; }
+    public DateTime UpdatedAtUtc { get; set; }
+}
+
 /// <summary>Maps a provider-side SIP identity (for example extension 201) to an Orbita user.</summary>
 public sealed class CrmTelephonyUserBindingEntity
 {
@@ -957,6 +993,7 @@ public sealed class CrmCallEntity
     public Guid OfficeId { get; set; }
     public Guid? CardId { get; set; }
     public string Provider { get; set; } = string.Empty;
+    public Guid? ProviderAccountId { get; set; }
     public string ExternalCallId { get; set; } = string.Empty;
     public string Direction { get; set; } = string.Empty;
     public string CallerPhone { get; set; } = string.Empty;
@@ -972,6 +1009,8 @@ public sealed class CrmCallEntity
     public string? RecordingFileName { get; set; }
     public int RecordingFetchAttempts { get; set; }
     public DateTime? NextRecordingFetchAtUtc { get; set; }
+    public int RecordingArchiveAttempts { get; set; }
+    public DateTime? NextRecordingArchiveAtUtc { get; set; }
     public DateTime ReceivedAtUtc { get; set; }
     public DateTime UpdatedAtUtc { get; set; }
 }

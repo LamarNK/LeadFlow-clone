@@ -109,7 +109,51 @@ public sealed record CrmTelephonySettingsDto(
     IReadOnlyList<CrmTelephonyUserBindingDto> UserBindings,
     bool ProviderCredentialsConfigured = false,
     CrmSipProviderAccountDto? SipAccount = null,
-    IReadOnlyList<CrmSipProviderAccountDto>? SipAccounts = null);
+    IReadOnlyList<CrmSipProviderAccountDto>? SipAccounts = null,
+    IReadOnlyList<CrmTelephonyProviderAccountDto>? ProviderAccounts = null);
+
+public sealed record CrmTelephonyProviderAccountDto(
+    Guid Id,
+    Guid OfficeId,
+    string Provider,
+    string Name,
+    string? ExternalAccountId,
+    IReadOnlyList<string> OwnedNumbers,
+    bool CredentialsConfigured,
+    bool IsEnabled,
+    Guid PublicId,
+    DateTime SyncFromUtc,
+    DateTime? SyncCursorUtc,
+    DateTime? LastSyncedAtUtc,
+    string SyncStatus,
+    string? LastSyncError,
+    int BoundUsersCount,
+    IReadOnlyList<CrmTelephonyUserBindingDto>? UserBindings = null);
+
+public sealed record CreateCrmTelephonyProviderAccountRequest(
+    string Name,
+    string? ExternalAccountId,
+    string? AccessToken,
+    IReadOnlyList<string>? OwnedNumbers,
+    DateTime? SyncFromUtc = null);
+
+public sealed record UpdateCrmTelephonyProviderAccountRequest(
+    string Name,
+    string? ExternalAccountId,
+    string? AccessToken,
+    IReadOnlyList<string>? OwnedNumbers,
+    bool IsEnabled,
+    DateTime? SyncFromUtc = null);
+
+public sealed record CrmTelephonyProviderAccountReceiverDto(
+    CrmTelephonyProviderAccountDto Account,
+    string CallbackUrl,
+    string WebhookSecret,
+    string WebhookSecretHeader);
+
+public sealed record UpdateCrmTelephonyProviderAccountBindingRequest(
+    string UserId,
+    string ProviderUserKey);
 
 public sealed record CrmSipProviderAccountDto(
     string Server,

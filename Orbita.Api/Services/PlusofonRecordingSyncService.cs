@@ -38,12 +38,40 @@ public sealed class PlusofonRecordingSyncService(
                 && x.Provider == CrmTelephonyProviders.Plusofon
                 && x.IsEnabled)
             .ToDictionaryAsync(x => x.OfficeId, ct);
+        var accountIds = calls.Where(x => x.ProviderAccountId != null)
+            .Select(x => x.ProviderAccountId!.Value)
+            .Distinct()
+            .ToArray();
+        var providerAccounts = await db.CrmTelephonyProviderAccounts.AsNoTracking()
+            .Where(x => accountIds.Contains(x.Id) && x.IsEnabled)
+            .ToDictionaryAsync(x => x.Id, ct);
         var updated = 0;
         foreach (var call in calls)
         {
-            if (!receivers.TryGetValue(call.OfficeId, out var receiver)
-                || string.IsNullOrWhiteSpace(receiver.ProviderClientId)
-                || string.IsNullOrWhiteSpace(receiver.ProviderAccessTokenProtected))
+            string? clientId;
+            string? protectedToken;
+            if (call.ProviderAccountId is Guid accountId)
+            {
+                if (!providerAccounts.TryGetValue(accountId, out var providerAccount))
+                {
+                    call.NextRecordingFetchAtUtc = now.AddMinutes(10);
+                    continue;
+                }
+                clientId = providerAccount.ExternalAccountId;
+                protectedToken = providerAccount.AccessTokenProtected;
+            }
+            else if (receivers.TryGetValue(call.OfficeId, out var receiver))
+            {
+                clientId = receiver.ProviderClientId;
+                protectedToken = receiver.ProviderAccessTokenProtected;
+            }
+            else
+            {
+                clientId = null;
+                protectedToken = null;
+            }
+
+            if (string.IsNullOrWhiteSpace(clientId) || string.IsNullOrWhiteSpace(protectedToken))
             {
                 call.NextRecordingFetchAtUtc = now.AddMinutes(10);
                 continue;
@@ -52,7 +80,7 @@ public sealed class PlusofonRecordingSyncService(
             string accessToken;
             try
             {
-                accessToken = credentialProtector.Unprotect(receiver.ProviderAccessTokenProtected);
+                accessToken = credentialProtector.Unprotect(protectedToken);
             }
             catch (Exception ex)
             {
@@ -65,7 +93,7 @@ public sealed class PlusofonRecordingSyncService(
             }
 
             var result = await plusofon.GetRecordingAsync(
-                receiver.ProviderClientId,
+                clientId,
                 accessToken,
                 call.ExternalCallId,
                 ct);
@@ -76,6 +104,7 @@ public sealed class PlusofonRecordingSyncService(
                 case PlusofonRecordingOutcome.Ready:
                     call.RecordingUrl = result.RecordingUrl;
                     call.NextRecordingFetchAtUtc = null;
+                    call.NextRecordingArchiveAtUtc = now;
                     updated++;
                     if (call.CardId is not null)
                     {

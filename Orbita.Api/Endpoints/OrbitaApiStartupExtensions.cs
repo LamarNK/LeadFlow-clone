@@ -301,9 +301,12 @@ public static class OrbitaApiStartupExtensions
         builder.Services.AddScoped<CrmLeadDistributionService>();
         builder.Services.AddScoped<CrmWorkspaceService>();
         builder.Services.AddScoped<CrmTelephonyService>();
+        builder.Services.AddScoped<CrmTelephonyProviderAccountService>();
         builder.Services.AddScoped<CrmTelephonyCredentialProtector>();
         builder.Services.AddSingleton<CrmSipRuntimeConfigWriter>();
         builder.Services.AddScoped<PlusofonRecordingSyncService>();
+        builder.Services.AddScoped<TelephonyProviderAccountSyncService>();
+        builder.Services.AddScoped<ProviderRecordingArchiveService>();
         builder.Services.AddSingleton<IPlusofonApiClient, PlusofonApiClient>();
         builder.Services.AddScoped<CrmDeadlineNotificationService>();
         builder.Services.AddSingleton<ICrmNotificationRealtimeNotifier, CrmNotificationRealtimeNotifier>();
@@ -355,6 +358,8 @@ public static class OrbitaApiStartupExtensions
         builder.Services.AddHostedService<CrmShiftSweeperService>();
         builder.Services.AddHostedService<CrmDailyDistributionHostedService>();
         builder.Services.AddHostedService<PlusofonRecordingHostedService>();
+        builder.Services.AddHostedService<TelephonyProviderAccountSyncHostedService>();
+        builder.Services.AddHostedService<ProviderRecordingArchiveHostedService>();
         builder.Services.AddHostedService<BitrixWorkforceHostedService>();
         builder.Services.AddHostedService<CrmTelephonyRuntimeSyncHostedService>();
         builder.Services.AddScoped<WebhookSecretProtector>();
@@ -405,6 +410,15 @@ public static class OrbitaApiStartupExtensions
             {
                 client.BaseAddress = new Uri("https://restapi.plusofon.ru/");
                 client.Timeout = TimeSpan.FromSeconds(15);
+            })
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+            {
+                AllowAutoRedirect = false
+            })
+            .RemoveAllLoggers();
+        builder.Services.AddHttpClient(ProviderRecordingArchiveService.HttpClientName, client =>
+            {
+                client.Timeout = TimeSpan.FromMinutes(2);
             })
             .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
             {

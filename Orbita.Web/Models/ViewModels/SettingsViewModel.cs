@@ -80,6 +80,28 @@ public sealed class SaveSipProviderAccountFormModel
     public bool UseForOutbound { get; set; }
 }
 
+public sealed class SaveTelephonyProviderAccountFormModel
+{
+    public Guid OfficeId { get; set; }
+    public string Provider { get; set; } = CrmTelephonyProviders.Plusofon;
+    public Guid? AccountId { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string? ExternalAccountId { get; set; }
+    public string? AccessToken { get; set; }
+    public string? OwnedNumbers { get; set; }
+    public DateTime? SyncFromUtc { get; set; }
+    public bool IsEnabled { get; set; } = true;
+}
+
+public sealed class SaveTelephonyProviderAccountBindingFormModel
+{
+    public Guid OfficeId { get; set; }
+    public string Provider { get; set; } = CrmTelephonyProviders.Plusofon;
+    public Guid AccountId { get; set; }
+    public string UserId { get; set; } = string.Empty;
+    public string ProviderUserKey { get; set; } = string.Empty;
+}
+
 public sealed class SettingsTabViewModel
 {
     public required string Id { get; init; }

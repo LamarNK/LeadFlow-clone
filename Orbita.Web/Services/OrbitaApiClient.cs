@@ -3245,6 +3245,13 @@ public sealed class OrbitaApiClient(
         return response is null ? (false, InvalidApiSessionError) : response.IsSuccessStatusCode ? (true, null) : (false, await ReadApiErrorAsync(response, ct));
     }
 
+    public Task<CrmOfficeSettingsDto?> GetCrmOfficeSettingsAsync(
+        Guid officeId,
+        CancellationToken ct = default) =>
+        _preview.Enabled
+            ? Task.FromResult<CrmOfficeSettingsDto?>(DesignPreviewData.GetCrmOfficeSettings())
+            : GetAsync<CrmOfficeSettingsDto>($"api/v1/crm/offices/{officeId:D}/settings", ct);
+
     public Task<CrmTelephonySettingsDto?> GetCrmTelephonySettingsAsync(
         Guid officeId,
         CancellationToken ct = default,
@@ -3303,6 +3310,98 @@ public sealed class OrbitaApiClient(
         if (response is null) return (null, InvalidApiSessionError);
         if (!response.IsSuccessStatusCode) return (null, await ReadApiErrorAsync(response, ct));
         return (await response.Content.ReadFromJsonAsync<CrmTelephonyReceiverDto>(ApiJsonOptions, ct), null);
+    }
+
+    public async Task<(CrmTelephonyProviderAccountReceiverDto? Account, string? Error)> CreateTelephonyProviderAccountAsync(
+        Guid officeId,
+        string provider,
+        CreateCrmTelephonyProviderAccountRequest account,
+        CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"api/v1/crm/telephony/offices/{officeId:D}/{Uri.EscapeDataString(provider)}/accounts")
+        {
+            Content = JsonContent.Create(account)
+        };
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null) return (null, InvalidApiSessionError);
+        if (!response.IsSuccessStatusCode) return (null, await ReadApiErrorAsync(response, ct));
+        return (await response.Content.ReadFromJsonAsync<CrmTelephonyProviderAccountReceiverDto>(ApiJsonOptions, ct), null);
+    }
+
+    public async Task<(bool Success, string? Error)> UpdateTelephonyProviderAccountAsync(
+        Guid officeId,
+        string provider,
+        Guid accountId,
+        UpdateCrmTelephonyProviderAccountRequest account,
+        CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Put,
+            $"api/v1/crm/telephony/offices/{officeId:D}/{Uri.EscapeDataString(provider)}/accounts/{accountId:D}")
+        {
+            Content = JsonContent.Create(account)
+        };
+        using var response = await SendAuthenticatedAsync(request, ct);
+        return response is null
+            ? (false, InvalidApiSessionError)
+            : response.IsSuccessStatusCode
+                ? (true, null)
+                : (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    public async Task<(bool Success, string? Error)> DeleteTelephonyProviderAccountAsync(
+        Guid officeId,
+        string provider,
+        Guid accountId,
+        CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Delete,
+            $"api/v1/crm/telephony/offices/{officeId:D}/{Uri.EscapeDataString(provider)}/accounts/{accountId:D}");
+        using var response = await SendAuthenticatedAsync(request, ct);
+        return response is null
+            ? (false, InvalidApiSessionError)
+            : response.IsSuccessStatusCode
+                ? (true, null)
+                : (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    public async Task<(CrmTelephonyProviderAccountReceiverDto? Account, string? Error)> RotateTelephonyProviderAccountReceiverAsync(
+        Guid officeId,
+        string provider,
+        Guid accountId,
+        CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"api/v1/crm/telephony/offices/{officeId:D}/{Uri.EscapeDataString(provider)}/accounts/{accountId:D}/receiver");
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null) return (null, InvalidApiSessionError);
+        if (!response.IsSuccessStatusCode) return (null, await ReadApiErrorAsync(response, ct));
+        return (await response.Content.ReadFromJsonAsync<CrmTelephonyProviderAccountReceiverDto>(ApiJsonOptions, ct), null);
+    }
+
+    public async Task<(bool Success, string? Error)> SetTelephonyProviderAccountBindingAsync(
+        Guid officeId,
+        string provider,
+        Guid accountId,
+        UpdateCrmTelephonyProviderAccountBindingRequest binding,
+        CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Put,
+            $"api/v1/crm/telephony/offices/{officeId:D}/{Uri.EscapeDataString(provider)}/accounts/{accountId:D}/bindings")
+        {
+            Content = JsonContent.Create(binding)
+        };
+        using var response = await SendAuthenticatedAsync(request, ct);
+        return response is null
+            ? (false, InvalidApiSessionError)
+            : response.IsSuccessStatusCode
+                ? (true, null)
+                : (false, await ReadApiErrorAsync(response, ct));
     }
 
     public async Task<(bool Success, string? Error)> SetCrmTelephonyEnabledAsync(

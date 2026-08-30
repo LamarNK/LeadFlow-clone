@@ -249,16 +249,47 @@ public sealed class CrmTelephonyService(
             _ => false
         };
 
+        var cloudAccounts = await db.CrmTelephonyProviderAccounts.AsNoTracking()
+            .Where(x => x.OfficeId == officeId && x.Provider == provider)
+            .OrderBy(x => x.Name)
+            .ToListAsync(ct);
+        var cloudAccountIds = cloudAccounts.Select(x => x.Id).ToList();
+        var cloudBindings = cloudAccountIds.Count == 0
+            ? new List<CloudAccountBindingRow>()
+            : await (
+                from binding in db.CrmTelephonyProviderAccountBindings.AsNoTracking()
+                join profile in db.PanelUserProfiles.AsNoTracking() on binding.UserId equals profile.UserId
+                join user in db.Users.AsNoTracking() on binding.UserId equals user.Id
+                where cloudAccountIds.Contains(binding.ProviderAccountId)
+                select new CloudAccountBindingRow(
+                    binding.ProviderAccountId,
+                    new CrmTelephonyUserBindingDto(
+                        binding.UserId,
+                        string.IsNullOrWhiteSpace(profile.FullName) ? user.Email ?? binding.UserId : profile.FullName,
+                        binding.ProviderUserKey)))
+                .ToListAsync(ct);
+        var cloudAccountDtos = cloudAccounts
+            .Select(x =>
+            {
+                var accountBindings = cloudBindings.Where(binding => binding.AccountId == x.Id)
+                    .Select(binding => binding.Binding)
+                    .OrderBy(binding => binding.UserName)
+                    .ToList();
+                return CrmTelephonyProviderAccountService.ToDto(x, accountBindings.Count, accountBindings);
+            })
+            .ToList();
+
         return new CrmTelephonySettingsDto(
             officeId,
             provider,
-            receiver is not null,
-            receiver?.IsEnabled == true,
+            receiver is not null || cloudAccountDtos.Count > 0,
+            receiver?.IsEnabled == true || cloudAccountDtos.Any(x => x.IsEnabled),
             receiver?.PublicId,
             bindings,
-            credentialsConfigured,
+            credentialsConfigured || cloudAccountDtos.Any(x => x.CredentialsConfigured),
             sipAccount,
-            sipAccounts);
+            sipAccounts,
+            cloudAccountDtos);
     }
 
     public async Task<(bool Success, string? Error)> SetPlusofonCredentialsAsync(
@@ -1795,6 +1826,17 @@ public sealed class CrmTelephonyService(
         SipoutCallWebhookPayload payload,
         CancellationToken ct)
     {
+        var providerAccount = await db.CrmTelephonyProviderAccounts.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.PublicId == publicId && x.Provider == provider && x.IsEnabled, ct);
+        if (providerAccount is not null)
+        {
+            if (!VerifySecret(secret, providerAccount.SecretHash))
+            {
+                return new SipoutCallReceiveResult(SipoutCallReceiveOutcome.Unauthorized);
+            }
+            return await ProcessReceivedCallAsync(providerAccount.OfficeId, provider, providerAccount, payload, ct);
+        }
+
         var receiver = await db.CrmTelephonyWebhooks.AsNoTracking()
             .FirstOrDefaultAsync(x => x.PublicId == publicId && x.Provider == provider && x.IsEnabled, ct);
         if (receiver is null || !VerifySecret(secret, receiver.SecretHash))
@@ -1802,16 +1844,75 @@ public sealed class CrmTelephonyService(
             return new SipoutCallReceiveResult(SipoutCallReceiveOutcome.Unauthorized);
         }
 
+        return await ProcessReceivedCallAsync(receiver.OfficeId, provider, null, payload, ct);
+    }
+
+    internal async Task<SipoutCallReceiveResult> ReceiveProviderAccountCallAsync(
+        Guid providerAccountId,
+        SipoutCallWebhookPayload payload,
+        CancellationToken ct = default)
+    {
+        var account = await db.CrmTelephonyProviderAccounts.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == providerAccountId && x.IsEnabled, ct);
+        return account is null
+            ? new SipoutCallReceiveResult(SipoutCallReceiveOutcome.Unauthorized)
+            : await ProcessReceivedCallAsync(account.OfficeId, account.Provider, account, payload, ct);
+    }
+
+    internal async Task<int> ReconcileUnmatchedCallsAsync(CancellationToken ct = default)
+    {
+        var cutoff = timeProvider.GetUtcNow().UtcDateTime.AddDays(-180);
+        var calls = await db.CrmCalls
+            .Where(x => x.CardId == null
+                && x.StartedAtUtc >= cutoff
+                && x.ClientPhoneNormalized != "")
+            .OrderByDescending(x => x.StartedAtUtc)
+            .Take(200)
+            .ToListAsync(ct);
+        var matched = 0;
+        foreach (var call in calls)
+        {
+            var card = await FindCardAsync(call.OfficeId, [call.ClientPhoneNormalized], ct);
+            if (card is null) continue;
+            call.CardId = card.Id;
+            call.UpdatedAtUtc = timeProvider.GetUtcNow().UtcDateTime;
+            matched++;
+            panelRealtime?.Notify([PanelChangeKind.Crm], call.OfficeId);
+        }
+        if (matched > 0) await db.SaveChangesAsync(ct);
+        return matched;
+    }
+
+    private async Task<SipoutCallReceiveResult> ProcessReceivedCallAsync(
+        Guid officeId,
+        string provider,
+        CrmTelephonyProviderAccountEntity? providerAccount,
+        SipoutCallWebhookPayload payload,
+        CancellationToken ct)
+    {
+
         var externalCallId = payload.ExternalCallId.Trim();
         if (string.IsNullOrWhiteSpace(externalCallId) || externalCallId.Length > 128)
         {
             return new SipoutCallReceiveResult(SipoutCallReceiveOutcome.Invalid, Message: "External call ID is required.");
         }
 
-        var candidatePhones = new[] { payload.CallerPhone, payload.CalledPhone, payload.LastCaller }
+        var providerUserKey = ResolveProviderUserKey(payload);
+        var direction = NormalizeDirection(payload.CallType, payload.CallerPhone, payload.CalledPhone, providerUserKey);
+        var ownedNumbers = providerAccount is null
+            ? new HashSet<string>(StringComparer.Ordinal)
+            : CrmTelephonyProviderAccountService.DeserializeOwnedNumbers(providerAccount.OwnedNumbersJson)
+                .ToHashSet(StringComparer.Ordinal);
+        var preferredPhones = direction == CrmCallDirections.Incoming
+            ? new[] { payload.CallerPhone, payload.LastCaller, payload.CalledPhone }
+            : direction == CrmCallDirections.Outgoing
+                ? new[] { payload.CalledPhone, payload.LastCaller, payload.CallerPhone }
+                : new[] { payload.CallerPhone, payload.CalledPhone, payload.LastCaller };
+        var candidatePhones = preferredPhones
             .Where(x => !string.IsNullOrWhiteSpace(x))
             .Select(x => phoneNormalizer.Normalize(x!))
             .Where(IsExternalPhone)
+            .Where(x => !ownedNumbers.Contains(x))
             .Distinct(StringComparer.Ordinal)
             .ToList();
         if (candidatePhones.Count == 0)
@@ -1819,21 +1920,28 @@ public sealed class CrmTelephonyService(
             return new SipoutCallReceiveResult(SipoutCallReceiveOutcome.Invalid, Message: "Client phone is missing.");
         }
 
-        var existing = await db.CrmCalls
-            .FirstOrDefaultAsync(x => x.OfficeId == receiver.OfficeId
-                && x.Provider == provider
-                && x.ExternalCallId == externalCallId, ct);
-        var card = await FindCardAsync(receiver.OfficeId, candidatePhones, ct);
-        var providerUserKey = ResolveProviderUserKey(payload);
-        var managerUserId = string.IsNullOrWhiteSpace(providerUserKey)
-            ? null
-            : await db.CrmTelephonyUserBindings.AsNoTracking()
-                .Where(x => x.OfficeId == receiver.OfficeId
-                    && x.Provider == provider
-                    && x.ProviderUserKey == providerUserKey)
-                .Select(x => x.UserId)
-                .FirstOrDefaultAsync(ct);
-        var direction = NormalizeDirection(payload.CallType, payload.CallerPhone, payload.CalledPhone, providerUserKey);
+        var providerAccountId = providerAccount?.Id;
+        var existing = await db.CrmCalls.FirstOrDefaultAsync(x =>
+            x.ExternalCallId == externalCallId
+            && (providerAccountId != null
+                ? x.ProviderAccountId == providerAccountId
+                : x.ProviderAccountId == null && x.OfficeId == officeId && x.Provider == provider), ct);
+        var card = await FindCardAsync(officeId, candidatePhones, ct);
+        string? managerUserId = null;
+        if (!string.IsNullOrWhiteSpace(providerUserKey))
+        {
+            managerUserId = providerAccountId is Guid accountId
+                ? await db.CrmTelephonyProviderAccountBindings.AsNoTracking()
+                    .Where(x => x.ProviderAccountId == accountId && x.ProviderUserKey == providerUserKey)
+                    .Select(x => x.UserId)
+                    .FirstOrDefaultAsync(ct)
+                : await db.CrmTelephonyUserBindings.AsNoTracking()
+                    .Where(x => x.OfficeId == officeId
+                        && x.Provider == provider
+                        && x.ProviderUserKey == providerUserKey)
+                    .Select(x => x.UserId)
+                    .FirstOrDefaultAsync(ct);
+        }
         var clientPhone = ResolveClientPhone(direction, payload, candidatePhones, providerUserKey);
         var now = timeProvider.GetUtcNow().UtcDateTime;
         var startedAt = ParseStartedAt(payload.StartedAt, now);
@@ -1843,8 +1951,9 @@ public sealed class CrmTelephonyService(
         var call = existing ?? new CrmCallEntity
         {
             Id = Guid.NewGuid(),
-            OfficeId = receiver.OfficeId,
+            OfficeId = officeId,
             Provider = provider,
+            ProviderAccountId = providerAccountId,
             ExternalCallId = externalCallId,
             ReceivedAtUtc = now
         };
@@ -1858,6 +1967,10 @@ public sealed class CrmTelephonyService(
         call.StartedAtUtc = startedAt;
         call.DurationSeconds = durationSeconds;
         call.RecordingUrl = recordingUrl ?? call.RecordingUrl;
+        if (call.RecordingUrl is not null && call.RecordingStoragePath is null)
+        {
+            call.NextRecordingArchiveAtUtc ??= now;
+        }
         if (provider == CrmTelephonyProviders.Plusofon)
         {
             call.NextRecordingFetchAtUtc = call.RecordingUrl is null ? now : null;
@@ -1868,10 +1981,23 @@ public sealed class CrmTelephonyService(
             db.CrmCalls.Add(call);
         }
 
+        if (providerAccountId is Guid statusAccountId)
+        {
+            var statusAccount = db.CrmTelephonyProviderAccounts.Local.FirstOrDefault(x => x.Id == statusAccountId)
+                ?? await db.CrmTelephonyProviderAccounts.FirstOrDefaultAsync(x => x.Id == statusAccountId, ct);
+            if (statusAccount is not null)
+            {
+                statusAccount.LastSyncedAtUtc = now;
+                statusAccount.SyncStatus = "online";
+                statusAccount.LastSyncError = null;
+                statusAccount.UpdatedAtUtc = now;
+            }
+        }
+
         await db.SaveChangesAsync(ct);
         if (call.CardId is Guid)
         {
-            panelRealtime?.Notify([PanelChangeKind.Crm], receiver.OfficeId);
+            panelRealtime?.Notify([PanelChangeKind.Crm], officeId);
         }
 
         return new SipoutCallReceiveResult(
@@ -2352,6 +2478,10 @@ public sealed class CrmTelephonyService(
         string Provider,
         IReadOnlyList<SipProviderCredentialPayload> Accounts);
 
+    private sealed record CloudAccountBindingRow(
+        Guid AccountId,
+        CrmTelephonyUserBindingDto Binding);
+
     private static string NormalizeDirection(
         string? callType,
         string? callerPhone,
@@ -2359,11 +2489,13 @@ public sealed class CrmTelephonyService(
         string? providerUserKey)
     {
         var value = callType?.Trim().ToLowerInvariant() ?? string.Empty;
-        if (value.Contains("out", StringComparison.Ordinal) || value.Contains("исход", StringComparison.Ordinal))
+        if (value is "external" or "outbound" or "outgoing"
+            || value.Contains("исход", StringComparison.Ordinal))
         {
             return CrmCallDirections.Outgoing;
         }
-        if (value.Contains("in", StringComparison.Ordinal) || value.Contains("вход", StringComparison.Ordinal))
+        if (value is "internal" or "inbound" or "incoming"
+            || value.Contains("вход", StringComparison.Ordinal))
         {
             return CrmCallDirections.Incoming;
         }

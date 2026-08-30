@@ -1197,6 +1197,9 @@ namespace Orbita.Api.Data.Migrations
                     b.Property<DateTime?>("NextRecordingFetchAtUtc")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<DateTime?>("NextRecordingArchiveAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<Guid>("OfficeId")
                         .HasColumnType("uuid");
 
@@ -1204,6 +1207,9 @@ namespace Orbita.Api.Data.Migrations
                         .IsRequired()
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");
+
+                    b.Property<Guid?>("ProviderAccountId")
+                        .HasColumnType("uuid");
 
                     b.Property<string>("ProviderUserKey")
                         .HasMaxLength(128)
@@ -1215,6 +1221,9 @@ namespace Orbita.Api.Data.Migrations
                     b.Property<string>("RecordingContentType")
                         .HasMaxLength(128)
                         .HasColumnType("character varying(128)");
+
+                    b.Property<int>("RecordingArchiveAttempts")
+                        .HasColumnType("integer");
 
                     b.Property<int>("RecordingFetchAttempts")
                         .HasColumnType("integer");
@@ -1243,10 +1252,17 @@ namespace Orbita.Api.Data.Migrations
 
                     b.HasIndex("Provider", "NextRecordingFetchAtUtc");
 
+                    b.HasIndex("Provider", "NextRecordingArchiveAtUtc");
+
+                    b.HasIndex("ProviderAccountId", "ExternalCallId")
+                        .IsUnique()
+                        .HasFilter("\"ProviderAccountId\" IS NOT NULL");
+
                     b.HasIndex("OfficeId", "ClientPhoneNormalized", "StartedAtUtc");
 
                     b.HasIndex("OfficeId", "Provider", "ExternalCallId")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasFilter("\"ProviderAccountId\" IS NULL");
 
                     b.ToTable("CrmCalls");
                 });
@@ -1911,6 +1927,126 @@ namespace Orbita.Api.Data.Migrations
                     b.HasIndex("OfficeId", "RecipientUserId", "ReadAtUtc", "CreatedAtUtc");
 
                     b.ToTable("CrmTaskNotifications");
+                });
+
+            modelBuilder.Entity("Orbita.Api.Data.CrmTelephonyProviderAccountBindingEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("ProviderAccountId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ProviderUserKey")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProviderAccountId", "ProviderUserKey")
+                        .IsUnique();
+
+                    b.HasIndex("ProviderAccountId", "UserId")
+                        .IsUnique();
+
+                    b.ToTable("CrmTelephonyProviderAccountBindings");
+                });
+
+            modelBuilder.Entity("Orbita.Api.Data.CrmTelephonyProviderAccountEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("AccessTokenProtected")
+                        .HasMaxLength(8192)
+                        .HasColumnType("character varying(8192)");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ExternalAccountId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<bool>("IsEnabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("LastSyncError")
+                        .HasMaxLength(1024)
+                        .HasColumnType("character varying(1024)");
+
+                    b.Property<DateTime?>("LastSyncedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<Guid>("OfficeId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("OwnedNumbersJson")
+                        .IsRequired()
+                        .HasMaxLength(8192)
+                        .HasColumnType("character varying(8192)");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<Guid>("PublicId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("SecretHash")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<DateTime?>("SyncCursorUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("SyncFromUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("SyncStatus")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PublicId")
+                        .IsUnique();
+
+                    b.HasIndex("OfficeId", "Provider", "ExternalAccountId")
+                        .IsUnique()
+                        .HasFilter("\"ExternalAccountId\" IS NOT NULL");
+
+                    b.HasIndex("OfficeId", "Provider", "Name")
+                        .IsUnique();
+
+                    b.HasIndex("Provider", "IsEnabled", "SyncCursorUtc");
+
+                    b.ToTable("CrmTelephonyProviderAccounts");
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.CrmTelephonyUserBindingEntity", b =>
@@ -3318,6 +3454,11 @@ namespace Orbita.Api.Data.Migrations
                         .HasForeignKey("OfficeId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.HasOne("Orbita.Api.Data.CrmTelephonyProviderAccountEntity", null)
+                        .WithMany()
+                        .HasForeignKey("ProviderAccountId")
+                        .OnDelete(DeleteBehavior.SetNull);
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.CrmCandidateCardEntity", b =>
@@ -3430,6 +3571,24 @@ namespace Orbita.Api.Data.Migrations
                     b.HasOne("Orbita.Api.Data.CrmTaskEntity", null)
                         .WithMany()
                         .HasForeignKey("TaskId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Orbita.Api.Data.CrmTelephonyProviderAccountBindingEntity", b =>
+                {
+                    b.HasOne("Orbita.Api.Data.CrmTelephonyProviderAccountEntity", null)
+                        .WithMany()
+                        .HasForeignKey("ProviderAccountId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Orbita.Api.Data.CrmTelephonyProviderAccountEntity", b =>
+                {
+                    b.HasOne("Orbita.Api.Data.OfficeEntity", null)
+                        .WithMany()
+                        .HasForeignKey("OfficeId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });

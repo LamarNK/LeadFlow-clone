@@ -242,6 +242,125 @@ public sealed class TelephonySettingsController(
         return RedirectToAction(nameof(Telephony), new { officeId, provider = CrmTelephonyProviders.Plusofon });
     }
 
+    [HttpPost("Telephony/ProviderAccount")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> SaveProviderAccount(
+        SaveTelephonyProviderAccountFormModel model,
+        CancellationToken ct = default)
+    {
+        if (!CrmTelephonyProviders.IsSupported(model.Provider)) return BadRequest();
+        var provider = CrmTelephonyProviders.Normalize(model.Provider);
+        if (provider is not (CrmTelephonyProviders.Plusofon or CrmTelephonyProviders.Sipout)) return BadRequest();
+        var ownedNumbers = SplitOwnedNumbers(model.OwnedNumbers);
+        if (model.AccountId is Guid accountId)
+        {
+            var (success, error) = await api.UpdateTelephonyProviderAccountAsync(
+                model.OfficeId,
+                provider,
+                accountId,
+                new UpdateCrmTelephonyProviderAccountRequest(
+                    model.Name,
+                    model.ExternalAccountId,
+                    model.AccessToken,
+                    ownedNumbers,
+                    model.IsEnabled,
+                    model.SyncFromUtc),
+                ct);
+            TempData[success ? "SettingsStatus" : "SettingsError"] = success
+                ? "Кабинет телефонии обновлён. Его синхронизация работает независимо от остальных кабинетов."
+                : error;
+        }
+        else
+        {
+            var (result, error) = await api.CreateTelephonyProviderAccountAsync(
+                model.OfficeId,
+                provider,
+                new CreateCrmTelephonyProviderAccountRequest(
+                    model.Name,
+                    model.ExternalAccountId,
+                    model.AccessToken,
+                    ownedNumbers,
+                    model.SyncFromUtc),
+                ct);
+            if (result is null)
+            {
+                TempData["SettingsError"] = error;
+            }
+            else
+            {
+                TempData["SettingsStatus"] = provider == CrmTelephonyProviders.Plusofon
+                    ? $"Кабинет «{result.Account.Name}» добавлен: загрузка истории уже запущена."
+                    : $"Кабинет «{result.Account.Name}» добавлен. Скопируйте WebRequest URL в открывшемся окне.";
+                TempData["TelephonyProviderSetupUrl"] = result.CallbackUrl;
+                TempData["TelephonyWebhookSecret"] = result.WebhookSecret;
+                TempData["TelephonyWebhookSecretHeader"] = result.WebhookSecretHeader;
+            }
+        }
+        return RedirectToAction(nameof(Telephony), new { officeId = model.OfficeId, provider });
+    }
+
+    [HttpPost("Telephony/ProviderAccount/RotateReceiver")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> RotateProviderAccountReceiver(
+        Guid officeId,
+        string provider,
+        Guid accountId,
+        CancellationToken ct = default)
+    {
+        var (result, error) = await api.RotateTelephonyProviderAccountReceiverAsync(
+            officeId, provider, accountId, ct);
+        if (result is null)
+        {
+            TempData["SettingsError"] = error;
+        }
+        else
+        {
+            TempData["SettingsStatus"] = $"Webhook кабинета «{result.Account.Name}» перевыпущен. Старый адрес больше не принимается.";
+            TempData["TelephonyProviderSetupUrl"] = result.CallbackUrl;
+            TempData["TelephonyWebhookSecret"] = result.WebhookSecret;
+            TempData["TelephonyWebhookSecretHeader"] = result.WebhookSecretHeader;
+        }
+        return RedirectToAction(nameof(Telephony), new { officeId, provider });
+    }
+
+    [HttpPost("Telephony/ProviderAccount/Delete")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> DeleteProviderAccount(
+        Guid officeId,
+        string provider,
+        Guid accountId,
+        CancellationToken ct = default)
+    {
+        if (!CrmTelephonyProviders.IsSupported(provider)) return BadRequest();
+        provider = CrmTelephonyProviders.Normalize(provider);
+        if (provider is not (CrmTelephonyProviders.Plusofon or CrmTelephonyProviders.Sipout)) return BadRequest();
+
+        var (success, error) = await api.DeleteTelephonyProviderAccountAsync(
+            officeId, provider, accountId, ct);
+        TempData[success ? "SettingsStatus" : "SettingsError"] = success
+            ? "Кабинет удалён. Ранее полученные звонки и записи сохранены в карточках кандидатов."
+            : error;
+        return RedirectToAction(nameof(Telephony), new { officeId, provider });
+    }
+
+    [HttpPost("Telephony/ProviderAccount/Binding")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> SaveProviderAccountBinding(
+        SaveTelephonyProviderAccountBindingFormModel model,
+        CancellationToken ct = default)
+    {
+        var (success, error) = await api.SetTelephonyProviderAccountBindingAsync(
+            model.OfficeId,
+            model.Provider,
+            model.AccountId,
+            new UpdateCrmTelephonyProviderAccountBindingRequest(model.UserId, model.ProviderUserKey),
+            ct);
+        TempData[success ? "SettingsStatus" : "SettingsError"] = success
+            ? "SIP-аккаунт кабинета связан с сотрудником."
+            : error;
+        return RedirectToAction(nameof(Telephony), new { officeId = model.OfficeId, provider = model.Provider });
+    }
+
     [HttpPost("Telephony/SipAccount")]
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> SaveSipProviderAccount(
@@ -374,4 +493,11 @@ public sealed class TelephonySettingsController(
         settings?.IsConfigured == true,
         settings?.IsEnabled == true,
         boundUsersCount ?? settings?.UserBindings.Count ?? 0);
+
+    private static IReadOnlyList<string> SplitOwnedNumbers(string? value) =>
+        string.IsNullOrWhiteSpace(value)
+            ? []
+            : value.Split([',', ';', '\n', '\r', ' '], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
 }
