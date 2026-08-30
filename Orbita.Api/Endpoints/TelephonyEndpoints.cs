@@ -378,6 +378,20 @@ public static class TelephonyEndpoints
             return result is null ? Results.BadRequest(new { error }) : Results.Ok(result);
         });
 
+        admin.MapDelete("/offices/{officeId:guid}/{provider}/accounts/{accountId:guid}", async (
+            Guid officeId,
+            string provider,
+            Guid accountId,
+            CrmTelephonyProviderAccountService accounts,
+            OfficeScopeService officeScope,
+            ClaimsPrincipal principal,
+            CancellationToken ct) =>
+        {
+            if (!await CanManageTelephonyAsync(officeId, officeScope, principal, ct)) return Results.Forbid();
+            var (success, error) = await accounts.DeleteAsync(officeId, provider, accountId, ct);
+            return success ? Results.NoContent() : Results.BadRequest(new { error });
+        });
+
         admin.MapPost("/offices/{officeId:guid}/{provider}/accounts/{accountId:guid}/receiver", async (
             Guid officeId,
             string provider,

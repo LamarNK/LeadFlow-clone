@@ -3351,6 +3351,23 @@ public sealed class OrbitaApiClient(
                 : (false, await ReadApiErrorAsync(response, ct));
     }
 
+    public async Task<(bool Success, string? Error)> DeleteTelephonyProviderAccountAsync(
+        Guid officeId,
+        string provider,
+        Guid accountId,
+        CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Delete,
+            $"api/v1/crm/telephony/offices/{officeId:D}/{Uri.EscapeDataString(provider)}/accounts/{accountId:D}");
+        using var response = await SendAuthenticatedAsync(request, ct);
+        return response is null
+            ? (false, InvalidApiSessionError)
+            : response.IsSuccessStatusCode
+                ? (true, null)
+                : (false, await ReadApiErrorAsync(response, ct));
+    }
+
     public async Task<(CrmTelephonyProviderAccountReceiverDto? Account, string? Error)> RotateTelephonyProviderAccountReceiverAsync(
         Guid officeId,
         string provider,

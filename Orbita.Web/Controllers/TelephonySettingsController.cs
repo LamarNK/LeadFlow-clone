@@ -289,8 +289,8 @@ public sealed class TelephonySettingsController(
             else
             {
                 TempData["SettingsStatus"] = provider == CrmTelephonyProviders.Plusofon
-                    ? $"Кабинет «{result.Account.Name}» добавлен: загрузка истории уже запущена. Webhook ниже можно подключить для мгновенного поступления новых звонков."
-                    : $"Кабинет «{result.Account.Name}» добавлен. Скопируйте WebRequest сейчас: секрет повторно не показывается.";
+                    ? $"Кабинет «{result.Account.Name}» добавлен: загрузка истории уже запущена."
+                    : $"Кабинет «{result.Account.Name}» добавлен. Скопируйте WebRequest URL в открывшемся окне.";
                 TempData["TelephonyProviderSetupUrl"] = result.CallbackUrl;
                 TempData["TelephonyWebhookSecret"] = result.WebhookSecret;
                 TempData["TelephonyWebhookSecretHeader"] = result.WebhookSecretHeader;
@@ -320,6 +320,26 @@ public sealed class TelephonySettingsController(
             TempData["TelephonyWebhookSecret"] = result.WebhookSecret;
             TempData["TelephonyWebhookSecretHeader"] = result.WebhookSecretHeader;
         }
+        return RedirectToAction(nameof(Telephony), new { officeId, provider });
+    }
+
+    [HttpPost("Telephony/ProviderAccount/Delete")]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> DeleteProviderAccount(
+        Guid officeId,
+        string provider,
+        Guid accountId,
+        CancellationToken ct = default)
+    {
+        if (!CrmTelephonyProviders.IsSupported(provider)) return BadRequest();
+        provider = CrmTelephonyProviders.Normalize(provider);
+        if (provider is not (CrmTelephonyProviders.Plusofon or CrmTelephonyProviders.Sipout)) return BadRequest();
+
+        var (success, error) = await api.DeleteTelephonyProviderAccountAsync(
+            officeId, provider, accountId, ct);
+        TempData[success ? "SettingsStatus" : "SettingsError"] = success
+            ? "Кабинет удалён. Ранее полученные звонки и записи сохранены в карточках кандидатов."
+            : error;
         return RedirectToAction(nameof(Telephony), new { officeId, provider });
     }
 

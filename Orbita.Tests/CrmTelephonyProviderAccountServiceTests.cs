@@ -99,6 +99,87 @@ public sealed class CrmTelephonyProviderAccountServiceTests
         Assert.Equal("Этот кабинет провайдера уже подключён к офису.", second.Error);
     }
 
+    [Fact]
+    public async Task DeleteAccount_RemovesSettingsButPreservesImportedCallsAndRecordings()
+    {
+        var now = new DateTimeOffset(2026, 8, 30, 12, 0, 0, TimeSpan.Zero);
+        var options = new DbContextOptionsBuilder<OrbitaDbContext>()
+            .UseInMemoryDatabase($"telephony-provider-delete-{Guid.NewGuid():N}")
+            .Options;
+        await using var db = new OrbitaDbContext(options);
+        var officeId = Guid.NewGuid();
+        var accountId = Guid.NewGuid();
+        db.Offices.Add(new OfficeEntity
+        {
+            Id = officeId,
+            Name = "Provider delete office",
+            RegistrationSecretHash = "hash",
+            IsEnabled = true,
+            CrmEnabled = true,
+            CreatedAtUtc = now.UtcDateTime
+        });
+        db.CrmTelephonyProviderAccounts.Add(new CrmTelephonyProviderAccountEntity
+        {
+            Id = accountId,
+            OfficeId = officeId,
+            Provider = CrmTelephonyProviders.Sipout,
+            Name = "SIPOUT office",
+            OwnedNumbersJson = "[]",
+            PublicId = Guid.NewGuid(),
+            SecretHash = "hash",
+            IsEnabled = true,
+            SyncFromUtc = now.UtcDateTime.AddDays(-7),
+            SyncStatus = "online",
+            CreatedAtUtc = now.UtcDateTime,
+            UpdatedAtUtc = now.UtcDateTime
+        });
+        db.CrmTelephonyProviderAccountBindings.Add(new CrmTelephonyProviderAccountBindingEntity
+        {
+            Id = Guid.NewGuid(),
+            ProviderAccountId = accountId,
+            ProviderUserKey = "202",
+            UserId = "manager-1",
+            CreatedAtUtc = now.UtcDateTime,
+            UpdatedAtUtc = now.UtcDateTime
+        });
+        db.CrmCalls.Add(new CrmCallEntity
+        {
+            Id = Guid.NewGuid(),
+            OfficeId = officeId,
+            Provider = CrmTelephonyProviders.Sipout,
+            ProviderAccountId = accountId,
+            ExternalCallId = "sipout-call-1",
+            Direction = CrmCallDirections.Outgoing,
+            CallerPhone = "202",
+            CalledPhone = "79991112233",
+            ClientPhoneNormalized = "79991112233",
+            StartedAtUtc = now.UtcDateTime,
+            RecordingStoragePath = "calls/recording.mp3",
+            ReceivedAtUtc = now.UtcDateTime,
+            UpdatedAtUtc = now.UtcDateTime
+        });
+        await db.SaveChangesAsync();
+        var sut = new CrmTelephonyProviderAccountService(
+            db,
+            new PhoneNormalizer(),
+            new CrmTelephonyCredentialProtector(new EphemeralDataProtectionProvider()),
+            new FixedTimeProvider(now));
+
+        var (success, error) = await sut.DeleteAsync(
+            officeId,
+            CrmTelephonyProviders.Sipout,
+            accountId);
+
+        Assert.True(success);
+        Assert.Null(error);
+        Assert.Empty(await db.CrmTelephonyProviderAccounts.ToListAsync());
+        Assert.Empty(await db.CrmTelephonyProviderAccountBindings.ToListAsync());
+        var call = await db.CrmCalls.SingleAsync();
+        Assert.Null(call.ProviderAccountId);
+        Assert.StartsWith($"removed:{accountId:N}:", call.ExternalCallId, StringComparison.Ordinal);
+        Assert.Equal("calls/recording.mp3", call.RecordingStoragePath);
+    }
+
     private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => now;

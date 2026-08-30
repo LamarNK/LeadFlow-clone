@@ -161,6 +161,38 @@ public sealed class CrmTelephonyProviderAccountService(
         return (ToDto(entity, boundUsers), null);
     }
 
+    public async Task<(bool Success, string? Error)> DeleteAsync(
+        Guid officeId,
+        string provider,
+        Guid accountId,
+        CancellationToken ct = default)
+    {
+        provider = NormalizeProvider(provider);
+        var entity = await db.CrmTelephonyProviderAccounts.FirstOrDefaultAsync(x =>
+            x.Id == accountId && x.OfficeId == officeId && x.Provider == provider, ct);
+        if (entity is null) return (false, "Кабинет телефонии не найден.");
+
+        // Calls and archived recordings are CRM history and must survive cabinet removal.
+        // Detach them from the account and replace the provider-side key so the partial
+        // unique index for legacy/accountless calls cannot collide across old cabinets.
+        var calls = await db.CrmCalls
+            .Where(x => x.ProviderAccountId == accountId)
+            .ToListAsync(ct);
+        foreach (var call in calls)
+        {
+            call.ProviderAccountId = null;
+            call.ExternalCallId = BuildRemovedAccountCallId(accountId, call.ExternalCallId);
+        }
+
+        var bindings = await db.CrmTelephonyProviderAccountBindings
+            .Where(x => x.ProviderAccountId == accountId)
+            .ToListAsync(ct);
+        db.CrmTelephonyProviderAccountBindings.RemoveRange(bindings);
+        db.CrmTelephonyProviderAccounts.Remove(entity);
+        await db.SaveChangesAsync(ct);
+        return (true, null);
+    }
+
     public async Task<(CrmTelephonyProviderAccountReceiverDto? Result, string? Error)> RotateReceiverAsync(
         Guid officeId,
         string provider,
@@ -336,6 +368,13 @@ public sealed class CrmTelephonyProviderAccountService(
 
     private static string NormalizeProvider(string provider) =>
         CrmTelephonyProviders.Normalize(provider);
+
+    private static string BuildRemovedAccountCallId(Guid accountId, string externalCallId)
+    {
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(externalCallId)))
+            .ToLowerInvariant();
+        return $"removed:{accountId:N}:{hash[..24]}";
+    }
 
     private static string? NormalizeNullable(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
