@@ -92,6 +92,56 @@ public static class WorkerPanelEndpoints
             return Results.Ok(new { message = "Команда поставлена в очередь." });
         });
 
+        workerPanel.MapPost("/{id:guid}/provider-checks", async (
+            Guid id,
+            RequestWorkerBrowserProviderCheckRequest request,
+            WorkerConfigService configService,
+            OfficeScopeService officeScope,
+            ClaimsPrincipal principal,
+            CancellationToken ct) =>
+        {
+            var scope = await officeScope.ResolveAsync(principal, ct);
+            if (!scope.HasAccess)
+            {
+                return Results.Forbid();
+            }
+
+            var (check, error) = await configService.RequestProviderCheckAsync(id, request.Provider, scope, ct);
+            if (error is not null)
+            {
+                return error.Contains("не найден", StringComparison.OrdinalIgnoreCase)
+                    ? Results.NotFound(new { error })
+                    : Results.BadRequest(new { error });
+            }
+
+            return Results.Ok(new { message = WorkerBrowserProviderMessages.CheckQueued, check });
+        });
+
+        workerPanel.MapPost("/{id:guid}/provider-sync", async (
+            Guid id,
+            RequestWorkerBrowserProviderSyncRequest request,
+            WorkerConfigService configService,
+            OfficeScopeService officeScope,
+            ClaimsPrincipal principal,
+            CancellationToken ct) =>
+        {
+            var scope = await officeScope.ResolveAsync(principal, ct);
+            if (!scope.HasAccess)
+            {
+                return Results.Forbid();
+            }
+
+            var (check, error) = await configService.RequestProviderSyncAsync(id, request.Provider, scope, ct);
+            if (error is not null)
+            {
+                return error.Contains("не найден", StringComparison.OrdinalIgnoreCase)
+                    ? Results.NotFound(new { error })
+                    : Results.BadRequest(new { error });
+            }
+
+            return Results.Ok(new { message = WorkerBrowserProviderMessages.SyncQueued, check });
+        });
+
         workerPanel.MapPatch("/{id:guid}/accounts/{accountId:guid}", async (
             Guid id,
             Guid accountId,

@@ -163,6 +163,12 @@ public sealed class WorkerDetailsViewModel
     public bool AdsPowerEnabled { get; init; } = true;
     public bool MultiloginEnabled { get; init; } = true;
     public bool LocalChromeEnabled { get; init; } = true;
+    public WorkerBrowserProviderCheckDto AdsPowerCheck { get; init; } =
+        new(WorkerBrowserProviderKinds.AdsPower, WorkerBrowserProviderStatus.Unchecked, "Не проверено");
+    public WorkerBrowserProviderCheckDto MultiloginCheck { get; init; } =
+        new(WorkerBrowserProviderKinds.Multilogin, WorkerBrowserProviderStatus.Unchecked, "Не проверено");
+    public WorkerBrowserProviderCheckDto LocalChromeCheck { get; init; } =
+        new(WorkerBrowserProviderKinds.Local, WorkerBrowserProviderStatus.Unchecked, "Не проверено");
     public string? AdsPowerGroupId { get; init; }
     public string? AdsPowerGroupName { get; init; }
     public IReadOnlyList<AdsPowerGroupDto> AdsPowerGroups { get; init; } = [];

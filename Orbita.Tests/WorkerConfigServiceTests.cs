@@ -1285,6 +1285,266 @@ public sealed class WorkerConfigServiceTests
         var acc = Assert.Single(dto.Accounts);
         Assert.Null(acc.LocalUserDataDir);
         Assert.Null(acc.ProfileProvider);
+        Assert.Null(dto.PendingProviderCheck);
+        Assert.Null(dto.PendingProviderSync);
+    }
+
+    [Fact]
+    public async Task UpdateSettingsAsync_DisabledProvider_DoesNotOverwriteConnectionFields()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db);
+        var worker = await db.Workers.SingleAsync();
+        worker.AdsPowerApiBaseUrl = "http://keep.adspower.local:50325";
+        worker.AdsPowerApiKey = "keep-ads-key";
+        worker.AdsPowerGroupId = "group-keep";
+        worker.MultiloginLauncherUrl = "http://keep-launcher.local:45001";
+        worker.MultiloginCloudApiUrl = "https://keep-cloud.local";
+        worker.MultiloginAutomationToken = "keep-mlx-token";
+        worker.LocalChromeExecutablePath = @"C:\Keep\chrome.exe";
+        await db.SaveChangesAsync();
+
+        var (config, error) = await CreateService(db).UpdateSettingsAsync(
+            WorkerId,
+            new UpdateWorkerSettingsRequest(
+                MaxConcurrentAccounts: 1,
+                AdsPowerApiBaseUrl: "not-a-url",
+                AdsPowerApiKey: "overwrite-ads",
+                AdsPowerGroupId: "group-overwrite",
+                MultiloginLauncherUrl: "also-not-a-url",
+                MultiloginCloudApiUrl: "https://overwrite-cloud.local",
+                MultiloginAutomationToken: "overwrite-token",
+                LocalChromeExecutablePath: new string('x', 600),
+                AdsPowerEnabled: false,
+                MultiloginEnabled: false,
+                LocalChromeEnabled: false),
+            OfficeScope.ForOffice(OfficeId));
+
+        Assert.Null(error);
+        Assert.NotNull(config);
+        Assert.False(config!.AdsPowerEnabled);
+        Assert.False(config.MultiloginEnabled);
+        Assert.False(config.LocalChromeEnabled);
+        Assert.Equal("http://keep.adspower.local:50325", config.AdsPowerApiBaseUrl);
+        Assert.Equal("keep-ads-key", config.AdsPowerApiKey);
+        Assert.Equal("http://keep-launcher.local:45001", config.MultiloginLauncherUrl);
+        Assert.Equal("https://keep-cloud.local", config.MultiloginCloudApiUrl);
+        Assert.Equal("keep-mlx-token", config.MultiloginAutomationToken);
+        Assert.Equal(@"C:\Keep\chrome.exe", config.LocalChromeExecutablePath);
+
+        worker = await db.Workers.SingleAsync();
+        Assert.Equal("http://keep.adspower.local:50325", worker.AdsPowerApiBaseUrl);
+        Assert.Equal("keep-ads-key", worker.AdsPowerApiKey);
+        Assert.Equal("group-keep", worker.AdsPowerGroupId);
+        Assert.Equal("http://keep-launcher.local:45001", worker.MultiloginLauncherUrl);
+        Assert.Equal("keep-mlx-token", worker.MultiloginAutomationToken);
+        Assert.Equal(@"C:\Keep\chrome.exe", worker.LocalChromeExecutablePath);
+        Assert.Single(await db.WorkerAccounts.ToListAsync());
+    }
+
+    [Fact]
+    public async Task UpdateSettingsAsync_EnabledUrlChange_ClearsStoredCheck()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db);
+        var worker = await db.Workers.SingleAsync();
+        worker.AdsPowerApiBaseUrl = "http://old.adspower.local:50325";
+        worker.BrowserProviderChecksJson = BrowserProviderChecksJson.Serialize(new BrowserProviderChecksState
+        {
+            AdsPower = new BrowserProviderCheckSnapshot
+            {
+                Ok = true,
+                AtUtc = DateTime.UtcNow,
+                Message = "ok",
+                Profiles = 4
+            }
+        });
+        await db.SaveChangesAsync();
+
+        var (config, error) = await CreateService(db).UpdateSettingsAsync(
+            WorkerId,
+            new UpdateWorkerSettingsRequest(
+                MaxConcurrentAccounts: 1,
+                AdsPowerApiBaseUrl: "http://new.adspower.local:50325",
+                AdsPowerEnabled: true),
+            OfficeScope.ForOffice(OfficeId));
+
+        Assert.Null(error);
+        Assert.NotNull(config);
+        worker = await db.Workers.SingleAsync();
+        Assert.Equal("http://new.adspower.local:50325", worker.AdsPowerApiBaseUrl);
+        var mapped = WorkerConfigService.MapProviderCheck(worker, WorkerBrowserProviderKinds.AdsPower);
+        Assert.Equal(WorkerBrowserProviderStatus.Unchecked, mapped.Status);
+        Assert.NotEqual(WorkerBrowserProviderStatus.Connected, mapped.Status);
+    }
+
+    [Fact]
+    public async Task RequestProviderCheckAsync_RejectsDisabledAndUnknown()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db);
+        var worker = await db.Workers.SingleAsync();
+        worker.AdsPowerEnabled = false;
+        await db.SaveChangesAsync();
+        var sut = CreateService(db);
+
+        var off = await sut.RequestProviderCheckAsync(WorkerId, "AdsPower", OfficeScope.ForOffice(OfficeId));
+        Assert.Null(off.Check);
+        Assert.Equal(WorkerBrowserProviderMessages.ProviderOff, off.Error);
+
+        var unknown = await sut.RequestProviderCheckAsync(WorkerId, "Bitrix", OfficeScope.ForOffice(OfficeId));
+        Assert.Null(unknown.Check);
+        Assert.Equal(WorkerBrowserProviderMessages.UnknownProvider, unknown.Error);
+    }
+
+    [Fact]
+    public async Task RequestProviderCheckAsync_MultiloginWithoutToken_NeedsSetup()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db);
+        var sut = CreateService(db);
+
+        var result = await sut.RequestProviderCheckAsync(WorkerId, "Multilogin", OfficeScope.ForOffice(OfficeId));
+        Assert.Null(result.Check);
+        Assert.Equal(WorkerBrowserProviderMessages.NeedsToken, result.Error);
+    }
+
+    [Fact]
+    public async Task RequestProviderCheckAsync_QueuesOnWorker_AndGetConfigDoesNotConsume()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db);
+        var sut = CreateService(db);
+
+        var queued = await sut.RequestProviderCheckAsync(WorkerId, "AdsPower", OfficeScope.ForOffice(OfficeId));
+        Assert.Null(queued.Error);
+        Assert.Equal(WorkerBrowserProviderStatus.Checking, queued.Check!.Status);
+        Assert.True(queued.Check.CanCheck is false);
+
+        var config = await sut.GetConfigForWorkerAsync(WorkerId, OfficeScope.ForOffice(OfficeId));
+        Assert.NotNull(config!.PendingProviderCheck);
+        Assert.Equal(WorkerBrowserProviderKinds.AdsPower, config.PendingProviderCheck!.Provider);
+
+        var again = await sut.GetConfigForWorkerAsync(WorkerId, OfficeScope.ForOffice(OfficeId));
+        Assert.Equal(WorkerBrowserProviderKinds.AdsPower, again!.PendingProviderCheck!.Provider);
+    }
+
+    [Fact]
+    public async Task RequestProviderSyncAsync_Local_IsUnknown()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db);
+        var result = await CreateService(db).RequestProviderSyncAsync(
+            WorkerId,
+            WorkerBrowserProviderKinds.Local,
+            OfficeScope.ForOffice(OfficeId));
+        Assert.Null(result.Check);
+        Assert.Equal(WorkerBrowserProviderMessages.UnknownProvider, result.Error);
+    }
+
+    [Fact]
+    public async Task ReportProviderCheckAsync_SanitizesSecret_AndClearsPending()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db);
+        var worker = await db.Workers.SingleAsync();
+        worker.AdsPowerApiKey = "ads-live-secret-key";
+        worker.PendingBrowserProviderCheck = WorkerBrowserProviderKinds.AdsPower;
+        worker.PendingBrowserProviderCheckAtUtc = DateTime.UtcNow;
+        await db.SaveChangesAsync();
+
+        var sut = CreateService(db);
+        var (ok, error) = await sut.ReportProviderCheckAsync(
+            WorkerId,
+            new ReportWorkerBrowserProviderCheckRequest(
+                WorkerBrowserProviderKinds.AdsPower,
+                Success: true,
+                Message: "Local API ok Authorization: Bearer ads-live-secret-key profiles=3",
+                ProfileCount: 3,
+                GroupCount: 1,
+                Groups: [new AdsPowerGroupDto("g-1", "Москва")]));
+
+        Assert.True(ok);
+        Assert.Null(error);
+
+        worker = await db.Workers.SingleAsync();
+        Assert.Null(worker.PendingBrowserProviderCheck);
+        Assert.Contains("profiles=3", worker.BrowserProviderChecksJson, StringComparison.Ordinal);
+        Assert.DoesNotContain("ads-live-secret-key", worker.BrowserProviderChecksJson, StringComparison.Ordinal);
+        Assert.DoesNotContain("Bearer", worker.BrowserProviderChecksJson, StringComparison.OrdinalIgnoreCase);
+
+        var mapped = WorkerConfigService.MapProviderCheck(worker, WorkerBrowserProviderKinds.AdsPower);
+        Assert.Equal(WorkerBrowserProviderStatus.Connected, mapped.Status);
+        Assert.Equal(3, mapped.ProfileCount);
+        Assert.True(mapped.CanSync);
+        Assert.DoesNotContain("ads-live-secret-key", mapped.Message ?? "", StringComparison.Ordinal);
+        var groups = AdsPowerGroupsJson.Parse(worker.AdsPowerGroupsJson);
+        var group = Assert.Single(groups);
+        Assert.Equal("g-1", group.GroupId);
+        Assert.Equal("Москва", group.GroupName);
+    }
+
+    [Fact]
+    public async Task MapProviderCheck_NeverFakesConnected()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db);
+        var worker = await db.Workers.SingleAsync();
+
+        var uncheckedStatus = WorkerConfigService.MapProviderCheck(worker, WorkerBrowserProviderKinds.AdsPower);
+        Assert.Equal(WorkerBrowserProviderStatus.Unchecked, uncheckedStatus.Status);
+        Assert.False(uncheckedStatus.CanSync);
+        Assert.True(uncheckedStatus.CanCheck);
+
+        worker.BrowserProviderChecksJson = BrowserProviderChecksJson.Serialize(new BrowserProviderChecksState
+        {
+            AdsPower = new BrowserProviderCheckSnapshot
+            {
+                Ok = false,
+                AtUtc = DateTime.UtcNow,
+                Message = "down"
+            }
+        });
+        var error = WorkerConfigService.MapProviderCheck(worker, WorkerBrowserProviderKinds.AdsPower);
+        Assert.Equal(WorkerBrowserProviderStatus.Error, error.Status);
+        Assert.NotEqual(WorkerBrowserProviderStatus.Connected, error.Status);
+        Assert.False(error.CanSync);
+
+        worker.AdsPowerEnabled = false;
+        worker.BrowserProviderChecksJson = BrowserProviderChecksJson.Serialize(new BrowserProviderChecksState
+        {
+            AdsPower = new BrowserProviderCheckSnapshot
+            {
+                Ok = true,
+                AtUtc = DateTime.UtcNow,
+                Message = "ok",
+                Profiles = 9
+            }
+        });
+        var disabled = WorkerConfigService.MapProviderCheck(worker, WorkerBrowserProviderKinds.AdsPower);
+        Assert.Equal(WorkerBrowserProviderStatus.Disabled, disabled.Status);
+        Assert.NotEqual(WorkerBrowserProviderStatus.Connected, disabled.Status);
+        Assert.False(disabled.CanCheck);
+        Assert.False(disabled.CanSync);
+    }
+
+    [Fact]
+    public async Task GetConfigForWorkerAsync_IncludesPendingProviderJobs()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db);
+        var worker = await db.Workers.SingleAsync();
+        worker.PendingBrowserProviderCheck = WorkerBrowserProviderKinds.Local;
+        worker.PendingBrowserProviderCheckAtUtc = DateTime.UtcNow.AddMinutes(-1);
+        worker.PendingBrowserProviderSync = WorkerBrowserProviderKinds.AdsPower;
+        worker.PendingBrowserProviderSyncAtUtc = DateTime.UtcNow.AddMinutes(-2);
+        await db.SaveChangesAsync();
+
+        var config = await CreateService(db).GetConfigForWorkerAsync(WorkerId, OfficeScope.ForOffice(OfficeId));
+        Assert.Equal(WorkerBrowserProviderKinds.Local, config!.PendingProviderCheck!.Provider);
+        Assert.Equal(WorkerBrowserProviderKinds.AdsPower, config.PendingProviderSync!.Provider);
+        Assert.True(config.AdsPowerEnabled);
+        Assert.True(config.LocalChromeEnabled);
     }
 
     private static WorkerConfigService CreateService(

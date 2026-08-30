@@ -321,6 +321,7 @@ public sealed class MultiloginApiClientTests
         Assert.Contains(nameof(IMultiloginApiClient.StartProfileAsync), names);
         Assert.Contains(nameof(IMultiloginApiClient.StopProfileAsync), names);
         Assert.Contains(nameof(IMultiloginApiClient.SearchProfilesAsync), names);
+        Assert.Contains(nameof(IMultiloginApiClient.ProbeLauncherAsync), names);
         Assert.DoesNotContain("ListProfilesAsync", names);
         Assert.DoesNotContain("ListFoldersAsync", names);
     }

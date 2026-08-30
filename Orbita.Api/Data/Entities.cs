@@ -238,6 +238,14 @@ public sealed class WorkerEntity
     public bool MultiloginEnabled { get; set; } = true;
     /// <summary>Запускать аккаунты обычного Chrome. Выключение не удаляет аккаунты и папки.</summary>
     public bool LocalChromeEnabled { get; set; } = true;
+    /// <summary>Ожидающая проверка AdsPower/Multilogin/Local на воркере.</summary>
+    public string? PendingBrowserProviderCheck { get; set; }
+    public DateTime? PendingBrowserProviderCheckAtUtc { get; set; }
+    /// <summary>Ожидающая немедленная синхронизация каталога AdsPower/Multilogin.</summary>
+    public string? PendingBrowserProviderSync { get; set; }
+    public DateTime? PendingBrowserProviderSyncAtUtc { get; set; }
+    /// <summary>Последние результаты проверки подключения. Без секретов.</summary>
+    public string? BrowserProviderChecksJson { get; set; }
     public string? LastUpdateVersion { get; set; }
     public bool? LastUpdateSuccess { get; set; }
     public string? LastUpdateMessage { get; set; }

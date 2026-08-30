@@ -2793,6 +2793,10 @@ namespace Orbita.Api.Data.Migrations
                         .HasMaxLength(5)
                         .HasColumnType("character varying(5)");
 
+                    b.Property<string>("BrowserProviderChecksJson")
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
+
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
@@ -2902,6 +2906,20 @@ namespace Orbita.Api.Data.Migrations
                     b.Property<string>("OwnerUserId")
                         .HasMaxLength(128)
                         .HasColumnType("character varying(128)");
+
+                    b.Property<string>("PendingBrowserProviderCheck")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateTime?>("PendingBrowserProviderCheckAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("PendingBrowserProviderSync")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateTime?>("PendingBrowserProviderSyncAtUtc")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("PendingCommand")
                         .HasColumnType("text");

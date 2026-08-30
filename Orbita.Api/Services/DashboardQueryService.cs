@@ -465,10 +465,13 @@ public sealed class DashboardQueryService(
             worker.MultiloginLauncherUrl,
             worker.MultiloginCloudApiUrl,
             HasMultiloginAutomationToken: !string.IsNullOrWhiteSpace(worker.MultiloginAutomationToken),
-            worker.LocalChromeExecutablePath,
-            worker.AdsPowerEnabled,
-            worker.MultiloginEnabled,
-            worker.LocalChromeEnabled);
+            LocalChromeExecutablePath: worker.LocalChromeExecutablePath,
+            AdsPowerEnabled: worker.AdsPowerEnabled,
+            MultiloginEnabled: worker.MultiloginEnabled,
+            LocalChromeEnabled: worker.LocalChromeEnabled,
+            AdsPowerCheck: WorkerConfigService.MapProviderCheck(worker, WorkerBrowserProviderKinds.AdsPower),
+            MultiloginCheck: WorkerConfigService.MapProviderCheck(worker, WorkerBrowserProviderKinds.Multilogin),
+            LocalChromeCheck: WorkerConfigService.MapProviderCheck(worker, WorkerBrowserProviderKinds.Local));
     }
 
     public async Task<IReadOnlyList<WorkerAccountDto>> GetWorkerAccountsAsync(

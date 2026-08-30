@@ -142,6 +142,21 @@ public static class WorkerEndpoints
             return await configService.SyncAccountsAsync(workerId, request, ct) ? Results.Ok() : Results.NotFound();
         }).RequireAuthorization("Worker");
 
+        workers.MapPost("/provider-checks", async (
+            ReportWorkerBrowserProviderCheckRequest request,
+            WorkerConfigService configService,
+            ClaimsPrincipal user,
+            CancellationToken ct) =>
+        {
+            if (!TryGetWorkerId(user, out var workerId))
+            {
+                return Results.Forbid();
+            }
+
+            var (success, error) = await configService.ReportProviderCheckAsync(workerId, request, ct);
+            return success ? Results.Ok() : Results.BadRequest(new { error });
+        }).RequireAuthorization("Worker");
+
         workers.MapPost("/candidates", async (
             WorkerCandidateBatchRequest request,
             CandidateIngestionService ingestion,

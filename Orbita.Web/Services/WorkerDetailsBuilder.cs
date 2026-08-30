@@ -120,6 +120,21 @@ internal static class WorkerDetailsBuilder
             AdsPowerEnabled = worker.AdsPowerEnabled,
             MultiloginEnabled = worker.MultiloginEnabled,
             LocalChromeEnabled = worker.LocalChromeEnabled,
+            AdsPowerCheck = ResolvePresentedCheck(
+                worker.AdsPowerCheck,
+                WorkerBrowserProviderKinds.AdsPower,
+                worker.AdsPowerEnabled,
+                needsSetup: false),
+            MultiloginCheck = ResolvePresentedCheck(
+                worker.MultiloginCheck,
+                WorkerBrowserProviderKinds.Multilogin,
+                worker.MultiloginEnabled,
+                needsSetup: !worker.HasMultiloginAutomationToken),
+            LocalChromeCheck = ResolvePresentedCheck(
+                worker.LocalChromeCheck,
+                WorkerBrowserProviderKinds.Local,
+                worker.LocalChromeEnabled,
+                needsSetup: false),
             AdsPowerGroupId = worker.AdsPowerGroupId,
             AdsPowerGroupName = worker.AdsPowerGroupName,
             AdsPowerGroups = BuildAdsPowerGroupOptions(
@@ -304,6 +319,41 @@ internal static class WorkerDetailsBuilder
         }
 
         return adsPowerEnabled;
+    }
+
+    private static WorkerBrowserProviderCheckDto ResolvePresentedCheck(
+        WorkerBrowserProviderCheckDto? dto,
+        string provider,
+        bool enabled,
+        bool needsSetup)
+    {
+        if (!enabled)
+        {
+            return FallbackCheck(provider, enabled: false, needsSetup: false);
+        }
+
+        if (needsSetup)
+        {
+            return FallbackCheck(provider, enabled: true, needsSetup: true);
+        }
+
+        return dto ?? FallbackCheck(provider, enabled: true, needsSetup: false);
+    }
+
+    private static WorkerBrowserProviderCheckDto FallbackCheck(string provider, bool enabled, bool needsSetup)
+    {
+        var status = WorkerBrowserProviderStatus.Resolve(enabled, needsSetup, checking: false, lastSucceeded: null);
+        return new WorkerBrowserProviderCheckDto(
+            provider,
+            status,
+            WorkerBrowserProviderStatus.Label(status),
+            status == WorkerBrowserProviderStatus.Disabled
+                ? WorkerBrowserProviderMessages.DisabledHint
+                : status == WorkerBrowserProviderStatus.NeedsSetup
+                    ? WorkerBrowserProviderMessages.NeedsToken
+                    : null,
+            CanCheck: enabled && !needsSetup,
+            CanSync: false);
     }
 
     private static IReadOnlyList<AdsPowerGroupDto> BuildAdsPowerGroupOptions(

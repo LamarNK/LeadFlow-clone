@@ -79,6 +79,8 @@ public interface IWorkersService
         bool clear,
         CancellationToken ct = default);
     Task<(bool Success, string? Error)> RequestSubProfilesRefreshAsync(Guid workerId, Guid accountId, CancellationToken ct = default);
+    Task<(bool Success, string? Error)> RequestProviderCheckAsync(Guid workerId, string provider, CancellationToken ct = default);
+    Task<(bool Success, string? Error)> RequestProviderSyncAsync(Guid workerId, string provider, CancellationToken ct = default);
     Task<(bool Success, string? Error)> UpdateSubProfileEnabledAsync(
         Guid workerId,
         Guid accountId,

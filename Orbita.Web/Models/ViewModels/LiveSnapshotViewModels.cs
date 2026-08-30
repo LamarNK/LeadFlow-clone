@@ -44,6 +44,9 @@ public sealed class WorkerDetailsLiveSnapshotViewModel
     public int AdsPowerAccountCount { get; init; }
     public int MultiloginAccountCount { get; init; }
     public int LocalAccountCount { get; init; }
+    public WorkerBrowserProviderCheckDto? AdsPowerCheck { get; init; }
+    public WorkerBrowserProviderCheckDto? MultiloginCheck { get; init; }
+    public WorkerBrowserProviderCheckDto? LocalChromeCheck { get; init; }
 }
 
 public sealed class EventsLiveSnapshotViewModel

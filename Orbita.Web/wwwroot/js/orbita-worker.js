@@ -296,33 +296,72 @@
             });
         });
 
-        function syncProviderSection(section) {
-            var toggle = section.querySelector('[data-provider-toggle]');
-            if (!toggle) return;
-
-            var enabled = !!toggle.checked;
-            section.classList.toggle('is-provider-off', !enabled);
-            var hint = section.querySelector('[data-provider-off-hint]');
-            if (hint) hint.hidden = enabled;
-
-            section.querySelectorAll('input, select, textarea').forEach(function (el) {
-                if (el.hasAttribute('data-provider-toggle') || el.closest('[data-provider-keep]')) return;
-                el.disabled = !enabled;
-            });
+        function providerStatusLabel(status) {
+            switch (status) {
+                case 'disabled': return 'Выключен';
+                case 'needsSetup': return 'Требуется настройка';
+                case 'checking': return 'Проверяется';
+                case 'connected': return 'Подключён';
+                case 'error': return 'Ошибка подключения';
+                default: return 'Не проверено';
+            }
         }
 
-        form.querySelectorAll('[data-provider-section]').forEach(function (section) {
-            syncProviderSection(section);
-            var toggle = section.querySelector('[data-provider-toggle]');
-            if (!toggle) return;
+        function applyLocalProviderCard(card, status, message) {
+            if (!card) return;
+            var resolved = status || 'unchecked';
+            card.setAttribute('data-provider-status', resolved);
+            var label = card.querySelector('[data-provider-status-label]');
+            if (label) {
+                label.className = 'worker-provider-status worker-provider-status--' + resolved;
+                label.textContent = providerStatusLabel(resolved);
+            }
+            if (typeof message === 'string') {
+                var messageEl = card.querySelector('[data-provider-message]');
+                if (messageEl) messageEl.textContent = message;
+            }
+            var checkBtn = card.querySelector('[data-provider-check]');
+            if (checkBtn) checkBtn.disabled = resolved === 'disabled' || resolved === 'checking' || resolved === 'needsSetup';
+            var syncBtn = card.querySelector('[data-provider-sync]');
+            if (syncBtn) syncBtn.hidden = resolved !== 'connected';
+        }
+
+        function syncProviderSection(kind) {
+            var toggle = form.querySelector('[data-provider-toggle="' + kind + '"]');
+            var section = form.querySelector('[data-provider-section="' + kind + '"]');
+            if (!toggle || !section) return;
+            var enabled = !!toggle.checked;
+            section.hidden = !enabled;
+            var card = form.querySelector('[data-provider-card="' + kind + '"]');
+            if (!card) return;
+            if (!card.getAttribute('data-provider-status-saved')) {
+                card.setAttribute('data-provider-status-saved', card.getAttribute('data-provider-status') || 'unchecked');
+            }
+            if (!enabled) {
+                applyLocalProviderCard(card, 'disabled', 'Провайдер выключен: аккаунты сохранены, но не синхронизируются и не запускаются');
+                return;
+            }
+            var saved = card.getAttribute('data-provider-status-saved') || 'unchecked';
+            if (saved === 'disabled') {
+                saved = 'unchecked';
+            }
+            applyLocalProviderCard(card, saved);
+        }
+
+        form.querySelectorAll('[data-provider-toggle]').forEach(function (toggle) {
+            var kind = toggle.getAttribute('data-provider-toggle');
+            syncProviderSection(kind);
             toggle.addEventListener('change', function () {
-                syncProviderSection(section);
+                syncProviderSection(kind);
             });
         });
 
         form.addEventListener('submit', function () {
-            form.querySelectorAll('[data-provider-section] input, [data-provider-section] select, [data-provider-section] textarea').forEach(function (el) {
-                el.disabled = false;
+            form.querySelectorAll('[data-provider-section]').forEach(function (section) {
+                var disable = !!section.hidden;
+                section.querySelectorAll('input, select, textarea').forEach(function (el) {
+                    el.disabled = disable;
+                });
             });
         });
 
@@ -735,6 +774,11 @@
         }
         select.innerHTML = html;
         select.value = current;
+        var hasGroups = (groups || []).some(function (g) { return !!(g.groupId); });
+        var hint = document.querySelector('[data-ads-group-hint]');
+        var ready = document.querySelector('[data-ads-group-ready]');
+        if (hint) hint.hidden = hasGroups;
+        if (ready) ready.hidden = !hasGroups;
     }
 
     function syncWorkerAccountsEmptyState(accounts) {
@@ -923,6 +967,43 @@
         }
     }
 
+    function updateProviderCards(snapshot) {
+        [
+            ['AdsPower', snapshot.adsPowerCheck],
+            ['Multilogin', snapshot.multiloginCheck],
+            ['Local', snapshot.localChromeCheck]
+        ].forEach(function (pair) {
+            applyProviderCard(pair[0], pair[1]);
+        });
+    }
+
+    function applyProviderCard(kind, check) {
+        if (!check) return;
+        var card = document.querySelector('[data-provider-card="' + kind + '"]');
+        if (!card) return;
+        card.setAttribute('data-provider-status', check.status || 'unchecked');
+        card.setAttribute('data-provider-status-saved', check.status || 'unchecked');
+        var label = card.querySelector('[data-provider-status-label]');
+        if (label) {
+            label.className = 'worker-provider-status worker-provider-status--' + (check.status || 'unchecked');
+            label.textContent = check.statusLabel || '';
+        }
+        var message = card.querySelector('[data-provider-message]');
+        if (message) message.textContent = check.message || '';
+        var time = card.querySelector('[data-provider-checked-at]');
+        if (time) {
+            time.hidden = !check.checkedAtUtc;
+            if (check.checkedAtUtc) {
+                time.innerHTML = '<span>Проверено: </span><time data-orbita-utc="' + shared.escapeHtml(check.checkedAtUtc) + '" data-orbita-format="activity"></time>';
+                if (window.OrbitaTime) window.OrbitaTime.localizeAll(time);
+            }
+        }
+        var checkBtn = card.querySelector('[data-provider-check]');
+        if (checkBtn) checkBtn.disabled = !check.canCheck;
+        var syncBtn = card.querySelector('[data-provider-sync]');
+        if (syncBtn) syncBtn.hidden = !check.canSync;
+    }
+
     function applySnapshot(snapshot, highlightChanged) {
         if (!snapshot || !shared) return;
         shared.updateKpiCards(snapshot.kpiCards || [], highlightChanged);
@@ -950,6 +1031,7 @@
         updateAdsPowerGroupOptions(snapshot.adsPowerGroups);
         updateAccountGroupFilterOptions(snapshot.accountGroupOptions);
         updateAccountCatalogSummary(snapshot);
+        updateProviderCards(snapshot);
 
         if (activityChart && snapshot.activityChart && snapshot.activityChart.values) {
             var chartData = snapshot.activityChart;
@@ -979,6 +1061,9 @@
                 if (window.Orbita && typeof window.Orbita.initWorkerAccountEnableToggles === 'function') {
                     window.Orbita.initWorkerAccountEnableToggles();
                 }
+                if (window.Orbita && typeof window.Orbita.initProviderConnectionButtons === 'function') {
+                    window.Orbita.initProviderConnectionButtons();
+                }
                 initAccountRowNavigation();
                 initActivityChart();
                 initParallelismSlider();
@@ -994,6 +1079,9 @@
         }
         if (window.Orbita && typeof window.Orbita.initWorkerAccountEnableToggles === 'function') {
             window.Orbita.initWorkerAccountEnableToggles();
+        }
+        if (window.Orbita && typeof window.Orbita.initProviderConnectionButtons === 'function') {
+            window.Orbita.initProviderConnectionButtons();
         }
         initAccountRowNavigation();
         initActivityChart();

@@ -1022,6 +1022,52 @@ public sealed class OrbitaApiClient(
             : (false, await ReadApiErrorAsync(response, ct));
     }
 
+    public async Task<(bool Success, string? Error)> RequestProviderCheckAsync(
+        Guid workerId,
+        string provider,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return (true, null);
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"api/v1/workers/{workerId}/provider-checks");
+        request.Content = JsonContent.Create(new RequestWorkerBrowserProviderCheckRequest(provider));
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (false, InvalidApiSessionError);
+        }
+
+        return response.IsSuccessStatusCode
+            ? (true, null)
+            : (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    public async Task<(bool Success, string? Error)> RequestProviderSyncAsync(
+        Guid workerId,
+        string provider,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return (true, null);
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"api/v1/workers/{workerId}/provider-sync");
+        request.Content = JsonContent.Create(new RequestWorkerBrowserProviderSyncRequest(provider));
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (false, InvalidApiSessionError);
+        }
+
+        return response.IsSuccessStatusCode
+            ? (true, null)
+            : (false, await ReadApiErrorAsync(response, ct));
+    }
+
     public async Task<(bool Success, string? Error)> UpdateSubProfileEnabledAsync(
         Guid workerId,
         Guid accountId,

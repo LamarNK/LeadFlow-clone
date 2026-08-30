@@ -135,11 +135,15 @@ public sealed class WorkerOrchestrator(
                     var enabledCount = config.Accounts.Count(a => a.IsEnabled && config.IsBrowserProviderEnabled(a));
                     runtimeState.Status = "Онлайн";
 
+                    var forcedCatalogSync = await RunPendingProviderJobsAsync(config, stoppingToken)
+                        .ConfigureAwait(false);
+
                     var groupChanged = !string.Equals(
                         _lastSyncedAdsPowerGroupId,
                         config.AdsPowerGroupId,
                         StringComparison.Ordinal);
-                    if (groupChanged || DateTime.UtcNow - _lastAccountSyncUtc >= AccountSyncInterval)
+                    if (!forcedCatalogSync
+                        && (groupChanged || DateTime.UtcNow - _lastAccountSyncUtc >= AccountSyncInterval))
                     {
                         if (config.ShouldSyncAdsPowerCatalog)
                         {
@@ -469,6 +473,139 @@ public sealed class WorkerOrchestrator(
         runtimeState.Detail = $"{enabledCount} акк.";
     }
 
+    private async Task<bool> RunPendingProviderJobsAsync(WorkerConfigDto config, CancellationToken ct)
+    {
+        var probe = new BrowserProviderConnectionProbe(adsPowerApi, multiloginApi);
+        if (config.PendingProviderCheck is { } pendingCheck)
+        {
+            await RunProviderCheckAsync(config, probe, pendingCheck.Provider, ct).ConfigureAwait(false);
+        }
+
+        if (config.PendingProviderSync is { } pendingSync)
+        {
+            await RunProviderSyncAsync(config, probe, pendingSync.Provider, ct).ConfigureAwait(false);
+            _lastAccountSyncUtc = DateTime.UtcNow;
+            _lastSyncedAdsPowerGroupId = config.AdsPowerGroupId;
+            return true;
+        }
+
+        return false;
+    }
+
+    private async Task RunProviderCheckAsync(
+        WorkerConfigDto config,
+        BrowserProviderConnectionProbe probe,
+        string provider,
+        CancellationToken ct)
+    {
+        BrowserProviderProbeResult result;
+        if (string.Equals(provider, WorkerBrowserProviderKinds.AdsPower, StringComparison.OrdinalIgnoreCase))
+        {
+            var baseUrl = string.IsNullOrWhiteSpace(config.AdsPowerApiBaseUrl)
+                ? "http://local.adspower.net:50325"
+                : config.AdsPowerApiBaseUrl;
+            result = await probe
+                .CheckAdsPowerAsync(new AdsPowerConnectionOptions(baseUrl, config.AdsPowerApiKey), config.AdsPowerGroupId, ct)
+                .ConfigureAwait(false);
+        }
+        else if (string.Equals(provider, WorkerBrowserProviderKinds.Multilogin, StringComparison.OrdinalIgnoreCase))
+        {
+            result = await probe
+                .CheckMultiloginAsync(
+                    new MultiloginConnectionOptions
+                    {
+                        CloudApiUrl = config.MultiloginCloudApiUrl,
+                        AutomationToken = config.MultiloginAutomationToken,
+                        LauncherUrl = config.MultiloginLauncherUrl
+                    },
+                    ct)
+                .ConfigureAwait(false);
+        }
+        else if (string.Equals(provider, WorkerBrowserProviderKinds.Local, StringComparison.OrdinalIgnoreCase))
+        {
+            result = probe.CheckLocalChrome(config.LocalChromeExecutablePath);
+        }
+        else
+        {
+            return;
+        }
+
+        await apiClient
+            .ReportProviderCheckAsync(
+                new ReportWorkerBrowserProviderCheckRequest(
+                    provider,
+                    result.Success,
+                    result.Message,
+                    result.ProfileCount,
+                    result.GroupCount,
+                    result.ResolvedExecutablePath,
+                    Groups: result.Groups),
+                ct)
+            .ConfigureAwait(false);
+        configProvider.InvalidateCache();
+    }
+
+    private async Task RunProviderSyncAsync(
+        WorkerConfigDto config,
+        BrowserProviderConnectionProbe probe,
+        string provider,
+        CancellationToken ct)
+    {
+        bool synced;
+        BrowserProviderProbeResult? check = null;
+        if (string.Equals(provider, WorkerBrowserProviderKinds.AdsPower, StringComparison.OrdinalIgnoreCase))
+        {
+            synced = await SyncAdsPowerProfilesAsync(config, ct).ConfigureAwait(false);
+            if (synced)
+            {
+                var baseUrl = string.IsNullOrWhiteSpace(config.AdsPowerApiBaseUrl)
+                    ? "http://local.adspower.net:50325"
+                    : config.AdsPowerApiBaseUrl;
+                check = await probe
+                    .CheckAdsPowerAsync(new AdsPowerConnectionOptions(baseUrl, config.AdsPowerApiKey), config.AdsPowerGroupId, ct)
+                    .ConfigureAwait(false);
+            }
+        }
+        else if (string.Equals(provider, WorkerBrowserProviderKinds.Multilogin, StringComparison.OrdinalIgnoreCase))
+        {
+            synced = await SyncMultiloginProfilesAsync(config, ct).ConfigureAwait(false);
+            if (synced)
+            {
+                check = await probe
+                    .CheckMultiloginAsync(
+                        new MultiloginConnectionOptions
+                        {
+                            CloudApiUrl = config.MultiloginCloudApiUrl,
+                            AutomationToken = config.MultiloginAutomationToken,
+                            LauncherUrl = config.MultiloginLauncherUrl
+                        },
+                        ct)
+                    .ConfigureAwait(false);
+            }
+        }
+        else
+        {
+            return;
+        }
+
+        var message = synced
+            ? check?.Message ?? "Каталог синхронизирован."
+            : "Не удалось синхронизировать каталог.";
+        await apiClient
+            .ReportProviderCheckAsync(
+                new ReportWorkerBrowserProviderCheckRequest(
+                    provider,
+                    synced && (check?.Success ?? true),
+                    message,
+                    check?.ProfileCount,
+                    check?.GroupCount,
+                    CompletesSync: true,
+                    Groups: check?.Groups),
+                ct)
+            .ConfigureAwait(false);
+        configProvider.InvalidateCache();
+    }
+
     private static string BuildEnabledAccountsFingerprint(WorkerConfigDto config)
     {
         var enabledIds = config.Accounts
@@ -479,7 +616,7 @@ public sealed class WorkerOrchestrator(
             + $"|ads:{config.AdsPowerEnabled}|mlx:{config.MultiloginEnabled}|local:{config.LocalChromeEnabled}";
     }
 
-    private async Task SyncAdsPowerProfilesAsync(WorkerConfigDto config, CancellationToken ct)
+    private async Task<bool> SyncAdsPowerProfilesAsync(WorkerConfigDto config, CancellationToken ct)
     {
         var baseUrl = string.IsNullOrWhiteSpace(config.AdsPowerApiBaseUrl)
             ? "http://local.adspower.net:50325"
@@ -494,7 +631,7 @@ public sealed class WorkerOrchestrator(
         }
         catch
         {
-            return;
+            return false;
         }
 
         IReadOnlyList<AdsPowerGroupDto>? groups = null;
@@ -515,13 +652,14 @@ public sealed class WorkerOrchestrator(
 
         await apiClient.SyncAccountsAsync(new WorkerAccountSyncRequest(items, groups), ct)
             .ConfigureAwait(false);
+        return true;
     }
 
-    private async Task SyncMultiloginProfilesAsync(WorkerConfigDto config, CancellationToken ct)
+    private async Task<bool> SyncMultiloginProfilesAsync(WorkerConfigDto config, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(config.MultiloginAutomationToken))
         {
-            return;
+            return false;
         }
 
         var options = new MultiloginConnectionOptions
@@ -540,12 +678,12 @@ public sealed class WorkerOrchestrator(
         }
         catch
         {
-            return;
+            return false;
         }
 
         if (!catalog.IsComplete && catalog.Profiles.Count == 0)
         {
-            return;
+            return false;
         }
 
         var items = catalog.Profiles
@@ -566,10 +704,11 @@ public sealed class WorkerOrchestrator(
                         ReplaceMultiloginCatalog: catalog.IsComplete),
                     ct)
                 .ConfigureAwait(false);
+            return true;
         }
         catch
         {
-            // AdsPower sync already completed; Multilogin catalog is best-effort.
+            return false;
         }
     }
 

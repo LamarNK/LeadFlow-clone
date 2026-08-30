@@ -170,6 +170,7 @@
         runtime.initSubProfilesToggles();
         runtime.initSubProfileEnableToggles();
         runtime.initWorkerAccountEnableToggles();
+        runtime.initProviderConnectionButtons();
         runtime.initAvitoCredentialsButtons();
         runtime.initSubProfilesRefreshButtons();
         runtime.initSubProfileScreenshotLinks();

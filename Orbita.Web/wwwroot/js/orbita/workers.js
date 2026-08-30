@@ -335,6 +335,48 @@
         });
     }
 
+    runtime.initProviderConnectionButtons = function initProviderConnectionButtons() {
+        function bind(selector, path, pendingLabel) {
+            document.querySelectorAll(selector).forEach(function (btn) {
+                if (btn.hasAttribute('data-provider-bound')) return;
+                btn.setAttribute('data-provider-bound', '1');
+                btn.addEventListener('click', async function (e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (btn.disabled) return;
+                    var workerId = btn.getAttribute('data-worker-id');
+                    var provider = btn.getAttribute('data-provider-check') || btn.getAttribute('data-provider-sync');
+                    if (!workerId || !provider) return;
+                    btn.disabled = true;
+                    var card = btn.closest('[data-provider-card]');
+                    if (card && selector.indexOf('provider-check') >= 0) {
+                        card.setAttribute('data-provider-status', 'checking');
+                        var label = card.querySelector('[data-provider-status-label]');
+                        if (label) {
+                            label.className = 'worker-provider-status worker-provider-status--checking';
+                            label.textContent = 'Проверяется';
+                        }
+                        var message = card.querySelector('[data-provider-message]');
+                        if (message) message.textContent = pendingLabel;
+                    }
+                    var result = await runtime.postForm(path, { workerId: workerId, provider: provider });
+                    if (result.ok) {
+                        runtime.showToast((result.payload && result.payload.message) || pendingLabel, { variant: 'success' });
+                        if (window.OrbitaLive && window.OrbitaLive.scheduleRefresh) {
+                            window.OrbitaLive.scheduleRefresh({ kinds: ['Workers'] });
+                        }
+                    } else {
+                        btn.disabled = false;
+                        runtime.showToast((result.payload && result.payload.error) || 'Не удалось отправить запрос', { variant: 'error' });
+                    }
+                });
+            });
+        }
+
+        bind('[data-provider-check]', '/Workers/CheckProvider', 'Проверка на воркере…');
+        bind('[data-provider-sync]', '/Workers/SyncProvider', 'Синхронизация запущена на воркере.');
+    };
+
     runtime.initWorkerAccountEnableToggles = function initWorkerAccountEnableToggles() {
         document.querySelectorAll('[data-account-enable-toggle]').forEach(function (input) {
             if (input.hasAttribute('data-account-enable-bound')) return;
@@ -615,6 +657,7 @@
     runtime.initSubProfilesToggles();
     runtime.initSubProfileEnableToggles();
     runtime.initWorkerAccountEnableToggles();
+    runtime.initProviderConnectionButtons();
     runtime.initAvitoCredentialsButtons();
     runtime.initLocalAccountEditButtons();
     runtime.initSubProfilesRefreshButtons();

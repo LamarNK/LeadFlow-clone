@@ -115,7 +115,10 @@ public sealed record WorkerDetail(
     string? LocalChromeExecutablePath = null,
     bool AdsPowerEnabled = true,
     bool MultiloginEnabled = true,
-    bool LocalChromeEnabled = true);
+    bool LocalChromeEnabled = true,
+    WorkerBrowserProviderCheckDto? AdsPowerCheck = null,
+    WorkerBrowserProviderCheckDto? MultiloginCheck = null,
+    WorkerBrowserProviderCheckDto? LocalChromeCheck = null);
 
 /// <summary>
 /// One row of the office-wide accounts page: account payload plus the worker

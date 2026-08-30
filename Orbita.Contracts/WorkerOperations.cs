@@ -106,7 +106,9 @@ public sealed record WorkerConfigDto(
     /// <summary>Запускать и синхронизировать Multilogin. По умолчанию включено.</summary>
     bool MultiloginEnabled = true,
     /// <summary>Запускать аккаунты обычного Chrome. По умолчанию включено.</summary>
-    bool LocalChromeEnabled = true)
+    bool LocalChromeEnabled = true,
+    WorkerPendingBrowserProviderCheckDto? PendingProviderCheck = null,
+    WorkerPendingBrowserProviderSyncDto? PendingProviderSync = null)
 {
     public bool ShouldSyncAdsPowerCatalog => AdsPowerEnabled;
 
@@ -310,7 +312,112 @@ public static class WorkerBrowserProviderMessages
     public const string DisabledStatusLabel = "Провайдер выключен";
     public const string DisabledHint =
         "Провайдер выключен: аккаунты сохранены, но не синхронизируются и не запускаются";
+    public const string CheckingMessage = "Проверка на воркере…";
+    public const string NeedsToken = "Сначала укажите API Token и сохраните настройки.";
+    public const string ProviderOff = "Провайдер выключен. Включите его, чтобы проверить подключение.";
+    public const string UnknownProvider = "Неизвестный провайдер.";
+    public const string CheckQueued = "Запрос отправлен воркеру.";
+    public const string SyncQueued = "Синхронизация запущена на воркере.";
 }
+
+public static class WorkerBrowserProviderKinds
+{
+    public const string AdsPower = "AdsPower";
+    public const string Multilogin = "Multilogin";
+    public const string Local = "Local";
+
+    public static string? Normalize(string? value) =>
+        value?.Trim() switch
+        {
+            "AdsPower" or "adspower" or "ads" => AdsPower,
+            "Multilogin" or "multilogin" or "mlx" => Multilogin,
+            "Local" or "local" or "chrome" or "localChrome" => Local,
+            _ => null
+        };
+
+    public static bool SupportsCatalogSync(string provider) =>
+        string.Equals(provider, AdsPower, StringComparison.Ordinal)
+        || string.Equals(provider, Multilogin, StringComparison.Ordinal);
+}
+
+public static class WorkerBrowserProviderStatus
+{
+    public const string Disabled = "disabled";
+    public const string NeedsSetup = "needsSetup";
+    public const string Unchecked = "unchecked";
+    public const string Checking = "checking";
+    public const string Connected = "connected";
+    public const string Error = "error";
+
+    public static string Resolve(
+        bool enabled,
+        bool needsSetup,
+        bool checking,
+        bool? lastSucceeded)
+    {
+        if (!enabled)
+        {
+            return Disabled;
+        }
+
+        if (checking)
+        {
+            return Checking;
+        }
+
+        if (needsSetup)
+        {
+            return NeedsSetup;
+        }
+
+        if (lastSucceeded is null)
+        {
+            return Unchecked;
+        }
+
+        return lastSucceeded.Value ? Connected : Error;
+    }
+
+    public static string Label(string status) => status switch
+    {
+        Disabled => "Выключен",
+        NeedsSetup => "Требуется настройка",
+        Checking => "Проверяется",
+        Connected => "Подключён",
+        Error => "Ошибка подключения",
+        _ => "Не проверено"
+    };
+}
+
+public sealed record WorkerBrowserProviderCheckDto(
+    string Provider,
+    string Status,
+    string StatusLabel,
+    string? Message = null,
+    DateTime? CheckedAtUtc = null,
+    int? ProfileCount = null,
+    int? GroupCount = null,
+    string? ResolvedExecutablePath = null,
+    bool CanCheck = false,
+    bool CanSync = false);
+
+public sealed record WorkerPendingBrowserProviderCheckDto(string Provider, DateTime RequestedAtUtc);
+
+public sealed record WorkerPendingBrowserProviderSyncDto(string Provider, DateTime RequestedAtUtc);
+
+public sealed record RequestWorkerBrowserProviderCheckRequest(string Provider);
+
+public sealed record RequestWorkerBrowserProviderSyncRequest(string Provider);
+
+public sealed record ReportWorkerBrowserProviderCheckRequest(
+    string Provider,
+    bool Success,
+    string? Message = null,
+    int? ProfileCount = null,
+    int? GroupCount = null,
+    string? ResolvedExecutablePath = null,
+    bool CompletesSync = false,
+    IReadOnlyList<AdsPowerGroupDto>? Groups = null);
 
 public sealed record CreateLocalWorkerAccountRequest(string DisplayName, string LocalUserDataDir);
 

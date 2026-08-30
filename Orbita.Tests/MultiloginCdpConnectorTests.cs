@@ -402,6 +402,15 @@ public sealed class MultiloginCdpConnectorTests
             _ = cancellationToken;
             return Task.FromResult(MultiloginProfileSearchResult.EmptyComplete);
         }
+
+        public Task ProbeLauncherAsync(
+            MultiloginConnectionOptions options,
+            CancellationToken cancellationToken = default)
+        {
+            _ = options;
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class FakeBrowserConnector : IMultiloginBrowserConnector

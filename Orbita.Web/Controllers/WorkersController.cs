@@ -74,7 +74,10 @@ public sealed class WorkersController(IWorkersService workers) : Controller
             AdsPowerAccountCount = model.AdsPowerAccountCount,
             MultiloginAccountCount = model.MultiloginAccountCount,
             LocalAccountCount = model.LocalAccountCount,
-            CatalogAccountCount = model.CatalogAccountCount
+            CatalogAccountCount = model.CatalogAccountCount,
+            AdsPowerCheck = model.AdsPowerCheck,
+            MultiloginCheck = model.MultiloginCheck,
+            LocalChromeCheck = model.LocalChromeCheck
         });
     }
 
@@ -344,6 +347,32 @@ public sealed class WorkersController(IWorkersService workers) : Controller
         }
 
         return Ok(new { message = "Воркер обновит субпрофили при следующем цикле." });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> CheckProvider(Guid workerId, string provider, CancellationToken ct)
+    {
+        var (success, error) = await workers.RequestProviderCheckAsync(workerId, provider, ct);
+        if (!success)
+        {
+            return BadRequest(new { error = error ?? "Не удалось отправить запрос." });
+        }
+
+        return Ok(new { message = WorkerBrowserProviderMessages.CheckQueued });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> SyncProvider(Guid workerId, string provider, CancellationToken ct)
+    {
+        var (success, error) = await workers.RequestProviderSyncAsync(workerId, provider, ct);
+        if (!success)
+        {
+            return BadRequest(new { error = error ?? "Не удалось отправить запрос." });
+        }
+
+        return Ok(new { message = WorkerBrowserProviderMessages.SyncQueued });
     }
 
     [HttpPost]

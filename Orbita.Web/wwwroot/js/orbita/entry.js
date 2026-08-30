@@ -148,6 +148,7 @@
     window.Orbita.initCrmTaskEditButtons = runtime.initCrmTaskEditButtons;
     window.Orbita.initCrmClientTimes = runtime.initCrmClientTimes;
     window.Orbita.initWorkerAccountEnableToggles = runtime.initWorkerAccountEnableToggles;
+    window.Orbita.initProviderConnectionButtons = runtime.initProviderConnectionButtons;
     window.Orbita.initAvitoCredentialsButtons = runtime.initAvitoCredentialsButtons;
     window.Orbita.openDetailModal = runtime.openDetailModal;
     window.Orbita.initFilterPanels = runtime.initFilterPanels;

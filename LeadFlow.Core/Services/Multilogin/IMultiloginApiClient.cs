@@ -19,4 +19,12 @@ public interface IMultiloginApiClient
     Task<MultiloginProfileSearchResult> SearchProfilesAsync(
         MultiloginConnectionOptions options,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Проверяет, что launcher отвечает по сети. Не запускает профиль.
+    /// Любой HTTP-ответ считается успехом; ошибка соединения — launcher недоступен.
+    /// </summary>
+    Task ProbeLauncherAsync(
+        MultiloginConnectionOptions options,
+        CancellationToken cancellationToken = default);
 }

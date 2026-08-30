@@ -197,6 +197,106 @@ public sealed class WorkerDetailsAccountsTests
         Assert.False(model.AdsPowerEnabled);
         Assert.True(model.MultiloginEnabled);
         Assert.False(model.LocalChromeEnabled);
+        Assert.Equal(WorkerBrowserProviderStatus.Disabled, model.AdsPowerCheck.Status);
+        Assert.Equal(WorkerBrowserProviderStatus.NeedsSetup, model.MultiloginCheck.Status);
+        Assert.Equal(WorkerBrowserProviderStatus.Disabled, model.LocalChromeCheck.Status);
+        Assert.NotEqual(WorkerBrowserProviderStatus.Connected, model.AdsPowerCheck.Status);
+        Assert.NotEqual(WorkerBrowserProviderStatus.Connected, model.MultiloginCheck.Status);
+        Assert.NotEqual(WorkerBrowserProviderStatus.Connected, model.LocalChromeCheck.Status);
+        Assert.False(model.AdsPowerCheck.CanCheck);
+        Assert.False(model.AdsPowerCheck.CanSync);
+        Assert.False(model.MultiloginCheck.CanCheck);
+    }
+
+    [Fact]
+    public void Build_ProviderChecks_NeverFakeConnectedFromStaleDto()
+    {
+        var connected = new WorkerBrowserProviderCheckDto(
+            WorkerBrowserProviderKinds.AdsPower,
+            WorkerBrowserProviderStatus.Connected,
+            "Подключён",
+            "Local API доступен · 4 профилей",
+            DateTime.UtcNow,
+            4,
+            2,
+            CanCheck: true,
+            CanSync: true);
+        var worker = new WorkerDetail(
+            WorkerId,
+            "worker-1",
+            "pc",
+            "1.0",
+            "Stopped",
+            null,
+            false,
+            false,
+            null,
+            null,
+            null,
+            [],
+            AdsPowerEnabled: false,
+            MultiloginEnabled: true,
+            LocalChromeEnabled: true,
+            AdsPowerCheck: connected,
+            MultiloginCheck: connected with { Provider = WorkerBrowserProviderKinds.Multilogin },
+            LocalChromeCheck: new WorkerBrowserProviderCheckDto(
+                WorkerBrowserProviderKinds.Local,
+                WorkerBrowserProviderStatus.Unchecked,
+                "Не проверено",
+                CanCheck: true));
+
+        var model = WorkerDetailsBuilder.Build(worker, [], []);
+        Assert.Equal(WorkerBrowserProviderStatus.Disabled, model.AdsPowerCheck.Status);
+        Assert.NotEqual(WorkerBrowserProviderStatus.Connected, model.AdsPowerCheck.Status);
+        Assert.Equal(WorkerBrowserProviderStatus.NeedsSetup, model.MultiloginCheck.Status);
+        Assert.Equal(WorkerBrowserProviderStatus.Unchecked, model.LocalChromeCheck.Status);
+        Assert.False(model.LocalChromeCheck.CanSync);
+    }
+
+    [Fact]
+    public void Build_ProviderChecks_PassThroughSuccessfulWorkerReport()
+    {
+        var worker = new WorkerDetail(
+            WorkerId,
+            "worker-1",
+            "pc",
+            "1.0",
+            "Stopped",
+            null,
+            false,
+            false,
+            null,
+            null,
+            null,
+            [],
+            HasMultiloginAutomationToken: true,
+            AdsPowerEnabled: true,
+            MultiloginEnabled: true,
+            LocalChromeEnabled: true,
+            AdsPowerCheck: new WorkerBrowserProviderCheckDto(
+                WorkerBrowserProviderKinds.AdsPower,
+                WorkerBrowserProviderStatus.Connected,
+                "Подключён",
+                "Local API доступен · 2 профилей",
+                DateTime.UtcNow,
+                2,
+                1,
+                CanCheck: true,
+                CanSync: true),
+            LocalChromeCheck: new WorkerBrowserProviderCheckDto(
+                WorkerBrowserProviderKinds.Local,
+                WorkerBrowserProviderStatus.Error,
+                "Ошибка подключения",
+                "Файл браузера не найден",
+                DateTime.UtcNow,
+                CanCheck: true));
+
+        var model = WorkerDetailsBuilder.Build(worker, [], []);
+        Assert.Equal(WorkerBrowserProviderStatus.Connected, model.AdsPowerCheck.Status);
+        Assert.True(model.AdsPowerCheck.CanSync);
+        Assert.Equal(WorkerBrowserProviderStatus.Unchecked, model.MultiloginCheck.Status);
+        Assert.Equal(WorkerBrowserProviderStatus.Error, model.LocalChromeCheck.Status);
+        Assert.NotEqual(WorkerBrowserProviderStatus.Connected, model.LocalChromeCheck.Status);
     }
 
     [Fact]

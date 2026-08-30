@@ -125,7 +125,9 @@ public sealed class WorkerConfigService(
             worker.LocalChromeExecutablePath,
             worker.AdsPowerEnabled,
             worker.MultiloginEnabled,
-            worker.LocalChromeEnabled);
+            worker.LocalChromeEnabled,
+            ToPendingCheck(worker),
+            ToPendingSync(worker));
     }
 
     public async Task<bool> SyncAccountsAsync(
@@ -300,16 +302,6 @@ public sealed class WorkerConfigService(
                 $"({WorkerParallelismRules.RamMbPerBrowser} МБ ОЗУ на браузер).");
         }
 
-        if (!TryNormalizeAdsPowerApiBaseUrl(request.AdsPowerApiBaseUrl, out var normalizedBaseUrl, out var baseUrlError))
-        {
-            return (null, baseUrlError);
-        }
-
-        if (!TryNormalizeAdsPowerApiKey(request.AdsPowerApiKey, out var normalizedApiKey, out var apiKeyError))
-        {
-            return (null, apiKeyError);
-        }
-
         if (!TryNormalizeAdsPowerApiKey(request.RuCaptchaApiKey, out var normalizedRuCaptchaKey, out var ruCaptchaKeyError))
         {
             return (null, ruCaptchaKeyError is null
@@ -317,55 +309,79 @@ public sealed class WorkerConfigService(
                 : ruCaptchaKeyError.Replace("AdsPower", "RuCaptcha", StringComparison.Ordinal));
         }
 
-        if (!TryNormalizeMultiloginUrl(
-                request.MultiloginLauncherUrl,
-                MultiloginWorkerSettings.DefaultLauncherUrl,
-                persistDefaultWhenEmpty: true,
-                "URL launcher Multilogin",
-                out var normalizedLauncherUrl,
-                out var launcherError))
+        string? normalizedBaseUrl = null;
+        string? normalizedApiKey = null;
+        if (request.AdsPowerEnabled)
         {
-            return (null, launcherError);
+            if (!TryNormalizeAdsPowerApiBaseUrl(request.AdsPowerApiBaseUrl, out normalizedBaseUrl, out var baseUrlError))
+            {
+                return (null, baseUrlError);
+            }
+
+            if (!TryNormalizeAdsPowerApiKey(request.AdsPowerApiKey, out normalizedApiKey, out var apiKeyError))
+            {
+                return (null, apiKeyError);
+            }
         }
 
-        if (!TryNormalizeMultiloginUrl(
-                request.MultiloginCloudApiUrl,
-                MultiloginWorkerSettings.DefaultCloudApiUrl,
-                persistDefaultWhenEmpty: false,
-                "URL cloud API Multilogin",
-                out var normalizedCloudUrl,
-                out var cloudError))
-        {
-            return (null, cloudError);
-        }
-
-        if (!TryNormalizeMultiloginAutomationToken(request.MultiloginAutomationToken, out var apiToken, out var tokenError))
-        {
-            return (null, tokenError);
-        }
-
-        if (!TryNormalizeLocalChromeExecutablePath(request.LocalChromeExecutablePath, out var normalizedChromePath, out var chromePathError))
-        {
-            return (null, chromePathError);
-        }
-
+        string? normalizedLauncherUrl = null;
+        string? normalizedCloudUrl = null;
         string? normalizedToken = null;
-        if (apiToken is not null)
+        if (request.MultiloginEnabled)
         {
-            if (multiloginTokenIssuer is null)
+            if (!TryNormalizeMultiloginUrl(
+                    request.MultiloginLauncherUrl,
+                    MultiloginWorkerSettings.DefaultLauncherUrl,
+                    persistDefaultWhenEmpty: true,
+                    "URL launcher Multilogin",
+                    out normalizedLauncherUrl,
+                    out var launcherError))
             {
-                return (null, "Multilogin automation token service недоступен.");
+                return (null, launcherError);
             }
 
-            try
+            if (!TryNormalizeMultiloginUrl(
+                    request.MultiloginCloudApiUrl,
+                    MultiloginWorkerSettings.DefaultCloudApiUrl,
+                    persistDefaultWhenEmpty: false,
+                    "URL cloud API Multilogin",
+                    out normalizedCloudUrl,
+                    out var cloudError))
             {
-                normalizedToken = await multiloginTokenIssuer
-                    .IssueAsync(normalizedCloudUrl, apiToken, ct)
-                    .ConfigureAwait(false);
+                return (null, cloudError);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+
+            if (!TryNormalizeMultiloginAutomationToken(request.MultiloginAutomationToken, out var apiToken, out var tokenError))
             {
-                return (null, ex.Message);
+                return (null, tokenError);
+            }
+
+            if (apiToken is not null)
+            {
+                if (multiloginTokenIssuer is null)
+                {
+                    return (null, "Multilogin automation token service недоступен.");
+                }
+
+                try
+                {
+                    normalizedToken = await multiloginTokenIssuer
+                        .IssueAsync(normalizedCloudUrl, apiToken, ct)
+                        .ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    return (null, ex.Message);
+                }
+            }
+        }
+
+        string? normalizedChromePath = null;
+        if (request.LocalChromeEnabled)
+        {
+            if (!TryNormalizeLocalChromeExecutablePath(request.LocalChromeExecutablePath, out normalizedChromePath, out var chromePathError))
+            {
+                return (null, chromePathError);
             }
         }
 
@@ -393,27 +409,57 @@ public sealed class WorkerConfigService(
             && !string.Equals(normalizedScheduleFrom, normalizedScheduleTo, StringComparison.Ordinal);
 
         worker.MaxConcurrentAccounts = request.MaxConcurrentAccounts;
-        worker.AdsPowerApiBaseUrl = normalizedBaseUrl;
-        worker.AdsPowerApiKey = normalizedApiKey;
         worker.RuCaptchaApiKey = normalizedRuCaptchaKey;
-        worker.MultiloginLauncherUrl = normalizedLauncherUrl;
-        worker.MultiloginCloudApiUrl = normalizedCloudUrl;
-        if (normalizedToken is not null)
+        if (request.AdsPowerEnabled)
         {
-            worker.MultiloginAutomationToken = normalizedToken;
+            if (Changed(worker.AdsPowerApiBaseUrl, normalizedBaseUrl)
+                || Changed(worker.AdsPowerApiKey, normalizedApiKey))
+            {
+                ClearStoredCheck(worker, WorkerBrowserProviderKinds.AdsPower);
+            }
+
+            worker.AdsPowerApiBaseUrl = normalizedBaseUrl;
+            worker.AdsPowerApiKey = normalizedApiKey;
+            var normalizedGroupId = AdsPowerGroupsJson.NormalizeGroupId(request.AdsPowerGroupId);
+            worker.AdsPowerGroupId = normalizedGroupId;
+            worker.AdsPowerGroupName = normalizedGroupId is null
+                ? null
+                : AdsPowerGroupsJson.ResolveGroupName(
+                      normalizedGroupId,
+                      AdsPowerGroupsJson.Parse(worker.AdsPowerGroupsJson))
+                  ?? worker.AdsPowerGroupName;
         }
-        worker.LocalChromeExecutablePath = normalizedChromePath;
+
+        if (request.MultiloginEnabled)
+        {
+            if (Changed(worker.MultiloginLauncherUrl, normalizedLauncherUrl)
+                || Changed(worker.MultiloginCloudApiUrl, normalizedCloudUrl)
+                || normalizedToken is not null)
+            {
+                ClearStoredCheck(worker, WorkerBrowserProviderKinds.Multilogin);
+            }
+
+            worker.MultiloginLauncherUrl = normalizedLauncherUrl;
+            worker.MultiloginCloudApiUrl = normalizedCloudUrl;
+            if (normalizedToken is not null)
+            {
+                worker.MultiloginAutomationToken = normalizedToken;
+            }
+        }
+
+        if (request.LocalChromeEnabled)
+        {
+            if (Changed(worker.LocalChromeExecutablePath, normalizedChromePath))
+            {
+                ClearStoredCheck(worker, WorkerBrowserProviderKinds.Local);
+            }
+
+            worker.LocalChromeExecutablePath = normalizedChromePath;
+        }
+
         worker.AdsPowerEnabled = request.AdsPowerEnabled;
         worker.MultiloginEnabled = request.MultiloginEnabled;
         worker.LocalChromeEnabled = request.LocalChromeEnabled;
-        var normalizedGroupId = AdsPowerGroupsJson.NormalizeGroupId(request.AdsPowerGroupId);
-        worker.AdsPowerGroupId = normalizedGroupId;
-        worker.AdsPowerGroupName = normalizedGroupId is null
-            ? null
-            : AdsPowerGroupsJson.ResolveGroupName(
-                  normalizedGroupId,
-                  AdsPowerGroupsJson.Parse(worker.AdsPowerGroupsJson))
-              ?? worker.AdsPowerGroupName;
         worker.ResponseFilterEnabled = filters.Enabled;
         worker.ResponseFilterExcludeFemale = filters.ExcludeFemale;
         worker.ResponseFilterExcludeMale = filters.ExcludeMale;
@@ -814,6 +860,57 @@ public sealed class WorkerConfigService(
             _ => worker.AdsPowerEnabled
         };
 
+    private static bool IsProviderToggleEnabled(WorkerEntity worker, string provider) =>
+        provider switch
+        {
+            WorkerBrowserProviderKinds.Multilogin => worker.MultiloginEnabled,
+            WorkerBrowserProviderKinds.Local => worker.LocalChromeEnabled,
+            _ => worker.AdsPowerEnabled
+        };
+
+    private static bool Changed(string? left, string? right) =>
+        !string.Equals(left ?? string.Empty, right ?? string.Empty, StringComparison.Ordinal);
+
+    private static void ClearStoredCheck(WorkerEntity worker, string provider)
+    {
+        var state = BrowserProviderChecksJson.Parse(worker.BrowserProviderChecksJson);
+        BrowserProviderChecksJson.Clear(state, provider);
+        worker.BrowserProviderChecksJson = BrowserProviderChecksJson.Serialize(state);
+        if (string.Equals(worker.PendingBrowserProviderCheck, provider, StringComparison.OrdinalIgnoreCase))
+        {
+            worker.PendingBrowserProviderCheck = null;
+            worker.PendingBrowserProviderCheckAtUtc = null;
+        }
+    }
+
+    private static WorkerPendingBrowserProviderCheckDto? ToPendingCheck(WorkerEntity worker) =>
+        string.IsNullOrWhiteSpace(worker.PendingBrowserProviderCheck)
+            ? null
+            : new WorkerPendingBrowserProviderCheckDto(
+                worker.PendingBrowserProviderCheck,
+                worker.PendingBrowserProviderCheckAtUtc ?? DateTime.UtcNow);
+
+    private static WorkerPendingBrowserProviderSyncDto? ToPendingSync(WorkerEntity worker) =>
+        string.IsNullOrWhiteSpace(worker.PendingBrowserProviderSync)
+            ? null
+            : new WorkerPendingBrowserProviderSyncDto(
+                worker.PendingBrowserProviderSync,
+                worker.PendingBrowserProviderSyncAtUtc ?? DateTime.UtcNow);
+
+    internal static WorkerBrowserProviderCheckDto MapProviderCheck(WorkerEntity worker, string provider)
+    {
+        var state = BrowserProviderChecksJson.Parse(worker.BrowserProviderChecksJson);
+        var enabled = IsProviderToggleEnabled(worker, provider);
+        var needsSetup = provider == WorkerBrowserProviderKinds.Multilogin
+            && string.IsNullOrWhiteSpace(worker.MultiloginAutomationToken);
+        return BrowserProviderChecksJson.ToDto(
+            provider,
+            enabled,
+            needsSetup,
+            worker.PendingBrowserProviderCheck,
+            BrowserProviderChecksJson.Get(state, provider));
+    }
+
     private static string? NullIfWhiteSpace(string? value) =>
         string.IsNullOrWhiteSpace(value) ? null : value.Trim();
 
@@ -896,6 +993,153 @@ public sealed class WorkerConfigService(
             await workerPushNotifier.PushConfigChangedAsync(workerId, ct).ConfigureAwait(false);
         }
 
+        return (true, null);
+    }
+
+    public async Task<(WorkerBrowserProviderCheckDto? Check, string? Error)> RequestProviderCheckAsync(
+        Guid workerId,
+        string? provider,
+        OfficeScope scope,
+        CancellationToken ct = default)
+    {
+        var kind = WorkerBrowserProviderKinds.Normalize(provider);
+        if (kind is null)
+        {
+            return (null, WorkerBrowserProviderMessages.UnknownProvider);
+        }
+
+        if (!await officeScope.CanAccessWorkerAsync(scope, workerId, ct))
+        {
+            return (null, "Воркер не найден.");
+        }
+
+        var worker = await db.Workers.FirstOrDefaultAsync(x => x.Id == workerId, ct);
+        if (worker is null)
+        {
+            return (null, "Воркер не найден.");
+        }
+
+        if (!IsProviderToggleEnabled(worker, kind))
+        {
+            return (null, WorkerBrowserProviderMessages.ProviderOff);
+        }
+
+        if (kind == WorkerBrowserProviderKinds.Multilogin
+            && string.IsNullOrWhiteSpace(worker.MultiloginAutomationToken))
+        {
+            return (null, WorkerBrowserProviderMessages.NeedsToken);
+        }
+
+        worker.PendingBrowserProviderCheck = kind;
+        worker.PendingBrowserProviderCheckAtUtc = DateTime.UtcNow;
+        await db.SaveChangesAsync(ct);
+        panelRealtime.Notify([PanelChangeKind.Workers], worker.OfficeId, worker.Id);
+        await workerPushNotifier.PushConfigChangedAsync(workerId, ct).ConfigureAwait(false);
+        return (MapProviderCheck(worker, kind), null);
+    }
+
+    public async Task<(WorkerBrowserProviderCheckDto? Check, string? Error)> RequestProviderSyncAsync(
+        Guid workerId,
+        string? provider,
+        OfficeScope scope,
+        CancellationToken ct = default)
+    {
+        var kind = WorkerBrowserProviderKinds.Normalize(provider);
+        if (kind is null || !WorkerBrowserProviderKinds.SupportsCatalogSync(kind))
+        {
+            return (null, WorkerBrowserProviderMessages.UnknownProvider);
+        }
+
+        if (!await officeScope.CanAccessWorkerAsync(scope, workerId, ct))
+        {
+            return (null, "Воркер не найден.");
+        }
+
+        var worker = await db.Workers.FirstOrDefaultAsync(x => x.Id == workerId, ct);
+        if (worker is null)
+        {
+            return (null, "Воркер не найден.");
+        }
+
+        if (!IsProviderToggleEnabled(worker, kind))
+        {
+            return (null, WorkerBrowserProviderMessages.ProviderOff);
+        }
+
+        if (kind == WorkerBrowserProviderKinds.Multilogin
+            && string.IsNullOrWhiteSpace(worker.MultiloginAutomationToken))
+        {
+            return (null, WorkerBrowserProviderMessages.NeedsToken);
+        }
+
+        worker.PendingBrowserProviderSync = kind;
+        worker.PendingBrowserProviderSyncAtUtc = DateTime.UtcNow;
+        await db.SaveChangesAsync(ct);
+        panelRealtime.Notify([PanelChangeKind.Workers, PanelChangeKind.Accounts], worker.OfficeId, worker.Id);
+        await workerPushNotifier.PushConfigChangedAsync(workerId, ct).ConfigureAwait(false);
+        return (MapProviderCheck(worker, kind), null);
+    }
+
+    public async Task<(bool Success, string? Error)> ReportProviderCheckAsync(
+        Guid workerId,
+        ReportWorkerBrowserProviderCheckRequest request,
+        CancellationToken ct = default)
+    {
+        var kind = WorkerBrowserProviderKinds.Normalize(request.Provider);
+        if (kind is null)
+        {
+            return (false, WorkerBrowserProviderMessages.UnknownProvider);
+        }
+
+        var worker = await db.Workers.FirstOrDefaultAsync(x => x.Id == workerId, ct);
+        if (worker is null)
+        {
+            return (false, "Воркер не найден.");
+        }
+
+        var state = BrowserProviderChecksJson.Parse(worker.BrowserProviderChecksJson);
+        var secrets = kind switch
+        {
+            WorkerBrowserProviderKinds.AdsPower => new[] { worker.AdsPowerApiKey },
+            WorkerBrowserProviderKinds.Multilogin => new[] { worker.MultiloginAutomationToken },
+            _ => Array.Empty<string?>()
+        };
+        BrowserProviderChecksJson.Set(
+            state,
+            kind,
+            BrowserProviderChecksJson.FromReport(request, DateTime.UtcNow, secrets));
+        worker.BrowserProviderChecksJson = BrowserProviderChecksJson.Serialize(state);
+
+        if (kind == WorkerBrowserProviderKinds.AdsPower && request.Groups is not null)
+        {
+            var groups = AdsPowerGroupsJson.Parse(AdsPowerGroupsJson.Serialize(request.Groups));
+            worker.AdsPowerGroupsJson = AdsPowerGroupsJson.Serialize(groups);
+            if (!string.IsNullOrWhiteSpace(worker.AdsPowerGroupId))
+            {
+                worker.AdsPowerGroupName =
+                    AdsPowerGroupsJson.ResolveGroupName(worker.AdsPowerGroupId, groups)
+                    ?? worker.AdsPowerGroupName;
+            }
+        }
+
+        if (string.Equals(worker.PendingBrowserProviderCheck, kind, StringComparison.OrdinalIgnoreCase))
+        {
+            worker.PendingBrowserProviderCheck = null;
+            worker.PendingBrowserProviderCheckAtUtc = null;
+        }
+
+        if (request.CompletesSync
+            && string.Equals(worker.PendingBrowserProviderSync, kind, StringComparison.OrdinalIgnoreCase))
+        {
+            worker.PendingBrowserProviderSync = null;
+            worker.PendingBrowserProviderSyncAtUtc = null;
+        }
+
+        await db.SaveChangesAsync(ct);
+        panelRealtime.Notify(
+            [PanelChangeKind.Workers, PanelChangeKind.Accounts],
+            worker.OfficeId,
+            worker.Id);
         return (true, null);
     }
 

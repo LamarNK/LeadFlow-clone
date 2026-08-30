@@ -308,6 +308,18 @@ public sealed class WorkersService(
         CancellationToken ct = default) =>
         api.RequestSubProfilesRefreshAsync(workerId, accountId, ct);
 
+    public Task<(bool Success, string? Error)> RequestProviderCheckAsync(
+        Guid workerId,
+        string provider,
+        CancellationToken ct = default) =>
+        api.RequestProviderCheckAsync(workerId, provider, ct);
+
+    public Task<(bool Success, string? Error)> RequestProviderSyncAsync(
+        Guid workerId,
+        string provider,
+        CancellationToken ct = default) =>
+        api.RequestProviderSyncAsync(workerId, provider, ct);
+
     public Task<(bool Success, string? Error)> UpdateSubProfileEnabledAsync(
         Guid workerId,
         Guid accountId,
