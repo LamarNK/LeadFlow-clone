@@ -27,11 +27,33 @@ public sealed class CrmCallAiProcessingService(
         var processFromUtc = _options.ProcessRecordingsFromUtc?.ToUniversalTime();
         var batchSize = Math.Clamp(_options.BatchSize, 1, 20);
         var maxAttempts = Math.Clamp(_options.MaxAttempts, 1, 25);
+        var zeroDurationInsights = await db.CrmCallAiInsights
+            .Include(x => x.Call)
+            .Where(x => x.Call.DurationSeconds <= 0
+                        && x.Status != CrmCallAiStatuses.Completed
+                        && x.Status != CrmCallAiStatuses.Skipped)
+            .ToListAsync(ct);
+        foreach (var insight in zeroDurationInsights)
+        {
+            insight.Status = CrmCallAiStatuses.Skipped;
+            insight.NextAttemptAtUtc = null;
+            insight.LastErrorCode = "zero_duration";
+            insight.LastErrorMessage = "Нулевая длительность записи: расшифровка не выполняется.";
+            insight.UpdatedAtUtc = now;
+        }
+        if (zeroDurationInsights.Count > 0)
+        {
+            await db.SaveChangesAsync(ct);
+            foreach (var insight in zeroDurationInsights) Notify(insight);
+        }
+
         var existingQuery = db.CrmCallAiInsights
             .Include(x => x.Call)
             .Where(x => x.Call.RecordingStoragePath != null
                         && x.Call.CardId != null
+                        && x.Call.DurationSeconds > 0
                         && x.Status != CrmCallAiStatuses.Completed
+                        && x.Status != CrmCallAiStatuses.Skipped
                         && x.Attempts < maxAttempts
                         && x.NextAttemptAtUtc != null
                         && x.NextAttemptAtUtc <= now);
@@ -49,6 +71,7 @@ public sealed class CrmCallAiProcessingService(
             var missingCallsQuery = db.CrmCalls
                 .Where(call => call.RecordingStoragePath != null
                                && call.CardId != null
+                               && call.DurationSeconds > 0
                                && !db.CrmCallAiInsights.Any(x => x.CallId == call.Id));
             if (processFromUtc.HasValue)
             {

@@ -179,7 +179,14 @@ public sealed class CrmAnalyticsQueryServiceTests
         var waitingCall = NewRecordedCall(ManagerOneId, fromUtc.AddHours(2), attached: true);
         var unattachedCall = NewRecordedCall(ManagerOneId, fromUtc.AddHours(3), attached: false);
         var outsideCall = NewRecordedCall(ManagerOneId, toUtc, attached: true);
-        harness.Db.CrmCalls.AddRange(analyzedCall, waitingCall, unattachedCall, outsideCall);
+        var zeroDurationCall = NewRecordedCall(ManagerOneId, fromUtc.AddHours(4), attached: true);
+        zeroDurationCall.DurationSeconds = 0;
+        harness.Db.CrmCalls.AddRange(
+            analyzedCall,
+            waitingCall,
+            unattachedCall,
+            outsideCall,
+            zeroDurationCall);
         var analysis = new CrmCallAiAnalysisDto(
             1,
             8,

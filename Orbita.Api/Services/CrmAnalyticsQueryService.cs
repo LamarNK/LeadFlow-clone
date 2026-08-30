@@ -295,6 +295,7 @@ public sealed class CrmAnalyticsQueryService(
             .Where(x => officeIds.Contains(x.OfficeId)
                         && x.RecordingStoragePath != null
                         && x.CardId != null
+                        && x.DurationSeconds > 0
                         && x.StartedAtUtc >= fromUtc
                         && x.StartedAtUtc < toUtc);
         if (managerUserId is not null)

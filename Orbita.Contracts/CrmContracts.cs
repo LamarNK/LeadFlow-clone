@@ -839,6 +839,7 @@ public static class CrmCallAiStatuses
     public const string Completed = "completed";
     public const string Partial = "partial";
     public const string Failed = "failed";
+    public const string Skipped = "skipped";
 }
 
 public sealed record CrmCallTranscriptSegmentDto(

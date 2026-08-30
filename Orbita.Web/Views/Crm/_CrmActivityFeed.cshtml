@@ -213,6 +213,10 @@
                             {
                                 <p class="crm-call-ai__state crm-call-ai__state--failed"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i>Не удалось подготовить расшифровку.</p>
                             }
+                            else if (item.CallAiStatus == CrmCallAiStatuses.Skipped)
+                            {
+                                <p class="crm-call-ai__state"><i class="fa-solid fa-forward" aria-hidden="true"></i>Нулевая запись — расшифровка не требуется.</p>
+                            }
                         </div>
                     }
                 }

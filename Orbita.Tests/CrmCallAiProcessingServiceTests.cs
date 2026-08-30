@@ -148,6 +148,93 @@ public sealed class CrmCallAiProcessingServiceTests
         }
     }
 
+    [Fact]
+    public async Task ZeroDurationRecordings_AreNeverSentAndExistingJobsBecomeSkipped()
+    {
+        await using var db = CreateDb();
+        var dataPath = Path.Combine(Path.GetTempPath(), $"orbita-ai-zero-tests-{Guid.NewGuid():N}");
+        try
+        {
+            var recordingOptions = Options.Create(new CrmCallRecordingOptions
+            {
+                DataPath = dataPath,
+                MaxUploadBytes = 1024 * 1024
+            });
+            var storage = new CrmCallRecordingStorageService(recordingOptions);
+            var now = DateTime.UtcNow;
+            var existingZeroCall = NewCall(Guid.NewGuid(), now, durationSeconds: 0, "existing-zero.bin");
+            var newZeroCall = NewCall(Guid.NewGuid(), now.AddSeconds(-1), durationSeconds: 0, "new-zero.bin");
+            var validCallId = Guid.NewGuid();
+            await using var audio = new MemoryStream([1, 2, 3, 4]);
+            var validPath = await storage.SaveAsync(validCallId, audio, CancellationToken.None);
+            var validCall = NewCall(validCallId, now.AddSeconds(-2), durationSeconds: 30, validPath);
+            db.CrmCalls.AddRange(existingZeroCall, newZeroCall, validCall);
+            db.CrmCallAiInsights.Add(new CrmCallAiInsightEntity
+            {
+                CallId = existingZeroCall.Id,
+                Call = existingZeroCall,
+                Status = CrmCallAiStatuses.Transcribing,
+                PromptVersion = "test",
+                Attempts = 1,
+                NextAttemptAtUtc = now.AddMinutes(-1),
+                CreatedAtUtc = now.AddMinutes(-2),
+                UpdatedAtUtc = now.AddMinutes(-1)
+            });
+            await db.SaveChangesAsync();
+
+            var fake = new FakeCerioClient();
+            var sut = new CrmCallAiProcessingService(
+                db,
+                storage,
+                fake,
+                Options.Create(new CerioAiOptions
+                {
+                    Enabled = true,
+                    Token = "test-token",
+                    BatchSize = 10
+                }),
+                TimeProvider.System,
+                NullLogger<CrmCallAiProcessingService>.Instance);
+
+            Assert.Equal(1, await sut.ProcessDueAsync());
+            Assert.Equal(1, fake.Transcriptions);
+            Assert.Equal(1, fake.Analyses);
+
+            var skipped = await db.CrmCallAiInsights.SingleAsync(x => x.CallId == existingZeroCall.Id);
+            Assert.Equal(CrmCallAiStatuses.Skipped, skipped.Status);
+            Assert.Equal("zero_duration", skipped.LastErrorCode);
+            Assert.Null(skipped.NextAttemptAtUtc);
+            Assert.False(await db.CrmCallAiInsights.AnyAsync(x => x.CallId == newZeroCall.Id));
+            Assert.Equal(
+                CrmCallAiStatuses.Completed,
+                (await db.CrmCallAiInsights.SingleAsync(x => x.CallId == validCall.Id)).Status);
+        }
+        finally
+        {
+            if (Directory.Exists(dataPath)) Directory.Delete(dataPath, recursive: true);
+        }
+
+        static CrmCallEntity NewCall(Guid id, DateTime startedAtUtc, int durationSeconds, string path) => new()
+        {
+            Id = id,
+            OfficeId = Guid.NewGuid(),
+            CardId = Guid.NewGuid(),
+            Provider = CrmTelephonyProviders.Asterisk,
+            ExternalCallId = Guid.NewGuid().ToString("N"),
+            Direction = CrmCallDirections.Outgoing,
+            CallerPhone = "79000000001",
+            CalledPhone = "79000000002",
+            ClientPhoneNormalized = "79000000002",
+            StartedAtUtc = startedAtUtc,
+            DurationSeconds = durationSeconds,
+            RecordingStoragePath = path,
+            RecordingContentType = "audio/wav",
+            RecordingFileName = "call.wav",
+            ReceivedAtUtc = startedAtUtc,
+            UpdatedAtUtc = startedAtUtc
+        };
+    }
+
     private static OrbitaDbContext CreateDb()
     {
         var options = new DbContextOptionsBuilder<OrbitaDbContext>()
