@@ -2,6 +2,7 @@
 @{
     ViewData["Title"] = "Импорт из Bitrix24";
     var preview = Model.Preview;
+    var selectedStages = Model.SelectedStageNames.ToHashSet(StringComparer.OrdinalIgnoreCase);
     var importable = preview?.Deals
         .Where(x => x.Action is BitrixCrmImportActions.Create or BitrixCrmImportActions.UpdateExisting)
         .ToList() ?? [];
@@ -43,12 +44,12 @@
                 <h2 class="settings-card-title">@Model.BitrixInstanceLabel</h2>
                 <p class="settings-card-subtitle">@(string.IsNullOrWhiteSpace(Model.PortalHost) ? "Портал Bitrix24" : Model.PortalHost)</p>
             </div>
-            <span class="settings-status-pill">Офис 1</span>
+            <span class="settings-status-pill">@Model.OfficeName</span>
         </div>
         <div class="card-body">
             <div class="bitrix-import-scope">
                 <div><span>Воронка Bitrix</span><strong>Общая, ID @Model.CategoryId</strong></div>
-                <div><span>Этапы</span><strong>НДЗ, Анкета и Переговоры</strong></div>
+                <div><span>Этапы</span><strong>@(Model.SelectedStageNames.Count == 0 ? "Не выбраны" : string.Join(", ", Model.SelectedStageNames))</strong></div>
                 <div><span>Переносим</span><strong>ответственного, комментарии и дела</strong></div>
                 <div><span>Защита</span><strong>по ID сделки и телефону</strong></div>
             </div>
@@ -60,6 +61,18 @@
                     <span class="settings-field-label">ID воронки</span>
                     <input type="number" name="categoryId" value="@Model.CategoryId" min="0" />
                 </label>
+                <fieldset class="bitrix-import-stage-picker">
+                    <legend class="settings-field-label">Стадии для импорта</legend>
+                    <div class="bitrix-import-stage-options">
+                        @foreach (var stage in Model.AvailableStageNames)
+                        {
+                            <label class="bitrix-import-stage-option">
+                                <input type="checkbox" name="StageNames" value="@stage" checked="@selectedStages.Contains(stage)" />
+                                <span>@stage</span>
+                            </label>
+                        }
+                    </div>
+                </fieldset>
                 <button type="submit" class="settings-primary-btn">
                     <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i> Сформировать предпросмотр
                 </button>
@@ -82,7 +95,7 @@
             <div class="card-header settings-card-header">
                 <div>
                     <h2 class="settings-card-title">Сопоставление ответственных</h2>
-                    <p class="settings-card-subtitle">Сотрудники связываются по полному ФИО внутри Офиса 1.</p>
+                    <p class="settings-card-subtitle">Сотрудники связываются по полному ФИО внутри офиса «@Model.OfficeName».</p>
                 </div>
             </div>
             <div class="card-body bitrix-import-manager-list">
@@ -103,6 +116,10 @@
             <input type="hidden" name="OfficeId" value="@Model.OfficeId" />
             <input type="hidden" name="BitrixInstanceId" value="@Model.BitrixInstanceId" />
             <input type="hidden" name="CategoryId" value="@Model.CategoryId" />
+            @foreach (var stage in Model.SelectedStageNames)
+            {
+                <input type="hidden" name="StageNames" value="@stage" />
+            }
             <div class="card-header settings-card-header">
                 <div>
                     <h2 class="settings-card-title">План переноса</h2>
@@ -164,7 +181,7 @@
             <div class="bitrix-import-confirm">
                 <label class="bitrix-import-confirm-check">
                     <input type="checkbox" name="Confirmed" value="true" required />
-                    <span>Я проверил этапы и ответственных. Выполнить импорт выбранных карточек в Офис 1.</span>
+                    <span>Я проверил этапы и ответственных. Выполнить импорт выбранных карточек в офис «@Model.OfficeName».</span>
                 </label>
                 <button type="submit" class="settings-primary-btn" @(importable.Count == 0 ? "disabled" : null)
                         onclick="return confirm('Импортировать выбранные карточки из Bitrix24 в Орбиту?');">

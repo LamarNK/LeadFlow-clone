@@ -37,7 +37,11 @@ public sealed class BitrixCrmImportServiceTests
             RegistrationSecretHash = "hash",
             IsEnabled = true,
             CrmEnabled = true,
-            CrmStagesJson = CrmStages.Serialize([.. CrmStages.Default, BitrixCrmImportStages.MissedCall]),
+            CrmStagesJson = CrmStages.Serialize([
+                .. CrmStages.Default,
+                BitrixCrmImportStages.MissedCall,
+                BitrixCrmImportStages.LongTermNegotiations
+            ]),
             CreatedAtUtc = now
         });
         db.Users.Add(new IdentityUser
@@ -172,10 +176,62 @@ public sealed class BitrixCrmImportServiceTests
         Assert.Equal(1, await db.CrmCandidateCards.CountAsync());
         Assert.Equal(1, await db.CrmCandidateNotes.CountAsync());
         Assert.Equal(1, await db.CrmTasks.CountAsync());
+
+        stubClient.Snapshot = new BitrixImportSnapshot(
+            [new BitrixImportStage("UC_LONG_NEGOTIATIONS", BitrixCrmImportStages.LongTermNegotiations)],
+            new Dictionary<string, string>(),
+            new Dictionary<long, BitrixImportUser> { [77] = new(77, "Иванов Иван") },
+            [
+                new BitrixImportDeal(
+                    41770,
+                    "Петров Пётр Петрович",
+                    "UC_LONG_NEGOTIATIONS",
+                    BitrixCrmImportStages.LongTermNegotiations,
+                    77,
+                    now.AddDays(-1),
+                    now,
+                    string.Empty,
+                    new Dictionary<string, string?>(),
+                    new BitrixImportContact(
+                        502,
+                        "Петров Пётр Петрович",
+                        "+7 999 555-66-77",
+                        new Dictionary<string, string?>()),
+                    [],
+                    [])
+            ]);
+
+        var selectedStages = new[] { BitrixCrmImportStages.LongTermNegotiations };
+        var (longTermPreview, longTermPreviewError) = await sut.PreviewAsync(
+            instanceId,
+            OfficeScope.GlobalAdmin,
+            officeId,
+            new BitrixCrmImportPreviewRequest(StageNames: selectedStages));
+
+        Assert.Null(longTermPreviewError);
+        Assert.Equal(selectedStages, stubClient.LastRequestedStageNames);
+        Assert.Equal(
+            BitrixCrmImportStages.LongTermNegotiations,
+            Assert.Single(longTermPreview!.Deals).StageName);
+
+        var (longTermResult, longTermError) = await sut.ImportAsync(
+            instanceId,
+            OfficeScope.GlobalAdmin,
+            officeId,
+            new BitrixCrmImportExecuteRequest(StageNames: selectedStages, DealIds: [41770]),
+            "admin",
+            CancellationToken.None);
+
+        Assert.Null(longTermError);
+        Assert.Equal(1, longTermResult!.Created);
+        Assert.Equal(
+            BitrixCrmImportStages.LongTermNegotiations,
+            (await db.CrmCandidateCards.SingleAsync(card => card.Response.BitrixEntityId == "41770")).Stage);
     }
 
     private sealed class StubClient(BitrixImportSnapshot snapshot) : IBitrixCrmImportClient
     {
+        public BitrixImportSnapshot Snapshot { get; set; } = snapshot;
         public IReadOnlyCollection<long>? LastDealIds { get; private set; }
         public IReadOnlyCollection<string>? LastRequestedStageNames { get; private set; }
 
@@ -188,7 +244,7 @@ public sealed class BitrixCrmImportServiceTests
         {
             LastDealIds = dealIds;
             LastRequestedStageNames = requestedStageNames;
-            return Task.FromResult(snapshot);
+            return Task.FromResult(Snapshot);
         }
     }
 }

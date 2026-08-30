@@ -1535,6 +1535,18 @@ internal static class DesignPreviewData
         }
     }
 
+    public static CrmOfficeSettingsDto GetCrmOfficeSettings()
+    {
+        lock (CrmSync)
+        {
+            return new CrmOfficeSettingsDto(
+                _previewCrmEnabled,
+                true,
+                _previewCrmStages.ToList(),
+                _previewCrmDeadlineNotificationsEnabled);
+        }
+    }
+
     public static (bool Success, string? Error) SetCrmOfficeFunnel(IReadOnlyList<string> stages)
     {
         lock (CrmSync)

@@ -5,6 +5,7 @@ public static class BitrixCrmImportStages
     public const string MissedCall = "НДЗ";
     public const string Questionnaire = "Анкета";
     public const string Negotiations = "Переговоры";
+    public const string LongTermNegotiations = "Переговоры долгосрок";
 
     public static readonly IReadOnlyList<string> Default =
         [MissedCall, Questionnaire, Negotiations];

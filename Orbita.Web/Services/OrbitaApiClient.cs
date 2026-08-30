@@ -3245,6 +3245,13 @@ public sealed class OrbitaApiClient(
         return response is null ? (false, InvalidApiSessionError) : response.IsSuccessStatusCode ? (true, null) : (false, await ReadApiErrorAsync(response, ct));
     }
 
+    public Task<CrmOfficeSettingsDto?> GetCrmOfficeSettingsAsync(
+        Guid officeId,
+        CancellationToken ct = default) =>
+        _preview.Enabled
+            ? Task.FromResult<CrmOfficeSettingsDto?>(DesignPreviewData.GetCrmOfficeSettings())
+            : GetAsync<CrmOfficeSettingsDto>($"api/v1/crm/offices/{officeId:D}/settings", ct);
+
     public Task<CrmTelephonySettingsDto?> GetCrmTelephonySettingsAsync(
         Guid officeId,
         CancellationToken ct = default,

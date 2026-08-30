@@ -680,15 +680,20 @@ public sealed class SettingsController(
             return NotFound();
         }
 
+        var (officeName, availableStages) = await LoadBitrixImportOfficeAsync(api, officeId, ct);
+        var selectedStages = ResolveBitrixImportStages(null, availableStages, useDefaults: true);
         return View(new BitrixCrmImportPageViewModel
         {
             OfficeId = officeId,
+            OfficeName = officeName,
             BitrixInstanceId = instanceId,
             BitrixInstanceLabel = string.IsNullOrWhiteSpace(instance.Signature)
                 ? instance.Name
                 : $"{instance.Name} · {instance.Signature}",
             PortalHost = instance.PortalHost ?? string.Empty,
-            CategoryId = Math.Max(0, categoryId)
+            CategoryId = Math.Max(0, categoryId),
+            AvailableStageNames = availableStages,
+            SelectedStageNames = selectedStages
         });
     }
 
@@ -698,6 +703,7 @@ public sealed class SettingsController(
         Guid officeId,
         Guid bitrixInstanceId,
         int categoryId,
+        List<string>? stageNames,
         [FromServices] OrbitaApiClient api,
         CancellationToken ct = default)
     {
@@ -707,12 +713,37 @@ public sealed class SettingsController(
             return NotFound();
         }
 
+        var (officeName, availableStages) = await LoadBitrixImportOfficeAsync(api, officeId, ct);
+        var selectedStages = ResolveBitrixImportStages(stageNames, availableStages, useDefaults: false);
+        if (selectedStages.Count == 0)
+        {
+            return View("BitrixCrmImport", BuildBitrixCrmImportPage(
+                instance,
+                officeName,
+                availableStages,
+                selectedStages,
+                Math.Max(0, categoryId),
+                null,
+                null,
+                null,
+                "Выберите хотя бы одну стадию для импорта."));
+        }
+
         var (preview, error) = await api.PreviewBitrixCrmImportAsync(
             bitrixInstanceId,
-            new BitrixCrmImportPreviewRequest(Math.Max(0, categoryId), BitrixCrmImportStages.Default),
+            new BitrixCrmImportPreviewRequest(Math.Max(0, categoryId), selectedStages),
             officeId,
             ct);
-        return View("BitrixCrmImport", BuildBitrixCrmImportPage(instance, Math.Max(0, categoryId), preview, null, null, error));
+        return View("BitrixCrmImport", BuildBitrixCrmImportPage(
+            instance,
+            officeName,
+            availableStages,
+            selectedStages,
+            Math.Max(0, categoryId),
+            preview,
+            null,
+            null,
+            error));
     }
 
     [HttpPost]
@@ -728,20 +759,45 @@ public sealed class SettingsController(
             return NotFound();
         }
 
+        var (officeName, availableStages) = await LoadBitrixImportOfficeAsync(api, model.OfficeId, ct);
+        var selectedStages = ResolveBitrixImportStages(model.StageNames, availableStages, useDefaults: false);
+        if (selectedStages.Count == 0)
+        {
+            return View("BitrixCrmImport", BuildBitrixCrmImportPage(
+                instance,
+                officeName,
+                availableStages,
+                selectedStages,
+                model.CategoryId,
+                null,
+                null,
+                null,
+                "Выберите хотя бы одну стадию для импорта."));
+        }
+
         if (!model.Confirmed || model.DealIds.Count == 0)
         {
             var (preview, previewError) = await api.PreviewBitrixCrmImportAsync(
                 model.BitrixInstanceId,
-                new BitrixCrmImportPreviewRequest(model.CategoryId, BitrixCrmImportStages.Default),
+                new BitrixCrmImportPreviewRequest(model.CategoryId, selectedStages),
                 model.OfficeId,
                 ct);
             var error = previewError ?? "Выберите хотя бы одну карточку и подтвердите импорт.";
-            return View("BitrixCrmImport", BuildBitrixCrmImportPage(instance, model.CategoryId, preview, null, null, error));
+            return View("BitrixCrmImport", BuildBitrixCrmImportPage(
+                instance,
+                officeName,
+                availableStages,
+                selectedStages,
+                model.CategoryId,
+                preview,
+                null,
+                null,
+                error));
         }
 
         var (result, importError) = await api.ExecuteBitrixCrmImportAsync(
             model.BitrixInstanceId,
-            new BitrixCrmImportExecuteRequest(model.CategoryId, BitrixCrmImportStages.Default, model.DealIds),
+            new BitrixCrmImportExecuteRequest(model.CategoryId, selectedStages, model.DealIds),
             model.OfficeId,
             ct);
         var status = result is null
@@ -749,6 +805,9 @@ public sealed class SettingsController(
             : $"Импорт завершён: создано {result.Created}, обновлено {result.Updated}, уже было {result.AlreadyImported}, пропущено {result.Skipped}.";
         return View("BitrixCrmImport", BuildBitrixCrmImportPage(
             instance,
+            officeName,
+            availableStages,
+            selectedStages,
             model.CategoryId,
             null,
             result,
@@ -758,6 +817,9 @@ public sealed class SettingsController(
 
     private static BitrixCrmImportPageViewModel BuildBitrixCrmImportPage(
         BitrixInstanceDto instance,
+        string officeName,
+        IReadOnlyList<string> availableStages,
+        IReadOnlyList<string> selectedStages,
         int categoryId,
         BitrixCrmImportPreviewDto? preview,
         BitrixCrmImportResultDto? result,
@@ -765,17 +827,49 @@ public sealed class SettingsController(
         string? error) => new()
     {
         OfficeId = instance.OfficeId,
+        OfficeName = officeName,
         BitrixInstanceId = instance.Id,
         BitrixInstanceLabel = string.IsNullOrWhiteSpace(instance.Signature)
             ? instance.Name
             : $"{instance.Name} · {instance.Signature}",
         PortalHost = instance.PortalHost ?? string.Empty,
         CategoryId = categoryId,
+        AvailableStageNames = availableStages,
+        SelectedStageNames = selectedStages,
         Preview = preview,
         Result = result,
         StatusMessage = status,
         ErrorMessage = error
     };
+
+    private static async Task<(string OfficeName, IReadOnlyList<string> Stages)> LoadBitrixImportOfficeAsync(
+        OrbitaApiClient api,
+        Guid officeId,
+        CancellationToken ct)
+    {
+        var office = await api.GetOfficeAsync(officeId, ct);
+        var crmSettings = await api.GetCrmOfficeSettingsAsync(officeId, ct);
+        var stages = (crmSettings?.Stages ?? BitrixCrmImportStages.Default)
+            .Where(stage => !string.IsNullOrWhiteSpace(stage))
+            .Select(stage => stage.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        return (office?.Name ?? "Офис", stages);
+    }
+
+    private static IReadOnlyList<string> ResolveBitrixImportStages(
+        IReadOnlyCollection<string>? requestedStages,
+        IReadOnlyList<string> availableStages,
+        bool useDefaults)
+    {
+        var requested = (useDefaults ? BitrixCrmImportStages.Default : requestedStages ?? [])
+            .Where(stage => !string.IsNullOrWhiteSpace(stage))
+            .Select(stage => stage.Trim())
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return availableStages
+            .Where(requested.Contains)
+            .ToList();
+    }
 
     [HttpPost]
     [ValidateAntiForgeryToken]
