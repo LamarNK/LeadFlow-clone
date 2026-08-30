@@ -29,7 +29,8 @@ public sealed class BitrixCrmImportServiceTests
         var instanceId = Guid.NewGuid();
         const string managerId = "manager-1";
         const string ekaterinaManagerId = "manager-ekaterina";
-        var protector = new WebhookSecretProtector(new EphemeralDataProtectionProvider());
+        var dataProtectionProvider = new EphemeralDataProtectionProvider();
+        var protector = new WebhookSecretProtector(dataProtectionProvider);
         db.Offices.Add(new OfficeEntity
         {
             Id = officeId,
@@ -119,6 +120,8 @@ public sealed class BitrixCrmImportServiceTests
             db,
             bitrixInstances,
             stubClient,
+            new BitrixCrmExportParser(),
+            new BitrixCrmImportTokenProtector(dataProtectionProvider),
             new PhoneNormalizer(),
             new CandidateParser());
 
@@ -227,6 +230,59 @@ public sealed class BitrixCrmImportServiceTests
         Assert.Equal(
             BitrixCrmImportStages.LongTermNegotiations,
             (await db.CrmCandidateCards.SingleAsync(card => card.Response.BitrixEntityId == "41770")).Stage);
+
+        const string exportHtml = """
+            <meta http-equiv="Content-type" content="text/html;charset=UTF-8" />
+            <table><thead><tr>
+            <th>ID</th><th>Стадия сделки</th><th>Ответственный</th><th>Название сделки</th>
+            <th>Дата создания</th><th>Дата изменения</th><th>Комментарий</th>
+            <th>Возраст</th><th>Профессия</th><th>Город</th><th>Контакт</th><th>Контакт: ID</th>
+            <th>Контакт: Имя</th><th>Контакт: Фамилия</th><th>Контакт: Отчество</th>
+            <th>Контакт: Рабочий телефон</th><th>Контакт: Мобильный телефон</th>
+            </tr></thead><tbody><tr>
+            <td>41771</td><td>ПЕРЕГОВОРЫ ДОЛГОСРОК</td><td>Иванов Иван Иванович</td><td>Карточка из файла</td>
+            <td>22.08.2026 14:30:00</td><td>30.08.2026 10:15:00</td><td>Комментарий из экспорта</td>
+            <td>43</td><td>Водитель</td><td>Пермь</td><td>Сидоров Сергей Петрович</td><td>503</td>
+            <td>Сергей</td><td>Сидоров</td><td>Петрович</td><td>8 900 222-33-44</td><td></td>
+            </tr></tbody></table>
+            """;
+        await using var fileStream = new MemoryStream(System.Text.Encoding.UTF8.GetBytes(exportHtml));
+        var (filePreview, filePreviewError) = await sut.PreviewFileAsync(
+            instanceId,
+            OfficeScope.GlobalAdmin,
+            officeId,
+            0,
+            selectedStages,
+            fileStream,
+            "deals.xls");
+
+        Assert.Null(filePreviewError);
+        Assert.NotEmpty(filePreview!.ImportToken);
+        var fileRow = Assert.Single(filePreview.Preview.Deals);
+        Assert.Equal(41771, fileRow.DealId);
+        Assert.Equal(BitrixCrmImportActions.Create, fileRow.Action);
+        Assert.Equal(managerId, fileRow.OrbitaResponsibleUserId);
+        Assert.Equal("Сидоров Сергей Петрович", fileRow.CandidateName);
+
+        var (fileResult, fileImportError) = await sut.ImportFileAsync(
+            instanceId,
+            OfficeScope.GlobalAdmin,
+            officeId,
+            new BitrixCrmFileImportExecuteRequest(filePreview.ImportToken, [41771]),
+            "admin");
+
+        Assert.Null(fileImportError);
+        Assert.Equal(1, fileResult!.Created);
+        var fileCard = await db.CrmCandidateCards
+            .Include(item => item.Response)
+            .SingleAsync(item => item.Response.BitrixEntityId == "41771");
+        Assert.Equal(BitrixCrmImportStages.LongTermNegotiations, fileCard.Stage);
+        Assert.Equal(managerId, fileCard.ManagerUserId);
+        Assert.Equal("79002223344", fileCard.Response.PhoneNormalized);
+        Assert.Equal("Пермь", fileCard.Response.City);
+        Assert.Equal("Водитель", fileCard.Response.Vacancy);
+        Assert.Equal(43, fileCard.Response.Age);
+        Assert.Equal("Комментарий из экспорта", fileCard.Response.RawText);
     }
 
     private sealed class StubClient(BitrixImportSnapshot snapshot) : IBitrixCrmImportClient

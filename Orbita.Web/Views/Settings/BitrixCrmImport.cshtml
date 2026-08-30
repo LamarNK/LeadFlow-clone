@@ -2,7 +2,12 @@
 @{
     ViewData["Title"] = "Импорт из Bitrix24";
     var preview = Model.Preview;
+    var isFilePreview = !string.IsNullOrWhiteSpace(Model.FileImportToken);
     var selectedStages = Model.SelectedStageNames.ToHashSet(StringComparer.OrdinalIgnoreCase);
+    var defaultFileStage = Model.AvailableStageNames.FirstOrDefault(stage =>
+        string.Equals(stage, BitrixCrmImportStages.LongTermNegotiations, StringComparison.OrdinalIgnoreCase))
+        ?? Model.AvailableStageNames.FirstOrDefault()
+        ?? string.Empty;
     var importable = preview?.Deals
         .Where(x => x.Action is BitrixCrmImportActions.Create or BitrixCrmImportActions.UpdateExisting)
         .ToList() ?? [];
@@ -38,10 +43,45 @@
         <div class="settings-alert settings-alert--error" role="alert">@Model.ErrorMessage</div>
     }
 
+    <section class="card bitrix-import-file-card">
+        <div class="card-header settings-card-header">
+            <div>
+                <h2 class="settings-card-title">Импорт из выгрузки Bitrix24</h2>
+                <p class="settings-card-subtitle">Работает без webhook. Файл нормализуется в штатные карточки Орбиты, а перед записью показывается план.</p>
+            </div>
+            <span class="settings-status-pill">XLS / XLSX</span>
+        </div>
+        <div class="card-body">
+            <form asp-action="PreviewBitrixCrmFileImport" method="post" enctype="multipart/form-data" class="bitrix-import-file-form">
+                @Html.AntiForgeryToken()
+                <input type="hidden" name="officeId" value="@Model.OfficeId" />
+                <input type="hidden" name="bitrixInstanceId" value="@Model.BitrixInstanceId" />
+                <input type="hidden" name="categoryId" value="@Model.CategoryId" />
+                <label class="settings-field bitrix-import-file-stage">
+                    <span class="settings-field-label">Импортировать только стадию</span>
+                    <select name="stageName" required>
+                        @foreach (var stage in Model.AvailableStageNames)
+                        {
+                            <option value="@stage" selected="@(string.Equals(stage, defaultFileStage, StringComparison.OrdinalIgnoreCase))">@stage</option>
+                        }
+                    </select>
+                </label>
+                <label class="settings-field bitrix-import-file-input">
+                    <span class="settings-field-label">Файл экспорта Bitrix24</span>
+                    <input type="file" name="importFile" accept=".xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" required />
+                </label>
+                <button type="submit" class="settings-primary-btn">
+                    <i class="fa-solid fa-file-circle-check" aria-hidden="true"></i> Проверить файл
+                </button>
+            </form>
+            <p class="settings-bitrix-hint">Орбита использует ID сделки и нормализованный телефон для защиты от дублей. Пустые поля файла не затирают заполненные данные существующей карточки. История комментариев и дел переносится только при прямом импорте через API.</p>
+        </div>
+    </section>
+
     <section class="card bitrix-import-summary">
         <div class="card-header settings-card-header">
             <div>
-                <h2 class="settings-card-title">@Model.BitrixInstanceLabel</h2>
+                <h2 class="settings-card-title">Импорт напрямую из @Model.BitrixInstanceLabel</h2>
                 <p class="settings-card-subtitle">@(string.IsNullOrWhiteSpace(Model.PortalHost) ? "Портал Bitrix24" : Model.PortalHost)</p>
             </div>
             <span class="settings-status-pill">@Model.OfficeName</span>
@@ -111,11 +151,16 @@
             </div>
         </section>
 
-        <form asp-action="ExecuteBitrixCrmImport" method="post" class="card bitrix-import-plan">
+        <form asp-action="@(isFilePreview ? "ExecuteBitrixCrmFileImport" : "ExecuteBitrixCrmImport")" method="post" class="card bitrix-import-plan">
             @Html.AntiForgeryToken()
             <input type="hidden" name="OfficeId" value="@Model.OfficeId" />
             <input type="hidden" name="BitrixInstanceId" value="@Model.BitrixInstanceId" />
             <input type="hidden" name="CategoryId" value="@Model.CategoryId" />
+            @if (isFilePreview)
+            {
+                <input type="hidden" name="ImportToken" value="@Model.FileImportToken" />
+                <input type="hidden" name="ImportFileName" value="@Model.ImportFileName" />
+            }
             @foreach (var stage in Model.SelectedStageNames)
             {
                 <input type="hidden" name="StageNames" value="@stage" />
@@ -123,7 +168,7 @@
             <div class="card-header settings-card-header">
                 <div>
                     <h2 class="settings-card-title">План переноса</h2>
-                    <p class="settings-card-subtitle">Отмечены только карточки, которые можно безопасно создать или связать.</p>
+                    <p class="settings-card-subtitle">@(isFilePreview ? $"Файл «{Model.ImportFileName}». Отмечены карточки, которые можно безопасно создать или обновить." : "Отмечены только карточки, которые можно безопасно создать или связать.")</p>
                 </div>
                 <span class="settings-office-count">@importable.Count</span>
             </div>
@@ -164,7 +209,7 @@
                             </td>
                             <td data-label="Данные">
                                 <span>@(string.IsNullOrWhiteSpace(deal.City) ? "Город не указан" : deal.City)</span>
-                                <span class="bitrix-import-muted">@deal.CommentCount комм. · @deal.ActivityCount дел</span>
+                                <span class="bitrix-import-muted">@(isFilePreview ? "Поля карточки из файла" : $"{deal.CommentCount} комм. · {deal.ActivityCount} дел")</span>
                             </td>
                             <td data-label="Действие">
                                 <span class="bitrix-import-action bitrix-import-action--@deal.Action">@ActionLabel(deal.Action)</span>

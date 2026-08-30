@@ -411,6 +411,51 @@ public static class PanelResponseEndpoints
             return error is not null ? Results.BadRequest(new { error }) : Results.Ok(preview);
         });
 
+        settings.MapPost("/bitrix-instances/{id:guid}/crm-import/file/preview", async (
+            Guid id,
+            HttpRequest request,
+            BitrixCrmImportService crmImport,
+            OfficeScopeService officeScope,
+            ClaimsPrincipal principal,
+            Guid? officeId,
+            CancellationToken ct) =>
+        {
+            var scope = await officeScope.ResolveAsync(principal, ct);
+            if (!scope.HasAccess)
+            {
+                return Results.Forbid();
+            }
+
+            if (!request.HasFormContentType)
+            {
+                return Results.BadRequest(new { error = "Ожидается файл выгрузки Bitrix24." });
+            }
+
+            var form = await request.ReadFormAsync(ct);
+            var file = form.Files.GetFile("file");
+            if (file is null || file.Length == 0)
+            {
+                return Results.BadRequest(new { error = "Выберите файл выгрузки Bitrix24." });
+            }
+
+            _ = int.TryParse(form["categoryId"].FirstOrDefault(), out var categoryId);
+            var stageNames = form["stageNames"]
+                .Where(value => !string.IsNullOrWhiteSpace(value))
+                .Select(value => value!)
+                .ToList();
+            await using var stream = file.OpenReadStream();
+            var (preview, error) = await crmImport.PreviewFileAsync(
+                id,
+                scope,
+                officeId,
+                Math.Max(0, categoryId),
+                stageNames,
+                stream,
+                file.FileName,
+                ct);
+            return error is not null ? Results.BadRequest(new { error }) : Results.Ok(preview);
+        });
+
         settings.MapPost("/bitrix-instances/{id:guid}/crm-import", async (
             Guid id,
             BitrixCrmImportExecuteRequest request,
@@ -428,6 +473,26 @@ public static class PanelResponseEndpoints
 
             var actorUserId = principal.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
             var (result, error) = await crmImport.ImportAsync(id, scope, officeId, request, actorUserId, ct);
+            return error is not null ? Results.BadRequest(new { error }) : Results.Ok(result);
+        });
+
+        settings.MapPost("/bitrix-instances/{id:guid}/crm-import/file", async (
+            Guid id,
+            BitrixCrmFileImportExecuteRequest request,
+            BitrixCrmImportService crmImport,
+            OfficeScopeService officeScope,
+            ClaimsPrincipal principal,
+            Guid? officeId,
+            CancellationToken ct) =>
+        {
+            var scope = await officeScope.ResolveAsync(principal, ct);
+            if (!scope.HasAccess)
+            {
+                return Results.Forbid();
+            }
+
+            var actorUserId = principal.FindFirstValue(ClaimTypes.NameIdentifier) ?? string.Empty;
+            var (result, error) = await crmImport.ImportFileAsync(id, scope, officeId, request, actorUserId, ct);
             return error is not null ? Results.BadRequest(new { error }) : Results.Ok(result);
         });
 

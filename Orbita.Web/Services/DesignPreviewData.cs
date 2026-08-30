@@ -45,7 +45,7 @@ internal static class DesignPreviewData
     private static bool _previewCrmShiftActive = true;
     private static bool _previewCrmEnabled = true;
     private static bool _previewCrmDeadlineNotificationsEnabled = true;
-    private static List<string> _previewCrmStages = CrmStages.Default.ToList();
+    private static List<string> _previewCrmStages = [.. CrmStages.Default, BitrixCrmImportStages.LongTermNegotiations];
     private static readonly List<PreviewCrmCandidate> PreviewCrmCandidates =
     [
         new(Guid.Parse("90000000-0000-0000-0000-000000000001"), "Селезнёв Артур Алексеевич", 55, "+7 912 445-18-07", "Тында", "Разнорабочий на вахту", CrmStages.Lead, PreviewManagerElena, true, 35),

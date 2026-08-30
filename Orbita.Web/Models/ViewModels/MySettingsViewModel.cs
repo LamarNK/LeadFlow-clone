@@ -38,6 +38,8 @@ public sealed class BitrixCrmImportPageViewModel
     public IReadOnlyList<string> SelectedStageNames { get; init; } = [];
     public BitrixCrmImportPreviewDto? Preview { get; init; }
     public BitrixCrmImportResultDto? Result { get; init; }
+    public string? FileImportToken { get; init; }
+    public string? ImportFileName { get; init; }
     public string? StatusMessage { get; init; }
     public string? ErrorMessage { get; init; }
 }
@@ -47,6 +49,17 @@ public sealed class ExecuteBitrixCrmImportFormModel
     public Guid OfficeId { get; set; }
     public Guid BitrixInstanceId { get; set; }
     public int CategoryId { get; set; }
+    public List<string> StageNames { get; set; } = [];
+    public List<long> DealIds { get; set; } = [];
+    public bool Confirmed { get; set; }
+}
+
+public sealed class ExecuteBitrixCrmFileImportFormModel
+{
+    public Guid OfficeId { get; set; }
+    public Guid BitrixInstanceId { get; set; }
+    public string ImportToken { get; set; } = string.Empty;
+    public string ImportFileName { get; set; } = string.Empty;
     public List<string> StageNames { get; set; } = [];
     public List<long> DealIds { get; set; } = [];
     public bool Confirmed { get; set; }

@@ -1489,6 +1489,52 @@ public sealed class OrbitaApiClient(
         return preview is null ? (null, "Не удалось прочитать предпросмотр импорта.") : (preview, null);
     }
 
+    public async Task<(BitrixCrmFileImportPreviewDto? Preview, string? Error)> PreviewBitrixCrmFileImportAsync(
+        Guid id,
+        IFormFile file,
+        int categoryId,
+        IReadOnlyCollection<string> stageNames,
+        Guid? officeId = null,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return (new BitrixCrmFileImportPreviewDto(
+                "design-preview-token",
+                file.FileName,
+                DesignPreviewData.PreviewBitrixCrmImport), null);
+        }
+
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            WithOfficeQuery($"api/v1/panel/bitrix-instances/{id:D}/crm-import/file/preview", officeId));
+        using var content = new MultipartFormDataContent();
+        var fileContent = new StreamContent(file.OpenReadStream());
+        fileContent.Headers.ContentType = MediaTypeHeaderValue.Parse(
+            string.IsNullOrWhiteSpace(file.ContentType) ? "application/octet-stream" : file.ContentType);
+        content.Add(fileContent, "file", Path.GetFileName(file.FileName));
+        content.Add(new StringContent(Math.Max(0, categoryId).ToString()), "categoryId");
+        foreach (var stageName in stageNames)
+        {
+            content.Add(new StringContent(stageName), "stageNames");
+        }
+
+        request.Content = content;
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (null, InvalidApiSessionError);
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            return (null, await ReadApiErrorAsync(response, ct));
+        }
+
+        var preview = await response.Content.ReadFromJsonAsync<BitrixCrmFileImportPreviewDto>(ApiJsonOptions, ct);
+        return preview is null ? (null, "Не удалось прочитать предпросмотр файла.") : (preview, null);
+    }
+
     public async Task<(BitrixCrmImportResultDto? Result, string? Error)> ExecuteBitrixCrmImportAsync(
         Guid id,
         BitrixCrmImportExecuteRequest importRequest,
@@ -1518,6 +1564,37 @@ public sealed class OrbitaApiClient(
 
         var result = await response.Content.ReadFromJsonAsync<BitrixCrmImportResultDto>(ApiJsonOptions, ct);
         return result is null ? (null, "Не удалось прочитать результат импорта.") : (result, null);
+    }
+
+    public async Task<(BitrixCrmImportResultDto? Result, string? Error)> ExecuteBitrixCrmFileImportAsync(
+        Guid id,
+        BitrixCrmFileImportExecuteRequest importRequest,
+        Guid? officeId = null,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            var selected = importRequest.DealIds?.Count ?? DesignPreviewData.PreviewBitrixCrmImport.Deals.Count;
+            return (new BitrixCrmImportResultDto(selected, selected, 0, 0, 0, []), null);
+        }
+
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            WithOfficeQuery($"api/v1/panel/bitrix-instances/{id:D}/crm-import/file", officeId));
+        request.Content = JsonContent.Create(importRequest);
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (null, InvalidApiSessionError);
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            return (null, await ReadApiErrorAsync(response, ct));
+        }
+
+        var result = await response.Content.ReadFromJsonAsync<BitrixCrmImportResultDto>(ApiJsonOptions, ct);
+        return result is null ? (null, "Не удалось прочитать результат импорта файла.") : (result, null);
     }
 
     public Task<BitrixWorkforceSettingsDto?> GetBitrixWorkforceSettingsAsync(

@@ -12,6 +12,8 @@ public sealed class BitrixCrmImportService(
     OrbitaDbContext db,
     BitrixInstanceService bitrixInstances,
     IBitrixCrmImportClient client,
+    BitrixCrmExportParser exportParser,
+    BitrixCrmImportTokenProtector importTokenProtector,
     PhoneNormalizer phoneNormalizer,
     CandidateParser candidateParser,
     IPanelRealtimeNotifier? panelRealtime = null)
@@ -22,6 +24,7 @@ public sealed class BitrixCrmImportService(
         @"\[/?[a-z][a-z0-9]*(?:=[^\]]*)?\]",
         RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
     private static readonly Regex WhiteSpaceRegex = new("\\s+", RegexOptions.Compiled);
+    private static readonly TimeSpan FileImportTokenLifetime = TimeSpan.FromHours(1);
 
     public async Task<(BitrixCrmImportPreviewDto? Preview, string? Error)> PreviewAsync(
         Guid bitrixInstanceId,
@@ -45,6 +48,56 @@ public sealed class BitrixCrmImportService(
 
         var preview = await BuildPreviewAsync(context, ct);
         return (preview, null);
+    }
+
+    public async Task<(BitrixCrmFileImportPreviewDto? Preview, string? Error)> PreviewFileAsync(
+        Guid bitrixInstanceId,
+        OfficeScope scope,
+        Guid? officeId,
+        int categoryId,
+        IReadOnlyCollection<string> stageNames,
+        Stream file,
+        string fileName,
+        CancellationToken ct = default)
+    {
+        var access = await LoadFileAccessAsync(bitrixInstanceId, scope, officeId, categoryId, stageNames, ct);
+        if (access.Error is not null)
+        {
+            return (null, access.Error);
+        }
+
+        BitrixImportSnapshot snapshot;
+        try
+        {
+            snapshot = await exportParser.ParseAsync(file, fileName, access.StageNames, ct);
+        }
+        catch (InvalidDataException ex)
+        {
+            return (null, ex.Message);
+        }
+
+        if (snapshot.Deals.Count > MaxImportDeals)
+        {
+            return (null, $"Найдено {snapshot.Deals.Count} сделок. Максимум за один импорт: {MaxImportDeals}.");
+        }
+
+        snapshot = NormalizeStageNames(snapshot, access.OfficeStages);
+        var context = new ImportContext(
+            access.InstanceId,
+            access.OfficeId,
+            access.PortalHost,
+            access.CategoryId,
+            snapshot,
+            null);
+        var preview = await BuildPreviewAsync(context, ct);
+        var token = importTokenProtector.Protect(new BitrixCrmFileImportTokenPayload(
+            context.InstanceId,
+            context.OfficeId,
+            context.PortalHost,
+            context.CategoryId,
+            DateTime.UtcNow.Add(FileImportTokenLifetime),
+            context.Snapshot));
+        return (new BitrixCrmFileImportPreviewDto(token, Path.GetFileName(fileName), preview), null);
     }
 
     public async Task<(BitrixCrmImportResultDto? Result, string? Error)> ImportAsync(
@@ -72,6 +125,77 @@ public sealed class BitrixCrmImportService(
             return (null, context.Error);
         }
 
+        return await ImportContextAsync(context, selectedDealIds, actorUserId, ct);
+    }
+
+    public async Task<(BitrixCrmImportResultDto? Result, string? Error)> ImportFileAsync(
+        Guid bitrixInstanceId,
+        OfficeScope scope,
+        Guid? officeId,
+        BitrixCrmFileImportExecuteRequest request,
+        string actorUserId,
+        CancellationToken ct = default)
+    {
+        if (!importTokenProtector.TryUnprotect(request.ImportToken, out var payload)
+            || payload is null
+            || payload.ExpiresAtUtc < DateTime.UtcNow)
+        {
+            return (null, "Предпросмотр файла устарел или повреждён. Загрузите выгрузку ещё раз.");
+        }
+
+        if (payload.BitrixInstanceId != bitrixInstanceId)
+        {
+            return (null, "Файл был подготовлен для другого подключения Bitrix24.");
+        }
+
+        var stageNames = payload.Snapshot.Stages.Select(stage => stage.Name).ToList();
+        var access = await LoadFileAccessAsync(
+            bitrixInstanceId,
+            scope,
+            officeId,
+            payload.CategoryId,
+            stageNames,
+            ct);
+        if (access.Error is not null || access.OfficeId != payload.OfficeId)
+        {
+            return (null, access.Error ?? "Файл был подготовлен для другого офиса.");
+        }
+
+        var selectedDealIds = request.DealIds?
+            .Where(id => id > 0)
+            .Distinct()
+            .ToArray();
+        if (selectedDealIds is null || selectedDealIds.Length == 0)
+        {
+            return (null, "Выберите хотя бы одну карточку для импорта.");
+        }
+
+        var selectedSet = selectedDealIds.ToHashSet();
+        var snapshot = payload.Snapshot with
+        {
+            Deals = payload.Snapshot.Deals.Where(deal => selectedSet.Contains(deal.Id)).ToList()
+        };
+        if (snapshot.Deals.Count != selectedDealIds.Length)
+        {
+            return (null, "Список выбранных сделок не соответствует загруженному файлу.");
+        }
+
+        var context = new ImportContext(
+            access.InstanceId,
+            access.OfficeId,
+            access.PortalHost,
+            access.CategoryId,
+            NormalizeStageNames(snapshot, access.OfficeStages),
+            null);
+        return await ImportContextAsync(context, selectedDealIds, actorUserId, ct);
+    }
+
+    private async Task<(BitrixCrmImportResultDto? Result, string? Error)> ImportContextAsync(
+        ImportContext context,
+        IReadOnlyCollection<long>? selectedDealIds,
+        string actorUserId,
+        CancellationToken ct)
+    {
         var preview = await BuildPreviewAsync(context, ct);
         var selected = selectedDealIds is null
             ? null
@@ -188,16 +312,16 @@ public sealed class BitrixCrmImportService(
             response.FirstName = FirstNonEmpty(response.FirstName, firstName);
             response.LastName = FirstNonEmpty(response.LastName, lastName);
             response.MiddleName = FirstNonEmpty(response.MiddleName, middleName);
-            response.Age = age ?? response.Age;
-            response.City = FirstNonEmpty(city, response.City);
-            response.Vacancy = FirstNonEmpty(vacancy, response.Vacancy);
+            response.Age ??= age;
+            response.City = FirstNonEmpty(response.City, city);
+            response.Vacancy = FirstNonEmpty(response.Vacancy, vacancy);
             response.RawText = FirstNonEmpty(response.RawText, deal.Comments);
             response.Person.FullName = FirstNonEmpty(response.Person.FullName, fullName);
             response.Person.FirstName = FirstNonEmpty(response.Person.FirstName, firstName);
             response.Person.LastName = FirstNonEmpty(response.Person.LastName, lastName);
             response.Person.MiddleName = FirstNonEmpty(response.Person.MiddleName, middleName);
-            response.Person.Age = age ?? response.Person.Age;
-            response.Person.City = FirstNonEmpty(city, response.Person.City);
+            response.Person.Age ??= age;
+            response.Person.City = FirstNonEmpty(response.Person.City, city);
             response.Person.UpdatedAtUtc = now;
         }
         else
@@ -492,6 +616,68 @@ public sealed class BitrixCrmImportService(
             deals.Count(x => x.Action == BitrixCrmImportActions.UpdateExisting),
             deals.Count(x => x.Action == BitrixCrmImportActions.AlreadyImported),
             deals.Count(x => x.Action == BitrixCrmImportActions.MissingPhone));
+    }
+
+    private async Task<FileAccessContext> LoadFileAccessAsync(
+        Guid bitrixInstanceId,
+        OfficeScope scope,
+        Guid? requestedOfficeId,
+        int categoryId,
+        IReadOnlyCollection<string>? requestedStages,
+        CancellationToken ct)
+    {
+        var instance = await db.BitrixInstances.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == bitrixInstanceId && x.DeletedAtUtc == null, ct);
+        if (instance is null
+            || !scope.HasAccess
+            || !scope.CanAccessOffice(instance.OfficeId)
+            || (requestedOfficeId is Guid officeFilter && officeFilter != instance.OfficeId))
+        {
+            return FileAccessContext.Failed("Интеграция Bitrix24 не найдена или недоступна.");
+        }
+
+        if (!instance.IsEnabled)
+        {
+            return FileAccessContext.Failed("Интеграция Bitrix24 отключена.");
+        }
+
+        var office = await db.Offices.AsNoTracking()
+            .Where(x => x.Id == instance.OfficeId && x.IsEnabled && x.CrmEnabled)
+            .Select(x => new { x.CrmStagesJson })
+            .FirstOrDefaultAsync(ct);
+        if (office is null)
+        {
+            return FileAccessContext.Failed("CRM выбранного офиса отключена.");
+        }
+
+        var stages = (requestedStages ?? [])
+            .Where(stage => !string.IsNullOrWhiteSpace(stage))
+            .Select(stage => stage.Trim())
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (stages.Count == 0)
+        {
+            return FileAccessContext.Failed("Не выбрана стадия для импорта из файла.");
+        }
+
+        var officeStages = CrmStages.Resolve(office.CrmStagesJson);
+        var missingOfficeStages = stages
+            .Where(stage => !CrmStages.Contains(officeStages, stage))
+            .ToList();
+        if (missingOfficeStages.Count > 0)
+        {
+            return FileAccessContext.Failed(
+                "В воронке Орбиты отсутствуют этапы: " + string.Join(", ", missingOfficeStages));
+        }
+
+        return new FileAccessContext(
+            instance.Id,
+            instance.OfficeId,
+            FirstNonEmpty(instance.PortalHost ?? string.Empty, $"bitrix-instance-{instance.Id:D}"),
+            Math.Max(0, categoryId),
+            stages,
+            officeStages,
+            null);
     }
 
     private async Task<ImportContext> LoadContextAsync(
@@ -805,6 +991,19 @@ public sealed class BitrixCrmImportService(
     {
         public static ImportContext Failed(string error) =>
             new(Guid.Empty, Guid.Empty, string.Empty, 0, new BitrixImportSnapshot([], new Dictionary<string, string>(), new Dictionary<long, BitrixImportUser>(), []), error);
+    }
+
+    private sealed record FileAccessContext(
+        Guid InstanceId,
+        Guid OfficeId,
+        string PortalHost,
+        int CategoryId,
+        IReadOnlyList<string> StageNames,
+        IReadOnlyList<string> OfficeStages,
+        string? Error)
+    {
+        public static FileAccessContext Failed(string error) =>
+            new(Guid.Empty, Guid.Empty, string.Empty, 0, [], [], error);
     }
 
     private sealed record OrbitaManager(string UserId, string FullName, string NormalizedName);

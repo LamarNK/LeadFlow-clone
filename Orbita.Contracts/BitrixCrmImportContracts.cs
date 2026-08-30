@@ -28,6 +28,15 @@ public sealed record BitrixCrmImportExecuteRequest(
     IReadOnlyList<string>? StageNames = null,
     IReadOnlyList<long>? DealIds = null);
 
+public sealed record BitrixCrmFileImportPreviewDto(
+    string ImportToken,
+    string FileName,
+    BitrixCrmImportPreviewDto Preview);
+
+public sealed record BitrixCrmFileImportExecuteRequest(
+    string ImportToken,
+    IReadOnlyList<long>? DealIds = null);
+
 public sealed record BitrixCrmImportStageSummaryDto(
     string StageName,
     string BitrixStageId,

@@ -748,6 +748,81 @@ public sealed class SettingsController(
 
     [HttpPost]
     [ValidateAntiForgeryToken]
+    public async Task<IActionResult> PreviewBitrixCrmFileImport(
+        Guid officeId,
+        Guid bitrixInstanceId,
+        int categoryId,
+        string? stageName,
+        IFormFile? importFile,
+        [FromServices] OrbitaApiClient api,
+        CancellationToken ct = default)
+    {
+        var instance = await api.GetBitrixInstanceAsync(bitrixInstanceId, officeId, ct);
+        if (instance is null)
+        {
+            return NotFound();
+        }
+
+        var (officeName, availableStages) = await LoadBitrixImportOfficeAsync(api, officeId, ct);
+        var selectedStages = ResolveBitrixImportStages(
+            string.IsNullOrWhiteSpace(stageName) ? [] : [stageName],
+            availableStages,
+            useDefaults: false);
+        string? validationError = null;
+        if (selectedStages.Count == 0)
+        {
+            validationError = "Выберите стадию для импорта из файла.";
+        }
+        else if (importFile is null || importFile.Length == 0)
+        {
+            validationError = "Выберите файл выгрузки Bitrix24.";
+        }
+        else if (Path.GetExtension(importFile.FileName).ToLowerInvariant() is not ".xls" and not ".xlsx")
+        {
+            validationError = "Поддерживаются только выгрузки Bitrix24 в форматах .xls и .xlsx.";
+        }
+        else if (importFile.Length > 25 * 1024 * 1024)
+        {
+            validationError = "Файл слишком большой. Максимальный размер — 25 МБ.";
+        }
+
+        if (validationError is not null)
+        {
+            return View("BitrixCrmImport", BuildBitrixCrmImportPage(
+                instance,
+                officeName,
+                availableStages,
+                selectedStages,
+                Math.Max(0, categoryId),
+                null,
+                null,
+                null,
+                validationError));
+        }
+
+        var (filePreview, error) = await api.PreviewBitrixCrmFileImportAsync(
+            bitrixInstanceId,
+            importFile!,
+            Math.Max(0, categoryId),
+            selectedStages,
+            officeId,
+            ct);
+        return View("BitrixCrmImport", BuildBitrixCrmImportPage(
+            instance,
+            officeName,
+            availableStages,
+            selectedStages,
+            Math.Max(0, categoryId),
+            filePreview?.Preview,
+            null,
+            filePreview is null ? null : $"Файл «{filePreview.FileName}» проверен. В CRM пока ничего не записано.",
+            error,
+            filePreview?.ImportToken,
+            filePreview?.FileName));
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> ExecuteBitrixCrmImport(
         ExecuteBitrixCrmImportFormModel model,
         [FromServices] OrbitaApiClient api,
@@ -815,6 +890,55 @@ public sealed class SettingsController(
             importError));
     }
 
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> ExecuteBitrixCrmFileImport(
+        ExecuteBitrixCrmFileImportFormModel model,
+        [FromServices] OrbitaApiClient api,
+        CancellationToken ct = default)
+    {
+        var instance = await api.GetBitrixInstanceAsync(model.BitrixInstanceId, model.OfficeId, ct);
+        if (instance is null)
+        {
+            return NotFound();
+        }
+
+        var (officeName, availableStages) = await LoadBitrixImportOfficeAsync(api, model.OfficeId, ct);
+        var selectedStages = ResolveBitrixImportStages(model.StageNames, availableStages, useDefaults: false);
+        if (!model.Confirmed || model.DealIds.Count == 0 || string.IsNullOrWhiteSpace(model.ImportToken))
+        {
+            return View("BitrixCrmImport", BuildBitrixCrmImportPage(
+                instance,
+                officeName,
+                availableStages,
+                selectedStages,
+                0,
+                null,
+                null,
+                null,
+                "Выберите хотя бы одну карточку и подтвердите импорт. Если предпросмотр исчез, загрузите файл заново."));
+        }
+
+        var (result, importError) = await api.ExecuteBitrixCrmFileImportAsync(
+            model.BitrixInstanceId,
+            new BitrixCrmFileImportExecuteRequest(model.ImportToken, model.DealIds),
+            model.OfficeId,
+            ct);
+        var status = result is null
+            ? null
+            : $"Импорт файла завершён: создано {result.Created}, обновлено {result.Updated}, уже было {result.AlreadyImported}, пропущено {result.Skipped}.";
+        return View("BitrixCrmImport", BuildBitrixCrmImportPage(
+            instance,
+            officeName,
+            availableStages,
+            selectedStages,
+            0,
+            null,
+            result,
+            status,
+            importError));
+    }
+
     private static BitrixCrmImportPageViewModel BuildBitrixCrmImportPage(
         BitrixInstanceDto instance,
         string officeName,
@@ -824,7 +948,9 @@ public sealed class SettingsController(
         BitrixCrmImportPreviewDto? preview,
         BitrixCrmImportResultDto? result,
         string? status,
-        string? error) => new()
+        string? error,
+        string? fileImportToken = null,
+        string? importFileName = null) => new()
     {
         OfficeId = instance.OfficeId,
         OfficeName = officeName,
@@ -838,6 +964,8 @@ public sealed class SettingsController(
         SelectedStageNames = selectedStages,
         Preview = preview,
         Result = result,
+        FileImportToken = fileImportToken,
+        ImportFileName = importFileName,
         StatusMessage = status,
         ErrorMessage = error
     };

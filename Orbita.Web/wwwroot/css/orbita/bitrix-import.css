@@ -12,6 +12,33 @@
     gap: 18px;
 }
 
+.bitrix-import-file-card .card-body {
+    display: grid;
+    gap: 12px;
+}
+
+.bitrix-import-file-form {
+    display: grid;
+    grid-template-columns: minmax(240px, .8fr) minmax(320px, 1.6fr) auto;
+    align-items: end;
+    gap: 12px;
+}
+
+.bitrix-import-file-stage,
+.bitrix-import-file-input {
+    min-width: 0;
+}
+
+.bitrix-import-file-input input[type="file"] {
+    width: 100%;
+    min-height: 42px;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--bg-card);
+    color: var(--text-primary);
+}
+
 .bitrix-import-scope,
 .bitrix-import-stats {
     display: grid;
@@ -188,8 +215,13 @@
     }
 
     .bitrix-import-preview-form,
+    .bitrix-import-file-form,
     .bitrix-import-confirm {
         align-items: stretch;
         flex-direction: column;
+    }
+
+    .bitrix-import-file-form {
+        display: flex;
     }
 }
