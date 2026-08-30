@@ -1,7 +1,13 @@
+using System.Text.RegularExpressions;
+
 namespace Orbita.Tests;
 
 public sealed class WorkerConnectionTabMarkupTests
 {
+    private static readonly Regex CssRuleRegex = new(
+        @"([^{}]+)\{([^{}]*)\}",
+        RegexOptions.Singleline | RegexOptions.CultureInvariant);
+
     [Fact]
     public void ConnectionTab_UsesCompactSourceRows_NotLargeCards()
     {
@@ -39,11 +45,40 @@ public sealed class WorkerConnectionTabMarkupTests
         Assert.DoesNotContain(".worker-provider-card {", css);
         Assert.Contains(".worker-provider-row", css);
         Assert.Contains(".worker-provider-status--checking::before", css);
-        Assert.Contains(".worker-settings-actions", css);
-        Assert.DoesNotContain("position: sticky;\n    bottom:", css.Replace("\r\n", "\n"));
-        Assert.DoesNotContain("box-shadow: 0 8px 24px rgba(16, 24, 40, 0.08)", css);
         Assert.DoesNotMatch(@"\.worker-settings-section-title\s*\{[^}]*text-transform:\s*uppercase", css);
         Assert.DoesNotMatch(@"\.worker-settings-subsection-title\s*\{[^}]*text-transform:\s*uppercase", css);
+
+        var actionBlocks = ExtractCssBlocks(css, ".worker-settings-actions").ToList();
+        Assert.NotEmpty(actionBlocks);
+        foreach (var body in actionBlocks)
+        {
+            Assert.DoesNotContain("position: sticky", body, StringComparison.OrdinalIgnoreCase);
+            Assert.DoesNotMatch(@"(?im)^\s*bottom\s*:", body);
+            Assert.DoesNotContain("box-shadow:", body, StringComparison.OrdinalIgnoreCase);
+        }
+    }
+
+    private static IEnumerable<string> ExtractCssBlocks(string css, string selector)
+    {
+        foreach (Match match in CssRuleRegex.Matches(css))
+        {
+            var selectorList = match.Groups[1].Value;
+            var body = match.Groups[2].Value;
+            foreach (var raw in selectorList.Split(','))
+            {
+                var current = raw.Trim();
+                var lineBreak = current.LastIndexOfAny(['\n', '\r']);
+                if (lineBreak >= 0)
+                {
+                    current = current[(lineBreak + 1)..].Trim();
+                }
+
+                if (current == selector || current.EndsWith(" " + selector, StringComparison.Ordinal))
+                {
+                    yield return body;
+                }
+            }
+        }
     }
 
     private static string ReadRepoFile(string relativePath)
