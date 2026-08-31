@@ -9,9 +9,10 @@ public static class LocalChromeLaunchOptionsFactory
     public static LocalChromeLaunchOptions FromAccount(AvitoAccount account)
     {
         ArgumentNullException.ThrowIfNull(account);
+        string? address = null;
         var useProxy = WorkerAccountRuntime.IsLocalProvider(account)
             && !string.IsNullOrWhiteSpace(account.ProxyAddress)
-            && LocalChromeProxyRules.TryNormalizeAddress(account.ProxyAddress, out var address, out _);
+            && LocalChromeProxyRules.TryNormalizeAddress(account.ProxyAddress, out address, out _);
 
         return new LocalChromeLaunchOptions
         {
