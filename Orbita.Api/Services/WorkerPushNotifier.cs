@@ -75,6 +75,23 @@ public sealed class WorkerPushNotifier(
         return true;
     }
 
+    public async Task<bool> TryPushLocalChromeLoginSessionAsync(
+        Guid workerId,
+        WorkerPendingLocalChromeLoginDto session,
+        CancellationToken ct = default)
+    {
+        if (!registry.TryGetConnectionId(workerId, out var connectionId) || connectionId is null)
+        {
+            return false;
+        }
+
+        await hub.Clients
+            .Client(connectionId)
+            .SendAsync(WorkerHubEvents.LocalChromeLoginSession, session, ct)
+            .ConfigureAwait(false);
+        return true;
+    }
+
     public async Task DeliverPendingOnConnectAsync(Guid workerId, CancellationToken ct = default)
     {
         if (!registry.IsConnected(workerId))
@@ -86,6 +103,7 @@ public sealed class WorkerPushNotifier(
         var db = scope.ServiceProvider.GetRequiredService<OrbitaDbContext>();
         var captchaSessions = scope.ServiceProvider.GetRequiredService<CaptchaSessionService>();
         var browserMonitorSessions = scope.ServiceProvider.GetRequiredService<BrowserMonitorService>();
+        var localChromeLoginSessions = scope.ServiceProvider.GetRequiredService<LocalChromeLoginSessionService>();
 
         var worker = await db.Workers.AsNoTracking()
             .FirstOrDefaultAsync(x => x.Id == workerId, ct)
@@ -114,6 +132,12 @@ public sealed class WorkerPushNotifier(
         if (pendingBrowserMonitor is not null)
         {
             await TryPushBrowserMonitorSessionAsync(workerId, pendingBrowserMonitor, ct).ConfigureAwait(false);
+        }
+
+        var pendingLocalLogin = localChromeLoginSessions.GetPendingForWorker(workerId);
+        if (pendingLocalLogin is not null)
+        {
+            await TryPushLocalChromeLoginSessionAsync(workerId, pendingLocalLogin, ct).ConfigureAwait(false);
         }
 
         await PushConfigChangedAsync(workerId, ct).ConfigureAwait(false);

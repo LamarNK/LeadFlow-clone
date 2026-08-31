@@ -324,5 +324,30 @@ public static class WorkerPanelEndpoints
             return Results.Ok(new { message = "Аккаунт удалён. Папка профиля на диске не удалялась." });
         });
 
+        workerPanel.MapPost("/{id:guid}/accounts/{accountId:guid}/local/login-session", async (
+            Guid id,
+            Guid accountId,
+            LocalChromeLoginSessionService loginSessions,
+            OfficeScopeService officeScope,
+            ClaimsPrincipal principal,
+            CancellationToken ct) =>
+        {
+            var scope = await officeScope.ResolveAsync(principal, ct);
+            if (!scope.HasAccess)
+            {
+                return Results.Forbid();
+            }
+
+            var (session, error) = await loginSessions.StartAsync(id, accountId, principal, ct);
+            if (error is not null)
+            {
+                return error.Contains("не найден", StringComparison.OrdinalIgnoreCase)
+                    ? Results.NotFound(new { error })
+                    : Results.BadRequest(new { error });
+            }
+
+            return Results.Ok(session);
+        });
+
     }
 }

@@ -1136,7 +1136,7 @@ public sealed class OrbitaApiClient(
     public async Task<(bool Success, string? Error)> CreateLocalAccountAsync(
         Guid workerId,
         string displayName,
-        string localUserDataDir,
+        string? localUserDataDir = null,
         CancellationToken ct = default)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, $"api/v1/workers/{workerId}/accounts/local");
@@ -1182,6 +1182,25 @@ public sealed class OrbitaApiClient(
         using var request = new HttpRequestMessage(
             HttpMethod.Delete,
             $"api/v1/workers/{workerId}/accounts/{accountId}");
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (false, InvalidApiSessionError);
+        }
+
+        return response.IsSuccessStatusCode
+            ? (true, null)
+            : (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    public async Task<(bool Success, string? Error)> OpenLocalBrowserAsync(
+        Guid workerId,
+        Guid accountId,
+        CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"api/v1/workers/{workerId}/accounts/{accountId}/local/login-session");
         using var response = await SendAuthenticatedAsync(request, ct);
         if (response is null)
         {

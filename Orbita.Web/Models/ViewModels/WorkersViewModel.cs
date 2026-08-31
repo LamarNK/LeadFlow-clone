@@ -277,6 +277,10 @@ public sealed class WorkerAccountRowViewModel
     public bool IsMultilogin => !string.IsNullOrWhiteSpace(MultiloginProfileId);
     public bool IsLocal =>
         !string.IsNullOrWhiteSpace(LocalUserDataDir) && string.IsNullOrWhiteSpace(MultiloginProfileId);
+    public bool IsManagedLocalProfile =>
+        IsLocal && LocalChromeProfileMarkers.IsManaged(LocalUserDataDir);
+    public bool NeedsFirstLogin { get; init; }
+    public string OpenBrowserLabel { get; init; } = "Открыть браузер";
     public string ProfileProvider =>
         IsMultilogin ? "Multilogin" : IsLocal ? "Local" : "AdsPower";
     public string ProfileProviderLabel =>
@@ -289,6 +293,11 @@ public sealed class WorkerAccountRowViewModel
         {
             if (IsLocal)
             {
+                if (IsManagedLocalProfile)
+                {
+                    return "Автопрофиль";
+                }
+
                 return ShortPath(LocalUserDataDir);
             }
 
@@ -312,6 +321,11 @@ public sealed class WorkerAccountRowViewModel
         {
             if (IsLocal)
             {
+                if (IsManagedLocalProfile)
+                {
+                    return "Папка профиля создаётся автоматически на машине воркера";
+                }
+
                 return string.IsNullOrWhiteSpace(LocalUserDataDir)
                     ? null
                     : $"Папка профиля: {LocalUserDataDir}";
@@ -334,7 +348,9 @@ public sealed class WorkerAccountRowViewModel
     }
     public string? ProfileIdTitle =>
         IsLocal
-            ? (string.IsNullOrWhiteSpace(LocalUserDataDir) ? "Обычный браузер" : $"Профиль: {LocalUserDataDir}")
+            ? (IsManagedLocalProfile || string.IsNullOrWhiteSpace(LocalUserDataDir)
+                ? "Обычный браузер"
+                : $"Профиль: {LocalUserDataDir}")
             : IsMultilogin
                 ? (string.IsNullOrWhiteSpace(MultiloginProfileId) ? "Multilogin" : $"Профиль Multilogin: {MultiloginProfileId}")
                 : (string.IsNullOrWhiteSpace(AdsPowerProfileId) ? "AdsPower" : $"Профиль AdsPower: {AdsPowerProfileId}");

@@ -158,12 +158,14 @@ internal static class Program
         host.Services.AddSingleton<IMultiloginBrowserConnector, PuppeteerMultiloginBrowserConnector>();
         host.Services.AddSingleton<IMultiloginCdpConnector, MultiloginCdpConnector>();
         host.Services.AddSingleton<ILocalChromeBrowserLauncher, LocalChromeBrowserLauncher>();
+        host.Services.AddSingleton<LocalChromeAccountLock>();
         host.Services.AddSingleton<WorkerAccountSessionFactory>();
         host.Services.AddSingleton<LeadFlow.Core.Services.Captcha.CaptchaSessionHost>();
         host.Services.AddSingleton<CaptchaSessionCoordinator>();
         host.Services.AddSingleton<BrowserMonitorSource>();
         host.Services.AddSingleton<IBrowserMonitorSource>(sp => sp.GetRequiredService<BrowserMonitorSource>());
         host.Services.AddSingleton<BrowserMonitorCoordinator>();
+        host.Services.AddSingleton<LocalChromeLoginCoordinator>();
         host.Services.AddSingleton<AvitoDemoResponseSource>();
         host.Services.AddSingleton<AvitoParserService>();
         host.Services.AddSingleton<IAvitoResponseSource, AvitoResponseSource>();

@@ -62,7 +62,7 @@ public interface IWorkersService
     Task<(bool Success, string? Error)> CreateLocalAccountAsync(
         Guid workerId,
         string displayName,
-        string localUserDataDir,
+        string? localUserDataDir = null,
         CancellationToken ct = default);
     Task<(bool Success, string? Error)> UpdateLocalAccountAsync(
         Guid workerId,
@@ -71,6 +71,7 @@ public interface IWorkersService
         string? localUserDataDir,
         CancellationToken ct = default);
     Task<(bool Success, string? Error)> DeleteLocalAccountAsync(Guid workerId, Guid accountId, CancellationToken ct = default);
+    Task<(bool Success, string? Error)> OpenLocalBrowserAsync(Guid workerId, Guid accountId, CancellationToken ct = default);
     Task<(bool Success, string? Error)> UpdateWorkerAccountCredentialsAsync(
         Guid workerId,
         Guid accountId,

@@ -11,7 +11,7 @@ public sealed class LocalChromeBrowserLauncher : ILocalChromeBrowserLauncher
         ArgumentNullException.ThrowIfNull(options);
         cancellationToken.ThrowIfCancellationRequested();
 
-        var userDataDir = LocalChromePaths.NormalizeUserDataDir(options.UserDataDir);
+        var userDataDir = LocalChromePaths.NormalizeUserDataDir(options.UserDataDir, options.AccountId);
         LocalChromePaths.EnsureUserDataDir(userDataDir);
         var executable = LocalChromePaths.ResolveExecutable(options.ExecutablePath);
 

@@ -23,6 +23,12 @@ public sealed class NoopWorkerPushNotifier : IWorkerPushNotifier
         CancellationToken ct = default) =>
         Task.FromResult(false);
 
+    public Task<bool> TryPushLocalChromeLoginSessionAsync(
+        Guid workerId,
+        WorkerPendingLocalChromeLoginDto session,
+        CancellationToken ct = default) =>
+        Task.FromResult(false);
+
     public Task DeliverPendingOnConnectAsync(Guid workerId, CancellationToken ct = default) =>
         Task.CompletedTask;
 }

@@ -211,7 +211,7 @@
             '  <label class="orbita-avito-cred-modal__label">Папка профиля (User Data)' +
             '    <input type="text" class="orbita-avito-cred-modal__input" data-local-account-dir maxlength="1024" autocomplete="off" spellcheck="false" />' +
             '  </label>' +
-            '  <p class="orbita-avito-cred-modal__status">Отдельная папка на машине воркера. Стандартный профиль Chrome использовать нельзя. Папка на диске не удаляется.</p>' +
+            '  <p class="orbita-avito-cred-modal__status" data-local-account-status>Отдельная папка на машине воркера. Стандартный профиль Chrome использовать нельзя. Папка на диске не удаляется.</p>' +
             '  <div class="orbita-avito-cred-modal__actions">' +
             '    <button type="button" class="orbita-avito-cred-modal__btn" data-local-account-close>Отмена</button>' +
             '    <button type="button" class="orbita-avito-cred-modal__btn orbita-avito-cred-modal__btn--primary" data-local-account-save>Сохранить</button>' +
@@ -226,6 +226,7 @@
         var nameInput = modal.querySelector('[data-local-account-name]');
         var dirInput = modal.querySelector('[data-local-account-dir]');
         var accountEl = modal.querySelector('[data-local-account-account]');
+        var statusEl = modal.querySelector('[data-local-account-status]');
         var saveBtn = modal.querySelector('[data-local-account-save]');
 
         accountEl.textContent = opts.accountName
@@ -233,6 +234,14 @@
             : '';
         nameInput.value = opts.accountName || '';
         dirInput.value = opts.userDataDir || '';
+        dirInput.placeholder = opts.managed
+            ? 'Оставьте пустым, чтобы сохранить автоматический профиль'
+            : 'D:\\Orbita\\ChromeProfiles\\account-1';
+        if (statusEl) {
+            statusEl.textContent = opts.managed
+                ? 'Профиль создаётся автоматически на машине воркера. Путь можно задать, только если подключаете уже существующую папку. Папка на диске не удаляется.'
+                : 'Отдельная папка на машине воркера. Стандартный профиль Chrome использовать нельзя. Папка на диске не удаляется.';
+        }
         modal.hidden = false;
 
         function close() {
@@ -254,18 +263,21 @@
                 runtime.showToast('Укажите имя аккаунта', { variant: 'error' });
                 return;
             }
-            if (!localUserDataDir) {
+            if (!localUserDataDir && !opts.managed) {
                 runtime.showToast('Укажите путь к отдельной папке профиля', { variant: 'error' });
                 return;
             }
 
             saveBtn.disabled = true;
-            var result = await runtime.postForm(opts.postUrl, {
+            var payload = {
                 workerId: opts.workerId,
                 accountId: opts.accountId,
-                displayName: displayName,
-                localUserDataDir: localUserDataDir
-            });
+                displayName: displayName
+            };
+            if (localUserDataDir) {
+                payload.localUserDataDir = localUserDataDir;
+            }
+            var result = await runtime.postForm(opts.postUrl, payload);
             saveBtn.disabled = false;
 
             if (result.ok) {
@@ -294,6 +306,7 @@
                     accountId: btn.getAttribute('data-account-id'),
                     accountName: btn.getAttribute('data-account-name') || '',
                     userDataDir: btn.getAttribute('data-user-data-dir') || '',
+                    managed: btn.getAttribute('data-managed') === 'true',
                     postUrl: btn.getAttribute('data-post-url') || '/Workers/UpdateLocalAccount'
                 });
             });
@@ -387,6 +400,42 @@
         bind('[data-provider-check]', '/Workers/CheckProvider', 'Проверка на воркере…');
         bind('[data-provider-sync]', '/Workers/SyncProvider', 'Синхронизация запущена на воркере.');
     };
+
+    runtime.initLocalOpenBrowserButtons = function initLocalOpenBrowserButtons() {
+        document.querySelectorAll('[data-local-open-browser]').forEach(function (btn) {
+            if (btn.hasAttribute('data-local-open-browser-bound')) return;
+            btn.setAttribute('data-local-open-browser-bound', '1');
+
+            btn.addEventListener('click', async function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                runtime.closeAllRowMenus();
+                if (btn.disabled) return;
+
+                var workerId = btn.getAttribute('data-worker-id');
+                var accountId = btn.getAttribute('data-account-id');
+                if (!workerId || !accountId) return;
+
+                btn.disabled = true;
+                var result = await runtime.postForm(btn.getAttribute('data-post-url') || '/Workers/OpenLocalBrowser', {
+                    workerId: workerId,
+                    accountId: accountId
+                });
+                btn.disabled = false;
+
+                if (result.ok) {
+                    runtime.showToast(
+                        (result.payload && result.payload.message) || 'На машине воркера открывается Chrome. Войдите в Avito и закройте браузер.',
+                        { variant: 'success' });
+                    if (window.OrbitaLive && window.OrbitaLive.scheduleRefresh) {
+                        window.OrbitaLive.scheduleRefresh({ kinds: ['Accounts', 'Workers'] });
+                    }
+                } else {
+                    runtime.showToast((result.payload && result.payload.error) || 'Не удалось открыть браузер', { variant: 'error' });
+                }
+            });
+        });
+    }
 
     runtime.initWorkerAccountEnableToggles = function initWorkerAccountEnableToggles() {
         document.querySelectorAll('[data-account-enable-toggle]').forEach(function (input) {
@@ -671,6 +720,7 @@
     runtime.initProviderConnectionButtons();
     runtime.initAvitoCredentialsButtons();
     runtime.initLocalAccountEditButtons();
+    runtime.initLocalOpenBrowserButtons();
     runtime.initSubProfilesRefreshButtons();
     runtime.initSubProfileScreenshotLinks();
     runtime.initUserMenu();

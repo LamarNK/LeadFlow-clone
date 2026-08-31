@@ -229,10 +229,16 @@ internal static class WorkerDetailsBuilder
             adsPowerEnabled,
             multiloginEnabled,
             localChromeEnabled);
-        var (label, tone) = AccountStatusMapper.ForWorkerDetails(
-            account.Status,
-            account.IsEnabledInPanel,
-            providerEnabled);
+        var (label, tone) = IsLocalAccount(account)
+            ? LocalChromeAccountStatus.ForWorkerDetails(
+                account.Status,
+                account.IsEnabledInPanel,
+                providerEnabled,
+                account.LastMonitoringAt)
+            : AccountStatusMapper.ForWorkerDetails(
+                account.Status,
+                account.IsEnabledInPanel,
+                providerEnabled);
         var responses = account.TodayResponses;
         var metricLinks = AccountMetricLinks.Hrefs(workerId, account.AccountId);
         var subProfiles = SubProfileViewModelMapper.Map(
@@ -275,6 +281,15 @@ internal static class WorkerDetailsBuilder
             AvitoLogin = account.AvitoLogin,
             StatusLabel = label,
             StatusTone = tone,
+            NeedsFirstLogin = IsLocalAccount(account)
+                && LocalChromeAccountStatus.IsFirstLoginRequired(
+                    account.Status,
+                    account.LastMonitoringAt),
+            OpenBrowserLabel = IsLocalAccount(account)
+                ? LocalChromeAccountStatus.OpenBrowserLabel(
+                    account.Status,
+                    account.LastMonitoringAt)
+                : "Открыть браузер",
             Balance = balance?.TotalBalance,
             BalanceText = balance is null
                 ? "—"
@@ -320,6 +335,10 @@ internal static class WorkerDetailsBuilder
 
         return adsPowerEnabled;
     }
+
+    private static bool IsLocalAccount(WorkerAccountDto account) =>
+        !string.IsNullOrWhiteSpace(account.LocalUserDataDir)
+        && string.IsNullOrWhiteSpace(account.MultiloginProfileId);
 
     private static WorkerBrowserProviderCheckDto ResolvePresentedCheck(
         WorkerBrowserProviderCheckDto? dto,

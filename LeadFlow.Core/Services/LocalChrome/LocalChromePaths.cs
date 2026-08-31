@@ -1,9 +1,11 @@
+using Orbita.Contracts;
+
 namespace LeadFlow.Core.Services.LocalChrome;
 
 public static class LocalChromePaths
 {
     public const int MaxExecutablePathLength = 512;
-    public const int MaxUserDataDirLength = 1024;
+    public const int MaxUserDataDirLength = LocalChromeUserDataRules.MaxUserDataDirLength;
     public const int MaxDisplayNameLength = 200;
 
     public static string ResolveExecutable(string? configuredPath)
@@ -38,8 +40,25 @@ public static class LocalChromePaths
             "Не найден установленный Chrome или Chromium. Укажите путь к chrome.exe в настройках воркера.");
     }
 
-    public static string NormalizeUserDataDir(string? path)
+    public static string NormalizeUserDataDir(string? path, Guid accountId = default)
     {
+        if (LocalChromeProfileMarkers.IsManaged(path)
+            || (string.IsNullOrWhiteSpace(path) && accountId != Guid.Empty))
+        {
+            if (!LocalChromeProfileMarkers.TryParseAccountId(path, out var managedId))
+            {
+                managedId = accountId;
+            }
+
+            if (managedId == Guid.Empty)
+            {
+                throw new InvalidOperationException(
+                    "Укажите путь к отдельной папке профиля Chrome (User Data).");
+            }
+
+            path = GetManagedUserDataDir(managedId);
+        }
+
         if (string.IsNullOrWhiteSpace(path))
         {
             throw new InvalidOperationException(
@@ -62,27 +81,29 @@ public static class LocalChromePaths
         return trimmed;
     }
 
+    public static string GetManagedUserDataDir(Guid accountId)
+    {
+        if (accountId == Guid.Empty)
+        {
+            throw new ArgumentException("Нужен идентификатор аккаунта.", nameof(accountId));
+        }
+
+        var local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        if (string.IsNullOrWhiteSpace(local))
+        {
+            local = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                "AppData",
+                "Local");
+        }
+
+        return Path.Combine(local, "Orbita", "ChromeProfiles", accountId.ToString("D"));
+    }
+
     public static void EnsureUserDataDir(string path) => Directory.CreateDirectory(path);
 
-    public static bool IsDefaultBrowserProfile(string path)
-    {
-        if (string.IsNullOrWhiteSpace(path))
-        {
-            return false;
-        }
-
-        var normalized = path.Trim().Replace('/', Path.DirectorySeparatorChar)
-            .TrimEnd(Path.DirectorySeparatorChar);
-        foreach (var forbidden in EnumerateDefaultProfilePaths())
-        {
-            if (string.Equals(normalized, forbidden, StringComparison.OrdinalIgnoreCase))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
+    public static bool IsDefaultBrowserProfile(string path) =>
+        LocalChromeUserDataRules.LooksLikeForbiddenProfile(path);
 
     internal static IEnumerable<string> EnumerateInstalledBrowserPaths()
     {
@@ -100,22 +121,5 @@ public static class LocalChromePaths
         yield return Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles);
         yield return Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86);
         yield return Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-    }
-
-    private static IEnumerable<string> EnumerateDefaultProfilePaths()
-    {
-        var local = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-        if (string.IsNullOrWhiteSpace(local))
-        {
-            yield break;
-        }
-
-        var chromeUserData = Path.Combine(local, "Google", "Chrome", "User Data");
-        yield return chromeUserData;
-        yield return Path.Combine(chromeUserData, "Default");
-
-        var chromiumUserData = Path.Combine(local, "Chromium", "User Data");
-        yield return chromiumUserData;
-        yield return Path.Combine(chromiumUserData, "Default");
     }
 }

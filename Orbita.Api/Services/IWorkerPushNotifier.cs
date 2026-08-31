@@ -18,5 +18,10 @@ public interface IWorkerPushNotifier
         WorkerPendingBrowserMonitorSessionDto session,
         CancellationToken ct = default);
 
+    Task<bool> TryPushLocalChromeLoginSessionAsync(
+        Guid workerId,
+        WorkerPendingLocalChromeLoginDto session,
+        CancellationToken ct = default);
+
     Task DeliverPendingOnConnectAsync(Guid workerId, CancellationToken ct = default);
 }

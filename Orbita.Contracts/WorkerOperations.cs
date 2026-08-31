@@ -108,7 +108,8 @@ public sealed record WorkerConfigDto(
     /// <summary>Запускать аккаунты обычного Chrome. По умолчанию включено.</summary>
     bool LocalChromeEnabled = true,
     WorkerPendingBrowserProviderCheckDto? PendingProviderCheck = null,
-    WorkerPendingBrowserProviderSyncDto? PendingProviderSync = null)
+    WorkerPendingBrowserProviderSyncDto? PendingProviderSync = null,
+    WorkerPendingLocalChromeLoginDto? PendingLocalChromeLogin = null)
 {
     public bool ShouldSyncAdsPowerCatalog => AdsPowerEnabled;
 
@@ -422,9 +423,16 @@ public sealed record ReportWorkerBrowserProviderCheckRequest(
     bool CompletesSync = false,
     IReadOnlyList<AdsPowerGroupDto>? Groups = null);
 
-public sealed record CreateLocalWorkerAccountRequest(string DisplayName, string LocalUserDataDir);
+public sealed record CreateLocalWorkerAccountRequest(string DisplayName, string? LocalUserDataDir = null);
 
 public sealed record UpdateLocalWorkerAccountRequest(string? DisplayName = null, string? LocalUserDataDir = null);
+
+public sealed record WorkerPendingLocalChromeLoginDto(
+    Guid SessionId,
+    Guid WorkerId,
+    Guid AccountId);
+
+public sealed record CompleteLocalChromeLoginRequest(Guid SessionId);
 
 /// <summary>
 /// Обновление логина/пароля Avito для аккаунта.
