@@ -562,7 +562,11 @@ public sealed class CrmSipRuntimeConfigWriter(IOptions<CrmSipRuntimeOptions> con
             max_contacts=1
             remove_existing=yes
             support_path=yes
-            qualify_frequency=30
+            ; JsSIP registers successfully over WSS but does not answer the
+            ; out-of-dialog OPTIONS probes used by PJSIP qualification. Keeping
+            ; qualification enabled marks a healthy browser contact Unavailable
+            ; a few seconds after registration and prevents inbound calls.
+            qualify_frequency=0
 
             [{{endpoint.AuthorizationUsername}}-auth]
             type=auth

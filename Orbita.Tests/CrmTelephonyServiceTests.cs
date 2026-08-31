@@ -104,6 +104,8 @@ public sealed class CrmTelephonyServiceTests
             Assert.Contains("username=201-webrtc", runtimeConfig, StringComparison.Ordinal);
             Assert.Contains($"password={endpoint.Password}", runtimeConfig, StringComparison.Ordinal);
             Assert.Contains("callerid=201 <201>", runtimeConfig, StringComparison.Ordinal);
+            Assert.Contains("qualify_frequency=0", runtimeConfig, StringComparison.Ordinal);
+            Assert.DoesNotContain("qualify_frequency=30", runtimeConfig, StringComparison.Ordinal);
 
             var (sameEndpoint, sameEndpointError) = await sut.GetOrProvisionWebRtcEndpointAsync(officeId, userId);
             Assert.NotNull(sameEndpoint);
