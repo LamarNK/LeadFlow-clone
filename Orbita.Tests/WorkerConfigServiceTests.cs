@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Options;
+using LeadFlow.Core.Services.LocalChrome;
 using Orbita.Api.Data;
 using Orbita.Api.Helpers;
 using Orbita.Api.Options;
@@ -1012,6 +1013,52 @@ public sealed class WorkerConfigServiceTests
     }
 
     [Fact]
+    public async Task CreateLocalAccountAsync_WithoutPath_StoresUniqueManagedMarker()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db);
+
+        var sut = CreateService(db);
+        var (first, firstError) = await sut.CreateLocalAccountAsync(
+            WorkerId,
+            new CreateLocalWorkerAccountRequest("Кабинет 1"),
+            OfficeScope.ForOffice(OfficeId));
+        var (second, secondError) = await sut.CreateLocalAccountAsync(
+            WorkerId,
+            new CreateLocalWorkerAccountRequest("Кабинет 2"),
+            OfficeScope.ForOffice(OfficeId));
+
+        Assert.Null(firstError);
+        Assert.Null(secondError);
+        Assert.Equal("RequiresLogin", first!.Status);
+        Assert.False(first.IsEnabled);
+        Assert.True(LocalChromeProfileMarkers.IsManaged(first.LocalUserDataDir));
+        Assert.NotEqual(first.LocalUserDataDir, second!.LocalUserDataDir);
+        Assert.False(LocalChromeUserDataRules.LooksLikeForbiddenProfile(first.LocalUserDataDir!));
+        Assert.Contains(first.AccountId.ToString("D"), first.LocalUserDataDir, StringComparison.OrdinalIgnoreCase);
+
+        var resolved = LocalChromePaths.NormalizeUserDataDir(first.LocalUserDataDir, first.AccountId);
+        Assert.False(resolved.EndsWith($"{Path.DirectorySeparatorChar}Default", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public async Task CreateLocalAccountAsync_ExistingPath_StillSupported()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db);
+
+        var (account, error) = await CreateService(db).CreateLocalAccountAsync(
+            WorkerId,
+            new CreateLocalWorkerAccountRequest("Готовый", @"D:\Orbita\ChromeProfiles\legacy"),
+            OfficeScope.ForOffice(OfficeId));
+
+        Assert.Null(error);
+        Assert.Equal(@"D:\Orbita\ChromeProfiles\legacy", account!.LocalUserDataDir);
+        Assert.False(LocalChromeProfileMarkers.IsManaged(account.LocalUserDataDir));
+        Assert.NotEqual("RequiresLogin", account.Status);
+    }
+
+    [Fact]
     public async Task CreateLocalAccountAsync_RejectsDefaultChromeProfile()
     {
         await using var db = CreateDb();
@@ -1106,6 +1153,40 @@ public sealed class WorkerConfigServiceTests
         Assert.False(adsDeleted);
         Assert.Contains("обычного браузера", adsError, StringComparison.Ordinal);
         Assert.Contains(await db.WorkerAccounts.ToListAsync(), a => a.AccountId == AccountId);
+    }
+
+    [Fact]
+    public async Task DeleteLocalAccountAsync_DoesNotDeleteProfileFolder()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db);
+        var folder = Path.Combine(Path.GetTempPath(), $"orbita-keep-{Guid.NewGuid():N}");
+        Directory.CreateDirectory(folder);
+        try
+        {
+            var (account, createError) = await CreateService(db).CreateLocalAccountAsync(
+                WorkerId,
+                new CreateLocalWorkerAccountRequest("disk", folder),
+                OfficeScope.ForOffice(OfficeId));
+            Assert.Null(createError);
+
+            var (deleted, error) = await CreateService(db).DeleteLocalAccountAsync(
+                WorkerId,
+                account!.AccountId,
+                OfficeScope.ForOffice(OfficeId));
+
+            Assert.True(deleted);
+            Assert.Null(error);
+            Assert.True(Directory.Exists(folder));
+            Assert.DoesNotContain(await db.WorkerAccounts.ToListAsync(), a => a.AccountId == account.AccountId);
+        }
+        finally
+        {
+            if (Directory.Exists(folder))
+            {
+                Directory.Delete(folder, recursive: true);
+            }
+        }
     }
 
     [Fact]

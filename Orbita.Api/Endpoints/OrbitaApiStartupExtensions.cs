@@ -207,6 +207,7 @@ public static class OrbitaApiStartupExtensions
         builder.Services.AddSingleton<CaptchaRelayRegistry>();
         builder.Services.AddSingleton<BrowserMonitorRegistry>();
         builder.Services.AddSingleton<BrowserMonitorService>();
+        builder.Services.AddSingleton<LocalChromeLoginSessionService>();
         builder.Services.AddSingleton<ICaptchaSessionRelayNotifier, CaptchaSessionRelayNotifier>();
         builder.Services.AddScoped<CaptchaSessionService>();
         builder.Services.AddSingleton<ICaptchaLockNotifier, CaptchaLockNotifier>();

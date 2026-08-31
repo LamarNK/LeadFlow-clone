@@ -209,6 +209,14 @@ public sealed class OrbitaApiClient
         return response.IsSuccessStatusCode;
     }
 
+    public async Task CompleteLocalChromeLoginAsync(Guid sessionId, CancellationToken ct)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "api/v1/workers/local-chrome-login/complete");
+        ApplyAuth(request);
+        request.Content = JsonContent.Create(new CompleteLocalChromeLoginRequest(sessionId));
+        await _http.SendAsync(request, ct).ConfigureAwait(false);
+    }
+
     public async Task SendHeartbeatAsync(WorkerHeartbeatRequest heartbeat, CancellationToken ct)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, "api/v1/workers/heartbeat");

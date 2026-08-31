@@ -113,6 +113,21 @@ public static class WorkerEndpoints
             return success ? Results.Ok() : Results.BadRequest(new { error });
         }).RequireAuthorization("Worker");
 
+        workers.MapPost("/local-chrome-login/complete", async (
+            CompleteLocalChromeLoginRequest request,
+            LocalChromeLoginSessionService loginSessions,
+            ClaimsPrincipal user) =>
+        {
+            if (!TryGetWorkerId(user, out var workerId))
+            {
+                return Results.Forbid();
+            }
+
+            return loginSessions.CompleteFromWorker(workerId, request.SessionId)
+                ? Results.Ok()
+                : Results.NotFound();
+        }).RequireAuthorization("Worker");
+
         workers.MapGet("/captcha-sessions/{id:guid}", async (
             Guid id,
             CaptchaSessionService captchaSessions,

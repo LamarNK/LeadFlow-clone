@@ -1059,36 +1059,58 @@
         </div>
         @if (isLocalProvider)
         {
-            <form asp-action="CreateLocalAccount" method="post" class="worker-local-account-form">
-                @Html.AntiForgeryToken()
-                <input type="hidden" name="workerId" value="@Model.WorkerId" />
-                <span class="worker-local-account-form-title">Добавить аккаунт обычного браузера</span>
-                <label class="worker-settings-field" for="localAccountDisplayName">
-                    <span class="worker-settings-label">Имя</span>
-                    <input type="text"
-                           id="localAccountDisplayName"
-                           name="displayName"
-                           class="worker-settings-input"
-                           maxlength="200"
-                           required
-                           placeholder="Например, Avito — кабинет 1"
-                           autocomplete="off" />
-                </label>
-                <label class="worker-settings-field" for="localAccountUserDataDir">
-                    <span class="worker-settings-label">Папка профиля (User Data)</span>
-                    <input type="text"
-                           id="localAccountUserDataDir"
-                           name="localUserDataDir"
-                           class="worker-settings-input"
-                           maxlength="1024"
-                           required
-                           placeholder="D:\Orbita\ChromeProfiles\account-1"
-                           autocomplete="off"
-                           spellcheck="false" />
-                    <span class="worker-settings-hint">Отдельная папка на машине воркера. Не используйте стандартный профиль Chrome. Папка создаётся воркером при первом запуске.</span>
-                </label>
-                <button type="submit" class="worker-refresh-btn">Добавить аккаунт</button>
-            </form>
+            <div class="worker-local-account-panel">
+                <p class="worker-local-account-steps">Создайте аккаунт → Откройте браузер → Войдите в Avito → Закройте браузер → Включите мониторинг.</p>
+                <form asp-action="CreateLocalAccount" method="post" class="worker-local-account-form">
+                    @Html.AntiForgeryToken()
+                    <input type="hidden" name="workerId" value="@Model.WorkerId" />
+                    <span class="worker-local-account-form-title">Создать браузерный аккаунт</span>
+                    <label class="worker-settings-field" for="localAccountDisplayName">
+                        <span class="worker-settings-label">Название</span>
+                        <input type="text"
+                               id="localAccountDisplayName"
+                               name="displayName"
+                               class="worker-settings-input"
+                               maxlength="200"
+                               required
+                               placeholder="Например, Авито — кабинет 1"
+                               autocomplete="off" />
+                    </label>
+                    <button type="submit" class="worker-refresh-btn">Создать браузерный аккаунт</button>
+                </form>
+                <details class="worker-local-account-advanced">
+                    <summary>Подключить существующую папку профиля</summary>
+                    <form asp-action="CreateLocalAccount" method="post" class="worker-local-account-form worker-local-account-form--advanced">
+                        @Html.AntiForgeryToken()
+                        <input type="hidden" name="workerId" value="@Model.WorkerId" />
+                        <label class="worker-settings-field" for="localAttachDisplayName">
+                            <span class="worker-settings-label">Название</span>
+                            <input type="text"
+                                   id="localAttachDisplayName"
+                                   name="displayName"
+                                   class="worker-settings-input"
+                                   maxlength="200"
+                                   required
+                                   placeholder="Например, Авито — кабинет 1"
+                                   autocomplete="off" />
+                        </label>
+                        <label class="worker-settings-field" for="localAccountUserDataDir">
+                            <span class="worker-settings-label">Папка профиля (User Data)</span>
+                            <input type="text"
+                                   id="localAccountUserDataDir"
+                                   name="localUserDataDir"
+                                   class="worker-settings-input"
+                                   maxlength="1024"
+                                   required
+                                   placeholder="D:\Orbita\ChromeProfiles\account-1"
+                                   autocomplete="off"
+                                   spellcheck="false" />
+                            <span class="worker-settings-hint">Только отдельная папка на машине воркера. Системный Chrome User Data и Default использовать нельзя. При удалении записи папка на диске не удаляется.</span>
+                        </label>
+                        <button type="submit" class="worker-refresh-btn">Подключить папку</button>
+                    </form>
+                </details>
+            </div>
         }
         <div class="card-body card-body-table worker-accounts-wrap">
             <div data-worker-accounts-empty @(Model.Accounts.Count == 0 ? null : "hidden")>
@@ -1099,7 +1121,7 @@
                     Description = Model.HasActiveAccountFilters
                         ? "Измените поисковый запрос."
                         : isLocalProvider
-                            ? "Добавьте аккаунт вручную: имя и путь к отдельной папке профиля Chrome на машине воркера."
+                            ? "Создайте аккаунт, откройте браузер, войдите в Avito и затем включите мониторинг."
                             : "Дождитесь синхронизации профилей AdsPower или Multilogin с воркером.",
                     CtaLabel = Model.HasActiveAccountFilters ? "Сбросить фильтры" : null,
                     CtaUrl = Model.HasActiveAccountFilters
@@ -1183,6 +1205,20 @@
                             {
                                 <span class="account-error-hint" title="@account.ErrorHint">@account.ErrorHint</span>
                             }
+                            @if (account.IsLocal)
+                            {
+                                <form asp-action="OpenLocalBrowser" method="post" class="worker-local-open-form">
+                                    @Html.AntiForgeryToken()
+                                    <input type="hidden" name="workerId" value="@Model.WorkerId" />
+                                    <input type="hidden" name="accountId" value="@account.Id" />
+                                    <button type="submit"
+                                            class="worker-local-open-btn"
+                                            data-local-open-browser
+                                            data-worker-id="@Model.WorkerId"
+                                            data-account-id="@account.Id"
+                                            data-post-url="@Url.Action("OpenLocalBrowser", "Workers")">@account.OpenBrowserLabel</button>
+                                </form>
+                            }
                         </td>
                         <td class="cell-num cell-balance" data-label="Баланс"><span class="account-balance-multiline">@account.BalanceText</span></td>
                         <td class="cell-num" data-label="Откликов">
@@ -1224,13 +1260,28 @@
                                     </a>
                                     @if (account.IsLocal)
                                     {
+                                        <form asp-action="OpenLocalBrowser" method="post" class="row-menu-item-form">
+                                            @Html.AntiForgeryToken()
+                                            <input type="hidden" name="workerId" value="@Model.WorkerId" />
+                                            <input type="hidden" name="accountId" value="@account.Id" />
+                                            <button type="submit"
+                                                    class="row-menu-item"
+                                                    data-local-open-browser
+                                                    data-worker-id="@Model.WorkerId"
+                                                    data-account-id="@account.Id"
+                                                    data-post-url="@Url.Action("OpenLocalBrowser", "Workers")">
+                                                <i class="fa-regular fa-window-maximize" aria-hidden="true"></i>
+                                                @account.OpenBrowserLabel
+                                            </button>
+                                        </form>
                                         <button type="button"
                                                 class="row-menu-item"
                                                 data-local-account-edit
                                                 data-worker-id="@Model.WorkerId"
                                                 data-account-id="@account.Id"
                                                 data-account-name="@account.DisplayName"
-                                                data-user-data-dir="@(account.LocalUserDataDir ?? "")"
+                                                data-user-data-dir="@(account.IsManagedLocalProfile ? "" : account.LocalUserDataDir ?? "")"
+                                                data-managed="@(account.IsManagedLocalProfile ? "true" : "false")"
                                                 data-post-url="@Url.Action("UpdateLocalAccount", "Workers")">
                                             <i class="fa-regular fa-folder-open" aria-hidden="true"></i>
                                             Папка профиля

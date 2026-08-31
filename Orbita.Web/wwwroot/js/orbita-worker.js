@@ -686,11 +686,20 @@
         return shared.urlFromTemplate(shared.getLiveAttr('data-responses-filter-url'), '__id__', accountId);
     }
 
+    function isManagedLocalProfile(account) {
+        if (!account) return false;
+        if (account.isManagedLocalProfile) return true;
+        var dir = account.localUserDataDir || '';
+        return dir.indexOf('orbita-managed:') === 0;
+    }
+
     function renderWorkerAccountMenu(account) {
         var workerId = getWorkerId();
         var hasPassword = !!account.hasAvitoCredentials;
         var login = account.avitoLogin || '';
         var isLocal = !!(account.isLocal || account.localUserDataDir);
+        var managed = isManagedLocalProfile(account);
+        var openLabel = account.openBrowserLabel || 'Открыть браузер';
         var items = '<a class="row-menu-item" href="' + shared.escapeHtml(accountSearchUrl(account.displayName)) + '">' +
             '<i class="fa-regular fa-eye" aria-hidden="true"></i>Просмотр</a>' +
             '<a class="row-menu-item" href="#worker-accounts">' +
@@ -706,11 +715,17 @@
             '<a class="row-menu-item" href="' + shared.escapeHtml(responsesFilterUrl(account.id)) + '">' +
             '<i class="fa-regular fa-clock" aria-hidden="true"></i>История откликов</a>';
         if (isLocal) {
-            items += '<button type="button" class="row-menu-item" data-local-account-edit' +
+            items += '<button type="button" class="row-menu-item" data-local-open-browser' +
+                ' data-worker-id="' + shared.escapeHtml(workerId) + '"' +
+                ' data-account-id="' + shared.escapeHtml(account.id) + '"' +
+                ' data-post-url="/Workers/OpenLocalBrowser">' +
+                '<i class="fa-regular fa-window-maximize" aria-hidden="true"></i>' + shared.escapeHtml(openLabel) + '</button>' +
+                '<button type="button" class="row-menu-item" data-local-account-edit' +
                 ' data-worker-id="' + shared.escapeHtml(workerId) + '"' +
                 ' data-account-id="' + shared.escapeHtml(account.id) + '"' +
                 ' data-account-name="' + shared.escapeHtml(account.displayName || '') + '"' +
-                ' data-user-data-dir="' + shared.escapeHtml(account.localUserDataDir || '') + '"' +
+                ' data-user-data-dir="' + shared.escapeHtml(managed ? '' : (account.localUserDataDir || '')) + '"' +
+                ' data-managed="' + (managed ? 'true' : 'false') + '"' +
                 ' data-post-url="/Workers/UpdateLocalAccount">' +
                 '<i class="fa-regular fa-folder-open" aria-hidden="true"></i>Папка профиля</button>' +
                 '<button type="button" class="row-menu-item row-menu-item--danger" data-local-account-delete' +
@@ -725,16 +740,19 @@
     function renderWorkerAccountIdentity(account) {
         var isMlx = !!(account.isMultilogin || account.multiloginProfileId);
         var isLocal = !!(account.isLocal || account.localUserDataDir);
+        var managed = isManagedLocalProfile(account);
         var location = account.locationLabel || '';
         if (!location) {
             location = isLocal
-                ? (account.localUserDataDir || '')
+                ? (managed ? 'Автопрофиль' : (account.localUserDataDir || ''))
                 : (isMlx
                     ? (account.multiloginFolderId || '')
                     : (account.adsPowerGroupName || account.adsPowerGroupId || ''));
         }
         var locationTitle = account.locationTitle || (isLocal
-            ? (account.localUserDataDir ? 'Папка профиля: ' + account.localUserDataDir : '')
+            ? (managed
+                ? 'Папка профиля создаётся автоматически на машине воркера'
+                : (account.localUserDataDir ? 'Папка профиля: ' + account.localUserDataDir : ''))
             : (isMlx
                 ? (account.multiloginFolderId ? 'Папка Multilogin: ' + account.multiloginFolderId : '')
                 : (account.adsPowerGroupName || account.adsPowerGroupId
@@ -914,6 +932,14 @@
                 statusHtml += '<span class="account-error-hint" title="' + shared.escapeHtml(account.errorHint) + '">' +
                     shared.escapeHtml(account.errorHint) + '</span>';
             }
+            if (account.isLocal || account.localUserDataDir) {
+                var openLabel = account.openBrowserLabel || 'Открыть браузер';
+                statusHtml += '<form class="worker-local-open-form">' +
+                    '<button type="button" class="worker-local-open-btn" data-local-open-browser' +
+                    ' data-worker-id="' + shared.escapeHtml(workerId) + '"' +
+                    ' data-account-id="' + shared.escapeHtml(account.id) + '"' +
+                    ' data-post-url="/Workers/OpenLocalBrowser">' + shared.escapeHtml(openLabel) + '</button></form>';
+            }
             var activityHtml = account.lastActivityUtc
                 ? '<time data-orbita-utc="' + shared.escapeHtml(account.lastActivityUtc) + '" data-orbita-format="activity"></time>'
                 : '—';
@@ -997,6 +1023,9 @@
         }
         if (window.Orbita && typeof window.Orbita.initLocalAccountEditButtons === 'function') {
             window.Orbita.initLocalAccountEditButtons();
+        }
+        if (window.Orbita && typeof window.Orbita.initLocalOpenBrowserButtons === 'function') {
+            window.Orbita.initLocalOpenBrowserButtons();
         }
         initAccountRowNavigation();
     }

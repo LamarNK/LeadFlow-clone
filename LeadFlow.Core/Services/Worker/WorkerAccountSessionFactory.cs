@@ -124,7 +124,8 @@ public sealed class WorkerAccountSessionFactory(
                     new LocalChromeLaunchOptions
                     {
                         UserDataDir = account.BrowserProfilePath,
-                        ExecutablePath = account.LocalChromeExecutablePath
+                        ExecutablePath = account.LocalChromeExecutablePath,
+                        AccountId = account.Id
                     },
                     cancellationToken)
                 .ConfigureAwait(false);

@@ -16,7 +16,8 @@ public sealed class WorkerConfigService(
     CaptchaSessionService captchaSessions,
     BrowserMonitorService browserMonitorSessions,
     AvitoAccountSecretProtector avitoSecrets,
-    IMultiloginAutomationTokenIssuer? multiloginTokenIssuer = null)
+    IMultiloginAutomationTokenIssuer? multiloginTokenIssuer = null,
+    LocalChromeLoginSessionService? localChromeLoginSessions = null)
 {
     public Task<WorkerConfigDto?> GetConfigForWorkerAsync(
         Guid workerId,
@@ -84,6 +85,10 @@ public sealed class WorkerConfigService(
             .GetPendingForWorkerAsync(worker.Id, ct)
             .ConfigureAwait(false);
 
+        var pendingLocalChromeLogin = localChromeLoginSessions is null
+            ? null
+            : localChromeLoginSessions.GetPendingForWorker(worker.Id);
+
         var configuredParallelism = worker.MaxConcurrentAccounts;
         var ramBasedParallelism = WorkerParallelismRules.GetMaximumConcurrentAccounts(worker.LastRamTotalMb);
         var effectiveParallelism = ramBasedParallelism is null
@@ -127,7 +132,8 @@ public sealed class WorkerConfigService(
             worker.MultiloginEnabled,
             worker.LocalChromeEnabled,
             ToPendingCheck(worker),
-            ToPendingSync(worker));
+            ToPendingSync(worker),
+            pendingLocalChromeLogin);
     }
 
     public async Task<bool> SyncAccountsAsync(
@@ -1211,7 +1217,10 @@ public sealed class WorkerConfigService(
             return (null, nameError);
         }
 
-        if (!TryNormalizeLocalUserDataDir(request.LocalUserDataDir, out var userDataDir, out var pathError))
+        string? userDataDir = null;
+        var attachExisting = !string.IsNullOrWhiteSpace(request.LocalUserDataDir);
+        if (attachExisting
+            && !TryNormalizeLocalUserDataDir(request.LocalUserDataDir, out userDataDir, out var pathError))
         {
             return (null, pathError);
         }
@@ -1227,23 +1236,29 @@ public sealed class WorkerConfigService(
             return (null, "Воркер не найден.");
         }
 
-        var duplicate = await db.WorkerAccounts.AnyAsync(
-            x => x.WorkerId == workerId && x.LocalUserDataDir == userDataDir,
-            ct);
-        if (duplicate)
+        if (attachExisting)
         {
-            return (null, "Аккаунт с этой папкой профиля уже добавлен.");
+            var duplicate = await db.WorkerAccounts.AnyAsync(
+                x => x.WorkerId == workerId && x.LocalUserDataDir == userDataDir,
+                ct);
+            if (duplicate)
+            {
+                return (null, "Аккаунт с этой папкой профиля уже добавлен.");
+            }
         }
 
         var now = DateTime.UtcNow;
+        var accountId = Guid.NewGuid();
         var created = new WorkerAccountEntity
         {
             WorkerId = workerId,
-            AccountId = Guid.NewGuid(),
+            AccountId = accountId,
             AdsPowerProfileId = string.Empty,
-            LocalUserDataDir = userDataDir,
+            LocalUserDataDir = attachExisting
+                ? userDataDir
+                : LocalChromeProfileMarkers.CreateManaged(accountId),
             DisplayName = displayName,
-            Status = string.Empty,
+            Status = attachExisting ? string.Empty : "RequiresLogin",
             IsEnabled = false,
             IsEnabledInPanel = false,
             UpdatedAtUtc = now
@@ -1399,39 +1414,6 @@ public sealed class WorkerConfigService(
         return true;
     }
 
-    private static bool TryNormalizeLocalUserDataDir(string? value, out string normalized, out string? error)
-    {
-        normalized = string.Empty;
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            error = "Укажите путь к отдельной папке профиля Chrome на машине воркера.";
-            return false;
-        }
-
-        var trimmed = value.Trim();
-        if (trimmed.Length > 1024)
-        {
-            error = "Путь к папке профиля не должен превышать 1024 символов.";
-            return false;
-        }
-
-        if (LooksLikeDefaultChromeProfile(trimmed))
-        {
-            error = "Нельзя использовать стандартный профиль Chrome пользователя. Укажите отдельную папку профиля.";
-            return false;
-        }
-
-        normalized = trimmed;
-        error = null;
-        return true;
-    }
-
-    private static bool LooksLikeDefaultChromeProfile(string path)
-    {
-        var normalized = path.Replace('/', '\\').Trim().TrimEnd('\\');
-        return normalized.EndsWith(@"\Google\Chrome\User Data", StringComparison.OrdinalIgnoreCase)
-            || normalized.EndsWith(@"\Google\Chrome\User Data\Default", StringComparison.OrdinalIgnoreCase)
-            || normalized.EndsWith(@"\Chromium\User Data", StringComparison.OrdinalIgnoreCase)
-            || normalized.EndsWith(@"\Chromium\User Data\Default", StringComparison.OrdinalIgnoreCase);
-    }
+    private static bool TryNormalizeLocalUserDataDir(string? value, out string normalized, out string? error) =>
+        LocalChromeUserDataRules.TryNormalizeAttachedDir(value, out normalized, out error);
 }

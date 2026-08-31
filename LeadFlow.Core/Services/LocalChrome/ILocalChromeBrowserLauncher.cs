@@ -18,4 +18,6 @@ public sealed class LocalChromeLaunchOptions
     public string UserDataDir { get; init; } = string.Empty;
 
     public string? ExecutablePath { get; init; }
+
+    public Guid AccountId { get; init; }
 }

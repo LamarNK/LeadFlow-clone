@@ -1,4 +1,5 @@
 using LeadFlow.Core.Services.LocalChrome;
+using Orbita.Contracts;
 
 namespace Orbita.Tests;
 
@@ -34,6 +35,49 @@ public sealed class LocalChromePathsTests
         var path = @"D:\Orbita\ChromeProfiles\acc-1";
         Assert.Equal(path, LocalChromePaths.NormalizeUserDataDir("  " + path + "  "));
         Assert.False(LocalChromePaths.IsDefaultBrowserProfile(path));
+    }
+
+    [Fact]
+    public void GetManagedUserDataDir_IsUniqueAndNotDefault()
+    {
+        var first = Guid.NewGuid();
+        var second = Guid.NewGuid();
+        var path1 = LocalChromePaths.GetManagedUserDataDir(first);
+        var path2 = LocalChromePaths.GetManagedUserDataDir(second);
+
+        Assert.NotEqual(path1, path2);
+        Assert.Contains(first.ToString("D"), path1, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Orbita", path1, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("ChromeProfiles", path1, StringComparison.OrdinalIgnoreCase);
+        Assert.False(LocalChromePaths.IsDefaultBrowserProfile(path1));
+        Assert.False(path1.EndsWith($"{Path.DirectorySeparatorChar}Default", StringComparison.OrdinalIgnoreCase));
+        Assert.False(path1.Contains($"{Path.DirectorySeparatorChar}Google{Path.DirectorySeparatorChar}Chrome{Path.DirectorySeparatorChar}User Data", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void NormalizeUserDataDir_ExpandsManagedMarker_WithoutUsingDefault()
+    {
+        var accountId = Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+        var marker = LocalChromeProfileMarkers.CreateManaged(accountId);
+        var resolved = LocalChromePaths.NormalizeUserDataDir(marker, accountId);
+
+        Assert.Equal(LocalChromePaths.GetManagedUserDataDir(accountId), resolved);
+        Assert.False(LocalChromePaths.IsDefaultBrowserProfile(resolved));
+        Assert.False(LocalChromeProfileMarkers.IsManaged(resolved));
+    }
+
+    [Fact]
+    public void NormalizeUserDataDir_KeepsExplicitExistingPath()
+    {
+        var path = @"D:\Orbita\ChromeProfiles\acc-1";
+        Assert.Equal(path, LocalChromePaths.NormalizeUserDataDir("  " + path + "  "));
+    }
+
+    [Fact]
+    public void IsDefaultBrowserProfile_RejectsDefaultFolderName()
+    {
+        Assert.True(LocalChromePaths.IsDefaultBrowserProfile(@"D:\Chrome\User Data\Default"));
+        Assert.True(LocalChromeUserDataRules.LooksLikeForbiddenProfile(@"C:\Users\user\AppData\Local\Google\Chrome\User Data"));
     }
 
     [Fact]

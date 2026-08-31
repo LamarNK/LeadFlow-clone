@@ -275,7 +275,7 @@ public sealed class WorkersService(
     public Task<(bool Success, string? Error)> CreateLocalAccountAsync(
         Guid workerId,
         string displayName,
-        string localUserDataDir,
+        string? localUserDataDir = null,
         CancellationToken ct = default) =>
         api.CreateLocalAccountAsync(workerId, displayName, localUserDataDir, ct);
 
@@ -292,6 +292,12 @@ public sealed class WorkersService(
         Guid accountId,
         CancellationToken ct = default) =>
         api.DeleteLocalAccountAsync(workerId, accountId, ct);
+
+    public Task<(bool Success, string? Error)> OpenLocalBrowserAsync(
+        Guid workerId,
+        Guid accountId,
+        CancellationToken ct = default) =>
+        api.OpenLocalBrowserAsync(workerId, accountId, ct);
 
     public Task<(bool Success, string? Error)> UpdateWorkerAccountCredentialsAsync(
         Guid workerId,

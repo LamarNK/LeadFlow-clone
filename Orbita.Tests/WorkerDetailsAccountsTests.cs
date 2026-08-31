@@ -300,6 +300,99 @@ public sealed class WorkerDetailsAccountsTests
     }
 
     [Fact]
+    public void MapAccount_Local_ShowsLoginReadyAndProviderStatuses()
+    {
+        var needsLogin = WorkerDetailsBuilder.MapAccount(
+            new WorkerAccountDto(
+                LocalId,
+                "chrome-acc",
+                "RequiresLogin",
+                false,
+                0,
+                0,
+                0,
+                null,
+                null,
+                false,
+                AdsPowerProfileId: "",
+                LocalUserDataDir: LocalChromeProfileMarkers.CreateManaged(LocalId)),
+            balance: null,
+            WorkerId,
+            workerIsOnline: false);
+
+        Assert.Equal(LocalChromeAccountStatus.NeedsLoginAvito, needsLogin.StatusLabel);
+        Assert.Equal("warning", needsLogin.StatusTone);
+        Assert.True(needsLogin.NeedsFirstLogin);
+        Assert.Equal("Открыть браузер для входа", needsLogin.OpenBrowserLabel);
+        Assert.True(needsLogin.IsManagedLocalProfile);
+        Assert.Equal("Автопрофиль", needsLogin.LocationLabel);
+        Assert.Equal("Обычный браузер", needsLogin.ProfileIdTitle);
+
+        var ready = WorkerDetailsBuilder.MapAccount(
+            new WorkerAccountDto(
+                LocalId,
+                "chrome-acc",
+                "Active",
+                true,
+                1,
+                0,
+                0,
+                null,
+                DateTime.UtcNow,
+                true,
+                AdsPowerProfileId: "",
+                LocalUserDataDir: @"D:\Orbita\ChromeProfiles\acc-1"),
+            balance: null,
+            WorkerId,
+            workerIsOnline: true);
+        Assert.Equal(LocalChromeAccountStatus.Ready, ready.StatusLabel);
+        Assert.Equal("success", ready.StatusTone);
+        Assert.Equal("Открыть браузер", ready.OpenBrowserLabel);
+        Assert.False(ready.NeedsFirstLogin);
+
+        var relogin = WorkerDetailsBuilder.MapAccount(
+            new WorkerAccountDto(
+                LocalId,
+                "chrome-acc",
+                "RequiresLogin",
+                true,
+                0,
+                0,
+                0,
+                null,
+                DateTime.UtcNow.AddHours(-2),
+                true,
+                AdsPowerProfileId: "",
+                LocalUserDataDir: @"D:\Orbita\ChromeProfiles\acc-1"),
+            balance: null,
+            WorkerId,
+            workerIsOnline: true);
+        Assert.Equal(LocalChromeAccountStatus.NeedsReLogin, relogin.StatusLabel);
+
+        var providerOff = WorkerDetailsBuilder.MapAccount(
+            new WorkerAccountDto(
+                LocalId,
+                "chrome-acc",
+                "Active",
+                true,
+                1,
+                0,
+                0,
+                null,
+                DateTime.UtcNow,
+                true,
+                AdsPowerProfileId: "",
+                LocalUserDataDir: @"D:\Orbita\ChromeProfiles\acc-1"),
+            balance: null,
+            WorkerId,
+            workerIsOnline: true,
+            localChromeEnabled: false);
+        Assert.Equal(LocalChromeAccountStatus.ProviderOff, providerOff.StatusLabel);
+        Assert.Equal("inactive", providerOff.StatusTone);
+        Assert.False(providerOff.IsProviderEnabled);
+    }
+
+    [Fact]
     public void Build_KeepsMultiloginAccounts_AndFiltersByProvider()
     {
         var worker = new WorkerDetail(

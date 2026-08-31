@@ -437,7 +437,7 @@ public sealed class WorkersController(IWorkersService workers) : Controller
     public async Task<IActionResult> CreateLocalAccount(
         Guid workerId,
         string displayName,
-        string localUserDataDir,
+        string? localUserDataDir,
         CancellationToken ct)
     {
         var (success, error) = await workers.CreateLocalAccountAsync(
@@ -446,7 +446,9 @@ public sealed class WorkersController(IWorkersService workers) : Controller
             localUserDataDir,
             ct);
         TempData[success ? "WorkersSuccess" : "WorkersError"] = success
-            ? "Аккаунт обычного браузера добавлен."
+            ? (string.IsNullOrWhiteSpace(localUserDataDir)
+                ? "Браузерный аккаунт создан. Откройте браузер и войдите в Avito."
+                : "Аккаунт обычного браузера добавлен.")
             : error;
         return RedirectToAction(nameof(Details), new { id = workerId, provider = WorkerAccountCatalogFilter.LocalProvider });
     }
@@ -482,6 +484,20 @@ public sealed class WorkersController(IWorkersService workers) : Controller
         var (success, error) = await workers.DeleteLocalAccountAsync(workerId, accountId, ct);
         TempData[success ? "WorkersSuccess" : "WorkersError"] = success
             ? "Аккаунт удалён. Папка профиля на диске не удалялась."
+            : error;
+        return RedirectToAction(nameof(Details), new { id = workerId, provider = WorkerAccountCatalogFilter.LocalProvider });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> OpenLocalBrowser(
+        Guid workerId,
+        Guid accountId,
+        CancellationToken ct)
+    {
+        var (success, error) = await workers.OpenLocalBrowserAsync(workerId, accountId, ct);
+        TempData[success ? "WorkersSuccess" : "WorkersError"] = success
+            ? "На машине воркера открывается Chrome. Войдите в Avito и закройте браузер."
             : error;
         return RedirectToAction(nameof(Details), new { id = workerId, provider = WorkerAccountCatalogFilter.LocalProvider });
     }

@@ -8,6 +8,7 @@ using LeadFlow.Core.Models;
 using LeadFlow.Core.Services.AdsPower;
 using LeadFlow.Core.Services.Avito;
 using LeadFlow.Core.Services.Captcha;
+using LeadFlow.Core.Services.LocalChrome;
 using LeadFlow.Core.Services.Multilogin;
 using LeadFlow.Core.Services.Browser;
 using Orbita.Contracts;
@@ -40,7 +41,8 @@ public sealed class WorkerMonitoringService(
     IMonitoringCycleJournal? monitoringCycleJournal = null,
     IOutboundChatDispatch? outboundChatDispatch = null,
     IMultiloginCdpConnector? multiloginCdpConnector = null,
-    WorkerAccountSessionFactory? accountSessionFactory = null) : IWorkerMonitoringService
+    WorkerAccountSessionFactory? accountSessionFactory = null,
+    LocalChromeAccountLock? localChromeAccountLock = null) : IWorkerMonitoringService
 {
     private readonly IResponsePhoneObservationStore _phoneObservationStore =
         phoneObservationStore ?? new NullResponsePhoneObservationStore();
@@ -52,6 +54,8 @@ public sealed class WorkerMonitoringService(
         accountSessionFactory ?? new WorkerAccountSessionFactory(
             adsPowerAvitoAutomationService,
             multiloginCdpConnector);
+    private readonly LocalChromeAccountLock _localChromeLock =
+        localChromeAccountLock ?? new LocalChromeAccountLock();
 
     private const int LoopRecoveryPauseMinutes = 12;
     private const int MaxLoopRecoveryFailuresBeforeStop = 10;
@@ -695,6 +699,25 @@ public sealed class WorkerMonitoringService(
             return new AccountCycleOutcome(0, false, false, skipReason);
         }
 
+        if (WorkerAccountRuntime.IsLocalProvider(account)
+            && _localChromeLock.IsHeld(account.Id, LocalChromeAccountLock.Login))
+        {
+            const string loginSkipReason = "открыт браузер для ручного входа";
+            WorkerMonitoringLogger.AccountSkipped(account, loginSkipReason);
+            activityReporter.ReportSkipped(
+                account.Id,
+                account.DisplayName,
+                $"Пропущен: {loginSkipReason}");
+            await repository.AddLogAsync(new ProcessingLogItem
+            {
+                AccountId = account.Id,
+                Level = "Warning",
+                Message = "Аккаунт пропущен",
+                Details = loginSkipReason
+            }, cancellationToken).ConfigureAwait(false);
+            return new AccountCycleOutcome(0, false, false, loginSkipReason);
+        }
+
         var enabledSubProfiles = SubProfileEnabledFilter
             .GetEnabled(account.SubProfiles, account.DisabledSubProfileIds)
             .Count;
@@ -1274,8 +1297,22 @@ public sealed class WorkerMonitoringService(
                 account.ProxyPassword),
             captchaCounters);
         WorkerOpenedAccountSession? opened = null;
+        var localChromeLockHeld = false;
         try
         {
+            if (runtimeKind == WorkerAccountRuntimeKind.Local)
+            {
+                if (!_localChromeLock.TryAcquire(account.Id, LocalChromeAccountLock.Monitoring, out var existing))
+                {
+                    throw new InvalidOperationException(
+                        string.Equals(existing, LocalChromeAccountLock.Login, StringComparison.Ordinal)
+                            ? "Обычный браузер уже открыт для ручного входа. Дождитесь закрытия окна."
+                            : "Обычный браузер этого аккаунта уже запущен.");
+                }
+
+                localChromeLockHeld = true;
+            }
+
             opened = await OpenAccountSessionWithDiagnosticsAsync(
                     account,
                     adsOptions,
@@ -1899,6 +1936,11 @@ public sealed class WorkerMonitoringService(
                 {
                     WorkerMonitoringLogger.BrowserClosed(account);
                 }
+            }
+
+            if (localChromeLockHeld)
+            {
+                _localChromeLock.Release(account.Id, LocalChromeAccountLock.Monitoring);
             }
         }
     }
