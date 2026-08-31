@@ -1,3 +1,4 @@
+using LeadFlow.Core.Services.LocalChrome;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
