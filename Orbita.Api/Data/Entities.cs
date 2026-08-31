@@ -317,6 +317,12 @@ public sealed class WorkerAccountEntity
     public string? AvitoLogin { get; set; }
     /// <summary>Пароль Avito, защищённый Data Protection.</summary>
     public string? AvitoPasswordProtected { get; set; }
+    /// <summary>HTTP-прокси обычного Chrome. AdsPower/Multilogin не используют эти поля.</summary>
+    public bool LocalProxyEnabled { get; set; }
+    public string? LocalProxyAddress { get; set; }
+    public string? LocalProxyUsername { get; set; }
+    /// <summary>Пароль прокси, защищённый Data Protection. Не возвращается в API.</summary>
+    public string? LocalProxyPasswordProtected { get; set; }
     public DateTime UpdatedAtUtc { get; set; }
 
     public WorkerEntity Worker { get; set; } = null!;

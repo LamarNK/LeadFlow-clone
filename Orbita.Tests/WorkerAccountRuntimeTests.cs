@@ -1,5 +1,6 @@
 using LeadFlow.Core.Models;
 using LeadFlow.Core.Services.AdsPower;
+using LeadFlow.Core.Services.Captcha;
 using LeadFlow.Core.Services.LocalChrome;
 using LeadFlow.Core.Services.Multilogin;
 using LeadFlow.Core.Services.Worker;
@@ -172,6 +173,80 @@ public sealed class WorkerAccountRuntimeTests
         Assert.Equal(AvitoProfileProvider.Local, account.ProfileProvider);
         Assert.Equal(@"D:\profiles\one", account.BrowserProfilePath);
         Assert.Equal(WorkerAccountRuntimeKind.Local, WorkerAccountRuntime.Resolve(account));
+    }
+
+    [Fact]
+    public void Mapper_CopiesLocalProxy_OnlyWhenEnabled()
+    {
+        var enabled = new WorkerAccountConfigDto(
+            Guid.Parse("dddddddd-dddd-dddd-dddd-dddddddddddd"),
+            AdsPowerProfileId: "",
+            DisplayName: "chrome-acc",
+            IsEnabled: true,
+            AdsPowerApiBaseUrl: null,
+            AdsPowerApiKey: null,
+            ProfileProvider: "Local",
+            LocalUserDataDir: @"D:\Orbita\ChromeProfiles\acc-1",
+            LocalProxyEnabled: true,
+            LocalProxyAddress: "203.0.113.10:8080",
+            LocalProxyUsername: "px",
+            LocalProxyPassword: "proxy-secret");
+        var config = new WorkerConfigDto(Guid.NewGuid(), 1, null, null, [enabled]);
+        var account = WorkerAccountRuntimeMapper.ToAccount(enabled, config, "http://fallback");
+
+        Assert.Equal("http", account.ProxyType);
+        Assert.Equal("203.0.113.10:8080", account.ProxyAddress);
+        Assert.Equal("px", account.ProxyUsername);
+        Assert.Equal("proxy-secret", account.ProxyPassword);
+
+        var captcha = GeeTestV4TaskOptions.FromBrowserProfile(
+            account.AssignedUserAgent,
+            account.ProxyType,
+            account.ProxyAddress,
+            account.ProxyUsername,
+            account.ProxyPassword);
+        Assert.True(captcha.UsesSuppliedProxy);
+        Assert.Equal("http", captcha.Proxy!.Type);
+        Assert.Equal("203.0.113.10", captcha.Proxy.Address);
+        Assert.Equal(8080, captcha.Proxy.Port);
+        Assert.Equal("px", captcha.Proxy.Login);
+        Assert.Equal("proxy-secret", captcha.Proxy.Password);
+
+        var disabled = enabled with { LocalProxyEnabled = false, LocalProxyPassword = "should-not-copy" };
+        var withoutProxy = WorkerAccountRuntimeMapper.ToAccount(disabled, config, "http://fallback");
+        Assert.True(string.IsNullOrWhiteSpace(withoutProxy.ProxyAddress));
+        Assert.Null(withoutProxy.ProxyPassword);
+        var launch = LocalChromeLaunchOptionsFactory.FromAccount(withoutProxy);
+        Assert.False(launch.ProxyEnabled);
+        Assert.Null(launch.ChromiumArgs);
+    }
+
+    [Fact]
+    public async Task Factory_LocalProxy_PassesHttpLaunchArg()
+    {
+        var ads = new FakeAdsPowerAutomation();
+        var mlx = new FakeMultiloginConnector();
+        var chrome = new FakeLocalChromeLauncher();
+        var sut = new WorkerAccountSessionFactory(ads, mlx, chrome);
+        var account = LocalAccount();
+        account.ProxyType = "http";
+        account.ProxyAddress = "203.0.113.10:8080";
+        account.ProxyUsername = "px";
+        account.ProxyPassword = "secret";
+
+        var opened = await sut.OpenAsync(
+            account,
+            new AdsPowerConnectionOptions("", null),
+            reportStartupStage: null,
+            CancellationToken.None);
+
+        Assert.NotNull(chrome.LastOptions);
+        Assert.True(chrome.LastOptions!.ProxyEnabled);
+        Assert.Equal("203.0.113.10:8080", chrome.LastOptions.ProxyServer);
+        Assert.Equal(["--proxy-server=http://203.0.113.10:8080"], chrome.LastOptions.ChromiumArgs);
+        Assert.DoesNotContain("secret", chrome.LastOptions.ChromiumArgs![0], StringComparison.Ordinal);
+        Assert.Equal("px", chrome.LastOptions.ProxyUsername);
+        await opened.DisposeAsync();
     }
 
     [Fact]
@@ -373,15 +448,17 @@ public sealed class WorkerAccountRuntimeTests
     {
         public int LaunchCount { get; private set; }
 
+        public LocalChromeLaunchOptions? LastOptions { get; private set; }
+
         public FakeBrowserProxy? LastBrowser { get; private set; }
 
         public Task<IBrowser> LaunchAsync(
             LocalChromeLaunchOptions options,
             CancellationToken cancellationToken = default)
         {
-            _ = options;
             cancellationToken.ThrowIfCancellationRequested();
             LaunchCount++;
+            LastOptions = options;
             var browser = DispatchProxy.Create<IBrowser, FakeBrowserProxy>();
             LastBrowser = (FakeBrowserProxy)(object)browser;
             return Task.FromResult(browser);

@@ -1235,6 +1235,31 @@ public sealed class OrbitaApiClient(
             : (false, await ReadApiErrorAsync(response, ct));
     }
 
+    public async Task<(LocalWorkerAccountProfileDto? Profile, string? Error)> UpdateLocalAccountProfileAsync(
+        Guid workerId,
+        Guid accountId,
+        UpdateLocalWorkerAccountProfileRequest body,
+        CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Put,
+            $"api/v1/workers/{workerId}/accounts/{accountId}/local/profile");
+        request.Content = JsonContent.Create(body);
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (null, InvalidApiSessionError);
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            return (null, await ReadApiErrorAsync(response, ct));
+        }
+
+        var profile = await response.Content.ReadFromJsonAsync<LocalWorkerAccountProfileDto>(ct);
+        return (profile, profile is null ? "Не удалось сохранить настройки профиля." : null);
+    }
+
     public async Task<(RotateWorkerApiKeyResponse? Result, string? Error)> RotateWorkerApiKeyAsync(
         Guid workerId,
         CancellationToken ct = default)

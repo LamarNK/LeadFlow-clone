@@ -139,7 +139,8 @@ public sealed class WorkersService(
                     apiWorker.IsOnline,
                     apiWorker.AdsPowerEnabled,
                     apiWorker.MultiloginEnabled,
-                    apiWorker.LocalChromeEnabled);
+                    apiWorker.LocalChromeEnabled,
+                    apiWorker.PendingLocalChromeLoginAccountId);
             }),
             tableSort).ToList();
 
@@ -307,6 +308,32 @@ public sealed class WorkersService(
         bool clear,
         CancellationToken ct = default) =>
         api.UpdateWorkerAccountCredentialsAsync(workerId, accountId, login, password, clear, ct);
+
+    public Task<(LocalWorkerAccountProfileDto? Profile, string? Error)> UpdateLocalAccountProfileAsync(
+        Guid workerId,
+        Guid accountId,
+        string? login,
+        string? password,
+        bool clearCredentials,
+        bool? proxyEnabled,
+        string? proxyAddress,
+        string? proxyUsername,
+        string? proxyPassword,
+        bool clearProxyPassword,
+        CancellationToken ct = default) =>
+        api.UpdateLocalAccountProfileAsync(
+            workerId,
+            accountId,
+            new UpdateLocalWorkerAccountProfileRequest(
+                login,
+                password,
+                clearCredentials,
+                proxyEnabled,
+                proxyAddress,
+                proxyUsername,
+                proxyPassword,
+                clearProxyPassword),
+            ct);
 
     public Task<(bool Success, string? Error)> RequestSubProfilesRefreshAsync(
         Guid workerId,

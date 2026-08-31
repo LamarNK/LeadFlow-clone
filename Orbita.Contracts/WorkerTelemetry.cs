@@ -107,7 +107,11 @@ public sealed record WorkerAccountDto(
     string? AdsPowerGroupName = null,
     string? MultiloginProfileId = null,
     string? MultiloginFolderId = null,
-    string? LocalUserDataDir = null);
+    string? LocalUserDataDir = null,
+    bool LocalProxyEnabled = false,
+    string? LocalProxyAddress = null,
+    string? LocalProxyUsername = null,
+    bool HasProxyPassword = false);
 
 public sealed record WorkerBalanceDto(
     Guid AccountId,

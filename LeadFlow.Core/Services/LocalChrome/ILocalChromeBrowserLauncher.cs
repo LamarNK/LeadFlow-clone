@@ -20,4 +20,20 @@ public sealed class LocalChromeLaunchOptions
     public string? ExecutablePath { get; init; }
 
     public Guid AccountId { get; init; }
+
+    /// <summary>HTTP-прокси <c>host:port</c>. Без схемы и без userinfo.</summary>
+    public bool ProxyEnabled { get; init; }
+
+    public string? ProxyServer { get; init; }
+
+    public string? ProxyUsername { get; init; }
+
+    public string? ProxyPassword { get; init; }
+
+    public string[]? ChromiumArgs =>
+        Orbita.Contracts.LocalChromeProxyRules.ToChromiumArgs(ProxyEnabled, ProxyServer);
+
+    public bool HasProxyCredentials =>
+        ProxyEnabled
+        && (!string.IsNullOrEmpty(ProxyUsername) || !string.IsNullOrEmpty(ProxyPassword));
 }

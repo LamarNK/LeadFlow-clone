@@ -700,25 +700,47 @@
         var isLocal = !!(account.isLocal || account.localUserDataDir);
         var managed = isManagedLocalProfile(account);
         var openLabel = account.openBrowserLabel || 'Открыть браузер';
+        var canOpen = account.canOpenBrowser !== false;
         var items = '<a class="row-menu-item" href="' + shared.escapeHtml(accountSearchUrl(account.displayName)) + '">' +
             '<i class="fa-regular fa-eye" aria-hidden="true"></i>Просмотр</a>' +
             '<a class="row-menu-item" href="#worker-accounts">' +
-            '<i class="fa-regular fa-pen-to-square" aria-hidden="true"></i>Настройки на воркере</a>' +
-            '<button type="button" class="row-menu-item" data-avito-credentials' +
-            ' data-worker-id="' + shared.escapeHtml(workerId) + '"' +
-            ' data-account-id="' + shared.escapeHtml(account.id) + '"' +
-            ' data-account-name="' + shared.escapeHtml(account.displayName || '') + '"' +
-            ' data-login="' + shared.escapeHtml(login) + '"' +
-            ' data-has-password="' + (hasPassword ? 'true' : 'false') + '"' +
-            ' data-post-url="/Workers/UpdateAccountCredentials">' +
-            '<i class="fa-solid fa-key" aria-hidden="true"></i>Логин / пароль Avito</button>' +
-            '<a class="row-menu-item" href="' + shared.escapeHtml(responsesFilterUrl(account.id)) + '">' +
+            '<i class="fa-regular fa-pen-to-square" aria-hidden="true"></i>Настройки на воркере</a>';
+        if (isLocal) {
+            items += '<button type="button" class="row-menu-item" data-local-profile-settings' +
+                ' data-worker-id="' + shared.escapeHtml(workerId) + '"' +
+                ' data-account-id="' + shared.escapeHtml(account.id) + '"' +
+                ' data-account-name="' + shared.escapeHtml(account.displayName || '') + '"' +
+                ' data-login="' + shared.escapeHtml(login) + '"' +
+                ' data-has-password="' + (hasPassword ? 'true' : 'false') + '"' +
+                ' data-proxy-enabled="' + (account.localProxyEnabled ? 'true' : 'false') + '"' +
+                ' data-proxy-address="' + shared.escapeHtml(account.localProxyAddress || '') + '"' +
+                ' data-proxy-username="' + shared.escapeHtml(account.localProxyUsername || '') + '"' +
+                ' data-has-proxy-password="' + (account.hasProxyPassword ? 'true' : 'false') + '"' +
+                ' data-proxy-status="' + shared.escapeHtml(account.proxyStatus || '') + '"' +
+                ' data-browser-status="' + shared.escapeHtml(account.browserSessionStatus || '') + '"' +
+                ' data-can-open-browser="' + (canOpen ? 'true' : 'false') + '"' +
+                ' data-open-label="' + shared.escapeHtml(openLabel) + '"' +
+                ' data-save-url="/Workers/UpdateLocalAccountProfile"' +
+                ' data-open-url="/Workers/OpenLocalBrowser">' +
+                '<i class="fa-solid fa-gear" aria-hidden="true"></i>Настройки профиля</button>';
+        } else {
+            items += '<button type="button" class="row-menu-item" data-avito-credentials' +
+                ' data-worker-id="' + shared.escapeHtml(workerId) + '"' +
+                ' data-account-id="' + shared.escapeHtml(account.id) + '"' +
+                ' data-account-name="' + shared.escapeHtml(account.displayName || '') + '"' +
+                ' data-login="' + shared.escapeHtml(login) + '"' +
+                ' data-has-password="' + (hasPassword ? 'true' : 'false') + '"' +
+                ' data-post-url="/Workers/UpdateAccountCredentials">' +
+                '<i class="fa-solid fa-key" aria-hidden="true"></i>Логин / пароль Avito</button>';
+        }
+        items += '<a class="row-menu-item" href="' + shared.escapeHtml(responsesFilterUrl(account.id)) + '">' +
             '<i class="fa-regular fa-clock" aria-hidden="true"></i>История откликов</a>';
         if (isLocal) {
             items += '<button type="button" class="row-menu-item" data-local-open-browser' +
                 ' data-worker-id="' + shared.escapeHtml(workerId) + '"' +
                 ' data-account-id="' + shared.escapeHtml(account.id) + '"' +
-                ' data-post-url="/Workers/OpenLocalBrowser">' +
+                ' data-post-url="/Workers/OpenLocalBrowser"' +
+                (canOpen ? '' : ' disabled') + '>' +
                 '<i class="fa-regular fa-window-maximize" aria-hidden="true"></i>' + shared.escapeHtml(openLabel) + '</button>' +
                 '<button type="button" class="row-menu-item" data-local-account-edit' +
                 ' data-worker-id="' + shared.escapeHtml(workerId) + '"' +
@@ -934,11 +956,15 @@
             }
             if (account.isLocal || account.localUserDataDir) {
                 var openLabel = account.openBrowserLabel || 'Открыть браузер';
+                var canOpen = account.canOpenBrowser !== false;
                 statusHtml += '<form class="worker-local-open-form">' +
                     '<button type="button" class="worker-local-open-btn" data-local-open-browser' +
                     ' data-worker-id="' + shared.escapeHtml(workerId) + '"' +
                     ' data-account-id="' + shared.escapeHtml(account.id) + '"' +
-                    ' data-post-url="/Workers/OpenLocalBrowser">' + shared.escapeHtml(openLabel) + '</button></form>';
+                    ' data-post-url="/Workers/OpenLocalBrowser"' +
+                    (canOpen ? '' : ' disabled') + '>' + shared.escapeHtml(openLabel) + '</button></form>' +
+                    '<span class="worker-local-browser-status">' +
+                    shared.escapeHtml(account.browserSessionStatus || 'Свободен') + '</span>';
             }
             var activityHtml = account.lastActivityUtc
                 ? '<time data-orbita-utc="' + shared.escapeHtml(account.lastActivityUtc) + '" data-orbita-format="activity"></time>'
@@ -974,7 +1000,26 @@
                         '<td data-label="Последняя активность">' + activityHtml + '</td>' +
                         '<td class="cell-num" data-label="Ошибок">' + shared.renderMetricLink(account.errors, metrics.errors, 'Проблемы за сегодня') + '</td>';
                 })() +
-                '<td class="data-table-menu" data-label="">' + renderWorkerAccountMenu(account) + '</td></tr>';
+                '<td class="data-table-menu" data-label="">' +
+                (account.isLocal || account.localUserDataDir
+                    ? '<button type="button" class="row-menu-btn worker-local-settings-btn" aria-label="Настройки профиля" title="Настройки профиля" data-local-profile-settings' +
+                        ' data-worker-id="' + shared.escapeHtml(workerId) + '"' +
+                        ' data-account-id="' + shared.escapeHtml(account.id) + '"' +
+                        ' data-account-name="' + shared.escapeHtml(account.displayName || '') + '"' +
+                        ' data-login="' + shared.escapeHtml(account.avitoLogin || '') + '"' +
+                        ' data-has-password="' + (account.hasAvitoCredentials ? 'true' : 'false') + '"' +
+                        ' data-proxy-enabled="' + (account.localProxyEnabled ? 'true' : 'false') + '"' +
+                        ' data-proxy-address="' + shared.escapeHtml(account.localProxyAddress || '') + '"' +
+                        ' data-proxy-username="' + shared.escapeHtml(account.localProxyUsername || '') + '"' +
+                        ' data-has-proxy-password="' + (account.hasProxyPassword ? 'true' : 'false') + '"' +
+                        ' data-proxy-status="' + shared.escapeHtml(account.proxyStatus || '') + '"' +
+                        ' data-browser-status="' + shared.escapeHtml(account.browserSessionStatus || '') + '"' +
+                        ' data-can-open-browser="' + (account.canOpenBrowser !== false ? 'true' : 'false') + '"' +
+                        ' data-open-label="' + shared.escapeHtml(account.openBrowserLabel || 'Открыть браузер') + '"' +
+                        ' data-save-url="/Workers/UpdateLocalAccountProfile"' +
+                        ' data-open-url="/Workers/OpenLocalBrowser"><i class="fa-solid fa-gear" aria-hidden="true"></i></button>'
+                    : '') +
+                renderWorkerAccountMenu(account) + '</td></tr>';
 
             var temp = document.createElement('tbody');
             temp.innerHTML = rowHtml;
@@ -1020,6 +1065,9 @@
         }
         if (window.Orbita && typeof window.Orbita.initAvitoCredentialsButtons === 'function') {
             window.Orbita.initAvitoCredentialsButtons();
+        }
+        if (window.Orbita && typeof window.Orbita.initLocalProfileSettingsButtons === 'function') {
+            window.Orbita.initLocalProfileSettingsButtons();
         }
         if (window.Orbita && typeof window.Orbita.initLocalAccountEditButtons === 'function') {
             window.Orbita.initLocalAccountEditButtons();

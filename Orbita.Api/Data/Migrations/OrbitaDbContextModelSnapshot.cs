@@ -2802,6 +2802,23 @@ namespace Orbita.Api.Data.Migrations
                     b.Property<DateTime?>("LastMonitoringAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("LocalProxyAddress")
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)");
+
+                    b.Property<bool>("LocalProxyEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
+                    b.Property<string>("LocalProxyPasswordProtected")
+                        .HasMaxLength(2048)
+                        .HasColumnType("character varying(2048)");
+
+                    b.Property<string>("LocalProxyUsername")
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)");
+
                     b.Property<string>("LocalUserDataDir")
                         .HasMaxLength(1024)
                         .HasColumnType("character varying(1024)");

@@ -534,6 +534,47 @@ public sealed class WorkersController(IWorkersService workers) : Controller
         });
     }
 
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> UpdateLocalAccountProfile(
+        Guid workerId,
+        Guid accountId,
+        string? login,
+        string? password,
+        bool clearCredentials,
+        bool? proxyEnabled,
+        string? proxyAddress,
+        string? proxyUsername,
+        string? proxyPassword,
+        bool clearProxyPassword,
+        CancellationToken ct)
+    {
+        var (profile, error) = await workers.UpdateLocalAccountProfileAsync(
+            workerId,
+            accountId,
+            login,
+            password,
+            clearCredentials,
+            proxyEnabled,
+            proxyAddress,
+            proxyUsername,
+            proxyPassword,
+            clearProxyPassword,
+            ct);
+        if (profile is null)
+        {
+            return BadRequest(new { error = error ?? "Не удалось сохранить настройки профиля." });
+        }
+
+        return Ok(new
+        {
+            message = clearCredentials
+                ? "Учётные данные Avito очищены."
+                : "Настройки профиля сохранены. Воркер подхватит их при следующей синхронизации.",
+            profile
+        });
+    }
+
     private IActionResult RedirectAfterWorkerAction(Guid workerId, string? returnTo) =>
         string.Equals(returnTo, "index", StringComparison.OrdinalIgnoreCase)
             ? RedirectToAction(nameof(Index))

@@ -356,6 +356,16 @@ public sealed class WorkerAccountRowViewModel
                 : (string.IsNullOrWhiteSpace(AdsPowerProfileId) ? "AdsPower" : $"Профиль AdsPower: {AdsPowerProfileId}");
     public bool HasAvitoCredentials { get; init; }
     public string? AvitoLogin { get; init; }
+    public bool LocalProxyEnabled { get; init; }
+    public string? LocalProxyAddress { get; init; }
+    public string? LocalProxyUsername { get; init; }
+    public bool HasProxyPassword { get; init; }
+    public string ProxyStatus =>
+        IsLocal
+            ? LocalChromeProxyRules.Status(LocalProxyEnabled, LocalProxyAddress)
+            : string.Empty;
+    public string BrowserSessionStatus { get; init; } = LocalChromeProxyRules.BrowserFree;
+    public bool CanOpenBrowser { get; init; }
     public string StatusLabel { get; init; } = string.Empty;
     public string StatusTone { get; init; } = "success";
     public string BalanceText { get; init; } = "—";

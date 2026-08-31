@@ -79,6 +79,18 @@ public interface IWorkersService
         string? password,
         bool clear,
         CancellationToken ct = default);
+    Task<(LocalWorkerAccountProfileDto? Profile, string? Error)> UpdateLocalAccountProfileAsync(
+        Guid workerId,
+        Guid accountId,
+        string? login,
+        string? password,
+        bool clearCredentials,
+        bool? proxyEnabled,
+        string? proxyAddress,
+        string? proxyUsername,
+        string? proxyPassword,
+        bool clearProxyPassword,
+        CancellationToken ct = default);
     Task<(bool Success, string? Error)> RequestSubProfilesRefreshAsync(Guid workerId, Guid accountId, CancellationToken ct = default);
     Task<(bool Success, string? Error)> RequestProviderCheckAsync(Guid workerId, string provider, CancellationToken ct = default);
     Task<(bool Success, string? Error)> RequestProviderSyncAsync(Guid workerId, string provider, CancellationToken ct = default);

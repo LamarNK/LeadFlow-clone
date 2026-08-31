@@ -48,6 +48,17 @@ public static class WorkerAccountRuntimeMapper
             AvitoPassword = string.IsNullOrEmpty(dto.AvitoPassword) ? null : dto.AvitoPassword
         };
 
+        if (provider == AvitoProfileProvider.Local && dto.LocalProxyEnabled)
+        {
+            if (LocalChromeProxyRules.TryNormalizeAddress(dto.LocalProxyAddress, out var proxyAddress, out _))
+            {
+                account.ProxyType = LocalChromeProxyRules.HttpType;
+                account.ProxyAddress = proxyAddress;
+                account.ProxyUsername = NullIfWhiteSpace(dto.LocalProxyUsername);
+                account.ProxyPassword = string.IsNullOrEmpty(dto.LocalProxyPassword) ? null : dto.LocalProxyPassword;
+            }
+        }
+
         if (!string.IsNullOrWhiteSpace(dto.SubProfilesJson))
         {
             try

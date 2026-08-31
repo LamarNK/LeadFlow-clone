@@ -195,6 +195,33 @@ public static class WorkerPanelEndpoints
             return Results.Ok(credentials);
         });
 
+        workerPanel.MapPut("/{id:guid}/accounts/{accountId:guid}/local/profile", async (
+            Guid id,
+            Guid accountId,
+            UpdateLocalWorkerAccountProfileRequest request,
+            WorkerConfigService configService,
+            OfficeScopeService officeScope,
+            ClaimsPrincipal principal,
+            CancellationToken ct) =>
+        {
+            var scope = await officeScope.ResolveAsync(principal, ct);
+            if (!scope.HasAccess)
+            {
+                return Results.Forbid();
+            }
+
+            var (profile, error) = await configService.UpdateLocalAccountProfileAsync(
+                id, accountId, request, scope, ct);
+            if (error is not null)
+            {
+                return error.Contains("не найден", StringComparison.OrdinalIgnoreCase)
+                    ? Results.NotFound(new { error })
+                    : Results.BadRequest(new { error });
+            }
+
+            return Results.Ok(profile);
+        });
+
         workerPanel.MapPost("/{id:guid}/accounts/{accountId:guid}/refresh-subprofiles", async (
             Guid id,
             Guid accountId,

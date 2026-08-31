@@ -13,7 +13,8 @@ public sealed class DashboardQueryService(
     OrbitaDbContext db,
     WorkerReleaseService releases,
     OfficeScopeService officeScope,
-    WorkerConnectionRegistry connectionRegistry)
+    WorkerConnectionRegistry connectionRegistry,
+    LocalChromeLoginSessionService? localChromeLoginSessions = null)
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
@@ -471,7 +472,8 @@ public sealed class DashboardQueryService(
             LocalChromeEnabled: worker.LocalChromeEnabled,
             AdsPowerCheck: WorkerConfigService.MapProviderCheck(worker, WorkerBrowserProviderKinds.AdsPower),
             MultiloginCheck: WorkerConfigService.MapProviderCheck(worker, WorkerBrowserProviderKinds.Multilogin),
-            LocalChromeCheck: WorkerConfigService.MapProviderCheck(worker, WorkerBrowserProviderKinds.Local));
+            LocalChromeCheck: WorkerConfigService.MapProviderCheck(worker, WorkerBrowserProviderKinds.Local),
+            PendingLocalChromeLoginAccountId: localChromeLoginSessions?.GetPendingForWorker(worker.Id)?.AccountId);
     }
 
     public async Task<IReadOnlyList<WorkerAccountDto>> GetWorkerAccountsAsync(
@@ -634,6 +636,10 @@ public sealed class DashboardQueryService(
                 x.SubProfilesDisabledIdsJson,
                 x.AvitoLogin,
                 x.AvitoPasswordProtected,
+                x.LocalProxyEnabled,
+                x.LocalProxyAddress,
+                x.LocalProxyUsername,
+                x.LocalProxyPasswordProtected,
                 x.TotalBalance
             })
             .ToListAsync(ct);
@@ -842,6 +848,13 @@ public sealed class DashboardQueryService(
                         responseNameLookup);
                     var hasCredentials = !string.IsNullOrWhiteSpace(x.AvitoLogin)
                         && !string.IsNullOrWhiteSpace(x.AvitoPasswordProtected);
+                    var isLocal = !string.IsNullOrWhiteSpace(x.LocalUserDataDir)
+                        && string.IsNullOrWhiteSpace(x.MultiloginProfileId)
+                        && string.IsNullOrWhiteSpace(x.AdsPowerProfileId);
+                    var proxyEnabled = isLocal && x.LocalProxyEnabled;
+                    var proxyAddress = isLocal && !string.IsNullOrWhiteSpace(x.LocalProxyAddress)
+                        ? x.LocalProxyAddress.Trim()
+                        : null;
                     return new WorkerAccountDto(
                         x.AccountId,
                         x.DisplayName,
@@ -870,7 +883,13 @@ public sealed class DashboardQueryService(
                         x.AdsPowerGroupName,
                         string.IsNullOrWhiteSpace(x.MultiloginProfileId) ? null : x.MultiloginProfileId,
                         string.IsNullOrWhiteSpace(x.MultiloginFolderId) ? null : x.MultiloginFolderId,
-                        string.IsNullOrWhiteSpace(x.LocalUserDataDir) ? null : x.LocalUserDataDir);
+                        string.IsNullOrWhiteSpace(x.LocalUserDataDir) ? null : x.LocalUserDataDir,
+                        proxyEnabled,
+                        proxyAddress,
+                        isLocal && !string.IsNullOrWhiteSpace(x.LocalProxyUsername)
+                            ? x.LocalProxyUsername.Trim()
+                            : null,
+                        isLocal && !string.IsNullOrWhiteSpace(x.LocalProxyPasswordProtected));
                 })
                 .ToList();
 

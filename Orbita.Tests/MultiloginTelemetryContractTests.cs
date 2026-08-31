@@ -67,6 +67,20 @@ public sealed class MultiloginTelemetryContractTests
         Assert.Contains(nameof(WorkerAccountConfigDto.MultiloginProfileId), names);
         Assert.Contains(nameof(WorkerAccountConfigDto.MultiloginFolderId), names);
         Assert.Contains(nameof(WorkerAccountConfigDto.LocalUserDataDir), names);
+        Assert.Contains(nameof(WorkerAccountConfigDto.LocalProxyPassword), names);
+    }
+
+    [Fact]
+    public void WorkerAccountDto_DoesNotExposeProxyOrAvitoPasswords()
+    {
+        var names = typeof(WorkerAccountDto).GetProperties(BindingFlags.Public | BindingFlags.Instance)
+            .Select(static p => p.Name)
+            .ToHashSet(StringComparer.Ordinal);
+        Assert.DoesNotContain("AvitoPassword", names);
+        Assert.DoesNotContain("LocalProxyPassword", names);
+        Assert.Contains(nameof(WorkerAccountDto.HasAvitoCredentials), names);
+        Assert.Contains(nameof(WorkerAccountDto.HasProxyPassword), names);
+        Assert.Contains(nameof(WorkerAccountDto.LocalProxyAddress), names);
     }
 
     [Fact]

@@ -37,7 +37,14 @@ public sealed record WorkerAccountConfigDto(
     string? MultiloginProfileId = null,
     string? MultiloginFolderId = null,
     /// <summary>Папка User Data обычного Chrome на машине воркера. Только для ProfileProvider=Local.</summary>
-    string? LocalUserDataDir = null);
+    string? LocalUserDataDir = null,
+    /// <summary>Включён HTTP-прокси обычного Chrome. Только Local.</summary>
+    bool LocalProxyEnabled = false,
+    /// <summary>Адрес HTTP-прокси <c>host:port</c>. Без схемы и без userinfo.</summary>
+    string? LocalProxyAddress = null,
+    string? LocalProxyUsername = null,
+    /// <summary>Пароль прокси. Только worker config channel, только Local и только когда прокси включён.</summary>
+    string? LocalProxyPassword = null);
 
 public sealed record UpdateWorkerSubProfileRequest(bool IsEnabledInPanel);
 
@@ -447,6 +454,33 @@ public sealed record WorkerAccountCredentialsDto(
     Guid AccountId,
     string? Login,
     bool HasPassword);
+
+/// <summary>
+/// Обновление настроек профиля обычного Chrome: Avito + HTTP-прокси.
+/// Пустой пароль — оставить текущий; <paramref name="ClearCredentials"/> / <paramref name="ClearProxyPassword"/> очищают секрет.
+/// </summary>
+public sealed record UpdateLocalWorkerAccountProfileRequest(
+    string? Login = null,
+    string? Password = null,
+    bool ClearCredentials = false,
+    bool? ProxyEnabled = null,
+    string? ProxyAddress = null,
+    string? ProxyUsername = null,
+    string? ProxyPassword = null,
+    bool ClearProxyPassword = false);
+
+public sealed record LocalWorkerAccountProfileDto(
+    Guid AccountId,
+    string? Login,
+    bool HasPassword,
+    bool HasCredentials,
+    bool ProxyEnabled,
+    string? ProxyAddress,
+    string? ProxyUsername,
+    bool HasProxyPassword,
+    string ProxyStatus,
+    string BrowserStatus,
+    bool CanOpenBrowser);
 
 public sealed record BulkWorkersMonitoringResultDto(
     int UpdatedCount,

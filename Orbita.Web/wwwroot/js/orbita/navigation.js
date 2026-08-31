@@ -172,6 +172,9 @@
         runtime.initWorkerAccountEnableToggles();
         runtime.initProviderConnectionButtons();
         runtime.initAvitoCredentialsButtons();
+        runtime.initLocalProfileSettingsButtons();
+        runtime.initLocalAccountEditButtons();
+        runtime.initLocalOpenBrowserButtons();
         runtime.initSubProfilesRefreshButtons();
         runtime.initSubProfileScreenshotLinks();
         runtime.initOfficeSwitcher();

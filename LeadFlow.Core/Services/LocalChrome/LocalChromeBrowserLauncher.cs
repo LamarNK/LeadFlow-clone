@@ -1,3 +1,4 @@
+using Orbita.Contracts;
 using PuppeteerSharp;
 
 namespace LeadFlow.Core.Services.LocalChrome;
@@ -14,24 +15,81 @@ public sealed class LocalChromeBrowserLauncher : ILocalChromeBrowserLauncher
         var userDataDir = LocalChromePaths.NormalizeUserDataDir(options.UserDataDir, options.AccountId);
         LocalChromePaths.EnsureUserDataDir(userDataDir);
         var executable = LocalChromePaths.ResolveExecutable(options.ExecutablePath);
+        var args = options.ChromiumArgs;
 
         var launchTask = Puppeteer.LaunchAsync(new LaunchOptions
         {
             Headless = false,
             DefaultViewport = null,
             ExecutablePath = executable,
-            UserDataDir = userDataDir
+            UserDataDir = userDataDir,
+            Args = args
         });
 
+        IBrowser? browser = null;
         try
         {
-            return await launchTask.WaitAsync(cancellationToken).ConfigureAwait(false);
+            browser = await launchTask.WaitAsync(cancellationToken).ConfigureAwait(false);
+            await LocalChromeProxyAuth
+                .ApplyAsync(browser, options, cancellationToken)
+                .ConfigureAwait(false);
+            return browser;
         }
-        catch
+        catch (OperationCanceledException)
         {
-            ObserveAbandonedLaunch(launchTask);
+            if (browser is not null)
+            {
+                await CloseAbandonedBrowserAsync(browser).ConfigureAwait(false);
+            }
+            else
+            {
+                ObserveAbandonedLaunch(launchTask);
+            }
+
             throw;
         }
+        catch (Exception ex)
+        {
+            if (browser is not null)
+            {
+                await CloseAbandonedBrowserAsync(browser).ConfigureAwait(false);
+            }
+            else
+            {
+                ObserveAbandonedLaunch(launchTask);
+            }
+
+            throw SanitizeLaunchError(ex, options);
+        }
+    }
+
+    internal static Exception SanitizeLaunchError(Exception ex, LocalChromeLaunchOptions options)
+    {
+        var sanitized = LocalChromeProxyRules.SanitizeError(
+            ex.Message,
+            options.ProxyUsername,
+            options.ProxyPassword);
+        if (ex is InvalidOperationException
+            && (sanitized.StartsWith("Обычный браузер", StringComparison.Ordinal)
+                || sanitized.StartsWith("Не найден установленный Chrome", StringComparison.Ordinal)
+                || sanitized.StartsWith("Файл браузера не найден", StringComparison.Ordinal)
+                || sanitized.StartsWith("Нельзя использовать стандартный профиль", StringComparison.Ordinal)
+                || sanitized.StartsWith("Укажите путь", StringComparison.Ordinal)
+                || sanitized.StartsWith("Путь к", StringComparison.Ordinal)
+                || sanitized.StartsWith("Не удалось авторизовать прокси", StringComparison.Ordinal)
+                || sanitized.StartsWith("Не удалось подготовить прокси", StringComparison.Ordinal)))
+        {
+            return new InvalidOperationException(sanitized);
+        }
+
+        return new InvalidOperationException(
+            options.ProxyEnabled
+                ? LocalChromeProxyRules.SanitizeError(
+                    "Не удалось открыть обычный браузер с прокси.",
+                    options.ProxyUsername,
+                    options.ProxyPassword)
+                : "Не удалось открыть обычный браузер.",
+            ex);
     }
 
     private static void ObserveAbandonedLaunch(Task<IBrowser> launchTask)

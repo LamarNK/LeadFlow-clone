@@ -770,6 +770,218 @@ public sealed class WorkerConfigService(
         return (ToCredentialsDto(account), null);
     }
 
+    public async Task<(LocalWorkerAccountProfileDto? Profile, string? Error)> UpdateLocalAccountProfileAsync(
+        Guid workerId,
+        Guid accountId,
+        UpdateLocalWorkerAccountProfileRequest request,
+        OfficeScope scope,
+        CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        if (!await officeScope.CanAccessWorkerAsync(scope, workerId, ct))
+        {
+            return (null, "Воркер не найден.");
+        }
+
+        var worker = await db.Workers.FirstOrDefaultAsync(x => x.Id == workerId, ct);
+        if (worker is null)
+        {
+            return (null, "Воркер не найден.");
+        }
+
+        var account = await db.WorkerAccounts.FirstOrDefaultAsync(
+            x => x.WorkerId == workerId && x.AccountId == accountId,
+            ct);
+        if (account is null)
+        {
+            return (null, "Аккаунт не найден.");
+        }
+
+        if (!IsLocalAccount(account))
+        {
+            return (null, "Настройки профиля доступны только для обычного браузера.");
+        }
+
+        if (!TryApplyAvitoCredentials(account, request.Login, request.Password, request.ClearCredentials, out var credentialsError))
+        {
+            return (null, credentialsError);
+        }
+
+        if (!TryApplyLocalProxy(account, request, out var proxyError))
+        {
+            return (null, proxyError);
+        }
+
+        account.UpdatedAtUtc = DateTime.UtcNow;
+        await db.SaveChangesAsync(ct);
+
+        panelRealtime.Notify(
+            [PanelChangeKind.Workers, PanelChangeKind.Accounts, PanelChangeKind.Dashboard],
+            worker.OfficeId,
+            workerId);
+        await workerPushNotifier.PushConfigChangedAsync(workerId, ct).ConfigureAwait(false);
+
+        return (ToLocalProfileDto(account, worker), null);
+    }
+
+    private bool TryApplyAvitoCredentials(
+        WorkerAccountEntity account,
+        string? login,
+        string? password,
+        bool clear,
+        out string? error)
+    {
+        error = null;
+        if (clear)
+        {
+            account.AvitoLogin = null;
+            account.AvitoPasswordProtected = null;
+            return true;
+        }
+
+        var normalizedLogin = string.IsNullOrWhiteSpace(login) ? null : login.Trim();
+        if (normalizedLogin is { Length: > 256 })
+        {
+            error = "Логин Avito не должен превышать 256 символов.";
+            return false;
+        }
+
+        if (normalizedLogin is not null)
+        {
+            account.AvitoLogin = normalizedLogin;
+        }
+
+        if (!string.IsNullOrEmpty(password))
+        {
+            if (password.Length > 256)
+            {
+                error = "Пароль Avito не должен превышать 256 символов.";
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(account.AvitoLogin) && normalizedLogin is null)
+            {
+                error = "Укажите логин Avito вместе с паролем.";
+                return false;
+            }
+
+            account.AvitoPasswordProtected = avitoSecrets.Protect(password);
+        }
+
+        if (!string.IsNullOrWhiteSpace(account.AvitoLogin)
+            && string.IsNullOrWhiteSpace(account.AvitoPasswordProtected))
+        {
+            error = "Укажите пароль Avito (или очистите учётные данные).";
+            return false;
+        }
+
+        return true;
+    }
+
+    private bool TryApplyLocalProxy(
+        WorkerAccountEntity account,
+        UpdateLocalWorkerAccountProfileRequest request,
+        out string? error)
+    {
+        error = null;
+        var enabled = request.ProxyEnabled ?? account.LocalProxyEnabled;
+        var addressInput = request.ProxyAddress is null
+            ? account.LocalProxyAddress
+            : (string.IsNullOrWhiteSpace(request.ProxyAddress) ? null : request.ProxyAddress);
+        var usernameInput = request.ProxyUsername is null
+            ? account.LocalProxyUsername
+            : request.ProxyUsername;
+
+        string? address = null;
+        if (!string.IsNullOrWhiteSpace(addressInput))
+        {
+            if (!LocalChromeProxyRules.TryNormalizeAddress(addressInput, out address, out error))
+            {
+                return false;
+            }
+        }
+        else if (enabled)
+        {
+            error = "Укажите адрес прокси в формате host:port.";
+            return false;
+        }
+
+        if (!LocalChromeProxyRules.TryNormalizeUsername(usernameInput, out var username, out error))
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrEmpty(request.ProxyPassword) && request.ProxyPassword.Length > LocalChromeProxyRules.MaxPasswordLength)
+        {
+            error = $"Пароль прокси не должен превышать {LocalChromeProxyRules.MaxPasswordLength} символов.";
+            return false;
+        }
+
+        account.LocalProxyEnabled = enabled;
+        account.LocalProxyAddress = address;
+        account.LocalProxyUsername = username;
+
+        if (request.ClearProxyPassword)
+        {
+            account.LocalProxyPasswordProtected = null;
+        }
+        else if (!string.IsNullOrEmpty(request.ProxyPassword))
+        {
+            account.LocalProxyPasswordProtected = avitoSecrets.ProtectProxyPassword(request.ProxyPassword);
+        }
+
+        return true;
+    }
+
+    private LocalWorkerAccountProfileDto ToLocalProfileDto(WorkerAccountEntity account, WorkerEntity worker)
+    {
+        var login = string.IsNullOrWhiteSpace(account.AvitoLogin) ? null : account.AvitoLogin.Trim();
+        var hasPassword = !string.IsNullOrWhiteSpace(account.AvitoPasswordProtected);
+        var proxyAddress = NullIfWhiteSpace(account.LocalProxyAddress);
+        var pending = localChromeLoginSessions?.GetPendingForWorker(worker.Id);
+        var isMonitoring = IsAccountMonitoringNow(worker, account.AccountId);
+        var isManual = pending?.AccountId == account.AccountId;
+        return new(
+            account.AccountId,
+            login,
+            hasPassword,
+            !string.IsNullOrWhiteSpace(login) && hasPassword,
+            account.LocalProxyEnabled,
+            proxyAddress,
+            NullIfWhiteSpace(account.LocalProxyUsername),
+            !string.IsNullOrWhiteSpace(account.LocalProxyPasswordProtected),
+            LocalChromeProxyRules.Status(account.LocalProxyEnabled, proxyAddress),
+            LocalChromeProxyRules.BrowserSessionStatus(isMonitoring, isManual),
+            LocalChromeProxyRules.CanOpenBrowser(
+                true,
+                IsBrowserProviderEnabled(account, worker),
+                isMonitoring));
+    }
+
+    private static bool IsAccountMonitoringNow(WorkerEntity worker, Guid accountId)
+    {
+        if (string.IsNullOrWhiteSpace(worker.ActivityActiveAccountsJson))
+        {
+            return false;
+        }
+
+        try
+        {
+            var active = System.Text.Json.JsonSerializer.Deserialize<List<WorkerActiveAccountDto>>(
+                worker.ActivityActiveAccountsJson);
+            return active is not null
+                && active.Any(item =>
+                    item.AccountId == accountId
+                    && (string.Equals(item.Phase, WorkerActivityPhases.Account, StringComparison.Ordinal)
+                        || string.Equals(item.Phase, WorkerActivityPhases.SubProfile, StringComparison.Ordinal)
+                        || string.Equals(item.Phase, WorkerActivityPhases.Parallel, StringComparison.Ordinal)));
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return false;
+        }
+    }
+
     private WorkerAccountConfigDto ToAccountConfigDto(
         WorkerAccountEntity account,
         string? adsPowerApiBaseUrl,
@@ -785,6 +997,17 @@ public sealed class WorkerConfigService(
         {
             avitoLogin = account.AvitoLogin.Trim();
             avitoPassword = password;
+        }
+
+        var isLocal = IsLocalAccount(account);
+        var proxyEnabled = isLocal && account.LocalProxyEnabled;
+        string? proxyPassword = null;
+        if (includeCredentials
+            && proxyEnabled
+            && avitoSecrets.TryUnprotectProxyPassword(account.LocalProxyPasswordProtected, out var localProxyPassword)
+            && !string.IsNullOrEmpty(localProxyPassword))
+        {
+            proxyPassword = localProxyPassword;
         }
 
         return new(
@@ -810,7 +1033,11 @@ public sealed class WorkerConfigService(
             ResolveProfileProvider(account),
             NullIfWhiteSpace(account.MultiloginProfileId),
             NullIfWhiteSpace(account.MultiloginFolderId),
-            NullIfWhiteSpace(account.LocalUserDataDir));
+            NullIfWhiteSpace(account.LocalUserDataDir),
+            proxyEnabled,
+            proxyEnabled ? NullIfWhiteSpace(account.LocalProxyAddress) : null,
+            proxyEnabled ? NullIfWhiteSpace(account.LocalProxyUsername) : null,
+            proxyPassword);
     }
 
     private static bool TryNormalizeLocalChromeExecutablePath(

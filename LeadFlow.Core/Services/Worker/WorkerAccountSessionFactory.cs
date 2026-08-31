@@ -120,14 +120,7 @@ public sealed class WorkerAccountSessionFactory(
         {
             reportStartupStage?.Invoke("запуск Chrome", TimeSpan.Zero);
             browser = await localChromeLauncher
-                .LaunchAsync(
-                    new LocalChromeLaunchOptions
-                    {
-                        UserDataDir = account.BrowserProfilePath,
-                        ExecutablePath = account.LocalChromeExecutablePath,
-                        AccountId = account.Id
-                    },
-                    cancellationToken)
+                .LaunchAsync(LocalChromeLaunchOptionsFactory.FromAccount(account), cancellationToken)
                 .ConfigureAwait(false);
 
             var session = await adsPowerAvitoAutomationService

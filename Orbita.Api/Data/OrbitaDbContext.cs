@@ -187,6 +187,10 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
             entity.Property(x => x.LocalUserDataDir).HasMaxLength(1024);
             entity.Property(x => x.AvitoLogin).HasMaxLength(256);
             entity.Property(x => x.AvitoPasswordProtected).HasMaxLength(2048);
+            entity.Property(x => x.LocalProxyEnabled).IsRequired().HasDefaultValue(false);
+            entity.Property(x => x.LocalProxyAddress).HasMaxLength(255);
+            entity.Property(x => x.LocalProxyUsername).HasMaxLength(255);
+            entity.Property(x => x.LocalProxyPasswordProtected).HasMaxLength(2048);
             entity.HasOne(x => x.Worker).WithMany(x => x.Accounts).HasForeignKey(x => x.WorkerId);
         });
 

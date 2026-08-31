@@ -1,5 +1,6 @@
 using LeadFlow.Core.Models;
 using LeadFlow.Core.Services.Worker;
+using Orbita.Contracts;
 using PuppeteerSharp;
 
 namespace LeadFlow.Core.Services.LocalChrome;
@@ -32,16 +33,10 @@ public sealed class LocalChromeLoginSessionRunner(
         {
             cancellationToken.ThrowIfCancellationRequested();
             browser = await launcher
-                .LaunchAsync(
-                    new LocalChromeLaunchOptions
-                    {
-                        UserDataDir = account.BrowserProfilePath,
-                        ExecutablePath = account.LocalChromeExecutablePath,
-                        AccountId = account.Id
-                    },
-                    cancellationToken)
+                .LaunchAsync(LocalChromeLaunchOptionsFactory.FromAccount(account), cancellationToken)
                 .ConfigureAwait(false);
 
+            await NavigateToAvitoAsync(browser, cancellationToken).ConfigureAwait(false);
             await WaitUntilDisconnectedAsync(browser, cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -52,6 +47,43 @@ public sealed class LocalChromeLoginSessionRunner(
         {
             await CloseOwnedBrowserAsync(browser).ConfigureAwait(false);
             accountLock.Release(account.Id, LocalChromeAccountLock.Login);
+        }
+    }
+
+    internal static async Task NavigateToAvitoAsync(IBrowser browser, CancellationToken cancellationToken)
+    {
+        IPage[]? pages;
+        try
+        {
+            pages = await browser.PagesAsync().WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            throw new InvalidOperationException("Не удалось открыть Avito в обычном браузере.", ex);
+        }
+
+        var page = pages is { Length: > 0 } ? pages[0] : null;
+        if (page is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await page
+                .GoToAsync(
+                    LocalChromeProxyRules.AvitoStartUrl,
+                    new NavigationOptions
+                    {
+                        Timeout = 60_000,
+                        WaitUntil = [WaitUntilNavigation.DOMContentLoaded]
+                    })
+                .WaitAsync(cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            throw new InvalidOperationException("Не удалось открыть Avito в обычном браузере.", ex);
         }
     }
 
@@ -72,9 +104,10 @@ public sealed class LocalChromeLoginSessionRunner(
                 || invalid.Message.StartsWith("Файл браузера не найден", StringComparison.Ordinal)
                 || invalid.Message.StartsWith("Нельзя использовать стандартный профиль", StringComparison.Ordinal)
                 || invalid.Message.StartsWith("Укажите путь", StringComparison.Ordinal)
-                || invalid.Message.StartsWith("Путь к", StringComparison.Ordinal)
-                || invalid.Message.StartsWith("Сначала дождитесь", StringComparison.Ordinal)
-                || invalid.Message.StartsWith("Браузер для входа", StringComparison.Ordinal)))
+                || invalid.Message.StartsWith("Не удалось открыть обычный браузер", StringComparison.Ordinal)
+                || invalid.Message.StartsWith("Не удалось авторизовать прокси", StringComparison.Ordinal)
+                || invalid.Message.StartsWith("Не удалось подготовить прокси", StringComparison.Ordinal)
+                || invalid.Message.StartsWith("Не удалось открыть Avito", StringComparison.Ordinal)))
         {
             return invalid;
         }

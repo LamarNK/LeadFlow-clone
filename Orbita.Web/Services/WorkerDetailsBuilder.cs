@@ -222,7 +222,8 @@ internal static class WorkerDetailsBuilder
         bool workerIsOnline = false,
         bool adsPowerEnabled = true,
         bool multiloginEnabled = true,
-        bool localChromeEnabled = true)
+        bool localChromeEnabled = true,
+        Guid? pendingLocalLoginAccountId = null)
     {
         var providerEnabled = IsAccountProviderEnabled(
             account,
@@ -265,6 +266,8 @@ internal static class WorkerDetailsBuilder
             workerIsOnline,
             account.AccountId,
             activeAccounts);
+        var isLocal = IsLocalAccount(account);
+        var isMonitoring = processing.IsProcessingNow;
         return new WorkerAccountRowViewModel
         {
             Id = account.AccountId,
@@ -279,6 +282,16 @@ internal static class WorkerDetailsBuilder
             IsProviderEnabled = providerEnabled,
             HasAvitoCredentials = account.HasAvitoCredentials,
             AvitoLogin = account.AvitoLogin,
+            LocalProxyEnabled = isLocal && account.LocalProxyEnabled,
+            LocalProxyAddress = isLocal ? account.LocalProxyAddress : null,
+            LocalProxyUsername = isLocal ? account.LocalProxyUsername : null,
+            HasProxyPassword = isLocal && account.HasProxyPassword,
+            BrowserSessionStatus = isLocal
+                ? LocalChromeProxyRules.BrowserSessionStatus(
+                    isMonitoring,
+                    pendingLocalLoginAccountId == account.AccountId)
+                : LocalChromeProxyRules.BrowserFree,
+            CanOpenBrowser = LocalChromeProxyRules.CanOpenBrowser(isLocal, providerEnabled, isMonitoring),
             StatusLabel = label,
             StatusTone = tone,
             NeedsFirstLogin = IsLocalAccount(account)

@@ -1216,8 +1216,11 @@
                                             data-local-open-browser
                                             data-worker-id="@Model.WorkerId"
                                             data-account-id="@account.Id"
-                                            data-post-url="@Url.Action("OpenLocalBrowser", "Workers")">@account.OpenBrowserLabel</button>
+                                            data-post-url="@Url.Action("OpenLocalBrowser", "Workers")"
+                                            @(account.CanOpenBrowser ? null : "disabled")
+                                            title="@(account.CanOpenBrowser ? account.OpenBrowserLabel : account.BrowserSessionStatus)">@account.OpenBrowserLabel</button>
                                 </form>
+                                <span class="worker-local-browser-status">@account.BrowserSessionStatus</span>
                             }
                         </td>
                         <td class="cell-num cell-balance" data-label="Баланс"><span class="account-balance-multiline">@account.BalanceText</span></td>
@@ -1229,6 +1232,32 @@
                             <partial name="_MetricLink" model="@AccountMetricLinks.Errors(Model.WorkerId, account.Id, account.Errors)" />
                         </td>
                         <td class="data-table-menu" data-label="">
+                            @if (account.IsLocal)
+                            {
+                                <button type="button"
+                                        class="row-menu-btn worker-local-settings-btn"
+                                        aria-label="Настройки профиля"
+                                        title="Настройки профиля"
+                                        data-local-profile-settings
+                                        data-worker-id="@Model.WorkerId"
+                                        data-account-id="@account.Id"
+                                        data-account-name="@account.DisplayName"
+                                        data-login="@(account.AvitoLogin ?? "")"
+                                        data-has-password="@(account.HasAvitoCredentials ? "true" : "false")"
+                                        data-proxy-enabled="@(account.LocalProxyEnabled ? "true" : "false")"
+                                        data-proxy-address="@(account.LocalProxyAddress ?? "")"
+                                        data-proxy-username="@(account.LocalProxyUsername ?? "")"
+                                        data-has-proxy-password="@(account.HasProxyPassword ? "true" : "false")"
+                                        data-proxy-status="@account.ProxyStatus"
+                                        data-browser-status="@account.BrowserSessionStatus"
+                                        data-can-open-browser="@(account.CanOpenBrowser ? "true" : "false")"
+                                        data-open-label="@account.OpenBrowserLabel"
+                                        data-save-url="@Url.Action("UpdateLocalAccountProfile", "Workers")"
+                                        data-open-url="@Url.Action("OpenLocalBrowser", "Workers")"
+                                        data-clear-url="@Url.Action("UpdateAccountCredentials", "Workers")">
+                                    <i class="fa-solid fa-gear" aria-hidden="true"></i>
+                                </button>
+                            }
                             <div class="row-menu" data-row-menu>
                                 <button type="button" class="row-menu-btn" aria-label="Действия" aria-expanded="false" aria-haspopup="true">
                                     <i class="fa-solid fa-ellipsis-vertical" aria-hidden="true"></i>
@@ -1242,18 +1271,46 @@
                                         <i class="fa-regular fa-pen-to-square" aria-hidden="true"></i>
                                         Настройки на воркере
                                     </a>
-                                    <button type="button"
-                                            class="row-menu-item"
-                                            data-avito-credentials
-                                            data-worker-id="@Model.WorkerId"
-                                            data-account-id="@account.Id"
-                                            data-account-name="@account.DisplayName"
-                                            data-login="@(account.AvitoLogin ?? "")"
-                                            data-has-password="@(account.HasAvitoCredentials ? "true" : "false")"
-                                            data-post-url="@Url.Action("UpdateAccountCredentials", "Workers")">
-                                        <i class="fa-solid fa-key" aria-hidden="true"></i>
-                                        Логин / пароль Avito
-                                    </button>
+                                    @if (account.IsLocal)
+                                    {
+                                        <button type="button"
+                                                class="row-menu-item"
+                                                data-local-profile-settings
+                                                data-worker-id="@Model.WorkerId"
+                                                data-account-id="@account.Id"
+                                                data-account-name="@account.DisplayName"
+                                                data-login="@(account.AvitoLogin ?? "")"
+                                                data-has-password="@(account.HasAvitoCredentials ? "true" : "false")"
+                                                data-proxy-enabled="@(account.LocalProxyEnabled ? "true" : "false")"
+                                                data-proxy-address="@(account.LocalProxyAddress ?? "")"
+                                                data-proxy-username="@(account.LocalProxyUsername ?? "")"
+                                                data-has-proxy-password="@(account.HasProxyPassword ? "true" : "false")"
+                                                data-proxy-status="@account.ProxyStatus"
+                                                data-browser-status="@account.BrowserSessionStatus"
+                                                data-can-open-browser="@(account.CanOpenBrowser ? "true" : "false")"
+                                                data-open-label="@account.OpenBrowserLabel"
+                                                data-save-url="@Url.Action("UpdateLocalAccountProfile", "Workers")"
+                                                data-open-url="@Url.Action("OpenLocalBrowser", "Workers")"
+                                                data-clear-url="@Url.Action("UpdateAccountCredentials", "Workers")">
+                                            <i class="fa-solid fa-gear" aria-hidden="true"></i>
+                                            Настройки профиля
+                                        </button>
+                                    }
+                                    else
+                                    {
+                                        <button type="button"
+                                                class="row-menu-item"
+                                                data-avito-credentials
+                                                data-worker-id="@Model.WorkerId"
+                                                data-account-id="@account.Id"
+                                                data-account-name="@account.DisplayName"
+                                                data-login="@(account.AvitoLogin ?? "")"
+                                                data-has-password="@(account.HasAvitoCredentials ? "true" : "false")"
+                                                data-post-url="@Url.Action("UpdateAccountCredentials", "Workers")">
+                                            <i class="fa-solid fa-key" aria-hidden="true"></i>
+                                            Логин / пароль Avito
+                                        </button>
+                                    }
                                     <a class="row-menu-item" href="@responsesUrl">
                                         <i class="fa-regular fa-clock" aria-hidden="true"></i>
                                         История откликов
@@ -1269,7 +1326,8 @@
                                                     data-local-open-browser
                                                     data-worker-id="@Model.WorkerId"
                                                     data-account-id="@account.Id"
-                                                    data-post-url="@Url.Action("OpenLocalBrowser", "Workers")">
+                                                    data-post-url="@Url.Action("OpenLocalBrowser", "Workers")"
+                                                    @(account.CanOpenBrowser ? null : "disabled")>
                                                 <i class="fa-regular fa-window-maximize" aria-hidden="true"></i>
                                                 @account.OpenBrowserLabel
                                             </button>

@@ -2,7 +2,6 @@ using Microsoft.AspNetCore.DataProtection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Diagnostics;
 using Microsoft.Extensions.Options;
-using LeadFlow.Core.Services.LocalChrome;
 using Orbita.Api.Data;
 using Orbita.Api.Helpers;
 using Orbita.Api.Options;
@@ -17,6 +16,7 @@ public sealed class WorkerConfigServiceTests
     private static readonly Guid OfficeId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
     private static readonly Guid WorkerId = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
     private static readonly Guid AccountId = Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc");
+    private static readonly Guid LocalAccountId = Guid.Parse("eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee");
 
     [Fact]
     public async Task UpdateSubProfileEnabledAsync_AddsIdToBlacklist_WhenDisabled()
@@ -174,6 +174,153 @@ public sealed class WorkerConfigServiceTests
         var reloaded = await db.WorkerAccounts.SingleAsync();
         Assert.Null(reloaded.AvitoLogin);
         Assert.Null(reloaded.AvitoPasswordProtected);
+    }
+
+    [Fact]
+    public async Task UpdateLocalAccountProfileAsync_SavesAndClearsProxy_WithoutReturningPassword()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db);
+        SeedLocalAccount(db);
+        var secrets = CreateAvitoSecrets();
+        var sut = CreateService(db, secrets);
+
+        var (profile, error) = await sut.UpdateLocalAccountProfileAsync(
+            WorkerId,
+            LocalAccountId,
+            new UpdateLocalWorkerAccountProfileRequest(
+                Login: "+79990001122",
+                Password: "avito-secret",
+                ProxyEnabled: true,
+                ProxyAddress: "203.0.113.10:8080",
+                ProxyUsername: "proxy-user",
+                ProxyPassword: "proxy-secret"),
+            OfficeScope.ForOffice(OfficeId));
+
+        Assert.Null(error);
+        Assert.NotNull(profile);
+        Assert.Equal("+79990001122", profile!.Login);
+        Assert.True(profile.HasPassword);
+        Assert.True(profile.HasCredentials);
+        Assert.True(profile.ProxyEnabled);
+        Assert.Equal("203.0.113.10:8080", profile.ProxyAddress);
+        Assert.Equal("proxy-user", profile.ProxyUsername);
+        Assert.True(profile.HasProxyPassword);
+        Assert.Equal(LocalChromeProxyRules.StatusConfigured, profile.ProxyStatus);
+        Assert.Null(typeof(LocalWorkerAccountProfileDto).GetProperty("Password"));
+        Assert.Null(typeof(LocalWorkerAccountProfileDto).GetProperty("ProxyPassword"));
+        Assert.DoesNotContain("proxy-secret", System.Text.Json.JsonSerializer.Serialize(profile), StringComparison.Ordinal);
+        Assert.DoesNotContain("avito-secret", System.Text.Json.JsonSerializer.Serialize(profile), StringComparison.Ordinal);
+
+        var stored = await db.WorkerAccounts.SingleAsync(x => x.AccountId == LocalAccountId);
+        Assert.NotEqual("proxy-secret", stored.LocalProxyPasswordProtected);
+        Assert.True(secrets.TryUnprotectProxyPassword(stored.LocalProxyPasswordProtected, out var proxyPlain));
+        Assert.Equal("proxy-secret", proxyPlain);
+
+        var keep = await sut.UpdateLocalAccountProfileAsync(
+            WorkerId,
+            LocalAccountId,
+            new UpdateLocalWorkerAccountProfileRequest(
+                ProxyEnabled: true,
+                ProxyAddress: "203.0.113.10:8080",
+                ProxyPassword: ""),
+            OfficeScope.ForOffice(OfficeId));
+        Assert.Null(keep.Error);
+        var kept = await db.WorkerAccounts.SingleAsync(x => x.AccountId == LocalAccountId);
+        Assert.True(secrets.TryUnprotectProxyPassword(kept.LocalProxyPasswordProtected, out var still));
+        Assert.Equal("proxy-secret", still);
+
+        var cleared = await sut.UpdateLocalAccountProfileAsync(
+            WorkerId,
+            LocalAccountId,
+            new UpdateLocalWorkerAccountProfileRequest(ClearProxyPassword: true, ProxyEnabled: true, ProxyAddress: "203.0.113.10:8080"),
+            OfficeScope.ForOffice(OfficeId));
+        Assert.Null(cleared.Error);
+        Assert.False(cleared.Profile!.HasProxyPassword);
+        var afterClear = await db.WorkerAccounts.SingleAsync(x => x.AccountId == LocalAccountId);
+        Assert.Null(afterClear.LocalProxyPasswordProtected);
+    }
+
+    [Fact]
+    public async Task UpdateLocalAccountProfileAsync_RejectsBadHostPort_AndAdsPower()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db);
+        SeedLocalAccount(db);
+        var sut = CreateService(db);
+
+        var bad = await sut.UpdateLocalAccountProfileAsync(
+            WorkerId,
+            LocalAccountId,
+            new UpdateLocalWorkerAccountProfileRequest(
+                ProxyEnabled: true,
+                ProxyAddress: "user:pass@203.0.113.10:8080"),
+            OfficeScope.ForOffice(OfficeId));
+        Assert.Null(bad.Profile);
+        Assert.Contains("логин", bad.Error, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("pass", bad.Error, StringComparison.Ordinal);
+
+        var scheme = await sut.UpdateLocalAccountProfileAsync(
+            WorkerId,
+            LocalAccountId,
+            new UpdateLocalWorkerAccountProfileRequest(
+                ProxyEnabled: true,
+                ProxyAddress: "http://203.0.113.10:8080"),
+            OfficeScope.ForOffice(OfficeId));
+        Assert.Null(scheme.Profile);
+
+        var ads = await sut.UpdateLocalAccountProfileAsync(
+            WorkerId,
+            AccountId,
+            new UpdateLocalWorkerAccountProfileRequest(ProxyEnabled: true, ProxyAddress: "203.0.113.10:8080"),
+            OfficeScope.ForOffice(OfficeId));
+        Assert.Null(ads.Profile);
+        Assert.Contains("обычного браузера", ads.Error, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task GetConfigForWorkerAsync_SendsLocalProxySecretOnlyOnWorkerChannel()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db);
+        SeedLocalAccount(db);
+        var secrets = CreateAvitoSecrets();
+        var sut = CreateService(db, secrets);
+        await sut.UpdateLocalAccountProfileAsync(
+            WorkerId,
+            LocalAccountId,
+            new UpdateLocalWorkerAccountProfileRequest(
+                ProxyEnabled: true,
+                ProxyAddress: "198.51.100.20:3128",
+                ProxyUsername: "px",
+                ProxyPassword: "worker-only-secret"),
+            OfficeScope.ForOffice(OfficeId));
+
+        var config = await sut.GetConfigForWorkerAsync(WorkerId, OfficeScope.ForOffice(OfficeId));
+        var local = Assert.Single(config!.Accounts, a => a.AccountId == LocalAccountId);
+        Assert.True(local.LocalProxyEnabled);
+        Assert.Equal("198.51.100.20:3128", local.LocalProxyAddress);
+        Assert.Equal("px", local.LocalProxyUsername);
+        Assert.Equal("worker-only-secret", local.LocalProxyPassword);
+
+        var ads = Assert.Single(config.Accounts, a => a.AccountId == AccountId);
+        Assert.False(ads.LocalProxyEnabled);
+        Assert.Null(ads.LocalProxyAddress);
+        Assert.Null(ads.LocalProxyPassword);
+
+        var (panelAccount, _) = await sut.UpdateAccountEnabledAsync(
+            WorkerId,
+            LocalAccountId,
+            new UpdateWorkerAccountRequest(false),
+            OfficeScope.ForOffice(OfficeId));
+        Assert.NotNull(panelAccount);
+        Assert.Null(panelAccount!.AvitoPassword);
+        Assert.Null(panelAccount.LocalProxyPassword);
+        Assert.True(panelAccount.LocalProxyEnabled);
+
+        Assert.Null(typeof(WorkerAccountDto).GetProperty("AvitoPassword"));
+        Assert.Null(typeof(WorkerAccountDto).GetProperty("LocalProxyPassword"));
+        Assert.NotNull(typeof(WorkerAccountDto).GetProperty(nameof(WorkerAccountDto.HasProxyPassword)));
     }
 
     [Fact]
@@ -1844,6 +1991,23 @@ public sealed class WorkerConfigServiceTests
                 new WorkerSubProfileDto("sp-2", "Beta", "", false, null, null, null, null)
             }),
             SubProfilesDisabledIdsJson = disabledIdsJson,
+            UpdatedAtUtc = DateTime.UtcNow
+        });
+        db.SaveChanges();
+    }
+
+    private static void SeedLocalAccount(OrbitaDbContext db)
+    {
+        db.WorkerAccounts.Add(new WorkerAccountEntity
+        {
+            WorkerId = WorkerId,
+            AccountId = LocalAccountId,
+            AdsPowerProfileId = string.Empty,
+            LocalUserDataDir = @"D:\Orbita\ChromeProfiles\acc-1",
+            DisplayName = "local-acc",
+            Status = "RequiresLogin",
+            IsEnabled = false,
+            IsEnabledInPanel = false,
             UpdatedAtUtc = DateTime.UtcNow
         });
         db.SaveChanges();

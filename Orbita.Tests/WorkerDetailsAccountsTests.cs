@@ -96,6 +96,9 @@ public sealed class WorkerDetailsAccountsTests
         Assert.True(mapped.CanRefreshSubProfiles);
         Assert.Contains(@"D:\Orbita\ChromeProfiles\acc-1", mapped.ProfileIdTitle, StringComparison.Ordinal);
         Assert.True(mapped.IsProviderEnabled);
+        Assert.True(mapped.CanOpenBrowser);
+        Assert.Equal(LocalChromeProxyRules.BrowserFree, mapped.BrowserSessionStatus);
+        Assert.Equal(LocalChromeProxyRules.StatusNotConfigured, mapped.ProxyStatus);
     }
 
     [Fact]
@@ -349,6 +352,35 @@ public sealed class WorkerDetailsAccountsTests
         Assert.Equal("success", ready.StatusTone);
         Assert.Equal("Открыть браузер", ready.OpenBrowserLabel);
         Assert.False(ready.NeedsFirstLogin);
+        Assert.True(ready.CanOpenBrowser);
+
+        var monitoring = WorkerDetailsBuilder.MapAccount(
+            new WorkerAccountDto(
+                LocalId,
+                "chrome-acc",
+                "Active",
+                true,
+                1,
+                0,
+                0,
+                null,
+                DateTime.UtcNow,
+                true,
+                AdsPowerProfileId: "",
+                LocalUserDataDir: @"D:\Orbita\ChromeProfiles\acc-1",
+                LocalProxyEnabled: true,
+                LocalProxyAddress: "203.0.113.10:8080",
+                HasProxyPassword: true),
+            balance: null,
+            WorkerId,
+            workerIsOnline: true,
+            activeAccounts:
+            [
+                new WorkerActiveAccountDto(LocalId, "chrome-acc", WorkerActivityPhases.Account, "сбор")
+            ]);
+        Assert.Equal(LocalChromeProxyRules.BrowserMonitoring, monitoring.BrowserSessionStatus);
+        Assert.False(monitoring.CanOpenBrowser);
+        Assert.Equal(LocalChromeProxyRules.StatusConfigured, monitoring.ProxyStatus);
 
         var relogin = WorkerDetailsBuilder.MapAccount(
             new WorkerAccountDto(
