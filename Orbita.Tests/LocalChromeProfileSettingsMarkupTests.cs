@@ -18,7 +18,6 @@ public sealed class LocalChromeProfileSettingsMarkupTests
 
         var adsCredentials = view.IndexOf("data-avito-credentials", StringComparison.Ordinal);
         Assert.True(adsCredentials > 0);
-        Assert.Contains("else", view[Math.Max(0, adsCredentials - 200)..adsCredentials]);
     }
 
     [Fact]

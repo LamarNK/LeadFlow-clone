@@ -376,7 +376,7 @@ public sealed class WorkerDetailsAccountsTests
             workerIsOnline: true,
             activeAccounts:
             [
-                new WorkerActiveAccountDto(LocalId, "chrome-acc", WorkerActivityPhases.Account, "сбор")
+                new WorkerActiveAccountDto(LocalId, "chrome-acc", WorkerActivityPhases.Account, "сбор", UpdatedAtUtc: DateTime.UtcNow)
             ]);
         Assert.Equal(LocalChromeProxyRules.BrowserMonitoring, monitoring.BrowserSessionStatus);
         Assert.False(monitoring.CanOpenBrowser);
