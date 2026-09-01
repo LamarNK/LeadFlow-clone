@@ -244,6 +244,124 @@ public sealed class CrmController(
         return board is null ? NoContent() : PartialView("_CrmWorkspace", board);
     }
 
+    [HttpGet]
+    [Authorize(Policy = PanelPermissions.CrmBoard)]
+    public async Task<IActionResult> StagePage(
+        Guid? officeId,
+        string stage,
+        string? search,
+        string? scope,
+        string? city,
+        string? vacancy,
+        string? managerUserId = null,
+        string? closeReason = null,
+        string? createdFrom = null,
+        string? createdTo = null,
+        string? sort = null,
+        string? dir = null,
+        int page = 1,
+        bool overdueOnly = false,
+        bool activeLoadOnly = false,
+        bool includeClosed = false,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(stage))
+        {
+            return BadRequest();
+        }
+
+        officeId = ResolveOfficeId(officeId);
+        if (officeId is null)
+        {
+            return NoContent();
+        }
+
+        var isClosedStage = string.Equals(stage, "Закрыто", StringComparison.Ordinal);
+        var effectiveScope = isClosedStage
+            ? CrmBoardScopes.Closed
+            : ResolveBoardScope(scope, managerUserId);
+        var createdPeriod = ResolveCreatedPeriod(createdFrom, createdTo);
+        var (board, _) = await api.GetCrmBoardResultAsync(
+            officeId,
+            new CrmBoardQuery(
+                search,
+                effectiveScope,
+                city,
+                vacancy,
+                overdueOnly,
+                activeLoadOnly,
+                includeClosed,
+                managerUserId,
+                closeReason,
+                CrmBoardViews.List,
+                Math.Max(1, page),
+                CrmBoardStageOptions.PageSize,
+                sort,
+                dir,
+                isClosedStage ? null : stage,
+                createdPeriod.FromUtc,
+                createdPeriod.ToUtc,
+                createdPeriod.From,
+                createdPeriod.To,
+                BrowserTimeZone.Resolve(HttpContext)),
+            ct);
+        if (board?.ListCards is not { Count: > 0 } cards)
+        {
+            return NoContent();
+        }
+
+        var returnUrl = Url?.Action(nameof(Index), new
+        {
+            scope,
+            managerUserId,
+            search,
+            city,
+            vacancy,
+            closeReason,
+            overdueOnly,
+            activeLoadOnly,
+            includeClosed,
+            createdFrom,
+            createdTo,
+            view = CrmBoardViews.Board,
+            sort,
+            dir
+        }) ?? "/Crm";
+        return PartialView("_CrmStageBatch", new CrmStageBatchViewModel(
+            cards,
+            board.Managers,
+            stage,
+            User.FindFirstValue(ClaimTypes.NameIdentifier),
+            returnUrl,
+            board.CanEdit,
+            board.IsAdmin,
+            board.IsAdmin));
+    }
+
+    [HttpGet]
+    [Authorize(Policy = PanelPermissions.CrmTeam)]
+    public async Task<IActionResult> ExportStage(
+        Guid? officeId,
+        string stage,
+        CancellationToken ct = default)
+    {
+        if (!PanelRoles.HasElevatedOfficeAccess(User)) return Forbid();
+        officeId = ResolveOfficeId(officeId);
+        if (officeId is null || string.IsNullOrWhiteSpace(stage))
+        {
+            return BadRequest("Выберите офис и этап для выгрузки.");
+        }
+
+        var (archive, error) = await api.ExportCrmStageArchiveAsync(officeId, stage, ct);
+        if (archive is null)
+        {
+            return BadRequest(error ?? "Не удалось сформировать ZIP-выгрузку.");
+        }
+
+        Response.Headers.CacheControl = "no-store";
+        return File(archive.Stream, "application/zip", archive.FileName);
+    }
+
     [HttpPost]
     [Authorize(Policy = PanelPermissions.CrmBoard)]
     [ValidateAntiForgeryToken]
@@ -692,20 +810,29 @@ public sealed class CrmController(
     public async Task<IActionResult> BulkAssign(
         Guid[]? cardIds,
         string managerUserId,
+        string? allCardsInStage,
         string? returnUrl,
         CancellationToken ct = default)
     {
         if (!PanelRoles.HasElevatedOfficeAccess(User)) return Forbid();
 
         var selectedIds = NormalizeBulkCardIds(cardIds);
-        if (selectedIds.Length == 0 || string.IsNullOrWhiteSpace(managerUserId))
+        var sourceStage = NormalizeBulkStageSelection(allCardsInStage);
+        var officeId = sourceStage is null ? null : ResolveOfficeId(null);
+        if ((selectedIds.Length == 0 && sourceStage is null)
+            || (sourceStage is not null && officeId is null)
+            || string.IsNullOrWhiteSpace(managerUserId))
         {
             TempData["CrmError"] = "Выберите карточки и нового ответственного.";
             return RedirectAfterCardMutation(returnUrl, nameof(Index), new { });
         }
 
         var (result, error) = await api.BulkAssignCrmCardsAsync(
-            new CrmBulkAssignRequest(selectedIds, managerUserId.Trim()),
+            new CrmBulkAssignRequest(
+                selectedIds,
+                managerUserId.Trim(),
+                officeId,
+                sourceStage),
             ct);
         SetBulkActionMessage(result, error, "Ответственный изменён");
         return RedirectAfterCardMutation(returnUrl, nameof(Index), new { });
@@ -720,13 +847,18 @@ public sealed class CrmController(
         string? stage,
         string? closeReason,
         string? comment,
+        string? allCardsInStage,
         string? returnUrl,
         CancellationToken ct = default)
     {
         if (!PanelRoles.HasElevatedOfficeAccess(User)) return Forbid();
 
         var selectedIds = NormalizeBulkCardIds(cardIds);
-        if (selectedIds.Length == 0 || !CrmBulkTransitionOperations.IsValid(operation))
+        var sourceStage = NormalizeBulkStageSelection(allCardsInStage);
+        var officeId = sourceStage is null ? null : ResolveOfficeId(null);
+        if ((selectedIds.Length == 0 && sourceStage is null)
+            || (sourceStage is not null && officeId is null)
+            || !CrmBulkTransitionOperations.IsValid(operation))
         {
             TempData["CrmError"] = "Выберите карточки и действие.";
             return RedirectAfterCardMutation(returnUrl, nameof(Index), new { });
@@ -764,7 +896,9 @@ public sealed class CrmController(
                 operation,
                 stage?.Trim(),
                 closeReason,
-                auditComment),
+                auditComment,
+                officeId,
+                sourceStage),
             ct);
         SetBulkActionMessage(
             result,
@@ -1360,6 +1494,9 @@ public sealed class CrmController(
         .Distinct()
         .Take(500)
         .ToArray();
+
+    private static string? NormalizeBulkStageSelection(string? stage) =>
+        string.IsNullOrWhiteSpace(stage) ? null : stage.Trim();
 
     private void SetBulkActionMessage(CrmBulkActionResult? result, string? error, string successPrefix)
     {

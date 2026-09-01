@@ -7,6 +7,19 @@
     var bulkReasonRequired = User.IsInRole(PanelRoles.SeniorManager)
                              && !User.IsInRole(PanelRoles.OfficeLead)
                              && !User.IsInRole(PanelRoles.Admin);
+    var canSelectWholeStage = canUseBulkActions
+                              && string.Equals(Model.Scope, CrmBoardScopes.Team, StringComparison.Ordinal)
+                              && string.IsNullOrWhiteSpace(Model.ManagerUserId)
+                              && string.IsNullOrWhiteSpace(Model.Search)
+                              && string.IsNullOrWhiteSpace(Model.City)
+                              && string.IsNullOrWhiteSpace(Model.Vacancy)
+                              && string.IsNullOrWhiteSpace(Model.CloseReason)
+                              && string.IsNullOrWhiteSpace(Model.Stage)
+                              && string.IsNullOrWhiteSpace(Model.CreatedFrom)
+                              && string.IsNullOrWhiteSpace(Model.CreatedTo)
+                              && !Model.OverdueOnly
+                              && !Model.ActiveLoadOnly
+                              && !Model.IncludeClosed;
 }
 <section class="crm-board-card card" aria-label="Воронка кандидатов" data-crm-board-carousel data-crm-require-stage-comment="true" data-crm-bulk-board="@(canUseBulkActions ? "true" : "false")" data-crm-bulk-reason-required="@(bulkReasonRequired ? "true" : "false")">
     <div class="crm-board-toolbar">
@@ -45,6 +58,7 @@
             <div class="crm-bulk-actions__selection">
                 <span class="crm-bulk-actions__icon"><i class="fa-solid fa-check-double" aria-hidden="true"></i></span>
                 <span><strong data-crm-bulk-count>0</strong> выбрано</span>
+                <span class="crm-bulk-actions__scope" data-crm-bulk-stage-label hidden></span>
                 <button type="button" class="crm-bulk-actions__clear" data-crm-bulk-clear>Снять выбор</button>
             </div>
             <div class="crm-bulk-actions__controls">
@@ -144,118 +158,81 @@
                 var stage = Model.Stages[stageIndex];
                 var hasRisk = stage.Cards.Any(card => card.HasOverdueTask || card.HoursInStage >= 24);
                 var hasUnassigned = stage.Cards.Any(card => !card.IsClosed && string.IsNullOrWhiteSpace(card.ManagerUserId));
+                var stagePageUrl = Url.Action("StagePage", new
+                {
+                    scope = Model.Scope,
+                    managerUserId = Model.ManagerUserId,
+                    search = Model.Search,
+                    city = Model.City,
+                    vacancy = Model.Vacancy,
+                    closeReason = Model.CloseReason,
+                    overdueOnly = Model.OverdueOnly,
+                    activeLoadOnly = Model.ActiveLoadOnly,
+                    includeClosed = Model.IncludeClosed,
+                    createdFrom = Model.CreatedFrom,
+                    createdTo = Model.CreatedTo,
+                    sort = Model.Sort,
+                    dir = Model.SortDir,
+                    stage = stage.Name
+                });
                 <section class="crm-stage @(hasRisk ? "is-risk" : "") @(hasUnassigned ? "has-unassigned" : "")" data-stage="@stage.Name" data-stage-index="@stageIndex" id="crm-stage-@stageIndex">
                     <header class="crm-stage__head">
                         <h3>@stage.Name</h3>
-                        <span title="Карточек в этапе">@stage.TotalCount</span>
+                        <div class="crm-stage__head-actions">
+                            @if (canSelectWholeStage && stage.TotalCount > 0 && !string.Equals(stage.Name, "Закрыто", StringComparison.Ordinal))
+                            {
+                                <button type="button"
+                                        class="crm-stage__select-all"
+                                        data-crm-select-stage
+                                        data-stage-name="@stage.Name"
+                                        data-total-count="@stage.TotalCount"
+                                        title="Выбрать все @stage.TotalCount карточек этапа «@stage.Name»"
+                                        aria-label="Выбрать все карточки этапа @stage.Name"
+                                        aria-pressed="false">
+                                    <i class="fa-solid fa-check-double" aria-hidden="true"></i>
+                                </button>
+                            }
+                            @if (canUseBulkActions && stage.TotalCount > 0 && !string.Equals(stage.Name, "Закрыто", StringComparison.Ordinal))
+                            {
+                                <a class="crm-stage__export"
+                                   href="@Url.Action("ExportStage", new { stage = stage.Name })"
+                                   download
+                                   data-no-fast-nav
+                                   title="Скачать весь этап «@stage.Name» в ZIP"
+                                   aria-label="Скачать весь этап @stage.Name в ZIP">
+                                    <i class="fa-solid fa-file-arrow-down" aria-hidden="true"></i>
+                                </a>
+                            }
+                            <span title="Карточек в этапе">@stage.TotalCount</span>
+                        </div>
                     </header>
-                    <div class="crm-stage__cards">
+                    <div class="crm-stage__cards"
+                         data-crm-stage-cards
+                         data-crm-stage-page-url="@stagePageUrl"
+                         data-crm-stage-next-page="2"
+                         data-crm-stage-loaded="@stage.Cards.Count"
+                         data-crm-stage-total="@stage.TotalCount">
                     @foreach (var card in stage.Cards)
                     {
-                        var defaultAssigneeUserId = card.ManagerUserId
-                            ?? Model.Managers.FirstOrDefault(x => x.UserId == currentUserId)?.UserId
-                            ?? Model.Managers.FirstOrDefault()?.UserId;
-                        var adUrl = !string.IsNullOrWhiteSpace(card.VacancyUrl) ? card.VacancyUrl : card.SourceUrl;
-                        var hasOverdueTask = !card.IsClosed && card.HasOverdueTask;
-                        var hasActiveTask = !card.IsClosed && card.OpenTaskCount > 0 && !hasOverdueTask;
-                        <article class="crm-tile @(card.IsClosed ? "is-closed" : "") @(hasOverdueTask ? "is-overdue" : "") @(hasActiveTask ? "has-active-task" : "")"
-                                 data-card-manager-user-id="@card.ManagerUserId"
-                                 @if (Model.CanEdit && !card.IsClosed) { <text>draggable="true" data-card-id="@card.Id" data-card-stage="@card.Stage"</text> }>
-                            @if (canUseBulkActions && !card.IsClosed)
-                            {
-                                <label class="crm-tile__select" title="Выбрать карточку">
-                                    <input type="checkbox" value="@card.Id" data-crm-card-select aria-label="Выбрать карточку @card.FullName" />
-                                    <span><i class="fa-solid fa-check" aria-hidden="true"></i></span>
-                                </label>
-                            }
-                            <a asp-action="Card" asp-route-id="@card.Id" asp-route-stage="@stage.Name" class="crm-tile__body" data-crm-open-card data-crm-stage="@stage.Name">
-                            <div class="crm-tile__top">
-                                <strong>@card.FullName</strong>
-                                @if (!card.IsInActiveLoad && !card.IsClosed) { <span class="crm-tag">Вне нагрузки</span> }
-                                @if (card.IsClosed) { <span class="crm-tag crm-tag--muted">@card.CloseReason</span> }
-                            </div>
-                            <div class="crm-tile__meta">@(card.Age?.ToString() ?? "—") лет · @card.City</div>
-                            <div class="crm-tile__vacancy">@card.Vacancy</div>
-                            <footer class="crm-tile__foot">
-                                <span class="crm-tile__assignee">
-                                    <i class="fa-regular fa-user" aria-hidden="true"></i>
-                                    <small>Ответственный</small>
-                                    <strong>@(card.ManagerName ?? "Не назначен")</strong>
-                                </span>
-                                @if (card.OpenTaskCount > 0)
-                                {
-                                    <span class="crm-tile__tasks @(hasOverdueTask ? "is-overdue" : "is-active")"><i class="fa-solid fa-list-check" aria-hidden="true"></i>@card.OpenTaskCount</span>
-                                }
-                            </footer>
-                            </a>
-                            @if (!card.IsClosed)
-                            {
-                                <div class="crm-tile__actions" aria-label="Быстрые действия для @card.FullName">
-                                    <a href="tel:@card.PhoneRaw" title="Позвонить"><i class="fa-solid fa-phone" aria-hidden="true"></i><span>Позвонить</span></a>
-                                    @if (!string.IsNullOrWhiteSpace(adUrl))
-                                    {
-                                        <a href="@adUrl" target="_blank" rel="noopener" title="Открыть объявление"><i class="fa-solid fa-tag" aria-hidden="true"></i><span>Объявление</span></a>
-                                    }
-                                    @if (Model.CanEdit)
-                                    {
-                                        @if (!card.IsInActiveLoad)
-                                        {
-                                            <form asp-action="SetLoad" method="post"><input type="hidden" name="id" value="@card.Id" /><input type="hidden" name="active" value="true" /><input type="hidden" name="returnUrl" value="@boardReturnUrl" /><button type="submit" title="Вернуть в активную нагрузку"><i class="fa-solid fa-bolt" aria-hidden="true"></i><span>В нагрузку</span></button></form>
-                                        }
-                                        @if (Model.IsAdmin || defaultAssigneeUserId is not null)
-                                        {
-                                            <details class="crm-tile__quick-menu">
-                                                <summary title="Ещё действия"><i class="fa-solid fa-ellipsis" aria-hidden="true"></i><span>Ещё действия</span></summary>
-                                                <div>
-                                                    @if (Model.IsAdmin && Model.Managers.Count > 0)
-                                                    {
-                                                        <form asp-action="Assign" method="post">
-                                                            <input type="hidden" name="id" value="@card.Id" />
-                                                            <input type="hidden" name="returnUrl" value="@boardReturnUrl" />
-                                                            <select name="managerUserId" aria-label="Назначить менеджера для @card.FullName">
-                                                                @foreach (var manager in Model.Managers)
-                                                                {
-                                                                    if (manager.UserId == card.ManagerUserId)
-                                                                    {
-                                                                        <option value="@manager.UserId" selected>@manager.DisplayName</option>
-                                                                    }
-                                                                    else
-                                                                    {
-                                                                        <option value="@manager.UserId">@manager.DisplayName</option>
-                                                                    }
-                                                                }
-                                                            </select>
-                                                            <button type="submit"><i class="fa-regular fa-user" aria-hidden="true"></i>Назначить</button>
-                                                        </form>
-                                                    }
-                                                    @if (defaultAssigneeUserId is not null)
-                                                    {
-                                                        <form asp-action="CreateTask" method="post">
-                                                            <input type="hidden" name="cardId" value="@card.Id" />
-                                                            <input type="hidden" name="assigneeUserId" value="@defaultAssigneeUserId" />
-                                                            <input type="hidden" name="importance" value="@CrmTaskImportances.Medium" />
-                                                            <input type="hidden" name="returnUrl" value="@boardReturnUrl" />
-                                                            <select name="taskType" required aria-label="Тип задачи">
-                                                                <option value="" selected disabled>Тип задачи</option>
-                                                                @foreach (var taskType in CrmTaskTypes.All)
-                                                                {
-                                                                    <option value="@taskType">@CrmTaskTypes.GetLabel(taskType)</option>
-                                                                }
-                                                            </select>
-                                                            <button type="submit"><i class="fa-solid fa-list-check" aria-hidden="true"></i>Поставить</button>
-                                                        </form>
-                                                    }
-                                                </div>
-                                            </details>
-                                        }
-                                    }
-                                </div>
-                            }
-                        </article>
+                        <partial name="_CrmTile" model="new Orbita.Web.Models.ViewModels.CrmTileViewModel(
+                            card,
+                            Model.Managers,
+                            stage.Name,
+                            currentUserId,
+                            boardReturnUrl,
+                            Model.CanEdit,
+                            Model.IsAdmin,
+                            canUseBulkActions)" />
                     }
                     @if (stage.Cards.Count == 0)
                     {
                         <div class="crm-stage__empty"><i class="fa-regular fa-folder-open" aria-hidden="true"></i><strong>Пока пусто</strong><span>Карточки появятся после перехода на этап</span></div>
+                    }
+                    @if (stage.Cards.Count < stage.TotalCount)
+                    {
+                        <div class="crm-stage__loader" data-crm-stage-loader aria-live="polite">
+                            <i class="fa-solid fa-spinner" aria-hidden="true"></i><span>Загрузим дальше при прокрутке</span>
+                        </div>
                     }
                     </div>
                 </section>

@@ -2320,6 +2320,67 @@ public sealed class OrbitaApiClient(
         }
     }
 
+    public async Task<(CrmStageArchiveResult? Archive, string? Error)> ExportCrmStageArchiveAsync(
+        Guid? officeId,
+        string stage,
+        CancellationToken ct = default)
+    {
+        var normalizedStage = stage?.Trim() ?? string.Empty;
+        if (normalizedStage.Length == 0)
+        {
+            return (null, "Не указан этап для выгрузки.");
+        }
+
+        const int pageSize = 100;
+        var page = 1;
+        var cards = new List<CrmCandidateCardDto>();
+        var seenIds = new HashSet<Guid>();
+        while (true)
+        {
+            var (board, errorCode) = await GetCrmBoardResultAsync(
+                officeId,
+                new CrmBoardQuery(
+                    Scope: CrmBoardScopes.Team,
+                    View: CrmBoardViews.List,
+                    Page: page,
+                    PageSize: pageSize,
+                    Sort: CrmBoardSorts.Created,
+                    SortDir: "desc",
+                    Stage: normalizedStage),
+                ct);
+            if (board is null)
+            {
+                return (null, errorCode switch
+                {
+                    "forbidden" => "Недостаточно прав для выгрузки этого офиса.",
+                    "unauthorized" or "no_session" => InvalidApiSessionError,
+                    _ => "Не удалось получить карточки для выгрузки."
+                });
+            }
+
+            var batch = board.ListCards ?? [];
+            foreach (var card in batch)
+            {
+                if (seenIds.Add(card.Id)) cards.Add(card);
+            }
+
+            var totalPages = Math.Max(1, (int)Math.Ceiling(board.TotalItems / (double)pageSize));
+            if (cards.Count >= board.TotalItems || batch.Count < pageSize || page >= totalPages)
+            {
+                break;
+            }
+
+            page++;
+        }
+
+        var officeName = officeContext.ContextLabel ?? "Текущий офис";
+        return (CrmStageArchiveBuilder.Build(
+            officeName,
+            normalizedStage,
+            cards,
+            DateTime.UtcNow), null);
+    }
+
     public Task<CrmCandidateDetailDto?> GetCrmCardAsync(Guid cardId, CancellationToken ct = default) =>
         _preview.Enabled
             ? Task.FromResult(DesignPreviewData.GetCrmCard(cardId))
@@ -2587,14 +2648,17 @@ public sealed class OrbitaApiClient(
         {
             var updated = 0;
             var errors = new List<string>();
-            foreach (var cardId in body.CardIds.Where(id => id != Guid.Empty).Distinct().Take(500))
+            var cardIds = !string.IsNullOrWhiteSpace(body.AllCardsInStage)
+                ? DesignPreviewData.GetOpenCrmCardIdsInStage(body.AllCardsInStage)
+                : body.CardIds.Where(id => id != Guid.Empty).Distinct().Take(500).ToArray();
+            foreach (var cardId in cardIds)
             {
                 var (success, error) = DesignPreviewData.AssignCrmCard(cardId, body.ManagerUserId);
                 if (success) updated++;
                 else errors.Add(error ?? "Не удалось изменить ответственного у одной из карточек.");
             }
 
-            var requested = body.CardIds.Where(id => id != Guid.Empty).Distinct().Take(500).Count();
+            var requested = cardIds.Count;
             return (new CrmBulkActionResult(
                 requested,
                 updated,
@@ -2620,7 +2684,9 @@ public sealed class OrbitaApiClient(
         {
             var updated = 0;
             var errors = new List<string>();
-            var cardIds = body.CardIds.Where(id => id != Guid.Empty).Distinct().Take(500).ToArray();
+            var cardIds = !string.IsNullOrWhiteSpace(body.AllCardsInStage)
+                ? DesignPreviewData.GetOpenCrmCardIdsInStage(body.AllCardsInStage)
+                : body.CardIds.Where(id => id != Guid.Empty).Distinct().Take(500).ToArray();
             foreach (var cardId in cardIds)
             {
                 var result = body.Operation == CrmBulkTransitionOperations.Close
@@ -2631,9 +2697,9 @@ public sealed class OrbitaApiClient(
             }
 
             return (new CrmBulkActionResult(
-                cardIds.Length,
+                cardIds.Count,
                 updated,
-                cardIds.Length - updated,
+                cardIds.Count - updated,
                 errors.Distinct(StringComparer.Ordinal).Take(3).ToArray()), null);
         }
 

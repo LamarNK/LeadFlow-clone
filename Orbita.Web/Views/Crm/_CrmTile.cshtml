@@ -1,0 +1,107 @@
+@model Orbita.Web.Models.ViewModels.CrmTileViewModel
+@using Orbita.Contracts
+@{
+    var card = Model.Card;
+    var defaultAssigneeUserId = card.ManagerUserId
+        ?? Model.Managers.FirstOrDefault(x => x.UserId == Model.CurrentUserId)?.UserId
+        ?? Model.Managers.FirstOrDefault()?.UserId;
+    var adUrl = !string.IsNullOrWhiteSpace(card.VacancyUrl) ? card.VacancyUrl : card.SourceUrl;
+    var hasOverdueTask = !card.IsClosed && card.HasOverdueTask;
+    var hasActiveTask = !card.IsClosed && card.OpenTaskCount > 0 && !hasOverdueTask;
+}
+<article class="crm-tile @(card.IsClosed ? "is-closed" : "") @(hasOverdueTask ? "is-overdue" : "") @(hasActiveTask ? "has-active-task" : "")"
+         data-card-id="@card.Id"
+         data-card-stage="@card.Stage"
+         data-card-manager-user-id="@card.ManagerUserId"
+         @if (Model.CanEdit && !card.IsClosed) { <text>draggable="true"</text> }>
+    @if (Model.CanUseBulkActions && !card.IsClosed)
+    {
+        <label class="crm-tile__select" title="Выбрать карточку">
+            <input type="checkbox" value="@card.Id" data-crm-card-select aria-label="Выбрать карточку @card.FullName" />
+            <span><i class="fa-solid fa-check" aria-hidden="true"></i></span>
+        </label>
+    }
+    <a asp-action="Card" asp-route-id="@card.Id" asp-route-stage="@Model.StageName" class="crm-tile__body" data-crm-open-card data-crm-stage="@Model.StageName">
+        <div class="crm-tile__top">
+            <strong>@card.FullName</strong>
+            @if (!card.IsInActiveLoad && !card.IsClosed) { <span class="crm-tag">Вне нагрузки</span> }
+            @if (card.IsClosed) { <span class="crm-tag crm-tag--muted">@card.CloseReason</span> }
+        </div>
+        <div class="crm-tile__meta">@(card.Age?.ToString() ?? "—") лет · @card.City</div>
+        <div class="crm-tile__vacancy">@card.Vacancy</div>
+        <footer class="crm-tile__foot">
+            <span class="crm-tile__assignee">
+                <i class="fa-regular fa-user" aria-hidden="true"></i>
+                <small>Ответственный</small>
+                <strong>@(card.ManagerName ?? "Не назначен")</strong>
+            </span>
+            @if (card.OpenTaskCount > 0)
+            {
+                <span class="crm-tile__tasks @(hasOverdueTask ? "is-overdue" : "is-active")"><i class="fa-solid fa-list-check" aria-hidden="true"></i>@card.OpenTaskCount</span>
+            }
+        </footer>
+    </a>
+    @if (!card.IsClosed)
+    {
+        <div class="crm-tile__actions" aria-label="Быстрые действия для @card.FullName">
+            <a href="tel:@card.PhoneRaw" title="Позвонить"><i class="fa-solid fa-phone" aria-hidden="true"></i><span>Позвонить</span></a>
+            @if (!string.IsNullOrWhiteSpace(adUrl))
+            {
+                <a href="@adUrl" target="_blank" rel="noopener" title="Открыть объявление"><i class="fa-solid fa-tag" aria-hidden="true"></i><span>Объявление</span></a>
+            }
+            @if (Model.CanEdit)
+            {
+                @if (!card.IsInActiveLoad)
+                {
+                    <form asp-action="SetLoad" method="post"><input type="hidden" name="id" value="@card.Id" /><input type="hidden" name="active" value="true" /><input type="hidden" name="returnUrl" value="@Model.ReturnUrl" /><button type="submit" title="Вернуть в активную нагрузку"><i class="fa-solid fa-bolt" aria-hidden="true"></i><span>В нагрузку</span></button></form>
+                }
+                @if (Model.IsAdmin || defaultAssigneeUserId is not null)
+                {
+                    <details class="crm-tile__quick-menu">
+                        <summary title="Ещё действия"><i class="fa-solid fa-ellipsis" aria-hidden="true"></i><span>Ещё действия</span></summary>
+                        <div>
+                            @if (Model.IsAdmin && Model.Managers.Count > 0)
+                            {
+                                <form asp-action="Assign" method="post">
+                                    <input type="hidden" name="id" value="@card.Id" />
+                                    <input type="hidden" name="returnUrl" value="@Model.ReturnUrl" />
+                                    <select name="managerUserId" aria-label="Назначить менеджера для @card.FullName">
+                                        @foreach (var manager in Model.Managers)
+                                        {
+                                            if (manager.UserId == card.ManagerUserId)
+                                            {
+                                                <option value="@manager.UserId" selected>@manager.DisplayName</option>
+                                            }
+                                            else
+                                            {
+                                                <option value="@manager.UserId">@manager.DisplayName</option>
+                                            }
+                                        }
+                                    </select>
+                                    <button type="submit"><i class="fa-regular fa-user" aria-hidden="true"></i>Назначить</button>
+                                </form>
+                            }
+                            @if (defaultAssigneeUserId is not null)
+                            {
+                                <form asp-action="CreateTask" method="post">
+                                    <input type="hidden" name="cardId" value="@card.Id" />
+                                    <input type="hidden" name="assigneeUserId" value="@defaultAssigneeUserId" />
+                                    <input type="hidden" name="importance" value="@CrmTaskImportances.Medium" />
+                                    <input type="hidden" name="returnUrl" value="@Model.ReturnUrl" />
+                                    <select name="taskType" required aria-label="Тип задачи">
+                                        <option value="" selected disabled>Тип задачи</option>
+                                        @foreach (var taskType in CrmTaskTypes.All)
+                                        {
+                                            <option value="@taskType">@CrmTaskTypes.GetLabel(taskType)</option>
+                                        }
+                                    </select>
+                                    <button type="submit"><i class="fa-solid fa-list-check" aria-hidden="true"></i>Поставить</button>
+                                </form>
+                            }
+                        </div>
+                    </details>
+                }
+            }
+        </div>
+    }
+</article>

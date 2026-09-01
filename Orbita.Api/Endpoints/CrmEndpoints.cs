@@ -381,6 +381,7 @@ public static class CrmEndpoints
         crmBoard.MapPost("/cards/bulk/assign", async (
             CrmBulkAssignRequest request,
             CrmWorkspaceService workspace,
+            OfficeScopeService officeScope,
             ClaimsPrincipal principal,
             CancellationToken ct) =>
         {
@@ -390,11 +391,28 @@ public static class CrmEndpoints
                 return Results.Forbid();
             }
 
-            if (request.CardIds is null
-                || request.CardIds.Count is < 1 or > 500
+            var selectsWholeStage = !string.IsNullOrWhiteSpace(request.AllCardsInStage);
+            if ((!selectsWholeStage && (request.CardIds is null || request.CardIds.Count is < 1 or > 500))
                 || string.IsNullOrWhiteSpace(request.ManagerUserId))
             {
-                return Results.BadRequest(new { error = "Выберите от 1 до 500 карточек и ответственного." });
+                return Results.BadRequest(new { error = "Выберите от 1 до 500 карточек или весь этап и ответственного." });
+            }
+
+            if (selectsWholeStage)
+            {
+                var scope = await officeScope.ResolveAsync(principal, ct);
+                var effectiveOfficeId = scope.ResolveFilter(request.OfficeId);
+                if (effectiveOfficeId is not Guid officeId)
+                {
+                    return Results.BadRequest(new { error = "Выберите офис для массового действия." });
+                }
+
+                request = request with
+                {
+                    OfficeId = officeId,
+                    AllCardsInStage = request.AllCardsInStage!.Trim(),
+                    CardIds = []
+                };
             }
 
             return Results.Ok(await workspace.BulkAssignAsync(request, userId, ct));
@@ -403,6 +421,7 @@ public static class CrmEndpoints
         crmBoard.MapPost("/cards/bulk/transition", async (
             CrmBulkTransitionRequest request,
             CrmWorkspaceService workspace,
+            OfficeScopeService officeScope,
             ClaimsPrincipal principal,
             CancellationToken ct) =>
         {
@@ -412,11 +431,28 @@ public static class CrmEndpoints
                 return Results.Forbid();
             }
 
-            if (request.CardIds is null
-                || request.CardIds.Count is < 1 or > 500
+            var selectsWholeStage = !string.IsNullOrWhiteSpace(request.AllCardsInStage);
+            if ((!selectsWholeStage && (request.CardIds is null || request.CardIds.Count is < 1 or > 500))
                 || !CrmBulkTransitionOperations.IsValid(request.Operation))
             {
-                return Results.BadRequest(new { error = "Выберите от 1 до 500 карточек и действие." });
+                return Results.BadRequest(new { error = "Выберите от 1 до 500 карточек или весь этап и действие." });
+            }
+
+            if (selectsWholeStage)
+            {
+                var scope = await officeScope.ResolveAsync(principal, ct);
+                var effectiveOfficeId = scope.ResolveFilter(request.OfficeId);
+                if (effectiveOfficeId is not Guid officeId)
+                {
+                    return Results.BadRequest(new { error = "Выберите офис для массового действия." });
+                }
+
+                request = request with
+                {
+                    OfficeId = officeId,
+                    AllCardsInStage = request.AllCardsInStage!.Trim(),
+                    CardIds = []
+                };
             }
 
             var requiresComment = principal.IsInRole(PanelRoles.SeniorManager)

@@ -252,6 +252,11 @@ public static class CrmBoardListOptions
         PageSizes.Contains(pageSize) ? pageSize : DefaultPageSize;
 }
 
+public static class CrmBoardStageOptions
+{
+    public const int PageSize = 20;
+}
+
 public static class CrmBoardSorts
 {
     public const string Candidate = "candidate";
@@ -463,7 +468,9 @@ public sealed record CrmCandidateCardDto(
     string? SourceResponseId,
     /// <summary>Unread chat messages for the current viewer (0 if none / no chat).</summary>
     int ChatUnreadCount = 0,
-    string Citizenship = "");
+    string Citizenship = "",
+    /// <summary>All active contact phones known for the candidate.</summary>
+    IReadOnlyList<string>? ContactPhones = null);
 
 public sealed record CrmCandidateDetailDto(
     CrmCandidateCardDto Card,
@@ -707,14 +714,18 @@ public static class CrmBulkTransitionOperations
 
 public sealed record CrmBulkAssignRequest(
     IReadOnlyList<Guid> CardIds,
-    string ManagerUserId);
+    string ManagerUserId,
+    Guid? OfficeId = null,
+    string? AllCardsInStage = null);
 
 public sealed record CrmBulkTransitionRequest(
     IReadOnlyList<Guid> CardIds,
     string Operation,
     string? Stage = null,
     string? CloseReason = null,
-    string? Comment = null);
+    string? Comment = null,
+    Guid? OfficeId = null,
+    string? AllCardsInStage = null);
 
 public sealed record CrmBulkActionResult(
     int Requested,

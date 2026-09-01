@@ -837,6 +837,19 @@ public sealed class CrmWorkspaceServiceTests
         Assert.Equal(
             2,
             await harness.Db.CandidatePhoneHistory.CountAsync(x => x.PersonId == card.Response.PersonId));
+
+        var board = await harness.Sut.GetBoardAsync(
+            OfficeId,
+            manager.Id,
+            isAdmin: false,
+            new CrmBoardQuery(
+                Scope: CrmBoardScopes.Mine,
+                View: CrmBoardViews.List,
+                Stage: CrmStages.Lead));
+        var exportedCard = Assert.Single(board!.ListCards!);
+        Assert.Equal(
+            ["+7 923 631-86-92", "+7 923 062-74-09"],
+            exportedCard.ContactPhones);
     }
 
     [Fact]
@@ -1109,6 +1122,59 @@ public sealed class CrmWorkspaceServiceTests
     }
 
     [Fact]
+    public async Task BulkTransition_AllCardsInStage_ClosesMoreThanLegacyFiveHundredLimit()
+    {
+        await using var harness = await Harness.CreateAsync();
+        SeedOffice(harness.Db, crmEnabled: true, stages: ["Робот", CrmStages.Lead]);
+        var manager = await harness.CreateManagerAsync("bulk-stage@test.local", capacity: 600, onShift: true);
+
+        const int robotCards = 505;
+        for (var index = 0; index < robotCards + 1; index++)
+        {
+            var person = TestCandidatePersonFactory.CreatePerson(
+                OfficeId,
+                fullName: $"Кандидат {index}",
+                firstName: "Кандидат",
+                lastName: index.ToString());
+            var response = TestCandidatePersonFactory.CreateResponse(
+                OfficeId,
+                person.Id,
+                WorkerId,
+                phone: $"7999{index:0000000}",
+                sourceResponseId: $"bulk-stage-{index}",
+                fullName: $"Кандидат {index}");
+            var card = NewCard(response.Id, manager.Id);
+            card.Stage = index < robotCards ? "Робот" : CrmStages.Lead;
+            harness.Db.CandidatePersons.Add(person);
+            harness.Db.CandidateResponses.Add(response);
+            harness.Db.CrmCandidateCards.Add(card);
+        }
+
+        await harness.Db.SaveChangesAsync();
+
+        var result = await harness.Sut.BulkTransitionAsync(
+            new CrmBulkTransitionRequest(
+                [],
+                CrmBulkTransitionOperations.Close,
+                CloseReason: CrmCloseReasons.NotRelevant,
+                Comment: "Архивируем весь этап после выгрузки",
+                OfficeId: OfficeId,
+                AllCardsInStage: "Робот"),
+            manager.Id);
+
+        Assert.Equal(robotCards, result.Requested);
+        Assert.Equal(robotCards, result.Updated);
+        Assert.Equal(0, result.Failed);
+        Assert.Equal(
+            robotCards,
+            await harness.Db.CrmCandidateCards.CountAsync(card => card.Stage == "Робот" && card.IsClosed));
+        Assert.Single(await harness.Db.CrmCandidateCards.Where(card => card.Stage == CrmStages.Lead && !card.IsClosed).ToListAsync());
+        Assert.Equal(
+            robotCards,
+            await harness.Db.CrmCandidateHistory.CountAsync(history => history.Action == "Closed"));
+    }
+
+    [Fact]
     public async Task SetOfficeFunnel_RejectsEmptyOrInvalid()
     {
         await using var harness = await Harness.CreateAsync();
@@ -1286,6 +1352,51 @@ public sealed class CrmWorkspaceServiceTests
         Assert.Equal(
             expectedByCreated.OrderByDescending(card => card.CreatedAtUtc).Skip(20).Select(card => card.Id),
             board.ListCards.Select(card => card.Id));
+    }
+
+    [Fact]
+    public async Task GetBoard_BoardView_LoadsFirstPagePerStageAndKeepsFullStageCounts()
+    {
+        await using var harness = await Harness.CreateAsync();
+        SeedOffice(harness.Db, crmEnabled: true);
+        var manager = await harness.CreateManagerAsync("board-stage-pages@test.local", capacity: 100, onShift: true);
+
+        for (var index = 0; index < CrmBoardStageOptions.PageSize + 5; index++)
+        {
+            var response = await SeedResponseAsync(harness.Db, $"board-stage-lead-{index}");
+            var card = NewCard(response.Id, manager.Id);
+            card.Stage = CrmStages.Lead;
+            card.CreatedAtUtc = DateTime.UtcNow.AddMinutes(-index);
+            harness.Db.CrmCandidateCards.Add(card);
+        }
+
+        for (var index = 0; index < CrmBoardStageOptions.PageSize + 3; index++)
+        {
+            var response = await SeedResponseAsync(harness.Db, $"board-stage-ndz-{index}");
+            var card = NewCard(response.Id, manager.Id);
+            card.Stage = CrmStages.Ndz73;
+            card.CreatedAtUtc = DateTime.UtcNow.AddMinutes(-index);
+            harness.Db.CrmCandidateCards.Add(card);
+        }
+
+        await harness.Db.SaveChangesAsync();
+
+        var board = await harness.Sut.GetBoardAsync(
+            OfficeId,
+            manager.Id,
+            isAdmin: false,
+            new CrmBoardQuery(Scope: CrmBoardScopes.Mine));
+
+        Assert.NotNull(board);
+        var lead = Assert.Single(board.Stages, stage => stage.Name == CrmStages.Lead);
+        var ndz = Assert.Single(board.Stages, stage => stage.Name == CrmStages.Ndz73);
+        Assert.Equal(CrmBoardStageOptions.PageSize + 5, lead.TotalCount);
+        Assert.Equal(CrmBoardStageOptions.PageSize, lead.Cards.Count);
+        Assert.Equal(CrmBoardStageOptions.PageSize + 3, ndz.TotalCount);
+        Assert.Equal(CrmBoardStageOptions.PageSize, ndz.Cards.Count);
+        Assert.Equal(
+            (CrmBoardStageOptions.PageSize * 2) + 8,
+            board.TotalItems);
     }
 
     [Fact]

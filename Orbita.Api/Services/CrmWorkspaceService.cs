@@ -249,6 +249,8 @@ public sealed class CrmWorkspaceService(
             ? Math.Min(requestedPage, totalPages)
             : 1;
 
+        var officeStages = CrmStages.Resolve(office.CrmStagesJson);
+
         IOrderedQueryable<CrmCandidateCardEntity> orderedCards = (sort, sortDir) switch
         {
             (CrmBoardSorts.Candidate, "asc") => cardsQuery.OrderBy(x => x.Response.FullName).ThenBy(x => x.Id),
@@ -267,9 +269,53 @@ public sealed class CrmWorkspaceService(
             _ => cardsQuery.OrderByDescending(x => x.CreatedAtUtc).ThenByDescending(x => x.Id)
         };
 
-        var cards = boardView == CrmBoardViews.List
-            ? await orderedCards.Skip((page - 1) * pageSize).Take(pageSize).ToListAsync(ct)
-            : await orderedCards.Take(500).ToListAsync(ct);
+        Dictionary<string, int>? boardOpenStageCounts = null;
+        var boardClosedCount = 0;
+        List<CrmCandidateCardEntity> cards;
+        if (boardView == CrmBoardViews.List)
+        {
+            cards = await orderedCards
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .ToListAsync(ct);
+        }
+        else if (scope is CrmBoardScopes.Mine or CrmBoardScopes.Team)
+        {
+            var counts = await cardsQuery
+                .GroupBy(x => new { x.Stage, x.IsClosed })
+                .Select(group => new { group.Key.Stage, group.Key.IsClosed, Count = group.Count() })
+                .ToListAsync(ct);
+            boardOpenStageCounts = counts
+                .Where(x => !x.IsClosed)
+                .GroupBy(x => x.Stage, StringComparer.Ordinal)
+                .ToDictionary(group => group.Key, group => group.Sum(x => x.Count), StringComparer.Ordinal);
+            boardClosedCount = counts.Where(x => x.IsClosed).Sum(x => x.Count);
+
+            var stageNames = officeStages
+                .Concat(boardOpenStageCounts.Keys.Where(stage => !officeStages.Contains(stage, StringComparer.Ordinal)))
+                .ToList();
+            cards = [];
+            foreach (var stageName in stageNames)
+            {
+                cards.AddRange(await orderedCards
+                    .Where(x => !x.IsClosed && x.Stage == stageName)
+                    .Take(CrmBoardStageOptions.PageSize)
+                    .ToListAsync(ct));
+            }
+
+            if (includeClosed && boardClosedCount > 0)
+            {
+                cards.AddRange(await orderedCards
+                    .Where(x => x.IsClosed)
+                    .Take(CrmBoardStageOptions.PageSize)
+                    .ToListAsync(ct));
+            }
+        }
+        else
+        {
+            // Queue and closed archive keep their existing bounded table payload.
+            cards = await orderedCards.Take(500).ToListAsync(ct);
+        }
 
         var cardIds = cards.Select(x => x.Id).ToList();
         var openTasks = await db.CrmTasks.AsNoTracking()
@@ -283,32 +329,56 @@ public sealed class CrmWorkspaceService(
                 g => (Count: g.Count(), Overdue: g.Any(t => t.DueAtUtc is DateTime due && due < now)));
 
         var chatUnreadByCard = await LoadChatUnreadCountsAsync(cardIds, userId, cards, ct);
+        var personIds = cards.Select(x => x.Response.PersonId).Distinct().ToList();
+        var contactPhoneRows = await db.CandidateContactPhones.AsNoTracking()
+            .Where(x => personIds.Contains(x.PersonId))
+            .OrderByDescending(x => x.IsPrimary)
+            .ThenBy(x => x.CreatedAtUtc)
+            .Select(x => new { x.PersonId, x.PhoneRaw })
+            .ToListAsync(ct);
+        var contactPhonesByPerson = contactPhoneRows
+            .GroupBy(x => x.PersonId)
+            .ToDictionary(
+                group => group.Key,
+                group => (IReadOnlyList<string>)group
+                    .Select(x => x.PhoneRaw)
+                    .Where(phone => !string.IsNullOrWhiteSpace(phone))
+                    .Distinct(StringComparer.Ordinal)
+                    .ToList());
 
         CrmCandidateCardDto MapCard(CrmCandidateCardEntity x)
         {
             var stats = taskStats.GetValueOrDefault(x.Id);
-            return ToCardDto(x, names, stats.Count, stats.Overdue, now, chatUnreadByCard.GetValueOrDefault(x.Id));
+            return ToCardDto(
+                x,
+                names,
+                stats.Count,
+                stats.Overdue,
+                now,
+                chatUnreadByCard.GetValueOrDefault(x.Id),
+                contactPhonesByPerson.GetValueOrDefault(x.Response.PersonId));
         }
 
-        var officeStages = CrmStages.Resolve(office.CrmStagesJson);
         var stageDtos = officeStages.Select(stage =>
         {
             var stageCards = cards.Where(x => x.Stage == stage && !x.IsClosed).Select(MapCard).ToList();
-            return new CrmStageDto(stage, stageCards, stageCards.Count);
+            var totalCount = boardOpenStageCounts?.GetValueOrDefault(stage) ?? stageCards.Count;
+            return new CrmStageDto(stage, stageCards, totalCount);
         }).ToList();
 
         // Cards left on stages removed from the funnel stay visible until remapped.
         var knownStages = new HashSet<string>(officeStages, StringComparer.Ordinal);
-        var orphanStages = cards
-            .Where(x => !x.IsClosed && !knownStages.Contains(x.Stage))
-            .Select(x => x.Stage)
-            .Distinct(StringComparer.Ordinal)
+        var orphanStages = (boardOpenStageCounts is null
+                ? cards.Where(x => !x.IsClosed).Select(x => x.Stage).Distinct(StringComparer.Ordinal)
+                : boardOpenStageCounts.Keys)
+            .Where(stage => !knownStages.Contains(stage))
             .OrderBy(x => x, StringComparer.Ordinal)
             .ToList();
         foreach (var orphan in orphanStages)
         {
             var stageCards = cards.Where(x => x.Stage == orphan && !x.IsClosed).Select(MapCard).ToList();
-            stageDtos.Add(new CrmStageDto(orphan, stageCards, stageCards.Count));
+            var totalCount = boardOpenStageCounts?.GetValueOrDefault(orphan) ?? stageCards.Count;
+            stageDtos.Add(new CrmStageDto(orphan, stageCards, totalCount));
         }
 
         if (scope == CrmBoardScopes.Closed || includeClosed)
@@ -316,7 +386,8 @@ public sealed class CrmWorkspaceService(
             var closedCards = cards.Where(x => x.IsClosed).Select(MapCard).ToList();
             if (closedCards.Count > 0)
             {
-                stageDtos = stageDtos.Concat([new CrmStageDto("Закрыто", closedCards, closedCards.Count)]).ToList();
+                var totalCount = boardOpenStageCounts is null ? closedCards.Count : boardClosedCount;
+                stageDtos = stageDtos.Concat([new CrmStageDto("Закрыто", closedCards, totalCount)]).ToList();
             }
         }
 
@@ -1105,6 +1176,16 @@ public sealed class CrmWorkspaceService(
         string actorUserId,
         CancellationToken ct = default)
     {
+        if (request.OfficeId is Guid officeId && !string.IsNullOrWhiteSpace(request.AllCardsInStage))
+        {
+            return await BulkAssignStageAsync(
+                officeId,
+                request.AllCardsInStage.Trim(),
+                request.ManagerUserId,
+                actorUserId,
+                ct);
+        }
+
         var cardIds = request.CardIds
             .Where(id => id != Guid.Empty)
             .Distinct()
@@ -1137,6 +1218,16 @@ public sealed class CrmWorkspaceService(
         string actorUserId,
         CancellationToken ct = default)
     {
+        if (request.OfficeId is Guid officeId && !string.IsNullOrWhiteSpace(request.AllCardsInStage))
+        {
+            return await BulkTransitionStageAsync(
+                officeId,
+                request.AllCardsInStage.Trim(),
+                request,
+                actorUserId,
+                ct);
+        }
+
         var cardIds = request.CardIds
             .Where(id => id != Guid.Empty)
             .Distinct()
@@ -1181,6 +1272,151 @@ public sealed class CrmWorkspaceService(
             updated,
             cardIds.Length - updated,
             errors.Distinct(StringComparer.Ordinal).Take(3).ToArray());
+    }
+
+    private async Task<CrmBulkActionResult> BulkAssignStageAsync(
+        Guid officeId,
+        string sourceStage,
+        string managerUserId,
+        string actorUserId,
+        CancellationToken ct)
+    {
+        if (await GetManagerProfileAsync(officeId, managerUserId, ct) is null)
+        {
+            return new CrmBulkActionResult(0, 0, 0, ["Ответственный должен работать в выбранном офисе."]);
+        }
+
+        var cards = await db.CrmCandidateCards
+            .Where(card => card.OfficeId == officeId
+                           && !card.IsClosed
+                           && card.Stage == sourceStage)
+            .OrderBy(card => card.Id)
+            .ToListAsync(ct);
+        if (cards.Count == 0)
+        {
+            return new CrmBulkActionResult(0, 0, 0, ["В выбранном этапе нет открытых карточек."]);
+        }
+
+        var actorName = await ResolveDisplayNameAsync(actorUserId, ct);
+        var managerName = await ResolveDisplayNameAsync(managerUserId, ct);
+        var now = DateTime.UtcNow;
+        foreach (var card in cards.Where(card => !string.Equals(
+                     card.ManagerUserId,
+                     managerUserId,
+                     StringComparison.Ordinal)))
+        {
+            leadDistribution.AssignManually(
+                card,
+                managerUserId,
+                managerName,
+                actorUserId,
+                actorName,
+                now);
+        }
+
+        await db.SaveChangesAsync(ct);
+        NotifyBoardChanged(officeId);
+        return new CrmBulkActionResult(cards.Count, cards.Count, 0, []);
+    }
+
+    private async Task<CrmBulkActionResult> BulkTransitionStageAsync(
+        Guid officeId,
+        string sourceStage,
+        CrmBulkTransitionRequest request,
+        string actorUserId,
+        CancellationToken ct)
+    {
+        var comment = request.Comment?.Trim();
+        if (string.IsNullOrWhiteSpace(comment))
+        {
+            return new CrmBulkActionResult(0, 0, 0, ["Для массового изменения нужен комментарий."]);
+        }
+
+        if (request.Operation == CrmBulkTransitionOperations.Close
+            && !CrmCloseReasons.IsValid(request.CloseReason))
+        {
+            return new CrmBulkActionResult(0, 0, 0, ["Неизвестная причина закрытия."]);
+        }
+
+        if (request.Operation == CrmBulkTransitionOperations.Move)
+        {
+            var configuredStages = await db.Offices.AsNoTracking()
+                .Where(office => office.Id == officeId)
+                .Select(office => office.CrmStagesJson)
+                .FirstOrDefaultAsync(ct);
+            if (!CrmStages.Contains(CrmStages.Resolve(configuredStages), request.Stage))
+            {
+                return new CrmBulkActionResult(0, 0, 0, ["Неизвестный этап назначения."]);
+            }
+        }
+
+        var cards = await db.CrmCandidateCards
+            .Where(card => card.OfficeId == officeId
+                           && !card.IsClosed
+                           && card.Stage == sourceStage)
+            .OrderBy(card => card.Id)
+            .ToListAsync(ct);
+        if (cards.Count == 0)
+        {
+            return new CrmBulkActionResult(0, 0, 0, ["В выбранном этапе нет открытых карточек."]);
+        }
+
+        var now = DateTime.UtcNow;
+        var actorName = await ResolveDisplayNameAsync(actorUserId, ct);
+        if (request.Operation == CrmBulkTransitionOperations.Close)
+        {
+            var cardIds = cards.Select(card => card.Id).ToArray();
+            var plannedMessages = await db.CrmOutboundChatMessages
+                .Where(message => cardIds.Contains(message.CardId)
+                                  && message.Status == CrmOutboundChatStatuses.Planned
+                                  && message.CancelledAtUtc == null)
+                .ToListAsync(ct);
+            foreach (var message in plannedMessages)
+            {
+                message.CancelledAtUtc = now;
+                AddHistory(message.CardId, "ChatCancelled", message.Text, actorUserId, actorName, now);
+            }
+
+            foreach (var card in cards)
+            {
+                card.IsClosed = true;
+                card.CloseReason = request.CloseReason;
+                card.ClosedAtUtc = now;
+                card.IsInActiveLoad = false;
+                card.UpdatedAtUtc = now;
+                card.LastContactAtUtc = now;
+                AddHistory(
+                    card.Id,
+                    "Closed",
+                    CrmActivityDetails.WithComment(request.CloseReason ?? string.Empty, comment),
+                    actorUserId,
+                    actorName,
+                    now);
+            }
+        }
+        else
+        {
+            var targetStage = request.Stage!.Trim();
+            foreach (var card in cards)
+            {
+                var previous = card.Stage;
+                card.Stage = targetStage;
+                card.StageChangedAtUtc = now;
+                card.UpdatedAtUtc = now;
+                card.LastContactAtUtc = now;
+                AddHistory(
+                    card.Id,
+                    "StageChanged",
+                    CrmActivityDetails.WithComment($"{previous} → {targetStage}", comment),
+                    actorUserId,
+                    actorName,
+                    now);
+            }
+        }
+
+        await db.SaveChangesAsync(ct);
+        NotifyBoardChanged(officeId);
+        return new CrmBulkActionResult(cards.Count, cards.Count, 0, []);
     }
 
     public async Task<bool> SetActiveLoadAsync(Guid cardId, bool isInActiveLoad, string actorUserId, bool isAdmin, CancellationToken ct = default)
@@ -3512,7 +3748,8 @@ public sealed class CrmWorkspaceService(
         int openTaskCount,
         bool hasOverdue,
         DateTime now,
-        int chatUnreadCount = 0)
+        int chatUnreadCount = 0,
+        IReadOnlyList<string>? contactPhones = null)
     {
         var stageAt = card.StageChangedAtUtc == default ? card.CreatedAtUtc : card.StageChangedAtUtc;
         var hours = Math.Max(0, (now - stageAt).TotalHours);
@@ -3546,7 +3783,8 @@ public sealed class CrmWorkspaceService(
             CandidateCitizenshipResolver.Resolve(
                 card.Response.Citizenship,
                 card.Response.RawText,
-                card.Response.ChatMessagesJson));
+                card.Response.ChatMessagesJson),
+            contactPhones);
     }
 
     private static CrmTaskDto ToTaskDto(

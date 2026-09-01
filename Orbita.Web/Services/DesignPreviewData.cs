@@ -40,17 +40,20 @@ internal static class DesignPreviewData
     private static readonly object CrmSync = new();
     private const string PreviewManagerElena = "preview-manager-elena";
     private const string PreviewManagerIgor = "preview-manager-igor";
+    private const string PreviewRobotStage = "Робот";
     private static bool _previewCrmShiftActive = true;
     private static bool _previewCrmEnabled = true;
     private static bool _previewCrmDeadlineNotificationsEnabled = true;
-    private static List<string> _previewCrmStages = CrmStages.Default.ToList();
+    private static List<string> _previewCrmStages = CrmStages.Default
+        .Select(stage => stage == CrmStages.Substitution ? PreviewRobotStage : stage)
+        .ToList();
     private static readonly List<PreviewCrmCandidate> PreviewCrmCandidates =
     [
         new(Guid.Parse("90000000-0000-0000-0000-000000000001"), "Селезнёв Артур Алексеевич", 55, "+7 912 445-18-07", "Тында", "Разнорабочий на вахту", CrmStages.Lead, PreviewManagerElena, true, 35),
         new(Guid.Parse("90000000-0000-0000-0000-000000000002"), "Ахмадалиев Сабиржон Садриддинович", 62, "+7 900 201-74-65", "Бородино", "Сварщик на вахту с проживанием", CrmStages.Lead, PreviewManagerIgor, true, 70),
         new(Guid.Parse("90000000-0000-0000-0000-000000000003"), "Турунцев Сергей Леонидович", 42, "+7 982 133-05-91", "Киров", "Электрик вахта с питанием", CrmStages.Ndz73, PreviewManagerElena, true, 105),
         new(Guid.Parse("90000000-0000-0000-0000-000000000004"), "Цветков Сергей Андреевич", 30, "+7 950 784-12-20", "Сыктывкар", "Слесарь на вахту", CrmStages.Ndz26, PreviewManagerIgor, true, 150),
-        new(Guid.Parse("90000000-0000-0000-0000-000000000005"), "Василий Демичев", 41, "+7 917 332-48-09", "Тихвин", "Охранник вахта с питанием", CrmStages.Substitution, PreviewManagerElena, true, 190),
+        new(Guid.Parse("90000000-0000-0000-0000-000000000005"), "Василий Демичев", 41, "+7 917 332-48-09", "Тихвин", "Охранник вахта с питанием", PreviewRobotStage, PreviewManagerElena, true, 190),
         new(Guid.Parse("90000000-0000-0000-0000-000000000006"), "Магомедов Либир Алигадыджиевич", 61, "+7 964 285-61-14", "Махачкала", "Сварщик", CrmStages.Negotiations, PreviewManagerIgor, true, 240),
         new(Guid.Parse("90000000-0000-0000-0000-000000000007"), "Махмутов Марат Магсумович", 49, "+7 908 447-93-52", "Анастасово", "Охранник вахта", CrmStages.Questionnaire, PreviewManagerElena, true, 285),
         new(Guid.Parse("90000000-0000-0000-0000-000000000008"), "Гаджиев Руслан Сулейманович", 35, "+7 995 623-40-15", "Хасавюрт", "Слесарь на вахту", CrmStages.Ticket, PreviewManagerIgor, false, 340),
@@ -66,7 +69,9 @@ internal static class DesignPreviewData
         new(Guid.Parse("90000000-0000-0000-0000-000000000018"), "Тестовая карточка 09", 41, "+7 900 000-00-09", "Челябинск", "Монтажник", CrmStages.Lead, PreviewManagerElena, true, 96),
         new(Guid.Parse("90000000-0000-0000-0000-000000000019"), "Тестовая карточка 10", 45, "+7 900 000-00-10", "Екатеринбург", "Стропальщик", CrmStages.Lead, PreviewManagerIgor, true, 110),
         new(Guid.Parse("90000000-0000-0000-0000-000000000020"), "Тестовая карточка 11", 27, "+7 900 000-00-11", "Барнаул", "Кладовщик", CrmStages.Lead, PreviewManagerElena, true, 124),
-        new(Guid.Parse("90000000-0000-0000-0000-000000000021"), "Тестовая карточка 12", 49, "+7 900 000-00-12", "Новосибирск", "Бетонщик", CrmStages.Lead, PreviewManagerIgor, true, 139)
+        new(Guid.Parse("90000000-0000-0000-0000-000000000021"), "Тестовая карточка 12", 49, "+7 900 000-00-12", "Новосибирск", "Бетонщик", CrmStages.Lead, PreviewManagerIgor, true, 139),
+        ..BuildPreviewPagingCandidates(),
+        ..BuildPreviewRobotLoadCandidates()
     ];
     private static readonly Dictionary<Guid, List<CrmNoteDto>> PreviewCrmNotes = new()
     {
@@ -290,27 +295,34 @@ internal static class DesignPreviewData
             };
             var list = boardView == CrmBoardViews.List
                 ? ordered.Skip((page - 1) * pageSize).Take(pageSize).ToList()
-                : filtered;
+                : _previewCrmStages
+                    .SelectMany(stage => ordered
+                        .Where(c => c.Stage == stage && !c.IsClosed)
+                        .Take(CrmBoardStageOptions.PageSize))
+                    .Concat(scope == CrmBoardScopes.Closed || includeClosed
+                        ? ordered.Where(c => c.IsClosed).Take(CrmBoardStageOptions.PageSize)
+                        : [])
+                    .ToList();
             var stages = _previewCrmStages
                 .Select(stage =>
                 {
                     var stageCards = list.Where(c => c.Stage == stage && !c.IsClosed)
-                        .OrderByDescending(c => c.CreatedAtUtc)
                         .Select(ToPreviewCrmCard)
                         .ToList();
-                    return new CrmStageDto(stage, stageCards, stageCards.Count);
+                    var totalCount = filtered.Count(c => c.Stage == stage && !c.IsClosed);
+                    return new CrmStageDto(stage, stageCards, totalCount);
                 })
                 .ToList();
             if (scope == CrmBoardScopes.Closed || includeClosed)
             {
                 var closedCards = list
                     .Where(c => c.IsClosed)
-                    .OrderByDescending(c => c.StageChangedAtUtc)
                     .Select(ToPreviewCrmCard)
                     .ToList();
-                if (closedCards.Count > 0)
+                var closedCount = filtered.Count(c => c.IsClosed);
+                if (closedCount > 0)
                 {
-                    stages.Add(new CrmStageDto("Закрыто", closedCards, closedCards.Count));
+                    stages.Add(new CrmStageDto("Закрыто", closedCards, closedCount));
                 }
             }
             var activeLoad = PreviewCrmCandidates.Count(c => c.ManagerUserId == PreviewManagerElena && c.IsInActiveLoad && !c.IsClosed);
@@ -370,6 +382,48 @@ internal static class DesignPreviewData
         return digits.Length == 11 && digits.StartsWith('8')
             ? $"7{digits[1..]}"
             : digits;
+    }
+
+    private static IEnumerable<PreviewCrmCandidate> BuildPreviewPagingCandidates()
+    {
+        var cities = new[] { "Пермь", "Омск", "Казань", "Уфа", "Тюмень" };
+        var vacancies = new[] { "Слесарь", "Разнорабочий", "Электрик", "Сварщик", "Охранник" };
+        for (var index = 13; index <= 32; index++)
+        {
+            yield return new PreviewCrmCandidate(
+                Guid.Parse($"90000000-0000-0000-0000-{index + 9:000000000000}"),
+                $"Тестовая карточка {index:00}",
+                25 + index % 30,
+                $"+7 900 100-{index:00}-{index:00}",
+                cities[index % cities.Length],
+                vacancies[index % vacancies.Length],
+                CrmStages.Lead,
+                index % 2 == 0 ? PreviewManagerElena : PreviewManagerIgor,
+                true,
+                150 + index * 5);
+        }
+    }
+
+    private static IEnumerable<PreviewCrmCandidate> BuildPreviewRobotLoadCandidates()
+    {
+        // Together with the regular preview card already in this stage this gives exactly 1300.
+        const int candidateCount = 1299;
+        var cities = new[] { "Екатеринбург", "Пермь", "Челябинск", "Тюмень", "Уфа" };
+        var vacancies = new[] { "Комплектовщик", "Разнорабочий", "Охранник", "Слесарь", "Сварщик" };
+        for (var index = 0; index < candidateCount; index++)
+        {
+            yield return new PreviewCrmCandidate(
+                Guid.Parse($"94000000-0000-0000-0000-{index + 1:000000000000}"),
+                $"Нагрузочная карточка {index + 1:0000}",
+                20 + index % 40,
+                $"+7 901 {index / 10_000:000}-{index / 100 % 100:00}-{index % 100:00}",
+                cities[index % cities.Length],
+                vacancies[index % vacancies.Length],
+                PreviewRobotStage,
+                index % 2 == 0 ? PreviewManagerElena : PreviewManagerIgor,
+                true,
+                400 + index);
+        }
     }
 
     public static CrmAnalyticsDto GetCrmAnalytics(
@@ -906,6 +960,19 @@ internal static class DesignPreviewData
         }
     }
 
+    public static IReadOnlyList<Guid> GetOpenCrmCardIdsInStage(string stage)
+    {
+        lock (CrmSync)
+        {
+            var normalizedStage = stage?.Trim() ?? string.Empty;
+            return PreviewCrmCandidates
+                .Where(candidate => !candidate.IsClosed
+                                    && string.Equals(candidate.Stage, normalizedStage, StringComparison.Ordinal))
+                .Select(candidate => candidate.Id)
+                .ToArray();
+        }
+    }
+
     public static (bool Success, string? Error) UpdateCrmCard(Guid cardId, CrmCardUpdateRequest request)
     {
         lock (CrmSync)
@@ -1409,7 +1476,8 @@ internal static class DesignPreviewData
             $"https://www.avito.ru/item/{candidate.Id:N}",
             "Avito · Северный парк",
             candidate.Id.ToString("N")[..8],
-            Citizenship: candidate.Citizenship);
+            Citizenship: candidate.Citizenship,
+            ContactPhones: [candidate.PhoneRaw]);
     }
 
     private static void AddPreviewCrmHistory(Guid? cardId, string action, string details)

@@ -1,7 +1,9 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
+using System.IO.Compression;
 using System.Security.Claims;
+using System.Text;
 using Orbita.Contracts;
 using Orbita.Web.Controllers;
 using Orbita.Web.Models.ViewModels;
@@ -155,6 +157,63 @@ public sealed class CrmControllerPreviewTests
         var partial = Assert.IsType<PartialViewResult>(result);
         Assert.Equal("_CrmWorkspace", partial.ViewName);
         Assert.IsType<CrmBoardDto>(partial.Model);
+    }
+
+    [Fact]
+    public async Task StagePage_InDesignPreview_ReturnsOnlyStageCardBatch()
+    {
+        var (controller, _) = CreateController(previewEnabled: true);
+
+        var result = await controller.StagePage(
+            officeId: DesignPreviewData.PreviewOfficeId,
+            stage: CrmStages.Lead,
+            search: null,
+            scope: CrmBoardScopes.Team,
+            city: null,
+            vacancy: null,
+            page: 1);
+
+        var partial = Assert.IsType<PartialViewResult>(result);
+        Assert.Equal("_CrmStageBatch", partial.ViewName);
+        var model = Assert.IsType<CrmStageBatchViewModel>(partial.Model);
+        Assert.Equal(CrmBoardStageOptions.PageSize, model.Cards.Count);
+        Assert.All(model.Cards, card => Assert.Equal(CrmStages.Lead, card.Stage));
+
+        var secondResult = await controller.StagePage(
+            officeId: DesignPreviewData.PreviewOfficeId,
+            stage: CrmStages.Lead,
+            search: null,
+            scope: CrmBoardScopes.Team,
+            city: null,
+            vacancy: null,
+            page: 2);
+
+        var secondPartial = Assert.IsType<PartialViewResult>(secondResult);
+        var secondModel = Assert.IsType<CrmStageBatchViewModel>(secondPartial.Model);
+        Assert.Equal(15, secondModel.Cards.Count);
+        Assert.Empty(model.Cards.Select(card => card.Id).Intersect(secondModel.Cards.Select(card => card.Id)));
+    }
+
+    [Fact]
+    public async Task ExportStage_InDesignPreview_ReturnsAllRobotCardsInZip()
+    {
+        var (controller, _) = CreateController(previewEnabled: true);
+
+        var result = await controller.ExportStage(
+            DesignPreviewData.PreviewOfficeId,
+            "Робот");
+
+        var file = Assert.IsType<FileStreamResult>(result);
+        Assert.Equal("application/zip", file.ContentType);
+        Assert.EndsWith(".zip", file.FileDownloadName, StringComparison.OrdinalIgnoreCase);
+
+        using var archive = new ZipArchive(file.FileStream, ZipArchiveMode.Read, leaveOpen: false, Encoding.UTF8);
+        Assert.Equal("Сделки.csv", Assert.Single(archive.Entries).FullName);
+        var cards = ReadArchiveEntry(archive, "Сделки.csv");
+
+        Assert.Equal(1301, cards.Split("\r\n", StringSplitOptions.RemoveEmptyEntries).Length);
+        Assert.DoesNotContain("ID карточки", cards);
+        Assert.DoesNotContain("Следующее действие UTC", cards);
     }
 
     [Fact]
@@ -339,6 +398,7 @@ public sealed class CrmControllerPreviewTests
         var assignResult = await controller.BulkAssign(
             cardIds,
             managerUserId: "preview-manager-igor",
+            allCardsInStage: null,
             returnUrl: null);
         var transitionResult = await controller.BulkTransition(
             cardIds,
@@ -346,6 +406,7 @@ public sealed class CrmControllerPreviewTests
             stage: CrmStages.Negotiations,
             closeReason: null,
             comment: "РџСЂРёС‡РёРЅР° СЃРјРµРЅС‹ СЌС‚Р°РїР°",
+            allCardsInStage: null,
             returnUrl: null);
 
         Assert.IsType<ForbidResult>(assignResult);
@@ -376,6 +437,13 @@ public sealed class CrmControllerPreviewTests
             ControllerContext = new ControllerContext { HttpContext = httpContext }
         };
         return (controller, http);
+    }
+
+    private static string ReadArchiveEntry(ZipArchive archive, string name)
+    {
+        var entry = Assert.Single(archive.Entries, item => item.FullName == name);
+        using var reader = new StreamReader(entry.Open(), Encoding.UTF8, detectEncodingFromByteOrderMarks: true);
+        return reader.ReadToEnd();
     }
 
     private static ClaimsPrincipal CreateOfficePrincipal(string userId, string role, Guid officeId)

@@ -1,0 +1,13 @@
+@model Orbita.Web.Models.ViewModels.CrmStageBatchViewModel
+@foreach (var card in Model.Cards)
+{
+    <partial name="_CrmTile" model="new Orbita.Web.Models.ViewModels.CrmTileViewModel(
+        card,
+        Model.Managers,
+        Model.StageName,
+        Model.CurrentUserId,
+        Model.ReturnUrl,
+        Model.CanEdit,
+        Model.IsAdmin,
+        Model.CanUseBulkActions)" />
+}
