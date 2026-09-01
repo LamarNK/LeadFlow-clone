@@ -7,7 +7,9 @@ namespace Orbita.Worker.Services;
 
 /// <summary>
 /// Batches candidate publishes to reduce HTTP roundtrips.
-/// Flushes on size threshold, time window, or explicit FlushAsync (e.g. on monitoring stop).
+/// Flushes when 5 candidates are queued, 1.5s after the first item in an idle queue,
+/// or on explicit FlushAsync (e.g. monitoring stop). Live POSTs are serialized
+/// and contain at most <see cref="MaxBatchSize"/> candidates.
 /// </summary>
 public sealed class OrbitaCandidateSink(
     OrbitaApiClient apiClient,
@@ -16,13 +18,15 @@ public sealed class OrbitaCandidateSink(
     AvitoAvatarDownloader avatarDownloader) : INewCandidateSink, IAsyncDisposable
 {
     private const int MaxBatchSize = 5;
-    // Avatar payloads are binary Base64 in the worker-to-panel request; keep retry/outbox records bounded.
-    private const int MaxFlushBatchSize = 10;
     private static readonly TimeSpan FlushWindow = TimeSpan.FromMilliseconds(1500);
 
     private readonly ConcurrentQueue<CandidateResponse> _queue = new();
-    private readonly object _flushGate = new();
-    private DateTime _lastFlushUtc = DateTime.MinValue;
+    private readonly SemaphoreSlim _sendGate = new(1, 1);
+    private readonly object _schedulerLock = new();
+    private CancellationTokenSource? _delayCts;
+    private Task _delayLoop = Task.CompletedTask;
+    private int _delayGeneration;
+    private bool _delayPending;
     private volatile bool _disposed;
 
     public async Task<CandidatePublishResult> PublishAsync(
@@ -35,10 +39,11 @@ public sealed class OrbitaCandidateSink(
         }
 
         _queue.Enqueue(candidate);
+        ArmDelayedFlush();
 
-        if (ShouldFlushNow())
+        if (_queue.Count >= MaxBatchSize)
         {
-            await FlushInternalAsync(cancellationToken).ConfigureAwait(false);
+            await FlushInternalAsync(drainAll: false, cancellationToken).ConfigureAwait(false);
         }
 
         return CandidatePublishResult.Pending();
@@ -51,58 +56,169 @@ public sealed class OrbitaCandidateSink(
             return;
         }
 
-        await FlushInternalAsync(cancellationToken).ConfigureAwait(false);
+        await StopDelayAsync().ConfigureAwait(false);
+        await FlushInternalAsync(drainAll: true, cancellationToken).ConfigureAwait(false);
     }
 
-    private bool ShouldFlushNow()
+    private void ArmDelayedFlush()
     {
-        if (_queue.Count >= MaxBatchSize)
+        lock (_schedulerLock)
         {
-            return true;
+            TryArmDelayedFlush_NoLock();
         }
-
-        return DateTime.UtcNow - _lastFlushUtc >= FlushWindow && !_queue.IsEmpty;
     }
 
-    private async Task FlushInternalAsync(CancellationToken ct)
+    private void TryArmDelayedFlush_NoLock()
     {
-        if (_queue.IsEmpty)
+        if (_disposed || _delayPending || _queue.IsEmpty)
         {
             return;
         }
 
-        List<CandidateResponse> candidates;
-        lock (_flushGate)
+        StartDelay_NoLock();
+    }
+
+    private void StartDelay_NoLock()
+    {
+        _delayCts?.Dispose();
+        _delayCts = new CancellationTokenSource();
+        _delayPending = true;
+        var generation = ++_delayGeneration;
+        _delayLoop = RunDelayedFlushAsync(generation, _delayCts.Token);
+    }
+
+    private async Task StopDelayAsync()
+    {
+        Task pending;
+        lock (_schedulerLock)
         {
-            if (_queue.IsEmpty)
+            _delayGeneration++;
+            _delayPending = false;
+            pending = _delayLoop;
+            try
+            {
+                _delayCts?.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+            }
+        }
+
+        try
+        {
+            await pending.ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private async Task RunDelayedFlushAsync(int generation, CancellationToken delayCt)
+    {
+        try
+        {
+            await Task.Delay(FlushWindow, delayCt).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+        }
+        finally
+        {
+            lock (_schedulerLock)
+            {
+                if (generation == _delayGeneration)
+                {
+                    _delayPending = false;
+                }
+            }
+        }
+
+        if (!delayCt.IsCancellationRequested && !_disposed)
+        {
+            try
+            {
+                await FlushInternalAsync(drainAll: false, CancellationToken.None).ConfigureAwait(false);
+            }
+            catch
+            {
+                // Background send: unsent batch is already in outbox.
+            }
+        }
+
+        lock (_schedulerLock)
+        {
+            if (generation != _delayGeneration)
             {
                 return;
             }
 
-            candidates = new List<CandidateResponse>();
-            while (_queue.TryDequeue(out var item) && candidates.Count < MaxFlushBatchSize)
+            _delayPending = false;
+            TryArmDelayedFlush_NoLock();
+        }
+    }
+
+    private async Task FlushInternalAsync(bool drainAll, CancellationToken ct)
+    {
+        await _sendGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
+        try
+        {
+            while (TryDequeueBatch(out var candidates))
             {
-                candidates.Add(item);
+                var submitCt = drainAll ? CancellationToken.None : ct;
+                var batchDtos = await Task.WhenAll(candidates.Select(candidate => ToDtoAsync(candidate, submitCt)))
+                    .ConfigureAwait(false);
+                var batch = new WorkerCandidateBatchRequest(batchDtos);
+
+                var submitted = false;
+                try
+                {
+                    var result = await apiClient.SubmitCandidatesAsync(batch, submitCt).ConfigureAwait(false);
+                    if (result is null)
+                    {
+                        await outbox.EnqueueAsync(batch, CancellationToken.None).ConfigureAwait(false);
+                    }
+                    else
+                    {
+                        submitted = true;
+                        await RecordDedupAsync(batchDtos, submitCt).ConfigureAwait(false);
+                    }
+                }
+                catch
+                {
+                    if (!submitted)
+                    {
+                        await outbox.EnqueueAsync(batch, CancellationToken.None).ConfigureAwait(false);
+                    }
+
+                    if (!drainAll)
+                    {
+                        throw;
+                    }
+                }
+
+                if (!drainAll && ct.IsCancellationRequested)
+                {
+                    break;
+                }
             }
-
-            _lastFlushUtc = DateTime.UtcNow;
         }
-
-        if (candidates.Count == 0)
+        finally
         {
-            return;
+            _sendGate.Release();
         }
 
-        var batchDtos = await Task.WhenAll(candidates.Select(candidate => ToDtoAsync(candidate, ct))).ConfigureAwait(false);
-        var batch = new WorkerCandidateBatchRequest(batchDtos);
-        var result = await apiClient.SubmitCandidatesAsync(batch, ct).ConfigureAwait(false);
-        if (result is null)
+        ArmDelayedFlush();
+    }
+
+    private bool TryDequeueBatch(out List<CandidateResponse> candidates)
+    {
+        candidates = new List<CandidateResponse>(MaxBatchSize);
+        while (candidates.Count < MaxBatchSize && _queue.TryDequeue(out var item))
         {
-            await outbox.EnqueueAsync(batch, ct).ConfigureAwait(false);
-            return;
+            candidates.Add(item);
         }
 
-        await RecordDedupAsync(batchDtos, ct).ConfigureAwait(false);
+        return candidates.Count > 0;
     }
 
     private async Task RecordDedupAsync(IReadOnlyList<WorkerCandidateDto> batch, CancellationToken ct)
@@ -165,11 +281,19 @@ public sealed class OrbitaCandidateSink(
         _disposed = true;
         try
         {
-            await FlushInternalAsync(CancellationToken.None).ConfigureAwait(false);
+            await StopDelayAsync().ConfigureAwait(false);
+            await FlushInternalAsync(drainAll: true, CancellationToken.None).ConfigureAwait(false);
         }
         catch
         {
             // best effort
+        }
+
+        _sendGate.Dispose();
+        lock (_schedulerLock)
+        {
+            _delayCts?.Dispose();
+            _delayCts = null;
         }
     }
 }

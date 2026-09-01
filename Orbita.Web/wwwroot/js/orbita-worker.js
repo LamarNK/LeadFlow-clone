@@ -742,6 +742,14 @@
                 ' data-post-url="/Workers/OpenLocalBrowser"' +
                 (canOpen ? '' : ' disabled') + '>' +
                 '<i class="fa-regular fa-window-maximize" aria-hidden="true"></i>' + shared.escapeHtml(openLabel) + '</button>' +
+                '<button type="button" class="row-menu-item" data-local-account-edit data-local-account-rename' +
+                ' data-worker-id="' + shared.escapeHtml(workerId) + '"' +
+                ' data-account-id="' + shared.escapeHtml(account.id) + '"' +
+                ' data-account-name="' + shared.escapeHtml(account.displayName || '') + '"' +
+                ' data-user-data-dir="' + shared.escapeHtml(managed ? '' : (account.localUserDataDir || '')) + '"' +
+                ' data-managed="' + (managed ? 'true' : 'false') + '"' +
+                ' data-post-url="/Workers/UpdateLocalAccount">' +
+                '<i class="fa-regular fa-pen-to-square" aria-hidden="true"></i>Переименовать аккаунт</button>' +
                 '<button type="button" class="row-menu-item" data-local-account-edit' +
                 ' data-worker-id="' + shared.escapeHtml(workerId) + '"' +
                 ' data-account-id="' + shared.escapeHtml(account.id) + '"' +

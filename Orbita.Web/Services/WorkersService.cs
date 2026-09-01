@@ -539,6 +539,14 @@ public sealed class WorkersService(
             ? Task.FromResult<(bool, string?)>((true, null))
             : api.SetWorkerEnabledAsync(workerId, enabled, ct);
 
+    public Task<(bool Success, string? Error)> RenameWorkerAsync(
+        Guid workerId,
+        string displayName,
+        CancellationToken ct = default) =>
+        previewOptions.Value.Enabled
+            ? Task.FromResult<(bool, string?)>((true, null))
+            : api.RenameAdminWorkerAsync(workerId, displayName, ct);
+
     public async Task<(BulkWorkersMonitoringResultDto? Result, string? Error)> SetAllWorkersMonitoringAsync(
         bool enabled,
         CancellationToken ct = default)

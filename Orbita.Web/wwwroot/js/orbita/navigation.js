@@ -174,6 +174,7 @@
         runtime.initAvitoCredentialsButtons();
         runtime.initLocalProfileSettingsButtons();
         runtime.initLocalAccountEditButtons();
+        runtime.initWorkerRenameModal();
         runtime.initLocalOpenBrowserButtons();
         runtime.initSubProfilesRefreshButtons();
         runtime.initSubProfileScreenshotLinks();

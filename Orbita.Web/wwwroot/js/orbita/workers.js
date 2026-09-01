@@ -524,12 +524,17 @@
 
     runtime.openLocalAccountModal = function openLocalAccountModal(opts) {
         var modal = runtime.ensureLocalAccountModal();
+        var titleEl = modal.querySelector('#orbita-local-account-title');
         var nameInput = modal.querySelector('[data-local-account-name]');
         var dirInput = modal.querySelector('[data-local-account-dir]');
         var accountEl = modal.querySelector('[data-local-account-account]');
         var statusEl = modal.querySelector('[data-local-account-status]');
         var saveBtn = modal.querySelector('[data-local-account-save]');
+        var originalDir = (opts.userDataDir || '').trim();
 
+        if (titleEl) {
+            titleEl.textContent = opts.focusName ? 'Переименовать аккаунт' : 'Папка профиля Chrome';
+        }
         accountEl.textContent = opts.accountName
             ? ('Аккаунт: ' + opts.accountName)
             : '';
@@ -544,6 +549,13 @@
                 : 'Отдельная папка на машине воркера. Стандартный профиль Chrome использовать нельзя. Папка на диске не удаляется.';
         }
         modal.hidden = false;
+        window.setTimeout(function () {
+            var focusInput = opts.focusName ? nameInput : dirInput;
+            if (focusInput) {
+                focusInput.focus();
+                if (typeof focusInput.select === 'function') focusInput.select();
+            }
+        }, 0);
 
         function close() {
             modal.hidden = true;
@@ -575,7 +587,7 @@
                 accountId: opts.accountId,
                 displayName: displayName
             };
-            if (localUserDataDir) {
+            if (localUserDataDir !== originalDir) {
                 payload.localUserDataDir = localUserDataDir;
             }
             var result = await runtime.postForm(opts.postUrl, payload);
@@ -608,6 +620,7 @@
                     accountName: btn.getAttribute('data-account-name') || '',
                     userDataDir: btn.getAttribute('data-user-data-dir') || '',
                     managed: btn.getAttribute('data-managed') === 'true',
+                    focusName: btn.hasAttribute('data-local-account-rename'),
                     postUrl: btn.getAttribute('data-post-url') || '/Workers/UpdateLocalAccount'
                 });
             });
@@ -647,6 +660,54 @@
                 }
             });
         });
+    }
+
+    runtime.initWorkerRenameModal = function initWorkerRenameModal() {
+        var modal = document.getElementById('workerRenameModal');
+        if (!modal) return;
+
+        function openModal() {
+            if (typeof runtime.closeAllRowMenus === 'function') {
+                runtime.closeAllRowMenus();
+            }
+            modal.removeAttribute('hidden');
+            var input = modal.querySelector('[data-worker-rename-input]');
+            if (input) {
+                input.focus();
+                if (typeof input.select === 'function') input.select();
+            }
+        }
+
+        function closeModal() {
+            modal.setAttribute('hidden', '');
+        }
+
+        document.querySelectorAll('[data-worker-rename-open]').forEach(function (btn) {
+            if (btn.hasAttribute('data-worker-rename-bound')) return;
+            btn.setAttribute('data-worker-rename-bound', '1');
+            btn.addEventListener('click', function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                openModal();
+            });
+        });
+
+        modal.querySelectorAll('[data-worker-rename-close]').forEach(function (el) {
+            if (el.hasAttribute('data-worker-rename-close-bound')) return;
+            el.setAttribute('data-worker-rename-close-bound', '1');
+            el.addEventListener('click', closeModal);
+        });
+
+        if (!window.__orbitaWorkerRenameModalKeydown) {
+            document.addEventListener('keydown', function (e) {
+                if (e.key !== 'Escape') return;
+                var openModalEl = document.getElementById('workerRenameModal');
+                if (openModalEl && !openModalEl.hasAttribute('hidden')) {
+                    openModalEl.setAttribute('hidden', '');
+                }
+            });
+            window.__orbitaWorkerRenameModalKeydown = true;
+        }
     }
 
     runtime.initProviderConnectionButtons = function initProviderConnectionButtons() {
@@ -1022,6 +1083,7 @@
     runtime.initAvitoCredentialsButtons();
     runtime.initLocalProfileSettingsButtons();
     runtime.initLocalAccountEditButtons();
+    runtime.initWorkerRenameModal();
     runtime.initLocalOpenBrowserButtons();
     runtime.initSubProfilesRefreshButtons();
     runtime.initSubProfileScreenshotLinks();

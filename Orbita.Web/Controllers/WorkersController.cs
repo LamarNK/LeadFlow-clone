@@ -284,6 +284,41 @@ public sealed class WorkersController(IWorkersService workers) : Controller
 
     [HttpPost]
     [ValidateAntiForgeryToken]
+    public async Task<IActionResult> Rename(
+        Guid workerId,
+        string displayName,
+        string? q,
+        string? sort,
+        string? dir,
+        string? provider,
+        string? groupId,
+        CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(displayName))
+        {
+            TempData["WorkersError"] = "Укажите имя воркера.";
+        }
+        else
+        {
+            var (success, error) = await workers.RenameWorkerAsync(workerId, displayName.Trim(), ct);
+            TempData[success ? "WorkersSuccess" : "WorkersError"] = success
+                ? "Имя воркера обновлено."
+                : (error ?? "Не удалось переименовать воркер.");
+        }
+
+        return RedirectToAction(nameof(Details), new
+        {
+            id = workerId,
+            q,
+            sort,
+            dir,
+            provider,
+            groupId
+        });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> Delete(Guid workerId, CancellationToken ct)
     {
         var (success, error) = await workers.DeleteWorkerAsync(workerId, ct);
@@ -468,10 +503,12 @@ public sealed class WorkersController(IWorkersService workers) : Controller
             displayName,
             localUserDataDir,
             ct);
-        TempData[success ? "WorkersSuccess" : "WorkersError"] = success
-            ? "Аккаунт обычного браузера сохранён."
-            : error;
-        return RedirectToAction(nameof(Details), new { id = workerId, provider = WorkerAccountCatalogFilter.LocalProvider });
+        if (!success)
+        {
+            return BadRequest(new { error = error ?? "Не удалось сохранить аккаунт обычного браузера." });
+        }
+
+        return Ok(new { message = "Аккаунт обычного браузера сохранён." });
     }
 
     [HttpPost]
