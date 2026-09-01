@@ -345,7 +345,7 @@ public sealed class CrmController(
         string stage,
         CancellationToken ct = default)
     {
-        if (!PanelRoles.HasElevatedOfficeAccess(User)) return Forbid();
+        if (!PanelRoles.IsGlobalAdmin(User)) return Forbid();
         officeId = ResolveOfficeId(officeId);
         if (officeId is null || string.IsNullOrWhiteSpace(stage))
         {

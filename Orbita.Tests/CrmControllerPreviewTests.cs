@@ -216,6 +216,24 @@ public sealed class CrmControllerPreviewTests
         Assert.DoesNotContain("Следующее действие UTC", cards);
     }
 
+    [Theory]
+    [InlineData(PanelRoles.OfficeLead)]
+    [InlineData(PanelRoles.SeniorManager)]
+    public async Task ExportStage_ElevatedOfficeRoleWithoutGlobalAdmin_IsForbidden(string role)
+    {
+        var principal = CreateOfficePrincipal(
+            $"preview-{role}",
+            role,
+            DesignPreviewData.PreviewOfficeId);
+        var (controller, _) = CreateController(previewEnabled: true, principal);
+
+        var result = await controller.ExportStage(
+            DesignPreviewData.PreviewOfficeId,
+            "Робот");
+
+        Assert.IsType<ForbidResult>(result);
+    }
+
     [Fact]
     public async Task Analytics_InDesignPreview_UsesLocalCalendarHalfOpenUtcRange()
     {

@@ -4,6 +4,7 @@
     var boardReturnUrl = $"{Context.Request.Path}{Context.Request.QueryString}";
     var currentUserId = ViewData["CurrentCrmUserId"] as string;
     var canUseBulkActions = Model.IsAdmin;
+    var canExportStages = PanelRoles.IsGlobalAdmin(User);
     var bulkReasonRequired = User.IsInRole(PanelRoles.SeniorManager)
                              && !User.IsInRole(PanelRoles.OfficeLead)
                              && !User.IsInRole(PanelRoles.Admin);
@@ -192,7 +193,7 @@
                                     <i class="fa-solid fa-check-double" aria-hidden="true"></i>
                                 </button>
                             }
-                            @if (canUseBulkActions && stage.TotalCount > 0 && !string.Equals(stage.Name, "Закрыто", StringComparison.Ordinal))
+                            @if (canExportStages && stage.TotalCount > 0 && !string.Equals(stage.Name, "Закрыто", StringComparison.Ordinal))
                             {
                                 <a class="crm-stage__export"
                                    href="@Url.Action("ExportStage", new { stage = stage.Name })"
