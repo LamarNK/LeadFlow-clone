@@ -154,8 +154,9 @@ public sealed class WorkerActivityPresenterTests
     }
 
     [Fact]
-    public void Present_WaitingPhase_ShowsNextCycleMinutes()
+    public void Present_WaitingPhase_ShowsRemainingMinutes()
     {
+        var nextCycleAtUtc = Now.AddMinutes(7);
         var result = WorkerActivityPresenter.Present(
             new WorkerActivityDto(
                 WorkerActivityPhases.Waiting,
@@ -164,13 +165,14 @@ public sealed class WorkerActivityPresenterTests
                 null,
                 null,
                 null,
-                Now.AddMinutes(7),
+                nextCycleAtUtc,
                 Now.AddSeconds(-5)),
             isOnline: true,
             nowUtc: Now);
 
-        Assert.StartsWith("Пауза · следующий цикл", result.Label);
+        Assert.Equal("Пауза · осталось 7 мин", result.Label);
         Assert.Equal("muted", result.Tone);
+        Assert.Equal(nextCycleAtUtc, result.NextCycleAtUtc);
     }
 
     [Fact]
