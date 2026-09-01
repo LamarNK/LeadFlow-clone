@@ -23,12 +23,12 @@ public static class MonitoringCycleDelay
         var capacity = Math.Max(1, accountsPolled * MonitoringTiming.TypicalResponsesPerAccountPerCycle);
         var activity = Math.Clamp((double)newResponsesInCycle / capacity, 0, 1);
 
-        // Не даём одному–двум новым откликам на фоне большой «ёмкости» цикла выглядеть как почти полная тишина.
-        if (newResponsesInCycle > 0 && accountsPolled > 0)
-        {
-            var perAccountHotness = Math.Min(1, (double)newResponsesInCycle / accountsPolled);
-            activity = Math.Max(activity, perAccountHotness);
-        }
+        // Единичный отклик не считается высокой нагрузкой: ёмкость цикла —
+        // TypicalResponsesPerAccountPerCycle на аккаунт (обычно 30). Один новый
+        // отклик на одном аккаунте даёт activity ≈ 1/30, пауза остаётся близкой
+        // к максимуму. Нормализация newResponses/accountsPolled раньше поднимала
+        // любой ненулевой отклик до activity=1 и ставила следующий проход через
+        // min (3 мин) — слишком часто для Avito при редких единичных откликах.
 
         if (hasUndischargedBacklog)
         {

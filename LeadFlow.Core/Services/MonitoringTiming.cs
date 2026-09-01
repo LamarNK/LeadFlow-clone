@@ -12,11 +12,17 @@ public static class MonitoringTiming
     /// <summary>Повторная попытка установки скачанного обновления в безопасном окне.</summary>
     public const int PendingUpdateRetrySeconds = 15;
 
-    /// <summary>Минимальная пауза между циклами при высокой доле новых откликов в последнем цикле.</summary>
-    public const int CycleDelayMinMinutes = 3;
+    /// <summary>
+    /// Минимальная пауза между циклами (8 мин) при высокой доле новых откликов
+    /// в последнем цикле. Ниже не опускаемся, чтобы не долбить Avito даже на пике.
+    /// </summary>
+    public const int CycleDelayMinMinutes = 8;
 
-    /// <summary>Максимальная пауза между циклами, если в последнем цикле новых откликов не было.</summary>
-    public const int CycleDelayMaxMinutes = 20;
+    /// <summary>
+    /// Максимальная дневная пауза между циклами (45 мин), если в последнем цикле
+    /// новых откликов почти не было. Единичный отклик держит паузу близко к этому потолку.
+    /// </summary>
+    public const int CycleDelayMaxMinutes = 45;
 
     /// <summary>К пустому циклу N… добавляется (N−1)×шаг минут (см. Max), чтобы реже дергать Авито при долгой тишине.</summary>
     public const int CycleQuietBackoffExtraMinutesPerStep = 4;
@@ -125,11 +131,11 @@ public static class MonitoringTiming
     /// <summary>Ночная тишина по Москве: до этого часа (не включая).</summary>
     public const int NightQuietEndHourExclusive = 7;
 
-    /// <summary>Нижняя граница паузы между циклами ночью (минуты).</summary>
-    public const int NightQuietDelayMinMinutes = 45;
+    /// <summary>Нижняя граница паузы между циклами ночью (90 мин, МСК 23:00–07:00).</summary>
+    public const int NightQuietDelayMinMinutes = 90;
 
-    /// <summary>Верхняя граница паузы между циклами ночью (минуты).</summary>
-    public const int NightQuietDelayMaxMinutes = 90;
+    /// <summary>Верхняя граница паузы между циклами ночью (180 мин, случайный floor в этом диапазоне).</summary>
+    public const int NightQuietDelayMaxMinutes = 180;
 
     // ---- «Человеческие» рандомные паузы ----
     // Идея: после открытия страницы / переключения профиля / обработки отклика
