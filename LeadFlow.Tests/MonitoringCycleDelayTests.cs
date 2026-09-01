@@ -21,21 +21,28 @@ public sealed class MonitoringCycleDelayTests
     }
 
     [Fact]
-    public void GetDelayAfterCycle_PerAccountHotness_PushesHighActivityTowardMin()
+    public void GetDelayAfterCycle_PartialAccountCapacity_UsesCapacityRatio()
     {
-        // 1 аккаунт, 5 новых: «сырая» доля 0.5, но perAccount 5/1 → activity 1 → как полный цикл
+        // 1 аккаунт, 5 новых: activity = 5 / TypicalResponsesPerAccountPerCycle, не min.
         var d = MonitoringCycleDelay.GetDelayAfterCycle(5, 1);
-        Assert.Equal(MonitoringTiming.CycleDelayMinMinutes, d.TotalMinutes);
+        var min = (double)MonitoringTiming.CycleDelayMinMinutes;
+        var max = (double)MonitoringTiming.CycleDelayMaxMinutes;
+        var capacity = 1 * MonitoringTiming.TypicalResponsesPerAccountPerCycle;
+        var activity = 5.0 / capacity;
+        var expectedMinutes = max - activity * (max - min);
+        Assert.Equal(expectedMinutes, d.TotalMinutes);
     }
 
     [Fact]
-    public void GetDelayAfterCycle_SparseNewsAcrossAccounts_DoesNotLookAlmostIdle()
+    public void GetDelayAfterCycle_SparseNewsAcrossAccounts_UsesCapacityRatio()
     {
-        // 2 аккаунта опрошено, всего 1 новый: сырая 1/20, perAccount min(1, 1/2)=0.5 → середина диапазона [min..max] минут
+        // 2 аккаунта, 1 новый: activity = 1 / (2 * TypicalResponsesPerAccountPerCycle).
         var d = MonitoringCycleDelay.GetDelayAfterCycle(1, 2);
         var min = (double)MonitoringTiming.CycleDelayMinMinutes;
         var max = (double)MonitoringTiming.CycleDelayMaxMinutes;
-        var expectedMinutes = max - 0.5 * (max - min);
+        var capacity = 2 * MonitoringTiming.TypicalResponsesPerAccountPerCycle;
+        var activity = 1.0 / capacity;
+        var expectedMinutes = max - activity * (max - min);
         Assert.Equal(expectedMinutes, d.TotalMinutes);
     }
 
