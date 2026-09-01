@@ -559,7 +559,7 @@ public sealed class WorkersService(
         CancellationToken ct = default) =>
         previewOptions.Value.Enabled
             ? Task.FromResult<(bool, string?)>((true, null))
-            : api.RenameAdminWorkerAsync(workerId, displayName, ct);
+            : api.RenameWorkerAsync(workerId, displayName, ct);
 
     public async Task<(BulkWorkersMonitoringResultDto? Result, string? Error)> SetAllWorkersMonitoringAsync(
         bool enabled,

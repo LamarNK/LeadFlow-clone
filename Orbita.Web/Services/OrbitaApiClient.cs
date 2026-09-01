@@ -797,6 +797,24 @@ public sealed class OrbitaApiClient(
             : (false, await ReadApiErrorAsync(response, ct));
     }
 
+    public async Task<(bool Success, string? Error)> RenameWorkerAsync(
+        Guid workerId,
+        string displayName,
+        CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Put, $"api/v1/workers/{workerId}/rename");
+        request.Content = JsonContent.Create(new UpdateAdminWorkerRequest(displayName));
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (false, InvalidApiSessionError);
+        }
+
+        return response.IsSuccessStatusCode
+            ? (true, null)
+            : (false, await ReadApiErrorAsync(response, ct));
+    }
+
     public async Task<(bool Success, string? Error)> SetAdminWorkerEnabledAsync(
         Guid workerId,
         bool enabled,

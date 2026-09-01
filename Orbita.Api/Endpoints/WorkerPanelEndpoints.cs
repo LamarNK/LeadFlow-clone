@@ -25,6 +25,47 @@ public static class WorkerPanelEndpoints
     public static void Map(WebApplication app)
     {
         var workerPanel = app.MapGroup("/api/v1/workers").RequireAuthorization(PanelPermissions.Workers);
+        workerPanel.MapPut("/{id:guid}/rename", async (
+            Guid id,
+            UpdateAdminWorkerRequest request,
+            WorkerAdminService workers,
+            OfficeScopeService officeScope,
+            PanelAuditService audit,
+            ClaimsPrincipal principal,
+            HttpContext http,
+            CancellationToken ct) =>
+        {
+            var scope = await officeScope.ResolveAsync(principal, ct);
+            if (!scope.HasAccess)
+            {
+                return Results.Forbid();
+            }
+
+            var (worker, error) = await workers.RenameAsync(id, request.DisplayName, scope, ct);
+            if (error is not null)
+            {
+                return error.Contains("не найден", StringComparison.OrdinalIgnoreCase)
+                    ? Results.NotFound(new { error })
+                    : Results.BadRequest(new { error });
+            }
+
+            await audit.LogAsync(
+                principal.FindFirstValue(ClaimTypes.NameIdentifier),
+                principal.FindFirstValue(ClaimTypes.Email),
+                PanelAuditActions.WorkerRenamed,
+                "worker",
+                id.ToString(),
+                request.DisplayName,
+                http.Connection.RemoteIpAddress?.ToString(),
+                ct);
+
+            await GlobalLogger.Instance.LogAsync(
+                $"Worker renamed ({id}, name={request.DisplayName}).",
+                DeskLinkAuditLogLevel.Info);
+
+            return Results.Ok(worker);
+        });
+
         workerPanel.MapGet("/{id:guid}/config", async (
             Guid id,
             WorkerConfigService configService,
