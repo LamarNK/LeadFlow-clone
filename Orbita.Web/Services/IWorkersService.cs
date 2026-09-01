@@ -90,6 +90,13 @@ public interface IWorkersService
         string? proxyUsername,
         string? proxyPassword,
         bool clearProxyPassword,
+        string? trafficMode = null,
+        bool? blockMedia = null,
+        bool? blockAnalytics = null,
+        bool? blockImages = null,
+        bool? blockFonts = null,
+        bool? blockPrefetch = null,
+        int? navigationTimeoutSeconds = null,
         CancellationToken ct = default);
     Task<(bool Success, string? Error)> RequestSubProfilesRefreshAsync(Guid workerId, Guid accountId, CancellationToken ct = default);
     Task<(bool Success, string? Error)> RequestProviderCheckAsync(Guid workerId, string provider, CancellationToken ct = default);

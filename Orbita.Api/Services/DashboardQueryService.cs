@@ -640,6 +640,19 @@ public sealed class DashboardQueryService(
                 x.LocalProxyAddress,
                 x.LocalProxyUsername,
                 x.LocalProxyPasswordProtected,
+                x.LocalTrafficMode,
+                x.LocalBlockMedia,
+                x.LocalBlockAnalytics,
+                x.LocalBlockImages,
+                x.LocalBlockFonts,
+                x.LocalBlockPrefetch,
+                x.LocalNavigationTimeoutSeconds,
+                x.LocalTrafficLastNavigationMs,
+                x.LocalTrafficBlockedMedia,
+                x.LocalTrafficBlockedImages,
+                x.LocalTrafficBlockedFonts,
+                x.LocalTrafficBlockedAnalytics,
+                x.LocalTrafficBlockedPrefetch,
                 x.TotalBalance
             })
             .ToListAsync(ct);
@@ -855,6 +868,16 @@ public sealed class DashboardQueryService(
                     var proxyAddress = isLocal && !string.IsNullOrWhiteSpace(x.LocalProxyAddress)
                         ? x.LocalProxyAddress.Trim()
                         : null;
+                    var traffic = isLocal
+                        ? LocalChromeTrafficRules.FromStored(
+                            x.LocalTrafficMode,
+                            x.LocalBlockMedia,
+                            x.LocalBlockAnalytics,
+                            x.LocalBlockImages,
+                            x.LocalBlockFonts,
+                            x.LocalBlockPrefetch,
+                            x.LocalNavigationTimeoutSeconds)
+                        : LocalChromeTrafficRules.Normal;
                     return new WorkerAccountDto(
                         x.AccountId,
                         x.DisplayName,
@@ -889,7 +912,29 @@ public sealed class DashboardQueryService(
                         isLocal && !string.IsNullOrWhiteSpace(x.LocalProxyUsername)
                             ? x.LocalProxyUsername.Trim()
                             : null,
-                        isLocal && !string.IsNullOrWhiteSpace(x.LocalProxyPasswordProtected));
+                        isLocal && !string.IsNullOrWhiteSpace(x.LocalProxyPasswordProtected),
+                        isLocal ? traffic.Mode : null,
+                        isLocal && traffic.BlockMedia,
+                        isLocal && traffic.BlockAnalytics,
+                        isLocal && traffic.BlockImages,
+                        isLocal && traffic.BlockFonts,
+                        isLocal && traffic.BlockPrefetch,
+                        isLocal ? traffic.NavigationTimeoutSeconds : LocalChromeTrafficRules.DefaultTimeoutSeconds,
+                        isLocal ? x.LocalTrafficLastNavigationMs : null,
+                        isLocal ? x.LocalTrafficBlockedMedia : 0,
+                        isLocal ? x.LocalTrafficBlockedImages : 0,
+                        isLocal ? x.LocalTrafficBlockedFonts : 0,
+                        isLocal ? x.LocalTrafficBlockedAnalytics : 0,
+                        isLocal ? x.LocalTrafficBlockedPrefetch : 0,
+                        isLocal
+                            ? LocalChromeTrafficRules.FormatLastRun(
+                                x.LocalTrafficLastNavigationMs,
+                                x.LocalTrafficBlockedMedia,
+                                x.LocalTrafficBlockedImages,
+                                x.LocalTrafficBlockedFonts,
+                                x.LocalTrafficBlockedAnalytics,
+                                x.LocalTrafficBlockedPrefetch)
+                            : null);
                 })
                 .ToList();
 

@@ -280,6 +280,96 @@ public sealed class WorkerConfigServiceTests
     }
 
     [Fact]
+    public async Task UpdateLocalAccountProfileAsync_SavesTrafficPresets_AndRejectsBadTimeout()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db);
+        SeedLocalAccount(db);
+        var sut = CreateService(db);
+
+        var economic = await sut.UpdateLocalAccountProfileAsync(
+            WorkerId,
+            LocalAccountId,
+            new UpdateLocalWorkerAccountProfileRequest(TrafficMode: LocalChromeTrafficRules.ModeEconomic),
+            OfficeScope.ForOffice(OfficeId));
+        Assert.Null(economic.Error);
+        Assert.Equal(LocalChromeTrafficRules.ModeEconomic, economic.Profile!.TrafficMode);
+        Assert.True(economic.Profile.BlockMedia);
+        Assert.True(economic.Profile.BlockAnalytics);
+        Assert.True(economic.Profile.BlockPrefetch);
+        Assert.False(economic.Profile.BlockImages);
+        Assert.Equal(60, economic.Profile.NavigationTimeoutSeconds);
+
+        var stored = await db.WorkerAccounts.SingleAsync(x => x.AccountId == LocalAccountId);
+        Assert.Equal(LocalChromeTrafficRules.ModeEconomic, stored.LocalTrafficMode);
+        Assert.True(stored.LocalBlockMedia);
+        Assert.False(stored.LocalBlockImages);
+
+        var custom = await sut.UpdateLocalAccountProfileAsync(
+            WorkerId,
+            LocalAccountId,
+            new UpdateLocalWorkerAccountProfileRequest(
+                TrafficMode: LocalChromeTrafficRules.ModeCustom,
+                BlockMedia: true,
+                BlockAnalytics: false,
+                BlockImages: true,
+                BlockFonts: false,
+                BlockPrefetch: false,
+                NavigationTimeoutSeconds: 30),
+            OfficeScope.ForOffice(OfficeId));
+        Assert.Null(custom.Error);
+        Assert.Equal(LocalChromeTrafficRules.ModeCustom, custom.Profile!.TrafficMode);
+        Assert.Equal(30, custom.Profile.NavigationTimeoutSeconds);
+
+        var badTimeout = await sut.UpdateLocalAccountProfileAsync(
+            WorkerId,
+            LocalAccountId,
+            new UpdateLocalWorkerAccountProfileRequest(NavigationTimeoutSeconds: 45),
+            OfficeScope.ForOffice(OfficeId));
+        Assert.Null(badTimeout.Profile);
+        Assert.Contains("30", badTimeout.Error, StringComparison.Ordinal);
+
+        var ads = await sut.UpdateLocalAccountProfileAsync(
+            WorkerId,
+            AccountId,
+            new UpdateLocalWorkerAccountProfileRequest(
+                TrafficMode: LocalChromeTrafficRules.ModeAggressive,
+                BlockMedia: true),
+            OfficeScope.ForOffice(OfficeId));
+        Assert.Null(ads.Profile);
+        Assert.Contains("обычного браузера", ads.Error, StringComparison.Ordinal);
+
+        var adsRow = await db.WorkerAccounts.SingleAsync(x => x.AccountId == AccountId);
+        Assert.Equal(LocalChromeTrafficRules.ModeNormal, adsRow.LocalTrafficMode);
+        Assert.False(adsRow.LocalBlockMedia);
+    }
+
+    [Fact]
+    public async Task GetConfigForWorkerAsync_SendsLocalTrafficOnlyForLocalAccounts()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db);
+        SeedLocalAccount(db);
+        var sut = CreateService(db);
+        await sut.UpdateLocalAccountProfileAsync(
+            WorkerId,
+            LocalAccountId,
+            new UpdateLocalWorkerAccountProfileRequest(TrafficMode: LocalChromeTrafficRules.ModeAggressive),
+            OfficeScope.ForOffice(OfficeId));
+
+        var config = await sut.GetConfigForWorkerAsync(WorkerId, OfficeScope.ForOffice(OfficeId));
+        var local = Assert.Single(config!.Accounts, a => a.AccountId == LocalAccountId);
+        Assert.Equal(LocalChromeTrafficRules.ModeAggressive, local.LocalTrafficMode);
+        Assert.True(local.LocalBlockImages);
+        Assert.Equal(60, local.LocalNavigationTimeoutSeconds);
+
+        var ads = Assert.Single(config.Accounts, a => a.AccountId == AccountId);
+        Assert.Null(ads.LocalTrafficMode);
+        Assert.False(ads.LocalBlockMedia);
+        Assert.Equal(60, ads.LocalNavigationTimeoutSeconds);
+    }
+
+    [Fact]
     public async Task GetConfigForWorkerAsync_SendsLocalProxySecretOnlyOnWorkerChannel()
     {
         await using var db = CreateDb();

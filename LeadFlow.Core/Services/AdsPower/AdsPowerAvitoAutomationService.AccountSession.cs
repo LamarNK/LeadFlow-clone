@@ -4,6 +4,7 @@ using LeadFlow.Core.Services;
 using LeadFlow.Core.Services.Avito;
 using LeadFlow.Core.Services.Browser;
 using LeadFlow.Core.Services.Captcha;
+using LeadFlow.Core.Services.LocalChrome;
 using PuppeteerSharp;
 
 namespace LeadFlow.Core.Services.AdsPower;
@@ -111,6 +112,7 @@ public sealed partial class AdsPowerAvitoAutomationService
                 cancellationToken,
                 waitForStartupNavigation: true)
             .ConfigureAwait(false);
+        await LocalChromeTrafficPolicy.TryAttachCurrentAsync(page, cancellationToken).ConfigureAwait(false);
         ReportStartupStage(reportStartupStage, 1, "вкладка получена", startupStopwatch);
         ReportStartupStage(reportStartupStage, 1, "прогрев страницы Avito", startupStopwatch);
         page = await WarmUpSessionPageAsync(
@@ -349,11 +351,7 @@ public sealed partial class AdsPowerAvitoAutomationService
             var recovered = await TryRecoverAvitoLoginAsync(page, cancellationToken).ConfigureAwait(false);
             if (recovered && !IsOnActiveProfileItemsPage(page.Url))
             {
-                await page.GoToAsync(ProfileItemsPageUrl, new NavigationOptions
-                {
-                    Timeout = 90_000,
-                    WaitUntil = [WaitUntilNavigation.DOMContentLoaded]
-                }).ConfigureAwait(false);
+                await page.GoToAsync(ProfileItemsPageUrl, MonitoringNavigation(90_000)).ConfigureAwait(false);
             }
         }
 
@@ -935,11 +933,7 @@ public sealed partial class AdsPowerAvitoAutomationService
 
             try
             {
-                await page.GoToAsync(ProfileItemsPageUrl, new NavigationOptions
-                {
-                    Timeout = 45_000,
-                    WaitUntil = [WaitUntilNavigation.DOMContentLoaded]
-                }).ConfigureAwait(false);
+                await page.GoToAsync(ProfileItemsPageUrl, MonitoringNavigation(45_000)).ConfigureAwait(false);
             }
             catch (Exception ex) when (IsRecoverableNavigationError(ex))
             {
@@ -1006,11 +1000,7 @@ public sealed partial class AdsPowerAvitoAutomationService
         {
             try
             {
-                await page.GoToAsync(ProfileItemsPageUrl, new NavigationOptions
-                {
-                    Timeout = 60_000,
-                    WaitUntil = [WaitUntilNavigation.DOMContentLoaded]
-                }).ConfigureAwait(false);
+                await page.GoToAsync(ProfileItemsPageUrl, MonitoringNavigation(60_000)).ConfigureAwait(false);
             }
             catch (Exception ex) when (IsRecoverableNavigationError(ex))
             {
@@ -1048,11 +1038,7 @@ public sealed partial class AdsPowerAvitoAutomationService
         {
             try
             {
-                await page.GoToAsync(ProfileBlockedItemsPageUrl, new NavigationOptions
-                {
-                    Timeout = 60_000,
-                    WaitUntil = [WaitUntilNavigation.DOMContentLoaded]
-                }).ConfigureAwait(false);
+                await page.GoToAsync(ProfileBlockedItemsPageUrl, MonitoringNavigation(60_000)).ConfigureAwait(false);
             }
             catch (Exception ex) when (IsRecoverableNavigationError(ex))
             {

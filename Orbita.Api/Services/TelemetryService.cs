@@ -277,6 +277,12 @@ public sealed class TelemetryService(
         if (!string.IsNullOrWhiteSpace(account.LocalUserDataDir))
         {
             target.LocalUserDataDir = account.LocalUserDataDir.Trim();
+            target.LocalTrafficLastNavigationMs = account.LocalTrafficLastNavigationMs;
+            target.LocalTrafficBlockedMedia = account.LocalTrafficBlockedMedia;
+            target.LocalTrafficBlockedImages = account.LocalTrafficBlockedImages;
+            target.LocalTrafficBlockedFonts = account.LocalTrafficBlockedFonts;
+            target.LocalTrafficBlockedAnalytics = account.LocalTrafficBlockedAnalytics;
+            target.LocalTrafficBlockedPrefetch = account.LocalTrafficBlockedPrefetch;
         }
 
         target.ActiveAdsCount = account.ActiveAdsCount;

@@ -2580,3 +2580,56 @@
     display: none !important;
 }
 
+.orbita-local-profile-panel__details {
+    display: grid;
+    gap: 10px;
+}
+
+.orbita-local-profile-panel__details > summary {
+    cursor: pointer;
+    list-style: none;
+}
+
+.orbita-local-profile-panel__details > summary::-webkit-details-marker {
+    display: none;
+}
+
+.orbita-local-profile-panel__details > summary::after {
+    content: "▾";
+    float: right;
+    color: #98a2b3;
+    font-size: 12px;
+}
+
+.orbita-local-profile-panel__details:not([open]) > summary::after {
+    content: "▸";
+}
+
+.orbita-local-profile-panel__presets {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.orbita-local-profile-panel__preset {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    border: 1px solid #d0d5dd;
+    border-radius: 8px;
+    font-size: 12px;
+    color: #344054;
+    background: #fff;
+}
+
+.orbita-local-profile-panel__preset:has(input:checked) {
+    border-color: #1570ef;
+    background: #eff8ff;
+    color: #175cd3;
+}
+
+.orbita-local-profile-panel__preset[hidden] {
+    display: none !important;
+}
+

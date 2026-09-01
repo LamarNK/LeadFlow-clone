@@ -2802,6 +2802,36 @@ namespace Orbita.Api.Data.Migrations
                     b.Property<DateTime?>("LastMonitoringAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<bool>("LocalBlockAnalytics")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
+                    b.Property<bool>("LocalBlockFonts")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
+                    b.Property<bool>("LocalBlockImages")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
+                    b.Property<bool>("LocalBlockMedia")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
+                    b.Property<bool>("LocalBlockPrefetch")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
+                    b.Property<int>("LocalNavigationTimeoutSeconds")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(60);
+
                     b.Property<string>("LocalProxyAddress")
                         .HasMaxLength(255)
                         .HasColumnType("character varying(255)");
@@ -2818,6 +2848,41 @@ namespace Orbita.Api.Data.Migrations
                     b.Property<string>("LocalProxyUsername")
                         .HasMaxLength(255)
                         .HasColumnType("character varying(255)");
+
+                    b.Property<int>("LocalTrafficBlockedAnalytics")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
+
+                    b.Property<int>("LocalTrafficBlockedFonts")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
+
+                    b.Property<int>("LocalTrafficBlockedImages")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
+
+                    b.Property<int>("LocalTrafficBlockedMedia")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
+
+                    b.Property<int>("LocalTrafficBlockedPrefetch")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(0);
+
+                    b.Property<int?>("LocalTrafficLastNavigationMs")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("LocalTrafficMode")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)")
+                        .HasDefaultValue("Normal");
 
                     b.Property<string>("LocalUserDataDir")
                         .HasMaxLength(1024)

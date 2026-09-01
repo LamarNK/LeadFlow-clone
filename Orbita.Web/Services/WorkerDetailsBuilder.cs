@@ -286,6 +286,18 @@ internal static class WorkerDetailsBuilder
             LocalProxyAddress = isLocal ? account.LocalProxyAddress : null,
             LocalProxyUsername = isLocal ? account.LocalProxyUsername : null,
             HasProxyPassword = isLocal && account.HasProxyPassword,
+            LocalTrafficMode = isLocal
+                ? (account.LocalTrafficMode ?? LocalChromeTrafficRules.ModeNormal)
+                : LocalChromeTrafficRules.ModeNormal,
+            LocalBlockMedia = isLocal && account.LocalBlockMedia,
+            LocalBlockAnalytics = isLocal && account.LocalBlockAnalytics,
+            LocalBlockImages = isLocal && account.LocalBlockImages,
+            LocalBlockFonts = isLocal && account.LocalBlockFonts,
+            LocalBlockPrefetch = isLocal && account.LocalBlockPrefetch,
+            LocalNavigationTimeoutSeconds = isLocal
+                ? account.LocalNavigationTimeoutSeconds
+                : LocalChromeTrafficRules.DefaultTimeoutSeconds,
+            LocalTrafficLastSummary = isLocal ? account.LocalTrafficLastSummary : null,
             BrowserSessionStatus = isLocal
                 ? LocalChromeProxyRules.BrowserSessionStatus(
                     isMonitoring,

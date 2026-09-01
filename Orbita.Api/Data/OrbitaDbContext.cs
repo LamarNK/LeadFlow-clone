@@ -191,6 +191,18 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
             entity.Property(x => x.LocalProxyAddress).HasMaxLength(255);
             entity.Property(x => x.LocalProxyUsername).HasMaxLength(255);
             entity.Property(x => x.LocalProxyPasswordProtected).HasMaxLength(2048);
+            entity.Property(x => x.LocalTrafficMode).IsRequired().HasMaxLength(16).HasDefaultValue("Normal");
+            entity.Property(x => x.LocalBlockMedia).IsRequired().HasDefaultValue(false);
+            entity.Property(x => x.LocalBlockAnalytics).IsRequired().HasDefaultValue(false);
+            entity.Property(x => x.LocalBlockImages).IsRequired().HasDefaultValue(false);
+            entity.Property(x => x.LocalBlockFonts).IsRequired().HasDefaultValue(false);
+            entity.Property(x => x.LocalBlockPrefetch).IsRequired().HasDefaultValue(false);
+            entity.Property(x => x.LocalNavigationTimeoutSeconds).IsRequired().HasDefaultValue(60);
+            entity.Property(x => x.LocalTrafficBlockedMedia).IsRequired().HasDefaultValue(0);
+            entity.Property(x => x.LocalTrafficBlockedImages).IsRequired().HasDefaultValue(0);
+            entity.Property(x => x.LocalTrafficBlockedFonts).IsRequired().HasDefaultValue(0);
+            entity.Property(x => x.LocalTrafficBlockedAnalytics).IsRequired().HasDefaultValue(0);
+            entity.Property(x => x.LocalTrafficBlockedPrefetch).IsRequired().HasDefaultValue(0);
             entity.HasOne(x => x.Worker).WithMany(x => x.Accounts).HasForeignKey(x => x.WorkerId);
         });
 

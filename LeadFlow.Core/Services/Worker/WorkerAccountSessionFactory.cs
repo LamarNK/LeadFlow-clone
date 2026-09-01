@@ -116,6 +116,7 @@ public sealed class WorkerAccountSessionFactory(
         }
 
         IBrowser? browser = null;
+        var traffic = LocalChromeTrafficPolicy.BeginMonitoring(account);
         try
         {
             reportStartupStage?.Invoke("запуск Chrome", TimeSpan.Zero);
@@ -137,10 +138,11 @@ public sealed class WorkerAccountSessionFactory(
             return new WorkerOpenedAccountSession(
                 session,
                 WorkerAccountRuntimeKind.Local,
-                () => CloseOwnedBrowserAsync(owned));
+                () => CloseLocalChromeAsync(traffic, owned));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
+            await traffic.DisposeAsync().ConfigureAwait(false);
             if (browser is not null)
             {
                 await CloseOwnedBrowserAsync(browser).ConfigureAwait(false);
@@ -160,6 +162,7 @@ public sealed class WorkerAccountSessionFactory(
         }
         catch
         {
+            await traffic.DisposeAsync().ConfigureAwait(false);
             if (browser is not null)
             {
                 await CloseOwnedBrowserAsync(browser).ConfigureAwait(false);
@@ -242,6 +245,18 @@ public sealed class WorkerAccountSessionFactory(
             }
 
             throw;
+        }
+    }
+
+    private static async ValueTask CloseLocalChromeAsync(LocalChromeTrafficPolicy traffic, IBrowser browser)
+    {
+        try
+        {
+            await traffic.DisposeAsync().ConfigureAwait(false);
+        }
+        finally
+        {
+            await CloseOwnedBrowserAsync(browser).ConfigureAwait(false);
         }
     }
 

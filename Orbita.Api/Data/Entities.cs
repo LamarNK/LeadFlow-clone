@@ -323,6 +323,20 @@ public sealed class WorkerAccountEntity
     public string? LocalProxyUsername { get; set; }
     /// <summary>Пароль прокси, защищённый Data Protection. Не возвращается в API.</summary>
     public string? LocalProxyPasswordProtected { get; set; }
+    /// <summary>Режим скорости и трафика обычного Chrome. AdsPower/Multilogin не используют.</summary>
+    public string LocalTrafficMode { get; set; } = "Normal";
+    public bool LocalBlockMedia { get; set; }
+    public bool LocalBlockAnalytics { get; set; }
+    public bool LocalBlockImages { get; set; }
+    public bool LocalBlockFonts { get; set; }
+    public bool LocalBlockPrefetch { get; set; }
+    public int LocalNavigationTimeoutSeconds { get; set; } = 60;
+    public int? LocalTrafficLastNavigationMs { get; set; }
+    public int LocalTrafficBlockedMedia { get; set; }
+    public int LocalTrafficBlockedImages { get; set; }
+    public int LocalTrafficBlockedFonts { get; set; }
+    public int LocalTrafficBlockedAnalytics { get; set; }
+    public int LocalTrafficBlockedPrefetch { get; set; }
     public DateTime UpdatedAtUtc { get; set; }
 
     public WorkerEntity Worker { get; set; } = null!;

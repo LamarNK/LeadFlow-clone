@@ -10,6 +10,7 @@ using LeadFlow.Core.Services;
 using LeadFlow.Core.Services.Avito;
 using LeadFlow.Core.Services.Browser;
 using LeadFlow.Core.Services.Captcha;
+using LeadFlow.Core.Services.LocalChrome;
 using LeadFlow.Core.Services.Worker;
 using Orbita.Contracts;
 using PuppeteerSharp;
@@ -215,11 +216,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
             {
                 try
                 {
-                    await page.GoToAsync(ProfileItemsPageUrl, new NavigationOptions
-                    {
-                        Timeout = 60_000,
-                        WaitUntil = [WaitUntilNavigation.DOMContentLoaded]
-                    }).ConfigureAwait(false);
+                    await page.GoToAsync(ProfileItemsPageUrl, MonitoringNavigation(60_000)).ConfigureAwait(false);
                 }
                 catch (Exception ex) when (IsRecoverableNavigationError(ex))
                 {
@@ -414,11 +411,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
             {
                 try
                 {
-                    await page.GoToAsync(ProfileBlockedItemsPageUrl, new NavigationOptions
-                    {
-                        Timeout = 60_000,
-                        WaitUntil = [WaitUntilNavigation.DOMContentLoaded]
-                    }).ConfigureAwait(false);
+                    await page.GoToAsync(ProfileBlockedItemsPageUrl, MonitoringNavigation(60_000)).ConfigureAwait(false);
                 }
                 catch (Exception ex) when (IsRecoverableNavigationError(ex))
                 {
@@ -672,23 +665,26 @@ public sealed partial class AdsPowerAvitoAutomationService(
 
     private async Task<bool> TryClearGeeTestCaptchaAsync(IPage page, CancellationToken cancellationToken)
     {
-        string? html = null;
-        try
+        using (LocalChromeTrafficPolicy.AllowImages())
         {
-            html = await page.GetContentAsync().ConfigureAwait(false);
-        }
-        catch
-        {
-            // солвер снимет HTML сам
-        }
+            string? html = null;
+            try
+            {
+                html = await page.GetContentAsync().ConfigureAwait(false);
+            }
+            catch
+            {
+                // солвер снимет HTML сам
+            }
 
-        return await TrySolveGeeTestAsync(
-                page,
-                html,
-                page.Url,
-                AvitoCaptchaDetector.Classify(html),
-                cancellationToken)
-            .ConfigureAwait(false);
+            return await TrySolveGeeTestAsync(
+                    page,
+                    html,
+                    page.Url,
+                    AvitoCaptchaDetector.Classify(html),
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
     }
 
     private async Task<bool> TrySolveGeeTestAsync(
@@ -719,9 +715,12 @@ public sealed partial class AdsPowerAvitoAutomationService(
 
         try
         {
-            return await geeTestSolver
-                .TrySolveOnPageAsync(page, html, pageUrl, AvitoCaptchaTaskContext.Options, cancellationToken)
-                .ConfigureAwait(false);
+            using (LocalChromeTrafficPolicy.AllowImages())
+            {
+                return await geeTestSolver
+                    .TrySolveOnPageAsync(page, html, pageUrl, AvitoCaptchaTaskContext.Options, cancellationToken)
+                    .ConfigureAwait(false);
+            }
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -1264,11 +1263,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
         try
         {
             await AdsPowerCdpGuard.WaitAsync(
-                    page.GoToAsync(ProfileDashboardPageUrl, new NavigationOptions
-                    {
-                        Timeout = 45_000,
-                        WaitUntil = [WaitUntilNavigation.DOMContentLoaded]
-                    }),
+                    page.GoToAsync(ProfileDashboardPageUrl, MonitoringNavigation(45_000)),
                     CdpNavigationGuardTimeout,
                     "уход с модалки субпрофилей на dashboard",
                     cancellationToken)
@@ -1691,20 +1686,12 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 .ConfigureAwait(false);
             try
             {
-                await page.GoToAsync(target, new NavigationOptions
-                {
-                    Timeout = 90_000,
-                    WaitUntil = [WaitUntilNavigation.DOMContentLoaded]
-                }).ConfigureAwait(false);
+                await page.GoToAsync(target, MonitoringNavigation(90_000)).ConfigureAwait(false);
             }
             catch (Exception ex) when (IsRecoverableNavigationError(ex))
             {
                 await Task.Delay(1400, cancellationToken).ConfigureAwait(false);
-                await page.GoToAsync(target, new NavigationOptions
-                {
-                    Timeout = 90_000,
-                    WaitUntil = [WaitUntilNavigation.DOMContentLoaded]
-                }).ConfigureAwait(false);
+                await page.GoToAsync(target, MonitoringNavigation(90_000)).ConfigureAwait(false);
             }
 
             _ = GlobalLogger.Instance.LogAsync(
@@ -1838,11 +1825,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
             try
             {
                 await AdsPowerCdpGuard.WaitAsync(
-                        page.GoToAsync(ProfileSwitchPageUrl, new NavigationOptions
-                        {
-                            Timeout = 45_000,
-                            WaitUntil = [WaitUntilNavigation.DOMContentLoaded]
-                        }),
+                        page.GoToAsync(ProfileSwitchPageUrl, MonitoringNavigation(45_000)),
                         CdpNavigationGuardTimeout,
                         "навигация на dashboard#profile/switch",
                         cancellationToken)
@@ -1944,11 +1927,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
         try
         {
             await AdsPowerCdpGuard.WaitAsync(
-                    page.GoToAsync(ProfileDashboardPageUrl, new NavigationOptions
-                    {
-                        Timeout = 45_000,
-                        WaitUntil = [WaitUntilNavigation.DOMContentLoaded]
-                    }),
+                    page.GoToAsync(ProfileDashboardPageUrl, MonitoringNavigation(45_000)),
                     CdpNavigationGuardTimeout,
                     "bounce на dashboard перед модалкой субпрофилей",
                     cancellationToken)
@@ -1962,11 +1941,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
         {
             await Task.Delay(1400, cancellationToken).ConfigureAwait(false);
             await AdsPowerCdpGuard.WaitAsync(
-                    page.GoToAsync(ProfileDashboardPageUrl, new NavigationOptions
-                    {
-                        Timeout = 45_000,
-                        WaitUntil = [WaitUntilNavigation.DOMContentLoaded]
-                    }),
+                    page.GoToAsync(ProfileDashboardPageUrl, MonitoringNavigation(45_000)),
                     CdpNavigationGuardTimeout,
                     "повторный bounce на dashboard",
                     cancellationToken)
@@ -2003,11 +1978,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
 
         try
         {
-            await page.GoToAsync(ProfileSwitchPageUrl, new NavigationOptions
-            {
-                Timeout = 45_000,
-                WaitUntil = [WaitUntilNavigation.DOMContentLoaded]
-            }).ConfigureAwait(false);
+            await page.GoToAsync(ProfileSwitchPageUrl, MonitoringNavigation(45_000)).ConfigureAwait(false);
         }
         catch (Exception ex) when (IsRecoverableNavigationError(ex))
         {
@@ -2242,11 +2213,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
 
                 recoveryAttempts.Add($"попытка {attempt}: переход на {targetUrl}");
 
-                var navigationOptions = new NavigationOptions
-                {
-                    Timeout = 60_000,
-                    WaitUntil = [WaitUntilNavigation.DOMContentLoaded]
-                };
+                var navigationOptions = MonitoringNavigation(60_000);
 
                 try
                 {
@@ -2385,20 +2352,12 @@ public sealed partial class AdsPowerAvitoAutomationService(
 
         try
         {
-            await page.GoToAsync(ProfileItemsPageUrl, new NavigationOptions
-            {
-                Timeout = 45_000,
-                WaitUntil = [WaitUntilNavigation.DOMContentLoaded]
-            }).ConfigureAwait(false);
+            await page.GoToAsync(ProfileItemsPageUrl, MonitoringNavigation(45_000)).ConfigureAwait(false);
         }
         catch (Exception ex) when (IsRecoverableNavigationError(ex))
         {
             await Task.Delay(1400, cancellationToken).ConfigureAwait(false);
-            await page.GoToAsync(ProfileItemsPageUrl, new NavigationOptions
-            {
-                Timeout = 45_000,
-                WaitUntil = [WaitUntilNavigation.DOMContentLoaded]
-            }).ConfigureAwait(false);
+            await page.GoToAsync(ProfileItemsPageUrl, MonitoringNavigation(45_000)).ConfigureAwait(false);
         }
     }
 
@@ -3173,6 +3132,13 @@ public sealed partial class AdsPowerAvitoAutomationService(
 
     internal static TimeoutException CreateEmptyPagesAcquisitionTimeout() =>
         new($"{AdsPowerCdpGuard.TimeoutPrefix} поиск рабочей вкладки: список вкладок пуст, NewPage не создаём.");
+
+    private static NavigationOptions MonitoringNavigation(int timeoutMs) =>
+        new()
+        {
+            Timeout = LocalChromeTrafficPolicy.ResolveNavigationTimeoutMs(timeoutMs),
+            WaitUntil = [WaitUntilNavigation.DOMContentLoaded]
+        };
 
     internal static string ClassifyAutomationPageUrl(string? url)
     {
@@ -4365,11 +4331,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
         {
             await page.GoToAsync(
                     candidatesReturnUrl,
-                    new NavigationOptions
-                    {
-                        Timeout = 30_000,
-                        WaitUntil = [WaitUntilNavigation.DOMContentLoaded]
-                    })
+                    MonitoringNavigation(30_000))
                 .ConfigureAwait(false);
             await Task.Delay(400, cancellationToken).ConfigureAwait(false);
         }

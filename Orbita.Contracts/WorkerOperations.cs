@@ -44,7 +44,15 @@ public sealed record WorkerAccountConfigDto(
     string? LocalProxyAddress = null,
     string? LocalProxyUsername = null,
     /// <summary>Пароль прокси. Только worker config channel, только Local и только когда прокси включён.</summary>
-    string? LocalProxyPassword = null);
+    string? LocalProxyPassword = null,
+    /// <summary>Режим скорости и трафика: Normal, Economic, Aggressive, Custom. Только Local.</summary>
+    string? LocalTrafficMode = null,
+    bool LocalBlockMedia = false,
+    bool LocalBlockAnalytics = false,
+    bool LocalBlockImages = false,
+    bool LocalBlockFonts = false,
+    bool LocalBlockPrefetch = false,
+    int LocalNavigationTimeoutSeconds = 60);
 
 public sealed record UpdateWorkerSubProfileRequest(bool IsEnabledInPanel);
 
@@ -467,7 +475,14 @@ public sealed record UpdateLocalWorkerAccountProfileRequest(
     string? ProxyAddress = null,
     string? ProxyUsername = null,
     string? ProxyPassword = null,
-    bool ClearProxyPassword = false);
+    bool ClearProxyPassword = false,
+    string? TrafficMode = null,
+    bool? BlockMedia = null,
+    bool? BlockAnalytics = null,
+    bool? BlockImages = null,
+    bool? BlockFonts = null,
+    bool? BlockPrefetch = null,
+    int? NavigationTimeoutSeconds = null);
 
 public sealed record LocalWorkerAccountProfileDto(
     Guid AccountId,
@@ -480,7 +495,15 @@ public sealed record LocalWorkerAccountProfileDto(
     bool HasProxyPassword,
     string ProxyStatus,
     string BrowserStatus,
-    bool CanOpenBrowser);
+    bool CanOpenBrowser,
+    string TrafficMode = LocalChromeTrafficRules.ModeNormal,
+    bool BlockMedia = false,
+    bool BlockAnalytics = false,
+    bool BlockImages = false,
+    bool BlockFonts = false,
+    bool BlockPrefetch = false,
+    int NavigationTimeoutSeconds = LocalChromeTrafficRules.DefaultTimeoutSeconds,
+    string? TrafficLastSummary = null);
 
 public sealed record BulkWorkersMonitoringResultDto(
     int UpdatedCount,

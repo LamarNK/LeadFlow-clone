@@ -584,6 +584,13 @@ public sealed class WorkersController(IWorkersService workers) : Controller
         string? proxyUsername,
         string? proxyPassword,
         bool clearProxyPassword,
+        string? trafficMode,
+        bool? blockMedia,
+        bool? blockAnalytics,
+        bool? blockImages,
+        bool? blockFonts,
+        bool? blockPrefetch,
+        int? navigationTimeoutSeconds,
         CancellationToken ct)
     {
         var (profile, error) = await workers.UpdateLocalAccountProfileAsync(
@@ -597,6 +604,13 @@ public sealed class WorkersController(IWorkersService workers) : Controller
             proxyUsername,
             proxyPassword,
             clearProxyPassword,
+            trafficMode,
+            blockMedia,
+            blockAnalytics,
+            blockImages,
+            blockFonts,
+            blockPrefetch,
+            navigationTimeoutSeconds,
             ct);
         if (profile is null)
         {

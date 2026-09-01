@@ -812,6 +812,11 @@ public sealed class WorkerConfigService(
             return (null, proxyError);
         }
 
+        if (!TryApplyLocalTraffic(account, request, out var trafficError))
+        {
+            return (null, trafficError);
+        }
+
         account.UpdatedAtUtc = DateTime.UtcNow;
         await db.SaveChangesAsync(ct);
 
@@ -933,6 +938,44 @@ public sealed class WorkerConfigService(
         return true;
     }
 
+    private static bool TryApplyLocalTraffic(
+        WorkerAccountEntity account,
+        UpdateLocalWorkerAccountProfileRequest request,
+        out string? error)
+    {
+        var current = LocalChromeTrafficRules.FromStored(
+            account.LocalTrafficMode,
+            account.LocalBlockMedia,
+            account.LocalBlockAnalytics,
+            account.LocalBlockImages,
+            account.LocalBlockFonts,
+            account.LocalBlockPrefetch,
+            account.LocalNavigationTimeoutSeconds);
+        if (!LocalChromeTrafficRules.TryApply(
+                request.TrafficMode,
+                request.BlockMedia,
+                request.BlockAnalytics,
+                request.BlockImages,
+                request.BlockFonts,
+                request.BlockPrefetch,
+                request.NavigationTimeoutSeconds,
+                current,
+                out var settings,
+                out error))
+        {
+            return false;
+        }
+
+        account.LocalTrafficMode = settings.Mode;
+        account.LocalBlockMedia = settings.BlockMedia;
+        account.LocalBlockAnalytics = settings.BlockAnalytics;
+        account.LocalBlockImages = settings.BlockImages;
+        account.LocalBlockFonts = settings.BlockFonts;
+        account.LocalBlockPrefetch = settings.BlockPrefetch;
+        account.LocalNavigationTimeoutSeconds = settings.NavigationTimeoutSeconds;
+        return true;
+    }
+
     private LocalWorkerAccountProfileDto ToLocalProfileDto(WorkerAccountEntity account, WorkerEntity worker)
     {
         var login = string.IsNullOrWhiteSpace(account.AvitoLogin) ? null : account.AvitoLogin.Trim();
@@ -941,6 +984,14 @@ public sealed class WorkerConfigService(
         var pending = localChromeLoginSessions?.GetPendingForWorker(worker.Id);
         var isMonitoring = IsAccountMonitoringNow(worker, account.AccountId);
         var isManual = pending?.AccountId == account.AccountId;
+        var traffic = LocalChromeTrafficRules.FromStored(
+            account.LocalTrafficMode,
+            account.LocalBlockMedia,
+            account.LocalBlockAnalytics,
+            account.LocalBlockImages,
+            account.LocalBlockFonts,
+            account.LocalBlockPrefetch,
+            account.LocalNavigationTimeoutSeconds);
         return new(
             account.AccountId,
             login,
@@ -955,7 +1006,21 @@ public sealed class WorkerConfigService(
             LocalChromeProxyRules.CanOpenBrowser(
                 true,
                 IsBrowserProviderEnabled(account, worker),
-                isMonitoring));
+                isMonitoring),
+            traffic.Mode,
+            traffic.BlockMedia,
+            traffic.BlockAnalytics,
+            traffic.BlockImages,
+            traffic.BlockFonts,
+            traffic.BlockPrefetch,
+            traffic.NavigationTimeoutSeconds,
+            LocalChromeTrafficRules.FormatLastRun(
+                account.LocalTrafficLastNavigationMs,
+                account.LocalTrafficBlockedMedia,
+                account.LocalTrafficBlockedImages,
+                account.LocalTrafficBlockedFonts,
+                account.LocalTrafficBlockedAnalytics,
+                account.LocalTrafficBlockedPrefetch));
     }
 
     private static bool IsAccountMonitoringNow(WorkerEntity worker, Guid accountId)
@@ -1010,6 +1075,17 @@ public sealed class WorkerConfigService(
             proxyPassword = localProxyPassword;
         }
 
+        var traffic = isLocal
+            ? LocalChromeTrafficRules.FromStored(
+                account.LocalTrafficMode,
+                account.LocalBlockMedia,
+                account.LocalBlockAnalytics,
+                account.LocalBlockImages,
+                account.LocalBlockFonts,
+                account.LocalBlockPrefetch,
+                account.LocalNavigationTimeoutSeconds)
+            : LocalChromeTrafficRules.Normal;
+
         return new(
             account.AccountId,
             account.AdsPowerProfileId,
@@ -1037,7 +1113,14 @@ public sealed class WorkerConfigService(
             proxyEnabled,
             proxyEnabled ? NullIfWhiteSpace(account.LocalProxyAddress) : null,
             proxyEnabled ? NullIfWhiteSpace(account.LocalProxyUsername) : null,
-            proxyPassword);
+            proxyPassword,
+            isLocal ? traffic.Mode : null,
+            isLocal && traffic.BlockMedia,
+            isLocal && traffic.BlockAnalytics,
+            isLocal && traffic.BlockImages,
+            isLocal && traffic.BlockFonts,
+            isLocal && traffic.BlockPrefetch,
+            isLocal ? traffic.NavigationTimeoutSeconds : LocalChromeTrafficRules.DefaultTimeoutSeconds);
     }
 
     private static bool TryNormalizeLocalChromeExecutablePath(

@@ -80,6 +80,7 @@ public sealed class WorkerAccountRuntimeStore
         target.ActiveAdsSnapshotJson = source.ActiveAdsSnapshotJson;
         target.BlockedAdsSnapshotJson = source.BlockedAdsSnapshotJson;
         target.ForceSubProfilesRefresh = source.ForceSubProfilesRefresh;
+        target.LocalTrafficLastStats = source.LocalTrafficLastStats;
         // AvitoLogin/AvitoPassword always come from panel config (target), not runtime store.
         if (source.SubProfiles.Count > 0)
         {
@@ -109,6 +110,14 @@ public sealed class WorkerAccountRuntimeStore
             LocalChromeExecutablePath = source.LocalChromeExecutablePath,
             AvitoLogin = source.AvitoLogin,
             AvitoPassword = source.AvitoPassword,
+            LocalTrafficMode = source.LocalTrafficMode,
+            LocalBlockMedia = source.LocalBlockMedia,
+            LocalBlockAnalytics = source.LocalBlockAnalytics,
+            LocalBlockImages = source.LocalBlockImages,
+            LocalBlockFonts = source.LocalBlockFonts,
+            LocalBlockPrefetch = source.LocalBlockPrefetch,
+            LocalNavigationTimeoutSeconds = source.LocalNavigationTimeoutSeconds,
+            LocalTrafficLastStats = source.LocalTrafficLastStats,
             Status = source.Status,
             LastErrorMessage = source.LastErrorMessage,
             LastMonitoringAt = source.LastMonitoringAt,

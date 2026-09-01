@@ -222,6 +222,51 @@ public sealed class WorkerAccountRuntimeTests
     }
 
     [Fact]
+    public void Mapper_CopiesLocalTrafficSettings()
+    {
+        var dto = new WorkerAccountConfigDto(
+            Guid.Parse("dddddddd-dddd-dddd-dddd-dddddddddddd"),
+            AdsPowerProfileId: "",
+            DisplayName: "chrome-acc",
+            IsEnabled: true,
+            AdsPowerApiBaseUrl: null,
+            AdsPowerApiKey: null,
+            ProfileProvider: "Local",
+            LocalUserDataDir: @"D:\Orbita\ChromeProfiles\acc-1",
+            LocalTrafficMode: LocalChromeTrafficRules.ModeAggressive,
+            LocalBlockMedia: true,
+            LocalBlockAnalytics: true,
+            LocalBlockImages: true,
+            LocalBlockFonts: true,
+            LocalBlockPrefetch: true,
+            LocalNavigationTimeoutSeconds: 90);
+        var config = new WorkerConfigDto(Guid.NewGuid(), 1, null, null, [dto]);
+        var account = WorkerAccountRuntimeMapper.ToAccount(dto, config, "http://fallback");
+
+        Assert.Equal(LocalChromeTrafficRules.ModeCustom, account.LocalTrafficMode);
+        Assert.True(account.LocalBlockMedia);
+        Assert.True(account.LocalBlockImages);
+        Assert.Equal(90, account.LocalNavigationTimeoutSeconds);
+
+        var adsDto = new WorkerAccountConfigDto(
+            Guid.NewGuid(),
+            "ads-user",
+            "acc",
+            true,
+            null,
+            null,
+            LocalBlockMedia: true,
+            LocalNavigationTimeoutSeconds: 30);
+        var ads = WorkerAccountRuntimeMapper.ToAccount(
+            adsDto,
+            new WorkerConfigDto(Guid.NewGuid(), 1, null, null, [adsDto]),
+            "http://fallback");
+        Assert.Equal(LocalChromeTrafficRules.ModeNormal, ads.LocalTrafficMode);
+        Assert.False(ads.LocalBlockMedia);
+        Assert.Equal(60, ads.LocalNavigationTimeoutSeconds);
+    }
+
+    [Fact]
     public async Task Factory_LocalProxy_PassesHttpLaunchArg()
     {
         var ads = new FakeAdsPowerAutomation();
@@ -287,6 +332,7 @@ public sealed class WorkerAccountRuntimeTests
         Assert.Equal(WorkerAccountRuntimeKind.Multilogin, opened.Runtime);
         Assert.Equal(0, ads.OpenAdsPowerCount);
         Assert.Equal(1, ads.OpenOnConnectedCount);
+        Assert.False(ads.LastTrafficMonitoring);
         Assert.Equal(["start", "connect"], mlx.Log);
         await opened.DisposeAsync();
         Assert.Equal(["start", "connect", "stop"], mlx.Log);
@@ -378,6 +424,7 @@ public sealed class WorkerAccountRuntimeTests
         Assert.Equal(WorkerAccountRuntimeKind.Local, opened.Runtime);
         Assert.Equal(1, chrome.LaunchCount);
         Assert.Equal("Local", ads.LastRuntimeProvider);
+        Assert.True(ads.LastTrafficMonitoring);
         Assert.Equal(1, ads.OpenOnConnectedCount);
         Assert.Equal(0, ads.OpenAdsPowerCount);
         Assert.Equal(0, mlx.OpenCount);
@@ -538,6 +585,8 @@ public sealed class WorkerAccountRuntimeTests
 
         public string? LastRuntimeProvider { get; private set; }
 
+        public bool LastTrafficMonitoring { get; private set; }
+
         public Func<IAdsPowerAccountSession>? OpenOnConnected { get; init; }
 
         public Task<string> ExtractCandidatesJsonAsync(
@@ -615,6 +664,7 @@ public sealed class WorkerAccountRuntimeTests
             _ = browser;
             _ = sessionKey;
             LastRuntimeProvider = runtimeProvider;
+            LastTrafficMonitoring = LocalChromeTrafficPolicy.IsMonitoringAttached;
             OpenOnConnectedCount++;
             if (OpenOnConnected is not null)
             {

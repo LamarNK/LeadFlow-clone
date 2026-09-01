@@ -320,6 +320,13 @@ public sealed class WorkersService(
         string? proxyUsername,
         string? proxyPassword,
         bool clearProxyPassword,
+        string? trafficMode = null,
+        bool? blockMedia = null,
+        bool? blockAnalytics = null,
+        bool? blockImages = null,
+        bool? blockFonts = null,
+        bool? blockPrefetch = null,
+        int? navigationTimeoutSeconds = null,
         CancellationToken ct = default) =>
         api.UpdateLocalAccountProfileAsync(
             workerId,
@@ -332,7 +339,14 @@ public sealed class WorkersService(
                 proxyAddress,
                 proxyUsername,
                 proxyPassword,
-                clearProxyPassword),
+                clearProxyPassword,
+                trafficMode,
+                blockMedia,
+                blockAnalytics,
+                blockImages,
+                blockFonts,
+                blockPrefetch,
+                navigationTimeoutSeconds),
             ct);
 
     public Task<(bool Success, string? Error)> RequestSubProfilesRefreshAsync(

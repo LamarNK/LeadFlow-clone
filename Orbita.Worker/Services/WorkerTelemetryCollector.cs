@@ -65,6 +65,8 @@ public sealed class WorkerTelemetryCollector(
         var status = local is null
             ? (cfg.IsEnabled ? "Active" : "Paused")
             : WorkerAccountStatusMapper.ToSnapshotStatus(local.Status, cfg.IsEnabled);
+        var isLocal = string.Equals(cfg.ProfileProvider, "Local", StringComparison.OrdinalIgnoreCase)
+            || !string.IsNullOrWhiteSpace(cfg.LocalUserDataDir);
 
         return new WorkerAccountDto(
             cfg.AccountId,
@@ -87,7 +89,25 @@ public sealed class WorkerTelemetryCollector(
             LocalProxyEnabled: cfg.LocalProxyEnabled,
             LocalProxyAddress: cfg.LocalProxyEnabled ? cfg.LocalProxyAddress : null,
             LocalProxyUsername: cfg.LocalProxyEnabled ? cfg.LocalProxyUsername : null,
-            HasProxyPassword: cfg.LocalProxyEnabled && !string.IsNullOrEmpty(cfg.LocalProxyPassword));
+            HasProxyPassword: cfg.LocalProxyEnabled && !string.IsNullOrEmpty(cfg.LocalProxyPassword),
+            LocalTrafficMode: isLocal ? (local?.LocalTrafficMode ?? cfg.LocalTrafficMode) : null,
+            LocalBlockMedia: isLocal && (local?.LocalBlockMedia ?? cfg.LocalBlockMedia),
+            LocalBlockAnalytics: isLocal && (local?.LocalBlockAnalytics ?? cfg.LocalBlockAnalytics),
+            LocalBlockImages: isLocal && (local?.LocalBlockImages ?? cfg.LocalBlockImages),
+            LocalBlockFonts: isLocal && (local?.LocalBlockFonts ?? cfg.LocalBlockFonts),
+            LocalBlockPrefetch: isLocal && (local?.LocalBlockPrefetch ?? cfg.LocalBlockPrefetch),
+            LocalNavigationTimeoutSeconds: isLocal
+                ? (local?.LocalNavigationTimeoutSeconds ?? cfg.LocalNavigationTimeoutSeconds)
+                : LocalChromeTrafficRules.DefaultTimeoutSeconds,
+            LocalTrafficLastNavigationMs: isLocal ? local?.LocalTrafficLastStats?.FirstNavigationMs : null,
+            LocalTrafficBlockedMedia: isLocal ? (local?.LocalTrafficLastStats?.BlockedMedia ?? 0) : 0,
+            LocalTrafficBlockedImages: isLocal ? (local?.LocalTrafficLastStats?.BlockedImages ?? 0) : 0,
+            LocalTrafficBlockedFonts: isLocal ? (local?.LocalTrafficLastStats?.BlockedFonts ?? 0) : 0,
+            LocalTrafficBlockedAnalytics: isLocal ? (local?.LocalTrafficLastStats?.BlockedAnalytics ?? 0) : 0,
+            LocalTrafficBlockedPrefetch: isLocal ? (local?.LocalTrafficLastStats?.BlockedPrefetch ?? 0) : 0,
+            LocalTrafficLastSummary: isLocal
+                ? LocalChromeTrafficRules.FormatLastRun(local?.LocalTrafficLastStats)
+                : null);
     }
 
     private static WorkerBalanceDto MapBalance(

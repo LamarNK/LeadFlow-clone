@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text.Json;
 using CommunityToolkit.Mvvm.ComponentModel;
+using Orbita.Contracts;
 
 namespace LeadFlow.Core.Models;
 
@@ -116,6 +117,21 @@ public sealed partial class AvitoAccount : ObservableObject
     /// Пароль Avito из панели Орбиты (не сохраняется в SQLite воркера, только runtime из config).
     /// </summary>
     public string? AvitoPassword { get; set; }
+
+    /// <summary>Режим скорости и трафика обычного Chrome. Только runtime из config.</summary>
+    public string LocalTrafficMode { get; set; } = LocalChromeTrafficModeDefault;
+
+    public bool LocalBlockMedia { get; set; }
+    public bool LocalBlockAnalytics { get; set; }
+    public bool LocalBlockImages { get; set; }
+    public bool LocalBlockFonts { get; set; }
+    public bool LocalBlockPrefetch { get; set; }
+    public int LocalNavigationTimeoutSeconds { get; set; } = 60;
+
+    /// <summary>Счётчики последней мониторинговой сессии. Не из панели, только runtime.</summary>
+    public LocalChromeTrafficLastStats? LocalTrafficLastStats { get; set; }
+
+    private const string LocalChromeTrafficModeDefault = "Normal";
 
     /// <summary>
     /// Имя пользователя, прочитанное со страницы Avito при последней проверке авторизации.

@@ -48,6 +48,25 @@ public static class WorkerAccountRuntimeMapper
             AvitoPassword = string.IsNullOrEmpty(dto.AvitoPassword) ? null : dto.AvitoPassword
         };
 
+        if (provider == AvitoProfileProvider.Local)
+        {
+            var traffic = LocalChromeTrafficRules.FromStored(
+                dto.LocalTrafficMode,
+                dto.LocalBlockMedia,
+                dto.LocalBlockAnalytics,
+                dto.LocalBlockImages,
+                dto.LocalBlockFonts,
+                dto.LocalBlockPrefetch,
+                dto.LocalNavigationTimeoutSeconds);
+            account.LocalTrafficMode = traffic.Mode;
+            account.LocalBlockMedia = traffic.BlockMedia;
+            account.LocalBlockAnalytics = traffic.BlockAnalytics;
+            account.LocalBlockImages = traffic.BlockImages;
+            account.LocalBlockFonts = traffic.BlockFonts;
+            account.LocalBlockPrefetch = traffic.BlockPrefetch;
+            account.LocalNavigationTimeoutSeconds = traffic.NavigationTimeoutSeconds;
+        }
+
         if (provider == AvitoProfileProvider.Local && dto.LocalProxyEnabled)
         {
             if (LocalChromeProxyRules.TryNormalizeAddress(dto.LocalProxyAddress, out var proxyAddress, out _))

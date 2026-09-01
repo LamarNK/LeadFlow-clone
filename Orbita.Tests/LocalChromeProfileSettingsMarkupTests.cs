@@ -10,6 +10,8 @@ public sealed class LocalChromeProfileSettingsMarkupTests
         Assert.Contains("data-local-profile-settings", view);
         Assert.Contains("Настройки профиля", view);
         Assert.Contains("worker-local-settings-btn", view);
+        Assert.Contains("data-traffic-mode", view);
+        Assert.Contains("data-block-media", view);
 
         var localBlockIndex = view.IndexOf("@if (account.IsLocal)", StringComparison.Ordinal);
         Assert.True(localBlockIndex >= 0);
@@ -34,9 +36,32 @@ public sealed class LocalChromeProfileSettingsMarkupTests
         Assert.Contains("data-local-profile-settings", js);
         Assert.Contains("Настройки профиля", js);
         Assert.Contains("Прокси", js);
+        Assert.Contains("Скорость и трафик", js);
+        Assert.Contains("Обычный", js);
+        Assert.Contains("Экономный", js);
+        Assert.Contains("Агрессивный", js);
+        Assert.Contains("Пользовательский", js);
+        Assert.Contains("Блокировать видео и аудио", js);
+        Assert.Contains("Блокировать внешнюю аналитику", js);
+        Assert.Contains("Не загружать изображения карточек", js);
+        Assert.Contains("Не загружать веб-шрифты", js);
+        Assert.Contains("Отключить предзагрузку страниц", js);
+        Assert.Contains("Кэш профиля включён всегда: повторные заходы быстрее", js);
+        Assert.Contains("Настройки применяются только во время мониторинга", js);
         Assert.Contains("Открыть браузер", js);
         Assert.Contains("type=\"password\"", js);
         Assert.DoesNotContain("SOCKS5", js);
+    }
+
+    [Fact]
+    public void WorkerDetails_DoesNotShowTrafficSettingsOutsideLocalBranch()
+    {
+        var view = ReadRepoFile("Orbita.Web/Views/Workers/Details.cshtml");
+        var stripped = StripLocalBlocks(view);
+        Assert.DoesNotContain("data-local-profile-settings", stripped);
+        Assert.DoesNotContain("data-traffic-mode", stripped);
+        Assert.DoesNotContain("data-block-media", stripped);
+        Assert.DoesNotContain("Скорость и трафик", stripped);
     }
 
     private static string StripLocalBlocks(string view)

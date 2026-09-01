@@ -360,6 +360,14 @@ public sealed class WorkerAccountRowViewModel
     public string? LocalProxyAddress { get; init; }
     public string? LocalProxyUsername { get; init; }
     public bool HasProxyPassword { get; init; }
+    public string LocalTrafficMode { get; init; } = LocalChromeTrafficRules.ModeNormal;
+    public bool LocalBlockMedia { get; init; }
+    public bool LocalBlockAnalytics { get; init; }
+    public bool LocalBlockImages { get; init; }
+    public bool LocalBlockFonts { get; init; }
+    public bool LocalBlockPrefetch { get; init; }
+    public int LocalNavigationTimeoutSeconds { get; init; } = LocalChromeTrafficRules.DefaultTimeoutSeconds;
+    public string? LocalTrafficLastSummary { get; init; }
     public string ProxyStatus =>
         IsLocal
             ? LocalChromeProxyRules.Status(LocalProxyEnabled, LocalProxyAddress)

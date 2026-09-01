@@ -111,7 +111,21 @@ public sealed record WorkerAccountDto(
     bool LocalProxyEnabled = false,
     string? LocalProxyAddress = null,
     string? LocalProxyUsername = null,
-    bool HasProxyPassword = false);
+    bool HasProxyPassword = false,
+    string? LocalTrafficMode = null,
+    bool LocalBlockMedia = false,
+    bool LocalBlockAnalytics = false,
+    bool LocalBlockImages = false,
+    bool LocalBlockFonts = false,
+    bool LocalBlockPrefetch = false,
+    int LocalNavigationTimeoutSeconds = 60,
+    int? LocalTrafficLastNavigationMs = null,
+    int LocalTrafficBlockedMedia = 0,
+    int LocalTrafficBlockedImages = 0,
+    int LocalTrafficBlockedFonts = 0,
+    int LocalTrafficBlockedAnalytics = 0,
+    int LocalTrafficBlockedPrefetch = 0,
+    string? LocalTrafficLastSummary = null);
 
 public sealed record WorkerBalanceDto(
     Guid AccountId,

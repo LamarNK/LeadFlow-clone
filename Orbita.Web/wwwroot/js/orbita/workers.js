@@ -240,6 +240,31 @@
             '    </div>' +
             '    <p class="orbita-local-profile-panel__status" data-local-profile-proxy-status></p>' +
             '  </section>' +
+            '  <section class="orbita-local-profile-panel__section" data-local-profile-traffic>' +
+            '    <details class="orbita-local-profile-panel__details" open>' +
+            '      <summary class="orbita-local-profile-panel__section-title">Скорость и трафик</summary>' +
+            '      <div class="orbita-local-profile-panel__presets" role="radiogroup" aria-label="Режим скорости">' +
+            '        <label class="orbita-local-profile-panel__preset"><input type="radio" name="orbita-local-traffic-preset" value="Normal" data-local-profile-traffic-preset /> Обычный</label>' +
+            '        <label class="orbita-local-profile-panel__preset"><input type="radio" name="orbita-local-traffic-preset" value="Economic" data-local-profile-traffic-preset /> Экономный</label>' +
+            '        <label class="orbita-local-profile-panel__preset"><input type="radio" name="orbita-local-traffic-preset" value="Aggressive" data-local-profile-traffic-preset /> Агрессивный</label>' +
+            '        <label class="orbita-local-profile-panel__preset" data-local-profile-traffic-custom hidden><input type="radio" name="orbita-local-traffic-preset" value="Custom" data-local-profile-traffic-preset /> Пользовательский</label>' +
+            '      </div>' +
+            '      <label class="orbita-local-profile-panel__toggle"><input type="checkbox" data-local-profile-block-media /> Блокировать видео и аудио</label>' +
+            '      <label class="orbita-local-profile-panel__toggle"><input type="checkbox" data-local-profile-block-analytics /> Блокировать внешнюю аналитику</label>' +
+            '      <label class="orbita-local-profile-panel__toggle"><input type="checkbox" data-local-profile-block-images /> Не загружать изображения карточек</label>' +
+            '      <label class="orbita-local-profile-panel__toggle"><input type="checkbox" data-local-profile-block-fonts /> Не загружать веб-шрифты</label>' +
+            '      <label class="orbita-local-profile-panel__toggle"><input type="checkbox" data-local-profile-block-prefetch /> Отключить предзагрузку страниц</label>' +
+            '      <p class="orbita-local-profile-panel__status">Таймаут загрузки</p>' +
+            '      <div class="orbita-local-profile-panel__presets" role="radiogroup" aria-label="Таймаут загрузки">' +
+            '        <label class="orbita-local-profile-panel__preset"><input type="radio" name="orbita-local-traffic-timeout" value="30" data-local-profile-nav-timeout /> 30 секунд</label>' +
+            '        <label class="orbita-local-profile-panel__preset"><input type="radio" name="orbita-local-traffic-timeout" value="60" data-local-profile-nav-timeout /> 60 секунд</label>' +
+            '        <label class="orbita-local-profile-panel__preset"><input type="radio" name="orbita-local-traffic-timeout" value="90" data-local-profile-nav-timeout /> 90 секунд</label>' +
+            '      </div>' +
+            '      <p class="orbita-local-profile-panel__status">Кэш профиля включён всегда: повторные заходы быстрее</p>' +
+            '      <p class="orbita-local-profile-panel__hint">Настройки применяются только во время мониторинга. При «Открыть браузер» вручную ничего не блокировать.</p>' +
+            '      <p class="orbita-local-profile-panel__status" data-local-profile-traffic-stats></p>' +
+            '    </details>' +
+            '  </section>' +
             '  <section class="orbita-local-profile-panel__section">' +
             '    <h4 class="orbita-local-profile-panel__section-title">Браузер</h4>' +
             '    <p class="orbita-local-profile-panel__status" data-local-profile-browser-status></p>' +
@@ -266,6 +291,21 @@
         var proxyUsername = panel.querySelector('[data-local-profile-proxy-username]');
         var proxyPassword = panel.querySelector('[data-local-profile-proxy-password]');
         var proxyStatus = panel.querySelector('[data-local-profile-proxy-status]');
+        var blockMedia = panel.querySelector('[data-local-profile-block-media]');
+        var blockAnalytics = panel.querySelector('[data-local-profile-block-analytics]');
+        var blockImages = panel.querySelector('[data-local-profile-block-images]');
+        var blockFonts = panel.querySelector('[data-local-profile-block-fonts]');
+        var blockPrefetch = panel.querySelector('[data-local-profile-block-prefetch]');
+        var trafficCustom = panel.querySelector('[data-local-profile-traffic-custom]');
+        var trafficStats = panel.querySelector('[data-local-profile-traffic-stats]');
+        var trafficPresets = panel.querySelectorAll('[data-local-profile-traffic-preset]');
+        var trafficTimeouts = panel.querySelectorAll('[data-local-profile-nav-timeout]');
+        var trafficFlagInputs = [blockMedia, blockAnalytics, blockImages, blockFonts, blockPrefetch];
+        var trafficPresetsMap = {
+            Normal: { media: false, analytics: false, images: false, fonts: false, prefetch: false, timeout: 60 },
+            Economic: { media: true, analytics: true, images: false, fonts: false, prefetch: true, timeout: 60 },
+            Aggressive: { media: true, analytics: true, images: true, fonts: true, prefetch: true, timeout: 60 }
+        };
         var browserStatus = panel.querySelector('[data-local-profile-browser-status]');
         var openBtn = panel.querySelector('[data-local-profile-open]');
         var saveBtn = panel.querySelector('[data-local-profile-save]');
@@ -293,6 +333,16 @@
             ? 'Пароль сохранён — оставьте пустым, чтобы не менять'
             : 'Необязательно';
         proxyStatus.textContent = opts.proxyStatus || (opts.proxyEnabled ? 'настроен' : 'не настроен');
+        applyTraffic({
+            trafficMode: opts.trafficMode,
+            blockMedia: opts.blockMedia,
+            blockAnalytics: opts.blockAnalytics,
+            blockImages: opts.blockImages,
+            blockFonts: opts.blockFonts,
+            blockPrefetch: opts.blockPrefetch,
+            navigationTimeoutSeconds: opts.navigationTimeoutSeconds,
+            trafficLastSummary: opts.trafficLastSummary
+        });
         browserStatus.textContent = 'Статус: ' + (opts.browserStatus || 'Свободен');
         openBtn.textContent = opts.openLabel || 'Открыть браузер';
         openBtn.disabled = opts.canOpenBrowser === false;
@@ -304,9 +354,91 @@
             clearBtn.onclick = null;
             openBtn.onclick = null;
             proxyEnabled.onchange = null;
+            trafficFlagInputs.forEach(function (el) { el.onchange = null; });
+            trafficPresets.forEach(function (el) { el.onchange = null; });
+            trafficTimeouts.forEach(function (el) { el.onchange = null; });
             panel.querySelectorAll('[data-local-profile-close]').forEach(function (el) {
                 el.onclick = null;
             });
+        }
+
+        function selectedTimeout() {
+            var checked = panel.querySelector('[data-local-profile-nav-timeout]:checked');
+            var value = checked ? parseInt(checked.value, 10) : 60;
+            return value === 30 || value === 90 ? value : 60;
+        }
+
+        function currentTrafficFlags() {
+            return {
+                media: !!blockMedia.checked,
+                analytics: !!blockAnalytics.checked,
+                images: !!blockImages.checked,
+                fonts: !!blockFonts.checked,
+                prefetch: !!blockPrefetch.checked,
+                timeout: selectedTimeout()
+            };
+        }
+
+        function flagsMatch(preset, flags) {
+            return preset.media === flags.media
+                && preset.analytics === flags.analytics
+                && preset.images === flags.images
+                && preset.fonts === flags.fonts
+                && preset.prefetch === flags.prefetch
+                && preset.timeout === flags.timeout;
+        }
+
+        function resolveTrafficMode() {
+            var flags = currentTrafficFlags();
+            if (flagsMatch(trafficPresetsMap.Normal, flags)) return 'Normal';
+            if (flagsMatch(trafficPresetsMap.Economic, flags)) return 'Economic';
+            if (flagsMatch(trafficPresetsMap.Aggressive, flags)) return 'Aggressive';
+            return 'Custom';
+        }
+
+        function applyPresetFlags(preset) {
+            blockMedia.checked = preset.media;
+            blockAnalytics.checked = preset.analytics;
+            blockImages.checked = preset.images;
+            blockFonts.checked = preset.fonts;
+            blockPrefetch.checked = preset.prefetch;
+            trafficTimeouts.forEach(function (el) {
+                el.checked = parseInt(el.value, 10) === preset.timeout;
+            });
+        }
+
+        function syncTrafficPresetUi() {
+            var mode = resolveTrafficMode();
+            trafficCustom.hidden = mode !== 'Custom';
+            trafficPresets.forEach(function (el) {
+                el.checked = el.value === mode;
+            });
+            return mode;
+        }
+
+        function applyTraffic(source) {
+            if (!source) {
+                syncTrafficPresetUi();
+                return;
+            }
+            blockMedia.checked = !!source.blockMedia;
+            blockAnalytics.checked = !!source.blockAnalytics;
+            blockImages.checked = !!source.blockImages;
+            blockFonts.checked = !!source.blockFonts;
+            blockPrefetch.checked = !!source.blockPrefetch;
+            var timeout = parseInt(source.navigationTimeoutSeconds, 10);
+            if (timeout !== 30 && timeout !== 90) timeout = 60;
+            trafficTimeouts.forEach(function (el) {
+                el.checked = parseInt(el.value, 10) === timeout;
+            });
+            var mode = syncTrafficPresetUi();
+            trafficCustom.hidden = mode !== 'Custom';
+            trafficPresets.forEach(function (el) {
+                el.checked = el.value === mode;
+            });
+            if (Object.prototype.hasOwnProperty.call(source, 'trafficLastSummary')) {
+                trafficStats.textContent = source.trafficLastSummary || '';
+            }
         }
 
         function applyProfile(profile) {
@@ -330,6 +462,7 @@
                 ? 'Пароль сохранён — оставьте пустым, чтобы не менять'
                 : 'Необязательно';
             proxyStatus.textContent = profile.proxyStatus || '';
+            applyTraffic(profile);
             browserStatus.textContent = 'Статус: ' + (profile.browserStatus || 'Свободен');
             openBtn.disabled = profile.canOpenBrowser === false;
             if (opts.source) {
@@ -340,6 +473,14 @@
                 opts.source.setAttribute('data-proxy-username', profile.proxyUsername || '');
                 opts.source.setAttribute('data-has-proxy-password', profile.hasProxyPassword ? 'true' : 'false');
                 opts.source.setAttribute('data-proxy-status', profile.proxyStatus || '');
+                opts.source.setAttribute('data-traffic-mode', profile.trafficMode || 'Normal');
+                opts.source.setAttribute('data-block-media', profile.blockMedia ? 'true' : 'false');
+                opts.source.setAttribute('data-block-analytics', profile.blockAnalytics ? 'true' : 'false');
+                opts.source.setAttribute('data-block-images', profile.blockImages ? 'true' : 'false');
+                opts.source.setAttribute('data-block-fonts', profile.blockFonts ? 'true' : 'false');
+                opts.source.setAttribute('data-block-prefetch', profile.blockPrefetch ? 'true' : 'false');
+                opts.source.setAttribute('data-nav-timeout', String(profile.navigationTimeoutSeconds || 60));
+                opts.source.setAttribute('data-traffic-last-summary', profile.trafficLastSummary || '');
                 opts.source.setAttribute('data-browser-status', profile.browserStatus || '');
                 opts.source.setAttribute('data-can-open-browser', profile.canOpenBrowser ? 'true' : 'false');
             }
@@ -348,6 +489,20 @@
         proxyEnabled.onchange = function () {
             proxyFields.hidden = !proxyEnabled.checked;
         };
+
+        trafficFlagInputs.forEach(function (el) {
+            el.onchange = function () { syncTrafficPresetUi(); };
+        });
+        trafficTimeouts.forEach(function (el) {
+            el.onchange = function () { syncTrafficPresetUi(); };
+        });
+        trafficPresets.forEach(function (el) {
+            el.onchange = function () {
+                if (el.value === 'Custom') return;
+                applyPresetFlags(trafficPresetsMap[el.value] || trafficPresetsMap.Normal);
+                syncTrafficPresetUi();
+            };
+        });
 
         panel.querySelectorAll('[data-local-profile-close]').forEach(function (el) {
             el.onclick = close;
@@ -384,7 +539,14 @@
                 proxyAddress: (proxyAddress.value || '').trim(),
                 proxyUsername: (proxyUsername.value || '').trim(),
                 proxyPassword: proxyPassword.value || '',
-                clearProxyPassword: 'false'
+                clearProxyPassword: 'false',
+                trafficMode: resolveTrafficMode(),
+                blockMedia: blockMedia.checked ? 'true' : 'false',
+                blockAnalytics: blockAnalytics.checked ? 'true' : 'false',
+                blockImages: blockImages.checked ? 'true' : 'false',
+                blockFonts: blockFonts.checked ? 'true' : 'false',
+                blockPrefetch: blockPrefetch.checked ? 'true' : 'false',
+                navigationTimeoutSeconds: String(selectedTimeout())
             });
             saveBtn.disabled = false;
             clearBtn.disabled = false;
@@ -424,7 +586,14 @@
                 proxyAddress: (proxyAddress.value || '').trim(),
                 proxyUsername: (proxyUsername.value || '').trim(),
                 proxyPassword: '',
-                clearProxyPassword: 'false'
+                clearProxyPassword: 'false',
+                trafficMode: resolveTrafficMode(),
+                blockMedia: blockMedia.checked ? 'true' : 'false',
+                blockAnalytics: blockAnalytics.checked ? 'true' : 'false',
+                blockImages: blockImages.checked ? 'true' : 'false',
+                blockFonts: blockFonts.checked ? 'true' : 'false',
+                blockPrefetch: blockPrefetch.checked ? 'true' : 'false',
+                navigationTimeoutSeconds: String(selectedTimeout())
             });
             clearBtn.disabled = false;
             saveBtn.disabled = false;
@@ -483,6 +652,14 @@
                     proxyUsername: btn.getAttribute('data-proxy-username') || '',
                     hasProxyPassword: btn.getAttribute('data-has-proxy-password') === 'true',
                     proxyStatus: btn.getAttribute('data-proxy-status') || '',
+                    trafficMode: btn.getAttribute('data-traffic-mode') || 'Normal',
+                    blockMedia: btn.getAttribute('data-block-media') === 'true',
+                    blockAnalytics: btn.getAttribute('data-block-analytics') === 'true',
+                    blockImages: btn.getAttribute('data-block-images') === 'true',
+                    blockFonts: btn.getAttribute('data-block-fonts') === 'true',
+                    blockPrefetch: btn.getAttribute('data-block-prefetch') === 'true',
+                    navigationTimeoutSeconds: btn.getAttribute('data-nav-timeout') || '60',
+                    trafficLastSummary: btn.getAttribute('data-traffic-last-summary') || '',
                     browserStatus: btn.getAttribute('data-browser-status') || '',
                     canOpenBrowser: btn.getAttribute('data-can-open-browser') !== 'false',
                     openLabel: btn.getAttribute('data-open-label') || 'Открыть браузер',

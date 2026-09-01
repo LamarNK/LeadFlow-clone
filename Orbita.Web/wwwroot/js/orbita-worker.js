@@ -717,6 +717,14 @@
                 ' data-proxy-username="' + shared.escapeHtml(account.localProxyUsername || '') + '"' +
                 ' data-has-proxy-password="' + (account.hasProxyPassword ? 'true' : 'false') + '"' +
                 ' data-proxy-status="' + shared.escapeHtml(account.proxyStatus || '') + '"' +
+                ' data-traffic-mode="' + shared.escapeHtml(account.localTrafficMode || 'Normal') + '"' +
+                ' data-block-media="' + (account.localBlockMedia ? 'true' : 'false') + '"' +
+                ' data-block-analytics="' + (account.localBlockAnalytics ? 'true' : 'false') + '"' +
+                ' data-block-images="' + (account.localBlockImages ? 'true' : 'false') + '"' +
+                ' data-block-fonts="' + (account.localBlockFonts ? 'true' : 'false') + '"' +
+                ' data-block-prefetch="' + (account.localBlockPrefetch ? 'true' : 'false') + '"' +
+                ' data-nav-timeout="' + shared.escapeHtml(String(account.localNavigationTimeoutSeconds || 60)) + '"' +
+                ' data-traffic-last-summary="' + shared.escapeHtml(account.localTrafficLastSummary || '') + '"' +
                 ' data-browser-status="' + shared.escapeHtml(account.browserSessionStatus || '') + '"' +
                 ' data-can-open-browser="' + (canOpen ? 'true' : 'false') + '"' +
                 ' data-open-label="' + shared.escapeHtml(openLabel) + '"' +
@@ -1021,6 +1029,14 @@
                         ' data-proxy-username="' + shared.escapeHtml(account.localProxyUsername || '') + '"' +
                         ' data-has-proxy-password="' + (account.hasProxyPassword ? 'true' : 'false') + '"' +
                         ' data-proxy-status="' + shared.escapeHtml(account.proxyStatus || '') + '"' +
+                        ' data-traffic-mode="' + shared.escapeHtml(account.localTrafficMode || 'Normal') + '"' +
+                        ' data-block-media="' + (account.localBlockMedia ? 'true' : 'false') + '"' +
+                        ' data-block-analytics="' + (account.localBlockAnalytics ? 'true' : 'false') + '"' +
+                        ' data-block-images="' + (account.localBlockImages ? 'true' : 'false') + '"' +
+                        ' data-block-fonts="' + (account.localBlockFonts ? 'true' : 'false') + '"' +
+                        ' data-block-prefetch="' + (account.localBlockPrefetch ? 'true' : 'false') + '"' +
+                        ' data-nav-timeout="' + shared.escapeHtml(String(account.localNavigationTimeoutSeconds || 60)) + '"' +
+                        ' data-traffic-last-summary="' + shared.escapeHtml(account.localTrafficLastSummary || '') + '"' +
                         ' data-browser-status="' + shared.escapeHtml(account.browserSessionStatus || '') + '"' +
                         ' data-can-open-browser="' + (account.canOpenBrowser !== false ? 'true' : 'false') + '"' +
                         ' data-open-label="' + shared.escapeHtml(account.openBrowserLabel || 'Открыть браузер') + '"' +
