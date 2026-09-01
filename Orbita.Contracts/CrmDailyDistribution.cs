@@ -9,9 +9,10 @@ namespace Orbita.Contracts;
 /// </summary>
 public static class CrmDailyDistribution
 {
+    public const int PoolKeyMaxLength = 16;
     public const string LeadPool = "lead";
     public const string NdzPool = "ndz";
-    public const string UnavailableSubstitutePool = "unavailable-substitute";
+    public const string UnavailableSubstitutePool = "unavailable";
     public const string ThirdOfficeName = "3 офис";
     public const string UnavailableSubstituteStage = "Недоступные подменные";
     public static readonly TimeSpan ShiftCollectionDelay = TimeSpan.FromMinutes(5);

@@ -113,7 +113,7 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
         modelBuilder.Entity<CrmDailyDistributionCounterEntity>(entity =>
         {
             entity.HasKey(x => new { x.OfficeId, x.LocalDate, x.Pool, x.ManagerUserId });
-            entity.Property(x => x.Pool).HasMaxLength(16);
+            entity.Property(x => x.Pool).HasMaxLength(CrmDailyDistribution.PoolKeyMaxLength);
             entity.Property(x => x.ManagerUserId).HasMaxLength(128);
             entity.HasOne<OfficeEntity>()
                 .WithMany()

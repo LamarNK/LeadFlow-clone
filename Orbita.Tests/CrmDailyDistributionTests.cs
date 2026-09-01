@@ -4,6 +4,15 @@ namespace Orbita.Tests;
 
 public sealed class CrmDailyDistributionTests
 {
+    [Theory]
+    [InlineData(CrmDailyDistribution.LeadPool)]
+    [InlineData(CrmDailyDistribution.NdzPool)]
+    [InlineData(CrmDailyDistribution.UnavailableSubstitutePool)]
+    public void CounterPoolKeys_FitPersistedColumn(string pool)
+    {
+        Assert.InRange(pool.Length, 1, CrmDailyDistribution.PoolKeyMaxLength);
+    }
+
     [Fact]
     public void BuildBalancedPlan_ImportedFileWithOneHundredOneLeadsAndFourManagers_SplitsTwentySixTwentyFive()
     {
