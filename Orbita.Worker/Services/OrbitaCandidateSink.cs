@@ -25,6 +25,8 @@ public sealed class OrbitaCandidateSink(
     private readonly object _schedulerLock = new();
     private CancellationTokenSource? _delayCts;
     private Task _delayLoop = Task.CompletedTask;
+    private int _delayGeneration;
+    private bool _delayPending;
     private volatile bool _disposed;
 
     public async Task<CandidatePublishResult> PublishAsync(
@@ -62,34 +64,27 @@ public sealed class OrbitaCandidateSink(
     {
         lock (_schedulerLock)
         {
-            if (_disposed)
-            {
-                return;
-            }
-
-            if (_delayCts is { IsCancellationRequested: false } && !_delayLoop.IsCompleted)
-            {
-                return;
-            }
-
-            _delayCts?.Dispose();
-            _delayCts = new CancellationTokenSource();
-            _delayLoop = RunDelayedFlushAsync(_delayCts.Token);
+            TryArmDelayedFlush_NoLock();
         }
     }
 
-    private void CancelDelayedFlush()
+    private void TryArmDelayedFlush_NoLock()
     {
-        lock (_schedulerLock)
+        if (_disposed || _delayPending || _queue.IsEmpty)
         {
-            try
-            {
-                _delayCts?.Cancel();
-            }
-            catch (ObjectDisposedException)
-            {
-            }
+            return;
         }
+
+        StartDelay_NoLock();
+    }
+
+    private void StartDelay_NoLock()
+    {
+        _delayCts?.Dispose();
+        _delayCts = new CancellationTokenSource();
+        _delayPending = true;
+        var generation = ++_delayGeneration;
+        _delayLoop = RunDelayedFlushAsync(generation, _delayCts.Token);
     }
 
     private async Task StopDelayAsync()
@@ -97,6 +92,8 @@ public sealed class OrbitaCandidateSink(
         Task pending;
         lock (_schedulerLock)
         {
+            _delayGeneration++;
+            _delayPending = false;
             pending = _delayLoop;
             try
             {
@@ -116,7 +113,7 @@ public sealed class OrbitaCandidateSink(
         }
     }
 
-    private async Task RunDelayedFlushAsync(CancellationToken delayCt)
+    private async Task RunDelayedFlushAsync(int generation, CancellationToken delayCt)
     {
         try
         {
@@ -124,28 +121,44 @@ public sealed class OrbitaCandidateSink(
         }
         catch (OperationCanceledException)
         {
-            return;
+        }
+        finally
+        {
+            lock (_schedulerLock)
+            {
+                if (generation == _delayGeneration)
+                {
+                    _delayPending = false;
+                }
+            }
         }
 
-        if (_disposed)
+        if (!delayCt.IsCancellationRequested && !_disposed)
         {
-            return;
+            try
+            {
+                await FlushInternalAsync(drainAll: false, CancellationToken.None).ConfigureAwait(false);
+            }
+            catch
+            {
+                // Background send: unsent batch is already in outbox.
+            }
         }
 
-        try
+        lock (_schedulerLock)
         {
-            await FlushInternalAsync(drainAll: false, CancellationToken.None).ConfigureAwait(false);
-        }
-        catch
-        {
-            // Background send: unsent batch is already in outbox.
+            if (generation != _delayGeneration)
+            {
+                return;
+            }
+
+            _delayPending = false;
+            TryArmDelayedFlush_NoLock();
         }
     }
 
     private async Task FlushInternalAsync(bool drainAll, CancellationToken ct)
     {
-        CancelDelayedFlush();
-
         await _sendGate.WaitAsync(CancellationToken.None).ConfigureAwait(false);
         try
         {
@@ -194,10 +207,7 @@ public sealed class OrbitaCandidateSink(
             _sendGate.Release();
         }
 
-        if (!_disposed && !_queue.IsEmpty)
-        {
-            ArmDelayedFlush();
-        }
+        ArmDelayedFlush();
     }
 
     private bool TryDequeueBatch(out List<CandidateResponse> candidates)
