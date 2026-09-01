@@ -15,7 +15,7 @@ public sealed class LocalChromeBrowserLauncher : ILocalChromeBrowserLauncher
         var userDataDir = LocalChromePaths.NormalizeUserDataDir(options.UserDataDir, options.AccountId);
         LocalChromePaths.EnsureUserDataDir(userDataDir);
         var executable = LocalChromePaths.ResolveExecutable(options.ExecutablePath);
-        var args = options.ChromiumArgs;
+        var args = ResolveLaunchArgs(options);
 
         var launchTask = Puppeteer.LaunchAsync(new LaunchOptions
         {
@@ -61,6 +61,16 @@ public sealed class LocalChromeBrowserLauncher : ILocalChromeBrowserLauncher
 
             throw SanitizeLaunchError(ex, options, executable, userDataDir);
         }
+    }
+
+    /// <summary>
+    /// PuppeteerSharp 24 не принимает <c>LaunchOptions.Args = null</c> (LINQ <c>source</c>).
+    /// Без прокси — пустой массив, не <c>null</c>. Прокси-аргумент без изменений.
+    /// </summary>
+    public static string[] ResolveLaunchArgs(LocalChromeLaunchOptions options)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        return options.ChromiumArgs ?? [];
     }
 
     internal static Exception SanitizeLaunchError(
