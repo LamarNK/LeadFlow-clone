@@ -300,12 +300,75 @@
         });
     }
 
-    function renderActivityPill(label, tone, isLive) {
-        if (!label) return '<span class="worker-activity-pill worker-activity-pill--muted">—</span>';
+    function pad2(n) {
+        return n < 10 ? '0' + n : String(n);
+    }
+
+    function parseActivityUtc(iso) {
+        if (!iso) return null;
+        if (window.OrbitaTime && typeof window.OrbitaTime.parseUtc === 'function') {
+            return window.OrbitaTime.parseUtc(iso);
+        }
+        var date = new Date(iso);
+        return Number.isNaN(date.getTime()) ? null : date;
+    }
+
+    function formatWaitingActivityLabel(nextCycleAtUtc) {
+        var date = parseActivityUtc(nextCycleAtUtc);
+        if (!date) return 'Пауза · ожидание цикла';
+        var remainingMs = date.getTime() - Date.now();
+        if (remainingMs <= 0) return 'Пауза · ожидание цикла';
+        var remainingText = remainingMs < 60000
+            ? 'меньше минуты'
+            : Math.floor(remainingMs / 60000) + ' мин';
+        var clock = pad2(date.getHours()) + ':' + pad2(date.getMinutes());
+        return 'Пауза · осталось ' + remainingText + ' · следующий в ' + clock;
+    }
+
+    function resolveActivityLabel(label, extras) {
+        extras = extras || {};
+        var phase = String(extras.phase || extras.Phase || '').toLowerCase();
+        if (phase !== 'waiting') return label || '';
+        if (label && /обновлен/i.test(label)) return label;
+        var nextCycleAtUtc = extras.nextCycleAtUtc || extras.NextCycleAtUtc || null;
+        var formatted = formatWaitingActivityLabel(nextCycleAtUtc);
+        if (formatted === 'Пауза · ожидание цикла') {
+            return label || formatted;
+        }
+        return formatted;
+    }
+
+    function renderActivityPill(label, tone, isLive, extras) {
+        extras = extras || {};
+        var resolved = resolveActivityLabel(label, extras);
+        if (!resolved) return '<span class="worker-activity-pill worker-activity-pill--muted">—</span>';
         var liveClass = isLive ? ' worker-activity-pill--live' : '';
         var dot = isLive ? '<span class="worker-activity-pill-dot" aria-hidden="true"></span>' : '';
-        return '<span class="worker-activity-pill worker-activity-pill--' + escapeHtml(tone || 'muted') + liveClass + '" title="' + escapeHtml(label) + '">' +
-            dot + '<span class="worker-activity-pill-text">' + escapeHtml(label) + '</span></span>';
+        var nextCycleAtUtc = extras.nextCycleAtUtc || extras.NextCycleAtUtc || '';
+        var phase = extras.phase || extras.Phase || '';
+        var nextAttr = nextCycleAtUtc
+            ? ' data-next-cycle-at="' + escapeHtml(nextCycleAtUtc) + '"'
+            : '';
+        var phaseAttr = phase
+            ? ' data-activity-phase="' + escapeHtml(phase) + '"'
+            : '';
+        return '<span class="worker-activity-pill worker-activity-pill--' + escapeHtml(tone || 'muted') + liveClass + '" title="' + escapeHtml(resolved) + '"' + phaseAttr + nextAttr + '>' +
+            dot + '<span class="worker-activity-pill-text">' + escapeHtml(resolved) + '</span></span>';
+    }
+
+    function localizeWaitingActivityPills(root) {
+        var scope = root || document;
+        scope.querySelectorAll('.worker-activity-pill[data-activity-phase="waiting"]').forEach(function (el) {
+            var current = '';
+            var textEl = el.querySelector('.worker-activity-pill-text');
+            if (textEl) current = textEl.textContent || '';
+            var resolved = resolveActivityLabel(current, {
+                phase: el.getAttribute('data-activity-phase') || 'waiting',
+                nextCycleAtUtc: el.getAttribute('data-next-cycle-at')
+            });
+            if (textEl) textEl.textContent = resolved;
+            el.setAttribute('title', resolved);
+        });
     }
 
     function renderSubProfileStatusBadges(sub, isProcessing) {
@@ -689,6 +752,8 @@
         renderAccountBalance: renderAccountBalance,
         updatePaginationInfo: updatePaginationInfo,
         renderActivityPill: renderActivityPill,
+        formatWaitingActivityLabel: formatWaitingActivityLabel,
+        localizeWaitingActivityPills: localizeWaitingActivityPills,
         normalizeSubProfile: normalizeSubProfile,
         accountSubProfilesRenderable: accountSubProfilesRenderable,
         renderSubProfilesList: renderSubProfilesList,

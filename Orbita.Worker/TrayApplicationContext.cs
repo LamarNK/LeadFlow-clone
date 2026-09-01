@@ -12,6 +12,7 @@ public sealed class TrayApplicationContext : ApplicationContext
     private readonly WorkerCredentials _credentials;
     private readonly ToolStripMenuItem _statusItem;
     private readonly ToolStripMenuItem _toggleMonitoringItem;
+    private readonly System.Windows.Forms.Timer _statusTimer;
 
     public TrayApplicationContext(
         WorkerOrchestrator orchestrator,
@@ -48,6 +49,10 @@ public sealed class TrayApplicationContext : ApplicationContext
         };
         _trayIcon.DoubleClick += OnTrayDoubleClick;
 
+        _statusTimer = new System.Windows.Forms.Timer { Interval = 15_000 };
+        _statusTimer.Tick += (_, _) => UpdateUi();
+        _statusTimer.Start();
+
         _runtimeState.Changed += (_, _) => UpdateUi();
         Application.ApplicationExit += OnApplicationExit;
         UpdateUi();
@@ -74,14 +79,12 @@ public sealed class TrayApplicationContext : ApplicationContext
 
     private void UpdateUi()
     {
-        var detail = _runtimeState.Detail;
-        _statusItem.Text = string.IsNullOrWhiteSpace(detail)
-            ? $"Статус: {_runtimeState.Status}"
-            : $"Статус: {_runtimeState.Status} — {detail}";
+        var text = _runtimeState.Tooltip;
+        _statusItem.Text = text;
         _toggleMonitoringItem.Text = _runtimeState.IsMonitoring
             ? "Остановить мониторинг"
             : "Запустить мониторинг";
-        _trayIcon.Text = TruncateTooltip(_runtimeState.Tooltip);
+        _trayIcon.Text = TruncateTooltip(text);
     }
 
     private void OnToggleMonitoring(object? sender, EventArgs e)
@@ -178,6 +181,8 @@ public sealed class TrayApplicationContext : ApplicationContext
     {
         if (disposing)
         {
+            _statusTimer.Stop();
+            _statusTimer.Dispose();
             _trayIcon.Dispose();
         }
 

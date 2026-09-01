@@ -66,6 +66,7 @@ public sealed class WorkerActivityViewModel
     public Guid? AccountId { get; init; }
     public string? SubProfileId { get; init; }
     public DateTime? UpdatedAtUtc { get; init; }
+    public DateTime? NextCycleAtUtc { get; init; }
     public IReadOnlyList<WorkerActivityViewModel> ActiveAccounts { get; init; } = [];
 }
 

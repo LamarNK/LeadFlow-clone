@@ -332,15 +332,12 @@ public sealed class WorkerMonitoringService(
                             wait = TimeSpan.FromSeconds(2);
                         }
 
-                        if (wait > TimeSpan.FromSeconds(30))
-                        {
-                            wait = TimeSpan.FromSeconds(30);
-                        }
+                        var delay = wait > TimeSpan.FromSeconds(30)
+                            ? TimeSpan.FromSeconds(30)
+                            : wait;
 
-                        activityReporter.ReportWaiting(
-                            DateTime.UtcNow.Add(wait),
-                            $"Жду due-аккаунты (~{Math.Max(1, (int)Math.Ceiling(wait.TotalSeconds))} с)");
-                        await Task.Delay(wait, cancellationToken).ConfigureAwait(false);
+                        activityReporter.ReportWaiting(nextDue, "Ожидание следующего цикла");
+                        await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
                         continue;
                     }
 

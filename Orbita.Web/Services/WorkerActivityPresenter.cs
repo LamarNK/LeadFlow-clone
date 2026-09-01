@@ -70,7 +70,10 @@ internal static class WorkerActivityPresenter
             Phase = activity.Phase,
             AccountId = activity.AccountId,
             SubProfileId = activity.SubProfileId,
-            UpdatedAtUtc = activity.UpdatedAtUtc
+            UpdatedAtUtc = activity.UpdatedAtUtc,
+            NextCycleAtUtc = string.Equals(activity.Phase, WorkerActivityPhases.Waiting, StringComparison.Ordinal)
+                ? activity.NextCycleAtUtc
+                : null
         };
     }
 
@@ -265,16 +268,7 @@ internal static class WorkerActivityPresenter
                 return activity.Message;
             }
 
-            if (activity.NextCycleAtUtc is not null)
-            {
-                var minutesUntil = (int)Math.Round((activity.NextCycleAtUtc.Value - nowUtc).TotalMinutes);
-                if (minutesUntil > 0)
-                {
-                    return $"Пауза · следующий цикл ~{minutesUntil} мин";
-                }
-
-                return "Пауза · ожидание цикла";
-            }
+            return FormatWaitingLabel(activity.NextCycleAtUtc, nowUtc);
         }
 
         if (!string.IsNullOrWhiteSpace(activity.AccountName))
@@ -289,6 +283,26 @@ internal static class WorkerActivityPresenter
         }
 
         return activity.Message;
+    }
+
+    private static string FormatWaitingLabel(DateTime? nextCycleAtUtc, DateTime nowUtc)
+    {
+        if (nextCycleAtUtc is not DateTime nextUtc)
+        {
+            return "Пауза · ожидание цикла";
+        }
+
+        var remaining = nextUtc - nowUtc;
+        if (remaining <= TimeSpan.Zero)
+        {
+            return "Пауза · ожидание цикла";
+        }
+
+        var remainingText = remaining < TimeSpan.FromMinutes(1)
+            ? "меньше минуты"
+            : $"{(int)remaining.TotalMinutes} мин";
+
+        return $"Пауза · осталось {remainingText}";
     }
 
     private static string FormatAccountLabel(WorkerActivityDto activity)

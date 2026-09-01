@@ -7,7 +7,8 @@ namespace Orbita.Worker.Services;
 public sealed class WorkerActivityReporter(
     OrbitaApiClient apiClient,
     WorkerCredentials credentials,
-    WorkerUpdateGate updateGate) : IWorkerActivityReporter
+    WorkerUpdateGate updateGate,
+    WorkerRuntimeState runtimeState) : IWorkerActivityReporter
 {
     private static readonly TimeSpan DebounceInterval = TimeSpan.FromSeconds(2);
 
@@ -95,6 +96,15 @@ public sealed class WorkerActivityReporter(
             }
         }
 
+        if (phase is WorkerActivityPhases.Waiting)
+        {
+            runtimeState.NextCycleAtUtc = nextCycleAtUtc;
+        }
+        else
+        {
+            runtimeState.NextCycleAtUtc = null;
+        }
+
         updateGate.SetPhase(phase);
         EnqueueFlush(flushImmediately);
     }
@@ -121,6 +131,7 @@ public sealed class WorkerActivityReporter(
                 DateTime.UtcNow);
         }
 
+        runtimeState.NextCycleAtUtc = null;
         EnqueueFlush();
     }
 

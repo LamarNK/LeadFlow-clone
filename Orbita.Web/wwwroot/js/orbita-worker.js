@@ -1102,13 +1102,21 @@
         initAccountRowNavigation();
     }
 
+    function activityPillExtras(item) {
+        if (!item) return {};
+        return {
+            phase: item.phase || item.Phase || '',
+            nextCycleAtUtc: item.nextCycleAtUtc || item.NextCycleAtUtc || ''
+        };
+    }
+
     function renderActivityBlock(activity, activeAccountActivities) {
         var items = (activeAccountActivities || []).filter(function (item) {
             return item && item.label;
         });
         if (items.length > 1) {
             return '<div class="worker-detail-activity-list">' + items.map(function (item) {
-                return shared.renderActivityPill(item.label, item.tone, item.isLive);
+                return shared.renderActivityPill(item.label, item.tone, item.isLive, activityPillExtras(item));
             }).join('') + '</div>';
         }
 
@@ -1116,7 +1124,7 @@
         if (!single || !single.label) {
             return '<span class="worker-activity-pill worker-activity-pill--muted">—</span>';
         }
-        return shared.renderActivityPill(single.label, single.tone, single.isLive);
+        return shared.renderActivityPill(single.label, single.tone, single.isLive, activityPillExtras(single));
     }
 
     function updateCurrentActivity(activity, activeAccountActivities) {
@@ -1135,6 +1143,9 @@
             labelEl.insertAdjacentHTML('afterend', contentHtml);
         } else {
             host.insertAdjacentHTML('beforeend', contentHtml);
+        }
+        if (shared.localizeWaitingActivityPills) {
+            shared.localizeWaitingActivityPills(host);
         }
     }
 
@@ -1255,6 +1266,9 @@
                 initWorkerSettings();
                 initWorkerAccountsControls();
                 initCopyButtons();
+                if (shared.localizeWaitingActivityPills) {
+                    shared.localizeWaitingActivityPills();
+                }
             });
             return;
         }
@@ -1274,6 +1288,9 @@
         initWorkerSettings();
         initWorkerAccountsControls();
         initCopyButtons();
+        if (shared && shared.localizeWaitingActivityPills) {
+            shared.localizeWaitingActivityPills();
+        }
     }
 
     window.OrbitaWorker = window.OrbitaWorker || {};
