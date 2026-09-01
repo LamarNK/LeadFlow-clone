@@ -24,6 +24,13 @@ public static class MonitoringTiming
     /// </summary>
     public const int CycleDelayMaxMinutes = 45;
 
+    /// <summary>
+    /// Случайный разброс дневной паузы успешного прохода без backlog (±% от расчёта).
+    /// Сдвигает соседние аккаунты относительно друг друга, чтобы не бить в Avito
+    /// одним расписанием. Не применяется к явному RetryAfter, backlog и ночному floor.
+    /// </summary>
+    public const int CycleDelayJitterPercent = 10;
+
     /// <summary>К пустому циклу N… добавляется (N−1)×шаг минут (см. Max), чтобы реже дергать Авито при долгой тишине.</summary>
     public const int CycleQuietBackoffExtraMinutesPerStep = 4;
 
