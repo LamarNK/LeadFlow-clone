@@ -152,6 +152,7 @@
     window.Orbita.initAvitoCredentialsButtons = runtime.initAvitoCredentialsButtons;
     window.Orbita.initLocalProfileSettingsButtons = runtime.initLocalProfileSettingsButtons;
     window.Orbita.initLocalAccountEditButtons = runtime.initLocalAccountEditButtons;
+    window.Orbita.initWorkerRenameModal = runtime.initWorkerRenameModal;
     window.Orbita.initLocalOpenBrowserButtons = runtime.initLocalOpenBrowserButtons;
     window.Orbita.openDetailModal = runtime.openDetailModal;
     window.Orbita.initFilterPanels = runtime.initFilterPanels;

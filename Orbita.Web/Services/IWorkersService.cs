@@ -101,6 +101,7 @@ public interface IWorkersService
         bool isEnabledInPanel,
         CancellationToken ct = default);
     Task<(bool Success, string? Error)> SendWorkerCommandAsync(Guid workerId, string command, CancellationToken ct = default);
+    Task<(bool Success, string? Error)> RenameWorkerAsync(Guid workerId, string displayName, CancellationToken ct = default);
     Task<(bool Success, string? Error)> SetWorkerEnabledAsync(Guid workerId, bool enabled, CancellationToken ct = default);
     Task<(BulkWorkersMonitoringResultDto? Result, string? Error)> SetAllWorkersMonitoringAsync(
         bool enabled,

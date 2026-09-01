@@ -116,6 +116,10 @@
                     <span>Действия</span>
                 </button>
                 <div class="row-menu-dropdown row-menu-dropdown--workers row-menu-dropdown--worker-toolbar" hidden>
+                    <button type="button" class="row-menu-item" data-worker-rename-open>
+                        <i class="fa-regular fa-pen-to-square" aria-hidden="true"></i>
+                        Переименовать
+                    </button>
                     @if (Model.IsEnabled)
                     {
                         <form asp-action="Disable" method="post" class="settings-inline-form">
@@ -1335,6 +1339,19 @@
                                         <button type="button"
                                                 class="row-menu-item"
                                                 data-local-account-edit
+                                                data-local-account-rename
+                                                data-worker-id="@Model.WorkerId"
+                                                data-account-id="@account.Id"
+                                                data-account-name="@account.DisplayName"
+                                                data-user-data-dir="@(account.IsManagedLocalProfile ? "" : account.LocalUserDataDir ?? "")"
+                                                data-managed="@(account.IsManagedLocalProfile ? "true" : "false")"
+                                                data-post-url="@Url.Action("UpdateLocalAccount", "Workers")">
+                                            <i class="fa-regular fa-pen-to-square" aria-hidden="true"></i>
+                                            Переименовать аккаунт
+                                        </button>
+                                        <button type="button"
+                                                class="row-menu-item"
+                                                data-local-account-edit
                                                 data-worker-id="@Model.WorkerId"
                                                 data-account-id="@account.Id"
                                                 data-account-name="@account.DisplayName"
@@ -1387,6 +1404,42 @@
     }
 
     <script id="worker-charts-data" type="application/json">@Html.Raw(chartJson)</script>
+</div>
+
+<div class="workers-modal" id="workerRenameModal" hidden>
+    <div class="workers-modal-backdrop" data-worker-rename-close></div>
+    <div class="workers-modal-dialog" role="dialog" aria-labelledby="workerRenameTitle" aria-modal="true">
+        <header class="workers-modal-head">
+            <h2 id="workerRenameTitle">Переименовать воркер</h2>
+            <button type="button" class="workers-modal-close" data-worker-rename-close aria-label="Закрыть">
+                <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+            </button>
+        </header>
+        <form asp-action="Rename" method="post" class="workers-modal-body">
+            @Html.AntiForgeryToken()
+            <input type="hidden" name="workerId" value="@Model.WorkerId" />
+            <input type="hidden" name="q" value="@Model.AccountSearchQuery" />
+            <input type="hidden" name="sort" value="@Model.Sort.Column" />
+            <input type="hidden" name="dir" value="@Model.Sort.Dir" />
+            <input type="hidden" name="provider" value="@Model.AccountProvider" />
+            <input type="hidden" name="groupId" value="@Model.AccountGroupId" />
+            <p class="workers-modal-hint">Текущее имя: <strong>@Model.DisplayName</strong></p>
+            <label class="workers-modal-label" for="workerRenameDisplayName">Новое имя</label>
+            <input type="text"
+                   id="workerRenameDisplayName"
+                   name="displayName"
+                   class="workers-modal-input"
+                   value="@Model.DisplayName"
+                   required
+                   maxlength="200"
+                   autocomplete="off"
+                   data-worker-rename-input />
+            <footer class="workers-modal-footer">
+                <button type="button" class="workers-modal-btn workers-modal-btn--ghost" data-worker-rename-close>Отмена</button>
+                <button type="submit" class="workers-modal-btn workers-modal-btn--primary">Сохранить</button>
+            </footer>
+        </form>
+    </div>
 </div>
 
 @section Scripts {
