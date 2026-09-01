@@ -58,9 +58,14 @@ internal static class WorkerMonitoringLogger
     public static void AccountSkipped(AvitoAccount account, string reason) =>
         LogWarning($"{FormatAccount(account)} — пропущен: {reason}");
 
-    public static void AccountFinished(AvitoAccount account, int newResponses, double seconds, int subProfilesProcessed) =>
+    public static void AccountFinished(
+        AvitoAccount account,
+        int collectedCount,
+        int publishedCount,
+        double seconds,
+        int subProfilesProcessed) =>
         LogInfo(
-            $"{FormatAccount(account)} — готово за {seconds:F0} с: новых откликов {newResponses}, обработано субпрофилей {subProfilesProcessed}.");
+            $"{FormatAccount(account)} — готово за {seconds:F0} с: новых {collectedCount}, отправлено {publishedCount}, обработано субпрофилей {subProfilesProcessed}.");
 
     public static void AccountFailed(AvitoAccount account, string step, string detail) =>
         LogError($"{FormatAccount(account)} — сбой на шаге «{step}»: {detail}");
@@ -68,11 +73,16 @@ internal static class WorkerMonitoringLogger
     public static void AccountPersonalDelay(
         AvitoAccount account,
         double delayMinutes,
-        int newResponses,
+        int collectedCount,
+        int publishedCount,
         bool polled) =>
         LogInfo(
             $"{FormatAccount(account)} — пауза ~{delayMinutes:F0} мин " +
-            $"(проход {(polled ? "ok" : "skip")}, новых {newResponses}); браузер закрыт.");
+            $"(проход {(polled ? "ok" : "skip")}, новых {collectedCount}, отправлено {publishedCount}); браузер закрыт.");
+
+    public static void AccountResumeRestored(AvitoAccount account, DateTime nextMonitoringAtUtc) =>
+        LogInfo(
+            $"{FormatAccount(account)} — ожидание восстановлено до {nextMonitoringAtUtc:HH:mm:ss} UTC");
 
     public static void BrowserOpened(AvitoAccount account) =>
         LogInfo($"{FormatAccount(account)} — браузер AdsPower открыт.");

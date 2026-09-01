@@ -75,6 +75,8 @@ public sealed class WorkerMonitoringService(
     private readonly ConcurrentDictionary<Guid, DateTime> _accountNextEligibleUtc = new();
     /// <summary>Сколько подряд «тихих» проходов у аккаунта (для quiet backoff delay).</summary>
     private readonly ConcurrentDictionary<Guid, int> _accountQuietStreak = new();
+    /// <summary>Один раз за процесс логируем восстановленную паузу аккаунта.</summary>
+    private readonly ConcurrentDictionary<Guid, byte> _loggedResumeRestored = new();
 
     public bool IsActive { get; private set; }
     public bool IsCaptchaHold => _captchaHold;
@@ -122,7 +124,6 @@ public sealed class WorkerMonitoringService(
 
         _cts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         IsActive = true;
-        _accountNextEligibleUtc.Clear();
         _accountQuietStreak.Clear();
         // После stop/start счётчик проходов обнуляется; календарный день учитывается отдельно.
         _completedPassesSinceBrowserHousekeeping = 0;
@@ -225,7 +226,8 @@ public sealed class WorkerMonitoringService(
                             running.Remove(finishedEmpty);
                             try
                             {
-                                await finishedEmpty.Task.ConfigureAwait(false);
+                                await ApplyCompletedPassScheduleAsync(finishedEmpty, cancellationToken)
+                                    .ConfigureAwait(false);
                             }
                             catch (OperationCanceledException)
                             {
@@ -276,7 +278,8 @@ public sealed class WorkerMonitoringService(
                         running.Remove(drained);
                         try
                         {
-                            await drained.Task.ConfigureAwait(false);
+                            await ApplyCompletedPassScheduleAsync(drained, CancellationToken.None)
+                                .ConfigureAwait(false);
                         }
                         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                         {
@@ -287,7 +290,6 @@ public sealed class WorkerMonitoringService(
                             // ignore pass errors during drain for update
                         }
 
-                        // Не планируем nextEligible — после install процесс перезапустится.
                         continue;
                     }
 
@@ -346,98 +348,7 @@ public sealed class WorkerMonitoringService(
                     var job = running.First(j => j.Task == completedTask);
                     running.Remove(job);
 
-                    var newResponses = 0;
-                    var polled = false;
-                    var backlog = false;
-                    var passCompleted = false;
-                    TimeSpan? retryAfter = null;
-                    try
-                    {
-                        var outcome = await job.Task.ConfigureAwait(false);
-                        passCompleted = outcome.PassCompleted;
-                        retryAfter = outcome.RetryAfter;
-                        if (outcome.PolledSource)
-                        {
-                            polled = true;
-                            newResponses = outcome.NewResponses;
-                            backlog = outcome.HasUndischargedBacklog;
-                        }
-                        else if (!string.IsNullOrWhiteSpace(outcome.NotPolledReason))
-                        {
-                            WorkerMonitoringLogger.AccountSkipped(job.Account, outcome.NotPolledReason);
-                        }
-                    }
-                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-                    {
-                        throw;
-                    }
-                    catch (Exception ex)
-                    {
-                        WorkerMonitoringLogger.AccountFailed(job.Account, "проход", ex.Message);
-                    }
-
-                    _consecutiveMonitoringLoopFailures = 0;
-
-                    var quietStreak = _accountQuietStreak.GetValueOrDefault(job.Account.Id);
-                    if (polled && (newResponses > 0 || backlog))
-                    {
-                        quietStreak = 0;
-                    }
-                    else if (polled)
-                    {
-                        quietStreak++;
-                    }
-
-                    _accountQuietStreak[job.Account.Id] = quietStreak;
-
-                    // Своя пауза только этому аккаунту (браузер уже закрыт в finally прохода).
-                    var historicalHeat = await repository
-                        .GetHistoricalResponseIngestHeatScoreAsync(DateTime.UtcNow, cancellationToken)
-                        .ConfigureAwait(false);
-                    // CDP hang / Local API queue-HTTP timeout: RetryAfter=1 мин, ночной пол не применяется.
-                    var personalDelay = WorkerAccountPassDelay.Resolve(
-                        retryAfter,
-                        polled,
-                        newResponses,
-                        quietStreak,
-                        backlog,
-                        historicalHeat,
-                        DateTime.UtcNow);
-
-                    var nextEligible = DateTime.UtcNow.Add(personalDelay);
-                    _accountNextEligibleUtc[job.Account.Id] = nextEligible;
-                    job.Account.NextMonitoringAtUtc = nextEligible;
-                    if (passCompleted)
-                    {
-                        var passStarted = job.Account.MonitoringPassStartedAtUtc;
-                        var passFinished = job.Account.MonitoringPassFinishedAtUtc;
-                        var next = job.Account.NextMonitoringAtUtc;
-                        MonitoringAccountResume.FinishPass(
-                            DateTime.UtcNow,
-                            nextEligible,
-                            ref passStarted,
-                            ref passFinished,
-                            ref next,
-                            job.Account.MonitoringPassCompletedSubIds);
-                        job.Account.MonitoringPassStartedAtUtc = passStarted;
-                        job.Account.MonitoringPassFinishedAtUtc = passFinished;
-                        job.Account.NextMonitoringAtUtc = next;
-                    }
-
-                    try
-                    {
-                        await repository.SaveAccountAsync(job.Account, cancellationToken).ConfigureAwait(false);
-                    }
-                    catch
-                    {
-                        // Пауза уже в памяти процесса; файл/рантайм — best effort.
-                    }
-
-                    WorkerMonitoringLogger.AccountPersonalDelay(
-                        job.Account,
-                        personalDelay.TotalMinutes,
-                        newResponses,
-                        polled);
+                    await ApplyCompletedPassScheduleAsync(job, cancellationToken).ConfigureAwait(false);
 
                     _completedPassesSinceBrowserHousekeeping++;
                     if (_completedPassesSinceBrowserHousekeeping
@@ -488,10 +399,124 @@ public sealed class WorkerMonitoringService(
     private DateTime GetNextEligibleUtc(AvitoAccount account)
     {
         DateTime? memoryNext = _accountNextEligibleUtc.TryGetValue(account.Id, out var at) ? at : null;
-        return MonitoringAccountResume.ResolveNextEligibleUtc(
+        var next = MonitoringAccountResume.ResolveNextEligibleUtc(
             memoryNext,
             account.NextMonitoringAtUtc,
             account.LastMonitoringAt);
+
+        if (memoryNext is null
+            && account.NextMonitoringAtUtc is { } persisted
+            && persisted > DateTime.UtcNow)
+        {
+            _accountNextEligibleUtc[account.Id] = persisted;
+            if (_loggedResumeRestored.TryAdd(account.Id, 0))
+            {
+                WorkerMonitoringLogger.AccountResumeRestored(account, persisted);
+            }
+        }
+
+        return next;
+    }
+
+    private async Task ApplyCompletedPassScheduleAsync(
+        AccountCycleJob job,
+        CancellationToken cancellationToken)
+    {
+        var collectedCount = 0;
+        var publishedCount = 0;
+        var polled = false;
+        var backlog = false;
+        var passCompleted = false;
+        TimeSpan? retryAfter = null;
+        try
+        {
+            var outcome = await job.Task.ConfigureAwait(false);
+            passCompleted = outcome.PassCompleted;
+            retryAfter = outcome.RetryAfter;
+            if (outcome.PolledSource)
+            {
+                polled = true;
+                collectedCount = outcome.CollectedCount;
+                publishedCount = outcome.PublishedCount;
+                backlog = outcome.HasUndischargedBacklog;
+            }
+            else if (!string.IsNullOrWhiteSpace(outcome.NotPolledReason))
+            {
+                WorkerMonitoringLogger.AccountSkipped(job.Account, outcome.NotPolledReason);
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            WorkerMonitoringLogger.AccountFailed(job.Account, "проход", ex.Message);
+        }
+
+        _consecutiveMonitoringLoopFailures = 0;
+
+        var quietStreak = _accountQuietStreak.GetValueOrDefault(job.Account.Id);
+        if (polled && (collectedCount > 0 || backlog))
+        {
+            quietStreak = 0;
+        }
+        else if (polled)
+        {
+            quietStreak++;
+        }
+
+        _accountQuietStreak[job.Account.Id] = quietStreak;
+
+        // Своя пауза только этому аккаунту (браузер уже закрыт в finally прохода).
+        var historicalHeat = await repository
+            .GetHistoricalResponseIngestHeatScoreAsync(DateTime.UtcNow, cancellationToken)
+            .ConfigureAwait(false);
+        // CDP hang / Local API queue-HTTP timeout: RetryAfter=1 мин, ночной пол не применяется.
+        var personalDelay = WorkerAccountPassDelay.Resolve(
+            retryAfter,
+            polled,
+            collectedCount,
+            quietStreak,
+            backlog,
+            historicalHeat,
+            DateTime.UtcNow);
+
+        var nextEligible = DateTime.UtcNow.Add(personalDelay);
+        _accountNextEligibleUtc[job.Account.Id] = nextEligible;
+        job.Account.NextMonitoringAtUtc = nextEligible;
+        if (passCompleted)
+        {
+            var passStarted = job.Account.MonitoringPassStartedAtUtc;
+            var passFinished = job.Account.MonitoringPassFinishedAtUtc;
+            var next = job.Account.NextMonitoringAtUtc;
+            MonitoringAccountResume.FinishPass(
+                DateTime.UtcNow,
+                nextEligible,
+                ref passStarted,
+                ref passFinished,
+                ref next,
+                job.Account.MonitoringPassCompletedSubIds);
+            job.Account.MonitoringPassStartedAtUtc = passStarted;
+            job.Account.MonitoringPassFinishedAtUtc = passFinished;
+            job.Account.NextMonitoringAtUtc = next;
+        }
+
+        try
+        {
+            await repository.SaveAccountAsync(job.Account, cancellationToken).ConfigureAwait(false);
+        }
+        catch
+        {
+            // Пауза уже в памяти процесса; файл/рантайм — best effort.
+        }
+
+        WorkerMonitoringLogger.AccountPersonalDelay(
+            job.Account,
+            personalDelay.TotalMinutes,
+            collectedCount,
+            publishedCount,
+            polled);
     }
 
     private async Task<bool> TryRecoverLoopAsync(Exception ex, CancellationToken cancellationToken)
@@ -527,12 +552,12 @@ public sealed class WorkerMonitoringService(
     /// Обход аккаунтов с динамическим параллелизмом: лимит перечитывается из конфига перед стартом каждого нового аккаунта.
     /// Уже запущенные браузеры не обрываются при снижении лимита в панели.
     /// </summary>
-    private async Task<(int NewResponses, int AccountsPolled, bool HadBacklog, List<(string DisplayName, string Reason)> NotPolled)>
+    private async Task<(int CollectedCount, int AccountsPolled, bool HadBacklog, List<(string DisplayName, string Reason)> NotPolled)>
         ProcessAccountsInCycleAsync(
         IReadOnlyList<AvitoAccount> accounts,
         CancellationToken cancellationToken)
     {
-        var newResponsesThisCycle = 0;
+        var collectedThisCycle = 0;
         var accountsPolled = 0;
         var hadUndischargedBacklog = false;
         var notPolled = new List<(string DisplayName, string Reason)>();
@@ -584,7 +609,7 @@ public sealed class WorkerMonitoringService(
                 if (outcome.PolledSource)
                 {
                     accountsPolled++;
-                    newResponsesThisCycle += outcome.NewResponses;
+                    collectedThisCycle += outcome.CollectedCount;
                     hadUndischargedBacklog |= outcome.HasUndischargedBacklog;
                 }
                 else if (!string.IsNullOrWhiteSpace(outcome.NotPolledReason))
@@ -607,18 +632,19 @@ public sealed class WorkerMonitoringService(
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        return (newResponsesThisCycle, accountsPolled, hadUndischargedBacklog, notPolled);
+        return (collectedThisCycle, accountsPolled, hadUndischargedBacklog, notPolled);
     }
 
     private sealed record AccountCycleJob(AvitoAccount Account, Task<AccountCycleOutcome> Task);
 
     private sealed record AccountCycleOutcome(
-        int NewResponses,
+        int CollectedCount,
         bool PolledSource,
         bool HasUndischargedBacklog,
         string? NotPolledReason = null,
         bool PassCompleted = false,
-        TimeSpan? RetryAfter = null);
+        TimeSpan? RetryAfter = null,
+        int PublishedCount = 0);
 
     private async Task<AccountCycleOutcome> RunAccountInCycleSlotAsync(
         AvitoAccount account,
@@ -732,7 +758,8 @@ public sealed class WorkerMonitoringService(
         var cycleTerminal = false;
         try
         {
-            var (detectedTotal, backlog, subProfilesProcessed, aborted) = await StreamProcessAccountResponsesAsync(
+            var (publishedCount, collectedCount, backlog, subProfilesProcessed, aborted) =
+                await StreamProcessAccountResponsesAsync(
                     account, settings, cycleId, cancellationToken)
                 .ConfigureAwait(false);
 
@@ -745,7 +772,8 @@ public sealed class WorkerMonitoringService(
             await repository.SaveAccountAsync(account, cancellationToken).ConfigureAwait(false);
             WorkerMonitoringLogger.AccountFinished(
                 account,
-                detectedTotal,
+                collectedCount,
+                publishedCount,
                 accountSw.Elapsed.TotalSeconds,
                 subProfilesProcessed);
             if (aborted)
@@ -766,7 +794,12 @@ public sealed class WorkerMonitoringService(
 
             cycleTerminal = true;
             await _cycleJournal.FlushAsync(cancellationToken).ConfigureAwait(false);
-            return new AccountCycleOutcome(detectedTotal, true, backlog, PassCompleted: !aborted);
+            return new AccountCycleOutcome(
+                collectedCount,
+                true,
+                backlog,
+                PassCompleted: !aborted,
+                PublishedCount: publishedCount);
         }
         catch (AvitoCaptchaDetectedException captchaEx)
         {
@@ -889,13 +922,15 @@ public sealed class WorkerMonitoringService(
         }
     }
 
-    private async Task<(int Detected, bool Backlog, int SubProfilesProcessed, bool Aborted)> StreamProcessAccountResponsesAsync(
+    private async Task<(int PublishedCount, int CollectedCount, bool Backlog, int SubProfilesProcessed, bool Aborted)>
+        StreamProcessAccountResponsesAsync(
         AvitoAccount account,
         AppSettings settings,
         Guid cycleId,
         CancellationToken cancellationToken)
     {
         var publishedTotal = 0;
+        var collectedTotal = 0;
         var subProfilesProcessed = 0;
         var aborted = false;
         var seenKeys = new HashSet<string>(StringComparer.Ordinal);
@@ -1180,6 +1215,7 @@ public sealed class WorkerMonitoringService(
                 if (decision.Action == ResponsePhoneWatchAction.PublishInitial)
                 {
                     collectedCount++;
+                    collectedTotal++;
                 }
             }
 
@@ -1204,15 +1240,15 @@ public sealed class WorkerMonitoringService(
             var demo = await avitoDemoResponseSource
                 .GetBatchAsync(account, int.MaxValue, cancellationToken)
                 .ConfigureAwait(false);
-            await ProcessBatchInlineAsync(demo).ConfigureAwait(false);
+            var demoResult = await ProcessBatchInlineAsync(demo).ConfigureAwait(false);
             var demoRunId = _cycleJournal.BeginSubProfile(cycleId, "demo", "demo", 1, 1);
             _cycleJournal.CompleteSubProfile(
                 cycleId,
                 demoRunId,
                 demo.Count,
                 publishedTotal,
-                collectedCount: publishedTotal);
-            return (publishedTotal, false, 1, false);
+                collectedCount: demoResult.CollectedCount);
+            return (publishedTotal, collectedTotal, false, 1, false);
         }
 
         var runtimeKind = WorkerAccountRuntime.Resolve(account);
@@ -1225,15 +1261,15 @@ public sealed class WorkerMonitoringService(
             var responses = await avitoResponseSource
                 .GetNewResponsesAsync(account, settings, cancellationToken)
                 .ConfigureAwait(false);
-            await ProcessBatchInlineAsync(responses).ConfigureAwait(false);
+            var legacyResult = await ProcessBatchInlineAsync(responses).ConfigureAwait(false);
             var legacyRunId = _cycleJournal.BeginSubProfile(cycleId, "legacy", "legacy", 1, 1);
             _cycleJournal.CompleteSubProfile(
                 cycleId,
                 legacyRunId,
                 responses.Count,
                 publishedTotal,
-                collectedCount: publishedTotal);
-            return (publishedTotal, false, 1, false);
+                collectedCount: legacyResult.CollectedCount);
+            return (publishedTotal, collectedTotal, false, 1, false);
         }
 
         if (WorkerAccountRuntime.IsMultiloginProvider(account) && !WorkerAccountRuntime.IsMultilogin(account))
@@ -1275,7 +1311,7 @@ public sealed class WorkerMonitoringService(
             if (enabledBeforeBrowser.Count > 0 && remainingBeforeBrowser.Count == 0)
             {
                 await repository.SaveAccountAsync(account, cancellationToken).ConfigureAwait(false);
-                return (publishedTotal, false, 0, false);
+                return (publishedTotal, collectedTotal, false, 0, false);
             }
         }
 
@@ -1474,7 +1510,7 @@ public sealed class WorkerMonitoringService(
                         cancellationToken).ConfigureAwait(false);
                 }
 
-                return (publishedTotal, false, 1, false);
+                return (publishedTotal, collectedTotal, false, 1, false);
             }
 
             var subProfiles = SubProfileEnabledFilter
@@ -1519,12 +1555,12 @@ public sealed class WorkerMonitoringService(
                     account.Id,
                     account.DisplayName,
                     "Все субпрофили отключены в панели");
-                return (publishedTotal, false, 0, true);
+                return (publishedTotal, collectedTotal, false, 0, true);
             }
 
             if (subProfiles.Count == 0)
             {
-                return (publishedTotal, false, 0, false);
+                return (publishedTotal, collectedTotal, false, 0, false);
             }
 
             var collectStats = MonitoringTiming.CollectActiveAdsInWorkerPass && IsAdsStatsStale(account);
@@ -1892,7 +1928,7 @@ public sealed class WorkerMonitoringService(
                 await ApplyStatsSnapshotAsync(account, statsAggregate, cancellationToken).ConfigureAwait(false);
             }
 
-            return (publishedTotal, false, subProfilesProcessed, aborted);
+            return (publishedTotal, collectedTotal, false, subProfilesProcessed, aborted);
             }
             catch (Exception ex) when (ShouldAttachSessionDiagnostic(ex))
             {

@@ -16,9 +16,19 @@ public sealed class WorkerAccountRuntimeStore
 
     public void Upsert(AvitoAccount account)
     {
-        _accounts[account.Id] = Clone(account);
-        var nextEntry = ResumeEntry.FromAccount(account);
-        if (!_resume.TryGetValue(account.Id, out var prev) || !prev.SameAs(nextEntry))
+        var clone = Clone(account);
+        var nextEntry = ResumeEntry.FromAccount(clone);
+        if (_resume.TryGetValue(account.Id, out var prev)
+            && nextEntry.NextUtc is null
+            && prev.NextUtc is not null)
+        {
+            // Snapshot без NextMonitoringAtUtc не должен затирать сохранённую паузу.
+            nextEntry.NextUtc = prev.NextUtc;
+            clone.NextMonitoringAtUtc = prev.NextUtc;
+        }
+
+        _accounts[account.Id] = clone;
+        if (!_resume.TryGetValue(account.Id, out prev) || !prev.SameAs(nextEntry))
         {
             _resume[account.Id] = nextEntry;
             SaveResume();
@@ -61,7 +71,7 @@ public sealed class WorkerAccountRuntimeStore
         }
         target.LastErrorMessage = source.LastErrorMessage;
         target.LastMonitoringAt = source.LastMonitoringAt;
-        target.NextMonitoringAtUtc = source.NextMonitoringAtUtc ?? target.NextMonitoringAtUtc;
+        target.NextMonitoringAtUtc = LaterUtc(source.NextMonitoringAtUtc, target.NextMonitoringAtUtc);
         target.MonitoringPassStartedAtUtc = source.MonitoringPassStartedAtUtc ?? target.MonitoringPassStartedAtUtc;
         target.MonitoringPassFinishedAtUtc = source.MonitoringPassFinishedAtUtc ?? target.MonitoringPassFinishedAtUtc;
         if (source.MonitoringPassCompletedSubIds.Count > 0)
@@ -226,6 +236,23 @@ public sealed class WorkerAccountRuntimeStore
     private static DateTime? AsUtc(DateTime? value) =>
         value is { } at ? AsUtc(at) : null;
 
+    private static DateTime? LaterUtc(DateTime? left, DateTime? right)
+    {
+        var a = AsUtc(left);
+        var b = AsUtc(right);
+        if (a is null)
+        {
+            return b;
+        }
+
+        if (b is null)
+        {
+            return a;
+        }
+
+        return a >= b ? a : b;
+    }
+
     private sealed class ResumeEntry
     {
         public DateTime? NextUtc { get; set; }
@@ -261,7 +288,7 @@ public sealed class WorkerAccountRuntimeStore
 
         public void ApplyTo(AvitoAccount target)
         {
-            target.NextMonitoringAtUtc ??= NextUtc;
+            target.NextMonitoringAtUtc = LaterUtc(target.NextMonitoringAtUtc, NextUtc);
             target.MonitoringPassStartedAtUtc ??= PassStartedAtUtc;
             target.MonitoringPassFinishedAtUtc ??= PassFinishedAtUtc;
             if (target.MonitoringPassCompletedSubIds.Count == 0 && CompletedSubIds.Count > 0)
