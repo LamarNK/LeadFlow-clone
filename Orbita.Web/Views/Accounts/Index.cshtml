@@ -188,7 +188,7 @@
                         <td data-label="Сейчас">
                             @if (!string.IsNullOrWhiteSpace(account.ProcessingLabel))
                             {
-                                <partial name="_WorkerActivityPillFromRow" model="@(account.ProcessingLabel, account.ProcessingTone, account.IsProcessingNow)" />
+                                <partial name="_WorkerActivityPillFromRow" model="@(account.ProcessingLabel, account.ProcessingTone, account.IsProcessingNow, (string?)null, (DateTime?)null)" />
                             }
                             else
                             {

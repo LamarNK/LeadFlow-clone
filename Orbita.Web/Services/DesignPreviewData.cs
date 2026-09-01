@@ -2242,6 +2242,8 @@ internal static class DesignPreviewData
                 CurrentActivityLabel = activity.Label,
                 CurrentActivityTone = activity.Tone,
                 IsActivityLive = activity.IsLive,
+                CurrentActivityPhase = activity.Phase,
+                CurrentActivityNextCycleAtUtc = activity.NextCycleAtUtc,
                 OfficeName = i >= 6 ? "Сибирь" : "Основной"
             };
         }).ToList();
@@ -2459,6 +2461,8 @@ internal static class DesignPreviewData
                 CurrentActivityLabel = w.CurrentActivityLabel,
                 CurrentActivityTone = w.CurrentActivityTone,
                 IsActivityLive = w.IsActivityLive,
+                CurrentActivityPhase = w.CurrentActivityPhase,
+                CurrentActivityNextCycleAtUtc = w.CurrentActivityNextCycleAtUtc,
                 OfficeName = w.OfficeName
             }).ToList(),
             HourlyChart = hourlyChart,

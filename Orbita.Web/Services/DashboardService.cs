@@ -64,6 +64,8 @@ public sealed class DashboardService(
                 CurrentActivityLabel = activity.Label,
                 CurrentActivityTone = activity.Tone,
                 IsActivityLive = activity.IsLive,
+                CurrentActivityPhase = activity.Phase,
+                CurrentActivityNextCycleAtUtc = activity.NextCycleAtUtc,
                 OfficeName = w.OfficeName
             };
         }).ToList();

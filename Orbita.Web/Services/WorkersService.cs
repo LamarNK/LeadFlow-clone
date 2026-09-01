@@ -517,7 +517,7 @@ public sealed class WorkersService(
         };
     }
 
-    private static WorkerRowViewModel MapRow(WorkerListItem w)
+    internal static WorkerRowViewModel MapRow(WorkerListItem w)
     {
         var activity = WorkerActivityPresenter.Present(
             w.CurrentActivity,
@@ -541,7 +541,9 @@ public sealed class WorkersService(
             IsEnabled = w.IsEnabled,
             CurrentActivityLabel = activity.Label,
             CurrentActivityTone = activity.Tone,
-            IsActivityLive = activity.IsLive
+            IsActivityLive = activity.IsLive,
+            CurrentActivityPhase = activity.Phase,
+            CurrentActivityNextCycleAtUtc = activity.NextCycleAtUtc
         };
     }
 

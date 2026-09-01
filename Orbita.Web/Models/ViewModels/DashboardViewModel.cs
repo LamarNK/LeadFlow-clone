@@ -57,6 +57,8 @@ public sealed class DashboardWorkerRowViewModel
     public string? CurrentActivityLabel { get; init; }
     public string CurrentActivityTone { get; init; } = "muted";
     public bool IsActivityLive { get; init; }
+    public string? CurrentActivityPhase { get; init; }
+    public DateTime? CurrentActivityNextCycleAtUtc { get; init; }
     public string OfficeName { get; init; } = string.Empty;
 }
 

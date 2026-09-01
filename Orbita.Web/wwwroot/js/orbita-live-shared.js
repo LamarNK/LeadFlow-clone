@@ -199,6 +199,7 @@
         }
         fetcher.reset();
         if (typeof extraInit === 'function') extraInit();
+        localizeWaitingActivityPills();
         if (window.OrbitaLive) {
             window.OrbitaLive.register(page, { fetchSnapshot: fetcher.fetchSnapshot });
         }
@@ -327,10 +328,11 @@
 
     function resolveActivityLabel(label, extras) {
         extras = extras || {};
-        var phase = String(extras.phase || extras.Phase || '').toLowerCase();
+        var phase = String(extras.phase || extras.Phase || extras.currentActivityPhase || extras.CurrentActivityPhase || '').toLowerCase();
         if (phase !== 'waiting') return label || '';
         if (label && /обновлен/i.test(label)) return label;
-        var nextCycleAtUtc = extras.nextCycleAtUtc || extras.NextCycleAtUtc || null;
+        var nextCycleAtUtc = extras.nextCycleAtUtc || extras.NextCycleAtUtc
+            || extras.currentActivityNextCycleAtUtc || extras.CurrentActivityNextCycleAtUtc || null;
         var formatted = formatWaitingActivityLabel(nextCycleAtUtc);
         if (formatted === 'Пауза · ожидание цикла') {
             return label || formatted;
@@ -344,8 +346,9 @@
         if (!resolved) return '<span class="worker-activity-pill worker-activity-pill--muted">—</span>';
         var liveClass = isLive ? ' worker-activity-pill--live' : '';
         var dot = isLive ? '<span class="worker-activity-pill-dot" aria-hidden="true"></span>' : '';
-        var nextCycleAtUtc = extras.nextCycleAtUtc || extras.NextCycleAtUtc || '';
-        var phase = extras.phase || extras.Phase || '';
+        var nextCycleAtUtc = extras.nextCycleAtUtc || extras.NextCycleAtUtc
+            || extras.currentActivityNextCycleAtUtc || extras.CurrentActivityNextCycleAtUtc || '';
+        var phase = extras.phase || extras.Phase || extras.currentActivityPhase || extras.CurrentActivityPhase || '';
         var nextAttr = nextCycleAtUtc
             ? ' data-next-cycle-at="' + escapeHtml(nextCycleAtUtc) + '"'
             : '';
@@ -354,6 +357,14 @@
             : '';
         return '<span class="worker-activity-pill worker-activity-pill--' + escapeHtml(tone || 'muted') + liveClass + '" title="' + escapeHtml(resolved) + '"' + phaseAttr + nextAttr + '>' +
             dot + '<span class="worker-activity-pill-text">' + escapeHtml(resolved) + '</span></span>';
+    }
+
+    function activityPillExtrasFromWorker(row) {
+        if (!row) return {};
+        return {
+            phase: row.currentActivityPhase || row.phase || row.Phase || '',
+            nextCycleAtUtc: row.currentActivityNextCycleAtUtc || row.nextCycleAtUtc || row.NextCycleAtUtc || ''
+        };
     }
 
     function localizeWaitingActivityPills(root) {
@@ -752,6 +763,7 @@
         renderAccountBalance: renderAccountBalance,
         updatePaginationInfo: updatePaginationInfo,
         renderActivityPill: renderActivityPill,
+        activityPillExtrasFromWorker: activityPillExtrasFromWorker,
         formatWaitingActivityLabel: formatWaitingActivityLabel,
         localizeWaitingActivityPills: localizeWaitingActivityPills,
         normalizeSubProfile: normalizeSubProfile,

@@ -150,7 +150,7 @@
                 '<td class="cell-name" data-label="Воркер">' + renderWorkerNameCell(w) + pausedBadge + updateBadge + '</td>' +
                 officeCell +
                 '<td data-label="Статус"><span class="status-dot' + statusClass + '"><i class="fa-solid fa-circle status-dot-icon" aria-hidden="true"></i>' + statusText + '</span></td>' +
-                '<td data-label="Сейчас">' + shared.renderActivityPill(w.currentActivityLabel, w.currentActivityTone, w.isActivityLive) + '</td>' +
+                '<td data-label="Сейчас">' + shared.renderActivityPill(w.currentActivityLabel, w.currentActivityTone, w.isActivityLive, shared.activityPillExtrasFromWorker(w)) + '</td>' +
                 '<td data-label="Аккаунтов">' + w.activeAccounts + ' / ' + w.totalAccounts + '</td>' +
                 '<td data-label="Откликов">' + w.responses + '</td>' +
                 '<td data-label="Дублей">' + w.duplicates + '</td>' +
@@ -195,6 +195,9 @@
                 }
                 initRowNavigation();
                 initAddWorkerModal();
+                if (shared.localizeWaitingActivityPills) {
+                    shared.localizeWaitingActivityPills();
+                }
             });
             return;
         }
@@ -204,6 +207,9 @@
         }
         initRowNavigation();
         initAddWorkerModal();
+        if (shared && shared.localizeWaitingActivityPills) {
+            shared.localizeWaitingActivityPills();
+        }
     }
 
     initWorkersPage();

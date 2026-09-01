@@ -172,6 +172,7 @@ public sealed class WorkerActivityPresenterTests
 
         Assert.Equal("Пауза · осталось 7 мин", result.Label);
         Assert.Equal("muted", result.Tone);
+        Assert.Equal(WorkerActivityPhases.Waiting, result.Phase);
         Assert.Equal(nextCycleAtUtc, result.NextCycleAtUtc);
     }
 

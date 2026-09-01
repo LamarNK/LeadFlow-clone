@@ -1,12 +1,16 @@
-@model (string? Label, string Tone, bool IsLive)
+@model (string? Label, string Tone, bool IsLive, string? Phase, DateTime? NextCycleAtUtc)
 @{
     if (string.IsNullOrWhiteSpace(Model.Label))
     {
         return;
     }
     var liveClass = Model.IsLive ? " worker-activity-pill--live" : "";
+    var nextCycleIso = OrbitaTime.ToIsoUtc(Model.NextCycleAtUtc);
 }
-<span class="worker-activity-pill worker-activity-pill--@Model.Tone@liveClass" title="@Model.Label">
+<span class="worker-activity-pill worker-activity-pill--@Model.Tone@liveClass"
+      title="@Model.Label"
+      data-activity-phase="@Model.Phase"
+      data-next-cycle-at="@nextCycleIso">
     @if (Model.IsLive)
     {
         <span class="worker-activity-pill-dot" aria-hidden="true"></span>

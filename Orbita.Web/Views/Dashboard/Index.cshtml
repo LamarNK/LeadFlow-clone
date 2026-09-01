@@ -134,7 +134,7 @@
                                     </span>
                                 </td>
                                 <td data-label="Сейчас">
-                                    <partial name="_WorkerActivityPillFromRow" model="@(w.CurrentActivityLabel, w.CurrentActivityTone, w.IsActivityLive)" />
+                                    <partial name="_WorkerActivityPillFromRow" model="@(w.CurrentActivityLabel, w.CurrentActivityTone, w.IsActivityLive, w.CurrentActivityPhase, w.CurrentActivityNextCycleAtUtc)" />
                                 </td>
                                 <td class="cell-num" data-label="Аккаунтов">@w.ActiveAccounts / @w.TotalAccounts</td>
                                 <td class="cell-num" data-label="Откликов">@w.Responses</td>

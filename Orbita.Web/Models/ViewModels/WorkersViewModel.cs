@@ -55,6 +55,8 @@ public sealed class WorkerRowViewModel
     public string? CurrentActivityLabel { get; init; }
     public string CurrentActivityTone { get; init; } = "muted";
     public bool IsActivityLive { get; init; }
+    public string? CurrentActivityPhase { get; init; }
+    public DateTime? CurrentActivityNextCycleAtUtc { get; init; }
 }
 
 public sealed class WorkerActivityViewModel

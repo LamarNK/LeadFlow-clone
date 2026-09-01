@@ -759,7 +759,7 @@
                 '<td class="cell-name" data-label="Воркер">' + nameCell + '</td>' +
                 officeCell +
                 '<td data-label="Статус"><span class="status-dot' + statusClass + '"><i class="fa-solid fa-circle status-dot-icon" aria-hidden="true"></i>' + statusText + '</span></td>' +
-                '<td data-label="Сейчас">' + (window.OrbitaLiveShared ? window.OrbitaLiveShared.renderActivityPill(w.currentActivityLabel, w.currentActivityTone, w.isActivityLive) : escapeHtml(w.currentActivityLabel || '—')) + '</td>' +
+                '<td data-label="Сейчас">' + (window.OrbitaLiveShared ? window.OrbitaLiveShared.renderActivityPill(w.currentActivityLabel, w.currentActivityTone, w.isActivityLive, window.OrbitaLiveShared.activityPillExtrasFromWorker(w)) : escapeHtml(w.currentActivityLabel || '—')) + '</td>' +
                 '<td class="cell-num" data-label="Аккаунтов">' + w.activeAccounts + ' / ' + w.totalAccounts + '</td>' +
                 '<td class="cell-num" data-label="Откликов">' + w.responses + '</td>' +
                 '<td class="cell-num" data-label="Дублей">' + w.duplicates + '</td>' +
@@ -1279,11 +1279,18 @@
         }
 
         if (window.OrbitaLiveShared && window.OrbitaLiveShared.registerLivePage) {
-            window.OrbitaLiveShared.registerLivePage('dashboard', snapshotFetcher);
+            window.OrbitaLiveShared.registerLivePage('dashboard', snapshotFetcher, function () {
+                if (window.OrbitaLiveShared.localizeWaitingActivityPills) {
+                    window.OrbitaLiveShared.localizeWaitingActivityPills();
+                }
+            });
             return;
         }
         if (window.OrbitaLive) {
             window.OrbitaLive.register('dashboard', { fetchSnapshot: fetchSnapshot });
+        }
+        if (window.OrbitaLiveShared && window.OrbitaLiveShared.localizeWaitingActivityPills) {
+            window.OrbitaLiveShared.localizeWaitingActivityPills();
         }
     }
 
