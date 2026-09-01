@@ -15,6 +15,9 @@ public sealed class WorkerAccountCatalogFilterTests
         Assert.Equal(WorkerAccountCatalogFilter.AdsPowerProvider, WorkerAccountCatalogFilter.NormalizeProvider("AdsPower"));
         Assert.Equal(WorkerAccountCatalogFilter.MultiloginProvider, WorkerAccountCatalogFilter.NormalizeProvider("mlx"));
         Assert.Equal(WorkerAccountCatalogFilter.MultiloginProvider, WorkerAccountCatalogFilter.NormalizeProvider("Multilogin"));
+        Assert.Equal(WorkerAccountCatalogFilter.LocalProvider, WorkerAccountCatalogFilter.NormalizeProvider("local"));
+        Assert.Equal(WorkerAccountCatalogFilter.LocalProvider, WorkerAccountCatalogFilter.NormalizeProvider("chrome"));
+        Assert.Equal(WorkerAccountCatalogFilter.LocalProvider, WorkerAccountCatalogFilter.NormalizeProvider("Обычный браузер"));
     }
 
     [Fact]
@@ -25,6 +28,11 @@ public sealed class WorkerAccountCatalogFilterTests
         Assert.False(WorkerAccountCatalogFilter.MatchesProvider("multilogin", null));
         Assert.True(WorkerAccountCatalogFilter.MatchesProvider("adspower", null));
         Assert.False(WorkerAccountCatalogFilter.MatchesProvider("adspower", "mlx-1"));
+        Assert.False(WorkerAccountCatalogFilter.MatchesProvider("adspower", null, @"D:\profiles\a"));
+        Assert.True(WorkerAccountCatalogFilter.MatchesProvider("local", null, @"D:\profiles\a"));
+        Assert.False(WorkerAccountCatalogFilter.MatchesProvider("local", "mlx-1", @"D:\profiles\a"));
+        Assert.False(WorkerAccountCatalogFilter.MatchesProvider("multilogin", null, @"D:\profiles\a"));
+        Assert.Equal("Обычный браузер", WorkerAccountCatalogFilter.ProviderLabel("local"));
     }
 
     [Fact]

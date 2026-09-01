@@ -31,7 +31,8 @@ public sealed class NavBadgesService(
                 summary.ActionRequired,
                 DateTime.UtcNow,
                 previewCrmNotifications?.Enabled == true ? previewCrmNotifications.UnreadCount : 0,
-                previewCrmNotifications?.Enabled);
+                previewCrmNotifications?.Enabled,
+                previewCrmNotifications?.OpenTaskCount ?? 0);
         }
 
         var badgesTask = api.GetNavBadgesAsync(Helpers.BrowserTimeZone.Resolve(httpContextAccessor.HttpContext), ct);
@@ -56,13 +57,15 @@ public sealed class NavBadgesService(
                 0,
                 DateTime.UtcNow,
                 crmNotifications?.Enabled == true ? crmNotifications.UnreadCount : 0,
-                crmNotifications?.Enabled);
+                crmNotifications?.Enabled,
+                crmNotifications?.OpenTaskCount ?? 0);
         }
 
         return live with
         {
             CrmTaskNotificationsUnread = crmNotifications?.Enabled == true ? crmNotifications.UnreadCount : 0,
-            CrmTaskNotificationsEnabled = crmNotifications?.Enabled
+            CrmTaskNotificationsEnabled = crmNotifications?.Enabled,
+            CrmOpenTasks = crmNotifications?.OpenTaskCount ?? 0
         };
     }
 }

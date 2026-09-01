@@ -131,7 +131,16 @@ public sealed class WorkersService(
             accounts.Select(a =>
             {
                 var balance = apiWorker.Balances.FirstOrDefault(b => b.AccountId == a.AccountId);
-                return WorkerDetailsBuilder.MapAccount(a, balance, id, activeAccounts, apiWorker.IsOnline);
+                return WorkerDetailsBuilder.MapAccount(
+                    a,
+                    balance,
+                    id,
+                    activeAccounts,
+                    apiWorker.IsOnline,
+                    apiWorker.AdsPowerEnabled,
+                    apiWorker.MultiloginEnabled,
+                    apiWorker.LocalChromeEnabled,
+                    apiWorker.PendingLocalChromeLoginAccountId);
             }),
             tableSort).ToList();
 
@@ -218,6 +227,10 @@ public sealed class WorkersService(
         string? multiloginLauncherUrl = null,
         string? multiloginCloudApiUrl = null,
         string? multiloginAutomationToken = null,
+        string? localChromeExecutablePath = null,
+        bool adsPowerEnabled = true,
+        bool multiloginEnabled = true,
+        bool localChromeEnabled = true,
         CancellationToken ct = default) =>
         api.UpdateWorkerSettingsAsync(
             workerId,
@@ -247,6 +260,10 @@ public sealed class WorkersService(
             multiloginLauncherUrl,
             multiloginCloudApiUrl,
             multiloginAutomationToken,
+            localChromeExecutablePath,
+            adsPowerEnabled,
+            multiloginEnabled,
+            localChromeEnabled,
             ct);
 
     public Task<(bool Success, string? Error)> UpdateWorkerAccountAsync(
@@ -255,6 +272,33 @@ public sealed class WorkersService(
         bool isEnabled,
         CancellationToken ct = default) =>
         api.UpdateWorkerAccountAsync(workerId, accountId, isEnabled, ct);
+
+    public Task<(bool Success, string? Error)> CreateLocalAccountAsync(
+        Guid workerId,
+        string displayName,
+        string? localUserDataDir = null,
+        CancellationToken ct = default) =>
+        api.CreateLocalAccountAsync(workerId, displayName, localUserDataDir, ct);
+
+    public Task<(bool Success, string? Error)> UpdateLocalAccountAsync(
+        Guid workerId,
+        Guid accountId,
+        string? displayName,
+        string? localUserDataDir,
+        CancellationToken ct = default) =>
+        api.UpdateLocalAccountAsync(workerId, accountId, displayName, localUserDataDir, ct);
+
+    public Task<(bool Success, string? Error)> DeleteLocalAccountAsync(
+        Guid workerId,
+        Guid accountId,
+        CancellationToken ct = default) =>
+        api.DeleteLocalAccountAsync(workerId, accountId, ct);
+
+    public Task<(bool Success, string? Error)> OpenLocalBrowserAsync(
+        Guid workerId,
+        Guid accountId,
+        CancellationToken ct = default) =>
+        api.OpenLocalBrowserAsync(workerId, accountId, ct);
 
     public Task<(bool Success, string? Error)> UpdateWorkerAccountCredentialsAsync(
         Guid workerId,
@@ -265,11 +309,49 @@ public sealed class WorkersService(
         CancellationToken ct = default) =>
         api.UpdateWorkerAccountCredentialsAsync(workerId, accountId, login, password, clear, ct);
 
+    public Task<(LocalWorkerAccountProfileDto? Profile, string? Error)> UpdateLocalAccountProfileAsync(
+        Guid workerId,
+        Guid accountId,
+        string? login,
+        string? password,
+        bool clearCredentials,
+        bool? proxyEnabled,
+        string? proxyAddress,
+        string? proxyUsername,
+        string? proxyPassword,
+        bool clearProxyPassword,
+        CancellationToken ct = default) =>
+        api.UpdateLocalAccountProfileAsync(
+            workerId,
+            accountId,
+            new UpdateLocalWorkerAccountProfileRequest(
+                login,
+                password,
+                clearCredentials,
+                proxyEnabled,
+                proxyAddress,
+                proxyUsername,
+                proxyPassword,
+                clearProxyPassword),
+            ct);
+
     public Task<(bool Success, string? Error)> RequestSubProfilesRefreshAsync(
         Guid workerId,
         Guid accountId,
         CancellationToken ct = default) =>
         api.RequestSubProfilesRefreshAsync(workerId, accountId, ct);
+
+    public Task<(bool Success, string? Error)> RequestProviderCheckAsync(
+        Guid workerId,
+        string provider,
+        CancellationToken ct = default) =>
+        api.RequestProviderCheckAsync(workerId, provider, ct);
+
+    public Task<(bool Success, string? Error)> RequestProviderSyncAsync(
+        Guid workerId,
+        string provider,
+        CancellationToken ct = default) =>
+        api.RequestProviderSyncAsync(workerId, provider, ct);
 
     public Task<(bool Success, string? Error)> UpdateSubProfileEnabledAsync(
         Guid workerId,

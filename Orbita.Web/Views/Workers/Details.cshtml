@@ -1,4 +1,5 @@
 @model WorkerDetailsViewModel
+@using System.Linq
 @using System.Text.Json
 @using Orbita.Contracts
 @{
@@ -13,6 +14,8 @@
     var snapshotUrl = Url.Action("DetailsSnapshot", "Workers", workerAccountsSortRoute)!;
     var adsPowerAccountsUrl = Url.Action("Details", "Workers", new { id = Model.WorkerId, q = Model.AccountSearchQuery, provider = "adspower", sort = Model.Sort.Column, dir = Model.Sort.Dir })!;
     var multiloginAccountsUrl = Url.Action("Details", "Workers", new { id = Model.WorkerId, q = Model.AccountSearchQuery, provider = "multilogin", sort = Model.Sort.Column, dir = Model.Sort.Dir })!;
+    var localAccountsUrl = Url.Action("Details", "Workers", new { id = Model.WorkerId, q = Model.AccountSearchQuery, provider = "local", sort = Model.Sort.Column, dir = Model.Sort.Dir })!;
+    var isLocalProvider = string.Equals(Model.AccountProvider, "local", StringComparison.Ordinal);
     var scheduleDayLabels = new Dictionary<string, string>(StringComparer.Ordinal)
     {
         ["Mon"] = "Понедельник",
@@ -203,7 +206,7 @@
         <div class="card card--worker-settings" id="worker-settings">
             <div class="card-header">
                 <h2>Настройки воркера</h2>
-                <p class="worker-settings-subtitle">Параллелизм и подключение к AdsPower Local API и Multilogin X</p>
+                <p class="worker-settings-subtitle">Параллелизм и подключение к AdsPower, Multilogin X и обычному Chrome</p>
             </div>
             <div class="card-body">
                 <form asp-action="UpdateSettings" method="post" class="worker-settings-form">
@@ -414,7 +417,7 @@
                             <div class="worker-highlight-profiles" data-worker-highlight-profiles>
                                 @if (Model.HighlightAccounts.Count == 0)
                                 {
-                                    <p class="worker-settings-hint">Аккаунтов пока нет. Они появятся после синхронизации AdsPower или Multilogin.</p>
+                                    <p class="worker-settings-hint">Аккаунтов пока нет. Они появятся после синхронизации AdsPower или Multilogin, либо добавьте аккаунт обычного браузера.</p>
                                 }
                                 @foreach (var account in Model.HighlightAccounts)
                                 {
@@ -452,7 +455,7 @@
                                                        value="@profileTarget"
                                                        @(isProfileSelected ? "checked" : null) />
                                                 <span>@account.DisplayName</span>
-                                                <span class="worker-provider-chip worker-provider-chip--@account.ProfileProviderTone" title="@account.ProfileIdTitle">@account.ProfileProvider</span>
+                                                <span class="worker-provider-chip worker-provider-chip--@account.ProfileProviderTone" title="@account.ProfileIdTitle">@account.ProfileProviderLabel</span>
                                             </label>
                                             <span class="worker-highlight-profile__meta">
                                                 @if (hasSubProfiles)
@@ -643,8 +646,114 @@
                     </div>
 
                     <div class="worker-settings-group worker-settings-group--advanced" id="worker-settings-connection" role="tabpanel" aria-labelledby="worker-settings-tab-connection" data-worker-settings-panel="connection">
-                    <div class="worker-settings-section">
-                        <span class="worker-settings-section-title">AdsPower Local API</span>
+                    <div class="worker-settings-section worker-settings-section--sources">
+                        <span class="worker-settings-section-title">Источники браузеров</span>
+                        <div class="worker-provider-sources" data-provider-sources>
+                        @foreach (var card in new[] { Model.AdsPowerCheck, Model.MultiloginCheck, Model.LocalChromeCheck })
+                        {
+                            var enabledName = card.Provider switch
+                            {
+                                "Multilogin" => "multiloginEnabled",
+                                "Local" => "localChromeEnabled",
+                                _ => "adsPowerEnabled"
+                            };
+                            var enabled = card.Provider switch
+                            {
+                                "Multilogin" => Model.MultiloginEnabled,
+                                "Local" => Model.LocalChromeEnabled,
+                                _ => Model.AdsPowerEnabled
+                            };
+                            var title = card.Provider switch
+                            {
+                                "Multilogin" => "Multilogin X",
+                                "Local" => "Обычный браузер",
+                                _ => "AdsPower"
+                            };
+                            var toggleTitle = card.Provider switch
+                            {
+                                "Multilogin" => "Использовать Multilogin",
+                                "Local" => "Использовать обычный браузер",
+                                _ => "Использовать AdsPower"
+                            };
+                            var iconClass = card.Provider switch
+                            {
+                                "Multilogin" => "fa-solid fa-layer-group",
+                                "Local" => "fa-brands fa-chrome",
+                                _ => "fa-solid fa-window-restore"
+                            };
+                            var iconTone = card.Provider switch
+                            {
+                                "Multilogin" => "mlx",
+                                "Local" => "local",
+                                _ => "ads"
+                            };
+                            var resultMessage = card.Status == WorkerBrowserProviderStatus.Disabled
+                                ? ""
+                                : (card.Message ?? "");
+                            <div class="worker-provider-row"
+                                 data-provider-card="@card.Provider"
+                                 data-provider-status="@card.Status">
+                                <span class="worker-provider-row__icon worker-provider-row__icon--@iconTone" aria-hidden="true">
+                                    <i class="@iconClass"></i>
+                                </span>
+                                <span class="worker-provider-row__name">@title</span>
+                                <span class="worker-provider-status worker-provider-status--@card.Status" data-provider-status-label>@card.StatusLabel</span>
+                                <span class="worker-provider-row__result">
+                                    <span class="worker-provider-row__message" data-provider-message>@resultMessage</span>
+                                    <span class="worker-provider-row__time" data-provider-checked-at @(card.CheckedAtUtc is null ? "hidden" : null)>
+                                        @if (card.CheckedAtUtc is not null)
+                                        {
+                                            <partial name="_UtcTime" model="@(new UtcTimeDisplayModel(card.CheckedAtUtc.Value, "activity"))" />
+                                        }
+                                    </span>
+                                </span>
+                                <label class="worker-provider-row__toggle" title="@toggleTitle">
+                                    <span class="worker-toggle">
+                                        <input type="checkbox"
+                                               name="@enabledName"
+                                               value="true"
+                                               aria-label="@toggleTitle"
+                                               data-provider-toggle="@card.Provider"
+                                               @(enabled ? "checked" : null) />
+                                        <span class="worker-toggle-slider"></span>
+                                    </span>
+                                </label>
+                                <span class="worker-provider-row__actions" data-provider-actions>
+                                    <button type="button"
+                                            class="worker-provider-btn"
+                                            data-provider-check="@card.Provider"
+                                            data-worker-id="@Model.WorkerId"
+                                            data-can-check="@(card.CanCheck ? "true" : "false")"
+                                            title="@(card.CanCheck ? null : card.Status == WorkerBrowserProviderStatus.Checking
+                                                ? WorkerBrowserProviderMessages.CheckingMessage
+                                                : card.Status == WorkerBrowserProviderStatus.NeedsSetup
+                                                    ? WorkerBrowserProviderMessages.NeedsToken
+                                                    : card.Status == WorkerBrowserProviderStatus.Disabled
+                                                        ? WorkerBrowserProviderMessages.DisabledHint
+                                                        : WorkerBrowserProviderMessages.CheckAlreadyQueued)"
+                                            @(card.CanCheck ? null : "disabled")>
+                                        Проверить
+                                    </button>
+                                    @if (WorkerBrowserProviderKinds.SupportsCatalogSync(card.Provider))
+                                    {
+                                        <button type="button"
+                                                class="worker-provider-btn worker-provider-btn--secondary"
+                                                data-provider-sync="@card.Provider"
+                                                data-worker-id="@Model.WorkerId"
+                                                data-can-sync="@(card.CanSync ? "true" : "false")"
+                                                title="@(card.CanSync ? null : WorkerBrowserProviderMessages.SyncAlreadyQueued)"
+                                                @(card.CanSync ? null : "hidden")>
+                                            Синхронизировать
+                                        </button>
+                                    }
+                                </span>
+                            </div>
+                        }
+                        </div>
+                    </div>
+
+                    <div class="worker-settings-section" data-provider-section="AdsPower" @(Model.AdsPowerEnabled ? null : "hidden")>
+                        <div data-provider-fields="AdsPower">
                         <label class="worker-settings-field" for="adsPowerApiBaseUrl">
                             <span class="worker-settings-label">URL API</span>
                             <input type="url"
@@ -673,20 +782,6 @@
                                 Ключ из настроек AdsPower на VDS. Оставьте пустым, если Local API без авторизации.
                             </span>
                         </label>
-                        <label class="worker-settings-field" for="ruCaptchaApiKey">
-                            <span class="worker-settings-label">RuCaptcha API Key</span>
-                            <input type="password"
-                                   id="ruCaptchaApiKey"
-                                   name="ruCaptchaApiKey"
-                                   class="worker-settings-input"
-                                   value="@Model.RuCaptchaApiKey"
-                                   placeholder="@(string.IsNullOrWhiteSpace(Model.RuCaptchaApiKey) ? "Не задан — капча Avito вручную" : "Ключ задан")"
-                                   autocomplete="new-password"
-                                   spellcheck="false" />
-                            <span class="worker-settings-hint">
-                                Ключ с rucaptcha.com для автопрохождения GeeTest v4. Пока пусто — воркер останавливает аккаунт на капче.
-                            </span>
-                        </label>
                         <label class="worker-settings-field" for="adsPowerGroupId">
                             <span class="worker-settings-label">Группа AdsPower</span>
                             <select id="adsPowerGroupId"
@@ -706,51 +801,25 @@
                                         <option value="@group.GroupId">@groupLabel</option>
                                     }
                                 }
-                            </select>
-                            <span class="worker-settings-hint">
-                                В AdsPower профили делятся по группам. Выберите группу этого воркера — в список попадут только её профили.
-                                Пока группа не выбрана, синхронизируются все аккаунты.
-                                @if (Model.AdsPowerGroups.Count == 0)
+                                @if (!string.IsNullOrWhiteSpace(Model.AdsPowerGroupId)
+                                     && !Model.AdsPowerGroups.Any(g => string.Equals(g.GroupId, Model.AdsPowerGroupId, StringComparison.Ordinal)))
                                 {
-                                    <text> Список появится после синхронизации воркера с AdsPower.</text>
+                                    var pendingLabel = string.IsNullOrWhiteSpace(Model.AdsPowerGroupName) ? Model.AdsPowerGroupId : Model.AdsPowerGroupName;
+                                    <option value="@Model.AdsPowerGroupId" selected="selected">@pendingLabel</option>
                                 }
+                            </select>
+                            <span class="worker-settings-hint" data-ads-group-hint @(Model.AdsPowerGroups.Count > 0 ? "hidden" : null)>
+                                Сначала проверьте подключение — список групп появится после успешной проверки.
+                            </span>
+                            <span class="worker-settings-hint" data-ads-group-ready @(Model.AdsPowerGroups.Count > 0 ? null : "hidden")>
+                                В AdsPower профили делятся по группам. Выберите группу этого воркера — в список попадут только её профили.
                             </span>
                         </label>
-                        <div class="worker-settings-effective">
-                            <span class="worker-settings-label">Текущий URL для воркера</span>
-                            <code class="worker-settings-effective-value">@Model.EffectiveAdsPowerApiBaseUrl</code>
                         </div>
                     </div>
-                    <div class="worker-settings-section">
-                        <span class="worker-settings-section-title">Multilogin X</span>
-                        <label class="worker-settings-field" for="multiloginLauncherUrl">
-                            <span class="worker-settings-label">Launcher URL</span>
-                            <input type="url"
-                                   id="multiloginLauncherUrl"
-                                   name="multiloginLauncherUrl"
-                                   class="worker-settings-input"
-                                   value="@Model.MultiloginLauncherUrl"
-                                   placeholder="@WorkerDetailsViewModel.DefaultMultiloginLauncherUrl"
-                                   autocomplete="off"
-                                   spellcheck="false" />
-                            <span class="worker-settings-hint">
-                                Если поле пустое, сохраняется @WorkerDetailsViewModel.DefaultMultiloginLauncherUrl
-                            </span>
-                        </label>
-                        <label class="worker-settings-field" for="multiloginCloudApiUrl">
-                            <span class="worker-settings-label">Cloud API URL</span>
-                            <input type="url"
-                                   id="multiloginCloudApiUrl"
-                                   name="multiloginCloudApiUrl"
-                                   class="worker-settings-input"
-                                   value="@Model.MultiloginCloudApiUrl"
-                                   placeholder="@WorkerDetailsViewModel.DefaultMultiloginCloudApiUrl"
-                                   autocomplete="off"
-                                   spellcheck="false" />
-                            <span class="worker-settings-hint">
-                                Необязательно. Пустое поле не заполняется значением по умолчанию.
-                            </span>
-                        </label>
+
+                    <div class="worker-settings-section" data-provider-section="Multilogin" @(Model.MultiloginEnabled ? null : "hidden")>
+                        <div data-provider-fields="Multilogin">
                         <label class="worker-settings-field" for="multiloginAutomationToken">
                             <span class="worker-settings-label">API Token</span>
                             <input type="password"
@@ -765,10 +834,79 @@
                                 Вставьте Token API из Multilogin → Информация. Orbita сама получит и сохранит долгоживущий automation token; ID проекта не нужен.
                             </span>
                         </label>
-                        <div class="worker-settings-effective">
-                            <span class="worker-settings-label">Текущий launcher для воркера</span>
-                            <code class="worker-settings-effective-value">@Model.EffectiveMultiloginLauncherUrl</code>
+                        <details class="worker-settings-advanced">
+                            <summary>Дополнительно</summary>
+                            <label class="worker-settings-field" for="multiloginLauncherUrl">
+                                <span class="worker-settings-label">Launcher URL</span>
+                                <input type="url"
+                                       id="multiloginLauncherUrl"
+                                       name="multiloginLauncherUrl"
+                                       class="worker-settings-input"
+                                       value="@Model.MultiloginLauncherUrl"
+                                       placeholder="@WorkerDetailsViewModel.DefaultMultiloginLauncherUrl"
+                                       autocomplete="off"
+                                       spellcheck="false" />
+                                <span class="worker-settings-hint">
+                                    Обычно менять не нужно. Если поле пустое, сохраняется @WorkerDetailsViewModel.DefaultMultiloginLauncherUrl
+                                </span>
+                            </label>
+                            <label class="worker-settings-field" for="multiloginCloudApiUrl">
+                                <span class="worker-settings-label">Cloud API URL</span>
+                                <input type="url"
+                                       id="multiloginCloudApiUrl"
+                                       name="multiloginCloudApiUrl"
+                                       class="worker-settings-input"
+                                       value="@Model.MultiloginCloudApiUrl"
+                                       placeholder="@WorkerDetailsViewModel.DefaultMultiloginCloudApiUrl"
+                                       autocomplete="off"
+                                       spellcheck="false" />
+                                <span class="worker-settings-hint">
+                                    Обычно менять не нужно. Необязательно: пустое поле не заполняется значением по умолчанию.
+                                </span>
+                            </label>
+                        </details>
                         </div>
+                    </div>
+
+                    <div class="worker-settings-section" data-provider-section="Local" @(Model.LocalChromeEnabled ? null : "hidden")>
+                        <div data-provider-fields="Local">
+                        <p class="worker-settings-hint">Chrome будет найден автоматически. Для каждого аккаунта нужна отдельная папка User Data — стандартный профиль Default обычного Chrome использовать нельзя.</p>
+                        <details class="worker-settings-advanced">
+                            <summary>Дополнительно</summary>
+                            <label class="worker-settings-field" for="localChromeExecutablePath">
+                                <span class="worker-settings-label">Путь к Chrome/Chromium</span>
+                                <input type="text"
+                                       id="localChromeExecutablePath"
+                                       name="localChromeExecutablePath"
+                                       class="worker-settings-input"
+                                       value="@Model.LocalChromeExecutablePath"
+                                       placeholder="C:\Program Files\Google\Chrome\Application\chrome.exe"
+                                       autocomplete="off"
+                                       spellcheck="false" />
+                                <span class="worker-settings-hint">
+                                    Нужно только если браузер установлен не в Program Files.
+                                </span>
+                            </label>
+                        </details>
+                        </div>
+                    </div>
+
+                    <div class="worker-settings-section">
+                        <span class="worker-settings-section-title">RuCaptcha</span>
+                        <label class="worker-settings-field" for="ruCaptchaApiKey">
+                            <span class="worker-settings-label">RuCaptcha API Key</span>
+                            <input type="password"
+                                   id="ruCaptchaApiKey"
+                                   name="ruCaptchaApiKey"
+                                   class="worker-settings-input"
+                                   value="@Model.RuCaptchaApiKey"
+                                   placeholder="@(string.IsNullOrWhiteSpace(Model.RuCaptchaApiKey) ? "Не задан — капча Avito вручную" : "Ключ задан")"
+                                   autocomplete="new-password"
+                                   spellcheck="false" />
+                            <span class="worker-settings-hint">
+                                Ключ с rucaptcha.com для автопрохождения GeeTest v4. Пока пусто — воркер останавливает аккаунт на капче.
+                            </span>
+                        </label>
                     </div>
                     </div>
                         </div>
@@ -879,6 +1017,12 @@
                     <span>Multilogin</span>
                     <span class="worker-accounts-tab-count" data-worker-accounts-mlx>@Model.MultiloginAccountCount</span>
                 </a>
+                <a class="worker-accounts-tab@(isLocalProvider ? " is-active" : "")"
+                   href="@localAccountsUrl"
+                   aria-current="@(isLocalProvider ? "page" : null)">
+                    <span>Обычный браузер</span>
+                    <span class="worker-accounts-tab-count" data-worker-accounts-local>@Model.LocalAccountCount</span>
+                </a>
             </nav>
         </div>
         <div class="worker-accounts-toolbar">
@@ -890,7 +1034,7 @@
                     <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
                     <input type="search" name="q" value="@Model.AccountSearchQuery" placeholder="Поиск по аккаунтам" aria-label="Поиск по аккаунтам" />
                 </div>
-                <label class="worker-accounts-group-select">
+                <label class="worker-accounts-group-select" @(isLocalProvider ? "hidden" : null)>
                     <span>@(Model.AccountProvider == "multilogin" ? "Папка" : "Группа")</span>
                     <select name="groupId" data-worker-accounts-group-select aria-label="@(Model.AccountProvider == "multilogin" ? "Папка Multilogin" : "Группа AdsPower")">
                         @foreach (var opt in Model.AccountGroupOptions)
@@ -913,6 +1057,61 @@
                 }
             </form>
         </div>
+        @if (isLocalProvider)
+        {
+            <div class="worker-local-account-panel">
+                <p class="worker-local-account-steps">Создайте аккаунт → Откройте браузер → Войдите в Avito → Закройте браузер → Включите мониторинг.</p>
+                <form asp-action="CreateLocalAccount" method="post" class="worker-local-account-form">
+                    @Html.AntiForgeryToken()
+                    <input type="hidden" name="workerId" value="@Model.WorkerId" />
+                    <span class="worker-local-account-form-title">Создать браузерный аккаунт</span>
+                    <label class="worker-settings-field" for="localAccountDisplayName">
+                        <span class="worker-settings-label">Название</span>
+                        <input type="text"
+                               id="localAccountDisplayName"
+                               name="displayName"
+                               class="worker-settings-input"
+                               maxlength="200"
+                               required
+                               placeholder="Например, Авито — кабинет 1"
+                               autocomplete="off" />
+                    </label>
+                    <button type="submit" class="worker-refresh-btn">Создать браузерный аккаунт</button>
+                </form>
+                <details class="worker-local-account-advanced">
+                    <summary>Подключить существующую папку профиля</summary>
+                    <form asp-action="CreateLocalAccount" method="post" class="worker-local-account-form worker-local-account-form--advanced">
+                        @Html.AntiForgeryToken()
+                        <input type="hidden" name="workerId" value="@Model.WorkerId" />
+                        <label class="worker-settings-field" for="localAttachDisplayName">
+                            <span class="worker-settings-label">Название</span>
+                            <input type="text"
+                                   id="localAttachDisplayName"
+                                   name="displayName"
+                                   class="worker-settings-input"
+                                   maxlength="200"
+                                   required
+                                   placeholder="Например, Авито — кабинет 1"
+                                   autocomplete="off" />
+                        </label>
+                        <label class="worker-settings-field" for="localAccountUserDataDir">
+                            <span class="worker-settings-label">Папка профиля (User Data)</span>
+                            <input type="text"
+                                   id="localAccountUserDataDir"
+                                   name="localUserDataDir"
+                                   class="worker-settings-input"
+                                   maxlength="1024"
+                                   required
+                                   placeholder="D:\Orbita\ChromeProfiles\account-1"
+                                   autocomplete="off"
+                                   spellcheck="false" />
+                            <span class="worker-settings-hint">Только отдельная папка на машине воркера. Системный Chrome User Data и Default использовать нельзя. При удалении записи папка на диске не удаляется.</span>
+                        </label>
+                        <button type="submit" class="worker-refresh-btn">Подключить папку</button>
+                    </form>
+                </details>
+            </div>
+        }
         <div class="card-body card-body-table worker-accounts-wrap">
             <div data-worker-accounts-empty @(Model.Accounts.Count == 0 ? null : "hidden")>
                 <partial name="_TableEmptyState" model="@(new TableEmptyStateViewModel
@@ -921,7 +1120,9 @@
                     Title = Model.HasActiveAccountFilters ? "Аккаунты не найдены" : "Аккаунтов пока нет",
                     Description = Model.HasActiveAccountFilters
                         ? "Измените поисковый запрос."
-                        : "Дождитесь синхронизации профилей AdsPower или Multilogin с воркером.",
+                        : isLocalProvider
+                            ? "Создайте аккаунт, откройте браузер, войдите в Avito и затем включите мониторинг."
+                            : "Дождитесь синхронизации профилей AdsPower или Multilogin с воркером.",
                     CtaLabel = Model.HasActiveAccountFilters ? "Сбросить фильтры" : null,
                     CtaUrl = Model.HasActiveAccountFilters
                         ? Url.Action("Details", "Workers", new { id = Model.WorkerId, provider = Model.AccountProvider, sort = Model.Sort.Column, dir = Model.Sort.Dir })
@@ -952,12 +1153,13 @@
                         data-processing-subprofile-id="@(account.IsProcessingNow ? account.ProcessingSubProfileId : null)"
                         data-subprofiles-json="@JsonSerializer.Serialize(account.SubProfiles, subProfileJsonOptions)">
                         <td class="cell-toggle" data-label="Вкл">
-                            <label class="worker-toggle" title="@(account.IsEnabledInPanel ? "Отключить аккаунт в панели" : "Включить аккаунт в панели")">
+                            <label class="worker-toggle@(account.IsProviderEnabled ? "" : " is-disabled")" title="@(account.IsProviderEnabled ? (account.IsEnabledInPanel ? "Отключить аккаунт в панели" : "Включить аккаунт в панели") : WorkerBrowserProviderMessages.DisabledHint)">
                                 <input type="checkbox"
                                        data-account-enable-toggle
                                        data-worker-id="@Model.WorkerId"
                                        data-account-id="@account.Id"
-                                       @(account.IsEnabledInPanel ? "checked" : null) />
+                                       @(account.IsEnabledInPanel ? "checked" : null)
+                                       @(account.IsProviderEnabled ? null : "disabled") />
                                 <span class="worker-toggle-slider"></span>
                             </label>
                         </td>
@@ -1003,6 +1205,23 @@
                             {
                                 <span class="account-error-hint" title="@account.ErrorHint">@account.ErrorHint</span>
                             }
+                            @if (account.IsLocal)
+                            {
+                                <form asp-action="OpenLocalBrowser" method="post" class="worker-local-open-form">
+                                    @Html.AntiForgeryToken()
+                                    <input type="hidden" name="workerId" value="@Model.WorkerId" />
+                                    <input type="hidden" name="accountId" value="@account.Id" />
+                                    <button type="submit"
+                                            class="worker-local-open-btn"
+                                            data-local-open-browser
+                                            data-worker-id="@Model.WorkerId"
+                                            data-account-id="@account.Id"
+                                            data-post-url="@Url.Action("OpenLocalBrowser", "Workers")"
+                                            @(account.CanOpenBrowser ? null : "disabled")
+                                            title="@(account.CanOpenBrowser ? account.OpenBrowserLabel : account.BrowserSessionStatus)">@account.OpenBrowserLabel</button>
+                                </form>
+                                <span class="worker-local-browser-status">@account.BrowserSessionStatus</span>
+                            }
                         </td>
                         <td class="cell-num cell-balance" data-label="Баланс"><span class="account-balance-multiline">@account.BalanceText</span></td>
                         <td class="cell-num" data-label="Откликов">
@@ -1013,6 +1232,32 @@
                             <partial name="_MetricLink" model="@AccountMetricLinks.Errors(Model.WorkerId, account.Id, account.Errors)" />
                         </td>
                         <td class="data-table-menu" data-label="">
+                            @if (account.IsLocal)
+                            {
+                                <button type="button"
+                                        class="row-menu-btn worker-local-settings-btn"
+                                        aria-label="Настройки профиля"
+                                        title="Настройки профиля"
+                                        data-local-profile-settings
+                                        data-worker-id="@Model.WorkerId"
+                                        data-account-id="@account.Id"
+                                        data-account-name="@account.DisplayName"
+                                        data-login="@(account.AvitoLogin ?? "")"
+                                        data-has-password="@(account.HasAvitoCredentials ? "true" : "false")"
+                                        data-proxy-enabled="@(account.LocalProxyEnabled ? "true" : "false")"
+                                        data-proxy-address="@(account.LocalProxyAddress ?? "")"
+                                        data-proxy-username="@(account.LocalProxyUsername ?? "")"
+                                        data-has-proxy-password="@(account.HasProxyPassword ? "true" : "false")"
+                                        data-proxy-status="@account.ProxyStatus"
+                                        data-browser-status="@account.BrowserSessionStatus"
+                                        data-can-open-browser="@(account.CanOpenBrowser ? "true" : "false")"
+                                        data-open-label="@account.OpenBrowserLabel"
+                                        data-save-url="@Url.Action("UpdateLocalAccountProfile", "Workers")"
+                                        data-open-url="@Url.Action("OpenLocalBrowser", "Workers")"
+                                        data-clear-url="@Url.Action("UpdateAccountCredentials", "Workers")">
+                                    <i class="fa-solid fa-gear" aria-hidden="true"></i>
+                                </button>
+                            }
                             <div class="row-menu" data-row-menu>
                                 <button type="button" class="row-menu-btn" aria-label="Действия" aria-expanded="false" aria-haspopup="true">
                                     <i class="fa-solid fa-ellipsis-vertical" aria-hidden="true"></i>
@@ -1026,22 +1271,89 @@
                                         <i class="fa-regular fa-pen-to-square" aria-hidden="true"></i>
                                         Настройки на воркере
                                     </a>
-                                    <button type="button"
-                                            class="row-menu-item"
-                                            data-avito-credentials
-                                            data-worker-id="@Model.WorkerId"
-                                            data-account-id="@account.Id"
-                                            data-account-name="@account.DisplayName"
-                                            data-login="@(account.AvitoLogin ?? "")"
-                                            data-has-password="@(account.HasAvitoCredentials ? "true" : "false")"
-                                            data-post-url="@Url.Action("UpdateAccountCredentials", "Workers")">
-                                        <i class="fa-solid fa-key" aria-hidden="true"></i>
-                                        Логин / пароль Avito
-                                    </button>
+                                    @if (account.IsLocal)
+                                    {
+                                        <button type="button"
+                                                class="row-menu-item"
+                                                data-local-profile-settings
+                                                data-worker-id="@Model.WorkerId"
+                                                data-account-id="@account.Id"
+                                                data-account-name="@account.DisplayName"
+                                                data-login="@(account.AvitoLogin ?? "")"
+                                                data-has-password="@(account.HasAvitoCredentials ? "true" : "false")"
+                                                data-proxy-enabled="@(account.LocalProxyEnabled ? "true" : "false")"
+                                                data-proxy-address="@(account.LocalProxyAddress ?? "")"
+                                                data-proxy-username="@(account.LocalProxyUsername ?? "")"
+                                                data-has-proxy-password="@(account.HasProxyPassword ? "true" : "false")"
+                                                data-proxy-status="@account.ProxyStatus"
+                                                data-browser-status="@account.BrowserSessionStatus"
+                                                data-can-open-browser="@(account.CanOpenBrowser ? "true" : "false")"
+                                                data-open-label="@account.OpenBrowserLabel"
+                                                data-save-url="@Url.Action("UpdateLocalAccountProfile", "Workers")"
+                                                data-open-url="@Url.Action("OpenLocalBrowser", "Workers")"
+                                                data-clear-url="@Url.Action("UpdateAccountCredentials", "Workers")">
+                                            <i class="fa-solid fa-gear" aria-hidden="true"></i>
+                                            Настройки профиля
+                                        </button>
+                                    }
+                                    else
+                                    {
+                                        <button type="button"
+                                                class="row-menu-item"
+                                                data-avito-credentials
+                                                data-worker-id="@Model.WorkerId"
+                                                data-account-id="@account.Id"
+                                                data-account-name="@account.DisplayName"
+                                                data-login="@(account.AvitoLogin ?? "")"
+                                                data-has-password="@(account.HasAvitoCredentials ? "true" : "false")"
+                                                data-post-url="@Url.Action("UpdateAccountCredentials", "Workers")">
+                                            <i class="fa-solid fa-key" aria-hidden="true"></i>
+                                            Логин / пароль Avito
+                                        </button>
+                                    }
                                     <a class="row-menu-item" href="@responsesUrl">
                                         <i class="fa-regular fa-clock" aria-hidden="true"></i>
                                         История откликов
                                     </a>
+                                    @if (account.IsLocal)
+                                    {
+                                        <form asp-action="OpenLocalBrowser" method="post" class="row-menu-item-form">
+                                            @Html.AntiForgeryToken()
+                                            <input type="hidden" name="workerId" value="@Model.WorkerId" />
+                                            <input type="hidden" name="accountId" value="@account.Id" />
+                                            <button type="submit"
+                                                    class="row-menu-item"
+                                                    data-local-open-browser
+                                                    data-worker-id="@Model.WorkerId"
+                                                    data-account-id="@account.Id"
+                                                    data-post-url="@Url.Action("OpenLocalBrowser", "Workers")"
+                                                    @(account.CanOpenBrowser ? null : "disabled")>
+                                                <i class="fa-regular fa-window-maximize" aria-hidden="true"></i>
+                                                @account.OpenBrowserLabel
+                                            </button>
+                                        </form>
+                                        <button type="button"
+                                                class="row-menu-item"
+                                                data-local-account-edit
+                                                data-worker-id="@Model.WorkerId"
+                                                data-account-id="@account.Id"
+                                                data-account-name="@account.DisplayName"
+                                                data-user-data-dir="@(account.IsManagedLocalProfile ? "" : account.LocalUserDataDir ?? "")"
+                                                data-managed="@(account.IsManagedLocalProfile ? "true" : "false")"
+                                                data-post-url="@Url.Action("UpdateLocalAccount", "Workers")">
+                                            <i class="fa-regular fa-folder-open" aria-hidden="true"></i>
+                                            Папка профиля
+                                        </button>
+                                        <form asp-action="DeleteLocalAccount" method="post" class="row-menu-item-form" onsubmit="return confirm('Удалить аккаунт из панели? Папка профиля на диске не удалится.');">
+                                            @Html.AntiForgeryToken()
+                                            <input type="hidden" name="workerId" value="@Model.WorkerId" />
+                                            <input type="hidden" name="accountId" value="@account.Id" />
+                                            <button type="submit" class="row-menu-item row-menu-item--danger">
+                                                <i class="fa-regular fa-trash-can" aria-hidden="true"></i>
+                                                Удалить аккаунт
+                                            </button>
+                                        </form>
+                                    }
                                 </div>
                             </div>
                         </td>

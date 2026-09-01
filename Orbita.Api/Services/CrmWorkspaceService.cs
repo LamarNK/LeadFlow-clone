@@ -1,4 +1,6 @@
 using System.Globalization;
+using System.IO.Compression;
+using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
@@ -19,6 +21,7 @@ public sealed class CrmWorkspaceService(
     CrmLeadDistributionService leadDistribution,
     IPanelRealtimeNotifier? panelRealtime = null,
     CrmTaskAttachmentStorageService? taskAttachments = null,
+    CrmSuccessDocumentStorageService? successDocuments = null,
     CrmCallRecordingStorageService? callRecordings = null,
     CrmDeadlineNotificationService? deadlineNotifications = null,
     PhoneNormalizer? phoneNormalizer = null,
@@ -229,7 +232,10 @@ public sealed class CrmWorkspaceService(
 
         if (query.ActiveLoadOnly)
         {
-            cardsQuery = cardsQuery.Where(x => x.IsInActiveLoad);
+            var excludedLoadStages = CrmManagerLoadRules.GetExcludedStages(office.Name).ToArray();
+            cardsQuery = cardsQuery.Where(x =>
+                x.IsInActiveLoad
+                && !excludedLoadStages.Contains(x.Stage));
         }
 
         if (query.OverdueOnly)
@@ -356,6 +362,7 @@ public sealed class CrmWorkspaceService(
                 stats.Overdue,
                 now,
                 chatUnreadByCard.GetValueOrDefault(x.Id),
+                office.Name,
                 contactPhonesByPerson.GetValueOrDefault(x.Response.PersonId));
         }
 
@@ -852,11 +859,11 @@ public sealed class CrmWorkspaceService(
         // Elevated (same office / global admin) or assigned owner may edit.
         var canEdit = isAdmin || string.Equals(card.ManagerUserId, userId, StringComparison.Ordinal);
 
-        var officeStagesJson = await db.Offices.AsNoTracking()
+        var officeInfo = await db.Offices.AsNoTracking()
             .Where(x => x.Id == card.OfficeId)
-            .Select(x => x.CrmStagesJson)
+            .Select(x => new { x.Name, x.CrmStagesJson })
             .FirstOrDefaultAsync(ct);
-        var officeStages = CrmStages.Resolve(officeStagesJson);
+        var officeStages = CrmStages.Resolve(officeInfo?.CrmStagesJson);
         var managers = await GetManagersAsync(card.OfficeId, ct);
         var names = managers.ToDictionary(x => x.Profile.UserId, x => x.Name, StringComparer.Ordinal);
         var loads = await leadDistribution.GetActiveLoadsAsync(card.OfficeId, ct);
@@ -886,10 +893,16 @@ public sealed class CrmWorkspaceService(
             .Where(x => x.CardId == cardId)
             .OrderByDescending(x => x.StartedAtUtc)
             .ToListAsync(ct);
+        var callIds = calls.Select(x => x.Id).ToArray();
+        var callAiStatuses = callIds.Length == 0
+            ? new Dictionary<Guid, string>()
+            : await db.CrmCallAiInsights.AsNoTracking()
+                .Where(x => callIds.Contains(x.CallId))
+                .ToDictionaryAsync(x => x.CallId, x => x.Status, ct);
         var openCount = tasks.Count(x => x.Status == CrmTaskStatuses.Open);
         var hasOverdue = tasks.Any(x => x.Status == CrmTaskStatuses.Open && x.DueAtUtc is DateTime due && due < now);
 
-        var activity = BuildActivity(notes, tasks, taskComments, history, calls, names, userId, isAdmin, canEdit);
+        var activity = BuildActivity(notes, tasks, taskComments, history, calls, callAiStatuses, names, userId, isAdmin, canEdit);
         var avitoChat = ParseChatMessages(card.Response.ChatMessagesJson);
         var outboundChat = await LoadOutboundChatAsync(cardId, userId, isAdmin, ct);
         var chat = CrmChatThreadMerger.Merge(avitoChat, outboundChat);
@@ -898,12 +911,24 @@ public sealed class CrmWorkspaceService(
         var chatHash = ComputeChatContentHash(card.Response.ChatMessagesJson);
         var chatRead = await db.CrmCardChatReads.AsNoTracking()
             .FirstOrDefaultAsync(x => x.CardId == cardId && x.UserId == userId, ct);
+        var successReport = await db.CrmSuccessDocuments.AsNoTracking()
+            .Where(x => x.CardId == cardId)
+            .OrderBy(x => x.CreatedAtUtc)
+            .Select(x => new CrmSuccessDocumentDto(
+                x.Id,
+                x.Category,
+                x.FileName,
+                x.ContentType,
+                x.SizeBytes,
+                x.UploadedByName,
+                x.CreatedAtUtc))
+            .ToListAsync(ct);
         var chatUnread = chat.Count > 0
             && (chatRead is null || !string.Equals(chatRead.ContentHash, chatHash, StringComparison.Ordinal))
             ? chat.Count
             : 0;
         return new CrmCandidateDetailDto(
-            ToCardDto(card, names, openCount, hasOverdue, now, chatUnread),
+            ToCardDto(card, names, openCount, hasOverdue, now, chatUnread, officeInfo?.Name),
             notes.Select(x =>
             {
                 var canManageNote = isAdmin || x.AuthorUserId == userId;
@@ -943,7 +968,9 @@ public sealed class CrmWorkspaceService(
                     canManageComment,
                     canManageComment);
             }).ToList(),
-            CrmClientTimeResolver.Resolve(card.Response.City, now));
+            CrmClientTimeResolver.Resolve(card.Response.City, now),
+            successReport,
+            card.SuccessContractMissingReason);
     }
 
     public async Task<ResponseAvatarFile?> GetCardAvatarAsync(
@@ -1001,6 +1028,7 @@ public sealed class CrmWorkspaceService(
         var attachments = taskIds.Count == 0
             ? []
             : await db.CrmTaskAttachments.Where(x => taskIds.Contains(x.TaskId)).ToListAsync(ct);
+        var successReport = await db.CrmSuccessDocuments.Where(x => x.CardId == cardId).ToListAsync(ct);
 
         if (taskIds.Count > 0)
         {
@@ -1020,6 +1048,7 @@ public sealed class CrmWorkspaceService(
             await db.CrmOutboundChatMessages.Where(x => x.CardId == cardId).ToListAsync(ct));
         db.CrmCardChatReads.RemoveRange(
             await db.CrmCardChatReads.Where(x => x.CardId == cardId).ToListAsync(ct));
+        db.CrmSuccessDocuments.RemoveRange(successReport);
 
         var calls = await db.CrmCalls.Where(x => x.CardId == cardId).ToListAsync(ct);
         calls.ForEach(x => x.CardId = null);
@@ -1038,6 +1067,13 @@ public sealed class CrmWorkspaceService(
             foreach (var attachment in attachments)
             {
                 taskAttachments.TryDelete(attachment.RelativePath);
+            }
+        }
+        if (successDocuments is not null)
+        {
+            foreach (var document in successReport)
+            {
+                successDocuments.TryDelete(document.RelativePath);
             }
         }
 
@@ -1450,6 +1486,11 @@ public sealed class CrmWorkspaceService(
             return (false, "Неизвестная причина закрытия.");
         }
 
+        if (string.Equals(reason, CrmCloseReasons.Success, StringComparison.Ordinal))
+        {
+            return (false, "Для успешного закрытия заполните отчёт и приложите обязательные файлы.");
+        }
+
         if (string.IsNullOrWhiteSpace(comment))
         {
             return (false, "При закрытии сделки обязателен комментарий с причиной и деталями.");
@@ -1491,6 +1532,372 @@ public sealed class CrmWorkspaceService(
         await db.SaveChangesAsync(ct);
         NotifyBoardChanged(card.OfficeId);
         return (true, null);
+    }
+
+    public async Task<(bool Ok, string? Error)> CloseSuccessAsync(
+        Guid cardId,
+        string? comment,
+        string? contractMissingReason,
+        IReadOnlyList<CrmSuccessDocumentUpload> uploads,
+        string actorUserId,
+        bool isAdmin,
+        CancellationToken ct = default)
+    {
+        if (successDocuments is null)
+        {
+            return (false, "Хранилище отчётов успешного закрытия не настроено.");
+        }
+
+        if (string.IsNullOrWhiteSpace(comment))
+        {
+            return (false, "При успешном закрытии обязателен комментарий.");
+        }
+
+        var normalizedContractMissingReason = string.IsNullOrWhiteSpace(contractMissingReason)
+            ? null
+            : contractMissingReason.Trim();
+        var validationError = await ValidateSuccessReportAsync(uploads, normalizedContractMissingReason, ct);
+        if (validationError is not null)
+        {
+            return (false, validationError);
+        }
+
+        var card = await FindAccessibleCardAsync(cardId, actorUserId, isAdmin, ct);
+        if (card is null)
+        {
+            return (false, "Карточка не найдена.");
+        }
+
+        if (card.IsClosed)
+        {
+            return (false, "Карточка уже закрыта.");
+        }
+
+        var now = DateTime.UtcNow;
+        var actorName = await ResolveDisplayNameAsync(actorUserId, ct);
+        var stored = new List<CrmSuccessDocumentEntity>(uploads.Count);
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        try
+        {
+            foreach (var upload in uploads)
+            {
+                var document = new CrmSuccessDocumentEntity
+                {
+                    Id = Guid.NewGuid(),
+                    CardId = card.Id,
+                    Category = upload.Category,
+                    FileName = NormalizeUploadFileName(upload.FileName),
+                    ContentType = string.IsNullOrWhiteSpace(upload.ContentType)
+                        ? "application/octet-stream"
+                        : upload.ContentType.Trim()[..Math.Min(upload.ContentType.Trim().Length, 128)],
+                    SizeBytes = upload.Length,
+                    UploadedByUserId = actorUserId,
+                    UploadedByName = actorName,
+                    CreatedAtUtc = now
+                };
+                await using var content = upload.OpenReadStream();
+                document.RelativePath = await successDocuments.SaveAsync(card.Id, document.Id, content, ct);
+                stored.Add(document);
+                db.CrmSuccessDocuments.Add(document);
+            }
+
+            card.IsClosed = true;
+            card.CloseReason = CrmCloseReasons.Success;
+            card.ClosedAtUtc = now;
+            card.IsInActiveLoad = false;
+            card.UpdatedAtUtc = now;
+            card.LastContactAtUtc = now;
+            card.SuccessContractMissingReason = uploads.Any(x =>
+                string.Equals(x.Category, CrmSuccessDocumentCategories.Contract, StringComparison.Ordinal))
+                ? null
+                : normalizedContractMissingReason;
+
+            var pendingMessages = await db.CrmOutboundChatMessages
+                .Where(message => message.CardId == card.Id
+                                  && message.Status == CrmOutboundChatStatuses.Planned
+                                  && message.CancelledAtUtc == null)
+                .ToListAsync(ct);
+            foreach (var message in pendingMessages)
+            {
+                message.CancelledAtUtc = now;
+                AddHistory(card.Id, "ChatCancelled", message.Text, actorUserId, actorName, now);
+            }
+
+            AddHistory(
+                card.Id,
+                "SuccessReportUploaded",
+                card.SuccessContractMissingReason is null
+                    ? $"Загружено файлов: {stored.Count}"
+                    : $"Загружено файлов: {stored.Count}. Фото контракта отсутствует: {card.SuccessContractMissingReason}",
+                actorUserId,
+                actorName,
+                now);
+            AddHistory(
+                card.Id,
+                "Closed",
+                CrmActivityDetails.WithComment(CrmCloseReasons.Success, comment.Trim()),
+                actorUserId,
+                actorName,
+                now);
+
+            await db.SaveChangesAsync(ct);
+            await transaction.CommitAsync(ct);
+        }
+        catch
+        {
+            await transaction.RollbackAsync(CancellationToken.None);
+            foreach (var document in stored)
+            {
+                successDocuments.TryDelete(document.RelativePath);
+            }
+            return (false, "Не удалось сохранить отчёт. Карточка не закрыта — попробуйте ещё раз.");
+        }
+
+        NotifyBoardChanged(card.OfficeId);
+        return (true, null);
+    }
+
+    public async Task<(bool Ok, string? Error)> UpdateSuccessReportAsync(
+        Guid cardId,
+        IReadOnlyCollection<Guid> keptDocumentIds,
+        string? contractMissingReason,
+        IReadOnlyList<CrmSuccessDocumentUpload> uploads,
+        string actorUserId,
+        bool canEditReport,
+        CancellationToken ct = default)
+    {
+        if (!canEditReport)
+        {
+            return (false, "Редактировать отчёт может только управляющий или администратор.");
+        }
+        if (successDocuments is null)
+        {
+            return (false, "Хранилище отчётов успешного закрытия не настроено.");
+        }
+
+        var card = await FindAccessibleCardAsync(cardId, actorUserId, isAdmin: true, ct);
+        if (card is null)
+        {
+            return (false, "Карточка не найдена.");
+        }
+        if (!card.IsClosed || !string.Equals(card.CloseReason, CrmCloseReasons.Success, StringComparison.Ordinal))
+        {
+            return (false, "Редактировать отчёт можно только у карточки, закрытой в успех.");
+        }
+
+        var existingDocuments = await db.CrmSuccessDocuments
+            .Where(document => document.CardId == cardId)
+            .ToListAsync(ct);
+        var existingIds = existingDocuments.Select(document => document.Id).ToHashSet();
+        var requestedKeptIds = keptDocumentIds.Where(documentId => documentId != Guid.Empty).ToHashSet();
+        if (requestedKeptIds.Any(documentId => !existingIds.Contains(documentId)))
+        {
+            return (false, "Один из сохраняемых файлов не относится к этому отчёту.");
+        }
+
+        var keptDocuments = existingDocuments
+            .Where(document => requestedKeptIds.Contains(document.Id))
+            .ToList();
+        var removedDocuments = existingDocuments
+            .Where(document => !requestedKeptIds.Contains(document.Id))
+            .ToList();
+        var normalizedContractMissingReason = string.IsNullOrWhiteSpace(contractMissingReason)
+            ? null
+            : contractMissingReason.Trim();
+        var validationError = await ValidateSuccessReportAsync(
+            uploads,
+            normalizedContractMissingReason,
+            ct,
+            keptDocuments);
+        if (validationError is not null)
+        {
+            return (false, validationError);
+        }
+
+        var now = DateTime.UtcNow;
+        var actorName = await ResolveDisplayNameAsync(actorUserId, ct);
+        var stored = new List<CrmSuccessDocumentEntity>(uploads.Count);
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        try
+        {
+            foreach (var upload in uploads)
+            {
+                var document = new CrmSuccessDocumentEntity
+                {
+                    Id = Guid.NewGuid(),
+                    CardId = card.Id,
+                    Category = upload.Category,
+                    FileName = NormalizeUploadFileName(upload.FileName),
+                    ContentType = string.IsNullOrWhiteSpace(upload.ContentType)
+                        ? "application/octet-stream"
+                        : upload.ContentType.Trim()[..Math.Min(upload.ContentType.Trim().Length, 128)],
+                    SizeBytes = upload.Length,
+                    UploadedByUserId = actorUserId,
+                    UploadedByName = actorName,
+                    CreatedAtUtc = now
+                };
+                await using var content = upload.OpenReadStream();
+                document.RelativePath = await successDocuments.SaveAsync(card.Id, document.Id, content, ct);
+                stored.Add(document);
+                db.CrmSuccessDocuments.Add(document);
+            }
+
+            db.CrmSuccessDocuments.RemoveRange(removedDocuments);
+            var hasContractPhoto = keptDocuments.Concat(stored).Any(document =>
+                string.Equals(document.Category, CrmSuccessDocumentCategories.Contract, StringComparison.Ordinal));
+            card.SuccessContractMissingReason = hasContractPhoto ? null : normalizedContractMissingReason;
+            card.UpdatedAtUtc = now;
+            AddHistory(
+                card.Id,
+                "SuccessReportUpdated",
+                $"Файлов в отчёте: {keptDocuments.Count + stored.Count}. Добавлено: {stored.Count}. Удалено: {removedDocuments.Count}",
+                actorUserId,
+                actorName,
+                now);
+
+            await db.SaveChangesAsync(ct);
+            await transaction.CommitAsync(ct);
+        }
+        catch
+        {
+            await transaction.RollbackAsync(CancellationToken.None);
+            foreach (var document in stored)
+            {
+                successDocuments.TryDelete(document.RelativePath);
+            }
+            return (false, "Не удалось сохранить изменения отчёта. Исходные файлы не изменены.");
+        }
+
+        foreach (var document in removedDocuments)
+        {
+            successDocuments.TryDelete(document.RelativePath);
+        }
+        NotifyBoardChanged(card.OfficeId);
+        return (true, null);
+    }
+
+    public async Task<(Stream? Stream, string? FileName, string? ContentType)> OpenSuccessDocumentAsync(
+        Guid cardId,
+        Guid documentId,
+        string actorUserId,
+        bool isAdmin,
+        CancellationToken ct = default)
+    {
+        if (successDocuments is null)
+        {
+            return (null, null, null);
+        }
+
+        var card = await FindAccessibleCardAsync(cardId, actorUserId, isAdmin, ct);
+        if (card is null)
+        {
+            return (null, null, null);
+        }
+
+        var document = await db.CrmSuccessDocuments.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == documentId && x.CardId == cardId, ct);
+        if (document is null)
+        {
+            return (null, null, null);
+        }
+
+        return (successDocuments.OpenRead(document.RelativePath), document.FileName, document.ContentType);
+    }
+
+    public async Task<(Stream? Stream, string? FileName)> OpenSuccessReportArchiveAsync(
+        Guid cardId,
+        string actorUserId,
+        bool isElevated,
+        CancellationToken ct = default)
+    {
+        if (successDocuments is null)
+        {
+            return (null, null);
+        }
+
+        var card = await FindAccessibleCardAsync(cardId, actorUserId, isElevated, ct);
+        if (card is null
+            || !card.IsClosed
+            || !string.Equals(card.CloseReason, CrmCloseReasons.Success, StringComparison.Ordinal))
+        {
+            return (null, null);
+        }
+
+        var documents = await db.CrmSuccessDocuments.AsNoTracking()
+            .Where(document => document.CardId == cardId)
+            .OrderBy(document => SuccessReportArchiveOrder(document.Category))
+            .ThenBy(document => document.CreatedAtUtc)
+            .ThenBy(document => document.FileName)
+            .ToListAsync(ct);
+        if (documents.Count == 0)
+        {
+            return (null, null);
+        }
+
+        var candidateName = await db.CandidateResponses.AsNoTracking()
+            .Where(response => response.Id == card.ResponseId)
+            .Select(response => response.FullName)
+            .FirstOrDefaultAsync(ct);
+        var safeCandidateName = SanitizeArchiveSegment(candidateName, "Кандидат", 80);
+        var reportDate = DateTimeUtcHelper.EnsureUtc(card.ClosedAtUtc ?? card.UpdatedAtUtc).ToString("yyyy-MM-dd");
+        var downloadFileName = $"Отчёт-{safeCandidateName}-{reportDate}.zip";
+        var tempPath = Path.Combine(Path.GetTempPath(), $"orbita-success-report-{Guid.NewGuid():N}.zip");
+
+        try
+        {
+            await using (var output = new FileStream(
+                             tempPath,
+                             FileMode.CreateNew,
+                             FileAccess.Write,
+                             FileShare.None,
+                             bufferSize: 81920,
+                             FileOptions.Asynchronous | FileOptions.SequentialScan))
+            {
+                using var archive = new ZipArchive(output, ZipArchiveMode.Create, leaveOpen: true, Encoding.UTF8);
+                var usedEntryNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                var manifest = archive.CreateEntry("Отчёт.txt", CompressionLevel.Fastest);
+                await using (var manifestStream = manifest.Open())
+                {
+                    var manifestBytes = new UTF8Encoding(encoderShouldEmitUTF8Identifier: true)
+                        .GetBytes(BuildSuccessReportManifest(card, candidateName, documents));
+                    await manifestStream.WriteAsync(manifestBytes, ct);
+                }
+                usedEntryNames.Add(manifest.FullName);
+
+                foreach (var document in documents)
+                {
+                    await using var source = successDocuments.OpenRead(document.RelativePath)
+                        ?? throw new FileNotFoundException("Файл отчёта отсутствует в хранилище.", document.RelativePath);
+                    var folder = SuccessReportArchiveFolder(document.Category);
+                    var fileName = SanitizeArchiveSegment(document.FileName, "Файл", 140);
+                    var entryName = EnsureUniqueArchiveEntryName(folder, fileName, usedEntryNames);
+                    var entry = archive.CreateEntry(entryName, CompressionLevel.Fastest);
+                    await using var entryStream = entry.Open();
+                    await source.CopyToAsync(entryStream, ct);
+                }
+            }
+
+            var stream = new FileStream(
+                tempPath,
+                FileMode.Open,
+                FileAccess.Read,
+                FileShare.Read,
+                bufferSize: 81920,
+                FileOptions.DeleteOnClose | FileOptions.Asynchronous | FileOptions.SequentialScan);
+            return (stream, downloadFileName);
+        }
+        catch
+        {
+            try
+            {
+                if (File.Exists(tempPath)) File.Delete(tempPath);
+            }
+            catch
+            {
+                // The response must fail closed even if temporary-file cleanup is delayed.
+            }
+            return (null, null);
+        }
     }
 
     public async Task<bool> ReopenAsync(Guid cardId, string actorUserId, bool isAdmin, CancellationToken ct = default)
@@ -3308,6 +3715,42 @@ public sealed class CrmWorkspaceService(
             string.IsNullOrWhiteSpace(call.RecordingContentType) ? "audio/wav" : call.RecordingContentType);
     }
 
+    public async Task<CrmCallAiInsightDto?> GetCallAiInsightAsync(
+        Guid callId,
+        string userId,
+        bool isAdmin,
+        CancellationToken ct = default)
+    {
+        var call = await db.CrmCalls.AsNoTracking()
+            .Where(x => x.Id == callId)
+            .Select(x => new { x.CardId })
+            .FirstOrDefaultAsync(ct);
+        if (call?.CardId is not Guid cardId) return null;
+
+        var card = await db.CrmCandidateCards.AsNoTracking()
+            .Where(x => x.Id == cardId)
+            .Select(x => new { x.OfficeId, x.ManagerUserId })
+            .FirstOrDefaultAsync(ct);
+        if (card is null || !await CanAccessCardAsync(card.OfficeId, card.ManagerUserId, userId, isAdmin, ct))
+        {
+            return null;
+        }
+
+        var insight = await db.CrmCallAiInsights.AsNoTracking()
+            .FirstOrDefaultAsync(x => x.CallId == callId, ct);
+        if (insight is null) return null;
+
+        return new CrmCallAiInsightDto(
+            insight.CallId,
+            insight.Status,
+            insight.TranscriptText,
+            DeserializeOrEmpty<CrmCallTranscriptSegmentDto>(insight.SegmentsJson),
+            DeserializeOrDefault<CrmCallAiAnalysisDto>(insight.AnalysisJson),
+            insight.AnalysisRawText,
+            insight.LastErrorMessage,
+            insight.UpdatedAtUtc);
+    }
+
     public async Task<CrmTaskCommentDto?> AddTaskCommentAsync(
         Guid taskId,
         string text,
@@ -3749,6 +4192,7 @@ public sealed class CrmWorkspaceService(
         bool hasOverdue,
         DateTime now,
         int chatUnreadCount = 0,
+        string? officeName = null,
         IReadOnlyList<string>? contactPhones = null)
     {
         var stageAt = card.StageChangedAtUtc == default ? card.CreatedAtUtc : card.StageChangedAtUtc;
@@ -3765,7 +4209,7 @@ public sealed class CrmWorkspaceService(
             card.Stage,
             card.ManagerUserId,
             card.ManagerUserId is null ? null : names.GetValueOrDefault(card.ManagerUserId, card.ManagerUserId),
-            card.IsInActiveLoad,
+            CrmManagerLoadRules.CountsTowardsLoad(card.Stage, card.IsInActiveLoad, card.IsClosed, officeName),
             card.CreatedAtUtc,
             stageAt,
             card.LastContactAtUtc,
@@ -3819,6 +4263,7 @@ public sealed class CrmWorkspaceService(
         IReadOnlyList<CrmTaskCommentEntity> taskComments,
         IReadOnlyList<CrmCandidateHistoryEntity> history,
         IReadOnlyList<CrmCallEntity> calls,
+        IReadOnlyDictionary<Guid, string> callAiStatuses,
         IReadOnlyDictionary<string, string> names,
         string userId,
         bool isAdmin,
@@ -3869,6 +4314,8 @@ public sealed class CrmWorkspaceService(
                 and not "TaskCreated"
                 and not "TaskUpdated"
                 and not "TaskCompleted"
+                and not "SuccessReportUploaded"
+                and not "SuccessReportUpdated"
                 and not "BitrixCommentImported"
                 and not "BitrixActivityImported")
             .Select(h =>
@@ -3909,7 +4356,8 @@ public sealed class CrmWorkspaceService(
                 CallDurationSeconds: call.DurationSeconds,
                 CallRecordingUrl: call.RecordingUrl,
                 CallRecordingStored: !string.IsNullOrWhiteSpace(call.RecordingStoragePath),
-                CallClientPhone: call.ClientPhoneNormalized);
+                CallClientPhone: call.ClientPhoneNormalized,
+                CallAiStatus: callAiStatuses.GetValueOrDefault(call.Id));
         }));
         return items
             .OrderByDescending(x => x.IsPinned)
@@ -3917,6 +4365,22 @@ public sealed class CrmWorkspaceService(
             .Take(80)
             .ToList();
     }
+
+    private static T? DeserializeOrDefault<T>(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return default;
+        try
+        {
+            return JsonSerializer.Deserialize<T>(json, new JsonSerializerOptions(JsonSerializerDefaults.Web));
+        }
+        catch (JsonException)
+        {
+            return default;
+        }
+    }
+
+    private static IReadOnlyList<T> DeserializeOrEmpty<T>(string? json) =>
+        DeserializeOrDefault<IReadOnlyList<T>>(json) ?? [];
 
     private static CrmTaskCommentEntity? FindCompletionComment(
         CrmTaskEntity task,
@@ -3953,6 +4417,8 @@ public sealed class CrmWorkspaceService(
         "NoteDeleted" => "Комментарий удалён",
         "NotePinned" => "Комментарий закреплён",
         "NoteUnpinned" => "Комментарий откреплён",
+        "SuccessReportUploaded" => "Загружен отчёт по успешному закрытию",
+        "SuccessReportUpdated" => "Отчёт по успешному закрытию изменён",
         "ChatQueued" => "Сообщение поставлено в очередь",
         "ChatSent" => "Сообщение отправлено в Avito",
         "BitrixDealImported" => "Карточка импортирована из Bitrix24",
@@ -4247,6 +4713,254 @@ public sealed class CrmWorkspaceService(
         }).ToList();
     }
 
+    private static int SuccessReportArchiveOrder(string category) => category switch
+    {
+        CrmSuccessDocumentCategories.Correspondence => 1,
+        CrmSuccessDocumentCategories.Ticket => 2,
+        CrmSuccessDocumentCategories.TicketReceipt => 3,
+        CrmSuccessDocumentCategories.Contract => 4,
+        CrmSuccessDocumentCategories.Relationship => 5,
+        CrmSuccessDocumentCategories.CandidateDocument => 6,
+        CrmSuccessDocumentCategories.Other => 7,
+        _ => 99
+    };
+
+    private static string SuccessReportArchiveFolder(string category) => category switch
+    {
+        CrmSuccessDocumentCategories.Correspondence => "01 Переписка",
+        CrmSuccessDocumentCategories.Ticket => "02 Билеты",
+        CrmSuccessDocumentCategories.TicketReceipt => "03 Чеки на билеты",
+        CrmSuccessDocumentCategories.Contract => "04 Контракт",
+        CrmSuccessDocumentCategories.Relationship => "05 Отношение",
+        CrmSuccessDocumentCategories.CandidateDocument => "06 Документы и прочие файлы/Документы кандидата",
+        CrmSuccessDocumentCategories.Other => "06 Документы и прочие файлы/Прочее",
+        _ => "06 Документы и прочие файлы/Без категории"
+    };
+
+    private static string EnsureUniqueArchiveEntryName(
+        string folder,
+        string fileName,
+        ISet<string> usedEntryNames)
+    {
+        var candidate = $"{folder}/{fileName}";
+        if (usedEntryNames.Add(candidate))
+        {
+            return candidate;
+        }
+
+        var extension = Path.GetExtension(fileName);
+        var stem = Path.GetFileNameWithoutExtension(fileName);
+        for (var suffix = 2; ; suffix++)
+        {
+            candidate = $"{folder}/{stem} ({suffix}){extension}";
+            if (usedEntryNames.Add(candidate))
+            {
+                return candidate;
+            }
+        }
+    }
+
+    private static string SanitizeArchiveSegment(string? value, string fallback, int maxLength)
+    {
+        var normalized = string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
+        normalized = normalized.Replace('\\', '_').Replace('/', '_');
+        var invalidChars = Path.GetInvalidFileNameChars()
+            .Concat("<>:\"|?*".ToCharArray())
+            .ToHashSet();
+        var builder = new StringBuilder(normalized.Length);
+        foreach (var character in normalized)
+        {
+            builder.Append(char.IsControl(character) || invalidChars.Contains(character) ? '_' : character);
+        }
+
+        normalized = builder.ToString().Trim(' ', '.');
+        if (string.IsNullOrWhiteSpace(normalized)) normalized = fallback;
+        if (normalized.Length <= maxLength) return normalized;
+
+        var extension = Path.GetExtension(normalized);
+        if (extension.Length is > 0 and <= 20 && extension.Length < maxLength)
+        {
+            var stemLength = maxLength - extension.Length;
+            return normalized[..stemLength].TrimEnd() + extension;
+        }
+        return normalized[..maxLength].TrimEnd();
+    }
+
+    private static string BuildSuccessReportManifest(
+        CrmCandidateCardEntity card,
+        string? candidateName,
+        IReadOnlyCollection<CrmSuccessDocumentEntity> documents)
+    {
+        var builder = new StringBuilder();
+        builder.AppendLine("ОТЧЁТ ПО УСПЕШНО ЗАКРЫТОМУ КАНДИДАТУ");
+        builder.AppendLine();
+        builder.AppendLine($"Кандидат: {candidateName?.Trim() ?? "Не указан"}");
+        builder.AppendLine($"ID карточки: {card.Id:D}");
+        builder.AppendLine($"Дата закрытия: {DateTimeUtcHelper.EnsureUtc(card.ClosedAtUtc ?? card.UpdatedAtUtc):dd.MM.yyyy HH:mm} UTC");
+        builder.AppendLine($"Всего файлов: {documents.Count}");
+        builder.AppendLine();
+
+        var sections = new[]
+        {
+            (Number: 1, Title: "Переписка", Categories: new[] { CrmSuccessDocumentCategories.Correspondence }, Optional: false),
+            (Number: 2, Title: "Билеты", Categories: new[] { CrmSuccessDocumentCategories.Ticket }, Optional: false),
+            (Number: 3, Title: "Чеки на билеты", Categories: new[] { CrmSuccessDocumentCategories.TicketReceipt }, Optional: false),
+            (Number: 4, Title: "Контракт", Categories: new[] { CrmSuccessDocumentCategories.Contract }, Optional: false),
+            (Number: 5, Title: "Отношение", Categories: new[] { CrmSuccessDocumentCategories.Relationship }, Optional: true),
+            (Number: 6, Title: "Документы и прочие файлы", Categories: new[] { CrmSuccessDocumentCategories.CandidateDocument, CrmSuccessDocumentCategories.Other }, Optional: true)
+        };
+        foreach (var section in sections)
+        {
+            var sectionDocuments = documents
+                .Where(document => section.Categories.Contains(document.Category, StringComparer.Ordinal))
+                .ToArray();
+            builder.AppendLine($"{section.Number}. {section.Title}");
+            if (sectionDocuments.Length > 0)
+            {
+                foreach (var document in sectionDocuments)
+                {
+                    builder.AppendLine($"   • {document.FileName}");
+                }
+            }
+            else if (section.Number == 4 && !string.IsNullOrWhiteSpace(card.SuccessContractMissingReason))
+            {
+                builder.AppendLine("   Фото отсутствует.");
+                builder.AppendLine($"   Причина: {card.SuccessContractMissingReason.Trim()}");
+            }
+            else
+            {
+                builder.AppendLine(section.Optional ? "   Не приложено." : "   Файлы отсутствуют.");
+            }
+            builder.AppendLine();
+        }
+
+        return builder.ToString();
+    }
+
+    private static readonly HashSet<string> SuccessReportImageExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".heic", ".heif", ".tif", ".tiff"
+    };
+
+    private static async Task<string?> ValidateSuccessReportAsync(
+        IReadOnlyList<CrmSuccessDocumentUpload> uploads,
+        string? contractMissingReason,
+        CancellationToken ct,
+        IReadOnlyCollection<CrmSuccessDocumentEntity>? existingDocuments = null)
+    {
+        existingDocuments ??= [];
+        if (uploads.Count + existingDocuments.Count > CrmSuccessDocumentLimits.MaxFilesPerReport)
+        {
+            return $"В одном отчёте можно загрузить не более {CrmSuccessDocumentLimits.MaxFilesPerReport} файлов.";
+        }
+
+        long totalSize = existingDocuments.Sum(document => document.SizeBytes);
+        if (totalSize > CrmSuccessDocumentLimits.MaxReportSizeBytes)
+        {
+            return "Общий размер отчёта превышает допустимые 200 МБ.";
+        }
+        foreach (var upload in uploads)
+        {
+            if (!CrmSuccessDocumentCategories.IsValid(upload.Category))
+            {
+                return "В отчёте обнаружена неизвестная категория файла.";
+            }
+
+            if (upload.Length <= 0)
+            {
+                return $"Файл «{NormalizeUploadFileName(upload.FileName)}» пустой.";
+            }
+
+            if (upload.Length > CrmSuccessDocumentLimits.MaxFileSizeBytes)
+            {
+                return $"Файл «{NormalizeUploadFileName(upload.FileName)}» превышает допустимые 20 МБ.";
+            }
+
+            totalSize += upload.Length;
+            if (totalSize > CrmSuccessDocumentLimits.MaxReportSizeBytes)
+            {
+                return "Общий размер отчёта превышает допустимые 200 МБ.";
+            }
+
+            var extension = Path.GetExtension(upload.FileName);
+            var isImage = SuccessReportImageExtensions.Contains(extension);
+            var isPdf = string.Equals(extension, ".pdf", StringComparison.OrdinalIgnoreCase);
+            var formatAllowed = upload.Category switch
+            {
+                CrmSuccessDocumentCategories.Ticket => isPdf,
+                CrmSuccessDocumentCategories.TicketReceipt => isImage || isPdf,
+                CrmSuccessDocumentCategories.Other => true,
+                _ => isImage
+            };
+            if (!formatAllowed)
+            {
+                return upload.Category switch
+                {
+                    CrmSuccessDocumentCategories.Ticket => "Билеты принимаются только в формате PDF.",
+                    CrmSuccessDocumentCategories.TicketReceipt => "Чек должен быть изображением или PDF-файлом.",
+                    _ => $"Для раздела «{CrmSuccessDocumentCategories.GetLabel(upload.Category)}» загрузите изображение."
+                };
+            }
+
+            if (isPdf && !await HasPdfSignatureAsync(upload, ct))
+            {
+                return $"Файл «{NormalizeUploadFileName(upload.FileName)}» не является корректным PDF.";
+            }
+        }
+
+        foreach (var category in CrmSuccessDocumentCategories.Required)
+        {
+            if (!uploads.Any(x => string.Equals(x.Category, category, StringComparison.Ordinal))
+                && !existingDocuments.Any(x => string.Equals(x.Category, category, StringComparison.Ordinal)))
+            {
+                return $"Добавьте обязательный раздел «{CrmSuccessDocumentCategories.GetLabel(category)}».";
+            }
+        }
+
+        var hasContractPhoto = uploads.Any(x =>
+                                   string.Equals(x.Category, CrmSuccessDocumentCategories.Contract, StringComparison.Ordinal))
+                               || existingDocuments.Any(x =>
+                                   string.Equals(x.Category, CrmSuccessDocumentCategories.Contract, StringComparison.Ordinal));
+        if (!hasContractPhoto && string.IsNullOrWhiteSpace(contractMissingReason))
+        {
+            return "Добавьте фото контракта или укажите обязательную причину, почему фото нет.";
+        }
+
+        if (contractMissingReason?.Length > 2000)
+        {
+            return "Причина отсутствия фото контракта не должна превышать 2000 символов.";
+        }
+
+        return null;
+    }
+
+    private static async Task<bool> HasPdfSignatureAsync(CrmSuccessDocumentUpload upload, CancellationToken ct)
+    {
+        await using var stream = upload.OpenReadStream();
+        var signature = new byte[5];
+        var read = 0;
+        while (read < signature.Length)
+        {
+            var current = await stream.ReadAsync(signature.AsMemory(read, signature.Length - read), ct);
+            if (current == 0) break;
+            read += current;
+        }
+
+        return read == signature.Length
+               && signature[0] == '%'
+               && signature[1] == 'P'
+               && signature[2] == 'D'
+               && signature[3] == 'F'
+               && signature[4] == '-';
+    }
+
+    private static string NormalizeUploadFileName(string? fileName)
+    {
+        var normalized = Path.GetFileName(fileName ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(normalized)) return "Файл";
+        return normalized.Length <= 255 ? normalized : normalized[^255..];
+    }
+
     private static string FormatMessageTime(DateTime at)
     {
         var utc = at.Kind == DateTimeKind.Utc ? at : DateTime.SpecifyKind(at, DateTimeKind.Utc);
@@ -4269,3 +4983,10 @@ public sealed class CrmWorkspaceService(
         return at;
     }
 }
+
+public sealed record CrmSuccessDocumentUpload(
+    string Category,
+    string FileName,
+    string ContentType,
+    long Length,
+    Func<Stream> OpenReadStream);

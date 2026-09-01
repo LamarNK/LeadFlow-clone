@@ -69,6 +69,17 @@ public sealed class OrbitaApiClient
         return response.IsSuccessStatusCode;
     }
 
+    public async Task<bool> ReportProviderCheckAsync(
+        ReportWorkerBrowserProviderCheckRequest report,
+        CancellationToken ct)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "api/v1/workers/provider-checks");
+        ApplyAuth(request);
+        request.Content = JsonContent.Create(report);
+        var response = await _http.SendAsync(request, ct).ConfigureAwait(false);
+        return response.IsSuccessStatusCode;
+    }
+
     public async Task<WorkerMonitoringStatsDto?> GetMonitoringStatsAsync(CancellationToken ct)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, "api/v1/workers/monitoring-stats");
@@ -196,6 +207,14 @@ public sealed class OrbitaApiClient
         ApplyAuth(request);
         var response = await _http.SendAsync(request, ct).ConfigureAwait(false);
         return response.IsSuccessStatusCode;
+    }
+
+    public async Task CompleteLocalChromeLoginAsync(Guid sessionId, CancellationToken ct)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "api/v1/workers/local-chrome-login/complete");
+        ApplyAuth(request);
+        request.Content = JsonContent.Create(new CompleteLocalChromeLoginRequest(sessionId));
+        await _http.SendAsync(request, ct).ConfigureAwait(false);
     }
 
     public async Task SendHeartbeatAsync(WorkerHeartbeatRequest heartbeat, CancellationToken ct)

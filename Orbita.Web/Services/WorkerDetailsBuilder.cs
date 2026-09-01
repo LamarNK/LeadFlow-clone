@@ -57,7 +57,10 @@ internal static class WorkerDetailsBuilder
         var normalizedProvider = WorkerAccountCatalogFilter.NormalizeProvider(accountProvider);
         var tableSort = sort ?? TableSortState.Create("account", descending: false);
         var filteredAccounts = FilterAccounts(accounts, normalizedSearch, normalizedGroupId, normalizedProvider);
-        var providerAccounts = accounts.Where(a => WorkerAccountCatalogFilter.MatchesProvider(normalizedProvider, a.MultiloginProfileId));
+        var providerAccounts = accounts.Where(a => WorkerAccountCatalogFilter.MatchesProvider(
+            normalizedProvider,
+            a.MultiloginProfileId,
+            a.LocalUserDataDir));
         var groupOptions = WorkerAccountCatalogFilter.BuildLocationOptions(providerAccounts, worker.AdsPowerGroups);
         var accountChips = FilterChipsBuilder.ForWorkerAccounts(
             worker.Id,
@@ -67,8 +70,9 @@ internal static class WorkerDetailsBuilder
             groupOptions,
             tableSort.Column,
             tableSort.Dir);
-        var adsPowerCount = accounts.Count(a => !a.IsMultilogin);
+        var adsPowerCount = accounts.Count(a => a.ProfileProvider == "AdsPower");
         var multiloginCount = accounts.Count(a => a.IsMultilogin);
+        var localCount = accounts.Count(a => a.IsLocal);
 
         return new WorkerDetailsViewModel
         {
@@ -95,6 +99,7 @@ internal static class WorkerDetailsBuilder
             CatalogAccountCount = accounts.Count,
             AdsPowerAccountCount = adsPowerCount,
             MultiloginAccountCount = multiloginCount,
+            LocalAccountCount = localCount,
             AccountSearchQuery = normalizedSearch,
             AccountGroupId = normalizedGroupId,
             AccountProvider = normalizedProvider,
@@ -111,6 +116,25 @@ internal static class WorkerDetailsBuilder
             MultiloginLauncherUrl = worker.MultiloginLauncherUrl,
             MultiloginCloudApiUrl = worker.MultiloginCloudApiUrl,
             HasMultiloginAutomationToken = worker.HasMultiloginAutomationToken,
+            LocalChromeExecutablePath = worker.LocalChromeExecutablePath,
+            AdsPowerEnabled = worker.AdsPowerEnabled,
+            MultiloginEnabled = worker.MultiloginEnabled,
+            LocalChromeEnabled = worker.LocalChromeEnabled,
+            AdsPowerCheck = ResolvePresentedCheck(
+                worker.AdsPowerCheck,
+                WorkerBrowserProviderKinds.AdsPower,
+                worker.AdsPowerEnabled,
+                needsSetup: false),
+            MultiloginCheck = ResolvePresentedCheck(
+                worker.MultiloginCheck,
+                WorkerBrowserProviderKinds.Multilogin,
+                worker.MultiloginEnabled,
+                needsSetup: !worker.HasMultiloginAutomationToken),
+            LocalChromeCheck = ResolvePresentedCheck(
+                worker.LocalChromeCheck,
+                WorkerBrowserProviderKinds.Local,
+                worker.LocalChromeEnabled,
+                needsSetup: false),
             AdsPowerGroupId = worker.AdsPowerGroupId,
             AdsPowerGroupName = worker.AdsPowerGroupName,
             AdsPowerGroups = BuildAdsPowerGroupOptions(
@@ -168,12 +192,17 @@ internal static class WorkerDetailsBuilder
                     a.AdsPowerGroupName,
                     a.MultiloginProfileId,
                     a.MultiloginFolderId,
-                    a.ProfileProvider));
+                    a.LocalUserDataDir,
+                    a.ProfileProvider,
+                    a.ProfileProviderLabel));
         }
 
         if (!string.IsNullOrWhiteSpace(provider))
         {
-            query = query.Where(a => WorkerAccountCatalogFilter.MatchesProvider(provider, a.MultiloginProfileId));
+            query = query.Where(a => WorkerAccountCatalogFilter.MatchesProvider(
+                provider,
+                a.MultiloginProfileId,
+                a.LocalUserDataDir));
         }
 
         if (!string.IsNullOrWhiteSpace(groupId))
@@ -190,9 +219,27 @@ internal static class WorkerDetailsBuilder
         WorkerBalanceDto? balance,
         Guid workerId,
         IReadOnlyList<WorkerActiveAccountDto>? activeAccounts = null,
-        bool workerIsOnline = false)
+        bool workerIsOnline = false,
+        bool adsPowerEnabled = true,
+        bool multiloginEnabled = true,
+        bool localChromeEnabled = true,
+        Guid? pendingLocalLoginAccountId = null)
     {
-        var (label, tone) = AccountStatusMapper.ForWorkerDetails(account.Status, account.IsEnabledInPanel);
+        var providerEnabled = IsAccountProviderEnabled(
+            account,
+            adsPowerEnabled,
+            multiloginEnabled,
+            localChromeEnabled);
+        var (label, tone) = IsLocalAccount(account)
+            ? LocalChromeAccountStatus.ForWorkerDetails(
+                account.Status,
+                account.IsEnabledInPanel,
+                providerEnabled,
+                account.LastMonitoringAt)
+            : AccountStatusMapper.ForWorkerDetails(
+                account.Status,
+                account.IsEnabledInPanel,
+                providerEnabled);
         var responses = account.TodayResponses;
         var metricLinks = AccountMetricLinks.Hrefs(workerId, account.AccountId);
         var subProfiles = SubProfileViewModelMapper.Map(
@@ -219,6 +266,8 @@ internal static class WorkerDetailsBuilder
             workerIsOnline,
             account.AccountId,
             activeAccounts);
+        var isLocal = IsLocalAccount(account);
+        var isMonitoring = processing.IsProcessingNow;
         return new WorkerAccountRowViewModel
         {
             Id = account.AccountId,
@@ -229,10 +278,31 @@ internal static class WorkerDetailsBuilder
             AdsPowerGroupName = account.AdsPowerGroupName,
             MultiloginProfileId = account.MultiloginProfileId,
             MultiloginFolderId = account.MultiloginFolderId,
+            LocalUserDataDir = account.LocalUserDataDir,
+            IsProviderEnabled = providerEnabled,
             HasAvitoCredentials = account.HasAvitoCredentials,
             AvitoLogin = account.AvitoLogin,
+            LocalProxyEnabled = isLocal && account.LocalProxyEnabled,
+            LocalProxyAddress = isLocal ? account.LocalProxyAddress : null,
+            LocalProxyUsername = isLocal ? account.LocalProxyUsername : null,
+            HasProxyPassword = isLocal && account.HasProxyPassword,
+            BrowserSessionStatus = isLocal
+                ? LocalChromeProxyRules.BrowserSessionStatus(
+                    isMonitoring,
+                    pendingLocalLoginAccountId == account.AccountId)
+                : LocalChromeProxyRules.BrowserFree,
+            CanOpenBrowser = LocalChromeProxyRules.CanOpenBrowser(isLocal, providerEnabled, isMonitoring),
             StatusLabel = label,
             StatusTone = tone,
+            NeedsFirstLogin = IsLocalAccount(account)
+                && LocalChromeAccountStatus.IsFirstLoginRequired(
+                    account.Status,
+                    account.LastMonitoringAt),
+            OpenBrowserLabel = IsLocalAccount(account)
+                ? LocalChromeAccountStatus.OpenBrowserLabel(
+                    account.Status,
+                    account.LastMonitoringAt)
+                : "Открыть браузер",
             Balance = balance?.TotalBalance,
             BalanceText = balance is null
                 ? "—"
@@ -246,8 +316,10 @@ internal static class WorkerDetailsBuilder
             ErrorHint = errorHint,
             SubProfiles = subProfiles,
             SubProfilesSummary = SubProfileViewModelMapper.BuildSummary(subProfiles),
-            CanRefreshSubProfiles = !string.IsNullOrWhiteSpace(account.AdsPowerProfileId)
-                || !string.IsNullOrWhiteSpace(account.MultiloginProfileId),
+            CanRefreshSubProfiles = providerEnabled
+                && (!string.IsNullOrWhiteSpace(account.AdsPowerProfileId)
+                    || !string.IsNullOrWhiteSpace(account.MultiloginProfileId)
+                    || !string.IsNullOrWhiteSpace(account.LocalUserDataDir)),
             IsSubProfilesRefreshPending = SubProfileViewModelMapper.IsRefreshPending(
                 account.SubProfilesRefreshRequestedAtUtc,
                 account.SubProfilesRefreshedAtUtc),
@@ -256,6 +328,64 @@ internal static class WorkerDetailsBuilder
             ProcessingTone = processing.Tone,
             ProcessingSubProfileId = processing.SubProfileId
         };
+    }
+
+    private static bool IsAccountProviderEnabled(
+        WorkerAccountDto account,
+        bool adsPowerEnabled,
+        bool multiloginEnabled,
+        bool localChromeEnabled)
+    {
+        if (!string.IsNullOrWhiteSpace(account.MultiloginProfileId))
+        {
+            return multiloginEnabled;
+        }
+
+        if (!string.IsNullOrWhiteSpace(account.LocalUserDataDir))
+        {
+            return localChromeEnabled;
+        }
+
+        return adsPowerEnabled;
+    }
+
+    private static bool IsLocalAccount(WorkerAccountDto account) =>
+        !string.IsNullOrWhiteSpace(account.LocalUserDataDir)
+        && string.IsNullOrWhiteSpace(account.MultiloginProfileId);
+
+    private static WorkerBrowserProviderCheckDto ResolvePresentedCheck(
+        WorkerBrowserProviderCheckDto? dto,
+        string provider,
+        bool enabled,
+        bool needsSetup)
+    {
+        if (!enabled)
+        {
+            return FallbackCheck(provider, enabled: false, needsSetup: false);
+        }
+
+        if (needsSetup)
+        {
+            return FallbackCheck(provider, enabled: true, needsSetup: true);
+        }
+
+        return dto ?? FallbackCheck(provider, enabled: true, needsSetup: false);
+    }
+
+    private static WorkerBrowserProviderCheckDto FallbackCheck(string provider, bool enabled, bool needsSetup)
+    {
+        var status = WorkerBrowserProviderStatus.Resolve(enabled, needsSetup, checking: false, lastSucceeded: null);
+        return new WorkerBrowserProviderCheckDto(
+            provider,
+            status,
+            WorkerBrowserProviderStatus.Label(status),
+            status == WorkerBrowserProviderStatus.Disabled
+                ? WorkerBrowserProviderMessages.DisabledHint
+                : status == WorkerBrowserProviderStatus.NeedsSetup
+                    ? WorkerBrowserProviderMessages.NeedsToken
+                    : null,
+            CanCheck: enabled && !needsSetup,
+            CanSync: false);
     }
 
     private static IReadOnlyList<AdsPowerGroupDto> BuildAdsPowerGroupOptions(

@@ -5,6 +5,7 @@ public static class BitrixCrmImportStages
     public const string MissedCall = "НДЗ";
     public const string Questionnaire = "Анкета";
     public const string Negotiations = "Переговоры";
+    public const string LongTermNegotiations = "Переговоры долгосрок";
 
     public static readonly IReadOnlyList<string> Default =
         [MissedCall, Questionnaire, Negotiations];
@@ -25,6 +26,15 @@ public sealed record BitrixCrmImportPreviewRequest(
 public sealed record BitrixCrmImportExecuteRequest(
     int CategoryId = 0,
     IReadOnlyList<string>? StageNames = null,
+    IReadOnlyList<long>? DealIds = null);
+
+public sealed record BitrixCrmFileImportPreviewDto(
+    string ImportToken,
+    string FileName,
+    BitrixCrmImportPreviewDto Preview);
+
+public sealed record BitrixCrmFileImportExecuteRequest(
+    string ImportToken,
     IReadOnlyList<long>? DealIds = null);
 
 public sealed record BitrixCrmImportStageSummaryDto(

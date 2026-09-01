@@ -1153,6 +1153,69 @@ namespace Orbita.Api.Data.Migrations
                     b.ToTable("CaptchaSessions");
                 });
 
+            modelBuilder.Entity("Orbita.Api.Data.CrmCallAiInsightEntity", b =>
+                {
+                    b.Property<Guid>("CallId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("AnalysisJson")
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("AnalysisRawText")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime?>("AnalyzedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("Attempts")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("LastErrorCode")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<string>("LastErrorMessage")
+                        .HasMaxLength(500)
+                        .HasColumnType("character varying(500)");
+
+                    b.Property<DateTime?>("NextAttemptAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("PromptVersion")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<double?>("Score")
+                        .HasColumnType("double precision");
+
+                    b.Property<string>("SegmentsJson")
+                        .HasColumnType("jsonb");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateTime?>("TranscribedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("TranscriptText")
+                        .HasColumnType("text");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("CallId");
+
+                    b.HasIndex("Status", "NextAttemptAtUtc");
+
+                    b.ToTable("CrmCallAiInsights");
+                });
+
             modelBuilder.Entity("Orbita.Api.Data.CrmCallEntity", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1194,6 +1257,9 @@ namespace Orbita.Api.Data.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("character varying(128)");
 
+                    b.Property<DateTime?>("NextRecordingArchiveAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<DateTime?>("NextRecordingFetchAtUtc")
                         .HasColumnType("timestamp with time zone");
 
@@ -1205,12 +1271,18 @@ namespace Orbita.Api.Data.Migrations
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");
 
+                    b.Property<Guid?>("ProviderAccountId")
+                        .HasColumnType("uuid");
+
                     b.Property<string>("ProviderUserKey")
                         .HasMaxLength(128)
                         .HasColumnType("character varying(128)");
 
                     b.Property<DateTime>("ReceivedAtUtc")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("RecordingArchiveAttempts")
+                        .HasColumnType("integer");
 
                     b.Property<string>("RecordingContentType")
                         .HasMaxLength(128)
@@ -1241,12 +1313,19 @@ namespace Orbita.Api.Data.Migrations
 
                     b.HasIndex("CardId", "StartedAtUtc");
 
+                    b.HasIndex("Provider", "NextRecordingArchiveAtUtc");
+
                     b.HasIndex("Provider", "NextRecordingFetchAtUtc");
+
+                    b.HasIndex("ProviderAccountId", "ExternalCallId")
+                        .IsUnique()
+                        .HasFilter("\"ProviderAccountId\" IS NOT NULL");
 
                     b.HasIndex("OfficeId", "ClientPhoneNormalized", "StartedAtUtc");
 
                     b.HasIndex("OfficeId", "Provider", "ExternalCallId")
-                        .IsUnique();
+                        .IsUnique()
+                        .HasFilter("\"ProviderAccountId\" IS NULL");
 
                     b.ToTable("CrmCalls");
                 });
@@ -1304,6 +1383,10 @@ namespace Orbita.Api.Data.Migrations
                     b.Property<DateTime>("StageChangedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("SuccessContractMissingReason")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
                     b.Property<DateTime>("UpdatedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
@@ -1314,12 +1397,12 @@ namespace Orbita.Api.Data.Migrations
 
                     b.HasIndex("OfficeId", "Stage");
 
+                    b.HasIndex("OfficeId", "InitialManagerUserId", "InitialAssignedAtUtc")
+                        .HasDatabaseName("IX_CrmCards_Office_InitialManager_AssignedAt");
+
                     b.HasIndex("OfficeId", "IsClosed", "NextActionAtUtc");
 
                     b.HasIndex("OfficeId", "ManagerUserId", "IsInActiveLoad");
-
-                    b.HasIndex("OfficeId", "InitialManagerUserId", "InitialAssignedAtUtc")
-                        .HasDatabaseName("IX_CrmCards_Office_InitialManager_AssignedAt");
 
                     b.ToTable("CrmCandidateCards");
                 });
@@ -1357,10 +1440,10 @@ namespace Orbita.Api.Data.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("CardId", "CreatedAtUtc");
+
                     b.HasIndex("Action", "CreatedAtUtc", "CardId")
                         .HasDatabaseName("IX_CrmHistory_Action_CreatedAt_Card");
-
-                    b.HasIndex("CardId", "CreatedAtUtc");
 
                     b.ToTable("CrmCandidateHistory");
                 });
@@ -1642,6 +1725,58 @@ namespace Orbita.Api.Data.Migrations
                     b.ToTable("CrmOutboundChatMessages");
                 });
 
+            modelBuilder.Entity("Orbita.Api.Data.CrmSuccessDocumentEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("CardId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("Category")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("ContentType")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("FileName")
+                        .IsRequired()
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)");
+
+                    b.Property<string>("RelativePath")
+                        .IsRequired()
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.Property<long>("SizeBytes")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("UploadedByName")
+                        .IsRequired()
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<string>("UploadedByUserId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CardId", "Category", "CreatedAtUtc");
+
+                    b.ToTable("CrmSuccessDocuments");
+                });
+
             modelBuilder.Entity("Orbita.Api.Data.CrmTaskAttachmentEntity", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1857,6 +1992,126 @@ namespace Orbita.Api.Data.Migrations
                     b.ToTable("CrmTaskNotifications");
                 });
 
+            modelBuilder.Entity("Orbita.Api.Data.CrmTelephonyProviderAccountBindingEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid>("ProviderAccountId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ProviderUserKey")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ProviderAccountId", "ProviderUserKey")
+                        .IsUnique();
+
+                    b.HasIndex("ProviderAccountId", "UserId")
+                        .IsUnique();
+
+                    b.ToTable("CrmTelephonyProviderAccountBindings");
+                });
+
+            modelBuilder.Entity("Orbita.Api.Data.CrmTelephonyProviderAccountEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("AccessTokenProtected")
+                        .HasMaxLength(8192)
+                        .HasColumnType("character varying(8192)");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("ExternalAccountId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<bool>("IsEnabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("LastSyncError")
+                        .HasMaxLength(1024)
+                        .HasColumnType("character varying(1024)");
+
+                    b.Property<DateTime?>("LastSyncedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<Guid>("OfficeId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("OwnedNumbersJson")
+                        .IsRequired()
+                        .HasMaxLength(8192)
+                        .HasColumnType("character varying(8192)");
+
+                    b.Property<string>("Provider")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<Guid>("PublicId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("SecretHash")
+                        .IsRequired()
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<DateTime?>("SyncCursorUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateTime>("SyncFromUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("SyncStatus")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PublicId")
+                        .IsUnique();
+
+                    b.HasIndex("OfficeId", "Provider", "ExternalAccountId")
+                        .IsUnique()
+                        .HasFilter("\"ExternalAccountId\" IS NOT NULL");
+
+                    b.HasIndex("OfficeId", "Provider", "Name")
+                        .IsUnique();
+
+                    b.HasIndex("Provider", "IsEnabled", "SyncCursorUtc");
+
+                    b.ToTable("CrmTelephonyProviderAccounts");
+                });
+
             modelBuilder.Entity("Orbita.Api.Data.CrmTelephonyUserBindingEntity", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1951,6 +2206,10 @@ namespace Orbita.Api.Data.Migrations
                         .IsRequired()
                         .HasMaxLength(128)
                         .HasColumnType("character varying(128)");
+
+                    b.Property<string>("SipAccountProtected")
+                        .HasMaxLength(8192)
+                        .HasColumnType("character varying(8192)");
 
                     b.Property<DateTime>("UpdatedAtUtc")
                         .HasColumnType("timestamp with time zone");
@@ -2543,6 +2802,27 @@ namespace Orbita.Api.Data.Migrations
                     b.Property<DateTime?>("LastMonitoringAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("LocalProxyAddress")
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)");
+
+                    b.Property<bool>("LocalProxyEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
+                    b.Property<string>("LocalProxyPasswordProtected")
+                        .HasMaxLength(2048)
+                        .HasColumnType("character varying(2048)");
+
+                    b.Property<string>("LocalProxyUsername")
+                        .HasMaxLength(255)
+                        .HasColumnType("character varying(255)");
+
+                    b.Property<string>("LocalUserDataDir")
+                        .HasMaxLength(1024)
+                        .HasColumnType("character varying(1024)");
+
                     b.Property<string>("MultiloginFolderId")
                         .HasMaxLength(128)
                         .HasColumnType("character varying(128)");
@@ -2678,6 +2958,11 @@ namespace Orbita.Api.Data.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("character varying(256)");
 
+                    b.Property<bool>("AdsPowerEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
+
                     b.Property<string>("AdsPowerGroupId")
                         .HasMaxLength(64)
                         .HasColumnType("character varying(64)");
@@ -2728,6 +3013,10 @@ namespace Orbita.Api.Data.Migrations
                         .HasMaxLength(5)
                         .HasColumnType("character varying(5)");
 
+                    b.Property<string>("BrowserProviderChecksJson")
+                        .HasMaxLength(4000)
+                        .HasColumnType("character varying(4000)");
+
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
@@ -2775,6 +3064,15 @@ namespace Orbita.Api.Data.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)");
 
+                    b.Property<bool>("LocalChromeEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
+
+                    b.Property<string>("LocalChromeExecutablePath")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
                     b.Property<string>("MachineName")
                         .IsRequired()
                         .HasMaxLength(200)
@@ -2806,6 +3104,11 @@ namespace Orbita.Api.Data.Migrations
                         .HasMaxLength(512)
                         .HasColumnType("character varying(512)");
 
+                    b.Property<bool>("MultiloginEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
+
                     b.Property<string>("MultiloginLauncherUrl")
                         .HasMaxLength(512)
                         .HasColumnType("character varying(512)");
@@ -2823,6 +3126,20 @@ namespace Orbita.Api.Data.Migrations
                     b.Property<string>("OwnerUserId")
                         .HasMaxLength(128)
                         .HasColumnType("character varying(128)");
+
+                    b.Property<string>("PendingBrowserProviderCheck")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateTime?>("PendingBrowserProviderCheckAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("PendingBrowserProviderSync")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<DateTime?>("PendingBrowserProviderSyncAtUtc")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("PendingCommand")
                         .HasColumnType("text");
@@ -3209,6 +3526,17 @@ namespace Orbita.Api.Data.Migrations
                     b.Navigation("Worker");
                 });
 
+            modelBuilder.Entity("Orbita.Api.Data.CrmCallAiInsightEntity", b =>
+                {
+                    b.HasOne("Orbita.Api.Data.CrmCallEntity", "Call")
+                        .WithOne()
+                        .HasForeignKey("Orbita.Api.Data.CrmCallAiInsightEntity", "CallId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Call");
+                });
+
             modelBuilder.Entity("Orbita.Api.Data.CrmCallEntity", b =>
                 {
                     b.HasOne("Orbita.Api.Data.CrmCandidateCardEntity", null)
@@ -3221,6 +3549,11 @@ namespace Orbita.Api.Data.Migrations
                         .HasForeignKey("OfficeId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.HasOne("Orbita.Api.Data.CrmTelephonyProviderAccountEntity", null)
+                        .WithMany()
+                        .HasForeignKey("ProviderAccountId")
+                        .OnDelete(DeleteBehavior.SetNull);
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.CrmCandidateCardEntity", b =>
@@ -3295,6 +3628,15 @@ namespace Orbita.Api.Data.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("Orbita.Api.Data.CrmSuccessDocumentEntity", b =>
+                {
+                    b.HasOne("Orbita.Api.Data.CrmCandidateCardEntity", null)
+                        .WithMany()
+                        .HasForeignKey("CardId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("Orbita.Api.Data.CrmTaskAttachmentEntity", b =>
                 {
                     b.HasOne("Orbita.Api.Data.CrmTaskEntity", null)
@@ -3324,6 +3666,24 @@ namespace Orbita.Api.Data.Migrations
                     b.HasOne("Orbita.Api.Data.CrmTaskEntity", null)
                         .WithMany()
                         .HasForeignKey("TaskId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Orbita.Api.Data.CrmTelephonyProviderAccountBindingEntity", b =>
+                {
+                    b.HasOne("Orbita.Api.Data.CrmTelephonyProviderAccountEntity", null)
+                        .WithMany()
+                        .HasForeignKey("ProviderAccountId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("Orbita.Api.Data.CrmTelephonyProviderAccountEntity", b =>
+                {
+                    b.HasOne("Orbita.Api.Data.OfficeEntity", null)
+                        .WithMany()
+                        .HasForeignKey("OfficeId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
                 });

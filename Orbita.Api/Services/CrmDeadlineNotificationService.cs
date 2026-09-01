@@ -141,13 +141,21 @@ public sealed class CrmDeadlineNotificationService(
         string recipientUserId,
         CancellationToken ct = default)
     {
+        var openTaskCount = await db.CrmTasks.CountAsync(
+            task => task.OfficeId == officeId
+                    && task.AssigneeUserId == recipientUserId
+                    && task.Status == CrmTaskStatuses.Open,
+            ct);
         var deadlineEnabled = await IsEnabledForOfficeAsync(officeId, ct);
         var taskUnread = deadlineEnabled
             ? await ActiveForUser(officeId, recipientUserId).CountAsync(x => x.ReadAtUtc == null, ct)
             : 0;
         var deskUnread = await db.CrmDeskAlerts
             .CountAsync(x => x.OfficeId == officeId && x.RecipientUserId == recipientUserId && x.ReadAtUtc == null, ct);
-        return new CrmTaskNotificationSummaryDto(taskUnread + deskUnread, Enabled: true);
+        return new CrmTaskNotificationSummaryDto(
+            taskUnread + deskUnread,
+            Enabled: true,
+            OpenTaskCount: openTaskCount);
     }
 
     public async Task<bool> MarkReadAsync(

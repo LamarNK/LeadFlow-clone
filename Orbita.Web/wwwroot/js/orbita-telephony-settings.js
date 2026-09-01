@@ -153,6 +153,12 @@
         const closeBindingButton = target.closest('[data-telephony-close-binding]');
         if (closeBindingButton) {
             closeModal(closeBindingButton.closest('[data-telephony-binding-modal]'));
+            return;
+        }
+
+        const closeWebhookButton = target.closest('[data-telephony-close-webhook]');
+        if (closeWebhookButton) {
+            closeModal(closeWebhookButton.closest('[data-telephony-webhook-modal]'));
         }
     });
 
@@ -168,6 +174,12 @@
     });
 
     document.querySelectorAll('.telephony-sip-account-grid').forEach(syncSipAccountMode);
+
+    const webhookModal = document.querySelector('[data-telephony-webhook-modal]');
+    if (webhookModal) {
+        document.body.classList.add('telephony-modal-open');
+        window.setTimeout(() => webhookModal.querySelector('[data-telephony-webhook-copy]')?.focus(), 0);
+    }
 
     document.addEventListener('keydown', event => {
         if (event.key !== 'Escape') return;

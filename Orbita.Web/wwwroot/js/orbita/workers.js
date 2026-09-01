@@ -192,6 +192,552 @@
         });
     }
 
+    runtime.ensureLocalProfilePanel = function ensureLocalProfilePanel() {
+        var existing = document.getElementById('orbita-local-profile-panel');
+        if (existing) return existing;
+
+        var wrap = document.createElement('div');
+        wrap.id = 'orbita-local-profile-panel';
+        wrap.className = 'orbita-local-profile-panel';
+        wrap.hidden = true;
+        wrap.innerHTML =
+            '<div class="orbita-local-profile-panel__backdrop" data-local-profile-close></div>' +
+            '<div class="orbita-local-profile-panel__dialog" role="dialog" aria-modal="true" aria-labelledby="orbita-local-profile-title">' +
+            '  <div class="orbita-local-profile-panel__header">' +
+            '    <h3 id="orbita-local-profile-title" class="orbita-local-profile-panel__title">Настройки профиля</h3>' +
+            '    <button type="button" class="orbita-local-profile-panel__close" data-local-profile-close aria-label="Закрыть"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>' +
+            '  </div>' +
+            '  <p class="orbita-local-profile-panel__hint" data-local-profile-account></p>' +
+            '  <section class="orbita-local-profile-panel__section">' +
+            '    <h4 class="orbita-local-profile-panel__section-title">Avito</h4>' +
+            '    <label class="orbita-avito-cred-modal__label">Логин / телефон' +
+            '      <input type="text" class="orbita-avito-cred-modal__input" data-local-profile-login autocomplete="username" maxlength="256" />' +
+            '    </label>' +
+            '    <label class="orbita-avito-cred-modal__label">Пароль' +
+            '      <input type="password" class="orbita-avito-cred-modal__input" data-local-profile-password autocomplete="new-password" maxlength="256" />' +
+            '    </label>' +
+            '    <p class="orbita-local-profile-panel__status" data-local-profile-avito-status></p>' +
+            '    <button type="button" class="orbita-avito-cred-modal__btn orbita-avito-cred-modal__btn--ghost" data-local-profile-clear>Очистить данные</button>' +
+            '  </section>' +
+            '  <section class="orbita-local-profile-panel__section">' +
+            '    <h4 class="orbita-local-profile-panel__section-title">Прокси</h4>' +
+            '    <label class="orbita-local-profile-panel__toggle">' +
+            '      <input type="checkbox" data-local-profile-proxy-enabled /> Использовать прокси' +
+            '    </label>' +
+            '    <div class="orbita-local-profile-panel__fields" data-local-profile-proxy-fields>' +
+            '      <label class="orbita-avito-cred-modal__label">Тип' +
+            '        <input type="text" class="orbita-avito-cred-modal__input" value="HTTP/HTTPS" disabled />' +
+            '      </label>' +
+            '      <label class="orbita-avito-cred-modal__label">Адрес host:port' +
+            '        <input type="text" class="orbita-avito-cred-modal__input" data-local-profile-proxy-address maxlength="255" autocomplete="off" spellcheck="false" placeholder="203.0.113.10:8080" />' +
+            '      </label>' +
+            '      <label class="orbita-avito-cred-modal__label">Логин прокси' +
+            '        <input type="text" class="orbita-avito-cred-modal__input" data-local-profile-proxy-username maxlength="255" autocomplete="off" />' +
+            '      </label>' +
+            '      <label class="orbita-avito-cred-modal__label">Пароль прокси' +
+            '        <input type="password" class="orbita-avito-cred-modal__input" data-local-profile-proxy-password maxlength="256" autocomplete="new-password" />' +
+            '      </label>' +
+            '    </div>' +
+            '    <p class="orbita-local-profile-panel__status" data-local-profile-proxy-status></p>' +
+            '  </section>' +
+            '  <section class="orbita-local-profile-panel__section">' +
+            '    <h4 class="orbita-local-profile-panel__section-title">Браузер</h4>' +
+            '    <p class="orbita-local-profile-panel__status" data-local-profile-browser-status></p>' +
+            '    <button type="button" class="orbita-avito-cred-modal__btn" data-local-profile-open>Открыть браузер</button>' +
+            '  </section>' +
+            '  <div class="orbita-avito-cred-modal__actions">' +
+            '    <button type="button" class="orbita-avito-cred-modal__btn" data-local-profile-close>Отмена</button>' +
+            '    <button type="button" class="orbita-avito-cred-modal__btn orbita-avito-cred-modal__btn--primary" data-local-profile-save>Сохранить</button>' +
+            '  </div>' +
+            '</div>';
+        document.body.appendChild(wrap);
+        return wrap;
+    }
+
+    runtime.openLocalProfilePanel = function openLocalProfilePanel(opts) {
+        var panel = runtime.ensureLocalProfilePanel();
+        var loginInput = panel.querySelector('[data-local-profile-login]');
+        var passwordInput = panel.querySelector('[data-local-profile-password]');
+        var avitoStatus = panel.querySelector('[data-local-profile-avito-status]');
+        var accountEl = panel.querySelector('[data-local-profile-account]');
+        var proxyEnabled = panel.querySelector('[data-local-profile-proxy-enabled]');
+        var proxyFields = panel.querySelector('[data-local-profile-proxy-fields]');
+        var proxyAddress = panel.querySelector('[data-local-profile-proxy-address]');
+        var proxyUsername = panel.querySelector('[data-local-profile-proxy-username]');
+        var proxyPassword = panel.querySelector('[data-local-profile-proxy-password]');
+        var proxyStatus = panel.querySelector('[data-local-profile-proxy-status]');
+        var browserStatus = panel.querySelector('[data-local-profile-browser-status]');
+        var openBtn = panel.querySelector('[data-local-profile-open]');
+        var saveBtn = panel.querySelector('[data-local-profile-save]');
+        var clearBtn = panel.querySelector('[data-local-profile-clear]');
+        var state = {
+            hasPassword: !!opts.hasPassword,
+            hasProxyPassword: !!opts.hasProxyPassword
+        };
+
+        accountEl.textContent = opts.accountName ? ('Аккаунт: ' + opts.accountName) : '';
+        loginInput.value = opts.login || '';
+        passwordInput.value = '';
+        passwordInput.placeholder = state.hasPassword
+            ? 'Пароль сохранён — оставьте пустым, чтобы не менять'
+            : 'Введите пароль Avito';
+        avitoStatus.textContent = state.hasPassword
+            ? 'Учётные данные заданы'
+            : 'Учётные данные не заданы';
+        proxyEnabled.checked = !!opts.proxyEnabled;
+        proxyFields.hidden = !proxyEnabled.checked;
+        proxyAddress.value = opts.proxyAddress || '';
+        proxyUsername.value = opts.proxyUsername || '';
+        proxyPassword.value = '';
+        proxyPassword.placeholder = state.hasProxyPassword
+            ? 'Пароль сохранён — оставьте пустым, чтобы не менять'
+            : 'Необязательно';
+        proxyStatus.textContent = opts.proxyStatus || (opts.proxyEnabled ? 'настроен' : 'не настроен');
+        browserStatus.textContent = 'Статус: ' + (opts.browserStatus || 'Свободен');
+        openBtn.textContent = opts.openLabel || 'Открыть браузер';
+        openBtn.disabled = opts.canOpenBrowser === false;
+        panel.hidden = false;
+
+        function close() {
+            panel.hidden = true;
+            saveBtn.onclick = null;
+            clearBtn.onclick = null;
+            openBtn.onclick = null;
+            proxyEnabled.onchange = null;
+            panel.querySelectorAll('[data-local-profile-close]').forEach(function (el) {
+                el.onclick = null;
+            });
+        }
+
+        function applyProfile(profile) {
+            if (!profile) return;
+            state.hasPassword = !!profile.hasPassword;
+            state.hasProxyPassword = !!profile.hasProxyPassword;
+            loginInput.value = profile.login || '';
+            passwordInput.value = '';
+            passwordInput.placeholder = state.hasPassword
+                ? 'Пароль сохранён — оставьте пустым, чтобы не менять'
+                : 'Введите пароль Avito';
+            avitoStatus.textContent = profile.hasCredentials
+                ? 'Учётные данные заданы'
+                : 'Учётные данные не заданы';
+            proxyEnabled.checked = !!profile.proxyEnabled;
+            proxyFields.hidden = !proxyEnabled.checked;
+            proxyAddress.value = profile.proxyAddress || '';
+            proxyUsername.value = profile.proxyUsername || '';
+            proxyPassword.value = '';
+            proxyPassword.placeholder = state.hasProxyPassword
+                ? 'Пароль сохранён — оставьте пустым, чтобы не менять'
+                : 'Необязательно';
+            proxyStatus.textContent = profile.proxyStatus || '';
+            browserStatus.textContent = 'Статус: ' + (profile.browserStatus || 'Свободен');
+            openBtn.disabled = profile.canOpenBrowser === false;
+            if (opts.source) {
+                opts.source.setAttribute('data-login', profile.login || '');
+                opts.source.setAttribute('data-has-password', profile.hasPassword ? 'true' : 'false');
+                opts.source.setAttribute('data-proxy-enabled', profile.proxyEnabled ? 'true' : 'false');
+                opts.source.setAttribute('data-proxy-address', profile.proxyAddress || '');
+                opts.source.setAttribute('data-proxy-username', profile.proxyUsername || '');
+                opts.source.setAttribute('data-has-proxy-password', profile.hasProxyPassword ? 'true' : 'false');
+                opts.source.setAttribute('data-proxy-status', profile.proxyStatus || '');
+                opts.source.setAttribute('data-browser-status', profile.browserStatus || '');
+                opts.source.setAttribute('data-can-open-browser', profile.canOpenBrowser ? 'true' : 'false');
+            }
+        }
+
+        proxyEnabled.onchange = function () {
+            proxyFields.hidden = !proxyEnabled.checked;
+        };
+
+        panel.querySelectorAll('[data-local-profile-close]').forEach(function (el) {
+            el.onclick = close;
+        });
+
+        saveBtn.onclick = async function () {
+            var login = (loginInput.value || '').trim();
+            var password = passwordInput.value || '';
+            if (login && !password && !state.hasPassword) {
+                runtime.showToast('Укажите пароль Avito', { variant: 'error' });
+                return;
+            }
+            if (proxyEnabled.checked) {
+                var address = (proxyAddress.value || '').trim();
+                if (!address) {
+                    runtime.showToast('Укажите адрес прокси в формате host:port', { variant: 'error' });
+                    return;
+                }
+                if (address.indexOf('://') >= 0 || address.indexOf('@') >= 0 || /\s/.test(address)) {
+                    runtime.showToast('Адрес прокси: только host:port, без схемы и логина', { variant: 'error' });
+                    return;
+                }
+            }
+
+            saveBtn.disabled = true;
+            clearBtn.disabled = true;
+            var result = await runtime.postForm(opts.saveUrl || '/Workers/UpdateLocalAccountProfile', {
+                workerId: opts.workerId,
+                accountId: opts.accountId,
+                login: login,
+                password: password,
+                clearCredentials: 'false',
+                proxyEnabled: proxyEnabled.checked ? 'true' : 'false',
+                proxyAddress: (proxyAddress.value || '').trim(),
+                proxyUsername: (proxyUsername.value || '').trim(),
+                proxyPassword: proxyPassword.value || '',
+                clearProxyPassword: 'false'
+            });
+            saveBtn.disabled = false;
+            clearBtn.disabled = false;
+
+            if (result.ok) {
+                runtime.showToast((result.payload && result.payload.message) || 'Сохранено', { variant: 'success' });
+                applyProfile(result.payload && result.payload.profile);
+                if (window.OrbitaLive && window.OrbitaLive.scheduleRefresh) {
+                    window.OrbitaLive.scheduleRefresh({ kinds: ['Accounts', 'Workers'] });
+                }
+            } else {
+                runtime.showToast((result.payload && result.payload.error) || 'Не удалось сохранить', { variant: 'error' });
+            }
+        };
+
+        clearBtn.onclick = async function () {
+            var confirmed = true;
+            if (window.Orbita && window.Orbita.confirm) {
+                confirmed = await window.Orbita.confirm({
+                    title: 'Очистить данные Avito?',
+                    message: 'Логин и пароль Avito будут удалены. Прокси не изменится.',
+                    confirmLabel: 'Очистить',
+                    variant: 'danger'
+                });
+            }
+            if (!confirmed) return;
+
+            clearBtn.disabled = true;
+            saveBtn.disabled = true;
+            var result = await runtime.postForm(opts.saveUrl || '/Workers/UpdateLocalAccountProfile', {
+                workerId: opts.workerId,
+                accountId: opts.accountId,
+                login: '',
+                password: '',
+                clearCredentials: 'true',
+                proxyEnabled: proxyEnabled.checked ? 'true' : 'false',
+                proxyAddress: (proxyAddress.value || '').trim(),
+                proxyUsername: (proxyUsername.value || '').trim(),
+                proxyPassword: '',
+                clearProxyPassword: 'false'
+            });
+            clearBtn.disabled = false;
+            saveBtn.disabled = false;
+
+            if (result.ok) {
+                runtime.showToast((result.payload && result.payload.message) || 'Очищено', { variant: 'success' });
+                applyProfile(result.payload && result.payload.profile);
+                if (window.OrbitaLive && window.OrbitaLive.scheduleRefresh) {
+                    window.OrbitaLive.scheduleRefresh({ kinds: ['Accounts', 'Workers'] });
+                }
+            } else {
+                runtime.showToast((result.payload && result.payload.error) || 'Не удалось очистить', { variant: 'error' });
+            }
+        };
+
+        openBtn.onclick = async function () {
+            if (openBtn.disabled) return;
+            openBtn.disabled = true;
+            var result = await runtime.postForm(opts.openUrl || '/Workers/OpenLocalBrowser', {
+                workerId: opts.workerId,
+                accountId: opts.accountId
+            });
+            openBtn.disabled = opts.canOpenBrowser === false;
+            if (result.ok) {
+                runtime.showToast(
+                    (result.payload && result.payload.message) || 'На машине воркера открывается Chrome.',
+                    { variant: 'success' });
+                browserStatus.textContent = 'Статус: Открыт вручную';
+                if (window.OrbitaLive && window.OrbitaLive.scheduleRefresh) {
+                    window.OrbitaLive.scheduleRefresh({ kinds: ['Accounts', 'Workers'] });
+                }
+            } else {
+                runtime.showToast((result.payload && result.payload.error) || 'Не удалось открыть браузер', { variant: 'error' });
+            }
+        };
+    }
+
+    runtime.initLocalProfileSettingsButtons = function initLocalProfileSettingsButtons() {
+        document.querySelectorAll('[data-local-profile-settings]').forEach(function (btn) {
+            if (btn.hasAttribute('data-local-profile-settings-bound')) return;
+            btn.setAttribute('data-local-profile-settings-bound', '1');
+
+            btn.addEventListener('click', function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                runtime.closeAllRowMenus();
+                runtime.openLocalProfilePanel({
+                    source: btn,
+                    workerId: btn.getAttribute('data-worker-id'),
+                    accountId: btn.getAttribute('data-account-id'),
+                    accountName: btn.getAttribute('data-account-name') || '',
+                    login: btn.getAttribute('data-login') || '',
+                    hasPassword: btn.getAttribute('data-has-password') === 'true',
+                    proxyEnabled: btn.getAttribute('data-proxy-enabled') === 'true',
+                    proxyAddress: btn.getAttribute('data-proxy-address') || '',
+                    proxyUsername: btn.getAttribute('data-proxy-username') || '',
+                    hasProxyPassword: btn.getAttribute('data-has-proxy-password') === 'true',
+                    proxyStatus: btn.getAttribute('data-proxy-status') || '',
+                    browserStatus: btn.getAttribute('data-browser-status') || '',
+                    canOpenBrowser: btn.getAttribute('data-can-open-browser') !== 'false',
+                    openLabel: btn.getAttribute('data-open-label') || 'Открыть браузер',
+                    saveUrl: btn.getAttribute('data-save-url') || '/Workers/UpdateLocalAccountProfile',
+                    openUrl: btn.getAttribute('data-open-url') || '/Workers/OpenLocalBrowser'
+                });
+            });
+        });
+    }
+
+    runtime.ensureLocalAccountModal = function ensureLocalAccountModal() {
+        var existing = document.getElementById('orbita-local-account-modal');
+        if (existing) return existing;
+
+        var wrap = document.createElement('div');
+        wrap.id = 'orbita-local-account-modal';
+        wrap.className = 'orbita-avito-cred-modal';
+        wrap.hidden = true;
+        wrap.innerHTML =
+            '<div class="orbita-avito-cred-modal__backdrop" data-local-account-close></div>' +
+            '<div class="orbita-avito-cred-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="orbita-local-account-title">' +
+            '  <h3 id="orbita-local-account-title" class="orbita-avito-cred-modal__title">Папка профиля Chrome</h3>' +
+            '  <p class="orbita-avito-cred-modal__hint" data-local-account-account></p>' +
+            '  <label class="orbita-avito-cred-modal__label">Имя аккаунта' +
+            '    <input type="text" class="orbita-avito-cred-modal__input" data-local-account-name maxlength="200" autocomplete="off" />' +
+            '  </label>' +
+            '  <label class="orbita-avito-cred-modal__label">Папка профиля (User Data)' +
+            '    <input type="text" class="orbita-avito-cred-modal__input" data-local-account-dir maxlength="1024" autocomplete="off" spellcheck="false" />' +
+            '  </label>' +
+            '  <p class="orbita-avito-cred-modal__status" data-local-account-status>Отдельная папка на машине воркера. Стандартный профиль Chrome использовать нельзя. Папка на диске не удаляется.</p>' +
+            '  <div class="orbita-avito-cred-modal__actions">' +
+            '    <button type="button" class="orbita-avito-cred-modal__btn" data-local-account-close>Отмена</button>' +
+            '    <button type="button" class="orbita-avito-cred-modal__btn orbita-avito-cred-modal__btn--primary" data-local-account-save>Сохранить</button>' +
+            '  </div>' +
+            '</div>';
+        document.body.appendChild(wrap);
+        return wrap;
+    }
+
+    runtime.openLocalAccountModal = function openLocalAccountModal(opts) {
+        var modal = runtime.ensureLocalAccountModal();
+        var nameInput = modal.querySelector('[data-local-account-name]');
+        var dirInput = modal.querySelector('[data-local-account-dir]');
+        var accountEl = modal.querySelector('[data-local-account-account]');
+        var statusEl = modal.querySelector('[data-local-account-status]');
+        var saveBtn = modal.querySelector('[data-local-account-save]');
+
+        accountEl.textContent = opts.accountName
+            ? ('Аккаунт: ' + opts.accountName)
+            : '';
+        nameInput.value = opts.accountName || '';
+        dirInput.value = opts.userDataDir || '';
+        dirInput.placeholder = opts.managed
+            ? 'Оставьте пустым, чтобы сохранить автоматический профиль'
+            : 'D:\\Orbita\\ChromeProfiles\\account-1';
+        if (statusEl) {
+            statusEl.textContent = opts.managed
+                ? 'Профиль создаётся автоматически на машине воркера. Путь можно задать, только если подключаете уже существующую папку. Папка на диске не удаляется.'
+                : 'Отдельная папка на машине воркера. Стандартный профиль Chrome использовать нельзя. Папка на диске не удаляется.';
+        }
+        modal.hidden = false;
+
+        function close() {
+            modal.hidden = true;
+            saveBtn.onclick = null;
+            modal.querySelectorAll('[data-local-account-close]').forEach(function (el) {
+                el.onclick = null;
+            });
+        }
+
+        modal.querySelectorAll('[data-local-account-close]').forEach(function (el) {
+            el.onclick = close;
+        });
+
+        saveBtn.onclick = async function () {
+            var displayName = (nameInput.value || '').trim();
+            var localUserDataDir = (dirInput.value || '').trim();
+            if (!displayName) {
+                runtime.showToast('Укажите имя аккаунта', { variant: 'error' });
+                return;
+            }
+            if (!localUserDataDir && !opts.managed) {
+                runtime.showToast('Укажите путь к отдельной папке профиля', { variant: 'error' });
+                return;
+            }
+
+            saveBtn.disabled = true;
+            var payload = {
+                workerId: opts.workerId,
+                accountId: opts.accountId,
+                displayName: displayName
+            };
+            if (localUserDataDir) {
+                payload.localUserDataDir = localUserDataDir;
+            }
+            var result = await runtime.postForm(opts.postUrl, payload);
+            saveBtn.disabled = false;
+
+            if (result.ok) {
+                runtime.showToast((result.payload && result.payload.message) || 'Сохранено', { variant: 'success' });
+                close();
+                if (window.OrbitaLive && window.OrbitaLive.scheduleRefresh) {
+                    window.OrbitaLive.scheduleRefresh({ kinds: ['Accounts', 'Workers'] });
+                }
+            } else {
+                runtime.showToast((result.payload && result.payload.error) || 'Не удалось сохранить', { variant: 'error' });
+            }
+        };
+    }
+
+    runtime.initLocalAccountEditButtons = function initLocalAccountEditButtons() {
+        document.querySelectorAll('[data-local-account-edit]').forEach(function (btn) {
+            if (btn.hasAttribute('data-local-account-edit-bound')) return;
+            btn.setAttribute('data-local-account-edit-bound', '1');
+
+            btn.addEventListener('click', function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                runtime.closeAllRowMenus();
+                runtime.openLocalAccountModal({
+                    workerId: btn.getAttribute('data-worker-id'),
+                    accountId: btn.getAttribute('data-account-id'),
+                    accountName: btn.getAttribute('data-account-name') || '',
+                    userDataDir: btn.getAttribute('data-user-data-dir') || '',
+                    managed: btn.getAttribute('data-managed') === 'true',
+                    postUrl: btn.getAttribute('data-post-url') || '/Workers/UpdateLocalAccount'
+                });
+            });
+        });
+
+        document.querySelectorAll('[data-local-account-delete]').forEach(function (btn) {
+            if (btn.hasAttribute('data-local-account-delete-bound')) return;
+            btn.setAttribute('data-local-account-delete-bound', '1');
+
+            btn.addEventListener('click', async function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                runtime.closeAllRowMenus();
+
+                var confirmed = true;
+                if (window.Orbita && window.Orbita.confirm) {
+                    confirmed = await window.Orbita.confirm({
+                        title: 'Удалить аккаунт из панели?',
+                        message: 'Папка профиля на диске не удалится.',
+                        confirmLabel: 'Удалить',
+                        variant: 'danger'
+                    });
+                }
+                if (!confirmed) return;
+
+                var result = await runtime.postForm(btn.getAttribute('data-post-url') || '/Workers/DeleteLocalAccount', {
+                    workerId: btn.getAttribute('data-worker-id'),
+                    accountId: btn.getAttribute('data-account-id')
+                });
+                if (result.ok) {
+                    runtime.showToast((result.payload && result.payload.message) || 'Аккаунт удалён', { variant: 'success' });
+                    if (window.OrbitaLive && window.OrbitaLive.scheduleRefresh) {
+                        window.OrbitaLive.scheduleRefresh({ kinds: ['Accounts', 'Workers'] });
+                    }
+                } else {
+                    runtime.showToast((result.payload && result.payload.error) || 'Не удалось удалить', { variant: 'error' });
+                }
+            });
+        });
+    }
+
+    runtime.initProviderConnectionButtons = function initProviderConnectionButtons() {
+        function bind(selector, path, pendingLabel) {
+            document.querySelectorAll(selector).forEach(function (btn) {
+                if (btn.hasAttribute('data-provider-bound')) return;
+                btn.setAttribute('data-provider-bound', '1');
+                btn.addEventListener('click', async function (e) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    var dirty = document.querySelector('[data-worker-settings-dirty]');
+                    if (dirty && !dirty.hidden) {
+                        runtime.showToast('Сначала сохраните настройки', { variant: 'error' });
+                        return;
+                    }
+                    if (btn.disabled) return;
+                    var workerId = btn.getAttribute('data-worker-id');
+                    var provider = btn.getAttribute('data-provider-check') || btn.getAttribute('data-provider-sync');
+                    if (!workerId || !provider) return;
+                    var isCheck = btn.hasAttribute('data-provider-check');
+                    document.querySelectorAll(isCheck ? '[data-provider-check]' : '[data-provider-sync]').forEach(function (other) {
+                        other.disabled = true;
+                    });
+                    var card = btn.closest('[data-provider-card]');
+                    if (card && selector.indexOf('provider-check') >= 0) {
+                        card.setAttribute('data-provider-status', 'checking');
+                        var label = card.querySelector('[data-provider-status-label]');
+                        if (label) {
+                            label.className = 'worker-provider-status worker-provider-status--checking';
+                            label.textContent = 'Проверяется';
+                        }
+                        var message = card.querySelector('[data-provider-message]');
+                        if (message) message.textContent = pendingLabel;
+                    }
+                    var result = await runtime.postForm(path, { workerId: workerId, provider: provider });
+                    if (result.ok) {
+                        runtime.showToast((result.payload && result.payload.message) || pendingLabel, { variant: 'success' });
+                        if (window.OrbitaLive && window.OrbitaLive.scheduleRefresh) {
+                            window.OrbitaLive.scheduleRefresh({ kinds: ['Workers'] });
+                        }
+                    } else {
+                        document.querySelectorAll(isCheck ? '[data-provider-check]' : '[data-provider-sync]').forEach(function (other) {
+                            var allowed = other.getAttribute(isCheck ? 'data-can-check' : 'data-can-sync') === 'true';
+                            other.disabled = !allowed;
+                        });
+                        runtime.showToast((result.payload && result.payload.error) || 'Не удалось отправить запрос', { variant: 'error' });
+                    }
+                });
+            });
+        }
+
+        bind('[data-provider-check]', '/Workers/CheckProvider', 'Проверка на воркере…');
+        bind('[data-provider-sync]', '/Workers/SyncProvider', 'Синхронизация запущена на воркере.');
+    };
+
+    runtime.initLocalOpenBrowserButtons = function initLocalOpenBrowserButtons() {
+        document.querySelectorAll('[data-local-open-browser]').forEach(function (btn) {
+            if (btn.hasAttribute('data-local-open-browser-bound')) return;
+            btn.setAttribute('data-local-open-browser-bound', '1');
+
+            btn.addEventListener('click', async function (e) {
+                e.preventDefault();
+                e.stopPropagation();
+                runtime.closeAllRowMenus();
+                if (btn.disabled) return;
+
+                var workerId = btn.getAttribute('data-worker-id');
+                var accountId = btn.getAttribute('data-account-id');
+                if (!workerId || !accountId) return;
+
+                btn.disabled = true;
+                var result = await runtime.postForm(btn.getAttribute('data-post-url') || '/Workers/OpenLocalBrowser', {
+                    workerId: workerId,
+                    accountId: accountId
+                });
+                btn.disabled = false;
+
+                if (result.ok) {
+                    runtime.showToast(
+                        (result.payload && result.payload.message) || 'На машине воркера открывается Chrome. Войдите в Avito и закройте браузер.',
+                        { variant: 'success' });
+                    if (window.OrbitaLive && window.OrbitaLive.scheduleRefresh) {
+                        window.OrbitaLive.scheduleRefresh({ kinds: ['Accounts', 'Workers'] });
+                    }
+                } else {
+                    runtime.showToast((result.payload && result.payload.error) || 'Не удалось открыть браузер', { variant: 'error' });
+                }
+            });
+        });
+    }
+
     runtime.initWorkerAccountEnableToggles = function initWorkerAccountEnableToggles() {
         document.querySelectorAll('[data-account-enable-toggle]').forEach(function (input) {
             if (input.hasAttribute('data-account-enable-bound')) return;
@@ -472,7 +1018,11 @@
     runtime.initSubProfilesToggles();
     runtime.initSubProfileEnableToggles();
     runtime.initWorkerAccountEnableToggles();
+    runtime.initProviderConnectionButtons();
     runtime.initAvitoCredentialsButtons();
+    runtime.initLocalProfileSettingsButtons();
+    runtime.initLocalAccountEditButtons();
+    runtime.initLocalOpenBrowserButtons();
     runtime.initSubProfilesRefreshButtons();
     runtime.initSubProfileScreenshotLinks();
     runtime.initUserMenu();
@@ -534,7 +1084,7 @@
         runtime.setBadge(responsesEl, payload.uniqueResponsesToday, ' уникальных откликов за сегодня');
         var crmNotificationStateKnown = typeof payload.crmTaskNotificationsEnabled === 'boolean';
         if (crmNotificationStateKnown) {
-            runtime.setBadge(crmTasksEl, payload.crmTaskNotificationsUnread, ' непрочитанных уведомлений CRM');
+            runtime.setBadge(crmTasksEl, payload.crmOpenTasks, ' открытых задач CRM');
             if (window.OrbitaNotifications) {
                 if (typeof window.OrbitaNotifications.setEnabled === 'function') {
                     window.OrbitaNotifications.setEnabled(payload.crmTaskNotificationsEnabled);

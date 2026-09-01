@@ -82,7 +82,12 @@ public sealed class WorkerTelemetryCollector(
             EnsureUtc(local?.SubProfilesRefreshedAt ?? cfg.SubProfilesRefreshedAtUtc),
             SubProfilesRefreshRequestedAtUtc: cfg.SubProfilesRefreshRequestedAtUtc,
             MultiloginProfileId: cfg.MultiloginProfileId,
-            MultiloginFolderId: cfg.MultiloginFolderId);
+            MultiloginFolderId: cfg.MultiloginFolderId,
+            LocalUserDataDir: cfg.LocalUserDataDir,
+            LocalProxyEnabled: cfg.LocalProxyEnabled,
+            LocalProxyAddress: cfg.LocalProxyEnabled ? cfg.LocalProxyAddress : null,
+            LocalProxyUsername: cfg.LocalProxyEnabled ? cfg.LocalProxyUsername : null,
+            HasProxyPassword: cfg.LocalProxyEnabled && !string.IsNullOrEmpty(cfg.LocalProxyPassword));
     }
 
     private static WorkerBalanceDto MapBalance(

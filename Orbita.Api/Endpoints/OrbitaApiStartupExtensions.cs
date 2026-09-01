@@ -207,6 +207,7 @@ public static class OrbitaApiStartupExtensions
         builder.Services.AddSingleton<CaptchaRelayRegistry>();
         builder.Services.AddSingleton<BrowserMonitorRegistry>();
         builder.Services.AddSingleton<BrowserMonitorService>();
+        builder.Services.AddSingleton<LocalChromeLoginSessionService>();
         builder.Services.AddSingleton<ICaptchaSessionRelayNotifier, CaptchaSessionRelayNotifier>();
         builder.Services.AddScoped<CaptchaSessionService>();
         builder.Services.AddSingleton<ICaptchaLockNotifier, CaptchaLockNotifier>();
@@ -277,7 +278,9 @@ public static class OrbitaApiStartupExtensions
         builder.Services.Configure<WorkerReleaseOptions>(builder.Configuration.GetSection(WorkerReleaseOptions.SectionName));
         builder.Services.Configure<WorkerDiagnosticsOptions>(builder.Configuration.GetSection(WorkerDiagnosticsOptions.SectionName));
         builder.Services.Configure<CrmTaskAttachmentOptions>(builder.Configuration.GetSection(CrmTaskAttachmentOptions.SectionName));
+        builder.Services.Configure<CrmSuccessDocumentOptions>(builder.Configuration.GetSection(CrmSuccessDocumentOptions.SectionName));
         builder.Services.Configure<CrmCallRecordingOptions>(builder.Configuration.GetSection(CrmCallRecordingOptions.SectionName));
+        builder.Services.Configure<CerioAiOptions>(builder.Configuration.GetSection(CerioAiOptions.SectionName));
         builder.Services.Configure<CrmTelephonyWebRtcOptions>(builder.Configuration.GetSection(CrmTelephonyWebRtcOptions.SectionName));
         builder.Services.Configure<CrmSipRuntimeOptions>(builder.Configuration.GetSection(CrmSipRuntimeOptions.SectionName));
         builder.Services.Configure<CrmDeadlineNotificationOptions>(builder.Configuration.GetSection(CrmDeadlineNotificationOptions.SectionName));
@@ -285,6 +288,7 @@ public static class OrbitaApiStartupExtensions
         builder.Services.AddSingleton<WorkerReleaseService>();
         builder.Services.AddScoped<WorkerDiagnosticsService>();
         builder.Services.AddScoped<CrmTaskAttachmentStorageService>();
+        builder.Services.AddScoped<CrmSuccessDocumentStorageService>();
         builder.Services.AddScoped<CrmCallRecordingStorageService>();
         builder.Services.AddHostedService<WorkerDiagnosticsCleanupService>();
         builder.Services.AddSingleton<WorkerLogFileArchive>();
@@ -299,15 +303,22 @@ public static class OrbitaApiStartupExtensions
         builder.Services.AddScoped<CrmLeadDistributionService>();
         builder.Services.AddScoped<CrmWorkspaceService>();
         builder.Services.AddScoped<CrmTelephonyService>();
+        builder.Services.AddScoped<CrmTelephonyProviderAccountService>();
         builder.Services.AddScoped<CrmTelephonyCredentialProtector>();
         builder.Services.AddSingleton<CrmSipRuntimeConfigWriter>();
         builder.Services.AddScoped<PlusofonRecordingSyncService>();
+        builder.Services.AddScoped<TelephonyProviderAccountSyncService>();
+        builder.Services.AddScoped<ProviderRecordingArchiveService>();
+        builder.Services.AddScoped<CrmCallAiProcessingService>();
+        builder.Services.AddSingleton<ICerioAiClient, CerioAiClient>();
         builder.Services.AddSingleton<IPlusofonApiClient, PlusofonApiClient>();
         builder.Services.AddScoped<CrmDeadlineNotificationService>();
         builder.Services.AddSingleton<ICrmNotificationRealtimeNotifier, CrmNotificationRealtimeNotifier>();
         builder.Services.AddScoped<CrmAnalyticsQueryService>();
         builder.Services.AddScoped<BitrixInstanceService>();
         builder.Services.AddScoped<BitrixCrmImportService>();
+        builder.Services.AddSingleton<BitrixCrmExportParser>();
+        builder.Services.AddSingleton<BitrixCrmImportTokenProtector>();
         builder.Services.AddScoped<BitrixWorkforceSettingsService>();
         builder.Services.AddScoped<BitrixWorkforceEventReceiver>();
         builder.Services.AddScoped<BitrixWorkforceProcessor>();
@@ -353,6 +364,9 @@ public static class OrbitaApiStartupExtensions
         builder.Services.AddHostedService<CrmShiftSweeperService>();
         builder.Services.AddHostedService<CrmDailyDistributionHostedService>();
         builder.Services.AddHostedService<PlusofonRecordingHostedService>();
+        builder.Services.AddHostedService<TelephonyProviderAccountSyncHostedService>();
+        builder.Services.AddHostedService<ProviderRecordingArchiveHostedService>();
+        builder.Services.AddHostedService<CrmCallAiProcessingHostedService>();
         builder.Services.AddHostedService<BitrixWorkforceHostedService>();
         builder.Services.AddHostedService<CrmTelephonyRuntimeSyncHostedService>();
         builder.Services.AddScoped<WebhookSecretProtector>();
@@ -408,6 +422,30 @@ public static class OrbitaApiStartupExtensions
             {
                 AllowAutoRedirect = false
             })
+            .RemoveAllLoggers();
+        builder.Services.AddHttpClient(ProviderRecordingArchiveService.HttpClientName, client =>
+            {
+                client.Timeout = TimeSpan.FromMinutes(2);
+            })
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+            {
+                AllowAutoRedirect = false
+            })
+            .RemoveAllLoggers();
+        builder.Services.AddHttpClient(CerioAiClient.HttpClientName, (services, client) =>
+            {
+                var options = services.GetRequiredService<Microsoft.Extensions.Options.IOptions<CerioAiOptions>>().Value;
+                client.BaseAddress = Uri.TryCreate(options.BaseUrl, UriKind.Absolute, out var configured)
+                    && configured.Scheme == Uri.UriSchemeHttps
+                        ? configured
+                        : new Uri("https://api.cerio.ru/");
+                client.Timeout = TimeSpan.FromSeconds(Math.Clamp(options.RequestTimeoutSeconds, 30, 900));
+            })
+            .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+            {
+                AllowAutoRedirect = false
+            })
+            // The token is a query parameter, so disable request logging for this client.
             .RemoveAllLoggers();
 
         builder.Services.Configure<ForwardedHeadersOptions>(options =>

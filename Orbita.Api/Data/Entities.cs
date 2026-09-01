@@ -230,6 +230,22 @@ public sealed class WorkerEntity
     public string? MultiloginCloudApiUrl { get; set; }
     /// <summary>Automation token Multilogin X. Не отдаётся в телеметрию панели.</summary>
     public string? MultiloginAutomationToken { get; set; }
+    /// <summary>Путь к chrome.exe / Chromium на машине воркера. Пусто — автопоиск.</summary>
+    public string? LocalChromeExecutablePath { get; set; }
+    /// <summary>Запускать AdsPower и синхронизировать каталог. Выключение не удаляет аккаунты.</summary>
+    public bool AdsPowerEnabled { get; set; } = true;
+    /// <summary>Запускать Multilogin и синхронизировать каталог. Выключение не удаляет аккаунты.</summary>
+    public bool MultiloginEnabled { get; set; } = true;
+    /// <summary>Запускать аккаунты обычного Chrome. Выключение не удаляет аккаунты и папки.</summary>
+    public bool LocalChromeEnabled { get; set; } = true;
+    /// <summary>Ожидающая проверка AdsPower/Multilogin/Local на воркере.</summary>
+    public string? PendingBrowserProviderCheck { get; set; }
+    public DateTime? PendingBrowserProviderCheckAtUtc { get; set; }
+    /// <summary>Ожидающая немедленная синхронизация каталога AdsPower/Multilogin.</summary>
+    public string? PendingBrowserProviderSync { get; set; }
+    public DateTime? PendingBrowserProviderSyncAtUtc { get; set; }
+    /// <summary>Последние результаты проверки подключения. Без секретов.</summary>
+    public string? BrowserProviderChecksJson { get; set; }
     public string? LastUpdateVersion { get; set; }
     public bool? LastUpdateSuccess { get; set; }
     public string? LastUpdateMessage { get; set; }
@@ -281,6 +297,8 @@ public sealed class WorkerAccountEntity
     public string? MultiloginProfileId { get; set; }
     public string? MultiloginProfileName { get; set; }
     public string? MultiloginFolderId { get; set; }
+    /// <summary>Папка User Data обычного Chrome на машине воркера.</summary>
+    public string? LocalUserDataDir { get; set; }
     public string DisplayName { get; set; } = string.Empty;
     public string Status { get; set; } = string.Empty;
     public bool IsEnabled { get; set; }
@@ -299,6 +317,12 @@ public sealed class WorkerAccountEntity
     public string? AvitoLogin { get; set; }
     /// <summary>Пароль Avito, защищённый Data Protection.</summary>
     public string? AvitoPasswordProtected { get; set; }
+    /// <summary>HTTP-прокси обычного Chrome. AdsPower/Multilogin не используют эти поля.</summary>
+    public bool LocalProxyEnabled { get; set; }
+    public string? LocalProxyAddress { get; set; }
+    public string? LocalProxyUsername { get; set; }
+    /// <summary>Пароль прокси, защищённый Data Protection. Не возвращается в API.</summary>
+    public string? LocalProxyPasswordProtected { get; set; }
     public DateTime UpdatedAtUtc { get; set; }
 
     public WorkerEntity Worker { get; set; } = null!;
@@ -801,6 +825,7 @@ public sealed class CrmCandidateCardEntity
     public bool IsClosed { get; set; }
     public string? CloseReason { get; set; }
     public DateTime? ClosedAtUtc { get; set; }
+    public string? SuccessContractMissingReason { get; set; }
     public CandidateResponseEntity Response { get; set; } = null!;
 }
 
@@ -875,6 +900,20 @@ public sealed class CrmTaskAttachmentEntity
     public DateTime CreatedAtUtc { get; set; }
 }
 
+public sealed class CrmSuccessDocumentEntity
+{
+    public Guid Id { get; set; }
+    public Guid CardId { get; set; }
+    public string Category { get; set; } = string.Empty;
+    public string FileName { get; set; } = string.Empty;
+    public string ContentType { get; set; } = "application/octet-stream";
+    public long SizeBytes { get; set; }
+    public string UploadedByUserId { get; set; } = string.Empty;
+    public string UploadedByName { get; set; } = string.Empty;
+    public string RelativePath { get; set; } = string.Empty;
+    public DateTime CreatedAtUtc { get; set; }
+}
+
 public sealed class CrmCandidateHistoryEntity
 {
     public Guid Id { get; set; }
@@ -902,6 +941,42 @@ public sealed class CrmTelephonyWebhookEntity
     public DateTime UpdatedAtUtc { get; set; }
 }
 
+/// <summary>
+/// One provider cabinet connected to an office. A cabinet may contain many public
+/// numbers and SIP accounts and is synchronized independently from other cabinets.
+/// </summary>
+public sealed class CrmTelephonyProviderAccountEntity
+{
+    public Guid Id { get; set; }
+    public Guid OfficeId { get; set; }
+    public string Provider { get; set; } = string.Empty;
+    public string Name { get; set; } = string.Empty;
+    public string? ExternalAccountId { get; set; }
+    public string? AccessTokenProtected { get; set; }
+    public string OwnedNumbersJson { get; set; } = "[]";
+    public Guid PublicId { get; set; }
+    public string SecretHash { get; set; } = string.Empty;
+    public bool IsEnabled { get; set; } = true;
+    public DateTime SyncFromUtc { get; set; }
+    public DateTime? SyncCursorUtc { get; set; }
+    public DateTime? LastSyncedAtUtc { get; set; }
+    public string SyncStatus { get; set; } = "pending";
+    public string? LastSyncError { get; set; }
+    public DateTime CreatedAtUtc { get; set; }
+    public DateTime UpdatedAtUtc { get; set; }
+}
+
+/// <summary>Maps a cabinet-side SIP identity or extension to an Orbita user.</summary>
+public sealed class CrmTelephonyProviderAccountBindingEntity
+{
+    public Guid Id { get; set; }
+    public Guid ProviderAccountId { get; set; }
+    public string ProviderUserKey { get; set; } = string.Empty;
+    public string UserId { get; set; } = string.Empty;
+    public DateTime CreatedAtUtc { get; set; }
+    public DateTime UpdatedAtUtc { get; set; }
+}
+
 /// <summary>Maps a provider-side SIP identity (for example extension 201) to an Orbita user.</summary>
 public sealed class CrmTelephonyUserBindingEntity
 {
@@ -924,6 +999,7 @@ public sealed class CrmCallEntity
     public Guid OfficeId { get; set; }
     public Guid? CardId { get; set; }
     public string Provider { get; set; } = string.Empty;
+    public Guid? ProviderAccountId { get; set; }
     public string ExternalCallId { get; set; } = string.Empty;
     public string Direction { get; set; } = string.Empty;
     public string CallerPhone { get; set; } = string.Empty;
@@ -939,8 +1015,32 @@ public sealed class CrmCallEntity
     public string? RecordingFileName { get; set; }
     public int RecordingFetchAttempts { get; set; }
     public DateTime? NextRecordingFetchAtUtc { get; set; }
+    public int RecordingArchiveAttempts { get; set; }
+    public DateTime? NextRecordingArchiveAtUtc { get; set; }
     public DateTime ReceivedAtUtc { get; set; }
     public DateTime UpdatedAtUtc { get; set; }
+}
+
+/// <summary>Provider-independent transcription and quality analysis for a stored CRM call.</summary>
+public sealed class CrmCallAiInsightEntity
+{
+    public Guid CallId { get; set; }
+    public string Status { get; set; } = CrmCallAiStatuses.Pending;
+    public string? TranscriptText { get; set; }
+    public string? SegmentsJson { get; set; }
+    public string? AnalysisJson { get; set; }
+    public string? AnalysisRawText { get; set; }
+    public double? Score { get; set; }
+    public string PromptVersion { get; set; } = string.Empty;
+    public int Attempts { get; set; }
+    public DateTime? NextAttemptAtUtc { get; set; }
+    public string? LastErrorCode { get; set; }
+    public string? LastErrorMessage { get; set; }
+    public DateTime CreatedAtUtc { get; set; }
+    public DateTime UpdatedAtUtc { get; set; }
+    public DateTime? TranscribedAtUtc { get; set; }
+    public DateTime? AnalyzedAtUtc { get; set; }
+    public CrmCallEntity Call { get; set; } = null!;
 }
 
 /// <summary>Additional active contact phones for a candidate person (beyond primary on response).</summary>

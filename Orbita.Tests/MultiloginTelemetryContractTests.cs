@@ -52,6 +52,7 @@ public sealed class MultiloginTelemetryContractTests
         Assert.Contains(nameof(WorkerDetail.HasMultiloginAutomationToken), names);
         Assert.Contains(nameof(WorkerDetail.MultiloginLauncherUrl), names);
         Assert.Contains(nameof(WorkerDetail.MultiloginCloudApiUrl), names);
+        Assert.Contains(nameof(WorkerDetail.LocalChromeExecutablePath), names);
         Assert.DoesNotContain("MultiloginAutomationToken", names);
     }
 
@@ -65,6 +66,21 @@ public sealed class MultiloginTelemetryContractTests
         Assert.DoesNotContain("AutomationToken", names);
         Assert.Contains(nameof(WorkerAccountConfigDto.MultiloginProfileId), names);
         Assert.Contains(nameof(WorkerAccountConfigDto.MultiloginFolderId), names);
+        Assert.Contains(nameof(WorkerAccountConfigDto.LocalUserDataDir), names);
+        Assert.Contains(nameof(WorkerAccountConfigDto.LocalProxyPassword), names);
+    }
+
+    [Fact]
+    public void WorkerAccountDto_DoesNotExposeProxyOrAvitoPasswords()
+    {
+        var names = typeof(WorkerAccountDto).GetProperties(BindingFlags.Public | BindingFlags.Instance)
+            .Select(static p => p.Name)
+            .ToHashSet(StringComparer.Ordinal);
+        Assert.DoesNotContain("AvitoPassword", names);
+        Assert.DoesNotContain("LocalProxyPassword", names);
+        Assert.Contains(nameof(WorkerAccountDto.HasAvitoCredentials), names);
+        Assert.Contains(nameof(WorkerAccountDto.HasProxyPassword), names);
+        Assert.Contains(nameof(WorkerAccountDto.LocalProxyAddress), names);
     }
 
     [Fact]
@@ -92,6 +108,7 @@ public sealed class MultiloginTelemetryContractTests
         Assert.Contains(nameof(WorkerAccountDto.AdsPowerProfileId), names);
         Assert.Contains(nameof(WorkerAccountDto.MultiloginProfileId), names);
         Assert.Contains(nameof(WorkerAccountDto.MultiloginFolderId), names);
+        Assert.Contains(nameof(WorkerAccountDto.LocalUserDataDir), names);
         Assert.DoesNotContain("MultiloginAutomationToken", names);
         Assert.DoesNotContain("AutomationToken", names);
         Assert.DoesNotContain("MultiloginLauncherUrl", names);
@@ -115,5 +132,7 @@ public sealed class MultiloginTelemetryContractTests
         Assert.Null(account.MultiloginProfileId);
         Assert.Null(account.MultiloginProfileName);
         Assert.Null(account.MultiloginFolderId);
+        Assert.Null(account.LocalUserDataDir);
+        Assert.Null(worker.LocalChromeExecutablePath);
     }
 }

@@ -5,12 +5,16 @@ namespace Orbita.Contracts;
 
 /// <summary>
 /// Pure rules for the daily distribution of native Orbita CRM cards.
-/// Leads and NDZ are deliberately independent pools.
+/// Leads, NDZ and office-specific service stages are deliberately independent pools.
 /// </summary>
 public static class CrmDailyDistribution
 {
+    public const int PoolKeyMaxLength = 16;
     public const string LeadPool = "lead";
     public const string NdzPool = "ndz";
+    public const string UnavailableSubstitutePool = "unavailable";
+    public const string ThirdOfficeName = "3 офис";
+    public const string UnavailableSubstituteStage = "Недоступные подменные";
     public static readonly TimeSpan ShiftCollectionDelay = TimeSpan.FromMinutes(5);
 
     private static readonly IReadOnlyList<string> PrimaryNdzAliases =
@@ -57,6 +61,29 @@ public static class CrmDailyDistribution
             .Where(IsNdz)
             .ToList();
         return new NdzStageSet(primary, recognized);
+    }
+
+    /// <summary>
+    /// Resolves the third office's unavailable-substitute stage while preserving
+    /// the exact configured label. Other offices must never distribute this pool.
+    /// </summary>
+    public static string? ResolveUnavailableSubstituteStage(
+        string? officeName,
+        IEnumerable<string>? officeStages)
+    {
+        if (!string.Equals(
+                officeName?.Trim(),
+                ThirdOfficeName,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        return (officeStages ?? [])
+            .FirstOrDefault(stage => string.Equals(
+                stage?.Trim(),
+                UnavailableSubstituteStage,
+                StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>

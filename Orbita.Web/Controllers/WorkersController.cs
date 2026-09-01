@@ -73,7 +73,11 @@ public sealed class WorkersController(IWorkersService workers) : Controller
             AccountGroupOptions = model.AccountGroupOptions,
             AdsPowerAccountCount = model.AdsPowerAccountCount,
             MultiloginAccountCount = model.MultiloginAccountCount,
-            CatalogAccountCount = model.CatalogAccountCount
+            LocalAccountCount = model.LocalAccountCount,
+            CatalogAccountCount = model.CatalogAccountCount,
+            AdsPowerCheck = model.AdsPowerCheck,
+            MultiloginCheck = model.MultiloginCheck,
+            LocalChromeCheck = model.LocalChromeCheck
         });
     }
 
@@ -193,6 +197,7 @@ public sealed class WorkersController(IWorkersService workers) : Controller
         string? multiloginLauncherUrl = null,
         string? multiloginCloudApiUrl = null,
         string? multiloginAutomationToken = null,
+        string? localChromeExecutablePath = null,
         CancellationToken ct = default)
     {
         var responseHighlightAgeBucketsCsv = responseHighlightAgeBuckets is { Length: > 0 }
@@ -206,6 +211,9 @@ public sealed class WorkersController(IWorkersService workers) : Controller
         // Unchecked checkboxes are omitted from form posts.
         autoDeliverToCrm = FormBindingHelper.ReadCheckbox(Request.Form, "autoDeliverToCrm");
         autoDeliverToBitrix = FormBindingHelper.ReadCheckbox(Request.Form, "autoDeliverToBitrix");
+        var adsPowerEnabled = FormBindingHelper.ReadCheckbox(Request.Form, "adsPowerEnabled");
+        var multiloginEnabled = FormBindingHelper.ReadCheckbox(Request.Form, "multiloginEnabled");
+        var localChromeEnabled = FormBindingHelper.ReadCheckbox(Request.Form, "localChromeEnabled");
 
         var (success, error) = await workers.UpdateWorkerSettingsAsync(
             workerId,
@@ -235,6 +243,10 @@ public sealed class WorkersController(IWorkersService workers) : Controller
             multiloginLauncherUrl,
             multiloginCloudApiUrl,
             multiloginAutomationToken,
+            localChromeExecutablePath,
+            adsPowerEnabled,
+            multiloginEnabled,
+            localChromeEnabled,
             ct);
         if (!success)
         {
@@ -339,6 +351,32 @@ public sealed class WorkersController(IWorkersService workers) : Controller
 
     [HttpPost]
     [ValidateAntiForgeryToken]
+    public async Task<IActionResult> CheckProvider(Guid workerId, string provider, CancellationToken ct)
+    {
+        var (success, error) = await workers.RequestProviderCheckAsync(workerId, provider, ct);
+        if (!success)
+        {
+            return BadRequest(new { error = error ?? "Не удалось отправить запрос." });
+        }
+
+        return Ok(new { message = WorkerBrowserProviderMessages.CheckQueued });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> SyncProvider(Guid workerId, string provider, CancellationToken ct)
+    {
+        var (success, error) = await workers.RequestProviderSyncAsync(workerId, provider, ct);
+        if (!success)
+        {
+            return BadRequest(new { error = error ?? "Не удалось отправить запрос." });
+        }
+
+        return Ok(new { message = WorkerBrowserProviderMessages.SyncQueued });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> Restart(Guid workerId, CancellationToken ct)
     {
         var (success, error) = await workers.SendWorkerCommandAsync(workerId, WorkerCommands.Restart, ct);
@@ -396,6 +434,76 @@ public sealed class WorkersController(IWorkersService workers) : Controller
 
     [HttpPost]
     [ValidateAntiForgeryToken]
+    public async Task<IActionResult> CreateLocalAccount(
+        Guid workerId,
+        string displayName,
+        string? localUserDataDir,
+        CancellationToken ct)
+    {
+        var (success, error) = await workers.CreateLocalAccountAsync(
+            workerId,
+            displayName,
+            localUserDataDir,
+            ct);
+        TempData[success ? "WorkersSuccess" : "WorkersError"] = success
+            ? (string.IsNullOrWhiteSpace(localUserDataDir)
+                ? "Браузерный аккаунт создан. Откройте браузер и войдите в Avito."
+                : "Аккаунт обычного браузера добавлен.")
+            : error;
+        return RedirectToAction(nameof(Details), new { id = workerId, provider = WorkerAccountCatalogFilter.LocalProvider });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> UpdateLocalAccount(
+        Guid workerId,
+        Guid accountId,
+        string? displayName,
+        string? localUserDataDir,
+        CancellationToken ct)
+    {
+        var (success, error) = await workers.UpdateLocalAccountAsync(
+            workerId,
+            accountId,
+            displayName,
+            localUserDataDir,
+            ct);
+        TempData[success ? "WorkersSuccess" : "WorkersError"] = success
+            ? "Аккаунт обычного браузера сохранён."
+            : error;
+        return RedirectToAction(nameof(Details), new { id = workerId, provider = WorkerAccountCatalogFilter.LocalProvider });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> DeleteLocalAccount(
+        Guid workerId,
+        Guid accountId,
+        CancellationToken ct)
+    {
+        var (success, error) = await workers.DeleteLocalAccountAsync(workerId, accountId, ct);
+        TempData[success ? "WorkersSuccess" : "WorkersError"] = success
+            ? "Аккаунт удалён. Папка профиля на диске не удалялась."
+            : error;
+        return RedirectToAction(nameof(Details), new { id = workerId, provider = WorkerAccountCatalogFilter.LocalProvider });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> OpenLocalBrowser(
+        Guid workerId,
+        Guid accountId,
+        CancellationToken ct)
+    {
+        var (success, error) = await workers.OpenLocalBrowserAsync(workerId, accountId, ct);
+        TempData[success ? "WorkersSuccess" : "WorkersError"] = success
+            ? "На машине воркера открывается Chrome. Войдите в Avito и закройте браузер."
+            : error;
+        return RedirectToAction(nameof(Details), new { id = workerId, provider = WorkerAccountCatalogFilter.LocalProvider });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> UpdateAccountCredentials(
         Guid workerId,
         Guid accountId,
@@ -423,6 +531,47 @@ public sealed class WorkersController(IWorkersService workers) : Controller
                 : "Логин и пароль Avito сохранены. Воркер подхватит их при следующей синхронизации.",
             hasCredentials = !clear,
             login = string.IsNullOrWhiteSpace(login) ? null : login.Trim()
+        });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> UpdateLocalAccountProfile(
+        Guid workerId,
+        Guid accountId,
+        string? login,
+        string? password,
+        bool clearCredentials,
+        bool? proxyEnabled,
+        string? proxyAddress,
+        string? proxyUsername,
+        string? proxyPassword,
+        bool clearProxyPassword,
+        CancellationToken ct)
+    {
+        var (profile, error) = await workers.UpdateLocalAccountProfileAsync(
+            workerId,
+            accountId,
+            login,
+            password,
+            clearCredentials,
+            proxyEnabled,
+            proxyAddress,
+            proxyUsername,
+            proxyPassword,
+            clearProxyPassword,
+            ct);
+        if (profile is null)
+        {
+            return BadRequest(new { error = error ?? "Не удалось сохранить настройки профиля." });
+        }
+
+        return Ok(new
+        {
+            message = clearCredentials
+                ? "Учётные данные Avito очищены."
+                : "Настройки профиля сохранены. Воркер подхватит их при следующей синхронизации.",
+            profile
         });
     }
 

@@ -9,6 +9,7 @@ public sealed class WorkerDetailsAccountsTests
     private static readonly Guid WorkerId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
     private static readonly Guid AdsId = Guid.Parse("11111111-1111-1111-1111-111111111111");
     private static readonly Guid MlxId = Guid.Parse("22222222-2222-2222-2222-222222222222");
+    private static readonly Guid LocalId = Guid.Parse("33333333-3333-3333-3333-333333333333");
 
     [Fact]
     public void MapAccount_Multilogin_SetsProviderAndCanRefresh()
@@ -67,6 +68,363 @@ public sealed class WorkerDetailsAccountsTests
     }
 
     [Fact]
+    public void MapAccount_Local_SetsProviderFolderAndCanRefresh()
+    {
+        var mapped = WorkerDetailsBuilder.MapAccount(
+            new WorkerAccountDto(
+                LocalId,
+                "chrome-acc",
+                "Active",
+                true,
+                1,
+                0,
+                0,
+                null,
+                null,
+                true,
+                AdsPowerProfileId: "",
+                LocalUserDataDir: @"D:\Orbita\ChromeProfiles\acc-1"),
+            balance: null,
+            WorkerId);
+
+        Assert.True(mapped.IsLocal);
+        Assert.False(mapped.IsMultilogin);
+        Assert.Equal("Local", mapped.ProfileProvider);
+        Assert.Equal("Обычный браузер", mapped.ProfileProviderLabel);
+        Assert.Equal("local", mapped.ProfileProviderTone);
+        Assert.Contains("acc-1", mapped.LocationLabel, StringComparison.Ordinal);
+        Assert.True(mapped.CanRefreshSubProfiles);
+        Assert.Contains(@"D:\Orbita\ChromeProfiles\acc-1", mapped.ProfileIdTitle, StringComparison.Ordinal);
+        Assert.True(mapped.IsProviderEnabled);
+        Assert.True(mapped.CanOpenBrowser);
+        Assert.Equal(LocalChromeProxyRules.BrowserFree, mapped.BrowserSessionStatus);
+        Assert.Equal(LocalChromeProxyRules.StatusNotConfigured, mapped.ProxyStatus);
+    }
+
+    [Fact]
+    public void MapAccount_ProviderDisabled_SetsStatusAndBlocksEnableRefresh()
+    {
+        var ads = WorkerDetailsBuilder.MapAccount(
+            new WorkerAccountDto(
+                AdsId,
+                "ads-user",
+                "Active",
+                true,
+                1,
+                0,
+                0,
+                null,
+                null,
+                true,
+                AdsPowerProfileId: "k19001"),
+            balance: null,
+            WorkerId,
+            adsPowerEnabled: false);
+
+        Assert.False(ads.IsProviderEnabled);
+        Assert.Equal(WorkerBrowserProviderMessages.DisabledStatusLabel, ads.StatusLabel);
+        Assert.Equal("inactive", ads.StatusTone);
+        Assert.False(ads.CanRefreshSubProfiles);
+
+        var mlx = WorkerDetailsBuilder.MapAccount(
+            new WorkerAccountDto(
+                MlxId,
+                "mlx-pro",
+                "Active",
+                true,
+                1,
+                0,
+                0,
+                null,
+                null,
+                true,
+                AdsPowerProfileId: "",
+                MultiloginProfileId: "mlx-profile",
+                MultiloginFolderId: "folder-pro"),
+            balance: null,
+            WorkerId,
+            adsPowerEnabled: false,
+            multiloginEnabled: false,
+            localChromeEnabled: true);
+
+        Assert.False(mlx.IsProviderEnabled);
+        Assert.Equal(WorkerBrowserProviderMessages.DisabledStatusLabel, mlx.StatusLabel);
+        Assert.False(mlx.CanRefreshSubProfiles);
+
+        var local = WorkerDetailsBuilder.MapAccount(
+            new WorkerAccountDto(
+                LocalId,
+                "chrome-acc",
+                "Active",
+                true,
+                1,
+                0,
+                0,
+                null,
+                null,
+                true,
+                AdsPowerProfileId: "",
+                LocalUserDataDir: @"D:\Orbita\ChromeProfiles\acc-1"),
+            balance: null,
+            WorkerId,
+            adsPowerEnabled: true,
+            multiloginEnabled: true,
+            localChromeEnabled: false);
+
+        Assert.False(local.IsProviderEnabled);
+        Assert.Equal(WorkerBrowserProviderMessages.DisabledStatusLabel, local.StatusLabel);
+        Assert.False(local.CanRefreshSubProfiles);
+    }
+
+    [Fact]
+    public void Build_CopiesBrowserProviderToggles()
+    {
+        var worker = new WorkerDetail(
+            WorkerId,
+            "worker-1",
+            "pc",
+            "1.0",
+            "Stopped",
+            null,
+            false,
+            false,
+            null,
+            null,
+            null,
+            [],
+            AdsPowerEnabled: false,
+            MultiloginEnabled: true,
+            LocalChromeEnabled: false);
+
+        var model = WorkerDetailsBuilder.Build(worker, [], []);
+        Assert.False(model.AdsPowerEnabled);
+        Assert.True(model.MultiloginEnabled);
+        Assert.False(model.LocalChromeEnabled);
+        Assert.Equal(WorkerBrowserProviderStatus.Disabled, model.AdsPowerCheck.Status);
+        Assert.Equal(WorkerBrowserProviderStatus.NeedsSetup, model.MultiloginCheck.Status);
+        Assert.Equal(WorkerBrowserProviderStatus.Disabled, model.LocalChromeCheck.Status);
+        Assert.NotEqual(WorkerBrowserProviderStatus.Connected, model.AdsPowerCheck.Status);
+        Assert.NotEqual(WorkerBrowserProviderStatus.Connected, model.MultiloginCheck.Status);
+        Assert.NotEqual(WorkerBrowserProviderStatus.Connected, model.LocalChromeCheck.Status);
+        Assert.False(model.AdsPowerCheck.CanCheck);
+        Assert.False(model.AdsPowerCheck.CanSync);
+        Assert.False(model.MultiloginCheck.CanCheck);
+    }
+
+    [Fact]
+    public void Build_ProviderChecks_NeverFakeConnectedFromStaleDto()
+    {
+        var connected = new WorkerBrowserProviderCheckDto(
+            WorkerBrowserProviderKinds.AdsPower,
+            WorkerBrowserProviderStatus.Connected,
+            "Подключён",
+            "Local API доступен · 4 профилей",
+            DateTime.UtcNow,
+            4,
+            2,
+            CanCheck: true,
+            CanSync: true);
+        var worker = new WorkerDetail(
+            WorkerId,
+            "worker-1",
+            "pc",
+            "1.0",
+            "Stopped",
+            null,
+            false,
+            false,
+            null,
+            null,
+            null,
+            [],
+            AdsPowerEnabled: false,
+            MultiloginEnabled: true,
+            LocalChromeEnabled: true,
+            AdsPowerCheck: connected,
+            MultiloginCheck: connected with { Provider = WorkerBrowserProviderKinds.Multilogin },
+            LocalChromeCheck: new WorkerBrowserProviderCheckDto(
+                WorkerBrowserProviderKinds.Local,
+                WorkerBrowserProviderStatus.Unchecked,
+                "Не проверено",
+                CanCheck: true));
+
+        var model = WorkerDetailsBuilder.Build(worker, [], []);
+        Assert.Equal(WorkerBrowserProviderStatus.Disabled, model.AdsPowerCheck.Status);
+        Assert.NotEqual(WorkerBrowserProviderStatus.Connected, model.AdsPowerCheck.Status);
+        Assert.Equal(WorkerBrowserProviderStatus.NeedsSetup, model.MultiloginCheck.Status);
+        Assert.Equal(WorkerBrowserProviderStatus.Unchecked, model.LocalChromeCheck.Status);
+        Assert.False(model.LocalChromeCheck.CanSync);
+    }
+
+    [Fact]
+    public void Build_ProviderChecks_PassThroughSuccessfulWorkerReport()
+    {
+        var worker = new WorkerDetail(
+            WorkerId,
+            "worker-1",
+            "pc",
+            "1.0",
+            "Stopped",
+            null,
+            false,
+            false,
+            null,
+            null,
+            null,
+            [],
+            HasMultiloginAutomationToken: true,
+            AdsPowerEnabled: true,
+            MultiloginEnabled: true,
+            LocalChromeEnabled: true,
+            AdsPowerCheck: new WorkerBrowserProviderCheckDto(
+                WorkerBrowserProviderKinds.AdsPower,
+                WorkerBrowserProviderStatus.Connected,
+                "Подключён",
+                "Local API доступен · 2 профилей",
+                DateTime.UtcNow,
+                2,
+                1,
+                CanCheck: true,
+                CanSync: true),
+            LocalChromeCheck: new WorkerBrowserProviderCheckDto(
+                WorkerBrowserProviderKinds.Local,
+                WorkerBrowserProviderStatus.Error,
+                "Ошибка подключения",
+                "Файл браузера не найден",
+                DateTime.UtcNow,
+                CanCheck: true));
+
+        var model = WorkerDetailsBuilder.Build(worker, [], []);
+        Assert.Equal(WorkerBrowserProviderStatus.Connected, model.AdsPowerCheck.Status);
+        Assert.True(model.AdsPowerCheck.CanSync);
+        Assert.Equal(WorkerBrowserProviderStatus.Unchecked, model.MultiloginCheck.Status);
+        Assert.Equal(WorkerBrowserProviderStatus.Error, model.LocalChromeCheck.Status);
+        Assert.NotEqual(WorkerBrowserProviderStatus.Connected, model.LocalChromeCheck.Status);
+    }
+
+    [Fact]
+    public void MapAccount_Local_ShowsLoginReadyAndProviderStatuses()
+    {
+        var needsLogin = WorkerDetailsBuilder.MapAccount(
+            new WorkerAccountDto(
+                LocalId,
+                "chrome-acc",
+                "RequiresLogin",
+                false,
+                0,
+                0,
+                0,
+                null,
+                null,
+                false,
+                AdsPowerProfileId: "",
+                LocalUserDataDir: LocalChromeProfileMarkers.CreateManaged(LocalId)),
+            balance: null,
+            WorkerId,
+            workerIsOnline: false);
+
+        Assert.Equal(LocalChromeAccountStatus.NeedsLoginAvito, needsLogin.StatusLabel);
+        Assert.Equal("warning", needsLogin.StatusTone);
+        Assert.True(needsLogin.NeedsFirstLogin);
+        Assert.Equal("Открыть браузер для входа", needsLogin.OpenBrowserLabel);
+        Assert.True(needsLogin.IsManagedLocalProfile);
+        Assert.Equal("Автопрофиль", needsLogin.LocationLabel);
+        Assert.Equal("Обычный браузер", needsLogin.ProfileIdTitle);
+
+        var ready = WorkerDetailsBuilder.MapAccount(
+            new WorkerAccountDto(
+                LocalId,
+                "chrome-acc",
+                "Active",
+                true,
+                1,
+                0,
+                0,
+                null,
+                DateTime.UtcNow,
+                true,
+                AdsPowerProfileId: "",
+                LocalUserDataDir: @"D:\Orbita\ChromeProfiles\acc-1"),
+            balance: null,
+            WorkerId,
+            workerIsOnline: true);
+        Assert.Equal(LocalChromeAccountStatus.Ready, ready.StatusLabel);
+        Assert.Equal("success", ready.StatusTone);
+        Assert.Equal("Открыть браузер", ready.OpenBrowserLabel);
+        Assert.False(ready.NeedsFirstLogin);
+        Assert.True(ready.CanOpenBrowser);
+
+        var monitoring = WorkerDetailsBuilder.MapAccount(
+            new WorkerAccountDto(
+                LocalId,
+                "chrome-acc",
+                "Active",
+                true,
+                1,
+                0,
+                0,
+                null,
+                DateTime.UtcNow,
+                true,
+                AdsPowerProfileId: "",
+                LocalUserDataDir: @"D:\Orbita\ChromeProfiles\acc-1",
+                LocalProxyEnabled: true,
+                LocalProxyAddress: "203.0.113.10:8080",
+                HasProxyPassword: true),
+            balance: null,
+            WorkerId,
+            workerIsOnline: true,
+            activeAccounts:
+            [
+                new WorkerActiveAccountDto(LocalId, "chrome-acc", WorkerActivityPhases.Account, "сбор", UpdatedAtUtc: DateTime.UtcNow)
+            ]);
+        Assert.Equal(LocalChromeProxyRules.BrowserMonitoring, monitoring.BrowserSessionStatus);
+        Assert.False(monitoring.CanOpenBrowser);
+        Assert.Equal(LocalChromeProxyRules.StatusConfigured, monitoring.ProxyStatus);
+
+        var relogin = WorkerDetailsBuilder.MapAccount(
+            new WorkerAccountDto(
+                LocalId,
+                "chrome-acc",
+                "RequiresLogin",
+                true,
+                0,
+                0,
+                0,
+                null,
+                DateTime.UtcNow.AddHours(-2),
+                true,
+                AdsPowerProfileId: "",
+                LocalUserDataDir: @"D:\Orbita\ChromeProfiles\acc-1"),
+            balance: null,
+            WorkerId,
+            workerIsOnline: true);
+        Assert.Equal(LocalChromeAccountStatus.NeedsReLogin, relogin.StatusLabel);
+
+        var providerOff = WorkerDetailsBuilder.MapAccount(
+            new WorkerAccountDto(
+                LocalId,
+                "chrome-acc",
+                "Active",
+                true,
+                1,
+                0,
+                0,
+                null,
+                DateTime.UtcNow,
+                true,
+                AdsPowerProfileId: "",
+                LocalUserDataDir: @"D:\Orbita\ChromeProfiles\acc-1"),
+            balance: null,
+            WorkerId,
+            workerIsOnline: true,
+            localChromeEnabled: false);
+        Assert.Equal(LocalChromeAccountStatus.ProviderOff, providerOff.StatusLabel);
+        Assert.Equal("inactive", providerOff.StatusTone);
+        Assert.False(providerOff.IsProviderEnabled);
+    }
+
+    [Fact]
     public void Build_KeepsMultiloginAccounts_AndFiltersByProvider()
     {
         var worker = new WorkerDetail(
@@ -98,20 +456,36 @@ public sealed class WorkerDetailsAccountsTests
                 DisplayName = "mlx-user",
                 MultiloginProfileId = "mlx-profile",
                 MultiloginFolderId = "folder-pro"
+            },
+            new WorkerAccountRowViewModel
+            {
+                Id = LocalId,
+                DisplayName = "chrome-user",
+                LocalUserDataDir = @"D:\Orbita\ChromeProfiles\acc-1"
             }
         };
 
         var all = WorkerDetailsBuilder.Build(worker, accounts, []);
-        Assert.Equal(2, all.Accounts.Count);
-        Assert.Equal(2, all.HighlightAccounts.Count);
+        Assert.Equal(3, all.Accounts.Count);
+        Assert.Equal(3, all.HighlightAccounts.Count);
         Assert.Equal(1, all.AdsPowerAccountCount);
         Assert.Equal(1, all.MultiloginAccountCount);
+        Assert.Equal(1, all.LocalAccountCount);
 
         var mlxOnly = WorkerDetailsBuilder.Build(worker, accounts, [], accountProvider: "multilogin");
         Assert.Single(mlxOnly.Accounts);
         Assert.Equal(MlxId, mlxOnly.Accounts[0].Id);
-        Assert.Equal(2, mlxOnly.HighlightAccounts.Count);
+        Assert.Equal(3, mlxOnly.HighlightAccounts.Count);
         Assert.Equal("multilogin", mlxOnly.AccountProvider);
+
+        var localOnly = WorkerDetailsBuilder.Build(worker, accounts, [], accountProvider: "local");
+        Assert.Single(localOnly.Accounts);
+        Assert.Equal(LocalId, localOnly.Accounts[0].Id);
+        Assert.Equal("local", localOnly.AccountProvider);
+
+        var adsOnly = WorkerDetailsBuilder.Build(worker, accounts, [], accountProvider: "adspower");
+        Assert.Single(adsOnly.Accounts);
+        Assert.Equal(AdsId, adsOnly.Accounts[0].Id);
         Assert.DoesNotContain(mlxOnly.ActiveAccountFilterChips, c => c.Label.StartsWith("Источник:", StringComparison.Ordinal));
 
         var folder = WorkerDetailsBuilder.Build(worker, accounts, [], accountGroupId: "mlx:folder-pro");
@@ -159,5 +533,42 @@ public sealed class WorkerDetailsAccountsTests
         var model = WorkerDetailsBuilder.Build(worker, accounts, [], accountSearchQuery: "folder-b2b");
         Assert.Single(model.Accounts);
         Assert.Equal(MlxId, model.Accounts[0].Id);
+    }
+
+    [Fact]
+    public void Build_Search_MatchesLocalUserDataDir()
+    {
+        var worker = new WorkerDetail(
+            WorkerId,
+            "worker-1",
+            "pc",
+            "1.0",
+            "Stopped",
+            null,
+            false,
+            false,
+            null,
+            null,
+            null,
+            []);
+        var accounts = new[]
+        {
+            new WorkerAccountRowViewModel
+            {
+                Id = AdsId,
+                DisplayName = "ads-user",
+                AdsPowerProfileId = "k1"
+            },
+            new WorkerAccountRowViewModel
+            {
+                Id = LocalId,
+                DisplayName = "other",
+                LocalUserDataDir = @"D:\Orbita\ChromeProfiles\cabinet-7"
+            }
+        };
+
+        var model = WorkerDetailsBuilder.Build(worker, accounts, [], accountSearchQuery: "cabinet-7");
+        Assert.Single(model.Accounts);
+        Assert.Equal(LocalId, model.Accounts[0].Id);
     }
 }

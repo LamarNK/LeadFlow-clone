@@ -6,11 +6,13 @@
     var isBeeline = Model.Provider == CrmTelephonyProviders.Beeline;
     var isSipProvider = isSipout || isPlusofon || isBeeline;
     var providerLabel = isPlusofon ? "Плюсофон" : isAsterisk ? "SIP-сервер" : isBeeline ? "Билайн SIP" : "SIPOUT";
+    var providerSetupTitle = isSipout ? "Скопируйте WebRequest URL" : $"Скопируйте webhook для {providerLabel}";
     var bindingsByUser = Model.Settings.UserBindings.ToDictionary(x => x.UserId, StringComparer.Ordinal);
     var phoneUsersByUser = Model.PhoneUsers.ToDictionary(x => x.UserId, StringComparer.Ordinal);
     var sipoutAccounts = Model.SipoutAccounts.ToList();
     var plusofonAccounts = Model.PlusofonAccounts.ToList();
     var beelineAccounts = Model.BeelineAccounts.ToList();
+    var providerAccounts = (Model.Settings.ProviderAccounts ?? []).ToList();
     var officeOutboundLines = new List<(string Value, string Label, bool Selected)>();
     officeOutboundLines.AddRange(sipoutAccounts
         .Where(account => account.Mode == CrmSipAccountModes.Shared)
@@ -116,6 +118,213 @@
         <div class="settings-alert settings-alert--error" role="alert">@Model.ErrorMessage</div>
     }
 
+    @if (isSipout || isPlusofon)
+    {
+        <section class="card telephony-card telephony-provider-accounts">
+            <div class="card-header settings-card-header">
+                <div>
+                    <h2 class="settings-card-title">Кабинеты @providerLabel</h2>
+                    <p class="settings-card-subtitle">Орбита находит карточку по номеру кандидата. Привязка внутренних номеров сотрудников нужна только для отображения автора звонка.</p>
+                </div>
+                <span class="settings-status-pill @(providerAccounts.Any(x => x.IsEnabled) ? "settings-status-pill--online" : "settings-status-pill--disabled")">
+                    @providerAccounts.Count @(providerAccounts.Count == 1 ? "кабинет" : "кабинетов")
+                </span>
+            </div>
+            <div class="card-body">
+                @if (providerAccounts.Count > 0)
+                {
+                    <div class="telephony-provider-account-list">
+                        @foreach (var cloudAccount in providerAccounts)
+                        {
+                            var statusTone = cloudAccount.SyncStatus switch
+                            {
+                                "online" or "webhook" => "settings-status-pill--online",
+                                "unauthorized" or "error" => "settings-status-pill--danger",
+                                _ => "settings-status-pill--warning"
+                            };
+                            var statusLabel = cloudAccount.SyncStatus switch
+                            {
+                                "online" => "Синхронизируется",
+                                "webhook" => "Ожидает события",
+                                "unauthorized" => "Ошибка доступа",
+                                "error" => "Ошибка синхронизации",
+                                _ => "Подключается"
+                            };
+                            <article class="telephony-provider-account">
+                                <div class="telephony-provider-account__head">
+                                    <div>
+                                        <strong>@cloudAccount.Name</strong>
+                                        <span>@(isPlusofon ? $"Client ID: {cloudAccount.ExternalAccountId}" : $"Приёмник: {cloudAccount.PublicId:D}")</span>
+                                    </div>
+                                    <span class="settings-status-pill @statusTone">@statusLabel</span>
+                                </div>
+                                @if (!string.IsNullOrWhiteSpace(cloudAccount.LastSyncError))
+                                {
+                                    <p class="settings-alert settings-alert--error">@cloudAccount.LastSyncError</p>
+                                }
+                                <div class="telephony-provider-account__facts">
+                                    <span><strong>@cloudAccount.OwnedNumbers.Count</strong> собственных номеров <small>(необязательно)</small></span>
+                                    <span>Последняя синхронизация: @(cloudAccount.LastSyncedAtUtc?.ToString("dd.MM.yyyy HH:mm") ?? "ещё не выполнялась")</span>
+                                </div>
+                                @if (Model.CanManage)
+                                {
+                                    <details class="telephony-provider-account__settings">
+                                        <summary>Изменить кабинет</summary>
+                                        <form asp-controller="TelephonySettings" asp-action="SaveProviderAccount" method="post" class="telephony-provider-account-form" autocomplete="off">
+                                            @Html.AntiForgeryToken()
+                                            <input type="hidden" name="OfficeId" value="@Model.OfficeId" />
+                                            <input type="hidden" name="Provider" value="@Model.Provider" />
+                                            <input type="hidden" name="AccountId" value="@cloudAccount.Id" />
+                                            <label class="settings-field">
+                                                <span class="settings-field-label">Название кабинета</span>
+                                                <input name="Name" value="@cloudAccount.Name" required maxlength="128" />
+                                            </label>
+                                            @if (isPlusofon)
+                                            {
+                                                <label class="settings-field">
+                                                    <span class="settings-field-label">Client ID</span>
+                                                    <input name="ExternalAccountId" value="@cloudAccount.ExternalAccountId" required maxlength="128" />
+                                                </label>
+                                                <label class="settings-field">
+                                                    <span class="settings-field-label">Новый Access Token</span>
+                                                    <input type="password" name="AccessToken" autocomplete="new-password" placeholder="Оставьте пустым, чтобы не менять" maxlength="4096" />
+                                                </label>
+                                            }
+                                            <label class="settings-field telephony-provider-account-form__wide">
+                                                <span class="settings-field-label">Собственные номера кабинета <small>(необязательно)</small></span>
+                                                <textarea name="OwnedNumbers" rows="2" placeholder="По одному номеру или через запятую">@string.Join(", ", cloudAccount.OwnedNumbers)</textarea>
+                                                <small>Нужны только как подсказка при неоднозначных событиях: эти номера исключаются из поиска кандидата. На загрузку звонков поле не влияет.</small>
+                                            </label>
+                                            <input type="hidden" name="IsEnabled" value="false" />
+                                            <label class="settings-check telephony-provider-account-form__wide">
+                                                <input type="checkbox" name="IsEnabled" value="true" checked="@cloudAccount.IsEnabled" />
+                                                <span>Получать звонки из этого кабинета</span>
+                                            </label>
+                                            <button type="submit" class="settings-primary-btn">Сохранить</button>
+                                        </form>
+                                    </details>
+                                    <div class="telephony-provider-account__actions">
+                                        <form asp-controller="TelephonySettings" asp-action="RotateProviderAccountReceiver" method="post">
+                                            @Html.AntiForgeryToken()
+                                            <input type="hidden" name="officeId" value="@Model.OfficeId" />
+                                            <input type="hidden" name="provider" value="@Model.Provider" />
+                                            <input type="hidden" name="accountId" value="@cloudAccount.Id" />
+                                            <button type="submit"
+                                                    class="settings-secondary-btn"
+                                                    onclick="return confirm('Старый адрес сразу перестанет работать. Перевыпустить WebRequest URL?');">
+                                                @(isSipout ? "Перевыпустить WebRequest URL" : "Перевыпустить webhook")
+                                            </button>
+                                        </form>
+                                        <form asp-controller="TelephonySettings"
+                                              asp-action="DeleteProviderAccount"
+                                              method="post"
+                                              onsubmit="return confirm('Удалить кабинет? Новые звонки перестанут поступать, но уже сохранённые звонки и записи останутся в карточках.');">
+                                            @Html.AntiForgeryToken()
+                                            <input type="hidden" name="officeId" value="@Model.OfficeId" />
+                                            <input type="hidden" name="provider" value="@Model.Provider" />
+                                            <input type="hidden" name="accountId" value="@cloudAccount.Id" />
+                                            <button type="submit" class="settings-danger-btn">
+                                                <i class="fa-solid fa-trash" aria-hidden="true"></i>
+                                                Удалить кабинет
+                                            </button>
+                                        </form>
+                                    </div>
+                                    <details class="telephony-provider-account__author-settings">
+                                        <summary>Дополнительно: определять автора звонка</summary>
+                                        <div class="telephony-provider-account__author-content">
+                                            <p>
+                                                Не влияет на поиск карточки и загрузку записи. Без этой настройки звонок всё равно попадёт к кандидату,
+                                                а автором в ленте будет указан <strong>@providerLabel</strong>.
+                                            </p>
+                                            @if (cloudAccount.UserBindings is { Count: > 0 })
+                                            {
+                                                <div class="telephony-provider-account__bindings" aria-label="Привязанные сотрудники">
+                                                    @foreach (var binding in cloudAccount.UserBindings)
+                                                    {
+                                                        <span><strong>@binding.ProviderUserKey</strong> · @binding.UserName</span>
+                                                    }
+                                                </div>
+                                            }
+                                            <form asp-controller="TelephonySettings" asp-action="SaveProviderAccountBinding" method="post" class="telephony-binding-form telephony-provider-account__binding">
+                                                @Html.AntiForgeryToken()
+                                                <input type="hidden" name="OfficeId" value="@Model.OfficeId" />
+                                                <input type="hidden" name="Provider" value="@Model.Provider" />
+                                                <input type="hidden" name="AccountId" value="@cloudAccount.Id" />
+                                                <label class="settings-field">
+                                                    <span class="settings-field-label">Сотрудник</span>
+                                                    <select name="UserId" required>
+                                                        <option value="">Выберите сотрудника</option>
+                                                        @foreach (var user in Model.OfficeUsers)
+                                                        {
+                                                            <option value="@user.Id">@(string.IsNullOrWhiteSpace(user.FullName) ? user.Email : user.FullName)</option>
+                                                        }
+                                                    </select>
+                                                </label>
+                                                <label class="settings-field">
+                                                    <span class="settings-field-label">@(isSipout ? "Внутренний номер SIPOUT" : "SIP ID / внутренний номер")</span>
+                                                    <input name="ProviderUserKey" required maxlength="128" placeholder="Например, 202" />
+                                                </label>
+                                                <button type="submit" class="settings-secondary-btn">Привязать автора</button>
+                                            </form>
+                                        </div>
+                                    </details>
+                                }
+                            </article>
+                        }
+                    </div>
+                }
+                else
+                {
+                    <p class="telephony-configured-note">Кабинеты ещё не добавлены. Старое подключение продолжит работать, но для получения всей истории добавьте кабинет ниже.</p>
+                }
+
+                @if (Model.CanManage)
+                {
+                    <details class="telephony-provider-account-create" open="@(providerAccounts.Count == 0)">
+                        <summary>Добавить кабинет</summary>
+                        <form asp-controller="TelephonySettings" asp-action="SaveProviderAccount" method="post" class="telephony-provider-account-form" autocomplete="off">
+                            @Html.AntiForgeryToken()
+                            <input type="hidden" name="OfficeId" value="@Model.OfficeId" />
+                            <input type="hidden" name="Provider" value="@Model.Provider" />
+                            <input type="hidden" name="IsEnabled" value="true" />
+                            <label class="settings-field">
+                                <span class="settings-field-label">Название кабинета</span>
+                                <input name="Name" required maxlength="128" placeholder="@(isPlusofon ? "Например, Плюсофон — основной" : "Например, SIPOUT — офис 3")" />
+                            </label>
+                            @if (isPlusofon)
+                            {
+                                <label class="settings-field">
+                                    <span class="settings-field-label">Client ID</span>
+                                    <input name="ExternalAccountId" required maxlength="128" autocomplete="off" />
+                                </label>
+                                <label class="settings-field">
+                                    <span class="settings-field-label">Access Token</span>
+                                    <input type="password" name="AccessToken" required maxlength="4096" autocomplete="new-password" />
+                                </label>
+                            }
+                            <label class="settings-field telephony-provider-account-form__wide">
+                                <span class="settings-field-label">Собственные номера кабинета <small>(необязательно)</small></span>
+                                <textarea name="OwnedNumbers" rows="3" placeholder="79990000001, 79990000002"></textarea>
+                                <small>@(isPlusofon
+                                    ? "Обычно можно оставить пустым: Плюсофон передаёт направление звонка."
+                                    : "Рекомендуется заполнить, если SIPOUT не всегда передаёт направление звонка.")</small>
+                            </label>
+                            @if (isPlusofon)
+                            {
+                                <label class="settings-field">
+                                    <span class="settings-field-label">Загрузить историю начиная с</span>
+                                    <input type="date" name="SyncFromUtc" />
+                                    <small>Если не указать — последние 7 дней. Максимум — 180 дней.</small>
+                                </label>
+                            }
+                            <button type="submit" class="settings-primary-btn">Добавить кабинет</button>
+                        </form>
+                    </details>
+                }
+            </div>
+        </section>
+    }
+
     @if (isAsterisk || isSipProvider)
     {
         <section class="card telephony-card">
@@ -153,56 +362,7 @@
         </section>
     }
 
-    @if (!string.IsNullOrWhiteSpace(Model.ProviderSetupUrl))
-    {
-        <section class="card telephony-card telephony-secret-card">
-            <div class="card-header settings-card-header">
-                <div>
-                    <h2 class="settings-card-title">Данные webhook для @providerLabel</h2>
-                    <p class="settings-card-subtitle">Показываются один раз. Не отправляйте их в общие чаты.</p>
-                </div>
-            </div>
-            <div class="card-body">
-                <div class="telephony-copy-row">
-                    <code id="telephonyProviderUrl">@Model.ProviderSetupUrl</code>
-                    <button type="button" class="settings-primary-btn settings-primary-btn--compact" data-copy-telephony-value="telephonyProviderUrl">Копировать URL</button>
-                </div>
-                @if (isPlusofon || isAsterisk)
-                {
-                    <div class="telephony-copy-row">
-                        <code id="telephonyProviderSecret">@Model.WebhookSecretHeader: @Model.WebhookSecret</code>
-                        <button type="button" class="settings-primary-btn settings-primary-btn--compact" data-copy-telephony-value="telephonyProviderSecret">Копировать заголовок</button>
-                    </div>
-                    @if (isAsterisk)
-                    {
-                        <ol class="telephony-steps">
-                            <li>Запишите <strong>Public ID</strong> из адреса и секретный HTTP-заголовок в защищённый <code>.env</code> SIP-контейнера.</li>
-                            <li>Asterisk отправляет сюда multipart-поля звонка и файл <strong>recording</strong> после завершения разговора.</li>
-                            <li>Внутренние номера сотрудников свяжите с пользователями ниже.</li>
-                        </ol>
-                    }
-                    else
-                    {
-                        <ol class="telephony-steps">
-                            <li>В Плюсофоне создайте webhook события <strong>destroy</strong> для всех звонков.</li>
-                            <li>Укажите URL выше и добавьте HTTP-заголовок целиком.</li>
-                            <li>Передавайте поля <strong>call_id, direction, from, to, internal, timestamp, duration</strong>.</li>
-                        </ol>
-                    }
-                }
-                else
-                {
-                    <ol class="telephony-steps">
-                        <li>В виртуальной АТС SIPOUT откройте сценарий звонка.</li>
-                        <li>В системном обработчике завершения <strong>h</strong> добавьте действие <strong>WebRequest</strong>.</li>
-                        <li>Вставьте адрес целиком и включите запись разговоров.</li>
-                    </ol>
-                }
-            </div>
-        </section>
-    }
-
-    @if (isPlusofon)
+    @if (isPlusofon && providerAccounts.Count == 0)
     {
         <section class="card telephony-card">
             <div class="card-header settings-card-header">
@@ -792,7 +952,7 @@
         </section>
     }
 
-    @if (!isBeeline)
+    @if (!isBeeline && providerAccounts.Count == 0)
     {
     <div class="telephony-settings-grid">
         <section class="card telephony-card telephony-receiver-card" id="telephonyReceiver">
@@ -1094,6 +1254,79 @@
                 <button type="submit" class="settings-primary-btn">Сохранить привязку</button>
             </footer>
         </form>
+    </section>
+</div>
+}
+
+@if (!string.IsNullOrWhiteSpace(Model.ProviderSetupUrl))
+{
+<div class="telephony-modal" data-telephony-webhook-modal>
+    <button type="button" class="telephony-modal__backdrop" data-telephony-close-webhook aria-label="Закрыть"></button>
+    <section class="telephony-modal__dialog telephony-webhook-modal__dialog"
+             role="dialog"
+             aria-modal="true"
+             aria-labelledby="telephonyWebhookTitle"
+             aria-describedby="telephonyWebhookDescription">
+        <header class="telephony-modal__header">
+            <div>
+                <span class="telephony-modal__eyebrow">@Model.OfficeName · @providerLabel</span>
+                <h2 id="telephonyWebhookTitle">@providerSetupTitle</h2>
+                <p id="telephonyWebhookDescription">Адрес показывается только сейчас. Скопируйте его и храните как пароль.</p>
+            </div>
+            <button type="button" class="telephony-modal__close" data-telephony-close-webhook aria-label="Закрыть">
+                <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+            </button>
+        </header>
+        <div class="telephony-webhook-modal__body">
+            <div class="telephony-webhook-modal__warning" role="note">
+                <i class="fa-solid fa-shield-halved" aria-hidden="true"></i>
+                <span>Не отправляйте этот URL в общие чаты. Перевыпуск адреса сразу отключит предыдущий.</span>
+            </div>
+            <div class="telephony-copy-row telephony-webhook-modal__copy">
+                <code id="telephonyProviderUrl">@Model.ProviderSetupUrl</code>
+                <button type="button"
+                        class="settings-primary-btn"
+                        data-copy-telephony-value="telephonyProviderUrl"
+                        data-telephony-webhook-copy>
+                    Копировать URL
+                </button>
+            </div>
+            @if (isPlusofon || isAsterisk)
+            {
+                @if (!string.IsNullOrWhiteSpace(Model.WebhookSecret))
+                {
+                    <div class="telephony-copy-row">
+                        <code id="telephonyProviderSecret">@Model.WebhookSecretHeader: @Model.WebhookSecret</code>
+                        <button type="button" class="settings-secondary-btn" data-copy-telephony-value="telephonyProviderSecret">Копировать заголовок</button>
+                    </div>
+                }
+                @if (isAsterisk)
+                {
+                    <ol class="telephony-steps">
+                        <li>Запишите <strong>Public ID</strong> из адреса и секретный HTTP-заголовок в защищённый <code>.env</code> SIP-контейнера.</li>
+                        <li>Asterisk отправляет сюда данные звонка и файл записи после завершения разговора.</li>
+                    </ol>
+                }
+                else
+                {
+                    <ol class="telephony-steps">
+                        <li>История кабинета уже загружается по API; webhook ускоряет появление новых звонков.</li>
+                        <li>В Плюсофоне создайте webhook события <strong>destroy</strong> для всех звонков и вставьте URL целиком.</li>
+                    </ol>
+                }
+            }
+            else
+            {
+                <ol class="telephony-steps">
+                    <li>В SIPOUT откройте <strong>Входящие маршруты / IVR</strong> и создайте пункт <strong>h</strong>.</li>
+                    <li>Выберите тип <strong>WEB-запрос</strong>, вставьте URL целиком и укажите метод <strong>GET</strong>.</li>
+                    <li>Включите <strong>Не ждать ответа</strong>, сохраните изменения и убедитесь, что запись разговоров включена.</li>
+                </ol>
+            }
+            <footer class="telephony-modal__footer">
+                <button type="button" class="settings-secondary-btn" data-telephony-close-webhook>Готово</button>
+            </footer>
+        </div>
     </section>
 </div>
 }

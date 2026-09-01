@@ -1,4 +1,6 @@
 using System.Globalization;
+using System.IO.Compression;
+using System.Text;
 using Orbita.Contracts;
 using Orbita.Web.Formatting;
 using Orbita.Web.Models.ViewModels;
@@ -46,6 +48,8 @@ internal static class DesignPreviewData
     private static bool _previewCrmDeadlineNotificationsEnabled = true;
     private static List<string> _previewCrmStages = CrmStages.Default
         .Select(stage => stage == CrmStages.Substitution ? PreviewRobotStage : stage)
+        .Append(BitrixCrmImportStages.LongTermNegotiations)
+        .Distinct(StringComparer.Ordinal)
         .ToList();
     private static readonly List<PreviewCrmCandidate> PreviewCrmCandidates =
     [
@@ -146,6 +150,8 @@ internal static class DesignPreviewData
             Guid.Parse("90000000-0000-0000-0000-000000000001"),
             new CrmHistoryDto(Guid.Parse("93000000-0000-0000-0000-000000000002"), "Assigned", "Елена Воронцова", "preview-admin", "Администратор", Now.AddMinutes(-34)))
     ];
+    private static readonly Dictionary<Guid, List<CrmSuccessDocumentDto>> PreviewCrmSuccessDocuments = [];
+    private static readonly Dictionary<Guid, string?> PreviewCrmContractMissingReasons = [];
 
     public static CrmBoardDto GetCrmBoard(CrmBoardQuery? query = null)
     {
@@ -223,7 +229,8 @@ internal static class DesignPreviewData
 
             if (query.ActiveLoadOnly)
             {
-                cards = cards.Where(c => c.IsInActiveLoad);
+                cards = cards.Where(c =>
+                    c.IsInActiveLoad && !CrmManagerLoadRules.IsExcludedStage(c.Stage));
             }
 
             if (scope == CrmBoardScopes.Unassigned)
@@ -325,7 +332,9 @@ internal static class DesignPreviewData
                     stages.Add(new CrmStageDto("Закрыто", closedCards, closedCount));
                 }
             }
-            var activeLoad = PreviewCrmCandidates.Count(c => c.ManagerUserId == PreviewManagerElena && c.IsInActiveLoad && !c.IsClosed);
+            var activeLoad = PreviewCrmCandidates.Count(c =>
+                c.ManagerUserId == PreviewManagerElena
+                && CrmManagerLoadRules.CountsTowardsLoad(c.Stage, c.IsInActiveLoad, c.IsClosed));
             var openTasks = PreviewCrmTasks.Count(t => t.Status == CrmTaskStatuses.Open);
             var overdue = PreviewCrmTasks.Count(t => t.IsOverdue && t.Status == CrmTaskStatuses.Open);
             var team = new CrmTeamStatsDto(
@@ -570,6 +579,33 @@ internal static class DesignPreviewData
             .OrderBy(x => x.OfficeName, StringComparer.OrdinalIgnoreCase)
             .ThenBy(x => x.DisplayName, StringComparer.OrdinalIgnoreCase)
             .ToList();
+        var decomposition = BuildPreviewCrmDecomposition(cards);
+        var qualityManagers = managers
+            .Take(5)
+            .Select((manager, index) => new CrmCallQualityManagerDto(
+                manager.UserId,
+                manager.DisplayName,
+                12 + index * 3,
+                10 + index * 2,
+                8 + index * 2,
+                PreviewPercent(8 + index * 2, 12 + index * 3),
+                Math.Round(8.4 - index * .35, 1)))
+            .ToList();
+        var quality = new CrmCallQualityAnalyticsDto(
+            qualityManagers.Sum(x => x.RecordedCalls),
+            qualityManagers.Sum(x => x.TranscribedCalls),
+            qualityManagers.Sum(x => x.AnalyzedCalls),
+            PreviewPercent(qualityManagers.Sum(x => x.AnalyzedCalls), qualityManagers.Sum(x => x.RecordedCalls)),
+            qualityManagers.Count == 0 ? null : Math.Round(qualityManagers.Average(x => x.AverageScore ?? 0), 1),
+            [
+                new("next_step", "Зафиксирован следующий шаг", 14, 73.7),
+                new("clear_offer", "Понятно объяснены условия", 11, 57.9)
+            ],
+            [
+                new("motivation", "Не полностью выявлена мотивация", 8, 42.1),
+                new("objections", "Возражение осталось без уточнения", 5, 26.3)
+            ],
+            qualityManagers);
 
         return new CrmAnalyticsDto(
             normalizedFrom,
@@ -581,7 +617,36 @@ internal static class DesignPreviewData
             funnels,
             managerOptions,
             managers,
-            DateTime.UtcNow);
+            decomposition,
+            DateTime.UtcNow,
+            quality);
+    }
+
+    private static CrmAnalyticsDecompositionDto BuildPreviewCrmDecomposition(
+        CrmAnalyticsCardMetricsDto cards)
+    {
+        var contracts = Math.Min(cards.Received, cards.SuccessfulClosed);
+        var tickets = Math.Min(cards.Received, Math.Max(contracts, (int)Math.Round(cards.Received * .12)));
+        var questionnaires = Math.Min(cards.Received, Math.Max(tickets, (int)Math.Round(cards.Received * .27)));
+        var contacts = Math.Min(cards.Received, Math.Max(questionnaires, (int)Math.Round(cards.Received * .61)));
+        var officer = Math.Min(contacts, Math.Max(0, (int)Math.Round(contacts * .04)));
+        var notRelevant = Math.Min(contacts - officer, Math.Max(0, (int)Math.Round(contacts * .08)));
+
+        return new CrmAnalyticsDecompositionDto(
+            cards.Received,
+            contacts,
+            questionnaires,
+            tickets,
+            contracts,
+            PreviewPercent(contacts, cards.Received),
+            PreviewPercent(questionnaires, contacts),
+            PreviewPercent(tickets, questionnaires),
+            PreviewPercent(contracts, tickets),
+            [
+                new("Переговоры и дальше", contacts - officer - notRelevant),
+                new(CrmCloseReasons.NotRelevant, notRelevant),
+                new(CrmCloseReasons.Officer, officer)
+            ]);
     }
 
     private static IReadOnlyList<CrmAnalyticsCloseReasonDto> BuildPreviewCrmCloseReasons(
@@ -682,6 +747,10 @@ internal static class DesignPreviewData
                 .Select(item => item.History)
                 .OrderByDescending(item => item.CreatedAtUtc)
                 .ToList();
+            var successDocuments = PreviewCrmSuccessDocuments.TryGetValue(cardId, out var reportDocuments)
+                ? reportDocuments.OrderBy(item => item.CreatedAtUtc).ToList()
+                : [];
+            var contractMissingReason = PreviewCrmContractMissingReasons.GetValueOrDefault(cardId);
             var activity = notes.Select(x => new CrmActivityItemDto(
                     "note",
                     x.IsPinned
@@ -720,7 +789,9 @@ internal static class DesignPreviewData
                         and not "NoteUnpinned"
                         and not "TaskCreated"
                         and not "TaskUpdated"
-                        and not "TaskCompleted")
+                        and not "TaskCompleted"
+                        and not "SuccessReportUploaded"
+                        and not "SuccessReportUpdated")
                     .Select(h =>
                     {
                         var activityDetails = CrmActivityDetails.Split(h.Details);
@@ -749,7 +820,9 @@ internal static class DesignPreviewData
                 [new CrmContactPhoneDto(Guid.Empty, candidate.PhoneRaw, candidate.PhoneRaw, true, null, DateTime.UtcNow)],
                 ChatUnreadCount: 0,
                 TaskComments: taskComments,
-                ClientTime: CrmClientTimeResolver.Resolve(candidate.City, DateTime.UtcNow));
+                ClientTime: CrmClientTimeResolver.Resolve(candidate.City, DateTime.UtcNow),
+                SuccessDocuments: successDocuments,
+                SuccessContractMissingReason: contractMissingReason);
         }
     }
 
@@ -850,11 +923,13 @@ internal static class DesignPreviewData
     {
         lock (CrmSync)
         {
+            var openTaskCount = PreviewCrmTasks.Count(task => task.Status == CrmTaskStatuses.Open);
             return _previewCrmDeadlineNotificationsEnabled
                 ? new CrmTaskNotificationSummaryDto(
                     PreviewCrmTaskNotifications.Count(item => item.ReadAtUtc is null),
-                    true)
-                : new CrmTaskNotificationSummaryDto(0, false);
+                    true,
+                    openTaskCount)
+                : new CrmTaskNotificationSummaryDto(0, false, openTaskCount);
         }
     }
 
@@ -999,6 +1074,174 @@ internal static class DesignPreviewData
             candidate.IsInActiveLoad = false;
             AddPreviewCrmHistory(cardId, "Closed", CrmActivityDetails.WithComment(reason, comment));
             return (true, null);
+        }
+    }
+
+    public static (bool Success, string? Error) CloseCrmCardSuccess(
+        Guid cardId,
+        string? comment,
+        string? contractMissingReason,
+        IReadOnlyList<CrmSuccessUploadFile> files)
+    {
+        lock (CrmSync)
+        {
+            var candidate = PreviewCrmCandidates.FirstOrDefault(item => item.Id == cardId);
+            if (candidate is null) return (false, "Карточка не найдена.");
+            if (string.IsNullOrWhiteSpace(comment)) return (false, "При успешном закрытии обязателен комментарий.");
+
+            var now = DateTime.UtcNow;
+            PreviewCrmSuccessDocuments[cardId] = files
+                .Select(file => new CrmSuccessDocumentDto(
+                    Guid.NewGuid(),
+                    file.Category,
+                    file.FileName,
+                    file.ContentType,
+                    file.Length,
+                    "Администратор",
+                    now))
+                .ToList();
+            PreviewCrmContractMissingReasons[cardId] = string.IsNullOrWhiteSpace(contractMissingReason)
+                ? null
+                : contractMissingReason.Trim();
+            candidate.IsClosed = true;
+            candidate.CloseReason = CrmCloseReasons.Success;
+            candidate.IsInActiveLoad = false;
+            AddPreviewCrmHistory(
+                cardId,
+                "SuccessReportUploaded",
+                $"Загружено файлов: {files.Count}");
+            AddPreviewCrmHistory(
+                cardId,
+                "Closed",
+                CrmActivityDetails.WithComment(CrmCloseReasons.Success, comment));
+            return (true, null);
+        }
+    }
+
+    public static (bool Success, string? Error) UpdateCrmSuccessReport(
+        Guid cardId,
+        IReadOnlyCollection<Guid> keptDocumentIds,
+        string? contractMissingReason,
+        IReadOnlyList<CrmSuccessUploadFile> files)
+    {
+        lock (CrmSync)
+        {
+            var candidate = PreviewCrmCandidates.FirstOrDefault(item => item.Id == cardId);
+            if (candidate is null
+                || !candidate.IsClosed
+                || !string.Equals(candidate.CloseReason, CrmCloseReasons.Success, StringComparison.Ordinal))
+            {
+                return (false, "Редактировать отчёт можно только у карточки, закрытой в успех.");
+            }
+
+            if (!PreviewCrmSuccessDocuments.TryGetValue(cardId, out var existing))
+            {
+                existing = [];
+            }
+            var existingIds = existing.Select(document => document.Id).ToHashSet();
+            if (keptDocumentIds.Any(documentId => !existingIds.Contains(documentId)))
+            {
+                return (false, "Один из сохраняемых файлов не относится к этому отчёту.");
+            }
+
+            var now = DateTime.UtcNow;
+            var finalDocuments = existing
+                .Where(document => keptDocumentIds.Contains(document.Id))
+                .Concat(files.Select(file => new CrmSuccessDocumentDto(
+                    Guid.NewGuid(),
+                    file.Category,
+                    file.FileName,
+                    file.ContentType,
+                    file.Length,
+                    "Администратор",
+                    now)))
+                .ToList();
+            foreach (var requiredCategory in CrmSuccessDocumentCategories.Required)
+            {
+                if (finalDocuments.All(document => !string.Equals(document.Category, requiredCategory, StringComparison.Ordinal)))
+                {
+                    return (false, $"Добавьте обязательный раздел «{CrmSuccessDocumentCategories.GetLabel(requiredCategory)}».");
+                }
+            }
+
+            var hasContract = finalDocuments.Any(document =>
+                string.Equals(document.Category, CrmSuccessDocumentCategories.Contract, StringComparison.Ordinal));
+            if (!hasContract && string.IsNullOrWhiteSpace(contractMissingReason))
+            {
+                return (false, "Добавьте фото контракта или укажите обязательную причину, почему фото нет.");
+            }
+
+            PreviewCrmSuccessDocuments[cardId] = finalDocuments;
+            PreviewCrmContractMissingReasons[cardId] = hasContract ? null : contractMissingReason!.Trim();
+            AddPreviewCrmHistory(cardId, "SuccessReportUpdated", $"Файлов в отчёте: {finalDocuments.Count}");
+            return (true, null);
+        }
+    }
+
+    public static (Stream? Stream, string? FileName, string? Error) OpenCrmSuccessReportArchive(Guid cardId)
+    {
+        lock (CrmSync)
+        {
+            var candidate = PreviewCrmCandidates.FirstOrDefault(item => item.Id == cardId);
+            if (candidate is null
+                || !candidate.IsClosed
+                || !string.Equals(candidate.CloseReason, CrmCloseReasons.Success, StringComparison.Ordinal)
+                || !PreviewCrmSuccessDocuments.TryGetValue(cardId, out var documents)
+                || documents.Count == 0)
+            {
+                return (null, null, "Отчёт не найден.");
+            }
+
+            var output = new MemoryStream();
+            using (var archive = new ZipArchive(output, ZipArchiveMode.Create, leaveOpen: true, Encoding.UTF8))
+            {
+                var manifest = archive.CreateEntry("Отчёт.txt", CompressionLevel.Fastest);
+                using (var writer = new StreamWriter(manifest.Open(), new UTF8Encoding(true)))
+                {
+                    writer.WriteLine("ОТЧЁТ ПО УСПЕШНО ЗАКРЫТОМУ КАНДИДАТУ");
+                    writer.WriteLine();
+                    writer.WriteLine($"Кандидат: {candidate.FullName}");
+                    writer.WriteLine($"ID карточки: {cardId:D}");
+                    writer.WriteLine($"Всего файлов: {documents.Count}");
+                    var reason = PreviewCrmContractMissingReasons.GetValueOrDefault(cardId);
+                    if (!string.IsNullOrWhiteSpace(reason))
+                    {
+                        writer.WriteLine($"Причина отсутствия фото контракта: {reason}");
+                    }
+                }
+
+                var usedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { manifest.FullName };
+                foreach (var document in documents)
+                {
+                    var folder = document.Category switch
+                    {
+                        CrmSuccessDocumentCategories.Correspondence => "01 Переписка",
+                        CrmSuccessDocumentCategories.Ticket => "02 Билеты",
+                        CrmSuccessDocumentCategories.TicketReceipt => "03 Чеки на билеты",
+                        CrmSuccessDocumentCategories.Contract => "04 Контракт",
+                        CrmSuccessDocumentCategories.Relationship => "05 Отношение",
+                        CrmSuccessDocumentCategories.CandidateDocument => "06 Документы и прочие файлы/Документы кандидата",
+                        _ => "06 Документы и прочие файлы/Прочее"
+                    };
+                    var safeFileName = string.Concat(document.FileName.Select(character =>
+                        "<>:\"/\\|?*".IndexOf(character) >= 0 || char.IsControl(character)
+                            ? '_'
+                            : character));
+                    var entryName = $"{folder}/{safeFileName}";
+                    var extension = Path.GetExtension(safeFileName);
+                    var stem = Path.GetFileNameWithoutExtension(safeFileName);
+                    for (var suffix = 2; !usedNames.Add(entryName); suffix++)
+                    {
+                        entryName = $"{folder}/{stem} ({suffix}){extension}";
+                    }
+                    var entry = archive.CreateEntry(entryName, CompressionLevel.Fastest);
+                    using var stream = entry.Open();
+                    var placeholder = Encoding.UTF8.GetBytes($"Демо-файл: {document.FileName}");
+                    stream.Write(placeholder);
+                }
+            }
+            output.Position = 0;
+            return (output, $"Отчёт-{candidate.FullName}-{DateTime.UtcNow:yyyy-MM-dd}.zip", null);
         }
     }
 
@@ -1388,6 +1631,18 @@ internal static class DesignPreviewData
         }
     }
 
+    public static CrmOfficeSettingsDto GetCrmOfficeSettings()
+    {
+        lock (CrmSync)
+        {
+            return new CrmOfficeSettingsDto(
+                _previewCrmEnabled,
+                true,
+                _previewCrmStages.ToList(),
+                _previewCrmDeadlineNotificationsEnabled);
+        }
+    }
+
     public static (bool Success, string? Error) SetCrmOfficeFunnel(IReadOnlyList<string> stages)
     {
         lock (CrmSync)
@@ -1431,7 +1686,9 @@ internal static class DesignPreviewData
                 "Елена Воронцова",
                 _previewCrmShiftActive,
                 10,
-                PreviewCrmCandidates.Count(candidate => candidate.ManagerUserId == PreviewManagerElena && candidate.IsInActiveLoad && !candidate.IsClosed),
+                PreviewCrmCandidates.Count(candidate =>
+                    candidate.ManagerUserId == PreviewManagerElena
+                    && CrmManagerLoadRules.CountsTowardsLoad(candidate.Stage, candidate.IsInActiveLoad, candidate.IsClosed)),
                 _previewCrmShiftActive ? now.AddHours(-3).AddMinutes(-20) : null,
                 _previewCrmShiftActive ? null : now.AddHours(-5)),
             new(
@@ -1439,7 +1696,9 @@ internal static class DesignPreviewData
                 "Игорь Белов",
                 true,
                 10,
-                PreviewCrmCandidates.Count(candidate => candidate.ManagerUserId == PreviewManagerIgor && candidate.IsInActiveLoad && !candidate.IsClosed),
+                PreviewCrmCandidates.Count(candidate =>
+                    candidate.ManagerUserId == PreviewManagerIgor
+                    && CrmManagerLoadRules.CountsTowardsLoad(candidate.Stage, candidate.IsInActiveLoad, candidate.IsClosed)),
                 now.AddHours(-1).AddMinutes(-5),
                 now.AddDays(-1).AddHours(-2))
         ];
@@ -1462,7 +1721,7 @@ internal static class DesignPreviewData
             candidate.Stage,
             candidate.ManagerUserId,
             candidate.ManagerUserId == PreviewManagerElena ? "Елена Воронцова" : candidate.ManagerUserId == PreviewManagerIgor ? "Игорь Белов" : null,
-            candidate.IsInActiveLoad,
+            CrmManagerLoadRules.CountsTowardsLoad(candidate.Stage, candidate.IsInActiveLoad, candidate.IsClosed),
             candidate.CreatedAtUtc,
             candidate.StageChangedAtUtc,
             candidate.LastContactAtUtc,

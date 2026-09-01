@@ -139,6 +139,28 @@ public sealed class MultiloginApiClient(IHttpClientFactory httpClientFactory) : 
         throw SearchCatalogError("каталог неполный.");
     }
 
+    public async Task ProbeLauncherAsync(
+        MultiloginConnectionOptions options,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        var origin = ResolveLauncherOrigin(options.Normalized().LauncherUrl);
+        var client = httpClientFactory.CreateClient();
+        client.Timeout = TimeSpan.FromSeconds(8);
+        using var request = new HttpRequestMessage(HttpMethod.Get, origin);
+        try
+        {
+            using var response = await client
+                .SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+                .ConfigureAwait(false);
+            _ = response.StatusCode;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            throw new InvalidOperationException("Launcher Multilogin недоступен.", ex);
+        }
+    }
+
     private async Task<(int StatusCode, bool IsSuccess, string Json)> SendGetAsync(
         string token,
         string url,

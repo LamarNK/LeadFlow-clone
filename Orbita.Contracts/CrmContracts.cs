@@ -107,6 +107,59 @@ public static class CrmStages
         stages.Contains(stage ?? string.Empty, StringComparer.Ordinal);
 }
 
+public static class CrmManagerLoadRules
+{
+    /// <summary>
+    /// Cards in service stages remain assigned and visible, but do not consume
+    /// the assigned manager's active capacity. At the moment these stages are
+    /// used by different office funnels: Robot, Empty and Substitution.
+    /// </summary>
+    public const string RobotStage = "Робот";
+    public const string EmptyStage = "Пустые";
+    public const string SubstitutionStage = "Подменка";
+    public const string SecondOfficeName = "2 офис";
+    public const string FourthOfficeName = "4 офис";
+
+    private static readonly IReadOnlyList<string> DefaultExcludedStages = [RobotStage];
+    private static readonly IReadOnlyList<string> SecondOfficeExcludedStages = [RobotStage, EmptyStage];
+    private static readonly IReadOnlyList<string> FourthOfficeExcludedStages = [RobotStage, SubstitutionStage];
+
+    public static bool CountsTowardsLoad(
+        string? stage,
+        bool isInActiveLoad,
+        bool isClosed,
+        string? officeName = null) =>
+        isInActiveLoad
+        && !isClosed
+        && (officeName is null
+            ? !IsExcludedStage(stage)
+            : !IsExcludedStage(stage, officeName));
+
+    /// <summary>Recognizes every service-stage label for UI presentation.</summary>
+    public static bool IsExcludedStage(string? stage) =>
+        string.Equals(stage, RobotStage, StringComparison.Ordinal)
+        || string.Equals(stage, EmptyStage, StringComparison.Ordinal)
+        || string.Equals(stage, SubstitutionStage, StringComparison.Ordinal);
+
+    /// <summary>Applies the exclusions only to the office that owns the service stage.</summary>
+    public static bool IsExcludedStage(string? stage, string? officeName) =>
+        string.Equals(stage, RobotStage, StringComparison.Ordinal)
+        || (IsOffice(officeName, SecondOfficeName)
+            && string.Equals(stage, EmptyStage, StringComparison.Ordinal))
+        || (IsOffice(officeName, FourthOfficeName)
+            && string.Equals(stage, SubstitutionStage, StringComparison.Ordinal));
+
+    public static IReadOnlyList<string> GetExcludedStages(string? officeName) =>
+        IsOffice(officeName, SecondOfficeName)
+            ? SecondOfficeExcludedStages
+            : IsOffice(officeName, FourthOfficeName)
+                ? FourthOfficeExcludedStages
+                : DefaultExcludedStages;
+
+    private static bool IsOffice(string? actualName, string expectedName) =>
+        string.Equals(actualName?.Trim(), expectedName, StringComparison.OrdinalIgnoreCase);
+}
+
 public static class CrmTaskStatuses
 {
     public const string Open = "Open";
@@ -186,6 +239,58 @@ public static class CrmContactPhoneLimits
 public static class CrmTaskAttachmentLimits
 {
     public const long MaxFileSizeBytes = 20 * 1024 * 1024;
+}
+
+public static class CrmSuccessDocumentLimits
+{
+    public const long MaxFileSizeBytes = 20 * 1024 * 1024;
+    public const long MaxReportSizeBytes = 200 * 1024 * 1024;
+    public const int MaxFilesPerReport = 50;
+}
+
+public static class CrmSuccessDocumentCategories
+{
+    public const string Correspondence = "correspondence";
+    public const string Ticket = "ticket";
+    public const string TicketReceipt = "ticket_receipt";
+    public const string Contract = "contract";
+    public const string Relationship = "relationship";
+    public const string CandidateDocument = "candidate_document";
+    public const string Other = "other";
+
+    public static readonly IReadOnlyList<string> All =
+    [
+        Correspondence,
+        Ticket,
+        TicketReceipt,
+        Contract,
+        Relationship,
+        CandidateDocument,
+        Other
+    ];
+
+    public static readonly IReadOnlyList<string> Required =
+    [
+        Correspondence,
+        Ticket,
+        TicketReceipt,
+        CandidateDocument
+    ];
+
+    public static bool IsValid(string? category) =>
+        All.Contains(category ?? string.Empty, StringComparer.Ordinal);
+
+    public static string GetLabel(string? category) => category switch
+    {
+        Correspondence => "Переписка",
+        Ticket => "Билеты",
+        TicketReceipt => "Чеки на билеты",
+        Contract => "Контракт",
+        Relationship => "Отношение",
+        CandidateDocument => "Документы кандидата",
+        Other => "Прочие файлы",
+        _ => "Файл отчёта"
+    };
 }
 
 public static class CrmCloseReasons
@@ -320,7 +425,50 @@ public sealed record CrmAnalyticsDto(
     IReadOnlyList<CrmAnalyticsOfficeFunnelDto> Funnels,
     IReadOnlyList<CrmAnalyticsManagerOptionDto> ManagerOptions,
     IReadOnlyList<CrmAnalyticsManagerDto> Managers,
-    DateTime GeneratedAtUtc);
+    CrmAnalyticsDecompositionDto? Decomposition,
+    DateTime GeneratedAtUtc,
+    CrmCallQualityAnalyticsDto? CallQuality = null);
+
+public sealed record CrmCallQualityAnalyticsDto(
+    int RecordedCalls,
+    int TranscribedCalls,
+    int AnalyzedCalls,
+    double CoveragePercent,
+    double? AverageScore,
+    IReadOnlyList<CrmCallQualityFindingDto> CommonStrengths,
+    IReadOnlyList<CrmCallQualityFindingDto> CommonWeaknesses,
+    IReadOnlyList<CrmCallQualityManagerDto> Managers);
+
+public sealed record CrmCallQualityFindingDto(
+    string Code,
+    string Label,
+    int Count,
+    double PercentOfAnalyzed);
+
+public sealed record CrmCallQualityManagerDto(
+    string? UserId,
+    string DisplayName,
+    int RecordedCalls,
+    int TranscribedCalls,
+    int AnalyzedCalls,
+    double CoveragePercent,
+    double? AverageScore);
+
+public sealed record CrmAnalyticsDecompositionDto(
+    int Leads,
+    int Contacts,
+    int Questionnaires,
+    int Tickets,
+    int Contracts,
+    double ContactConversionPercent,
+    double QuestionnaireConversionPercent,
+    double TicketConversionPercent,
+    double ContractConversionPercent,
+    IReadOnlyList<CrmAnalyticsContactBreakdownDto> ContactBreakdown);
+
+public sealed record CrmAnalyticsContactBreakdownDto(
+    string Label,
+    int Count);
 
 public sealed record CrmAnalyticsCardMetricsDto(
     int Received,
@@ -486,7 +634,9 @@ public sealed record CrmCandidateDetailDto(
     IReadOnlyList<CrmContactPhoneDto> ContactPhones = null!,
     int ChatUnreadCount = 0,
     IReadOnlyList<CrmTaskCommentDto>? TaskComments = null,
-    CrmClientTimeDto? ClientTime = null);
+    CrmClientTimeDto? ClientTime = null,
+    IReadOnlyList<CrmSuccessDocumentDto>? SuccessDocuments = null,
+    string? SuccessContractMissingReason = null);
 
 public sealed record CrmClientTimeDto(
     int UtcOffsetMinutes,
@@ -619,6 +769,15 @@ public sealed record CrmTaskAttachmentDto(
     string UploadedByName,
     DateTime CreatedAtUtc);
 
+public sealed record CrmSuccessDocumentDto(
+    Guid Id,
+    string Category,
+    string FileName,
+    string ContentType,
+    long SizeBytes,
+    string UploadedByName,
+    DateTime CreatedAtUtc);
+
 public sealed record CrmTaskDetailDto(
     CrmTaskDto Task,
     IReadOnlyList<CrmTaskCommentDto> Comments,
@@ -645,7 +804,8 @@ public sealed record CrmTaskNotificationsDto(
 
 public sealed record CrmTaskNotificationSummaryDto(
     int UnreadCount,
-    bool Enabled = false);
+    bool Enabled = false,
+    int OpenTaskCount = 0);
 
 public sealed record CrmHistoryDto(
     Guid Id,
@@ -675,7 +835,56 @@ public sealed record CrmActivityItemDto(
     int? CallDurationSeconds = null,
     string? CallRecordingUrl = null,
     bool CallRecordingStored = false,
-    string? CallClientPhone = null);
+    string? CallClientPhone = null,
+    string? CallAiStatus = null);
+
+public static class CrmCallAiStatuses
+{
+    public const string Pending = "pending";
+    public const string Transcribing = "transcribing";
+    public const string Analyzing = "analyzing";
+    public const string Completed = "completed";
+    public const string Partial = "partial";
+    public const string Failed = "failed";
+    public const string Skipped = "skipped";
+}
+
+public sealed record CrmCallTranscriptSegmentDto(
+    double StartSeconds,
+    double EndSeconds,
+    string Text,
+    string? Speaker = null);
+
+public sealed record CrmCallAiAnalysisPointDto(
+    string Code,
+    string Title,
+    string? Evidence = null,
+    string? Impact = null);
+
+public sealed record CrmCallAiAnalysisDto(
+    int Version,
+    double Score,
+    string? ScoreReason,
+    string? Goal,
+    string? Outcome,
+    string? NextStep,
+    string AttributionConfidence,
+    IReadOnlyList<CrmCallAiAnalysisPointDto> Strengths,
+    IReadOnlyList<CrmCallAiAnalysisPointDto> Weaknesses,
+    IReadOnlyList<CrmCallAiAnalysisPointDto> Risks,
+    IReadOnlyList<string> Recommendations,
+    IReadOnlyList<string> SuggestedPhrases,
+    IReadOnlyList<string> Checklist);
+
+public sealed record CrmCallAiInsightDto(
+    Guid CallId,
+    string Status,
+    string? TranscriptText,
+    IReadOnlyList<CrmCallTranscriptSegmentDto> Segments,
+    CrmCallAiAnalysisDto? Analysis,
+    string? AnalysisRawText,
+    string? ErrorMessage,
+    DateTime UpdatedAtUtc);
 
 public static class CrmActivityDetails
 {

@@ -32,10 +32,19 @@ public sealed record WorkerAccountConfigDto(
     string? AvitoLogin = null,
     /// <summary>Пароль Avito (plaintext только в защищённом worker config channel).</summary>
     string? AvitoPassword = null,
-    /// <summary>AdsPower или Multilogin. Пусто — AdsPower (обратная совместимость).</summary>
+    /// <summary>AdsPower, Multilogin или Local. Пусто — AdsPower (обратная совместимость).</summary>
     string? ProfileProvider = null,
     string? MultiloginProfileId = null,
-    string? MultiloginFolderId = null);
+    string? MultiloginFolderId = null,
+    /// <summary>Папка User Data обычного Chrome на машине воркера. Только для ProfileProvider=Local.</summary>
+    string? LocalUserDataDir = null,
+    /// <summary>Включён HTTP-прокси обычного Chrome. Только Local.</summary>
+    bool LocalProxyEnabled = false,
+    /// <summary>Адрес HTTP-прокси <c>host:port</c>. Без схемы и без userinfo.</summary>
+    string? LocalProxyAddress = null,
+    string? LocalProxyUsername = null,
+    /// <summary>Пароль прокси. Только worker config channel, только Local и только когда прокси включён.</summary>
+    string? LocalProxyPassword = null);
 
 public sealed record UpdateWorkerSubProfileRequest(bool IsEnabledInPanel);
 
@@ -96,8 +105,39 @@ public sealed record WorkerConfigDto(
     /// <summary>Automation token Multilogin X. Только worker config, не телеметрия панели.</summary>
     string? MultiloginAutomationToken = null,
     /// <summary>URL cloud API Multilogin X (worker config channel).</summary>
-    string? MultiloginCloudApiUrl = null)
+    string? MultiloginCloudApiUrl = null,
+    /// <summary>Путь к chrome.exe / Chromium на машине воркера. Пусто — автопоиск.</summary>
+    string? LocalChromeExecutablePath = null,
+    /// <summary>Запускать и синхронизировать AdsPower. По умолчанию включено.</summary>
+    bool AdsPowerEnabled = true,
+    /// <summary>Запускать и синхронизировать Multilogin. По умолчанию включено.</summary>
+    bool MultiloginEnabled = true,
+    /// <summary>Запускать аккаунты обычного Chrome. По умолчанию включено.</summary>
+    bool LocalChromeEnabled = true,
+    WorkerPendingBrowserProviderCheckDto? PendingProviderCheck = null,
+    WorkerPendingBrowserProviderSyncDto? PendingProviderSync = null,
+    WorkerPendingLocalChromeLoginDto? PendingLocalChromeLogin = null)
 {
+    public bool ShouldSyncAdsPowerCatalog => AdsPowerEnabled;
+
+    public bool ShouldSyncMultiloginCatalog => MultiloginEnabled;
+
+    public bool IsBrowserProviderEnabled(WorkerAccountConfigDto account)
+    {
+        ArgumentNullException.ThrowIfNull(account);
+        if (!string.IsNullOrWhiteSpace(account.MultiloginProfileId))
+        {
+            return MultiloginEnabled;
+        }
+
+        if (!string.IsNullOrWhiteSpace(account.LocalUserDataDir))
+        {
+            return LocalChromeEnabled;
+        }
+
+        return AdsPowerEnabled;
+    }
+
     public ResponseCollectionFilters ResponseFilters =>
         ResponseCollectionFilters.NormalizeLegacy(
             ResponseFilterEnabled,
@@ -266,9 +306,140 @@ public sealed record UpdateWorkerSettingsRequest(
     string? MultiloginLauncherUrl = null,
     string? MultiloginCloudApiUrl = null,
     /// <summary>Пусто — не менять сохранённый token (поле не возвращается в HTML панели).</summary>
-    string? MultiloginAutomationToken = null);
+    string? MultiloginAutomationToken = null,
+    /// <summary>Путь к chrome.exe / Chromium. Пусто — автопоиск на машине воркера.</summary>
+    string? LocalChromeExecutablePath = null,
+    bool AdsPowerEnabled = true,
+    bool MultiloginEnabled = true,
+    bool LocalChromeEnabled = true);
 
 public sealed record UpdateWorkerAccountRequest(bool IsEnabledInPanel);
+
+public static class WorkerBrowserProviderMessages
+{
+    public const string DisabledStatusLabel = "Провайдер выключен";
+    public const string DisabledHint =
+        "Провайдер выключен: аккаунты сохранены, но не синхронизируются и не запускаются";
+    public const string CheckingMessage = "Проверка на воркере…";
+    public const string NeedsToken = "Сначала укажите API Token и сохраните настройки.";
+    public const string ProviderOff = "Провайдер выключен. Включите его, чтобы проверить подключение.";
+    public const string UnknownProvider = "Неизвестный провайдер.";
+    public const string CheckQueued = "Запрос отправлен воркеру.";
+    public const string SyncQueued = "Синхронизация запущена на воркере.";
+    public const string CheckAlreadyQueued = "Дождитесь текущей проверки на воркере.";
+    public const string SyncAlreadyQueued = "Дождитесь текущей синхронизации на воркере.";
+    public const string SaveSettingsFirst = "Сначала сохраните настройки.";
+}
+
+public static class WorkerBrowserProviderKinds
+{
+    public const string AdsPower = "AdsPower";
+    public const string Multilogin = "Multilogin";
+    public const string Local = "Local";
+
+    public static string? Normalize(string? value) =>
+        value?.Trim() switch
+        {
+            "AdsPower" or "adspower" or "ads" => AdsPower,
+            "Multilogin" or "multilogin" or "mlx" => Multilogin,
+            "Local" or "local" or "chrome" or "localChrome" => Local,
+            _ => null
+        };
+
+    public static bool SupportsCatalogSync(string provider) =>
+        string.Equals(provider, AdsPower, StringComparison.Ordinal)
+        || string.Equals(provider, Multilogin, StringComparison.Ordinal);
+}
+
+public static class WorkerBrowserProviderStatus
+{
+    public const string Disabled = "disabled";
+    public const string NeedsSetup = "needsSetup";
+    public const string Unchecked = "unchecked";
+    public const string Checking = "checking";
+    public const string Connected = "connected";
+    public const string Error = "error";
+
+    public static string Resolve(
+        bool enabled,
+        bool needsSetup,
+        bool checking,
+        bool? lastSucceeded)
+    {
+        if (!enabled)
+        {
+            return Disabled;
+        }
+
+        if (checking)
+        {
+            return Checking;
+        }
+
+        if (needsSetup)
+        {
+            return NeedsSetup;
+        }
+
+        if (lastSucceeded is null)
+        {
+            return Unchecked;
+        }
+
+        return lastSucceeded.Value ? Connected : Error;
+    }
+
+    public static string Label(string status) => status switch
+    {
+        Disabled => "Выключен",
+        NeedsSetup => "Требуется настройка",
+        Checking => "Проверяется",
+        Connected => "Подключён",
+        Error => "Ошибка подключения",
+        _ => "Не проверено"
+    };
+}
+
+public sealed record WorkerBrowserProviderCheckDto(
+    string Provider,
+    string Status,
+    string StatusLabel,
+    string? Message = null,
+    DateTime? CheckedAtUtc = null,
+    int? ProfileCount = null,
+    int? GroupCount = null,
+    string? ResolvedExecutablePath = null,
+    bool CanCheck = false,
+    bool CanSync = false);
+
+public sealed record WorkerPendingBrowserProviderCheckDto(string Provider, DateTime RequestedAtUtc);
+
+public sealed record WorkerPendingBrowserProviderSyncDto(string Provider, DateTime RequestedAtUtc);
+
+public sealed record RequestWorkerBrowserProviderCheckRequest(string Provider);
+
+public sealed record RequestWorkerBrowserProviderSyncRequest(string Provider);
+
+public sealed record ReportWorkerBrowserProviderCheckRequest(
+    string Provider,
+    bool Success,
+    string? Message = null,
+    int? ProfileCount = null,
+    int? GroupCount = null,
+    string? ResolvedExecutablePath = null,
+    bool CompletesSync = false,
+    IReadOnlyList<AdsPowerGroupDto>? Groups = null);
+
+public sealed record CreateLocalWorkerAccountRequest(string DisplayName, string? LocalUserDataDir = null);
+
+public sealed record UpdateLocalWorkerAccountRequest(string? DisplayName = null, string? LocalUserDataDir = null);
+
+public sealed record WorkerPendingLocalChromeLoginDto(
+    Guid SessionId,
+    Guid WorkerId,
+    Guid AccountId);
+
+public sealed record CompleteLocalChromeLoginRequest(Guid SessionId);
 
 /// <summary>
 /// Обновление логина/пароля Avito для аккаунта.
@@ -283,6 +454,33 @@ public sealed record WorkerAccountCredentialsDto(
     Guid AccountId,
     string? Login,
     bool HasPassword);
+
+/// <summary>
+/// Обновление настроек профиля обычного Chrome: Avito + HTTP-прокси.
+/// Пустой пароль — оставить текущий; <paramref name="ClearCredentials"/> / <paramref name="ClearProxyPassword"/> очищают секрет.
+/// </summary>
+public sealed record UpdateLocalWorkerAccountProfileRequest(
+    string? Login = null,
+    string? Password = null,
+    bool ClearCredentials = false,
+    bool? ProxyEnabled = null,
+    string? ProxyAddress = null,
+    string? ProxyUsername = null,
+    string? ProxyPassword = null,
+    bool ClearProxyPassword = false);
+
+public sealed record LocalWorkerAccountProfileDto(
+    Guid AccountId,
+    string? Login,
+    bool HasPassword,
+    bool HasCredentials,
+    bool ProxyEnabled,
+    string? ProxyAddress,
+    string? ProxyUsername,
+    bool HasProxyPassword,
+    string ProxyStatus,
+    string BrowserStatus,
+    bool CanOpenBrowser);
 
 public sealed record BulkWorkersMonitoringResultDto(
     int UpdatedCount,

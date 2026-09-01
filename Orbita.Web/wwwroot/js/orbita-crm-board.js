@@ -1551,6 +1551,344 @@
             });
         }
 
+        const closeForm = page.querySelector('[data-crm-close-form]');
+        const successWizard = page.querySelector('[data-crm-success-wizard]');
+        const successEditButtons = Array.from(page.querySelectorAll('[data-crm-success-edit-open]'));
+        if (successWizard && (closeForm || successEditButtons.length > 0)) {
+            const isEditMode = successWizard.getAttribute('data-crm-success-mode') === 'edit';
+            const reasonInput = closeForm?.querySelector('[data-crm-close-reason]');
+            const closeComment = closeForm?.querySelector('[data-crm-close-comment]');
+            const wizardForm = successWizard.querySelector('[data-crm-success-form]');
+            const wizardComment = successWizard.querySelector('[data-crm-success-comment]');
+            const steps = Array.from(successWizard.querySelectorAll('[data-crm-success-step]'));
+            const stepNavButtons = Array.from(successWizard.querySelectorAll('[data-success-step-nav]'));
+            const stepLabel = successWizard.querySelector('[data-crm-success-step-label]');
+            const progress = successWizard.querySelector('[data-crm-success-progress]');
+            const progressBar = successWizard.querySelector('[data-crm-success-progressbar]');
+            const dialog = successWizard.querySelector('.crm-success-wizard__dialog');
+            const backButton = successWizard.querySelector('[data-crm-success-back]');
+            const skipButton = successWizard.querySelector('[data-crm-success-skip]');
+            const nextButton = successWizard.querySelector('[data-crm-success-next]');
+            const submitButton = successWizard.querySelector('[data-crm-success-submit]');
+            const errorBox = successWizard.querySelector('[data-crm-success-error]');
+            const contractPhotoInput = successWizard.querySelector('[data-success-contract-photo]');
+            const contractMissingInput = successWizard.querySelector('[data-success-contract-missing]');
+            const contractReasonWrap = successWizard.querySelector('[data-success-contract-reason-wrap]');
+            const contractReasonInput = successWizard.querySelector('[data-success-contract-reason]');
+            const existingKeepInputs = Array.from(successWizard.querySelectorAll('[data-success-existing-keep]'));
+            const successReason = closeForm?.getAttribute('data-success-reason') || 'Успех';
+            const maxFileBytes = 20 * 1024 * 1024;
+            const maxReportBytes = 200 * 1024 * 1024;
+            const maxFiles = 50;
+            let currentStep = 0;
+            let previouslyFocusedElement = null;
+            const visitedSteps = new Set();
+
+            const showError = (message) => {
+                if (!errorBox) return;
+                errorBox.textContent = message || '';
+                errorBox.hidden = !message;
+            };
+
+            const fileSummary = (input) => {
+                const summary = input.closest('.crm-success-upload')?.querySelector('[data-success-file-summary]');
+                if (!summary) return;
+                const files = Array.from(input.files || []);
+                const totalBytes = files.reduce((sum, file) => sum + file.size, 0);
+                const formattedSize = totalBytes >= 1024 * 1024
+                    ? `${(totalBytes / 1024 / 1024).toLocaleString('ru-RU', { maximumFractionDigits: 1 })} МБ`
+                    : `${Math.max(1, Math.ceil(totalBytes / 1024)).toLocaleString('ru-RU')} КБ`;
+                summary.textContent = files.length === 0
+                    ? 'Файлы не выбраны'
+                    : `${files.length} ${files.length === 1 ? 'файл' : files.length < 5 ? 'файла' : 'файлов'} · ${formattedSize}`;
+                input.closest('.crm-success-upload')?.classList.toggle('has-files', files.length > 0);
+            };
+
+            const hasKeptCategory = (category) => existingKeepInputs.some((input) =>
+                input.checked && input.getAttribute('data-success-category') === category);
+
+            const syncExistingFileState = (input) => {
+                const row = input.closest('[data-success-existing-file]');
+                row?.classList.toggle('is-removed', !input.checked);
+                const state = input.closest('label')?.querySelector('span');
+                if (state) state.textContent = input.checked ? 'Оставить' : 'Удалить';
+            };
+
+            const syncContractMissingState = () => {
+                const isMissing = Boolean(contractMissingInput?.checked);
+                if (contractReasonWrap) contractReasonWrap.hidden = !isMissing;
+                if (contractReasonInput) contractReasonInput.required = isMissing;
+                if (contractPhotoInput) {
+                    if (isMissing && contractPhotoInput.files?.length) {
+                        contractPhotoInput.value = '';
+                        fileSummary(contractPhotoInput);
+                    }
+                    contractPhotoInput.disabled = isMissing;
+                    contractPhotoInput.closest('.crm-success-upload')?.classList.toggle('is-disabled', isMissing);
+                }
+                existingKeepInputs
+                    .filter((input) => input.getAttribute('data-success-category') === 'contract')
+                    .forEach((input) => {
+                        if (isMissing) input.checked = false;
+                        input.disabled = isMissing;
+                        syncExistingFileState(input);
+                    });
+            };
+
+            const isStepComplete = (index) => {
+                const step = steps[index];
+                if (!step) return false;
+                if (step.hasAttribute('data-success-contract-step')) {
+                    return Boolean(contractPhotoInput?.files?.length)
+                        || hasKeptCategory('contract')
+                        || Boolean(contractMissingInput?.checked && contractReasonInput?.value.trim());
+                }
+                const requiredInputs = Array.from(step.querySelectorAll('input[type="file"][data-success-required]'));
+                if (requiredInputs.length > 0) {
+                    return requiredInputs.every((input) =>
+                        Boolean(input.files?.length) || hasKeptCategory(input.name));
+                }
+                return visitedSteps.has(index)
+                    || Array.from(step.querySelectorAll('input[type="file"]')).some((input) =>
+                        Boolean(input.files?.length) || hasKeptCategory(input.name));
+            };
+
+            const updateNavigation = () => {
+                stepNavButtons.forEach((button, index) => {
+                    const isActive = index === currentStep;
+                    button.classList.toggle('is-active', isActive);
+                    button.classList.toggle('is-complete', isStepComplete(index));
+                    if (isActive) button.setAttribute('aria-current', 'step');
+                    else button.removeAttribute('aria-current');
+                });
+            };
+
+            const renderStep = (clearError = true) => {
+                steps.forEach((step, index) => { step.hidden = index !== currentStep; });
+                if (stepLabel) stepLabel.textContent = `Шаг ${currentStep + 1} из ${steps.length}`;
+                if (progress) progress.style.width = `${((currentStep + 1) / steps.length) * 100}%`;
+                if (progressBar) progressBar.setAttribute('aria-valuenow', String(currentStep + 1));
+                if (backButton) backButton.hidden = currentStep === 0;
+                if (skipButton) skipButton.hidden = currentStep !== 4;
+                if (nextButton) {
+                    nextButton.hidden = currentStep === steps.length - 1;
+                    const nextTitle = stepNavButtons[currentStep + 1]?.querySelector('strong')?.textContent?.trim();
+                    nextButton.textContent = nextTitle ? `Далее: ${nextTitle}` : 'Далее';
+                }
+                if (submitButton) submitButton.hidden = currentStep !== steps.length - 1;
+                updateNavigation();
+                stepNavButtons[currentStep]?.scrollIntoView?.({ behavior: 'smooth', block: 'nearest', inline: 'nearest' });
+                if (clearError) showError('');
+            };
+
+            const openWizard = () => {
+                if (wizardComment) wizardComment.value = (closeComment?.value || '').trim();
+                previouslyFocusedElement = document.activeElement;
+                visitedSteps.clear();
+                currentStep = 0;
+                renderStep();
+                successWizard.hidden = false;
+                document.body.classList.add('orbita-modal-open');
+                window.requestAnimationFrame(() => dialog?.focus());
+            };
+
+            const closeWizard = () => {
+                successWizard.hidden = true;
+                document.body.classList.remove('orbita-modal-open');
+                if (previouslyFocusedElement instanceof HTMLElement) previouslyFocusedElement.focus();
+            };
+
+            const validateFileFormat = (input, file) => {
+                const name = (file.name || '').toLowerCase();
+                const isPdf = name.endsWith('.pdf');
+                const isImage = /\.(jpe?g|png|webp|gif|bmp|heic|heif|tiff?)$/i.test(name);
+                if (input.name === 'ticket' && !isPdf) return 'Билеты можно загрузить только в PDF.';
+                if (input.name === 'ticket_receipt' && !isPdf && !isImage) return 'Чек должен быть изображением или PDF.';
+                if (!['ticket', 'ticket_receipt', 'other'].includes(input.name) && !isImage) {
+                    return 'В этот раздел можно загрузить только изображения.';
+                }
+                return '';
+            };
+
+            const validateStep = (index) => {
+                const step = steps[index];
+                if (!step) return true;
+                if (step.hasAttribute('data-success-contract-step')) {
+                    const hasContractPhoto = Boolean(contractPhotoInput?.files?.length) || hasKeptCategory('contract');
+                    if (contractMissingInput?.checked) {
+                        const reason = contractReasonInput?.value.trim() || '';
+                        if (!reason) {
+                            showError('Обязательно укажите, почему нет фото контракта.');
+                            contractReasonInput?.focus();
+                            return false;
+                        }
+                        if (reason.length > 2000) {
+                            showError('Причина отсутствия фото контракта не должна превышать 2000 символов.');
+                            contractReasonInput?.focus();
+                            return false;
+                        }
+                    } else if (!hasContractPhoto) {
+                        showError('Загрузите фото контракта или отметьте «Фото контракта нет».');
+                        contractPhotoInput?.focus();
+                        return false;
+                    }
+                }
+                const inputs = Array.from(step.querySelectorAll('input[type="file"]'));
+                for (const input of inputs) {
+                    const files = Array.from(input.files || []);
+                    if (input.hasAttribute('data-success-required')
+                        && files.length === 0
+                        && !hasKeptCategory(input.name)) {
+                        showError('Добавьте обязательные файлы, чтобы продолжить.');
+                        input.focus();
+                        return false;
+                    }
+                    for (const file of files) {
+                        if (file.size <= 0) {
+                            showError(`Файл «${file.name}» пустой.`);
+                            return false;
+                        }
+                        if (file.size > maxFileBytes) {
+                            showError(`Файл «${file.name}» больше 20 МБ.`);
+                            return false;
+                        }
+                        const formatError = validateFileFormat(input, file);
+                        if (formatError) {
+                            showError(formatError);
+                            input.focus();
+                            return false;
+                        }
+                    }
+                }
+                showError('');
+                return true;
+            };
+
+            closeForm?.addEventListener('submit', (event) => {
+                if (reasonInput?.value !== successReason) return;
+                event.preventDefault();
+                if (!closeComment?.value.trim()) {
+                    closeComment?.focus();
+                    window.Orbita?.toast?.('Для закрытия нужен комментарий.', { variant: 'error' });
+                    return;
+                }
+                openWizard();
+            });
+            successEditButtons.forEach((button) => button.addEventListener('click', openWizard));
+
+            successWizard.querySelectorAll('[data-crm-success-close]').forEach((button) => {
+                button.addEventListener('click', closeWizard);
+            });
+            successWizard.querySelectorAll('input[type="file"]').forEach((input) => {
+                input.addEventListener('change', () => {
+                    fileSummary(input);
+                    showError('');
+                    updateNavigation();
+                });
+            });
+            contractMissingInput?.addEventListener('change', () => {
+                syncContractMissingState();
+                showError('');
+                updateNavigation();
+                if (contractMissingInput.checked) contractReasonInput?.focus();
+            });
+            contractReasonInput?.addEventListener('input', () => {
+                showError('');
+                updateNavigation();
+            });
+            existingKeepInputs.forEach((input) => {
+                syncExistingFileState(input);
+                input.addEventListener('change', () => {
+                    syncExistingFileState(input);
+                    showError('');
+                    updateNavigation();
+                });
+            });
+            syncContractMissingState();
+            stepNavButtons.forEach((button) => {
+                button.addEventListener('click', () => {
+                    const requestedStep = Number(button.getAttribute('data-success-step-nav'));
+                    if (!Number.isInteger(requestedStep) || requestedStep < 0 || requestedStep >= steps.length || requestedStep === currentStep) return;
+                    if (requestedStep > currentStep) {
+                        for (let index = currentStep; index < requestedStep; index += 1) {
+                            if (!validateStep(index)) {
+                                currentStep = index;
+                                renderStep(false);
+                                return;
+                            }
+                            visitedSteps.add(index);
+                        }
+                    }
+                    currentStep = requestedStep;
+                    renderStep();
+                });
+            });
+            backButton?.addEventListener('click', () => {
+                currentStep = Math.max(0, currentStep - 1);
+                renderStep();
+            });
+            skipButton?.addEventListener('click', () => {
+                visitedSteps.add(currentStep);
+                currentStep = Math.min(steps.length - 1, currentStep + 1);
+                renderStep();
+            });
+            nextButton?.addEventListener('click', () => {
+                if (!validateStep(currentStep)) return;
+                visitedSteps.add(currentStep);
+                currentStep = Math.min(steps.length - 1, currentStep + 1);
+                renderStep();
+            });
+            wizardForm?.addEventListener('submit', (event) => {
+                for (let index = 0; index < steps.length; index += 1) {
+                    if (!validateStep(index)) {
+                        event.preventDefault();
+                        currentStep = index;
+                        renderStep(false);
+                        return;
+                    }
+                }
+
+                const files = Array.from(wizardForm.querySelectorAll('input[type="file"]'))
+                    .flatMap((input) => Array.from(input.files || []));
+                const keptFiles = existingKeepInputs.filter((input) => input.checked && !input.disabled);
+                const totalSize = files.reduce((sum, file) => sum + file.size, 0)
+                    + keptFiles.reduce((sum, input) => sum + Number(input.getAttribute('data-success-size') || 0), 0);
+                const totalFiles = files.length + keptFiles.length;
+                if (totalFiles > maxFiles || totalSize > maxReportBytes) {
+                    event.preventDefault();
+                    showError(totalFiles > maxFiles
+                        ? `В одном отчёте можно загрузить не более ${maxFiles} файлов.`
+                        : 'Общий размер файлов превышает 200 МБ.');
+                    return;
+                }
+
+                if (submitButton) {
+                    submitButton.disabled = true;
+                    submitButton.textContent = isEditMode ? 'Сохраняем изменения…' : 'Сохраняем отчёт…';
+                }
+            });
+            document.addEventListener('keydown', (event) => {
+                if (successWizard.hidden) return;
+                if (event.key === 'Escape') {
+                    closeWizard();
+                    return;
+                }
+                if (event.key !== 'Tab' || !dialog) return;
+                const focusable = Array.from(dialog.querySelectorAll('button:not([disabled]), input:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])'))
+                    .filter((element) => element instanceof HTMLElement && element.offsetParent !== null);
+                if (focusable.length === 0) return;
+                const first = focusable[0];
+                const last = focusable[focusable.length - 1];
+                if (event.shiftKey && document.activeElement === first) {
+                    event.preventDefault();
+                    last.focus();
+                } else if (!event.shiftKey && document.activeElement === last) {
+                    event.preventDefault();
+                    first.focus();
+                }
+            });
+        }
+
         const cardEditForm = page.querySelector('[data-crm-card-inline-edit]');
         const cardEditToggle = page.querySelector('[data-crm-card-inline-edit-toggle]');
         const cardEditCancel = page.querySelector('[data-crm-card-inline-edit-cancel]');

@@ -4,6 +4,15 @@ namespace Orbita.Tests;
 
 public sealed class CrmDailyDistributionTests
 {
+    [Theory]
+    [InlineData(CrmDailyDistribution.LeadPool)]
+    [InlineData(CrmDailyDistribution.NdzPool)]
+    [InlineData(CrmDailyDistribution.UnavailableSubstitutePool)]
+    public void CounterPoolKeys_FitPersistedColumn(string pool)
+    {
+        Assert.InRange(pool.Length, 1, CrmDailyDistribution.PoolKeyMaxLength);
+    }
+
     [Fact]
     public void BuildBalancedPlan_ImportedFileWithOneHundredOneLeadsAndFourManagers_SplitsTwentySixTwentyFive()
     {
@@ -145,6 +154,18 @@ public sealed class CrmDailyDistributionTests
     public void IsNdz_DoesNotMixSubstitutePoolsIntoRegularNdz(string stage)
     {
         Assert.False(CrmDailyDistribution.IsNdz(stage));
+    }
+
+    [Fact]
+    public void ResolveUnavailableSubstituteStage_OnlyEnablesConfiguredThirdOfficeStage()
+    {
+        var stages = new[] { "Лид", "Недоступные подменные", "НДЗ" };
+
+        Assert.Equal(
+            "Недоступные подменные",
+            CrmDailyDistribution.ResolveUnavailableSubstituteStage(" 3 ОФИС ", stages));
+        Assert.Null(CrmDailyDistribution.ResolveUnavailableSubstituteStage("2 офис", stages));
+        Assert.Null(CrmDailyDistribution.ResolveUnavailableSubstituteStage("3 офис", ["Лид", "НДЗ"]));
     }
 
     [Fact]

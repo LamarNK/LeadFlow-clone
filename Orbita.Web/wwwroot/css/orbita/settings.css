@@ -592,6 +592,164 @@
     line-height: 1.45;
 }
 .telephony-provider-note i { margin-top: 2px; color: #2563eb; }
+
+.telephony-provider-account-list {
+    display: grid;
+    gap: 12px;
+    margin-bottom: 18px;
+}
+
+.telephony-provider-account {
+    padding: 16px;
+    border: 1px solid var(--border, #dfe6f1);
+    border-radius: 14px;
+    background: var(--surface, #fff);
+}
+
+.telephony-provider-account__head,
+.telephony-provider-account__facts,
+.telephony-provider-account__actions {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.telephony-provider-account__head {
+    justify-content: space-between;
+}
+
+.telephony-provider-account__head > div {
+    display: grid;
+    gap: 3px;
+    min-width: 0;
+}
+
+.telephony-provider-account__head strong { font-size: 14px; }
+.telephony-provider-account__head span:not(.settings-status-pill) {
+    color: var(--text-muted, #667085);
+    font-size: 12px;
+    overflow-wrap: anywhere;
+}
+
+.telephony-provider-account__facts {
+    flex-wrap: wrap;
+    margin-top: 12px;
+    color: var(--text-muted, #667085);
+    font-size: 12px;
+}
+
+.telephony-provider-account__facts span + span {
+    padding-left: 12px;
+    border-left: 1px solid var(--border, #dfe6f1);
+}
+
+.telephony-provider-account__bindings {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+    margin-top: 10px;
+}
+
+.telephony-provider-account__bindings span {
+    padding: 5px 9px;
+    border-radius: 999px;
+    background: #f2f6ff;
+    color: #344054;
+    font-size: 12px;
+}
+
+.telephony-provider-account__settings,
+.telephony-provider-account-create {
+    margin-top: 14px;
+    border-top: 1px solid var(--border, #dfe6f1);
+    padding-top: 12px;
+}
+
+.telephony-provider-account__author-settings {
+    margin-top: 14px;
+    padding: 12px 14px;
+    border: 1px dashed var(--border, #dfe6f1);
+    border-radius: 12px;
+    background: var(--surface-soft, #f8fafc);
+}
+
+.telephony-provider-account__author-settings > summary {
+    width: fit-content;
+    cursor: pointer;
+    color: var(--text-secondary, #475569);
+    font-size: 12px;
+    font-weight: 700;
+}
+
+.telephony-provider-account__author-content {
+    display: grid;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.telephony-provider-account__author-content > p {
+    max-width: 780px;
+    margin: 0;
+    color: var(--text-muted, #667085);
+    font-size: 12px;
+    line-height: 1.5;
+}
+
+.telephony-provider-account__settings > summary,
+.telephony-provider-account-create > summary {
+    width: fit-content;
+    cursor: pointer;
+    color: #2563eb;
+    font-size: 13px;
+    font-weight: 700;
+}
+
+.telephony-provider-account-form {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    margin-top: 14px;
+}
+
+.telephony-provider-account-form__wide { grid-column: 1 / -1; }
+.telephony-provider-account-form textarea { resize: vertical; }
+.telephony-provider-account-form > button { align-self: end; justify-self: start; }
+.telephony-provider-account__actions { margin-top: 12px; }
+.telephony-provider-account__binding { margin-top: 12px; }
+
+.telephony-webhook-modal__dialog { width: min(820px, 100%); }
+
+.telephony-webhook-modal__body {
+    display: grid;
+    gap: 16px;
+    padding: 24px 26px 26px;
+}
+
+.telephony-webhook-modal__warning {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 11px 13px;
+    border: 1px solid #fde68a;
+    border-radius: 10px;
+    background: #fffbeb;
+    color: #92400e;
+    font-size: 12px;
+    line-height: 1.45;
+}
+
+.telephony-webhook-modal__warning i { margin-top: 2px; }
+.telephony-webhook-modal__copy code { max-height: 170px; overflow: auto; }
+.telephony-webhook-modal__body .telephony-steps { margin: 0; }
+.telephony-webhook-modal__body .telephony-modal__footer { padding-top: 0; }
+
+@media (max-width: 760px) {
+    .telephony-provider-account-form { grid-template-columns: 1fr; }
+    .telephony-provider-account-form__wide { grid-column: auto; }
+    .telephony-provider-account__head { align-items: flex-start; }
+    .telephony-provider-account__facts { display: grid; }
+    .telephony-provider-account__facts span + span { padding-left: 0; border-left: 0; }
+}
 .telephony-permissions {
     display: flex;
     flex-wrap: wrap;

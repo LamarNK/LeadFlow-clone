@@ -4,7 +4,9 @@ using Orbita.Contracts;
 
 namespace Orbita.Api.Services;
 
-public sealed class OfficeAdminService(OrbitaDbContext db)
+public sealed class OfficeAdminService(
+    OrbitaDbContext db,
+    CrmSuccessDocumentStorageService? successDocuments = null)
 {
     public async Task<IReadOnlyList<OfficeDto>> ListAsync(CancellationToken ct = default)
     {
@@ -189,10 +191,27 @@ public sealed class OfficeAdminService(OrbitaDbContext db)
             profile.OfficeId = null;
         }
 
+        var officeCardIds = await db.CrmCandidateCards
+            .Where(x => x.OfficeId == id)
+            .Select(x => x.Id)
+            .ToListAsync(ct);
+        var successDocumentFiles = await db.CrmSuccessDocuments
+            .Where(x => officeCardIds.Contains(x.CardId))
+            .ToListAsync(ct);
+        db.CrmSuccessDocuments.RemoveRange(successDocumentFiles);
+
         await CleanupOfficeOwnedDataAsync(id, ct);
 
         db.Offices.Remove(office);
         await db.SaveChangesAsync(ct);
+        if (successDocuments is not null)
+        {
+            foreach (var document in successDocumentFiles)
+            {
+                successDocuments.TryDelete(document.RelativePath);
+            }
+        }
+
         return (true, null, office.Name);
     }
 

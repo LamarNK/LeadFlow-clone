@@ -10,6 +10,8 @@
     var canAccessCrmTasks = ViewData["CanAccessCrmTasks"] as bool? == true;
     var currentUserId = ViewData["CurrentCrmUserId"] as string;
     var isCrmAdmin = ViewData["IsCrmAdmin"] as bool? == true;
+    var canEditSuccessReport = ViewData["CanEditSuccessReport"] as bool? == true;
+    var canDownloadSuccessReportArchive = ViewData["CanDownloadSuccessReportArchive"] as bool? == true;
     var boardReturnStage = Context.Request.Query["stage"].ToString();
     if (string.IsNullOrWhiteSpace(boardReturnStage))
     {
@@ -32,6 +34,11 @@
         ?? Model.Managers.FirstOrDefault(x => x.UserId == currentUserId)?.UserId
         ?? Model.Managers.FirstOrDefault()?.UserId;
     var taskComments = Model.TaskComments ?? [];
+    var successDocuments = Model.SuccessDocuments ?? [];
+    var isEditingSuccessReport = canEditSuccessReport
+        && card.IsClosed
+        && string.Equals(card.CloseReason, CrmCloseReasons.Success, StringComparison.Ordinal)
+        && successDocuments.Count > 0;
     var vacancyUrl = !string.IsNullOrWhiteSpace(card.VacancyUrl) ? card.VacancyUrl : card.SourceUrl;
     var phoneDigits = string.Concat(card.PhoneRaw.Where(char.IsDigit));
     var messengerPhone = phoneDigits.Length == 11 && phoneDigits.StartsWith("8", StringComparison.Ordinal) ? "7" + phoneDigits[1..] : phoneDigits;
@@ -59,12 +66,15 @@
         "NoteDeleted" => "Комментарий удалён",
         "NotePinned" => "Комментарий закреплён",
         "NoteUnpinned" => "Комментарий откреплён",
+        "SuccessReportUploaded" => "Загружен отчёт по успешному закрытию",
+        "SuccessReportUpdated" => "Отчёт по успешному закрытию изменён",
         "ChatQueued" => "Сообщение поставлено в очередь",
         "ChatSent" => "Сообщение отправлено в Avito",
         "ChatCancelled" => "Сообщение в чат отменено",
         _ => action
     };
     var canSendChat = canEdit && !card.IsClosed && !string.IsNullOrWhiteSpace(card.SourceResponseId);
+    const string successImageAccept = ".jpg,.jpeg,.png,.webp,.gif,.bmp,.heic,.heif,.tif,.tiff";
 }
 <partial name="_PageHeader" model="header" />
 
@@ -80,6 +90,10 @@
     @if (TempData["CrmError"] is string error)
     {
         <div class="crm-notice crm-notice--error"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i>@error</div>
+    }
+    @if (TempData["CrmOk"] is string ok)
+    {
+        <div class="crm-notice crm-notice--ok"><i class="fa-solid fa-circle-check" aria-hidden="true"></i>@ok</div>
     }
 
     <section class="crm-card-hero card">
@@ -116,7 +130,7 @@
                         <input class="crm-card-inline-edit__citizenship-input" name="citizenship" value="@card.Citizenship" maxlength="128" aria-label="Гражданство кандидата" placeholder="Не указано" />
                     </span>
                     @if (card.IsClosed) { <span class="crm-tag crm-tag--muted">Закрыто: @card.CloseReason</span> }
-                    else if (!card.IsInActiveLoad) { <span class="crm-tag">Вне нагрузки</span> }
+                    else if (!card.IsInActiveLoad) { <span class="crm-tag">@(CrmManagerLoadRules.IsExcludedStage(card.Stage) ? "Не входит в нагрузку" : "Вне нагрузки")</span> }
                 </p>
                 <div class="crm-card-hero__contacts">
                     <details class="crm-phone-actions crm-card-inline-edit__phone-display">
@@ -286,7 +300,7 @@
                     }
                     <div><dt>Этап</dt><dd>@card.Stage</dd></div>
                     <div><dt>Ответственный</dt><dd>@(card.ManagerName ?? "Не назначен")</dd></div>
-                    <div><dt>Нагрузка</dt><dd>@(card.IsInActiveLoad ? "В активной работе" : "Вне нагрузки")</dd></div>
+                    <div><dt>Нагрузка</dt><dd>@(card.IsInActiveLoad ? "В активной работе" : CrmManagerLoadRules.IsExcludedStage(card.Stage) ? "Не входит в нагрузку (служебный этап)" : "Вне нагрузки")</dd></div>
                     <div><dt>Создана</dt><dd><time data-orbita-utc="@OrbitaTime.ToIsoUtc(card.CreatedAtUtc)" data-orbita-format="datetime-ru"></time></dd></div>
                     @if (card.LastContactAtUtc is DateTime last)
                     {
@@ -328,11 +342,11 @@
                     }
                     @if (!card.IsClosed)
                     {
-                        <form asp-action="Close" method="post" class="crm-side-form">
+                        <form asp-action="Close" method="post" class="crm-side-form" data-crm-close-form data-success-reason="@CrmCloseReasons.Success">
                             <input type="hidden" name="id" value="@card.Id" />
                             <input type="hidden" name="stage" value="@boardReturnStage" />
                             <label>Закрыть
-                                <select name="reason" required>
+                                <select name="reason" required data-crm-close-reason>
                                     <option value="" selected disabled hidden>Выберите тип закрытия</option>
                                     @foreach (var reason in CrmCloseReasons.All)
                                     {
@@ -340,7 +354,7 @@
                                     }
                                 </select>
                             </label>
-                            <textarea name="comment" required minlength="1" placeholder="Комментарий обязателен: причина и детали"></textarea>
+                            <textarea name="comment" required minlength="1" placeholder="Комментарий обязателен: результат и детали" data-crm-close-comment></textarea>
                             <button class="settings-secondary-btn crm-btn-danger" type="submit">Закрыть карточку</button>
                         </form>
                     }
@@ -360,6 +374,27 @@
                             <button class="settings-secondary-btn crm-btn-danger" type="submit"><i class="fa-solid fa-trash" aria-hidden="true"></i>Удалить карточку</button>
                         </form>
                     }
+                </section>
+            }
+            @if (successDocuments.Count > 0)
+            {
+                <section class="card crm-side-panel crm-success-report-card crm-success-report-card--compact">
+                    <header>
+                        <span>Отчёт по успешному закрытию</span>
+                        <b>@successDocuments.Count</b>
+                    </header>
+                    <p>Комплект сохранён в событии закрытия карточки.</p>
+                    <div class="crm-success-report-card__actions">
+                        <a class="crm-success-report-jump" href="#crm-success-report"><i class="fa-solid fa-arrow-down" aria-hidden="true"></i>Посмотреть в ленте</a>
+                        @if (canDownloadSuccessReportArchive)
+                        {
+                            <a class="crm-success-report-download" asp-action="DownloadSuccessReportArchive" asp-route-id="@card.Id"><i class="fa-solid fa-file-zipper" aria-hidden="true"></i>Скачать архив</a>
+                        }
+                        @if (isEditingSuccessReport)
+                        {
+                            <button type="button" class="crm-success-report-edit" data-crm-success-edit-open><i class="fa-solid fa-pen" aria-hidden="true"></i>Редактировать отчёт</button>
+                        }
+                    </div>
                 </section>
             }
         </aside>
@@ -631,6 +666,221 @@
             }
         </section>
     </div>
+
+    @if ((canEdit && !card.IsClosed) || isEditingSuccessReport)
+    {
+        <div class="crm-success-wizard" data-crm-success-wizard data-crm-success-mode="@(isEditingSuccessReport ? "edit" : "close")" hidden>
+            <button type="button" class="crm-success-wizard__backdrop" data-crm-success-close tabindex="-1" aria-label="Закрыть окно"></button>
+            <section class="crm-success-wizard__dialog" role="dialog" aria-modal="true" aria-labelledby="crm-success-wizard-title" aria-describedby="crm-success-wizard-description" tabindex="-1">
+                <header class="crm-success-wizard__header">
+                    <div>
+                        <span data-crm-success-step-label>Шаг 1 из 6</span>
+                        <h2 id="crm-success-wizard-title">@(isEditingSuccessReport ? "Редактирование отчёта" : "Отчёт по подписавшемуся кандидату")</h2>
+                        <p id="crm-success-wizard-description">@(isEditingSuccessReport ? "Оставьте нужные файлы, удалите лишние и добавьте новые." : "Карточка закроется в успех только после загрузки обязательного комплекта.")</p>
+                    </div>
+                    <button type="button" class="crm-success-wizard__close" data-crm-success-close aria-label="Закрыть"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+                </header>
+                <div class="crm-success-wizard__progress" role="progressbar" aria-label="Заполнение отчёта" aria-valuemin="1" aria-valuemax="6" aria-valuenow="1" data-crm-success-progressbar><i data-crm-success-progress></i></div>
+                <form asp-action="@(isEditingSuccessReport ? "UpdateSuccessReport" : "CloseSuccess")" method="post" enctype="multipart/form-data" class="crm-success-wizard__form" data-crm-success-form>
+                    <input type="hidden" name="id" value="@card.Id" />
+                    <input type="hidden" name="stage" value="@boardReturnStage" />
+                    @if (!isEditingSuccessReport)
+                    {
+                        <input type="hidden" name="comment" value="" data-crm-success-comment />
+                    }
+
+                    <nav class="crm-success-wizard__steps" aria-label="Шаги отчёта">
+                        <button type="button" data-success-step-nav="0">
+                            <i>1</i><span><strong>Переписка</strong><small>Обязательно</small></span><em><i class="fa-solid fa-check" aria-hidden="true"></i></em>
+                        </button>
+                        <button type="button" data-success-step-nav="1">
+                            <i>2</i><span><strong>Билеты</strong><small>PDF · обязательно</small></span><em><i class="fa-solid fa-check" aria-hidden="true"></i></em>
+                        </button>
+                        <button type="button" data-success-step-nav="2">
+                            <i>3</i><span><strong>Чеки</strong><small>Обязательно</small></span><em><i class="fa-solid fa-check" aria-hidden="true"></i></em>
+                        </button>
+                        <button type="button" data-success-step-nav="3">
+                            <i>4</i><span><strong>Контракт</strong><small>Фото или причина</small></span><em><i class="fa-solid fa-check" aria-hidden="true"></i></em>
+                        </button>
+                        <button type="button" data-success-step-nav="4">
+                            <i>5</i><span><strong>Отношение</strong><small>Необязательно</small></span><em><i class="fa-solid fa-check" aria-hidden="true"></i></em>
+                        </button>
+                        <button type="button" data-success-step-nav="5">
+                            <i>6</i><span><strong>Документы</strong><small>Фото + прочее</small></span><em><i class="fa-solid fa-check" aria-hidden="true"></i></em>
+                        </button>
+                    </nav>
+
+                    <section class="crm-success-wizard__step" data-crm-success-step="0">
+                        <div class="crm-success-wizard__icon"><i class="fa-regular fa-comments" aria-hidden="true"></i></div>
+                        <h3>Скриншоты всей переписки <em>обязательно</em></h3>
+                        <p>Добавьте переписку целиком — от первого до последнего сообщения. Можно выбрать сразу несколько изображений.</p>
+                        <label class="crm-success-upload">
+                            <input type="file" name="@CrmSuccessDocumentCategories.Correspondence" accept="@successImageAccept" multiple data-success-required />
+                            <i class="fa-solid fa-cloud-arrow-up" aria-hidden="true"></i>
+                            <strong>Выбрать скриншоты</strong>
+                            <span data-success-file-summary>Файлы не выбраны</span>
+                        </label>
+                        @if (isEditingSuccessReport)
+                        {
+                            <div class="crm-success-existing-files">
+                                @foreach (var document in successDocuments.Where(item => item.Category == CrmSuccessDocumentCategories.Correspondence))
+                                {
+                                    <div data-success-existing-file>
+                                        <a asp-action="DownloadSuccessDocument" asp-route-id="@card.Id" asp-route-documentId="@document.Id"><i class="fa-regular fa-image" aria-hidden="true"></i><span>@document.FileName</span></a>
+                                        <label><input type="checkbox" name="keptDocumentIds" value="@document.Id" checked data-success-existing-keep data-success-category="@document.Category" data-success-size="@document.SizeBytes" /><span>Оставить</span></label>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </section>
+
+                    <section class="crm-success-wizard__step" data-crm-success-step="1" hidden>
+                        <div class="crm-success-wizard__icon"><i class="fa-solid fa-plane-departure" aria-hidden="true"></i></div>
+                        <h3>Все купленные билеты <em>обязательно</em></h3>
+                        <p>Каждый билет загружается только в PDF. Если билетов несколько, выберите их все.</p>
+                        <label class="crm-success-upload">
+                            <input type="file" name="@CrmSuccessDocumentCategories.Ticket" accept="application/pdf,.pdf" multiple data-success-required />
+                            <i class="fa-solid fa-file-pdf" aria-hidden="true"></i>
+                            <strong>Выбрать PDF-билеты</strong>
+                            <span data-success-file-summary>Файлы не выбраны</span>
+                        </label>
+                        @if (isEditingSuccessReport)
+                        {
+                            <div class="crm-success-existing-files">
+                                @foreach (var document in successDocuments.Where(item => item.Category == CrmSuccessDocumentCategories.Ticket))
+                                {
+                                    <div data-success-existing-file>
+                                        <a asp-action="DownloadSuccessDocument" asp-route-id="@card.Id" asp-route-documentId="@document.Id"><i class="fa-regular fa-file-pdf" aria-hidden="true"></i><span>@document.FileName</span></a>
+                                        <label><input type="checkbox" name="keptDocumentIds" value="@document.Id" checked data-success-existing-keep data-success-category="@document.Category" data-success-size="@document.SizeBytes" /><span>Оставить</span></label>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </section>
+
+                    <section class="crm-success-wizard__step" data-crm-success-step="2" hidden>
+                        <div class="crm-success-wizard__icon"><i class="fa-solid fa-receipt" aria-hidden="true"></i></div>
+                        <h3>Чеки на билеты <em>обязательно</em></h3>
+                        <p>Подойдут фотографии, скриншоты или PDF-файлы чеков.</p>
+                        <label class="crm-success-upload">
+                            <input type="file" name="@CrmSuccessDocumentCategories.TicketReceipt" accept="@successImageAccept,.pdf" multiple data-success-required />
+                            <i class="fa-solid fa-cloud-arrow-up" aria-hidden="true"></i>
+                            <strong>Выбрать чеки</strong>
+                            <span data-success-file-summary>Файлы не выбраны</span>
+                        </label>
+                        @if (isEditingSuccessReport)
+                        {
+                            <div class="crm-success-existing-files">
+                                @foreach (var document in successDocuments.Where(item => item.Category == CrmSuccessDocumentCategories.TicketReceipt))
+                                {
+                                    <div data-success-existing-file>
+                                        <a asp-action="DownloadSuccessDocument" asp-route-id="@card.Id" asp-route-documentId="@document.Id"><i class="fa-solid fa-receipt" aria-hidden="true"></i><span>@document.FileName</span></a>
+                                        <label><input type="checkbox" name="keptDocumentIds" value="@document.Id" checked data-success-existing-keep data-success-category="@document.Category" data-success-size="@document.SizeBytes" /><span>Оставить</span></label>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </section>
+
+                    <section class="crm-success-wizard__step" data-crm-success-step="3" data-success-contract-step hidden>
+                        <div class="crm-success-wizard__icon"><i class="fa-solid fa-file-signature" aria-hidden="true"></i></div>
+                        <h3>Фото контракта</h3>
+                        <p>Загрузите читаемое фото или скриншот контракта. Если фото нет, отметьте это и обязательно укажите причину.</p>
+                        <label class="crm-success-upload">
+                            <input type="file" name="@CrmSuccessDocumentCategories.Contract" accept="@successImageAccept" multiple data-success-contract-photo />
+                            <i class="fa-solid fa-cloud-arrow-up" aria-hidden="true"></i>
+                            <strong>Выбрать изображения</strong>
+                            <span data-success-file-summary>Файлы не выбраны</span>
+                        </label>
+                        @if (isEditingSuccessReport)
+                        {
+                            <div class="crm-success-existing-files" data-success-existing-contracts>
+                                @foreach (var document in successDocuments.Where(item => item.Category == CrmSuccessDocumentCategories.Contract))
+                                {
+                                    <div data-success-existing-file>
+                                        <a asp-action="DownloadSuccessDocument" asp-route-id="@card.Id" asp-route-documentId="@document.Id"><i class="fa-solid fa-file-signature" aria-hidden="true"></i><span>@document.FileName</span></a>
+                                        <label><input type="checkbox" name="keptDocumentIds" value="@document.Id" checked data-success-existing-keep data-success-category="@document.Category" data-success-size="@document.SizeBytes" /><span>Оставить</span></label>
+                                    </div>
+                                }
+                            </div>
+                        }
+                        <label class="crm-success-missing-toggle">
+                            <input type="checkbox" name="noContractPhoto" value="true" data-success-contract-missing checked="@(isEditingSuccessReport && !successDocuments.Any(item => item.Category == CrmSuccessDocumentCategories.Contract) && !string.IsNullOrWhiteSpace(Model.SuccessContractMissingReason))" />
+                            <span>Фото контракта нет</span>
+                        </label>
+                        <label class="crm-success-missing-reason" data-success-contract-reason-wrap hidden>
+                            <span>Почему нет фото контракта <em>*</em></span>
+                            <textarea name="contractMissingReason" maxlength="2000" rows="4" placeholder="Обязательно укажите причину" data-success-contract-reason>@(isEditingSuccessReport ? Model.SuccessContractMissingReason : null)</textarea>
+                        </label>
+                    </section>
+
+                    <section class="crm-success-wizard__step" data-crm-success-step="4" hidden>
+                        <div class="crm-success-wizard__icon"><i class="fa-solid fa-file-shield" aria-hidden="true"></i></div>
+                        <h3>Отношение <span>можно пропустить</span></h3>
+                        <p>Если кандидат прислал отношение, добавьте фото или скриншот. В большинстве случаев этого файла нет.</p>
+                        <label class="crm-success-upload">
+                            <input type="file" name="@CrmSuccessDocumentCategories.Relationship" accept="@successImageAccept" multiple />
+                            <i class="fa-solid fa-cloud-arrow-up" aria-hidden="true"></i>
+                            <strong>Выбрать изображения</strong>
+                            <span data-success-file-summary>Файлы не выбраны</span>
+                        </label>
+                        @if (isEditingSuccessReport)
+                        {
+                            <div class="crm-success-existing-files">
+                                @foreach (var document in successDocuments.Where(item => item.Category == CrmSuccessDocumentCategories.Relationship))
+                                {
+                                    <div data-success-existing-file>
+                                        <a asp-action="DownloadSuccessDocument" asp-route-id="@card.Id" asp-route-documentId="@document.Id"><i class="fa-solid fa-file-shield" aria-hidden="true"></i><span>@document.FileName</span></a>
+                                        <label><input type="checkbox" name="keptDocumentIds" value="@document.Id" checked data-success-existing-keep data-success-category="@document.Category" data-success-size="@document.SizeBytes" /><span>Оставить</span></label>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </section>
+
+                    <section class="crm-success-wizard__step" data-crm-success-step="5" hidden>
+                        <div class="crm-success-wizard__icon"><i class="fa-solid fa-folder-open" aria-hidden="true"></i></div>
+                        <h3>Документы и прочие файлы</h3>
+                        <p>Фото документов кандидата обязательны. Ниже можно дополнительно приложить любые остальные материалы, которые вы обменивались с кандидатом.</p>
+                        <div class="crm-success-wizard__uploads">
+                            <label class="crm-success-upload">
+                                <input type="file" name="@CrmSuccessDocumentCategories.CandidateDocument" accept="@successImageAccept" multiple data-success-required />
+                                <i class="fa-regular fa-address-card" aria-hidden="true"></i>
+                                <strong>Фото документов <em>обязательно</em></strong>
+                                <span data-success-file-summary>Файлы не выбраны</span>
+                            </label>
+                            <label class="crm-success-upload">
+                                <input type="file" name="@CrmSuccessDocumentCategories.Other" multiple />
+                                <i class="fa-solid fa-paperclip" aria-hidden="true"></i>
+                                <strong>Прочие файлы <span>необязательно</span></strong>
+                                <span data-success-file-summary>Файлы не выбраны</span>
+                            </label>
+                        </div>
+                        @if (isEditingSuccessReport)
+                        {
+                            <div class="crm-success-existing-files">
+                                @foreach (var document in successDocuments.Where(item => item.Category is CrmSuccessDocumentCategories.CandidateDocument or CrmSuccessDocumentCategories.Other))
+                                {
+                                    <div data-success-existing-file>
+                                        <a asp-action="DownloadSuccessDocument" asp-route-id="@card.Id" asp-route-documentId="@document.Id"><i class="fa-solid fa-file" aria-hidden="true"></i><span>@document.FileName <small>· @CrmSuccessDocumentCategories.GetLabel(document.Category)</small></span></a>
+                                        <label><input type="checkbox" name="keptDocumentIds" value="@document.Id" checked data-success-existing-keep data-success-category="@document.Category" data-success-size="@document.SizeBytes" /><span>Оставить</span></label>
+                                    </div>
+                                }
+                            </div>
+                        }
+                    </section>
+
+                    <p class="crm-success-wizard__error" data-crm-success-error role="alert" aria-live="polite" hidden></p>
+                    <footer class="crm-success-wizard__footer">
+                        <button type="button" class="settings-secondary-btn" data-crm-success-back hidden>Назад</button>
+                        <button type="button" class="settings-secondary-btn" data-crm-success-skip hidden>Пропустить отношение</button>
+                        <button type="button" class="settings-primary-btn" data-crm-success-next>Далее</button>
+                        <button type="submit" class="settings-primary-btn" data-crm-success-submit hidden>@(isEditingSuccessReport ? "Сохранить изменения" : "Закрыть в успех")</button>
+                    </footer>
+                </form>
+            </section>
+        </div>
+    }
 </div>
 
 @section Scripts {

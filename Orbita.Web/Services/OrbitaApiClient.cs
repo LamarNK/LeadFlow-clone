@@ -944,6 +944,10 @@ public sealed class OrbitaApiClient(
         string? multiloginLauncherUrl = null,
         string? multiloginCloudApiUrl = null,
         string? multiloginAutomationToken = null,
+        string? localChromeExecutablePath = null,
+        bool adsPowerEnabled = true,
+        bool multiloginEnabled = true,
+        bool localChromeEnabled = true,
         CancellationToken ct = default)
     {
         using var request = new HttpRequestMessage(HttpMethod.Patch, $"api/v1/workers/{workerId}/settings");
@@ -974,7 +978,11 @@ public sealed class OrbitaApiClient(
             ruCaptchaApiKey,
             multiloginLauncherUrl,
             multiloginCloudApiUrl,
-            multiloginAutomationToken));
+            multiloginAutomationToken,
+            localChromeExecutablePath,
+            adsPowerEnabled,
+            multiloginEnabled,
+            localChromeEnabled));
         using var response = await SendAuthenticatedAsync(request, ct);
         if (response is null)
         {
@@ -1017,6 +1025,52 @@ public sealed class OrbitaApiClient(
         using var request = new HttpRequestMessage(
             HttpMethod.Post,
             $"api/v1/workers/{workerId}/accounts/{accountId}/refresh-subprofiles");
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (false, InvalidApiSessionError);
+        }
+
+        return response.IsSuccessStatusCode
+            ? (true, null)
+            : (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    public async Task<(bool Success, string? Error)> RequestProviderCheckAsync(
+        Guid workerId,
+        string provider,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return (true, null);
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"api/v1/workers/{workerId}/provider-checks");
+        request.Content = JsonContent.Create(new RequestWorkerBrowserProviderCheckRequest(provider));
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (false, InvalidApiSessionError);
+        }
+
+        return response.IsSuccessStatusCode
+            ? (true, null)
+            : (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    public async Task<(bool Success, string? Error)> RequestProviderSyncAsync(
+        Guid workerId,
+        string provider,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return (true, null);
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"api/v1/workers/{workerId}/provider-sync");
+        request.Content = JsonContent.Create(new RequestWorkerBrowserProviderSyncRequest(provider));
         using var response = await SendAuthenticatedAsync(request, ct);
         if (response is null)
         {
@@ -1093,6 +1147,85 @@ public sealed class OrbitaApiClient(
             : (false, await ReadApiErrorAsync(response, ct));
     }
 
+    public async Task<(bool Success, string? Error)> CreateLocalAccountAsync(
+        Guid workerId,
+        string displayName,
+        string? localUserDataDir = null,
+        CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"api/v1/workers/{workerId}/accounts/local");
+        request.Content = JsonContent.Create(new CreateLocalWorkerAccountRequest(displayName, localUserDataDir));
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (false, InvalidApiSessionError);
+        }
+
+        return response.IsSuccessStatusCode
+            ? (true, null)
+            : (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    public async Task<(bool Success, string? Error)> UpdateLocalAccountAsync(
+        Guid workerId,
+        Guid accountId,
+        string? displayName,
+        string? localUserDataDir,
+        CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Patch,
+            $"api/v1/workers/{workerId}/accounts/{accountId}/local");
+        request.Content = JsonContent.Create(new UpdateLocalWorkerAccountRequest(displayName, localUserDataDir));
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (false, InvalidApiSessionError);
+        }
+
+        return response.IsSuccessStatusCode
+            ? (true, null)
+            : (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    public async Task<(bool Success, string? Error)> DeleteLocalAccountAsync(
+        Guid workerId,
+        Guid accountId,
+        CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Delete,
+            $"api/v1/workers/{workerId}/accounts/{accountId}");
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (false, InvalidApiSessionError);
+        }
+
+        return response.IsSuccessStatusCode
+            ? (true, null)
+            : (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    public async Task<(bool Success, string? Error)> OpenLocalBrowserAsync(
+        Guid workerId,
+        Guid accountId,
+        CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"api/v1/workers/{workerId}/accounts/{accountId}/local/login-session");
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (false, InvalidApiSessionError);
+        }
+
+        return response.IsSuccessStatusCode
+            ? (true, null)
+            : (false, await ReadApiErrorAsync(response, ct));
+    }
+
     public async Task<(bool Success, string? Error)> UpdateWorkerAccountCredentialsAsync(
         Guid workerId,
         Guid accountId,
@@ -1114,6 +1247,31 @@ public sealed class OrbitaApiClient(
         return response.IsSuccessStatusCode
             ? (true, null)
             : (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    public async Task<(LocalWorkerAccountProfileDto? Profile, string? Error)> UpdateLocalAccountProfileAsync(
+        Guid workerId,
+        Guid accountId,
+        UpdateLocalWorkerAccountProfileRequest body,
+        CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Put,
+            $"api/v1/workers/{workerId}/accounts/{accountId}/local/profile");
+        request.Content = JsonContent.Create(body);
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (null, InvalidApiSessionError);
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            return (null, await ReadApiErrorAsync(response, ct));
+        }
+
+        var profile = await response.Content.ReadFromJsonAsync<LocalWorkerAccountProfileDto>(ct);
+        return (profile, profile is null ? "Не удалось сохранить настройки профиля." : null);
     }
 
     public async Task<(RotateWorkerApiKeyResponse? Result, string? Error)> RotateWorkerApiKeyAsync(
@@ -1389,6 +1547,52 @@ public sealed class OrbitaApiClient(
         return preview is null ? (null, "Не удалось прочитать предпросмотр импорта.") : (preview, null);
     }
 
+    public async Task<(BitrixCrmFileImportPreviewDto? Preview, string? Error)> PreviewBitrixCrmFileImportAsync(
+        Guid id,
+        IFormFile file,
+        int categoryId,
+        IReadOnlyCollection<string> stageNames,
+        Guid? officeId = null,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return (new BitrixCrmFileImportPreviewDto(
+                "design-preview-token",
+                file.FileName,
+                DesignPreviewData.PreviewBitrixCrmImport), null);
+        }
+
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            WithOfficeQuery($"api/v1/panel/bitrix-instances/{id:D}/crm-import/file/preview", officeId));
+        using var content = new MultipartFormDataContent();
+        var fileContent = new StreamContent(file.OpenReadStream());
+        fileContent.Headers.ContentType = MediaTypeHeaderValue.Parse(
+            string.IsNullOrWhiteSpace(file.ContentType) ? "application/octet-stream" : file.ContentType);
+        content.Add(fileContent, "file", Path.GetFileName(file.FileName));
+        content.Add(new StringContent(Math.Max(0, categoryId).ToString()), "categoryId");
+        foreach (var stageName in stageNames)
+        {
+            content.Add(new StringContent(stageName), "stageNames");
+        }
+
+        request.Content = content;
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (null, InvalidApiSessionError);
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            return (null, await ReadApiErrorAsync(response, ct));
+        }
+
+        var preview = await response.Content.ReadFromJsonAsync<BitrixCrmFileImportPreviewDto>(ApiJsonOptions, ct);
+        return preview is null ? (null, "Не удалось прочитать предпросмотр файла.") : (preview, null);
+    }
+
     public async Task<(BitrixCrmImportResultDto? Result, string? Error)> ExecuteBitrixCrmImportAsync(
         Guid id,
         BitrixCrmImportExecuteRequest importRequest,
@@ -1418,6 +1622,37 @@ public sealed class OrbitaApiClient(
 
         var result = await response.Content.ReadFromJsonAsync<BitrixCrmImportResultDto>(ApiJsonOptions, ct);
         return result is null ? (null, "Не удалось прочитать результат импорта.") : (result, null);
+    }
+
+    public async Task<(BitrixCrmImportResultDto? Result, string? Error)> ExecuteBitrixCrmFileImportAsync(
+        Guid id,
+        BitrixCrmFileImportExecuteRequest importRequest,
+        Guid? officeId = null,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            var selected = importRequest.DealIds?.Count ?? DesignPreviewData.PreviewBitrixCrmImport.Deals.Count;
+            return (new BitrixCrmImportResultDto(selected, selected, 0, 0, 0, []), null);
+        }
+
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            WithOfficeQuery($"api/v1/panel/bitrix-instances/{id:D}/crm-import/file", officeId));
+        request.Content = JsonContent.Create(importRequest);
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (null, InvalidApiSessionError);
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            return (null, await ReadApiErrorAsync(response, ct));
+        }
+
+        var result = await response.Content.ReadFromJsonAsync<BitrixCrmImportResultDto>(ApiJsonOptions, ct);
+        return result is null ? (null, "Не удалось прочитать результат импорта файла.") : (result, null);
     }
 
     public Task<BitrixWorkforceSettingsDto?> GetBitrixWorkforceSettingsAsync(
@@ -2588,6 +2823,13 @@ public sealed class OrbitaApiClient(
         return (stream, fileName, contentType, error);
     }
 
+    public Task<CrmCallAiInsightDto?> GetCrmCallAiInsightAsync(
+        Guid callId,
+        CancellationToken ct = default) =>
+        _preview.Enabled
+            ? Task.FromResult<CrmCallAiInsightDto?>(null)
+            : GetAsync<CrmCallAiInsightDto>($"api/v1/crm/calls/{callId:D}/ai-insight", ct);
+
     public Task<(bool Success, string? Error)> StartCrmShiftAsync(CancellationToken ct = default) =>
         _preview.Enabled
             ? Task.FromResult(DesignPreviewData.StartCrmShift())
@@ -2850,6 +3092,139 @@ public sealed class OrbitaApiClient(
         return response is null ? (false, InvalidApiSessionError) : response.IsSuccessStatusCode ? (true, null) : (false, await ReadApiErrorAsync(response, ct));
     }
 
+    public async Task<(bool Success, string? Error)> CloseCrmCardSuccessAsync(
+        Guid cardId,
+        string? comment,
+        string? contractMissingReason,
+        IReadOnlyList<CrmSuccessUploadFile> files,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return DesignPreviewData.CloseCrmCardSuccess(cardId, comment, contractMissingReason, files);
+        }
+
+        using var multipart = new MultipartFormDataContent();
+        multipart.Add(new StringContent(comment ?? string.Empty), "comment");
+        multipart.Add(new StringContent(contractMissingReason ?? string.Empty), "contractMissingReason");
+        foreach (var file in files)
+        {
+            var content = new StreamContent(file.OpenReadStream());
+            if (MediaTypeHeaderValue.TryParse(file.ContentType, out var contentType))
+            {
+                content.Headers.ContentType = contentType;
+            }
+            multipart.Add(content, file.Category, file.FileName);
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"api/v1/crm/cards/{cardId:D}/close-success")
+        {
+            Content = multipart
+        };
+        using var response = await SendAuthenticatedAsync(request, ct);
+        return response is null
+            ? (false, InvalidApiSessionError)
+            : response.IsSuccessStatusCode
+                ? (true, null)
+                : (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    public async Task<(bool Success, string? Error)> UpdateCrmSuccessReportAsync(
+        Guid cardId,
+        IReadOnlyCollection<Guid> keptDocumentIds,
+        string? contractMissingReason,
+        IReadOnlyList<CrmSuccessUploadFile> files,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return DesignPreviewData.UpdateCrmSuccessReport(
+                cardId,
+                keptDocumentIds,
+                contractMissingReason,
+                files);
+        }
+
+        using var multipart = new MultipartFormDataContent();
+        multipart.Add(new StringContent(contractMissingReason ?? string.Empty), "contractMissingReason");
+        foreach (var documentId in keptDocumentIds)
+        {
+            multipart.Add(new StringContent(documentId.ToString("D")), "keptDocumentIds");
+        }
+        foreach (var file in files)
+        {
+            var content = new StreamContent(file.OpenReadStream());
+            if (MediaTypeHeaderValue.TryParse(file.ContentType, out var contentType))
+            {
+                content.Headers.ContentType = contentType;
+            }
+            multipart.Add(content, file.Category, file.FileName);
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Put, $"api/v1/crm/cards/{cardId:D}/success-report")
+        {
+            Content = multipart
+        };
+        using var response = await SendAuthenticatedAsync(request, ct);
+        return response is null
+            ? (false, InvalidApiSessionError)
+            : response.IsSuccessStatusCode
+                ? (true, null)
+                : (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    public async Task<(Stream? Stream, string? FileName, string? ContentType, string? Error)> OpenCrmSuccessDocumentAsync(
+        Guid cardId,
+        Guid documentId,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return (null, null, null, "Файл недоступен в режиме предпросмотра.");
+        }
+
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"api/v1/crm/cards/{cardId:D}/success-documents/{documentId:D}");
+        var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null) return (null, null, null, InvalidApiSessionError);
+        if (!response.IsSuccessStatusCode)
+        {
+            var error = await ReadApiErrorAsync(response, ct);
+            response.Dispose();
+            return (null, null, null, error);
+        }
+
+        var contentType = response.Content.Headers.ContentType?.MediaType ?? "application/octet-stream";
+        var (stream, fileName, errorMessage) = await MaterializeDownloadResponseAsync(response, "Документ", ct);
+        return (stream, fileName, contentType, errorMessage);
+    }
+
+    public async Task<(Stream? Stream, string? FileName, string? Error)> OpenCrmSuccessReportArchiveAsync(
+        Guid cardId,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return DesignPreviewData.OpenCrmSuccessReportArchive(cardId);
+        }
+
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"api/v1/crm/cards/{cardId:D}/success-report/archive");
+        using var response = await SendAuthenticatedAsync(request, ct, HttpCompletionOption.ResponseHeadersRead);
+        if (response is null)
+        {
+            return (null, null, InvalidApiSessionError);
+        }
+        if (!response.IsSuccessStatusCode)
+        {
+            return (null, null, await ReadApiErrorAsync(response, ct));
+        }
+
+        return await MaterializeDownloadResponseAsync(response, "Отчёт.zip", ct);
+    }
+
     public async Task<(bool Success, string? Error)> ReopenCrmCardAsync(Guid cardId, CancellationToken ct = default)
     {
         if (_preview.Enabled)
@@ -3078,6 +3453,13 @@ public sealed class OrbitaApiClient(
         return response is null ? (false, InvalidApiSessionError) : response.IsSuccessStatusCode ? (true, null) : (false, await ReadApiErrorAsync(response, ct));
     }
 
+    public Task<CrmOfficeSettingsDto?> GetCrmOfficeSettingsAsync(
+        Guid officeId,
+        CancellationToken ct = default) =>
+        _preview.Enabled
+            ? Task.FromResult<CrmOfficeSettingsDto?>(DesignPreviewData.GetCrmOfficeSettings())
+            : GetAsync<CrmOfficeSettingsDto>($"api/v1/crm/offices/{officeId:D}/settings", ct);
+
     public Task<CrmTelephonySettingsDto?> GetCrmTelephonySettingsAsync(
         Guid officeId,
         CancellationToken ct = default,
@@ -3136,6 +3518,98 @@ public sealed class OrbitaApiClient(
         if (response is null) return (null, InvalidApiSessionError);
         if (!response.IsSuccessStatusCode) return (null, await ReadApiErrorAsync(response, ct));
         return (await response.Content.ReadFromJsonAsync<CrmTelephonyReceiverDto>(ApiJsonOptions, ct), null);
+    }
+
+    public async Task<(CrmTelephonyProviderAccountReceiverDto? Account, string? Error)> CreateTelephonyProviderAccountAsync(
+        Guid officeId,
+        string provider,
+        CreateCrmTelephonyProviderAccountRequest account,
+        CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"api/v1/crm/telephony/offices/{officeId:D}/{Uri.EscapeDataString(provider)}/accounts")
+        {
+            Content = JsonContent.Create(account)
+        };
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null) return (null, InvalidApiSessionError);
+        if (!response.IsSuccessStatusCode) return (null, await ReadApiErrorAsync(response, ct));
+        return (await response.Content.ReadFromJsonAsync<CrmTelephonyProviderAccountReceiverDto>(ApiJsonOptions, ct), null);
+    }
+
+    public async Task<(bool Success, string? Error)> UpdateTelephonyProviderAccountAsync(
+        Guid officeId,
+        string provider,
+        Guid accountId,
+        UpdateCrmTelephonyProviderAccountRequest account,
+        CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Put,
+            $"api/v1/crm/telephony/offices/{officeId:D}/{Uri.EscapeDataString(provider)}/accounts/{accountId:D}")
+        {
+            Content = JsonContent.Create(account)
+        };
+        using var response = await SendAuthenticatedAsync(request, ct);
+        return response is null
+            ? (false, InvalidApiSessionError)
+            : response.IsSuccessStatusCode
+                ? (true, null)
+                : (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    public async Task<(bool Success, string? Error)> DeleteTelephonyProviderAccountAsync(
+        Guid officeId,
+        string provider,
+        Guid accountId,
+        CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Delete,
+            $"api/v1/crm/telephony/offices/{officeId:D}/{Uri.EscapeDataString(provider)}/accounts/{accountId:D}");
+        using var response = await SendAuthenticatedAsync(request, ct);
+        return response is null
+            ? (false, InvalidApiSessionError)
+            : response.IsSuccessStatusCode
+                ? (true, null)
+                : (false, await ReadApiErrorAsync(response, ct));
+    }
+
+    public async Task<(CrmTelephonyProviderAccountReceiverDto? Account, string? Error)> RotateTelephonyProviderAccountReceiverAsync(
+        Guid officeId,
+        string provider,
+        Guid accountId,
+        CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"api/v1/crm/telephony/offices/{officeId:D}/{Uri.EscapeDataString(provider)}/accounts/{accountId:D}/receiver");
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null) return (null, InvalidApiSessionError);
+        if (!response.IsSuccessStatusCode) return (null, await ReadApiErrorAsync(response, ct));
+        return (await response.Content.ReadFromJsonAsync<CrmTelephonyProviderAccountReceiverDto>(ApiJsonOptions, ct), null);
+    }
+
+    public async Task<(bool Success, string? Error)> SetTelephonyProviderAccountBindingAsync(
+        Guid officeId,
+        string provider,
+        Guid accountId,
+        UpdateCrmTelephonyProviderAccountBindingRequest binding,
+        CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Put,
+            $"api/v1/crm/telephony/offices/{officeId:D}/{Uri.EscapeDataString(provider)}/accounts/{accountId:D}/bindings")
+        {
+            Content = JsonContent.Create(binding)
+        };
+        using var response = await SendAuthenticatedAsync(request, ct);
+        return response is null
+            ? (false, InvalidApiSessionError)
+            : response.IsSuccessStatusCode
+                ? (true, null)
+                : (false, await ReadApiErrorAsync(response, ct));
     }
 
     public async Task<(bool Success, string? Error)> SetCrmTelephonyEnabledAsync(
@@ -3357,3 +3831,10 @@ public sealed class OrbitaApiClient(
 }
 
 public sealed record LoginResponse(string Token, string Email);
+
+public sealed record CrmSuccessUploadFile(
+    string Category,
+    string FileName,
+    string ContentType,
+    long Length,
+    Func<Stream> OpenReadStream);

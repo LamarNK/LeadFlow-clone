@@ -23,6 +23,8 @@
     else
     {
         var cards = analytics.Cards;
+        var decomposition = analytics.Decomposition;
+        var callQuality = analytics.CallQuality;
         var selectedManager = analytics.ManagerOptions.FirstOrDefault(x =>
             string.Equals(x.UserId, Model.SelectedManagerUserId, StringComparison.Ordinal));
         var managerLabel = selectedManager?.DisplayName
@@ -91,7 +93,7 @@
 
         <details class="crm-analytics-methodology">
             <summary><i class="fa-solid fa-circle-info" aria-hidden="true"></i>Как считаются показатели</summary>
-            <p>Общие KPI показывают карточки, созданные в выбранный период, и их состояние на сейчас. В таблице менеджеров и при фильтре по менеджеру карточка засчитывается первому получившему её сотруднику в дату первой выдачи, даже если ответственного позже изменили. «Работа с этапами» и «Закрыто сотрудником» считаются по фактическому автору действия; автоматические и служебные переходы не учитываются. Текущие карточки, нагрузка и задачи — снимок на сейчас. «Дошли» определяется по максимальному достигнутому этапу: карточка учитывается на нём и на всех предыдущих этапах воронки.</p>
+            <p>Общие KPI показывают карточки, созданные в выбранный период, и их состояние на сейчас. В декомпозиции «Получено» считается по первой выдаче карточки менеджеру только внутри его записанной смены. Дозвоны, анкеты, билеты и контракты засчитываются фактическому автору действия, если оно совершено в выбранном периоде и во время его смены; общий результат равен сумме результатов сотрудников. Одна карточка учитывается не более одного раза на каждом шаге у каждого сотрудника. Автоматические и служебные переходы не учитываются. Текущие карточки, нагрузка и задачи — снимок на сейчас. Дозвоном считается достижение «Переговоров», анкеты, билета или успеха, а также закрытие по причинам «Женщина», «Контракт», «Выбрали других», «Возраст», «Здоровье», «Уже был на СВО», «Неактуально» и «Офицер». НДЗ, «Исчез, слился» и «Робот» сами по себе дозвоном не считаются.</p>
         </details>
 
         <section class="crm-analytics-kpis" aria-label="Ключевые показатели CRM">
@@ -108,6 +110,75 @@
                 </article>
             }
         </section>
+
+        @if (decomposition is not null)
+        {
+            var decompositionSteps = new[]
+            {
+                new { Label = "Лиды", Count = decomposition.Leads, Caption = "Выдано во время смены", Icon = "fa-solid fa-user-plus", Tone = "leads", Conversion = (double?)null },
+                new { Label = "Дозвоны", Count = decomposition.Contacts, Caption = managerCohortSelected ? "Подтвердил сотрудник" : "Подтвердили сотрудники", Icon = "fa-solid fa-phone-volume", Tone = "contacts", Conversion = (double?)decomposition.ContactConversionPercent },
+                new { Label = "Анкеты", Count = decomposition.Questionnaires, Caption = "Дошли до анкеты", Icon = "fa-solid fa-clipboard-list", Tone = "questionnaires", Conversion = (double?)decomposition.QuestionnaireConversionPercent },
+                new { Label = "Билеты", Count = decomposition.Tickets, Caption = "Дошли до билета", Icon = "fa-solid fa-ticket", Tone = "tickets", Conversion = (double?)decomposition.TicketConversionPercent },
+                new { Label = "Контракты", Count = decomposition.Contracts, Caption = "Успешно закрыто", Icon = "fa-solid fa-file-signature", Tone = "contracts", Conversion = (double?)decomposition.ContractConversionPercent }
+            };
+            var contactBreakdown = decomposition.ContactBreakdown.Where(x => x.Count > 0).ToList();
+
+            <section class="card crm-analytics-panel crm-analytics-decomposition" aria-labelledby="crm-decomposition-title">
+            <header class="crm-analytics-panel__header">
+                <div>
+                    <h2 id="crm-decomposition-title">Декомпозиция</h2>
+                    <p>@(managerCohortSelected
+                        ? "Лиды — выдача во время смены; остальные шаги — фактические действия сотрудника в выбранном периоде."
+                        : "Сумма результатов сотрудников: выдачи и фактические действия в выбранном периоде, только внутри смен.")</p>
+                </div>
+                <span>Конверсия от предыдущего шага</span>
+            </header>
+            <div class="crm-analytics-decomposition-scroll">
+                <div class="crm-analytics-decomposition-flow">
+                    @for (var stepIndex = 0; stepIndex < decompositionSteps.Length; stepIndex++)
+                    {
+                        var step = decompositionSteps[stepIndex];
+                        if (stepIndex > 0)
+                        {
+                            <div class="crm-analytics-decomposition-connector" aria-label="Конверсия @Percent(step.Conversion ?? 0)">
+                                <span>@Percent(step.Conversion ?? 0)</span>
+                                <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
+                            </div>
+                        }
+                        <article class="crm-analytics-decomposition-step crm-analytics-decomposition-step--@step.Tone">
+                            <span class="crm-analytics-decomposition-step__icon"><i class="@step.Icon" aria-hidden="true"></i></span>
+                            <div>
+                                <span>@step.Label</span>
+                                <strong>@step.Count.ToString("N0")</strong>
+                                <small>@step.Caption</small>
+                            </div>
+                        </article>
+                    }
+                </div>
+            </div>
+            <details class="crm-analytics-contact-details">
+                <summary>
+                    <span><i class="fa-solid fa-list-check" aria-hidden="true"></i>Из чего сложились дозвоны</span>
+                    <strong>@decomposition.Contacts.ToString("N0")</strong>
+                    <i class="fa-solid fa-chevron-down" aria-hidden="true"></i>
+                </summary>
+                @if (contactBreakdown.Count == 0)
+                {
+                    <p>В выбранном периоде нет подтверждённых дозвонов, совершённых во время смен.</p>
+                }
+                else
+                {
+                    <p>Каждая карточка учитывается один раз у каждого сотрудника: достигнутый этап имеет приоритет перед причиной закрытия.</p>
+                    <div class="crm-analytics-contact-breakdown">
+                        @foreach (var item in contactBreakdown)
+                        {
+                            <div><span>@item.Label</span><strong>@item.Count.ToString("N0")</strong></div>
+                        }
+                    </div>
+                }
+            </details>
+            </section>
+        }
 
         <div class="crm-analytics-grid">
             <section class="card crm-analytics-panel crm-analytics-panel--reasons">
@@ -164,7 +235,7 @@
             <header class="crm-analytics-panel__header">
                 <div>
                     <h2>Воронка по этапам</h2>
-                    <p>«Дошли» — карточка достигла этого этапа или прошла дальше; «сейчас» — её текущий или последний этап, включая закрытые.</p>
+                    <p>«Дошли» — карточка достигла этапа в выбранном периоде; «сейчас» — её текущий или последний этап, включая закрытые.</p>
                 </div>
             </header>
             @if (visibleFunnels.Count == 0)
@@ -227,11 +298,82 @@
             }
         </section>
 
+        @if (callQuality is not null)
+        {
+            <section class="card crm-analytics-panel crm-call-quality">
+                <header class="crm-analytics-panel__header">
+                    <div>
+                        <h2>Качество звонков</h2>
+                        <p>Отдельный отчёт по завершённым звонкам с сохранённой записью. Не влияет на лиды, дозвоны и воронку выше.</p>
+                    </div>
+                    <span>@callQuality.AnalyzedCalls проанализировано</span>
+                </header>
+                @if (callQuality.RecordedCalls == 0)
+                {
+                    <div class="crm-analytics-panel-empty"><i class="fa-solid fa-headphones" aria-hidden="true"></i><span>За выбранный период записей звонков нет</span></div>
+                }
+                else
+                {
+                    <div class="crm-call-quality__kpis">
+                        <div><span>Записей</span><strong>@callQuality.RecordedCalls.ToString("N0")</strong><small>завершённые звонки</small></div>
+                        <div><span>Расшифровано</span><strong>@callQuality.TranscribedCalls.ToString("N0")</strong><small>текст уже доступен</small></div>
+                        <div><span>Проанализировано</span><strong>@callQuality.AnalyzedCalls.ToString("N0")</strong><small>@Percent(callQuality.CoveragePercent) покрытия</small></div>
+                        <div><span>Средняя оценка</span><strong>@(callQuality.AverageScore?.ToString("0.0") ?? "—")</strong><small>из 10 баллов</small></div>
+                    </div>
+                    <div class="crm-call-quality__findings">
+                        <section class="crm-call-quality__finding crm-call-quality__finding--strength">
+                            <h3><i class="fa-solid fa-circle-check" aria-hidden="true"></i>Частые сильные стороны</h3>
+                            @if (callQuality.CommonStrengths.Count == 0)
+                            {
+                                <p>Пока недостаточно структурированных анализов.</p>
+                            }
+                            else
+                            {
+                                <ul>@foreach (var item in callQuality.CommonStrengths) { <li><span>@item.Label</span><strong>@item.Count</strong><small>@Percent(item.PercentOfAnalyzed)</small></li> }</ul>
+                            }
+                        </section>
+                        <section class="crm-call-quality__finding crm-call-quality__finding--weakness">
+                            <h3><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i>Частые зоны роста</h3>
+                            @if (callQuality.CommonWeaknesses.Count == 0)
+                            {
+                                <p>Пока недостаточно структурированных анализов.</p>
+                            }
+                            else
+                            {
+                                <ul>@foreach (var item in callQuality.CommonWeaknesses) { <li><span>@item.Label</span><strong>@item.Count</strong><small>@Percent(item.PercentOfAnalyzed)</small></li> }</ul>
+                            }
+                        </section>
+                    </div>
+                    @if (callQuality.Managers.Count > 0)
+                    {
+                        <div class="crm-analytics-table-wrap crm-call-quality__table">
+                            <table class="crm-analytics-table">
+                                <thead><tr><th>Менеджер</th><th>Записи</th><th>Расшифровано</th><th>Анализы</th><th>Покрытие</th><th>Средняя оценка</th></tr></thead>
+                                <tbody>
+                                    @foreach (var manager in callQuality.Managers)
+                                    {
+                                        <tr>
+                                            <td data-label="Менеджер"><strong>@manager.DisplayName</strong></td>
+                                            <td data-label="Записи">@manager.RecordedCalls</td>
+                                            <td data-label="Расшифровано">@manager.TranscribedCalls</td>
+                                            <td data-label="Анализы">@manager.AnalyzedCalls</td>
+                                            <td data-label="Покрытие">@Percent(manager.CoveragePercent)</td>
+                                            <td data-label="Средняя оценка">@(manager.AverageScore?.ToString("0.0") ?? "—")</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        </div>
+                    }
+                }
+            </section>
+        }
+
         <section class="card crm-analytics-panel crm-analytics-managers">
             <header class="crm-analytics-panel__header">
                 <div>
                     <h2>Нагрузка менеджеров</h2>
-                    <p>Полученные лиды закреплены за первым менеджером; переходы и закрытия — за фактическим автором действия; нагрузка и задачи показаны на сейчас.</p>
+                    <p>Полученные лиды закреплены за первым менеджером и считаются только внутри его смены; переходы и закрытия — за фактическим автором во время его смены; нагрузка и задачи показаны на сейчас.</p>
                 </div>
                 <span>@analytics.Managers.Count менеджеров</span>
             </header>

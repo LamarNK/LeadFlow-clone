@@ -8,6 +8,7 @@ using LeadFlow.Core.Models;
 using LeadFlow.Core.Services.AdsPower;
 using LeadFlow.Core.Services.Avito;
 using LeadFlow.Core.Services.Captcha;
+using LeadFlow.Core.Services.LocalChrome;
 using LeadFlow.Core.Services.Multilogin;
 using LeadFlow.Core.Services.Browser;
 using Orbita.Contracts;
@@ -40,7 +41,8 @@ public sealed class WorkerMonitoringService(
     IMonitoringCycleJournal? monitoringCycleJournal = null,
     IOutboundChatDispatch? outboundChatDispatch = null,
     IMultiloginCdpConnector? multiloginCdpConnector = null,
-    WorkerAccountSessionFactory? accountSessionFactory = null) : IWorkerMonitoringService
+    WorkerAccountSessionFactory? accountSessionFactory = null,
+    LocalChromeAccountLock? localChromeAccountLock = null) : IWorkerMonitoringService
 {
     private readonly IResponsePhoneObservationStore _phoneObservationStore =
         phoneObservationStore ?? new NullResponsePhoneObservationStore();
@@ -52,6 +54,8 @@ public sealed class WorkerMonitoringService(
         accountSessionFactory ?? new WorkerAccountSessionFactory(
             adsPowerAvitoAutomationService,
             multiloginCdpConnector);
+    private readonly LocalChromeAccountLock _localChromeLock =
+        localChromeAccountLock ?? new LocalChromeAccountLock();
 
     private const int LoopRecoveryPauseMinutes = 12;
     private const int MaxLoopRecoveryFailuresBeforeStop = 10;
@@ -209,7 +213,7 @@ public sealed class WorkerMonitoringService(
                     configProvider.InvalidateConfigCache();
                     var config = await configProvider.GetConfigAsync(cancellationToken).ConfigureAwait(false);
                     var settings = ToAppSettings(config);
-                    var accounts = SelectRunnableAccounts(config.Accounts);
+                    var accounts = SelectRunnableAccounts(config);
 
                     if (accounts.Count == 0)
                     {
@@ -693,6 +697,25 @@ public sealed class WorkerMonitoringService(
                 Details = skipReason
             }, cancellationToken).ConfigureAwait(false);
             return new AccountCycleOutcome(0, false, false, skipReason);
+        }
+
+        if (WorkerAccountRuntime.IsLocalProvider(account)
+            && _localChromeLock.IsHeld(account.Id, LocalChromeAccountLock.Login))
+        {
+            const string loginSkipReason = "открыт браузер для ручного входа";
+            WorkerMonitoringLogger.AccountSkipped(account, loginSkipReason);
+            activityReporter.ReportSkipped(
+                account.Id,
+                account.DisplayName,
+                $"Пропущен: {loginSkipReason}");
+            await repository.AddLogAsync(new ProcessingLogItem
+            {
+                AccountId = account.Id,
+                Level = "Warning",
+                Message = "Аккаунт пропущен",
+                Details = loginSkipReason
+            }, cancellationToken).ConfigureAwait(false);
+            return new AccountCycleOutcome(0, false, false, loginSkipReason);
         }
 
         var enabledSubProfiles = SubProfileEnabledFilter
@@ -1195,10 +1218,10 @@ public sealed class WorkerMonitoringService(
             return (publishedTotal, false, 1, false);
         }
 
-        var hasAdsPowerCreds =
-            !string.IsNullOrWhiteSpace(account.AdsPowerProfileId)
-            && !string.IsNullOrWhiteSpace(account.AdsPowerApiBaseUrl);
-        var useExternalBrowser = WorkerAccountRuntime.IsMultiloginProvider(account) || hasAdsPowerCreds;
+        var runtimeKind = WorkerAccountRuntime.Resolve(account);
+        var useExternalBrowser = runtimeKind is WorkerAccountRuntimeKind.AdsPower
+            or WorkerAccountRuntimeKind.Multilogin
+            or WorkerAccountRuntimeKind.Local;
 
         if (!useExternalBrowser)
         {
@@ -1222,8 +1245,14 @@ public sealed class WorkerMonitoringService(
                 "Multilogin CDP: не заданы launcher URL, token, folder ID или profile ID.");
         }
 
+        if (WorkerAccountRuntime.IsLocalProvider(account) && !WorkerAccountRuntime.IsLocal(account))
+        {
+            throw new InvalidOperationException(
+                "Обычный браузер: не задан путь к отдельной папке профиля (User Data).");
+        }
+
         var adsOptions = new AdsPowerConnectionOptions(
-            account.AdsPowerApiBaseUrl!,
+            string.IsNullOrWhiteSpace(account.AdsPowerApiBaseUrl) ? string.Empty : account.AdsPowerApiBaseUrl,
             string.IsNullOrWhiteSpace(account.AdsPowerApiKey) ? null : account.AdsPowerApiKey);
 
         if (account.SubProfiles.Count > 0)
@@ -1268,8 +1297,22 @@ public sealed class WorkerMonitoringService(
                 account.ProxyPassword),
             captchaCounters);
         WorkerOpenedAccountSession? opened = null;
+        var localChromeLockHeld = false;
         try
         {
+            if (runtimeKind == WorkerAccountRuntimeKind.Local)
+            {
+                if (!_localChromeLock.TryAcquire(account.Id, LocalChromeAccountLock.Monitoring, out var existing))
+                {
+                    throw new InvalidOperationException(
+                        string.Equals(existing, LocalChromeAccountLock.Login, StringComparison.Ordinal)
+                            ? "Обычный браузер уже открыт для ручного входа. Дождитесь закрытия окна."
+                            : "Обычный браузер этого аккаунта уже запущен.");
+                }
+
+                localChromeLockHeld = true;
+            }
+
             opened = await OpenAccountSessionWithDiagnosticsAsync(
                     account,
                     adsOptions,
@@ -1894,6 +1937,11 @@ public sealed class WorkerMonitoringService(
                     WorkerMonitoringLogger.BrowserClosed(account);
                 }
             }
+
+            if (localChromeLockHeld)
+            {
+                _localChromeLock.Release(account.Id, LocalChromeAccountLock.Monitoring);
+            }
         }
     }
 
@@ -1904,8 +1952,13 @@ public sealed class WorkerMonitoringService(
     {
         var startupStopwatch = Stopwatch.StartNew();
         var lastStage = "ожидание запуска";
-        var isMultilogin = WorkerAccountRuntime.IsMultiloginProvider(account);
-        var startLabel = isMultilogin ? "Запуск Multilogin" : "Запуск AdsPower";
+        var kind = WorkerAccountRuntime.Resolve(account);
+        var startLabel = kind switch
+        {
+            WorkerAccountRuntimeKind.Multilogin => "Запуск Multilogin",
+            WorkerAccountRuntimeKind.Local => "Запуск обычного браузера",
+            _ => "Запуск AdsPower"
+        };
 
         void ReportStage(string stage, TimeSpan elapsed)
         {
@@ -1928,7 +1981,12 @@ public sealed class WorkerMonitoringService(
         }
         catch (Exception ex)
         {
-            var prefix = isMultilogin ? "Multilogin CDP не открыл сессию" : "AdsPower не открыл сессию";
+            var prefix = kind switch
+            {
+                WorkerAccountRuntimeKind.Multilogin => "Multilogin CDP не открыл сессию",
+                WorkerAccountRuntimeKind.Local => "Обычный браузер не открыл сессию",
+                _ => "AdsPower не открыл сессию"
+            };
             throw new InvalidOperationException(
                 $"{prefix}: последний этап «{lastStage}», прошло {startupStopwatch.Elapsed.TotalSeconds:F0} с. {ex.Message}",
                 ex);
@@ -2085,15 +2143,21 @@ public sealed class WorkerMonitoringService(
     private static bool IsAdsPowerAccount(AvitoAccount account) =>
         WorkerAccountRuntime.IsAdsPower(account);
 
-    private static List<AvitoAccount> SelectRunnableAccounts(IEnumerable<AvitoAccount> accounts) =>
-        accounts
+    private static List<AvitoAccount> SelectRunnableAccounts(WorkerMonitoringConfig config) =>
+        config.Accounts
             .Where(static account => account.IsEnabled)
             .Where(HasSupportedRuntime)
+            .Where(account => WorkerAccountRuntime.IsBrowserProviderEnabled(
+                account,
+                config.AdsPowerEnabled,
+                config.MultiloginEnabled,
+                config.LocalChromeEnabled))
             .ToList();
 
     private static bool HasSupportedRuntime(AvitoAccount account) =>
         WorkerAccountRuntime.Resolve(account) is WorkerAccountRuntimeKind.AdsPower
-            or WorkerAccountRuntimeKind.Multilogin;
+            or WorkerAccountRuntimeKind.Multilogin
+        || WorkerAccountRuntime.IsLocal(account);
 
     private static bool ShouldRefreshSubProfiles(AvitoAccount account)
     {
@@ -2403,7 +2467,9 @@ public sealed class WorkerMonitoringService(
         AvitoAccount account,
         AdsPowerConnectionOptions options)
     {
-        if (string.IsNullOrWhiteSpace(account.AdsPowerProfileId))
+        if (WorkerAccountRuntime.IsLocalProvider(account)
+            || WorkerAccountRuntime.IsMultiloginProvider(account)
+            || string.IsNullOrWhiteSpace(account.AdsPowerProfileId))
         {
             return true;
         }

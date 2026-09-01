@@ -263,6 +263,32 @@ public sealed class CrmDeadlineNotificationServiceTests
     }
 
     [Fact]
+    public async Task Summary_OpenTaskCount_ContainsOnlyRecipientsOpenTasksInOffice()
+    {
+        await using var harness = Harness.Create();
+        var officeA = harness.AddOffice(name: "office-a", notificationsEnabled: false);
+        var officeB = harness.AddOffice(name: "office-b");
+        harness.AddProfile("manager", officeA);
+        harness.AddProfile("other-manager", officeA);
+        harness.AddTask(officeA, "manager", harness.Now.AddMinutes(-30));
+        harness.AddTask(officeA, "manager", harness.Now.AddHours(2));
+        harness.AddTask(officeA, "manager", dueAtUtc: null);
+        harness.AddTask(
+            officeA,
+            "manager",
+            harness.Now.AddMinutes(-10),
+            status: CrmTaskStatuses.Completed);
+        harness.AddTask(officeA, "other-manager", harness.Now.AddMinutes(-5));
+        harness.AddTask(officeB, "manager", harness.Now.AddMinutes(-5));
+        await harness.Db.SaveChangesAsync();
+
+        var summary = await harness.Sut.GetSummaryAsync(officeA, "manager");
+
+        Assert.Equal(3, summary.OpenTaskCount);
+        Assert.Equal(0, summary.UnreadCount);
+    }
+
+    [Fact]
     public async Task Notifications_StopBeingActiveWhenRecipientLeavesOffice()
     {
         await using var harness = Harness.Create();

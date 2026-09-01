@@ -105,6 +105,8 @@ public sealed class WorkerAccountRuntimeStore
             MultiloginLauncherUrl = source.MultiloginLauncherUrl,
             MultiloginCloudApiUrl = source.MultiloginCloudApiUrl,
             MultiloginAutomationToken = source.MultiloginAutomationToken,
+            BrowserProfilePath = source.BrowserProfilePath,
+            LocalChromeExecutablePath = source.LocalChromeExecutablePath,
             AvitoLogin = source.AvitoLogin,
             AvitoPassword = source.AvitoPassword,
             Status = source.Status,

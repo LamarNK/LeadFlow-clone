@@ -1,9 +1,12 @@
 using LeadFlow.Core.Models;
 using LeadFlow.Core.Services.AdsPower;
+using LeadFlow.Core.Services.Captcha;
+using LeadFlow.Core.Services.LocalChrome;
 using LeadFlow.Core.Services.Multilogin;
 using LeadFlow.Core.Services.Worker;
 using Orbita.Contracts;
 using PuppeteerSharp;
+using System.Reflection;
 
 namespace Orbita.Tests;
 
@@ -16,6 +19,7 @@ public sealed class WorkerAccountRuntimeTests
         Assert.Equal(WorkerAccountRuntimeKind.AdsPower, WorkerAccountRuntime.Resolve(account));
         Assert.True(WorkerAccountRuntime.IsAdsPower(account));
         Assert.False(WorkerAccountRuntime.IsMultilogin(account));
+        Assert.False(WorkerAccountRuntime.IsLocal(account));
     }
 
     [Fact]
@@ -25,6 +29,46 @@ public sealed class WorkerAccountRuntimeTests
         Assert.Equal(WorkerAccountRuntimeKind.Multilogin, WorkerAccountRuntime.Resolve(account));
         Assert.True(WorkerAccountRuntime.IsMultilogin(account));
         Assert.False(WorkerAccountRuntime.IsAdsPower(account));
+        Assert.False(WorkerAccountRuntime.IsLocal(account));
+    }
+
+    [Fact]
+    public void Resolve_LocalAccount_SelectsLocal()
+    {
+        var account = LocalAccount();
+        Assert.Equal(WorkerAccountRuntimeKind.Local, WorkerAccountRuntime.Resolve(account));
+        Assert.True(WorkerAccountRuntime.IsLocal(account));
+        Assert.True(WorkerAccountRuntime.IsLocalProvider(account));
+        Assert.False(WorkerAccountRuntime.IsAdsPower(account));
+        Assert.False(WorkerAccountRuntime.IsMultilogin(account));
+        Assert.Equal(account.Id.ToString("D"), WorkerAccountRuntime.MonitorProfileId(account));
+    }
+
+    [Fact]
+    public void Resolve_LocalWithoutUserDataDir_IsLocalProviderButNotValid()
+    {
+        var account = new AvitoAccount
+        {
+            Id = Guid.NewGuid(),
+            DisplayName = "local-empty",
+            ProfileProvider = AvitoProfileProvider.Local
+        };
+
+        Assert.Equal(WorkerAccountRuntimeKind.Local, WorkerAccountRuntime.Resolve(account));
+        Assert.True(WorkerAccountRuntime.IsLocalProvider(account));
+        Assert.False(WorkerAccountRuntime.IsLocal(account));
+        Assert.False(WorkerAccountRuntime.IsAdsPower(account));
+    }
+
+    [Fact]
+    public void IsBrowserProviderEnabled_FollowsProviderFlags()
+    {
+        Assert.True(WorkerAccountRuntime.IsBrowserProviderEnabled(AdsPowerAccount(), true, false, false));
+        Assert.False(WorkerAccountRuntime.IsBrowserProviderEnabled(AdsPowerAccount(), false, true, true));
+        Assert.True(WorkerAccountRuntime.IsBrowserProviderEnabled(MultiloginAccount(), false, true, false));
+        Assert.False(WorkerAccountRuntime.IsBrowserProviderEnabled(MultiloginAccount(), true, false, true));
+        Assert.True(WorkerAccountRuntime.IsBrowserProviderEnabled(LocalAccount(), false, false, true));
+        Assert.False(WorkerAccountRuntime.IsBrowserProviderEnabled(LocalAccount(), true, true, false));
     }
 
     [Fact]
@@ -79,6 +123,130 @@ public sealed class WorkerAccountRuntimeTests
         Assert.Null(account.MultiloginProfileId);
         Assert.Null(account.MultiloginProfileName);
         Assert.Equal(WorkerAccountRuntimeKind.AdsPower, WorkerAccountRuntime.Resolve(account));
+    }
+
+    [Fact]
+    public void Mapper_CopiesLocalUserDataDirAndWorkerChromePath()
+    {
+        var dto = new WorkerAccountConfigDto(
+            Guid.Parse("dddddddd-dddd-dddd-dddd-dddddddddddd"),
+            AdsPowerProfileId: "",
+            DisplayName: "chrome-acc",
+            IsEnabled: true,
+            AdsPowerApiBaseUrl: null,
+            AdsPowerApiKey: null,
+            ProfileProvider: "Local",
+            LocalUserDataDir: @"D:\Orbita\ChromeProfiles\acc-1");
+        var config = new WorkerConfigDto(
+            Guid.NewGuid(),
+            1,
+            "http://local.adspower.net:50325",
+            "ads-key",
+            [dto],
+            LocalChromeExecutablePath: @"C:\Program Files\Google\Chrome\Application\chrome.exe");
+
+        var account = WorkerAccountRuntimeMapper.ToAccount(dto, config, "http://local.adspower.net:50325");
+
+        Assert.Equal(AvitoProfileProvider.Local, account.ProfileProvider);
+        Assert.Equal(@"D:\Orbita\ChromeProfiles\acc-1", account.BrowserProfilePath);
+        Assert.Equal(@"C:\Program Files\Google\Chrome\Application\chrome.exe", account.LocalChromeExecutablePath);
+        Assert.Equal(string.Empty, account.AdsPowerProfileId);
+        Assert.Null(account.MultiloginProfileId);
+        Assert.Equal(WorkerAccountRuntimeKind.Local, WorkerAccountRuntime.Resolve(account));
+    }
+
+    [Fact]
+    public void Mapper_InfersLocal_WhenUserDataDirSetAndProviderEmpty()
+    {
+        var dto = new WorkerAccountConfigDto(
+            Guid.NewGuid(),
+            AdsPowerProfileId: "",
+            DisplayName: "inferred",
+            IsEnabled: true,
+            AdsPowerApiBaseUrl: null,
+            AdsPowerApiKey: null,
+            LocalUserDataDir: @"D:\profiles\one");
+        var config = new WorkerConfigDto(Guid.NewGuid(), 1, null, null, [dto]);
+
+        var account = WorkerAccountRuntimeMapper.ToAccount(dto, config, "http://fallback");
+
+        Assert.Equal(AvitoProfileProvider.Local, account.ProfileProvider);
+        Assert.Equal(@"D:\profiles\one", account.BrowserProfilePath);
+        Assert.Equal(WorkerAccountRuntimeKind.Local, WorkerAccountRuntime.Resolve(account));
+    }
+
+    [Fact]
+    public void Mapper_CopiesLocalProxy_OnlyWhenEnabled()
+    {
+        var enabled = new WorkerAccountConfigDto(
+            Guid.Parse("dddddddd-dddd-dddd-dddd-dddddddddddd"),
+            AdsPowerProfileId: "",
+            DisplayName: "chrome-acc",
+            IsEnabled: true,
+            AdsPowerApiBaseUrl: null,
+            AdsPowerApiKey: null,
+            ProfileProvider: "Local",
+            LocalUserDataDir: @"D:\Orbita\ChromeProfiles\acc-1",
+            LocalProxyEnabled: true,
+            LocalProxyAddress: "203.0.113.10:8080",
+            LocalProxyUsername: "px",
+            LocalProxyPassword: "proxy-secret");
+        var config = new WorkerConfigDto(Guid.NewGuid(), 1, null, null, [enabled]);
+        var account = WorkerAccountRuntimeMapper.ToAccount(enabled, config, "http://fallback");
+
+        Assert.Equal("http", account.ProxyType);
+        Assert.Equal("203.0.113.10:8080", account.ProxyAddress);
+        Assert.Equal("px", account.ProxyUsername);
+        Assert.Equal("proxy-secret", account.ProxyPassword);
+
+        var captcha = GeeTestV4TaskOptions.FromBrowserProfile(
+            account.AssignedUserAgent,
+            account.ProxyType,
+            account.ProxyAddress,
+            account.ProxyUsername,
+            account.ProxyPassword);
+        Assert.True(captcha.UsesSuppliedProxy);
+        Assert.Equal("http", captcha.Proxy!.Type);
+        Assert.Equal("203.0.113.10", captcha.Proxy.Address);
+        Assert.Equal(8080, captcha.Proxy.Port);
+        Assert.Equal("px", captcha.Proxy.Login);
+        Assert.Equal("proxy-secret", captcha.Proxy.Password);
+
+        var disabled = enabled with { LocalProxyEnabled = false, LocalProxyPassword = "should-not-copy" };
+        var withoutProxy = WorkerAccountRuntimeMapper.ToAccount(disabled, config, "http://fallback");
+        Assert.True(string.IsNullOrWhiteSpace(withoutProxy.ProxyAddress));
+        Assert.Null(withoutProxy.ProxyPassword);
+        var launch = LocalChromeLaunchOptionsFactory.FromAccount(withoutProxy);
+        Assert.False(launch.ProxyEnabled);
+        Assert.Null(launch.ChromiumArgs);
+    }
+
+    [Fact]
+    public async Task Factory_LocalProxy_PassesHttpLaunchArg()
+    {
+        var ads = new FakeAdsPowerAutomation();
+        var mlx = new FakeMultiloginConnector();
+        var chrome = new FakeLocalChromeLauncher();
+        var sut = new WorkerAccountSessionFactory(ads, mlx, chrome);
+        var account = LocalAccount();
+        account.ProxyType = "http";
+        account.ProxyAddress = "203.0.113.10:8080";
+        account.ProxyUsername = "px";
+        account.ProxyPassword = "secret";
+
+        var opened = await sut.OpenAsync(
+            account,
+            new AdsPowerConnectionOptions("", null),
+            reportStartupStage: null,
+            CancellationToken.None);
+
+        Assert.NotNull(chrome.LastOptions);
+        Assert.True(chrome.LastOptions!.ProxyEnabled);
+        Assert.Equal("203.0.113.10:8080", chrome.LastOptions.ProxyServer);
+        Assert.Equal(["--proxy-server=http://203.0.113.10:8080"], chrome.LastOptions.ChromiumArgs);
+        Assert.DoesNotContain("secret", chrome.LastOptions.ChromiumArgs![0], StringComparison.Ordinal);
+        Assert.Equal("px", chrome.LastOptions.ProxyUsername);
+        await opened.DisposeAsync();
     }
 
     [Fact]
@@ -169,6 +337,83 @@ public sealed class WorkerAccountRuntimeTests
         Assert.Equal(0, ads.OpenOnConnectedCount);
     }
 
+    [Fact]
+    public async Task Factory_LocalMissingUserDataDir_ThrowsRussian()
+    {
+        var ads = new FakeAdsPowerAutomation();
+        var mlx = new FakeMultiloginConnector();
+        var chrome = new FakeLocalChromeLauncher();
+        var sut = new WorkerAccountSessionFactory(ads, mlx, chrome);
+        var account = LocalAccount();
+        account.BrowserProfilePath = "";
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            sut.OpenAsync(
+                account,
+                new AdsPowerConnectionOptions("", null),
+                null,
+                CancellationToken.None));
+
+        Assert.Contains("Обычный браузер", ex.Message, StringComparison.Ordinal);
+        Assert.Contains("папке профиля", ex.Message, StringComparison.Ordinal);
+        Assert.Equal(0, chrome.LaunchCount);
+        Assert.Equal(0, ads.OpenAdsPowerCount);
+        Assert.Equal(0, mlx.OpenCount);
+    }
+
+    [Fact]
+    public async Task Factory_LocalPath_LaunchesConnectsThenClosesBrowser()
+    {
+        var ads = new FakeAdsPowerAutomation();
+        var mlx = new FakeMultiloginConnector();
+        var chrome = new FakeLocalChromeLauncher();
+        var sut = new WorkerAccountSessionFactory(ads, mlx, chrome);
+
+        var opened = await sut.OpenAsync(
+            LocalAccount(),
+            new AdsPowerConnectionOptions("", null),
+            reportStartupStage: null,
+            CancellationToken.None);
+
+        Assert.Equal(WorkerAccountRuntimeKind.Local, opened.Runtime);
+        Assert.Equal(1, chrome.LaunchCount);
+        Assert.Equal("Local", ads.LastRuntimeProvider);
+        Assert.Equal(1, ads.OpenOnConnectedCount);
+        Assert.Equal(0, ads.OpenAdsPowerCount);
+        Assert.Equal(0, mlx.OpenCount);
+        await opened.DisposeAsync();
+        Assert.Equal(1, chrome.LastBrowser!.CloseCount);
+        Assert.Equal(1, chrome.LastBrowser.DisposeCount);
+        Assert.Equal(0, ads.CloseCount);
+        Assert.Equal(0, mlx.StopCount);
+    }
+
+    [Fact]
+    public async Task Factory_LocalAutomationException_StillClosesBrowser()
+    {
+        var ads = new FakeAdsPowerAutomation
+        {
+            OpenOnConnected = () => throw new InvalidOperationException("automation failed")
+        };
+        var mlx = new FakeMultiloginConnector();
+        var chrome = new FakeLocalChromeLauncher();
+        var sut = new WorkerAccountSessionFactory(ads, mlx, chrome);
+
+        var ex = await Assert.ThrowsAsync<InvalidOperationException>(() =>
+            sut.OpenAsync(
+                LocalAccount(),
+                new AdsPowerConnectionOptions("", null),
+                null,
+                CancellationToken.None));
+
+        Assert.Contains("Обычный браузер", ex.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("AdsPower", ex.Message, StringComparison.Ordinal);
+        Assert.DoesNotContain("Multilogin", ex.Message, StringComparison.Ordinal);
+        Assert.Equal(1, chrome.LaunchCount);
+        Assert.Equal(1, chrome.LastBrowser!.CloseCount);
+        Assert.Equal(1, chrome.LastBrowser.DisposeCount);
+    }
+
     private static AvitoAccount AdsPowerAccount() => new()
     {
         Id = Guid.NewGuid(),
@@ -190,6 +435,99 @@ public sealed class WorkerAccountRuntimeTests
         MultiloginAutomationToken = "mlx-secret-token"
     };
 
+    private static AvitoAccount LocalAccount() => new()
+    {
+        Id = Guid.Parse("dddddddd-dddd-dddd-dddd-dddddddddddd"),
+        DisplayName = "chrome-acc",
+        ProfileProvider = AvitoProfileProvider.Local,
+        BrowserProfilePath = @"D:\Orbita\ChromeProfiles\acc-1",
+        LocalChromeExecutablePath = @"C:\Program Files\Google\Chrome\Application\chrome.exe"
+    };
+
+    private sealed class FakeLocalChromeLauncher : ILocalChromeBrowserLauncher
+    {
+        public int LaunchCount { get; private set; }
+
+        public LocalChromeLaunchOptions? LastOptions { get; private set; }
+
+        public FakeBrowserProxy? LastBrowser { get; private set; }
+
+        public Task<IBrowser> LaunchAsync(
+            LocalChromeLaunchOptions options,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            LaunchCount++;
+            LastOptions = options;
+            var browser = DispatchProxy.Create<IBrowser, FakeBrowserProxy>();
+            LastBrowser = (FakeBrowserProxy)(object)browser;
+            return Task.FromResult(browser);
+        }
+    }
+
+    public class FakeBrowserProxy : DispatchProxy
+    {
+        public int CloseCount { get; private set; }
+
+        public int DisposeCount { get; private set; }
+
+        public bool Connected { get; set; } = true;
+
+        protected override object? Invoke(MethodInfo? targetMethod, object?[]? args)
+        {
+            ArgumentNullException.ThrowIfNull(targetMethod);
+            if (targetMethod.Name == "get_IsConnected")
+            {
+                return Connected;
+            }
+
+            if (targetMethod.Name == "CloseAsync")
+            {
+                CloseCount++;
+                Connected = false;
+                return Task.CompletedTask;
+            }
+
+            if (targetMethod.Name is "Dispose" or "DisposeAsync")
+            {
+                DisposeCount++;
+                if (targetMethod.ReturnType == typeof(ValueTask))
+                {
+                    return ValueTask.CompletedTask;
+                }
+
+                return null;
+            }
+
+            if (targetMethod.ReturnType == typeof(Task) || targetMethod.ReturnType.FullName == "System.Threading.Tasks.Task")
+            {
+                return Task.CompletedTask;
+            }
+
+            if (targetMethod.ReturnType.IsGenericType
+                && targetMethod.ReturnType.GetGenericTypeDefinition() == typeof(Task<>))
+            {
+                var resultType = targetMethod.ReturnType.GetGenericArguments()[0];
+                var result = resultType.IsValueType ? Activator.CreateInstance(resultType) : null;
+                return typeof(Task).GetMethod(nameof(Task.FromResult))!
+                    .MakeGenericMethod(resultType)
+                    .Invoke(null, [result]);
+            }
+
+            if (targetMethod.ReturnType == typeof(ValueTask))
+            {
+                return ValueTask.CompletedTask;
+            }
+
+            if (targetMethod.ReturnType.IsValueType)
+            {
+                return Activator.CreateInstance(targetMethod.ReturnType);
+            }
+
+            return null;
+        }
+    }
+
     private sealed class FakeAdsPowerAutomation : IAdsPowerAvitoAutomationService
     {
         public int OpenAdsPowerCount { get; private set; }
@@ -197,6 +535,8 @@ public sealed class WorkerAccountRuntimeTests
         public int OpenOnConnectedCount { get; private set; }
 
         public int CloseCount { get; private set; }
+
+        public string? LastRuntimeProvider { get; private set; }
 
         public Func<IAdsPowerAccountSession>? OpenOnConnected { get; init; }
 
@@ -269,9 +609,12 @@ public sealed class WorkerAccountRuntimeTests
             IBrowser browser,
             string sessionKey,
             Action<string, TimeSpan>? reportStartupStage = null,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default,
+            string runtimeProvider = "Multilogin")
         {
             _ = browser;
+            _ = sessionKey;
+            LastRuntimeProvider = runtimeProvider;
             OpenOnConnectedCount++;
             if (OpenOnConnected is not null)
             {

@@ -54,6 +54,43 @@ public static class CrmEndpoints
                     enableRangeProcessing: true);
         });
 
+        crmBoard.MapGet("/calls/{callId:guid}/ai-insight", async (
+            Guid callId,
+            CrmWorkspaceService workspace,
+            ClaimsPrincipal principal,
+            CancellationToken ct) =>
+        {
+            var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier)
+                         ?? principal.FindFirstValue("sub");
+            if (string.IsNullOrWhiteSpace(userId)) return Results.Forbid();
+
+            var insight = await workspace.GetCallAiInsightAsync(
+                callId,
+                userId,
+                PanelRoles.HasElevatedOfficeAccess(principal),
+                ct);
+            return insight is null ? Results.NotFound() : Results.Ok(insight);
+        });
+
+        crmAdmin.MapPost("/calls/{callId:guid}/ai-insight/retry", async (
+            Guid callId,
+            CrmWorkspaceService workspace,
+            CrmCallAiProcessingService processing,
+            ClaimsPrincipal principal,
+            CancellationToken ct) =>
+        {
+            if (!PanelRoles.HasElevatedOfficeAccess(principal)) return Results.Forbid();
+            var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier)
+                         ?? principal.FindFirstValue("sub");
+            if (string.IsNullOrWhiteSpace(userId)) return Results.Forbid();
+
+            var accessible = await workspace.GetCallAiInsightAsync(callId, userId, true, ct);
+            if (accessible is null) return Results.NotFound();
+            return await processing.RetryAsync(callId, ct)
+                ? Results.Ok(new { status = CrmCallAiStatuses.Pending })
+                : Results.NotFound();
+        });
+
         crmBoard.MapGet("/board", async (
             CrmWorkspaceService workspace,
             OfficeScopeService officeScope,
@@ -473,6 +510,12 @@ public static class CrmEndpoints
                 return Results.BadRequest(new { error = "Выберите тип закрытия." });
             }
 
+            if (request.Operation == CrmBulkTransitionOperations.Close
+                && string.Equals(request.CloseReason, CrmCloseReasons.Success, StringComparison.Ordinal))
+            {
+                return Results.BadRequest(new { error = "Успешно закрывайте карточки по одной — для каждой нужен отдельный отчёт с файлами." });
+            }
+
             var auditComment = string.IsNullOrWhiteSpace(request.Comment)
                 ? request.Operation == CrmBulkTransitionOperations.Close
                     ? "Массовое закрытие карточек."
@@ -510,6 +553,139 @@ public static class CrmEndpoints
             if (string.IsNullOrWhiteSpace(userId)) return Results.Forbid();
             var (ok, error) = await workspace.CloseAsync(cardId, request.Reason, request.Comment, userId, PanelRoles.HasElevatedOfficeAccess(principal), ct);
             return ok ? Results.NoContent() : Results.BadRequest(new { error = error ?? "Не удалось закрыть карточку." });
+        });
+
+        crmBoard.MapPost("/cards/{cardId:guid}/close-success", async (
+            Guid cardId,
+            HttpRequest request,
+            CrmWorkspaceService workspace,
+            ClaimsPrincipal principal,
+            CancellationToken ct) =>
+        {
+            var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrWhiteSpace(userId)) return Results.Forbid();
+            if (!request.HasFormContentType)
+            {
+                return Results.BadRequest(new { error = "Ожидается multipart/form-data." });
+            }
+
+            var form = await request.ReadFormAsync(ct);
+            var uploads = form.Files
+                .Select(file => new CrmSuccessDocumentUpload(
+                    file.Name,
+                    file.FileName,
+                    file.ContentType,
+                    file.Length,
+                    file.OpenReadStream))
+                .ToList();
+            var (ok, error) = await workspace.CloseSuccessAsync(
+                cardId,
+                form["comment"].ToString(),
+                form["contractMissingReason"].ToString(),
+                uploads,
+                userId,
+                PanelRoles.HasElevatedOfficeAccess(principal),
+                ct);
+            return ok ? Results.NoContent() : Results.BadRequest(new { error = error ?? "Не удалось закрыть карточку в успех." });
+        }).DisableAntiforgery();
+
+        crmBoard.MapPut("/cards/{cardId:guid}/success-report", async (
+            Guid cardId,
+            HttpRequest request,
+            CrmWorkspaceService workspace,
+            ClaimsPrincipal principal,
+            CancellationToken ct) =>
+        {
+            var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrWhiteSpace(userId) || !PanelRoles.CanEditSuccessReport(principal))
+            {
+                return Results.Forbid();
+            }
+            if (!request.HasFormContentType)
+            {
+                return Results.BadRequest(new { error = "Ожидается multipart/form-data." });
+            }
+
+            var form = await request.ReadFormAsync(ct);
+            var keptDocumentIds = new List<Guid>();
+            foreach (var rawDocumentId in form["keptDocumentIds"])
+            {
+                if (!Guid.TryParse(rawDocumentId, out var documentId))
+                {
+                    return Results.BadRequest(new { error = "Передан некорректный идентификатор файла отчёта." });
+                }
+                keptDocumentIds.Add(documentId);
+            }
+            var uploads = form.Files
+                .Select(file => new CrmSuccessDocumentUpload(
+                    file.Name,
+                    file.FileName,
+                    file.ContentType,
+                    file.Length,
+                    file.OpenReadStream))
+                .ToList();
+            var (ok, error) = await workspace.UpdateSuccessReportAsync(
+                cardId,
+                keptDocumentIds.Distinct().ToArray(),
+                form["contractMissingReason"].ToString(),
+                uploads,
+                userId,
+                canEditReport: true,
+                ct);
+            return ok
+                ? Results.NoContent()
+                : Results.BadRequest(new { error = error ?? "Не удалось изменить отчёт." });
+        }).DisableAntiforgery();
+
+        crmBoard.MapGet("/cards/{cardId:guid}/success-documents/{documentId:guid}", async (
+            Guid cardId,
+            Guid documentId,
+            CrmWorkspaceService workspace,
+            ClaimsPrincipal principal,
+            CancellationToken ct) =>
+        {
+            var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrWhiteSpace(userId)) return Results.Forbid();
+            var document = await workspace.OpenSuccessDocumentAsync(
+                cardId,
+                documentId,
+                userId,
+                PanelRoles.HasElevatedOfficeAccess(principal),
+                ct);
+            return document.Stream is null
+                ? Results.NotFound()
+                : Results.File(
+                    document.Stream,
+                    document.ContentType ?? "application/octet-stream",
+                    document.FileName ?? "Документ",
+                    enableRangeProcessing: true);
+        });
+
+        crmBoard.MapGet("/cards/{cardId:guid}/success-report/archive", async (
+            Guid cardId,
+            CrmWorkspaceService workspace,
+            ClaimsPrincipal principal,
+            CancellationToken ct) =>
+        {
+            var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrWhiteSpace(userId)
+                || !PanelRoles.CanDownloadSuccessReportArchive(principal))
+            {
+                return Results.Forbid();
+            }
+
+            var archive = await workspace.OpenSuccessReportArchiveAsync(
+                cardId,
+                userId,
+                PanelRoles.HasElevatedOfficeAccess(principal),
+                ct);
+            return archive.Stream is null
+                ? Results.NotFound()
+                : Results.File(
+                    archive.Stream,
+                    "application/zip",
+                    archive.FileName ?? "Отчёт.zip",
+                    enableRangeProcessing: true);
         });
 
         crmBoard.MapPost("/cards/{cardId:guid}/reopen", async (Guid cardId, CrmWorkspaceService workspace, ClaimsPrincipal principal, CancellationToken ct) =>

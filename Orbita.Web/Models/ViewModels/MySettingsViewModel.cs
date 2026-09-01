@@ -29,12 +29,17 @@ public sealed class BitrixInstancesRegistryViewModel
 public sealed class BitrixCrmImportPageViewModel
 {
     public required Guid OfficeId { get; init; }
+    public string OfficeName { get; init; } = string.Empty;
     public required Guid BitrixInstanceId { get; init; }
     public string BitrixInstanceLabel { get; init; } = string.Empty;
     public string PortalHost { get; init; } = string.Empty;
     public int CategoryId { get; init; }
+    public IReadOnlyList<string> AvailableStageNames { get; init; } = [];
+    public IReadOnlyList<string> SelectedStageNames { get; init; } = [];
     public BitrixCrmImportPreviewDto? Preview { get; init; }
     public BitrixCrmImportResultDto? Result { get; init; }
+    public string? FileImportToken { get; init; }
+    public string? ImportFileName { get; init; }
     public string? StatusMessage { get; init; }
     public string? ErrorMessage { get; init; }
 }
@@ -44,6 +49,18 @@ public sealed class ExecuteBitrixCrmImportFormModel
     public Guid OfficeId { get; set; }
     public Guid BitrixInstanceId { get; set; }
     public int CategoryId { get; set; }
+    public List<string> StageNames { get; set; } = [];
+    public List<long> DealIds { get; set; } = [];
+    public bool Confirmed { get; set; }
+}
+
+public sealed class ExecuteBitrixCrmFileImportFormModel
+{
+    public Guid OfficeId { get; set; }
+    public Guid BitrixInstanceId { get; set; }
+    public string ImportToken { get; set; } = string.Empty;
+    public string ImportFileName { get; set; } = string.Empty;
+    public List<string> StageNames { get; set; } = [];
     public List<long> DealIds { get; set; } = [];
     public bool Confirmed { get; set; }
 }

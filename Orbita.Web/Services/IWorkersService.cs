@@ -53,8 +53,25 @@ public interface IWorkersService
         string? multiloginLauncherUrl = null,
         string? multiloginCloudApiUrl = null,
         string? multiloginAutomationToken = null,
+        string? localChromeExecutablePath = null,
+        bool adsPowerEnabled = true,
+        bool multiloginEnabled = true,
+        bool localChromeEnabled = true,
         CancellationToken ct = default);
     Task<(bool Success, string? Error)> UpdateWorkerAccountAsync(Guid workerId, Guid accountId, bool isEnabled, CancellationToken ct = default);
+    Task<(bool Success, string? Error)> CreateLocalAccountAsync(
+        Guid workerId,
+        string displayName,
+        string? localUserDataDir = null,
+        CancellationToken ct = default);
+    Task<(bool Success, string? Error)> UpdateLocalAccountAsync(
+        Guid workerId,
+        Guid accountId,
+        string? displayName,
+        string? localUserDataDir,
+        CancellationToken ct = default);
+    Task<(bool Success, string? Error)> DeleteLocalAccountAsync(Guid workerId, Guid accountId, CancellationToken ct = default);
+    Task<(bool Success, string? Error)> OpenLocalBrowserAsync(Guid workerId, Guid accountId, CancellationToken ct = default);
     Task<(bool Success, string? Error)> UpdateWorkerAccountCredentialsAsync(
         Guid workerId,
         Guid accountId,
@@ -62,7 +79,21 @@ public interface IWorkersService
         string? password,
         bool clear,
         CancellationToken ct = default);
+    Task<(LocalWorkerAccountProfileDto? Profile, string? Error)> UpdateLocalAccountProfileAsync(
+        Guid workerId,
+        Guid accountId,
+        string? login,
+        string? password,
+        bool clearCredentials,
+        bool? proxyEnabled,
+        string? proxyAddress,
+        string? proxyUsername,
+        string? proxyPassword,
+        bool clearProxyPassword,
+        CancellationToken ct = default);
     Task<(bool Success, string? Error)> RequestSubProfilesRefreshAsync(Guid workerId, Guid accountId, CancellationToken ct = default);
+    Task<(bool Success, string? Error)> RequestProviderCheckAsync(Guid workerId, string provider, CancellationToken ct = default);
+    Task<(bool Success, string? Error)> RequestProviderSyncAsync(Guid workerId, string provider, CancellationToken ct = default);
     Task<(bool Success, string? Error)> UpdateSubProfileEnabledAsync(
         Guid workerId,
         Guid accountId,

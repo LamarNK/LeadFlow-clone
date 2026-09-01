@@ -7,6 +7,39 @@
     {
         boardReturnStage = card.Stage;
     }
+    var successDocuments = Model.SuccessDocuments ?? [];
+    var canEditSuccessReport = ViewData["CanEditSuccessReport"] as bool? == true;
+    var canDownloadSuccessReportArchive = ViewData["CanDownloadSuccessReportArchive"] as bool? == true;
+    var successReportAnchorRendered = false;
+    var successReportSteps = new[]
+    {
+        (Title: "Переписка", Categories: new[] { CrmSuccessDocumentCategories.Correspondence }, Optional: false),
+        (Title: "Билеты", Categories: new[] { CrmSuccessDocumentCategories.Ticket }, Optional: false),
+        (Title: "Чеки на билеты", Categories: new[] { CrmSuccessDocumentCategories.TicketReceipt }, Optional: false),
+        (Title: "Контракт", Categories: new[] { CrmSuccessDocumentCategories.Contract }, Optional: false),
+        (Title: "Отношение", Categories: new[] { CrmSuccessDocumentCategories.Relationship }, Optional: true),
+        (Title: "Документы и прочие файлы", Categories: new[] { CrmSuccessDocumentCategories.CandidateDocument, CrmSuccessDocumentCategories.Other }, Optional: false)
+    };
+
+    string FormatFileSize(long bytes) => bytes switch
+    {
+        >= 1024 * 1024 => $"{bytes / 1024d / 1024d:0.#} МБ",
+        >= 1024 => $"{bytes / 1024d:0.#} КБ",
+        _ => $"{bytes} Б"
+    };
+
+    string FormatFilesCount(int count)
+    {
+        var suffix = count % 100 is >= 11 and <= 14
+            ? "файлов"
+            : (count % 10) switch
+            {
+                1 => "файл",
+                >= 2 and <= 4 => "файла",
+                _ => "файлов"
+            };
+        return $"{count} {suffix}";
+    }
 
     string DisplayCrmAction(string action) => action switch
     {
@@ -29,6 +62,8 @@
         "NoteDeleted" => "Комментарий удалён",
         "NotePinned" => "Комментарий закреплён",
         "NoteUnpinned" => "Комментарий откреплён",
+        "SuccessReportUploaded" => "Загружен отчёт по успешному закрытию",
+        "SuccessReportUpdated" => "Отчёт по успешному закрытию изменён",
         _ => action
     };
 }
@@ -60,11 +95,19 @@
                 _ => "fa-calendar-check"
             };
         var displayTitle = DisplayCrmAction(item.Title);
+        var isSuccessReport = string.Equals(displayTitle, "Карточка закрыта", StringComparison.Ordinal)
+            && string.Equals(item.Body, CrmCloseReasons.Success, StringComparison.Ordinal)
+            && successDocuments.Count > 0;
+        var successReportAnchor = isSuccessReport && !successReportAnchorRendered ? "crm-success-report" : null;
+        if (isSuccessReport)
+        {
+            successReportAnchorRendered = true;
+        }
         var systemTone = displayTitle switch
         {
             "Смена этапа" => "stage",
             "Назначен ответственный" => "assignment",
-            "Карточка создана" or "Карточка изменена" or "Карточка закрыта" or "Карточка открыта снова" => "card",
+            "Карточка создана" or "Карточка изменена" or "Карточка закрыта" or "Карточка открыта снова" or "Загружен отчёт по успешному закрытию" => "card",
             _ when displayTitle.StartsWith("Задача", StringComparison.Ordinal) => "task",
             _ => "event"
         };
@@ -150,8 +193,118 @@
                     }
                     else
                     {
-                        <p class="crm-feed-item__call-pending">Запись ещё не получена от SIPOUT.</p>
+                        <p class="crm-feed-item__call-pending">Запись ещё не получена от оператора телефонии.</p>
                     }
+                    @if (item.CallId is Guid aiCallId && !string.IsNullOrWhiteSpace(item.CallAiStatus))
+                    {
+                        <div class="crm-call-ai" data-call-ai data-call-ai-url="@Url.Action("CallAiInsight", "Crm", new { callId = aiCallId })">
+                            @if (item.CallAiStatus is CrmCallAiStatuses.Completed or CrmCallAiStatuses.Partial)
+                            {
+                                <button type="button" class="crm-call-ai__load" data-call-ai-load>
+                                    <i class="fa-solid fa-wand-magic-sparkles" aria-hidden="true"></i>
+                                    Расшифровка и анализ звонка
+                                </button>
+                            }
+                            else if (item.CallAiStatus is CrmCallAiStatuses.Pending or CrmCallAiStatuses.Transcribing or CrmCallAiStatuses.Analyzing)
+                            {
+                                <p class="crm-call-ai__state"><i class="fa-solid fa-spinner" aria-hidden="true"></i>Расшифровка и анализ готовятся…</p>
+                            }
+                            else if (item.CallAiStatus == CrmCallAiStatuses.Failed)
+                            {
+                                <p class="crm-call-ai__state crm-call-ai__state--failed"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i>Не удалось подготовить расшифровку.</p>
+                            }
+                            else if (item.CallAiStatus == CrmCallAiStatuses.Skipped)
+                            {
+                                <p class="crm-call-ai__state"><i class="fa-solid fa-forward" aria-hidden="true"></i>Нулевая запись — расшифровка не требуется.</p>
+                            }
+                        </div>
+                    }
+                }
+                else if (isSuccessReport)
+                {
+                    <div id="@successReportAnchor" class="crm-feed-success-report-wrap">
+                        @if (!string.IsNullOrWhiteSpace(item.ActionComment))
+                        {
+                            <div class="crm-feed-item__action-details">
+                                <p><small>Причина</small><span>@item.Body</span></p>
+                                <p><small>Комментарий</small><span>@item.ActionComment</span></p>
+                            </div>
+                        }
+                        <div class="crm-feed-success-report__summary">
+                            <span class="crm-feed-success-report__summary-icon"><i class="fa-solid fa-folder-closed" aria-hidden="true"></i></span>
+                            <span>
+                                <strong>Отчёт по подписавшемуся кандидату</strong>
+                                <small>@FormatFilesCount(successDocuments.Count) · @FormatFileSize(successDocuments.Sum(document => document.SizeBytes))</small>
+                            </span>
+                            <span class="crm-feed-success-report__summary-actions">
+                                <em><i class="fa-solid fa-circle-check" aria-hidden="true"></i> Комплект сохранён</em>
+                                @if (canDownloadSuccessReportArchive)
+                                {
+                                    <a asp-action="DownloadSuccessReportArchive" asp-route-id="@card.Id"><i class="fa-solid fa-file-zipper" aria-hidden="true"></i>Скачать ZIP</a>
+                                }
+                                @if (canEditSuccessReport)
+                                {
+                                    <button type="button" data-crm-success-edit-open><i class="fa-solid fa-pen" aria-hidden="true"></i>Изменить</button>
+                                }
+                            </span>
+                        </div>
+                        <ol class="crm-feed-success-report">
+                            @for (var stepIndex = 0; stepIndex < successReportSteps.Length; stepIndex++)
+                            {
+                                var step = successReportSteps[stepIndex];
+                                var stepDocuments = successDocuments
+                                    .Where(document => step.Categories.Contains(document.Category, StringComparer.Ordinal))
+                                    .ToList();
+                                var isMissingContract = stepIndex == 3
+                                    && stepDocuments.Count == 0
+                                    && !string.IsNullOrWhiteSpace(Model.SuccessContractMissingReason);
+                                var stepStatus = stepDocuments.Count > 0
+                                    ? FormatFilesCount(stepDocuments.Count)
+                                    : isMissingContract
+                                        ? "Нет фото"
+                                        : step.Optional
+                                            ? "Пропущено"
+                                            : "Не приложено";
+                                <li>
+                                    <header class="crm-feed-success-report__step-header">
+                                        <span class="crm-feed-success-report__number">@(stepIndex + 1)</span>
+                                        <strong>@step.Title</strong>
+                                        <small class="@(stepDocuments.Count > 0 ? "is-ready" : isMissingContract ? "is-warning" : "is-muted")">
+                                            @if (stepDocuments.Count > 0)
+                                            {
+                                                <i class="fa-solid fa-check" aria-hidden="true"></i>
+                                            }
+                                            @stepStatus
+                                        </small>
+                                    </header>
+                                    @if (stepDocuments.Count > 0 || isMissingContract)
+                                    {
+                                        <div class="crm-feed-success-report__step-body">
+                                            @if (stepDocuments.Count > 0)
+                                            {
+                                            <div class="crm-feed-success-report__files">
+                                                @foreach (var document in stepDocuments)
+                                                {
+                                                    <a asp-action="DownloadSuccessDocument" asp-route-id="@card.Id" asp-route-documentId="@document.Id">
+                                                        <i class="fa-solid fa-file-arrow-down" aria-hidden="true"></i>
+                                                        <span><strong>@document.FileName</strong><small>@(stepIndex == 5 ? CrmSuccessDocumentCategories.GetLabel(document.Category) + " · " : "")@FormatFileSize(document.SizeBytes)</small></span>
+                                                    </a>
+                                                }
+                                            </div>
+                                            }
+                                            @if (isMissingContract)
+                                            {
+                                                <div class="crm-feed-success-report__reason">
+                                                    <strong>Причина</strong>
+                                                    <span>@Model.SuccessContractMissingReason</span>
+                                                </div>
+                                            }
+                                        </div>
+                                    }
+                                </li>
+                            }
+                        </ol>
+                    </div>
                 }
                 else if (!string.IsNullOrWhiteSpace(item.ActionComment))
                 {
