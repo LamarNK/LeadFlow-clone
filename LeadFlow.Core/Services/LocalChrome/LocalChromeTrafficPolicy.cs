@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Runtime.CompilerServices;
 using LeadFlow.Core.Models;
 using Orbita.Contracts;
 using PuppeteerSharp;
@@ -7,16 +8,18 @@ namespace LeadFlow.Core.Services.LocalChrome;
 
 /// <summary>
 /// Request interception только на рабочей вкладке Local Chrome во время мониторинга.
+/// Привязана к конкретной <see cref="IPage"/>, а не к AsyncLocal: события Puppeteer
+/// и капча живут в другом execution context.
 /// Ручной «Открыть браузер» политику не включает.
 /// </summary>
 public sealed class LocalChromeTrafficPolicy : IAsyncDisposable
 {
-    private static readonly AsyncLocal<LocalChromeTrafficPolicy?> CurrentPolicy = new();
-    private static readonly AsyncLocal<int> CaptchaImageAllowDepth = new();
+    private static readonly ConditionalWeakTable<IPage, LocalChromeTrafficPolicy> Pages = new();
 
     private readonly LocalChromeTrafficSettings _settings;
     private readonly AvitoAccount? _account;
     private readonly Stopwatch _firstNavigation = new();
+    private readonly object _sync = new();
     private IPage? _page;
     private EventHandler<RequestEventArgs>? _requestHandler;
     private EventHandler? _loadHandler;
@@ -27,8 +30,8 @@ public sealed class LocalChromeTrafficPolicy : IAsyncDisposable
     private int _blockedFonts;
     private int _blockedAnalytics;
     private int _blockedPrefetch;
+    private int _captchaImageAllowDepth;
     private int _disposed;
-    private LocalChromeTrafficPolicy? _previous;
 
     private LocalChromeTrafficPolicy(LocalChromeTrafficSettings settings, AvitoAccount? account)
     {
@@ -40,17 +43,30 @@ public sealed class LocalChromeTrafficPolicy : IAsyncDisposable
 
     public bool IsMonitoringSession { get; private init; }
 
-    public static bool IsMonitoringAttached => CurrentPolicy.Value is { IsMonitoringSession: true, _disposed: 0 };
+    public bool CaptchaImagesAllowed => Volatile.Read(ref _captchaImageAllowDepth) > 0;
 
-    public static int ResolveNavigationTimeoutMs(int fallbackMs)
+    public static LocalChromeTrafficPolicy? ForPage(IPage page)
     {
-        var current = CurrentPolicy.Value;
-        if (current is not { IsMonitoringSession: true, _disposed: 0 })
+        ArgumentNullException.ThrowIfNull(page);
+        return Pages.TryGetValue(page, out var policy) && Volatile.Read(ref policy._disposed) == 0
+            ? policy
+            : null;
+    }
+
+    public static int ResolveNavigationTimeoutMs(IPage? page, int fallbackMs)
+    {
+        if (page is null)
         {
             return fallbackMs;
         }
 
-        return current._settings.NavigationTimeoutSeconds * 1000;
+        var policy = ForPage(page);
+        if (policy is not { IsMonitoringSession: true })
+        {
+            return fallbackMs;
+        }
+
+        return policy._settings.NavigationTimeoutSeconds * 1000;
     }
 
     public static LocalChromeTrafficPolicy BeginMonitoring(AvitoAccount account)
@@ -64,65 +80,71 @@ public sealed class LocalChromeTrafficPolicy : IAsyncDisposable
             account.LocalBlockFonts,
             account.LocalBlockPrefetch,
             account.LocalNavigationTimeoutSeconds);
-        var policy = new LocalChromeTrafficPolicy(settings, account) { IsMonitoringSession = true };
-        policy._previous = CurrentPolicy.Value;
-        CurrentPolicy.Value = policy;
-        return policy;
+        return new LocalChromeTrafficPolicy(settings, account) { IsMonitoringSession = true };
     }
 
     public static LocalChromeTrafficPolicy None { get; } = new(LocalChromeTrafficRules.Disabled, account: null);
 
-    public static IDisposable AllowImages()
+    public static IDisposable AllowImages(IPage page)
     {
-        CaptchaImageAllowDepth.Value++;
-        return new CaptchaScope();
-    }
-
-    public static async Task TryAttachCurrentAsync(IPage page, CancellationToken cancellationToken = default)
-    {
-        var current = CurrentPolicy.Value;
-        if (current is not { IsMonitoringSession: true, _disposed: 0 })
+        ArgumentNullException.ThrowIfNull(page);
+        var policy = ForPage(page);
+        if (policy is null)
         {
-            return;
+            return NoopScope.Instance;
         }
 
-        await current.AttachAsync(page, cancellationToken).ConfigureAwait(false);
+        Interlocked.Increment(ref policy._captchaImageAllowDepth);
+        return new CaptchaScope(policy);
     }
 
     public async Task AttachAsync(IPage page, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(page);
-        if (_disposed != 0 || !IsMonitoringSession)
+        if (Volatile.Read(ref _disposed) != 0 || !IsMonitoringSession)
         {
             return;
         }
 
         cancellationToken.ThrowIfCancellationRequested();
-        _page = page;
-        try
+        if (IsBoundTo(page) && _requestHandler is not null)
         {
-            page.DefaultNavigationTimeout = _settings.NavigationTimeoutSeconds * 1000;
-        }
-        catch
-        {
-            // Default timeout is best-effort.
+            TrySetNavigationTimeout(page);
+            return;
         }
 
-        _requestHandler = OnRequest;
-        _loadHandler = OnLoad;
-        page.Request += _requestHandler;
-        page.Load += _loadHandler;
+        await DetachPageAsync(disableInterception: true).ConfigureAwait(false);
+        Bind(page);
+        TrySetNavigationTimeout(page);
+
+        var requestHandler = new EventHandler<RequestEventArgs>(OnRequest);
+        var loadHandler = new EventHandler(OnLoad);
+        _requestHandler = requestHandler;
+        _loadHandler = loadHandler;
+        page.Request += requestHandler;
+        page.Load += loadHandler;
         try
         {
             await page.SetRequestInterceptionAsync(true).WaitAsync(cancellationToken).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            page.Request -= _requestHandler;
-            page.Load -= _loadHandler;
-            _requestHandler = null;
-            _loadHandler = null;
-            _page = null;
+            page.Request -= requestHandler;
+            page.Load -= loadHandler;
+            if (ReferenceEquals(_requestHandler, requestHandler))
+            {
+                _requestHandler = null;
+            }
+
+            if (ReferenceEquals(_loadHandler, loadHandler))
+            {
+                _loadHandler = null;
+            }
+        }
+
+        if (Volatile.Read(ref _disposed) != 0)
+        {
+            await DetachPageAsync(disableInterception: true).ConfigureAwait(false);
         }
     }
 
@@ -134,6 +156,27 @@ public sealed class LocalChromeTrafficPolicy : IAsyncDisposable
             Volatile.Read(ref _blockedFonts),
             Volatile.Read(ref _blockedAnalytics),
             Volatile.Read(ref _blockedPrefetch));
+
+    public LocalChromeTrafficBlockKind Classify(
+        string? resourceType,
+        string? url,
+        string? purposeHeader = null,
+        string? secPurposeHeader = null)
+    {
+        var kind = LocalChromeTrafficRules.Classify(
+            _settings,
+            resourceType,
+            url,
+            purposeHeader,
+            secPurposeHeader,
+            CaptchaImagesAllowed);
+        if (kind != LocalChromeTrafficBlockKind.None)
+        {
+            Increment(kind);
+        }
+
+        return kind;
+    }
 
     public static LocalChromeTrafficBlockKind Classify(
         LocalChromeTrafficSettings settings,
@@ -158,42 +201,102 @@ public sealed class LocalChromeTrafficPolicy : IAsyncDisposable
             return;
         }
 
-        var page = _page;
-        var requestHandler = _requestHandler;
-        var loadHandler = _loadHandler;
-        _page = null;
-        _requestHandler = null;
-        _loadHandler = null;
-        if (page is not null)
-        {
-            if (requestHandler is not null)
-            {
-                page.Request -= requestHandler;
-            }
-
-            if (loadHandler is not null)
-            {
-                page.Load -= loadHandler;
-            }
-
-            try
-            {
-                await page.SetRequestInterceptionAsync(false).ConfigureAwait(false);
-            }
-            catch
-            {
-                // Detach must never throw.
-            }
-        }
-
+        await DetachPageAsync(disableInterception: true).ConfigureAwait(false);
         if (_account is not null)
         {
             _account.LocalTrafficLastStats = Snapshot();
         }
+    }
 
-        if (ReferenceEquals(CurrentPolicy.Value, this))
+    private bool IsBoundTo(IPage page)
+    {
+        lock (_sync)
         {
-            CurrentPolicy.Value = _previous;
+            return ReferenceEquals(_page, page);
+        }
+    }
+
+    private void Bind(IPage page)
+    {
+        lock (_sync)
+        {
+            var previous = _page;
+            if (previous is not null && !ReferenceEquals(previous, page))
+            {
+                RemoveMapping(previous);
+            }
+
+            _page = page;
+            Pages.AddOrUpdate(page, this);
+        }
+    }
+
+    private async Task DetachPageAsync(bool disableInterception)
+    {
+        IPage? page;
+        EventHandler<RequestEventArgs>? requestHandler;
+        EventHandler? loadHandler;
+        lock (_sync)
+        {
+            page = _page;
+            requestHandler = _requestHandler;
+            loadHandler = _loadHandler;
+            _page = null;
+            _requestHandler = null;
+            _loadHandler = null;
+            if (page is not null)
+            {
+                RemoveMapping(page);
+            }
+        }
+
+        if (page is null)
+        {
+            return;
+        }
+
+        if (requestHandler is not null)
+        {
+            page.Request -= requestHandler;
+        }
+
+        if (loadHandler is not null)
+        {
+            page.Load -= loadHandler;
+        }
+
+        if (!disableInterception)
+        {
+            return;
+        }
+
+        try
+        {
+            await page.SetRequestInterceptionAsync(false).ConfigureAwait(false);
+        }
+        catch
+        {
+            // Detach must never throw.
+        }
+    }
+
+    private void RemoveMapping(IPage page)
+    {
+        if (Pages.TryGetValue(page, out var mapped) && ReferenceEquals(mapped, this))
+        {
+            Pages.Remove(page);
+        }
+    }
+
+    private void TrySetNavigationTimeout(IPage page)
+    {
+        try
+        {
+            page.DefaultNavigationTimeout = _settings.NavigationTimeoutSeconds * 1000;
+        }
+        catch
+        {
+            // Default timeout is best-effort.
         }
     }
 
@@ -202,21 +305,24 @@ public sealed class LocalChromeTrafficPolicy : IAsyncDisposable
         var request = e.Request;
         try
         {
+            if (Volatile.Read(ref _disposed) != 0)
+            {
+                await request.ContinueAsync().ConfigureAwait(false);
+                return;
+            }
+
             NoteFirstNavigationStart(request);
-            var kind = LocalChromeTrafficRules.Classify(
-                _settings,
+            var kind = Classify(
                 request.ResourceType.ToString(),
                 request.Url,
                 Header(request, "purpose") ?? Header(request, "Purpose"),
-                Header(request, "sec-purpose") ?? Header(request, "Sec-Purpose"),
-                CaptchaImageAllowDepth.Value > 0);
+                Header(request, "sec-purpose") ?? Header(request, "Sec-Purpose"));
             if (kind == LocalChromeTrafficBlockKind.None)
             {
                 await request.ContinueAsync().ConfigureAwait(false);
                 return;
             }
 
-            Increment(kind);
             await request.AbortAsync().ConfigureAwait(false);
         }
         catch
@@ -318,7 +424,7 @@ public sealed class LocalChromeTrafficPolicy : IAsyncDisposable
         return null;
     }
 
-    private sealed class CaptchaScope : IDisposable
+    private sealed class CaptchaScope(LocalChromeTrafficPolicy policy) : IDisposable
     {
         private int _disposed;
 
@@ -329,8 +435,19 @@ public sealed class LocalChromeTrafficPolicy : IAsyncDisposable
                 return;
             }
 
-            var depth = CaptchaImageAllowDepth.Value;
-            CaptchaImageAllowDepth.Value = depth > 0 ? depth - 1 : 0;
+            if (Interlocked.Decrement(ref policy._captchaImageAllowDepth) < 0)
+            {
+                Interlocked.Exchange(ref policy._captchaImageAllowDepth, 0);
+            }
+        }
+    }
+
+    private sealed class NoopScope : IDisposable
+    {
+        public static readonly NoopScope Instance = new();
+
+        public void Dispose()
+        {
         }
     }
 }

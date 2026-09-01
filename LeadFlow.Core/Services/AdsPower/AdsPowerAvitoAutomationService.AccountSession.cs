@@ -97,7 +97,8 @@ public sealed partial class AdsPowerAvitoAutomationService
         string sessionKey,
         Action<string, TimeSpan>? reportStartupStage = null,
         CancellationToken cancellationToken = default,
-        string runtimeProvider = "Multilogin")
+        string runtimeProvider = "Multilogin",
+        LocalChromeTrafficPolicy? trafficPolicy = null)
     {
         ArgumentNullException.ThrowIfNull(browser);
         ArgumentException.ThrowIfNullOrWhiteSpace(sessionKey);
@@ -112,14 +113,19 @@ public sealed partial class AdsPowerAvitoAutomationService
                 cancellationToken,
                 waitForStartupNavigation: true)
             .ConfigureAwait(false);
-        await LocalChromeTrafficPolicy.TryAttachCurrentAsync(page, cancellationToken).ConfigureAwait(false);
+        if (trafficPolicy is not null)
+        {
+            await trafficPolicy.AttachAsync(page, cancellationToken).ConfigureAwait(false);
+        }
+
         ReportStartupStage(reportStartupStage, 1, "вкладка получена", startupStopwatch);
         ReportStartupStage(reportStartupStage, 1, "прогрев страницы Avito", startupStopwatch);
         page = await WarmUpSessionPageAsync(
                 page,
                 sessionKey,
                 cancellationToken,
-                runtimeProvider: provider)
+                runtimeProvider: provider,
+                trafficPolicy: trafficPolicy)
             .ConfigureAwait(false);
         ReportStartupStage(reportStartupStage, 1, "страница Avito готова", startupStopwatch);
         return new AccountSession(this, browser, page, sessionKey, new GeeTestV4TaskOptions(), provider);
@@ -293,8 +299,20 @@ public sealed partial class AdsPowerAvitoAutomationService
         IPage page,
         string adsPowerUserId,
         CancellationToken cancellationToken,
-        string runtimeProvider = "AdsPower")
+        string runtimeProvider = "AdsPower",
+        LocalChromeTrafficPolicy? trafficPolicy = null)
     {
+        var traffic = trafficPolicy ?? LocalChromeTrafficPolicy.ForPage(page);
+        async Task<IPage> KeepTrafficAsync(IPage next)
+        {
+            if (traffic is not null)
+            {
+                await traffic.AttachAsync(next, cancellationToken).ConfigureAwait(false);
+            }
+
+            return next;
+        }
+
         await TryBringAutomationPageToFrontAsync(
                 page,
                 CdpPageDiscoveryTimeout,
@@ -305,11 +323,13 @@ public sealed partial class AdsPowerAvitoAutomationService
         var currentUrl = await ReadPageUrlAsync(page, cancellationToken).ConfigureAwait(false);
         if (IsReusableStartupPlaceholderUrl(currentUrl) || !IsUsableWorkerPageUrl(currentUrl))
         {
-            page = await NavigateOffStartupPlaceholderAsync(
-                    page,
-                    ProfileItemsPageUrl,
-                    nameof(WarmUpSessionPageAsync),
-                    cancellationToken)
+            page = await KeepTrafficAsync(
+                    await NavigateOffStartupPlaceholderAsync(
+                            page,
+                            ProfileItemsPageUrl,
+                            nameof(WarmUpSessionPageAsync),
+                            cancellationToken)
+                        .ConfigureAwait(false))
                 .ConfigureAwait(false);
             currentUrl = await ReadPageUrlAsync(page, cancellationToken).ConfigureAwait(false);
         }
@@ -317,7 +337,9 @@ public sealed partial class AdsPowerAvitoAutomationService
         if (!IsAvitoProfileAutomationTab(currentUrl))
         {
             await TryCdpPageNavigateAsync(page, ProfileItemsPageUrl, cancellationToken).ConfigureAwait(false);
-            page = await PollUntilAvitoPageAsync(page, cancellationToken).ConfigureAwait(false);
+            page = await KeepTrafficAsync(
+                    await PollUntilAvitoPageAsync(page, cancellationToken).ConfigureAwait(false))
+                .ConfigureAwait(false);
             currentUrl = await ReadPageUrlAsync(page, cancellationToken).ConfigureAwait(false);
         }
 
@@ -351,7 +373,7 @@ public sealed partial class AdsPowerAvitoAutomationService
             var recovered = await TryRecoverAvitoLoginAsync(page, cancellationToken).ConfigureAwait(false);
             if (recovered && !IsOnActiveProfileItemsPage(page.Url))
             {
-                await page.GoToAsync(ProfileItemsPageUrl, MonitoringNavigation(90_000)).ConfigureAwait(false);
+                await page.GoToAsync(ProfileItemsPageUrl, MonitoringNavigation(page, 90_000)).ConfigureAwait(false);
             }
         }
 
@@ -933,7 +955,7 @@ public sealed partial class AdsPowerAvitoAutomationService
 
             try
             {
-                await page.GoToAsync(ProfileItemsPageUrl, MonitoringNavigation(45_000)).ConfigureAwait(false);
+                await page.GoToAsync(ProfileItemsPageUrl, MonitoringNavigation(page, 45_000)).ConfigureAwait(false);
             }
             catch (Exception ex) when (IsRecoverableNavigationError(ex))
             {
@@ -1000,7 +1022,7 @@ public sealed partial class AdsPowerAvitoAutomationService
         {
             try
             {
-                await page.GoToAsync(ProfileItemsPageUrl, MonitoringNavigation(60_000)).ConfigureAwait(false);
+                await page.GoToAsync(ProfileItemsPageUrl, MonitoringNavigation(page, 60_000)).ConfigureAwait(false);
             }
             catch (Exception ex) when (IsRecoverableNavigationError(ex))
             {
@@ -1038,7 +1060,7 @@ public sealed partial class AdsPowerAvitoAutomationService
         {
             try
             {
-                await page.GoToAsync(ProfileBlockedItemsPageUrl, MonitoringNavigation(60_000)).ConfigureAwait(false);
+                await page.GoToAsync(ProfileBlockedItemsPageUrl, MonitoringNavigation(page, 60_000)).ConfigureAwait(false);
             }
             catch (Exception ex) when (IsRecoverableNavigationError(ex))
             {

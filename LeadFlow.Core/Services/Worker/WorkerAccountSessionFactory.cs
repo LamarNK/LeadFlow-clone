@@ -130,7 +130,8 @@ public sealed class WorkerAccountSessionFactory(
                     account.Id.ToString("D"),
                     reportStartupStage,
                     cancellationToken,
-                    runtimeProvider: "Local")
+                    runtimeProvider: "Local",
+                    trafficPolicy: traffic)
                 .ConfigureAwait(false);
 
             var owned = browser;

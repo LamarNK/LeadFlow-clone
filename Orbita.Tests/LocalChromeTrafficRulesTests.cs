@@ -1,4 +1,3 @@
-using LeadFlow.Core.Services.LocalChrome;
 using Orbita.Contracts;
 
 namespace Orbita.Tests;
@@ -186,7 +185,7 @@ public sealed class LocalChromeTrafficRulesTests
         var runner = ReadRepoFile("LeadFlow.Core/Services/LocalChrome/LocalChromeLoginSessionRunner.cs");
         Assert.DoesNotContain("LocalChromeTrafficPolicy", runner, StringComparison.Ordinal);
         Assert.DoesNotContain("SetRequestInterception", runner, StringComparison.Ordinal);
-        Assert.False(LocalChromeTrafficPolicy.IsMonitoringAttached);
+        Assert.DoesNotContain("ConditionalWeakTable", runner, StringComparison.Ordinal);
     }
 
     private static void AssertNeverBlocked(LocalChromeTrafficSettings settings, bool skipAnalytics = false)

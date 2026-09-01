@@ -108,7 +108,8 @@ public interface IAdsPowerAvitoAutomationService
         string sessionKey,
         Action<string, TimeSpan>? reportStartupStage = null,
         CancellationToken cancellationToken = default,
-        string runtimeProvider = "Multilogin") =>
+        string runtimeProvider = "Multilogin",
+        LocalChrome.LocalChromeTrafficPolicy? trafficPolicy = null) =>
         Task.FromException<IAdsPowerAccountSession>(
             new NotSupportedException("OpenAccountSessionOnConnectedBrowserAsync is not supported."));
 }

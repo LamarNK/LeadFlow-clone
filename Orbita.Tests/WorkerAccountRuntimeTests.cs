@@ -659,12 +659,13 @@ public sealed class WorkerAccountRuntimeTests
             string sessionKey,
             Action<string, TimeSpan>? reportStartupStage = null,
             CancellationToken cancellationToken = default,
-            string runtimeProvider = "Multilogin")
+            string runtimeProvider = "Multilogin",
+            LocalChromeTrafficPolicy? trafficPolicy = null)
         {
             _ = browser;
             _ = sessionKey;
             LastRuntimeProvider = runtimeProvider;
-            LastTrafficMonitoring = LocalChromeTrafficPolicy.IsMonitoringAttached;
+            LastTrafficMonitoring = trafficPolicy is { IsMonitoringSession: true };
             OpenOnConnectedCount++;
             if (OpenOnConnected is not null)
             {
