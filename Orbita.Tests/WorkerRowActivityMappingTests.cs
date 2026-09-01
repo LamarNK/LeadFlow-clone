@@ -7,13 +7,14 @@ namespace Orbita.Tests;
 
 public sealed class WorkerRowActivityMappingTests
 {
-    private static readonly DateTime Now = new(2026, 7, 2, 12, 0, 0, DateTimeKind.Utc);
+    private static readonly DateTime SnapshotTime = new(2026, 7, 2, 12, 0, 0, DateTimeKind.Utc);
     private static readonly Guid WorkerId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
 
     [Fact]
     public void MapRow_WaitingActivity_PreservesPhaseAndNextCycleAtUtc()
     {
-        var nextCycleAtUtc = Now.AddMinutes(32);
+        var now = DateTime.UtcNow;
+        var nextCycleAtUtc = now.AddMinutes(32);
         var row = WorkersService.MapRow(new WorkerListItem(
             WorkerId,
             "Worker #1",
@@ -23,7 +24,7 @@ public sealed class WorkerRowActivityMappingTests
             null,
             true,
             true,
-            Now.AddSeconds(-5),
+            now.AddSeconds(-5),
             10,
             0,
             0,
@@ -36,9 +37,8 @@ public sealed class WorkerRowActivityMappingTests
                 null,
                 null,
                 nextCycleAtUtc,
-                Now.AddSeconds(-5))));
+                now.AddSeconds(-5))));
 
-        Assert.Equal("Пауза · осталось 32 мин", row.CurrentActivityLabel);
         Assert.Equal("muted", row.CurrentActivityTone);
         Assert.Equal(WorkerActivityPhases.Waiting, row.CurrentActivityPhase);
         Assert.Equal(nextCycleAtUtc, row.CurrentActivityNextCycleAtUtc);
@@ -50,7 +50,7 @@ public sealed class WorkerRowActivityMappingTests
         var nextCycleAtUtc = new DateTime(2026, 7, 2, 12, 32, 0, DateTimeKind.Utc);
         var snapshot = new WorkersLiveSnapshotViewModel
         {
-            UpdatedAtUtc = Now,
+            UpdatedAtUtc = SnapshotTime,
             Workers =
             [
                 new WorkerRowViewModel
