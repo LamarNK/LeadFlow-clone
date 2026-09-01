@@ -57,6 +57,49 @@ public sealed class PanelUserService(
             .ToList();
     }
 
+    /// <summary>
+    /// Users in <paramref name="officeId"/> who may use office telephony.
+    /// Unlike the editable staff roster, this also includes the office lead so
+    /// a phone extension and outbound line can be assigned to them.
+    /// </summary>
+    public async Task<IReadOnlyList<PanelUserDto>> ListTelephonyUsersByOfficeAsync(
+        Guid officeId,
+        CancellationToken ct = default)
+    {
+        var userIds = await db.PanelUserProfiles
+            .AsNoTracking()
+            .Where(x => x.OfficeId == officeId)
+            .Select(x => x.UserId)
+            .ToListAsync(ct);
+
+        var result = new List<PanelUserDto>();
+        foreach (var userId in userIds)
+        {
+            var user = await users.FindByIdAsync(userId);
+            if (user is null)
+            {
+                continue;
+            }
+
+            var dto = await MapAsync(user, ct);
+            if (PanelRoles.CrmDeskRoles.Contains(dto.Role, StringComparer.OrdinalIgnoreCase))
+            {
+                result.Add(dto);
+            }
+        }
+
+        return result
+            .OrderBy(x => PanelRoles.Normalize(x.Role) switch
+            {
+                PanelRoles.OfficeLead => 0,
+                PanelRoles.SeniorManager => 1,
+                _ => 2
+            })
+            .ThenBy(x => string.IsNullOrWhiteSpace(x.FullName) ? x.Email : x.FullName, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(x => x.Email, StringComparer.OrdinalIgnoreCase)
+            .ToList();
+    }
+
     public async Task<PanelUserDto?> GetByIdAsync(string userId, CancellationToken ct = default)
     {
         var user = await users.FindByIdAsync(userId);

@@ -28,6 +28,23 @@ public static class OfficeStaffEndpoints
                 : Results.BadRequest(new { error });
         });
 
+        staff.MapGet("/telephony-users", async (
+            OfficeStaffService officeStaff,
+            ClaimsPrincipal principal,
+            Guid? officeId,
+            CancellationToken ct) =>
+        {
+            var (users, forbidden, error) = await officeStaff.ListTelephonyUsersAsync(principal, officeId, ct);
+            if (forbidden)
+            {
+                return Results.Forbid();
+            }
+
+            return error is null
+                ? Results.Ok(users)
+                : Results.BadRequest(new { error });
+        });
+
         staff.MapPost("/users", async (
             CreatePanelUserRequest request,
             OfficeStaffService officeStaff,

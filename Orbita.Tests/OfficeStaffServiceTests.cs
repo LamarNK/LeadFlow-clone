@@ -124,6 +124,30 @@ public sealed class OfficeStaffServiceTests
     }
 
     [Fact]
+    public async Task OfficeLead_TelephonyRosterIncludesLeadManagersAndSeniorManagersOnly()
+    {
+        await using var h = await Harness.CreateAsync();
+        var lead = await h.CreateUserAsync("lead@test.local", PanelRoles.OfficeLead, h.OfficeA);
+        var manager = await h.CreateUserAsync("mgr@test.local", PanelRoles.Manager, h.OfficeA);
+        var senior = await h.CreateUserAsync("senior@test.local", PanelRoles.SeniorManager, h.OfficeA);
+        var officeOperator = await h.CreateUserAsync("operator@test.local", PanelRoles.Operator, h.OfficeA);
+        var foreignLead = await h.CreateUserAsync("foreign-lead@test.local", PanelRoles.OfficeLead, h.OfficeB);
+        var actor = h.Principal(lead.Id, PanelRoles.OfficeLead, h.OfficeA);
+
+        var (list, forbidden, error) = await h.Sut.ListTelephonyUsersAsync(
+            actor,
+            h.OfficeA,
+            CancellationToken.None);
+
+        Assert.False(forbidden);
+        Assert.Null(error);
+        Assert.NotNull(list);
+        Assert.Equal([lead.Id, senior.Id, manager.Id], list.Select(x => x.Id));
+        Assert.DoesNotContain(list, x => x.Id == officeOperator.Id);
+        Assert.DoesNotContain(list, x => x.Id == foreignLead.Id);
+    }
+
+    [Fact]
     public async Task OfficeLead_CannotDeleteSelf()
     {
         await using var h = await Harness.CreateAsync();

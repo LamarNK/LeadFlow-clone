@@ -75,7 +75,7 @@ public sealed class TelephonySettingsController(
         else
         {
             officeName = profile.OfficeName;
-            users = await api.GetOfficeStaffUsersAsync(selectedOfficeId, ct) ?? [];
+            users = await api.GetOfficeTelephonyUsersAsync(selectedOfficeId, ct) ?? [];
         }
 
         if (string.IsNullOrWhiteSpace(officeName)) return NotFound();

@@ -26,6 +26,20 @@ public sealed class OfficeStaffService(
         return (await panelUsers.ListStaffByOfficeAsync(oid, ct), false, null);
     }
 
+    public async Task<(IReadOnlyList<PanelUserDto>? Users, bool Forbidden, string? Error)> ListTelephonyUsersAsync(
+        ClaimsPrincipal actor,
+        Guid? requestedOfficeId,
+        CancellationToken ct = default)
+    {
+        var (officeId, forbidden, error) = await ResolveManagedOfficeAsync(actor, requestedOfficeId, ct);
+        if (forbidden || error is not null || officeId is not Guid oid)
+        {
+            return (null, forbidden, error);
+        }
+
+        return (await panelUsers.ListTelephonyUsersByOfficeAsync(oid, ct), false, null);
+    }
+
     public async Task<(PanelUserDto? User, bool Forbidden, string? Error)> CreateAsync(
         ClaimsPrincipal actor,
         Guid? requestedOfficeId,

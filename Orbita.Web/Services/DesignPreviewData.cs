@@ -3016,6 +3016,27 @@ internal static class DesignPreviewData
         }
     }
 
+    public static IReadOnlyList<PanelUserDto> GetOfficeTelephonyUsers(Guid? officeId)
+    {
+        var oid = officeId ?? PreviewOfficeId;
+        lock (OfficeStaffSync)
+        {
+            return PreviewOfficeStaff
+                .Concat(PanelUsers.Where(x => x.Role == PanelRoles.OfficeLead))
+                .Where(x => x.OfficeId == oid
+                    && PanelRoles.CrmDeskRoles.Contains(x.Role, StringComparer.OrdinalIgnoreCase))
+                .DistinctBy(x => x.Id, StringComparer.Ordinal)
+                .OrderBy(x => PanelRoles.Normalize(x.Role) switch
+                {
+                    PanelRoles.OfficeLead => 0,
+                    PanelRoles.SeniorManager => 1,
+                    _ => 2
+                })
+                .ThenBy(x => x.FullName ?? x.Email, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+    }
+
     public static (bool Success, string? Error) CreateOfficeStaffUser(
         string email,
         string fullName,

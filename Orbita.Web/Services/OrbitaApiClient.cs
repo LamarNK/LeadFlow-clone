@@ -294,6 +294,20 @@ public sealed class OrbitaApiClient(
         return GetAsync<IReadOnlyList<PanelUserDto>>(WithOfficeQuery("api/v1/office-staff/users", officeId), ct);
     }
 
+    public Task<IReadOnlyList<PanelUserDto>?> GetOfficeTelephonyUsersAsync(
+        Guid? officeId = null,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return Task.FromResult<IReadOnlyList<PanelUserDto>?>(DesignPreviewData.GetOfficeTelephonyUsers(officeId));
+        }
+
+        return GetAsync<IReadOnlyList<PanelUserDto>>(
+            WithOfficeQuery("api/v1/office-staff/telephony-users", officeId),
+            ct);
+    }
+
     public async Task<(bool Success, string? Error)> CreateOfficeStaffUserAsync(
         string email,
         string fullName,
