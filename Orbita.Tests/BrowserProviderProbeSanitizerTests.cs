@@ -33,6 +33,21 @@ public sealed class BrowserProviderProbeSanitizerTests
     }
 
     [Fact]
+    public void Sanitize_StripsUserInfoWithoutScheme()
+    {
+        const string password = "proxy-secret";
+        var sanitized = BrowserProviderProbeSanitizer.Sanitize(
+            "Failed to launch browser! proxy user:proxy-secret@203.0.113.10:8080",
+            "user",
+            password);
+
+        Assert.DoesNotContain(password, sanitized, StringComparison.Ordinal);
+        Assert.DoesNotContain("user:proxy-secret@", sanitized, StringComparison.Ordinal);
+        Assert.DoesNotContain("user:", sanitized, StringComparison.Ordinal);
+        Assert.Contains("Failed to launch browser!", sanitized, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Sanitize_StripsBearerAndPasswordInUrl_WithShortSecret()
     {
         const string password = "pw";

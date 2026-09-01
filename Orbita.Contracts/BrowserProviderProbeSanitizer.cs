@@ -12,15 +12,44 @@ public static class BrowserProviderProbeSanitizer
         TimeSpan.FromMilliseconds(200));
 
     private static readonly Regex CredentialUrlRegex = new(
-        @"(?i)(?:https?|wss?)://[^/\s:@]+:[^/\s:@]+@",
+        @"(?i)(?:(?:https?|wss?)://)?[^/\s:@]+:[^/\s:@]+@",
         RegexOptions.Compiled,
         TimeSpan.FromMilliseconds(200));
 
-    public static string Sanitize(string? message, params string?[] secrets)
+    public static string Sanitize(string? message, params string?[] secrets) =>
+        Sanitize(message, MaxMessageLength, "Не удалось проверить подключение.", secrets);
+
+    public static string Sanitize(
+        string? message,
+        int maxLength,
+        string fallback,
+        params string?[] secrets)
+    {
+        var result = StripSecrets(message, secrets);
+        if (result.Length == 0)
+        {
+            result = string.IsNullOrWhiteSpace(fallback)
+                ? "Не удалось проверить подключение."
+                : fallback.Trim();
+        }
+
+        if (maxLength <= 0 || result.Length <= maxLength)
+        {
+            return result;
+        }
+
+        return result[..maxLength].TrimEnd() + "…";
+    }
+
+    public static string StripSecrets(string? message, params string?[] secrets)
     {
         var result = string.IsNullOrWhiteSpace(message)
-            ? "Не удалось проверить подключение."
+            ? string.Empty
             : message.Trim();
+        if (result.Length == 0)
+        {
+            return result;
+        }
 
         result = CredentialUrlRegex.Replace(result, string.Empty);
         result = BearerRegex.Replace(result, string.Empty);
@@ -35,15 +64,7 @@ public static class BrowserProviderProbeSanitizer
             result = result.Replace(secret, string.Empty, StringComparison.Ordinal);
         }
 
-        result = result.Replace("  ", " ", StringComparison.Ordinal).Trim();
-        if (result.Length == 0)
-        {
-            result = "Не удалось проверить подключение.";
-        }
-
-        return result.Length <= MaxMessageLength
-            ? result
-            : result[..MaxMessageLength].TrimEnd() + "…";
+        return result.Replace("  ", " ", StringComparison.Ordinal).Trim();
     }
 
     public static string FromException(Exception exception, params string?[] secrets)

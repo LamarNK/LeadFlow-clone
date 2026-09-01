@@ -1,3 +1,4 @@
+using LeadFlow.Core.Logging.Audit;
 using LeadFlow.Core.Models;
 using LeadFlow.Core.Services.LocalChrome;
 using LeadFlow.Core.Services.Worker;
@@ -49,9 +50,9 @@ public sealed class LocalChromeLoginCoordinator(
             {
                 throw;
             }
-            catch
+            catch (Exception ex)
             {
-                // Path and launch details stay off worker logs.
+                await RecordLaunchFailureAsync(account, ex).ConfigureAwait(false);
             }
             finally
             {
@@ -85,6 +86,37 @@ public sealed class LocalChromeLoginCoordinator(
         account.LastErrorMessage = string.Empty;
         runtimeStore.Upsert(account);
         configProvider.InvalidateCache();
+    }
+
+    private async Task RecordLaunchFailureAsync(AvitoAccount account, Exception exception)
+    {
+        var launch = LocalChromeLaunchOptionsFactory.FromAccount(account);
+        var sanitized = LocalChromeLaunchDiagnostics.ToSafeError(
+            exception,
+            launch.ExecutablePath,
+            launch.UserDataDir,
+            launch.ProxyEnabled,
+            launch.ProxyUsername,
+            launch.ProxyPassword,
+            account.AvitoPassword,
+            account.AdsPowerApiKey,
+            account.MultiloginAutomationToken);
+
+        account.LastErrorMessage = sanitized;
+        runtimeStore.Upsert(account);
+        configProvider.InvalidateCache();
+
+        await GlobalLogger.Instance.LogAsync(
+            sanitized,
+            DeskLinkAuditLogLevel.Error,
+            errorKey: LocalChromeLaunchDiagnostics.ErrorKey,
+            memberName: nameof(TryRunPendingSessionAsync),
+            filePath: "LocalChromeLoginCoordinator.cs",
+            properties: new Dictionary<string, object?>
+            {
+                ["error.type"] = LocalChromeLaunchDiagnostics.DescribeExceptionType(exception),
+                ["startup.stage"] = LocalChromeLaunchDiagnostics.ClassifyStage(exception)
+            }).ConfigureAwait(false);
     }
 
     private async Task CompleteQuietlyAsync(Guid sessionId, CancellationToken cancellationToken)

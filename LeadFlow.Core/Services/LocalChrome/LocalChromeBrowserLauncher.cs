@@ -59,37 +59,23 @@ public sealed class LocalChromeBrowserLauncher : ILocalChromeBrowserLauncher
                 ObserveAbandonedLaunch(launchTask);
             }
 
-            throw SanitizeLaunchError(ex, options);
+            throw SanitizeLaunchError(ex, options, executable, userDataDir);
         }
     }
 
-    internal static Exception SanitizeLaunchError(Exception ex, LocalChromeLaunchOptions options)
+    internal static Exception SanitizeLaunchError(
+        Exception ex,
+        LocalChromeLaunchOptions options,
+        string? executable = null,
+        string? userDataDir = null)
     {
-        var sanitized = LocalChromeProxyRules.SanitizeError(
-            ex.Message,
+        return LocalChromeLaunchDiagnostics.Wrap(
+            ex,
+            executable ?? options.ExecutablePath,
+            userDataDir ?? options.UserDataDir,
+            options.ProxyEnabled,
             options.ProxyUsername,
             options.ProxyPassword);
-        if (ex is InvalidOperationException
-            && (sanitized.StartsWith("Обычный браузер", StringComparison.Ordinal)
-                || sanitized.StartsWith("Не найден установленный Chrome", StringComparison.Ordinal)
-                || sanitized.StartsWith("Файл браузера не найден", StringComparison.Ordinal)
-                || sanitized.StartsWith("Нельзя использовать стандартный профиль", StringComparison.Ordinal)
-                || sanitized.StartsWith("Укажите путь", StringComparison.Ordinal)
-                || sanitized.StartsWith("Путь к", StringComparison.Ordinal)
-                || sanitized.StartsWith("Не удалось авторизовать прокси", StringComparison.Ordinal)
-                || sanitized.StartsWith("Не удалось подготовить прокси", StringComparison.Ordinal)))
-        {
-            return new InvalidOperationException(sanitized);
-        }
-
-        return new InvalidOperationException(
-            options.ProxyEnabled
-                ? LocalChromeProxyRules.SanitizeError(
-                    "Не удалось открыть обычный браузер с прокси.",
-                    options.ProxyUsername,
-                    options.ProxyPassword)
-                : "Не удалось открыть обычный браузер.",
-            ex);
     }
 
     private static void ObserveAbandonedLaunch(Task<IBrowser> launchTask)
