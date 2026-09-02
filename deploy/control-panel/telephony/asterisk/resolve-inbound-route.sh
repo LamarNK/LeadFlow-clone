@@ -12,7 +12,7 @@ fi
 if [[ ! "$caller" =~ ^[0-9+]{10,20}$ ]] || [[ ! "$called" =~ ^[0-9+]{1,20}$ ]]; then
   exit 0
 fi
-if [[ -n "$provider" && ! "$provider" =~ ^(plusofon|beeline)$ ]]; then
+if [[ -n "$provider" && ! "$provider" =~ ^(plusofon|beeline|sipout)$ ]]; then
   exit 0
 fi
 if [[ -n "$account" && ! "$account" =~ ^[a-zA-Z0-9_-]{1,16}$ ]]; then

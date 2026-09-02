@@ -732,8 +732,10 @@ public sealed class CrmTelephonyServiceTests
         }
     }
 
-    [Fact]
-    public async Task AsteriskInboundRoute_PersonalPlusofonLineTargetsItsAssignedManager()
+    [Theory]
+    [InlineData(CrmTelephonyProviders.Plusofon)]
+    [InlineData(CrmTelephonyProviders.Sipout)]
+    public async Task AsteriskInboundRoute_PersonalProviderLineTargetsItsAssignedManager(string provider)
     {
         var runtimePath = Path.Combine(Path.GetTempPath(), "orbita-sip-runtime-tests", Guid.NewGuid().ToString("N"));
         try
@@ -780,20 +782,27 @@ public sealed class CrmTelephonyServiceTests
                 TimeProvider.System,
                 credentialProtector: protector,
                 sipRuntimeConfigWriter: writer);
-            var line = await sut.UpsertPlusofonSipAccountAsync(
-                officeId,
-                "personal1",
-                new UpdateSipProviderAccountRequest(
-                    "12345.voice.plusofon.ru", "12345.voice.plusofon.ru", 5060, "tcp",
-                    "personal-user", "personal-auth", "personal-password", false,
-                    "Личная линия", CrmSipAccountModes.Personal, "74951332210"));
+            var request = new UpdateSipProviderAccountRequest(
+                provider == CrmTelephonyProviders.Sipout ? "sip.sipout.net" : "12345.voice.plusofon.ru",
+                provider == CrmTelephonyProviders.Sipout ? "sip.sipout.net" : "12345.voice.plusofon.ru",
+                5060,
+                provider == CrmTelephonyProviders.Sipout ? "udp" : "tcp",
+                "personal-user", "personal-auth", "personal-password", false,
+                "Личная линия", CrmSipAccountModes.Personal, "74951332210",
+                provider == CrmTelephonyProviders.Sipout ? "301" : null);
+            var line = provider == CrmTelephonyProviders.Sipout
+                ? await sut.UpsertSipoutSipAccountAsync(officeId, "personal1", request)
+                : await sut.UpsertPlusofonSipAccountAsync(officeId, "personal1", request);
             Assert.True(line.Success, line.Error);
+            var outboundProvider = provider == CrmTelephonyProviders.Sipout
+                ? CrmTelephonyOutboundProviders.ForSipoutLine("personal1")
+                : CrmTelephonyOutboundProviders.ForPlusofonLine("personal1");
             var (binding, bindingError) = await sut.SetBindingAsync(
                 officeId,
                 managerId,
                 "301",
                 provider: CrmTelephonyProviders.Asterisk,
-                outboundProvider: CrmTelephonyOutboundProviders.ForPlusofonLine("personal1"));
+                outboundProvider: outboundProvider);
             Assert.NotNull(binding);
             Assert.Null(bindingError);
             var (receiver, receiverError) = await sut.RotateReceiverAsync(
@@ -809,7 +818,7 @@ public sealed class CrmTelephonyServiceTests
                 receiver.WebhookSecret,
                 "79991112233",
                 "74951332210",
-                CrmTelephonyProviders.Plusofon,
+                provider,
                 "personal1");
 
             Assert.Equal(AsteriskInboundRouteOutcome.Resolved, route.Outcome);
