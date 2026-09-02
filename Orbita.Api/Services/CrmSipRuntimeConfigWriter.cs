@@ -32,9 +32,13 @@ public sealed record CrmAsteriskWebRtcEndpoint(
     string AuthorizationUsername,
     string Password);
 
-public sealed class CrmSipRuntimeConfigWriter(IOptions<CrmSipRuntimeOptions> configuredOptions)
+public sealed class CrmSipRuntimeConfigWriter(
+    IOptions<CrmSipRuntimeOptions> configuredOptions,
+    IOptions<CrmTelephonyWebRtcOptions>? configuredWebRtcOptions = null)
 {
     private readonly CrmSipRuntimeOptions _options = configuredOptions.Value;
+    private readonly string _webRtcSipDomain = NormalizeSipDomain(
+        configuredWebRtcOptions?.Value.SipDomain);
     private readonly ConcurrentDictionary<string, SemaphoreSlim> _writeLocks =
         new(StringComparer.Ordinal);
 
@@ -586,7 +590,7 @@ public sealed class CrmSipRuntimeConfigWriter(IOptions<CrmSipRuntimeOptions> con
             auth={{endpoint.AuthorizationUsername}}-auth
             aors={{endpoint.AuthorizationUsername}}
             callerid={{endpoint.Extension}} <{{endpoint.Extension}}>
-            webrtc=yes
+            {{(_webRtcSipDomain.Length == 0 ? string.Empty : $"from_domain={_webRtcSipDomain}\n")}}webrtc=yes
             dtls_auto_generate_cert=yes
             direct_media=no
             rtp_symmetric=yes
@@ -653,6 +657,27 @@ public sealed class CrmSipRuntimeConfigWriter(IOptions<CrmSipRuntimeOptions> con
     private static bool IsValidAccountKey(string accountKey) =>
         accountKey.Length is > 0 and <= 16
         && accountKey.All(character => char.IsAsciiLetterOrDigit(character) || character is '-' or '_');
+
+    private static string NormalizeSipDomain(string? value)
+    {
+        var candidate = value?.Trim() ?? string.Empty;
+        if (candidate.Length is 0 or > 253)
+        {
+            return string.Empty;
+        }
+
+        var labels = candidate.Split('.');
+        if (labels.Any(label =>
+                label.Length is 0 or > 63
+                || !char.IsAsciiLetterOrDigit(label[0])
+                || !char.IsAsciiLetterOrDigit(label[^1])
+                || !label.All(character => char.IsAsciiLetterOrDigit(character) || character == '-')))
+        {
+            return string.Empty;
+        }
+
+        return candidate;
+    }
 
     private async Task WriteOutboundSelectionAsync(
         Guid officeId,

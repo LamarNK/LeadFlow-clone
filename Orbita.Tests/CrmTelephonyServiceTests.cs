@@ -69,6 +69,9 @@ public sealed class CrmTelephonyServiceTests
             var writer = new CrmSipRuntimeConfigWriter(Options.Create(new CrmSipRuntimeOptions
             {
                 ConfigPath = runtimePath
+            }), Options.Create(new CrmTelephonyWebRtcOptions
+            {
+                SipDomain = "sip.orbitsu.ru"
             }));
             var sut = new CrmTelephonyService(
                 db,
@@ -104,6 +107,7 @@ public sealed class CrmTelephonyServiceTests
             Assert.Contains("username=201-webrtc", runtimeConfig, StringComparison.Ordinal);
             Assert.Contains($"password={endpoint.Password}", runtimeConfig, StringComparison.Ordinal);
             Assert.Contains("callerid=201 <201>", runtimeConfig, StringComparison.Ordinal);
+            Assert.Contains("from_domain=sip.orbitsu.ru", runtimeConfig, StringComparison.Ordinal);
             Assert.Contains("qualify_frequency=0", runtimeConfig, StringComparison.Ordinal);
             Assert.DoesNotContain("qualify_frequency=30", runtimeConfig, StringComparison.Ordinal);
             Assert.Contains("default_expiration=120", runtimeConfig, StringComparison.Ordinal);
