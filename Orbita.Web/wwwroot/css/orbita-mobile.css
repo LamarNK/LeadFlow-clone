@@ -969,4 +969,38 @@
     [data-theme="dark"] .data-table--dashboard-workers.data-table--cards tbody td[data-label="Ошибок"] {
         background: rgba(255, 255, 255, 0.06);
     }
+
+    .card--worker-settings,
+    .worker-settings-shell,
+    .worker-settings-rail,
+    .worker-settings-layout,
+    .worker-settings-groups,
+    .worker-settings-group {
+        min-width: 0;
+        max-width: 100%;
+    }
+
+    .worker-settings-nav {
+        margin: 0 -4px;
+        padding: 0 4px 4px;
+        overflow-x: auto;
+        overscroll-behavior-x: contain;
+    }
+
+    .worker-settings-chip-grid,
+    .worker-schedule-days {
+        min-width: 0;
+    }
+
+    .worker-settings-panel-head,
+    .worker-settings-block-head,
+    .worker-settings-row {
+        min-width: 0;
+    }
+
+    .worker-highlight-profile__account,
+    .worker-highlight-profile__meta {
+        min-width: 0;
+        overflow-wrap: anywhere;
+    }
 }

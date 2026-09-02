@@ -304,8 +304,8 @@
             });
             button.addEventListener('keydown', function (event) {
                 var nextIndex = null;
-                if (event.key === 'ArrowRight') nextIndex = (index + 1) % tabButtons.length;
-                if (event.key === 'ArrowLeft') nextIndex = (index - 1 + tabButtons.length) % tabButtons.length;
+                if (event.key === 'ArrowRight' || event.key === 'ArrowDown') nextIndex = (index + 1) % tabButtons.length;
+                if (event.key === 'ArrowLeft' || event.key === 'ArrowUp') nextIndex = (index - 1 + tabButtons.length) % tabButtons.length;
                 if (event.key === 'Home') nextIndex = 0;
                 if (event.key === 'End') nextIndex = tabButtons.length - 1;
                 if (nextIndex === null) return;
