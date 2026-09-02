@@ -79,9 +79,15 @@
     var workerSortKey = dashboardPreference('orbita-dashboard-worker-sort-key', 'activity');
     var highlightMs = 1800;
 
-    Chart.defaults.font.family = '"Segoe UI", system-ui, -apple-system, sans-serif';
-    Chart.defaults.font.size = 11;
-    Chart.defaults.color = '#94a3b8';
+    // The dashboard script can be prefetched before Chart.js finishes loading.
+    // Keep the non-chart controls (including worker sorting) available in that
+    // case, then apply chart-specific defaults when charts are initialized.
+    function configureChartDefaults() {
+        if (!hasChart()) return;
+        Chart.defaults.font.family = '"Segoe UI", system-ui, -apple-system, sans-serif';
+        Chart.defaults.font.size = 11;
+        Chart.defaults.color = '#94a3b8';
+    }
 
     function localizeChartData(chartData) {
         if (window.OrbitaTime && window.OrbitaTime.localizeHourlyChart) {
@@ -1496,6 +1502,8 @@
         initDashboardWorkerToggleButtons();
 
         if (typeof Chart === 'undefined') return;
+
+        configureChartDefaults();
 
         destroyAllCharts();
 
