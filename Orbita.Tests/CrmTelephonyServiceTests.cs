@@ -69,6 +69,9 @@ public sealed class CrmTelephonyServiceTests
             var writer = new CrmSipRuntimeConfigWriter(Options.Create(new CrmSipRuntimeOptions
             {
                 ConfigPath = runtimePath
+            }), Options.Create(new CrmTelephonyWebRtcOptions
+            {
+                SipDomain = "sip.orbitsu.ru"
             }));
             var sut = new CrmTelephonyService(
                 db,
@@ -104,8 +107,13 @@ public sealed class CrmTelephonyServiceTests
             Assert.Contains("username=201-webrtc", runtimeConfig, StringComparison.Ordinal);
             Assert.Contains($"password={endpoint.Password}", runtimeConfig, StringComparison.Ordinal);
             Assert.Contains("callerid=201 <201>", runtimeConfig, StringComparison.Ordinal);
+            Assert.Contains("from_domain=sip.orbitsu.ru", runtimeConfig, StringComparison.Ordinal);
+            Assert.Contains("max_contacts=5", runtimeConfig, StringComparison.Ordinal);
             Assert.Contains("qualify_frequency=0", runtimeConfig, StringComparison.Ordinal);
             Assert.DoesNotContain("qualify_frequency=30", runtimeConfig, StringComparison.Ordinal);
+            Assert.Contains("default_expiration=120", runtimeConfig, StringComparison.Ordinal);
+            Assert.Contains("minimum_expiration=60", runtimeConfig, StringComparison.Ordinal);
+            Assert.Contains("maximum_expiration=180", runtimeConfig, StringComparison.Ordinal);
 
             var (sameEndpoint, sameEndpointError) = await sut.GetOrProvisionWebRtcEndpointAsync(officeId, userId);
             Assert.NotNull(sameEndpoint);
@@ -729,8 +737,10 @@ public sealed class CrmTelephonyServiceTests
         }
     }
 
-    [Fact]
-    public async Task AsteriskInboundRoute_PersonalPlusofonLineTargetsItsAssignedManager()
+    [Theory]
+    [InlineData(CrmTelephonyProviders.Plusofon)]
+    [InlineData(CrmTelephonyProviders.Sipout)]
+    public async Task AsteriskInboundRoute_PersonalProviderLineTargetsItsAssignedManager(string provider)
     {
         var runtimePath = Path.Combine(Path.GetTempPath(), "orbita-sip-runtime-tests", Guid.NewGuid().ToString("N"));
         try
@@ -777,20 +787,27 @@ public sealed class CrmTelephonyServiceTests
                 TimeProvider.System,
                 credentialProtector: protector,
                 sipRuntimeConfigWriter: writer);
-            var line = await sut.UpsertPlusofonSipAccountAsync(
-                officeId,
-                "personal1",
-                new UpdateSipProviderAccountRequest(
-                    "12345.voice.plusofon.ru", "12345.voice.plusofon.ru", 5060, "tcp",
-                    "personal-user", "personal-auth", "personal-password", false,
-                    "Личная линия", CrmSipAccountModes.Personal, "74951332210"));
+            var request = new UpdateSipProviderAccountRequest(
+                provider == CrmTelephonyProviders.Sipout ? "sip.sipout.net" : "12345.voice.plusofon.ru",
+                provider == CrmTelephonyProviders.Sipout ? "sip.sipout.net" : "12345.voice.plusofon.ru",
+                5060,
+                provider == CrmTelephonyProviders.Sipout ? "udp" : "tcp",
+                "personal-user", "personal-auth", "personal-password", false,
+                "Личная линия", CrmSipAccountModes.Personal, "74951332210",
+                provider == CrmTelephonyProviders.Sipout ? "301" : null);
+            var line = provider == CrmTelephonyProviders.Sipout
+                ? await sut.UpsertSipoutSipAccountAsync(officeId, "personal1", request)
+                : await sut.UpsertPlusofonSipAccountAsync(officeId, "personal1", request);
             Assert.True(line.Success, line.Error);
+            var outboundProvider = provider == CrmTelephonyProviders.Sipout
+                ? CrmTelephonyOutboundProviders.ForSipoutLine("personal1")
+                : CrmTelephonyOutboundProviders.ForPlusofonLine("personal1");
             var (binding, bindingError) = await sut.SetBindingAsync(
                 officeId,
                 managerId,
                 "301",
                 provider: CrmTelephonyProviders.Asterisk,
-                outboundProvider: CrmTelephonyOutboundProviders.ForPlusofonLine("personal1"));
+                outboundProvider: outboundProvider);
             Assert.NotNull(binding);
             Assert.Null(bindingError);
             var (receiver, receiverError) = await sut.RotateReceiverAsync(
@@ -806,7 +823,7 @@ public sealed class CrmTelephonyServiceTests
                 receiver.WebhookSecret,
                 "79991112233",
                 "74951332210",
-                CrmTelephonyProviders.Plusofon,
+                provider,
                 "personal1");
 
             Assert.Equal(AsteriskInboundRouteOutcome.Resolved, route.Outcome);
@@ -1376,6 +1393,60 @@ public sealed class CrmTelephonyServiceTests
         Assert.Equal("201", route.PreferredExtension);
         Assert.Equal(["202"], route.FallbackExtensions);
         Assert.Equal(harness.Now.UtcDateTime.AddDays(1), route.AffinityExpiresAtUtc);
+    }
+
+    [Fact]
+    public async Task AsteriskInboundRoute_KnownCardTargetsOnlyItsCurrentResponsibleManager()
+    {
+        await using var harness = await Harness.CreateAsync();
+        var receiver = await harness.CreateReceiverAsync(CrmTelephonyProviders.Asterisk);
+        await harness.SetManagerOnShiftAsync(Harness.ManagerId);
+        const string responsibleManagerId = "current-card-responsible";
+        await harness.AddAsteriskManagerAsync(responsibleManagerId, "202", onShift: false);
+        var card = await harness.Db.CrmCandidateCards.SingleAsync(x => x.Id == harness.CardId);
+        card.ManagerUserId = responsibleManagerId;
+        card.IsClosed = true;
+        await harness.Db.SaveChangesAsync();
+        await harness.AddAsteriskCallAsync(
+            "other-manager-outbound-affinity",
+            CrmCallDirections.Outgoing,
+            Harness.ManagerId,
+            "201",
+            harness.Now.UtcDateTime.AddMinutes(-5));
+
+        var route = await harness.Sut.ResolveAsteriskInboundRouteAsync(
+            receiver.PublicId,
+            receiver.Secret,
+            "+7 (999) 111-22-33",
+            "74950000000");
+
+        Assert.Equal(AsteriskInboundRouteOutcome.Resolved, route.Outcome);
+        Assert.Equal("202", route.PreferredExtension);
+        Assert.Empty(route.FallbackExtensions ?? []);
+        Assert.True(route.IsExclusive);
+        Assert.Null(route.AffinityExpiresAtUtc);
+    }
+
+    [Fact]
+    public async Task AsteriskInboundRoute_KnownCardWithoutTelephonyNeverFallsBackToAnotherManager()
+    {
+        await using var harness = await Harness.CreateAsync();
+        var receiver = await harness.CreateReceiverAsync(CrmTelephonyProviders.Asterisk);
+        await harness.SetManagerOnShiftAsync(Harness.ManagerId);
+        var card = await harness.Db.CrmCandidateCards.SingleAsync(x => x.Id == harness.CardId);
+        card.ManagerUserId = "responsible-without-telephony";
+        await harness.Db.SaveChangesAsync();
+
+        var route = await harness.Sut.ResolveAsteriskInboundRouteAsync(
+            receiver.PublicId,
+            receiver.Secret,
+            "+7 (999) 111-22-33",
+            "74950000000");
+
+        Assert.Equal(AsteriskInboundRouteOutcome.Resolved, route.Outcome);
+        Assert.Null(route.PreferredExtension);
+        Assert.Empty(route.FallbackExtensions ?? []);
+        Assert.True(route.IsExclusive);
     }
 
     [Fact]
