@@ -479,7 +479,9 @@ public sealed class DashboardQueryService(
         {
             var responseCounts = db.CandidateResponses
                 .AsNoTracking()
-                .Where(x => x.WorkerId != null && x.CollectedAt >= todayStartUtc)
+                .Where(x => x.WorkerId != null
+                    && x.CollectedAt >= todayStartUtc
+                    && query.Any(worker => worker.Id == x.WorkerId.Value))
                 .GroupBy(x => x.WorkerId!.Value)
                 .Select(g => new { WorkerId = g.Key, Count = g.Count() });
 
@@ -502,7 +504,8 @@ public sealed class DashboardQueryService(
                 .AsNoTracking()
                 .Where(x => !x.IsDismissed
                     && x.CreatedAtUtc >= todayStartUtc
-                    && (x.Level == "Error" || x.Level == "Warning"))
+                    && (x.Level == "Error" || x.Level == "Warning")
+                    && query.Any(worker => worker.Id == x.WorkerId))
                 .GroupBy(x => x.WorkerId)
                 .Select(g => new { WorkerId = g.Key, Count = g.Count() });
 
