@@ -276,6 +276,38 @@ public sealed class WorkerEntity
     public ICollection<WorkerEventEntity> Events { get; set; } = [];
 }
 
+public sealed class WorkerSettingsTemplateEntity
+{
+    public Guid Id { get; set; }
+    public Guid OfficeId { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string NameNormalized { get; set; } = string.Empty;
+    public DateTime CreatedAtUtc { get; set; }
+    public DateTime UpdatedAtUtc { get; set; }
+    public int MaxConcurrentAccounts { get; set; } = 1;
+    public bool ResponseFilterEnabled { get; set; }
+    public bool ResponseFilterExcludeFemale { get; set; }
+    public bool ResponseFilterExcludeMale { get; set; }
+    public int? ResponseFilterMaxAgeMale { get; set; }
+    public int? ResponseFilterMaxAgeFemale { get; set; }
+    public int? ResponseFilterMaxAgeDays { get; set; }
+    public bool ResponseHighlightEnabled { get; set; }
+    public string? ResponseHighlightAgeBuckets { get; set; }
+    public bool AutoScheduleEnabled { get; set; }
+    public string? AutoScheduleDays { get; set; }
+    public string? AutoScheduleFromLocalTime { get; set; }
+    public string? AutoScheduleToLocalTime { get; set; }
+    public bool MessengerAutoReplyEnabled { get; set; }
+    public string? MessengerAutoReplyMessage { get; set; }
+    public int? PhoneUnchangedHours { get; set; }
+    public bool AutoDeliverToCrm { get; set; }
+    public bool AutoDeliverToBitrix { get; set; } = true;
+    public bool AdsPowerEnabled { get; set; } = true;
+    public bool MultiloginEnabled { get; set; } = true;
+    public bool LocalChromeEnabled { get; set; } = true;
+    public OfficeEntity Office { get; set; } = null!;
+}
+
 public sealed class WorkerSnapshotEntity
 {
     public Guid Id { get; set; }

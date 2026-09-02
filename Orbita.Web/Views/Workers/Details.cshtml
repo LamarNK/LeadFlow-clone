@@ -218,6 +218,48 @@
                     <input type="hidden" name="workerId" value="@Model.WorkerId" />
                     <input type="hidden" name="settingsTab" id="workerSettingsActiveTab" value="performance" />
 
+                    <div class="worker-settings-templates"
+                         data-worker-settings-templates
+                         data-worker-id="@Model.WorkerId"
+                         data-create-url="@Url.Action("CreateSettingsTemplate")"
+                         data-update-url="@Url.Action("UpdateSettingsTemplate")"
+                         data-delete-url="@Url.Action("DeleteSettingsTemplate")">
+                        <div class="worker-settings-templates-head">
+                            <span class="worker-settings-templates-title">Шаблоны настроек</span>
+                            <span class="worker-settings-hint">Применение только подставляет значения в форму. Чтобы отправить их воркеру, нажмите «Сохранить настройки».</span>
+                        </div>
+                        <div class="worker-settings-templates-row">
+                            <label class="worker-settings-templates-select" for="workerSettingsTemplateSelect">
+                                <span class="visually-hidden">Шаблон</span>
+                                <select id="workerSettingsTemplateSelect"
+                                        class="worker-settings-input"
+                                        data-worker-settings-template-select>
+                                    <option value="">Выберите шаблон</option>
+                                    @foreach (var template in Model.SettingsTemplates)
+                                    {
+                                        <option value="@template.Id" data-settings="@JsonSerializer.Serialize(template.Settings, subProfileJsonOptions)">@template.Name</option>
+                                    }
+                                </select>
+                            </label>
+                            <button type="button" class="worker-provider-btn" data-worker-settings-template-apply>Применить</button>
+                        </div>
+                        <div class="worker-settings-templates-row">
+                            <label class="worker-settings-templates-name" for="workerSettingsTemplateName">
+                                <span class="visually-hidden">Название шаблона</span>
+                                <input type="text"
+                                       id="workerSettingsTemplateName"
+                                       class="worker-settings-input"
+                                       maxlength="200"
+                                       placeholder="Название шаблона"
+                                       autocomplete="off"
+                                       data-worker-settings-template-name />
+                            </label>
+                            <button type="button" class="worker-provider-btn worker-provider-btn--secondary" data-worker-settings-template-create>Сохранить как новый</button>
+                            <button type="button" class="worker-provider-btn" data-worker-settings-template-update>Обновить</button>
+                            <button type="button" class="worker-provider-btn worker-settings-templates-delete" data-worker-settings-template-delete>Удалить</button>
+                        </div>
+                    </div>
+
                     <div class="worker-settings-layout">
                         <nav class="worker-settings-nav" role="tablist" aria-label="Разделы настроек воркера">
                             <button type="button" class="worker-settings-nav-link" id="worker-settings-tab-performance" role="tab" aria-selected="true" aria-controls="worker-settings-performance" data-worker-settings-tab="performance">

@@ -262,6 +262,86 @@ public sealed class WorkersController(IWorkersService workers) : Controller
 
     [HttpPost]
     [ValidateAntiForgeryToken]
+    public async Task<IActionResult> CreateSettingsTemplate(
+        WorkerSettingsTemplateFormModel model,
+        CancellationToken ct)
+    {
+        BindTemplateCheckboxes(model);
+        var (template, templates, error) = await workers.CreateWorkerSettingsTemplateAsync(
+            model.WorkerId,
+            model.Name ?? string.Empty,
+            model.ToPayload(),
+            ct);
+        if (error is not null || template is null)
+        {
+            return BadRequest(new { error = error ?? "Не удалось сохранить шаблон." });
+        }
+
+        return Ok(new { template, templates, message = "Шаблон сохранён." });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> UpdateSettingsTemplate(
+        WorkerSettingsTemplateFormModel model,
+        CancellationToken ct)
+    {
+        BindTemplateCheckboxes(model);
+        if (model.TemplateId == Guid.Empty)
+        {
+            return BadRequest(new { error = "Выберите шаблон." });
+        }
+
+        var (template, templates, error) = await workers.UpdateWorkerSettingsTemplateAsync(
+            model.WorkerId,
+            model.TemplateId,
+            model.Name ?? string.Empty,
+            model.ToPayload(),
+            ct);
+        if (error is not null || template is null)
+        {
+            return StatusCode(
+                error is not null && error.Contains("не найден", StringComparison.OrdinalIgnoreCase) ? 404 : 400,
+                new { error = error ?? "Не удалось обновить шаблон." });
+        }
+
+        return Ok(new { template, templates, message = "Шаблон обновлён." });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> DeleteSettingsTemplate(
+        Guid workerId,
+        Guid templateId,
+        CancellationToken ct)
+    {
+        var (templates, error) = await workers.DeleteWorkerSettingsTemplateAsync(workerId, templateId, ct);
+        if (error is not null)
+        {
+            return StatusCode(
+                error.Contains("не найден", StringComparison.OrdinalIgnoreCase) ? 404 : 400,
+                new { error });
+        }
+
+        return Ok(new { templates, message = "Шаблон удалён." });
+    }
+
+    private void BindTemplateCheckboxes(WorkerSettingsTemplateFormModel model)
+    {
+        model.ResponseFilterExcludeFemale = FormBindingHelper.ReadCheckbox(Request.Form, nameof(model.ResponseFilterExcludeFemale));
+        model.ResponseFilterExcludeMale = FormBindingHelper.ReadCheckbox(Request.Form, nameof(model.ResponseFilterExcludeMale));
+        model.ResponseHighlightEnabled = FormBindingHelper.ReadCheckbox(Request.Form, nameof(model.ResponseHighlightEnabled));
+        model.AutoScheduleEnabled = FormBindingHelper.ReadCheckbox(Request.Form, nameof(model.AutoScheduleEnabled));
+        model.MessengerAutoReplyEnabled = FormBindingHelper.ReadCheckbox(Request.Form, nameof(model.MessengerAutoReplyEnabled));
+        model.AutoDeliverToCrm = FormBindingHelper.ReadCheckbox(Request.Form, nameof(model.AutoDeliverToCrm));
+        model.AutoDeliverToBitrix = FormBindingHelper.ReadCheckbox(Request.Form, nameof(model.AutoDeliverToBitrix));
+        model.AdsPowerEnabled = FormBindingHelper.ReadCheckbox(Request.Form, nameof(model.AdsPowerEnabled));
+        model.MultiloginEnabled = FormBindingHelper.ReadCheckbox(Request.Form, nameof(model.MultiloginEnabled));
+        model.LocalChromeEnabled = FormBindingHelper.ReadCheckbox(Request.Form, nameof(model.LocalChromeEnabled));
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> Enable(Guid workerId, string? returnTo, CancellationToken ct)
     {
         var (success, error) = await workers.SetWorkerEnabledAsync(workerId, true, ct);

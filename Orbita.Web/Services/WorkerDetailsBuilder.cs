@@ -15,7 +15,8 @@ internal static class WorkerDetailsBuilder
         TableSortState? sort = null,
         string? accountSearchQuery = null,
         string? accountGroupId = null,
-        string? accountProvider = null)
+        string? accountProvider = null,
+        IReadOnlyList<WorkerSettingsTemplateDto>? settingsTemplates = null)
     {
         extra ??= new WorkerExtraInfoViewModel();
         var stats = worker.LatestStats;
@@ -164,6 +165,7 @@ internal static class WorkerDetailsBuilder
             AutoDeliverToBitrix = worker.AutoDeliverToBitrix,
             OfficeId = worker.OfficeId,
             OfficeName = worker.OfficeName,
+            SettingsTemplates = settingsTemplates ?? [],
             System = BuildSystemPanel(worker, extra),
             CurrentActivity = WorkerActivityPresenter.Present(
                 worker.CurrentActivity,

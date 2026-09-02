@@ -12,6 +12,7 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
     public DbSet<PanelUserProfileEntity> PanelUserProfiles => Set<PanelUserProfileEntity>();
     public DbSet<PanelUserPresenceHourEntity> PanelUserPresenceHours => Set<PanelUserPresenceHourEntity>();
     public DbSet<WorkerEntity> Workers => Set<WorkerEntity>();
+    public DbSet<WorkerSettingsTemplateEntity> WorkerSettingsTemplates => Set<WorkerSettingsTemplateEntity>();
     public DbSet<WorkerSnapshotEntity> WorkerSnapshots => Set<WorkerSnapshotEntity>();
     public DbSet<WorkerAccountEntity> WorkerAccounts => Set<WorkerAccountEntity>();
     public DbSet<WorkerEventEntity> WorkerEvents => Set<WorkerEventEntity>();
@@ -166,6 +167,26 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
             entity.Property(x => x.OperatingSystem).HasMaxLength(256);
             entity.Property(x => x.AgentVersion).HasMaxLength(50);
             entity.HasIndex(x => x.LastSeenAtUtc);
+        });
+
+        modelBuilder.Entity<WorkerSettingsTemplateEntity>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasOne(x => x.Office)
+                .WithMany()
+                .HasForeignKey(x => x.OfficeId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.Property(x => x.Name).HasMaxLength(200);
+            entity.Property(x => x.NameNormalized).HasMaxLength(200);
+            entity.HasIndex(x => new { x.OfficeId, x.NameNormalized }).IsUnique();
+            entity.Property(x => x.ResponseHighlightAgeBuckets).HasMaxLength(256);
+            entity.Property(x => x.AutoScheduleDays).HasMaxLength(64);
+            entity.Property(x => x.AutoScheduleFromLocalTime).HasMaxLength(5);
+            entity.Property(x => x.AutoScheduleToLocalTime).HasMaxLength(5);
+            entity.Property(x => x.MessengerAutoReplyMessage).HasMaxLength(2000);
+            entity.Property(x => x.AdsPowerEnabled).HasDefaultValue(true);
+            entity.Property(x => x.MultiloginEnabled).HasDefaultValue(true);
+            entity.Property(x => x.LocalChromeEnabled).HasDefaultValue(true);
         });
 
         modelBuilder.Entity<WorkerSnapshotEntity>(entity =>

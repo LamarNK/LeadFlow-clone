@@ -108,6 +108,106 @@ public static class WorkerPanelEndpoints
             return Results.Ok(config);
         });
 
+        workerPanel.MapGet("/{id:guid}/settings-templates", async (
+            Guid id,
+            WorkerSettingsTemplateService templates,
+            OfficeScopeService officeScope,
+            ClaimsPrincipal principal,
+            CancellationToken ct) =>
+        {
+            var scope = await officeScope.ResolveAsync(principal, ct);
+            if (!scope.HasAccess)
+            {
+                return Results.Forbid();
+            }
+
+            var (list, error) = await templates.ListAsync(id, scope, ct);
+            if (error is not null)
+            {
+                return error.Contains("не найден", StringComparison.OrdinalIgnoreCase)
+                    ? Results.NotFound(new { error })
+                    : Results.BadRequest(new { error });
+            }
+
+            return Results.Ok(list);
+        });
+
+        workerPanel.MapPost("/{id:guid}/settings-templates", async (
+            Guid id,
+            CreateWorkerSettingsTemplateRequest request,
+            WorkerSettingsTemplateService templates,
+            OfficeScopeService officeScope,
+            ClaimsPrincipal principal,
+            CancellationToken ct) =>
+        {
+            var scope = await officeScope.ResolveAsync(principal, ct);
+            if (!scope.HasAccess)
+            {
+                return Results.Forbid();
+            }
+
+            var (result, error) = await templates.CreateAsync(id, request, scope, ct);
+            if (error is not null)
+            {
+                return error.Contains("не найден", StringComparison.OrdinalIgnoreCase)
+                    ? Results.NotFound(new { error })
+                    : Results.BadRequest(new { error });
+            }
+
+            return Results.Ok(result);
+        });
+
+        workerPanel.MapPut("/{id:guid}/settings-templates/{templateId:guid}", async (
+            Guid id,
+            Guid templateId,
+            UpdateWorkerSettingsTemplateRequest request,
+            WorkerSettingsTemplateService templates,
+            OfficeScopeService officeScope,
+            ClaimsPrincipal principal,
+            CancellationToken ct) =>
+        {
+            var scope = await officeScope.ResolveAsync(principal, ct);
+            if (!scope.HasAccess)
+            {
+                return Results.Forbid();
+            }
+
+            var (result, error) = await templates.UpdateAsync(id, templateId, request, scope, ct);
+            if (error is not null)
+            {
+                return error.Contains("не найден", StringComparison.OrdinalIgnoreCase)
+                    ? Results.NotFound(new { error })
+                    : Results.BadRequest(new { error });
+            }
+
+            return Results.Ok(result);
+        });
+
+        workerPanel.MapDelete("/{id:guid}/settings-templates/{templateId:guid}", async (
+            Guid id,
+            Guid templateId,
+            WorkerSettingsTemplateService templates,
+            OfficeScopeService officeScope,
+            ClaimsPrincipal principal,
+            CancellationToken ct) =>
+        {
+            var scope = await officeScope.ResolveAsync(principal, ct);
+            if (!scope.HasAccess)
+            {
+                return Results.Forbid();
+            }
+
+            var (result, error) = await templates.DeleteAsync(id, templateId, scope, ct);
+            if (error is not null)
+            {
+                return error.Contains("не найден", StringComparison.OrdinalIgnoreCase)
+                    ? Results.NotFound(new { error })
+                    : Results.BadRequest(new { error });
+            }
+
+            return Results.Ok(result);
+        });
+
         workerPanel.MapPost("/{id:guid}/commands", async (
             Guid id,
             WorkerCommandRequest request,

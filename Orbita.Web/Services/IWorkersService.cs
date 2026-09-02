@@ -58,6 +58,24 @@ public interface IWorkersService
         bool multiloginEnabled = true,
         bool localChromeEnabled = true,
         CancellationToken ct = default);
+    Task<IReadOnlyList<WorkerSettingsTemplateDto>> GetWorkerSettingsTemplatesAsync(
+        Guid workerId,
+        CancellationToken ct = default);
+    Task<(WorkerSettingsTemplateDto? Template, IReadOnlyList<WorkerSettingsTemplateDto> Templates, string? Error)> CreateWorkerSettingsTemplateAsync(
+        Guid workerId,
+        string name,
+        WorkerSettingsTemplatePayload settings,
+        CancellationToken ct = default);
+    Task<(WorkerSettingsTemplateDto? Template, IReadOnlyList<WorkerSettingsTemplateDto> Templates, string? Error)> UpdateWorkerSettingsTemplateAsync(
+        Guid workerId,
+        Guid templateId,
+        string name,
+        WorkerSettingsTemplatePayload settings,
+        CancellationToken ct = default);
+    Task<(IReadOnlyList<WorkerSettingsTemplateDto> Templates, string? Error)> DeleteWorkerSettingsTemplateAsync(
+        Guid workerId,
+        Guid templateId,
+        CancellationToken ct = default);
     Task<(bool Success, string? Error)> UpdateWorkerAccountAsync(Guid workerId, Guid accountId, bool isEnabled, CancellationToken ct = default);
     Task<(bool Success, string? Error)> CreateLocalAccountAsync(
         Guid workerId,

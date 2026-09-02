@@ -460,6 +460,303 @@
             gateAllProviderButtons();
         }
 
+        function isTemplateControl(event) {
+            return !!(event && event.target && event.target.closest && event.target.closest('[data-worker-settings-templates]'));
+        }
+
+        function toast(message, variant) {
+            var show = (window.Orbita && (window.Orbita.toast || window.Orbita.showToast))
+                || (window.OrbitaRuntime && window.OrbitaRuntime.showToast);
+            if (typeof show === 'function') {
+                show(message, variant ? { variant: variant } : undefined);
+            }
+        }
+
+        function setInputValue(el, value) {
+            if (!el) return;
+            el.value = value == null ? '' : String(value);
+        }
+
+        function setCheckbox(el, checked) {
+            if (!el) return;
+            el.checked = isOn(checked);
+            el.dispatchEvent(new Event('change', { bubbles: true }));
+        }
+
+        function isOn(value, defaultOn) {
+            if (value === undefined || value === null || value === '') {
+                return !!defaultOn;
+            }
+            if (value === false || value === 0 || value === 'false' || value === '0') {
+                return false;
+            }
+            return true;
+        }
+
+        function checkedCsv(root, name) {
+            return Array.prototype.map.call(root.querySelectorAll('input[name="' + name + '"]:checked'), function (el) {
+                return el.value;
+            }).join(',');
+        }
+
+        function applyCsvChecks(root, name, csv) {
+            var selected = {};
+            String(csv || '').split(',').forEach(function (part) {
+                var key = part.trim();
+                if (key) selected[key] = true;
+            });
+            root.querySelectorAll('input[name="' + name + '"]').forEach(function (el) {
+                el.checked = !!selected[el.value];
+            });
+        }
+
+        function collectTemplateSettings() {
+            var ads = form.querySelector('[data-provider-toggle="AdsPower"]');
+            var mlx = form.querySelector('[data-provider-toggle="Multilogin"]');
+            var local = form.querySelector('[data-provider-toggle="Local"]');
+            var slider = document.getElementById('maxConcurrentAccounts');
+            return {
+                workerId: form.querySelector('input[name="workerId"]') ? form.querySelector('input[name="workerId"]').value : '',
+                maxConcurrentAccounts: slider ? slider.value : '1',
+                responseFilterExcludeFemale: form.querySelector('#responseFilterExcludeFemale') && form.querySelector('#responseFilterExcludeFemale').checked ? 'true' : 'false',
+                responseFilterExcludeMale: form.querySelector('#responseFilterExcludeMale') && form.querySelector('#responseFilterExcludeMale').checked ? 'true' : 'false',
+                responseFilterMaxAgeMale: (document.getElementById('responseFilterMaxAgeMale') || {}).value || '',
+                responseFilterMaxAgeFemale: (document.getElementById('responseFilterMaxAgeFemale') || {}).value || '',
+                responseFilterMaxAgeDays: (document.getElementById('responseFilterMaxAgeDays') || {}).value || '',
+                responseHighlightEnabled: form.querySelector('#responseHighlightEnabled') && form.querySelector('#responseHighlightEnabled').checked ? 'true' : 'false',
+                responseHighlightAgeBuckets: checkedCsv(form, 'responseHighlightAgeBuckets'),
+                autoScheduleEnabled: form.querySelector('#autoScheduleEnabled') && form.querySelector('#autoScheduleEnabled').checked ? 'true' : 'false',
+                autoScheduleDays: checkedCsv(form, 'autoScheduleDays'),
+                autoScheduleFromLocalTime: (document.getElementById('autoScheduleFromLocalTime') || {}).value || '',
+                autoScheduleToLocalTime: (document.getElementById('autoScheduleToLocalTime') || {}).value || '',
+                messengerAutoReplyEnabled: form.querySelector('#messengerAutoReplyEnabled') && form.querySelector('#messengerAutoReplyEnabled').checked ? 'true' : 'false',
+                messengerAutoReplyMessage: (document.getElementById('messengerAutoReplyMessage') || {}).value || '',
+                phoneUnchangedHours: (document.getElementById('phoneUnchangedHours') || {}).value || '',
+                autoDeliverToCrm: form.querySelector('#autoDeliverToCrm') && form.querySelector('#autoDeliverToCrm').checked ? 'true' : 'false',
+                autoDeliverToBitrix: form.querySelector('#autoDeliverToBitrix') && form.querySelector('#autoDeliverToBitrix').checked ? 'true' : 'false',
+                adsPowerEnabled: ads && ads.checked ? 'true' : 'false',
+                multiloginEnabled: mlx && mlx.checked ? 'true' : 'false',
+                localChromeEnabled: local && local.checked ? 'true' : 'false'
+            };
+        }
+
+        function applyTemplateSettings(settings) {
+            if (!settings) return;
+            var slider = document.getElementById('maxConcurrentAccounts');
+            var output = document.getElementById('maxConcurrentAccountsOut');
+            if (slider) {
+                var min = parseInt(slider.min, 10) || 1;
+                var max = parseInt(slider.max, 10) || min;
+                var next = parseInt(settings.maxConcurrentAccounts, 10);
+                if (isNaN(next) || next < min) next = min;
+                if (next > max) next = max;
+                slider.value = String(next);
+                if (output) output.textContent = String(next);
+                slider.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+
+            setCheckbox(document.getElementById('responseFilterExcludeMale'), settings.responseFilterExcludeMale);
+            setCheckbox(document.getElementById('responseFilterExcludeFemale'), settings.responseFilterExcludeFemale);
+            setInputValue(document.getElementById('responseFilterMaxAgeMale'), settings.responseFilterMaxAgeMale);
+            setInputValue(document.getElementById('responseFilterMaxAgeFemale'), settings.responseFilterMaxAgeFemale);
+            setInputValue(
+                document.getElementById('responseFilterMaxAgeDays'),
+                settings.responseFilterMaxResponseAgeDays != null
+                    ? settings.responseFilterMaxResponseAgeDays
+                    : settings.responseFilterMaxAgeDays
+            );
+            setCheckbox(document.getElementById('responseHighlightEnabled'), settings.responseHighlightEnabled);
+            applyCsvChecks(form, 'responseHighlightAgeBuckets', settings.responseHighlightAgeBuckets);
+            setCheckbox(document.getElementById('autoScheduleEnabled'), settings.autoScheduleEnabled);
+            applyCsvChecks(form, 'autoScheduleDays', settings.autoScheduleDays);
+            setInputValue(document.getElementById('autoScheduleFromLocalTime'), settings.autoScheduleFromLocalTime);
+            setInputValue(document.getElementById('autoScheduleToLocalTime'), settings.autoScheduleToLocalTime);
+            setCheckbox(document.getElementById('messengerAutoReplyEnabled'), settings.messengerAutoReplyEnabled);
+            setInputValue(document.getElementById('messengerAutoReplyMessage'), settings.messengerAutoReplyMessage);
+            setInputValue(
+                document.getElementById('phoneUnchangedHours'),
+                settings.phoneUnchangedHours == null ? '120' : settings.phoneUnchangedHours
+            );
+            setCheckbox(document.getElementById('autoDeliverToCrm'), isOn(settings.autoDeliverToCrm, false));
+            setCheckbox(document.getElementById('autoDeliverToBitrix'), isOn(settings.autoDeliverToBitrix, true));
+            setCheckbox(form.querySelector('[data-provider-toggle="AdsPower"]'), isOn(settings.adsPowerEnabled, true));
+            setCheckbox(form.querySelector('[data-provider-toggle="Multilogin"]'), isOn(settings.multiloginEnabled, true));
+            setCheckbox(form.querySelector('[data-provider-toggle="Local"]'), isOn(settings.localChromeEnabled, true));
+            markDirty();
+        }
+
+        function parseOptionSettings(option) {
+            if (!option) return null;
+            var raw = option.getAttribute('data-settings');
+            if (!raw) return null;
+            try {
+                return JSON.parse(raw);
+            } catch (e) {
+                return null;
+            }
+        }
+
+        function selectedTemplateOption(select) {
+            if (!select || !select.value) return null;
+            return select.options[select.selectedIndex] || null;
+        }
+
+        function rebuildTemplateOptions(select, templates, selectedId) {
+            if (!select) return;
+            var current = selectedId || '';
+            select.innerHTML = '';
+            var placeholder = document.createElement('option');
+            placeholder.value = '';
+            placeholder.textContent = 'Выберите шаблон';
+            select.appendChild(placeholder);
+            (templates || []).forEach(function (item) {
+                var option = document.createElement('option');
+                option.value = item.id;
+                option.textContent = item.name;
+                option.setAttribute('data-settings', JSON.stringify(item.settings || {}));
+                if (item.id === current) option.selected = true;
+                select.appendChild(option);
+            });
+        }
+
+        function initSettingsTemplates() {
+            var root = form.querySelector('[data-worker-settings-templates]');
+            if (!root || root.hasAttribute('data-worker-settings-templates-bound')) return;
+            root.setAttribute('data-worker-settings-templates-bound', '1');
+
+            var select = root.querySelector('[data-worker-settings-template-select]');
+            var nameInput = root.querySelector('[data-worker-settings-template-name]');
+            var applyBtn = root.querySelector('[data-worker-settings-template-apply]');
+            var createBtn = root.querySelector('[data-worker-settings-template-create]');
+            var updateBtn = root.querySelector('[data-worker-settings-template-update]');
+            var deleteBtn = root.querySelector('[data-worker-settings-template-delete]');
+            var postForm = window.Orbita && window.Orbita.postForm;
+
+            function selectedName() {
+                var option = selectedTemplateOption(select);
+                return option && option.value ? option.textContent : '';
+            }
+
+            function fillNameFromSelect() {
+                if (!nameInput) return;
+                var option = selectedTemplateOption(select);
+                nameInput.value = option && option.value ? option.textContent : '';
+            }
+
+            function busy(on) {
+                [applyBtn, createBtn, updateBtn, deleteBtn].forEach(function (btn) {
+                    if (btn) btn.disabled = !!on;
+                });
+            }
+
+            if (select) {
+                select.addEventListener('change', fillNameFromSelect);
+            }
+
+            if (applyBtn) {
+                applyBtn.addEventListener('click', function () {
+                    var option = selectedTemplateOption(select);
+                    if (!option || !option.value) {
+                        toast('Выберите шаблон.', 'error');
+                        return;
+                    }
+                    var settings = parseOptionSettings(option);
+                    if (!settings) {
+                        toast('Не удалось прочитать шаблон.', 'error');
+                        return;
+                    }
+                    applyTemplateSettings(settings);
+                    toast('Шаблон подставлен в форму. Сохраните настройки воркера.');
+                });
+            }
+
+            async function mutate(url, extra) {
+                if (typeof postForm !== 'function') {
+                    toast('Не удалось отправить запрос.', 'error');
+                    return null;
+                }
+                var fields = collectTemplateSettings();
+                Object.keys(extra || {}).forEach(function (key) {
+                    fields[key] = extra[key];
+                });
+                busy(true);
+                try {
+                    var result = await postForm(url, fields);
+                    if (!result.ok) {
+                        toast((result.payload && result.payload.error) || 'Не удалось сохранить шаблон.', 'error');
+                        return null;
+                    }
+                    return result.payload;
+                } catch (e) {
+                    toast('Не удалось сохранить шаблон.', 'error');
+                    return null;
+                } finally {
+                    busy(false);
+                }
+            }
+
+            if (createBtn) {
+                createBtn.addEventListener('click', async function () {
+                    var name = nameInput ? nameInput.value.trim() : '';
+                    if (!name) {
+                        toast('Укажите название шаблона.', 'error');
+                        if (nameInput) nameInput.focus();
+                        return;
+                    }
+                    var payload = await mutate(root.getAttribute('data-create-url'), { name: name });
+                    if (!payload) return;
+                    rebuildTemplateOptions(select, payload.templates, payload.template && payload.template.id);
+                    fillNameFromSelect();
+                    toast(payload.message || 'Шаблон сохранён.');
+                });
+            }
+
+            if (updateBtn) {
+                updateBtn.addEventListener('click', async function () {
+                    var option = selectedTemplateOption(select);
+                    if (!option || !option.value) {
+                        toast('Выберите шаблон.', 'error');
+                        return;
+                    }
+                    var name = nameInput ? nameInput.value.trim() : '';
+                    if (!name) {
+                        toast('Укажите название шаблона.', 'error');
+                        if (nameInput) nameInput.focus();
+                        return;
+                    }
+                    var payload = await mutate(root.getAttribute('data-update-url'), {
+                        name: name,
+                        templateId: option.value
+                    });
+                    if (!payload) return;
+                    rebuildTemplateOptions(select, payload.templates, payload.template && payload.template.id);
+                    fillNameFromSelect();
+                    toast(payload.message || 'Шаблон обновлён.');
+                });
+            }
+
+            if (deleteBtn) {
+                deleteBtn.addEventListener('click', async function () {
+                    var option = selectedTemplateOption(select);
+                    if (!option || !option.value) {
+                        toast('Выберите шаблон.', 'error');
+                        return;
+                    }
+                    var label = selectedName() || 'шаблон';
+                    if (!window.confirm('Удалить шаблон «' + label + '»?')) return;
+                    var payload = await mutate(root.getAttribute('data-delete-url'), {
+                        templateId: option.value
+                    });
+                    if (!payload) return;
+                    rebuildTemplateOptions(select, payload.templates, '');
+                    if (nameInput) nameInput.value = '';
+                    toast(payload.message || 'Шаблон удалён.');
+                });
+            }
+        }
+
+        initSettingsTemplates();
+
         form.querySelectorAll('[data-provider-actions]').forEach(function (actions) {
             if (actions.hasAttribute('data-dirty-gate-bound')) return;
             actions.setAttribute('data-dirty-gate-bound', '1');
@@ -468,16 +765,18 @@
                 if (!e.target.closest('[data-provider-check], [data-provider-sync], [data-provider-actions]')) return;
                 e.preventDefault();
                 e.stopPropagation();
-                var toast = (window.Orbita && (window.Orbita.toast || window.Orbita.showToast))
-                    || (window.OrbitaRuntime && window.OrbitaRuntime.showToast);
-                if (typeof toast === 'function') {
-                    toast('Сначала сохраните настройки', { variant: 'error' });
-                }
+                toast('Сначала сохраните настройки', 'error');
             });
         });
 
-        form.addEventListener('input', markDirty);
-        form.addEventListener('change', markDirty);
+        form.addEventListener('input', function (event) {
+            if (isTemplateControl(event)) return;
+            markDirty();
+        });
+        form.addEventListener('change', function (event) {
+            if (isTemplateControl(event)) return;
+            markDirty();
+        });
     }
 
     function initCopyButtons() {

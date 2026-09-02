@@ -113,7 +113,8 @@ public sealed class WorkersService(
         var workerTask = api.GetWorkerAsync(id, ct);
         var accountsTask = api.GetWorkerAccountsAsync(id, ct);
         var eventsTask = api.GetEventsAsync(workerId: id, limit: 10, ct: ct);
-        await Task.WhenAll(workerTask, accountsTask, eventsTask);
+        var templatesTask = api.GetWorkerSettingsTemplatesAsync(id, ct);
+        await Task.WhenAll(workerTask, accountsTask, eventsTask, templatesTask);
 
         var apiWorker = await workerTask;
         if (apiWorker is null) return null;
@@ -162,7 +163,8 @@ public sealed class WorkersService(
             sort: tableSort,
             accountSearchQuery: accountSearchQuery,
             accountGroupId: accountGroupId,
-            accountProvider: accountProvider);
+            accountProvider: accountProvider,
+            settingsTemplates: await templatesTask ?? []);
     }
 
     public async Task<(CreateWorkerResultViewModel? Result, string? Error)> CreateWorkerAsync(
@@ -265,6 +267,62 @@ public sealed class WorkersService(
             multiloginEnabled,
             localChromeEnabled,
             ct);
+
+    public async Task<IReadOnlyList<WorkerSettingsTemplateDto>> GetWorkerSettingsTemplatesAsync(
+        Guid workerId,
+        CancellationToken ct = default)
+    {
+        if (previewOptions.Value.Enabled)
+        {
+            return DesignPreviewData.GetWorkerSettingsTemplates(workerId);
+        }
+
+        return await api.GetWorkerSettingsTemplatesAsync(workerId, ct) ?? [];
+    }
+
+    public async Task<(WorkerSettingsTemplateDto? Template, IReadOnlyList<WorkerSettingsTemplateDto> Templates, string? Error)> CreateWorkerSettingsTemplateAsync(
+        Guid workerId,
+        string name,
+        WorkerSettingsTemplatePayload settings,
+        CancellationToken ct = default)
+    {
+        if (previewOptions.Value.Enabled)
+        {
+            var created = DesignPreviewData.CreatePreviewSettingsTemplate(workerId, name, settings);
+            return (created, [created], null);
+        }
+
+        return await api.CreateWorkerSettingsTemplateAsync(workerId, name, settings, ct);
+    }
+
+    public async Task<(WorkerSettingsTemplateDto? Template, IReadOnlyList<WorkerSettingsTemplateDto> Templates, string? Error)> UpdateWorkerSettingsTemplateAsync(
+        Guid workerId,
+        Guid templateId,
+        string name,
+        WorkerSettingsTemplatePayload settings,
+        CancellationToken ct = default)
+    {
+        if (previewOptions.Value.Enabled)
+        {
+            var updated = DesignPreviewData.CreatePreviewSettingsTemplate(workerId, name, settings, templateId);
+            return (updated, [updated], null);
+        }
+
+        return await api.UpdateWorkerSettingsTemplateAsync(workerId, templateId, name, settings, ct);
+    }
+
+    public async Task<(IReadOnlyList<WorkerSettingsTemplateDto> Templates, string? Error)> DeleteWorkerSettingsTemplateAsync(
+        Guid workerId,
+        Guid templateId,
+        CancellationToken ct = default)
+    {
+        if (previewOptions.Value.Enabled)
+        {
+            return ([], null);
+        }
+
+        return await api.DeleteWorkerSettingsTemplateAsync(workerId, templateId, ct);
+    }
 
     public Task<(bool Success, string? Error)> UpdateWorkerAccountAsync(
         Guid workerId,

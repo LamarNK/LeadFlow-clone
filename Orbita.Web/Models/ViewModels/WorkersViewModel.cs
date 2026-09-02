@@ -197,6 +197,7 @@ public sealed class WorkerDetailsViewModel
     public bool AutoDeliverToBitrix { get; init; } = true;
     public Guid OfficeId { get; init; }
     public string OfficeName { get; init; } = string.Empty;
+    public IReadOnlyList<WorkerSettingsTemplateDto> SettingsTemplates { get; init; } = [];
     public string EffectiveAdsPowerApiBaseUrl =>
         string.IsNullOrWhiteSpace(AdsPowerApiBaseUrl) ? DefaultAdsPowerApiBaseUrl : AdsPowerApiBaseUrl;
     public string EffectiveMultiloginLauncherUrl =>
@@ -408,6 +409,56 @@ public sealed class WorkerAccountRowViewModel
         var slash = name.LastIndexOf('\\');
         return slash >= 0 && slash < name.Length - 1 ? name[(slash + 1)..] : trimmed;
     }
+}
+
+public sealed class WorkerSettingsTemplateFormModel
+{
+    public Guid WorkerId { get; set; }
+    public Guid TemplateId { get; set; }
+    public string? Name { get; set; }
+    public int MaxConcurrentAccounts { get; set; } = 1;
+    public bool ResponseFilterExcludeFemale { get; set; }
+    public bool ResponseFilterExcludeMale { get; set; }
+    public int? ResponseFilterMaxAgeMale { get; set; }
+    public int? ResponseFilterMaxAgeFemale { get; set; }
+    public int? ResponseFilterMaxAgeDays { get; set; }
+    public bool ResponseHighlightEnabled { get; set; }
+    public string? ResponseHighlightAgeBuckets { get; set; }
+    public bool AutoScheduleEnabled { get; set; }
+    public string? AutoScheduleDays { get; set; }
+    public string? AutoScheduleFromLocalTime { get; set; }
+    public string? AutoScheduleToLocalTime { get; set; }
+    public bool MessengerAutoReplyEnabled { get; set; }
+    public string? MessengerAutoReplyMessage { get; set; }
+    public int? PhoneUnchangedHours { get; set; }
+    public bool AutoDeliverToCrm { get; set; }
+    public bool AutoDeliverToBitrix { get; set; } = true;
+    public bool AdsPowerEnabled { get; set; } = true;
+    public bool MultiloginEnabled { get; set; } = true;
+    public bool LocalChromeEnabled { get; set; } = true;
+
+    public WorkerSettingsTemplatePayload ToPayload() =>
+        WorkerSettingsTemplatePayload.Normalize(new WorkerSettingsTemplatePayload(
+            MaxConcurrentAccounts,
+            ResponseFilterExcludeFemale: ResponseFilterExcludeFemale,
+            ResponseFilterExcludeMale: ResponseFilterExcludeMale,
+            ResponseFilterMaxAgeMale: ResponseFilterMaxAgeMale,
+            ResponseFilterMaxAgeFemale: ResponseFilterMaxAgeFemale,
+            ResponseFilterMaxResponseAgeDays: ResponseFilterMaxAgeDays,
+            ResponseHighlightEnabled: ResponseHighlightEnabled,
+            ResponseHighlightAgeBuckets: ResponseHighlightAgeBuckets,
+            AutoScheduleEnabled: AutoScheduleEnabled,
+            AutoScheduleDays: AutoScheduleDays,
+            AutoScheduleFromLocalTime: AutoScheduleFromLocalTime,
+            AutoScheduleToLocalTime: AutoScheduleToLocalTime,
+            MessengerAutoReplyEnabled: MessengerAutoReplyEnabled,
+            MessengerAutoReplyMessage: MessengerAutoReplyMessage,
+            PhoneUnchangedHours: PhoneUnchangedHours,
+            AutoDeliverToCrm: AutoDeliverToCrm,
+            AutoDeliverToBitrix: AutoDeliverToBitrix,
+            AdsPowerEnabled: AdsPowerEnabled,
+            MultiloginEnabled: MultiloginEnabled,
+            LocalChromeEnabled: LocalChromeEnabled));
 }
 
 public sealed class WorkerExtraInfoViewModel
