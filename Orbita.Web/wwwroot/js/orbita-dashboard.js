@@ -60,9 +60,23 @@
     var liveState = null;
     var activeWorkerFilter = 'all';
     var workerSearchQuery = '';
-    var workerView = 'table';
-    var workerSortDirection = 'desc';
-    var workerSortKey = 'activity';
+    function dashboardPreference(key, fallback) {
+        try {
+            return window.sessionStorage.getItem(key) || fallback;
+        } catch (e) {
+            return fallback;
+        }
+    }
+
+    function saveDashboardPreference(key, value) {
+        try {
+            window.sessionStorage.setItem(key, value);
+        } catch (e) { }
+    }
+
+    var workerView = dashboardPreference('orbita-dashboard-worker-view', 'table');
+    var workerSortDirection = dashboardPreference('orbita-dashboard-worker-sort-direction', 'desc');
+    var workerSortKey = dashboardPreference('orbita-dashboard-worker-sort-key', 'activity');
     var highlightMs = 1800;
 
     Chart.defaults.font.family = '"Segoe UI", system-ui, -apple-system, sans-serif';
@@ -854,6 +868,7 @@
             button.setAttribute('data-dashboard-worker-sort-bound', '1');
             button.addEventListener('click', function () {
                 workerSortDirection = workerSortDirection === 'desc' ? 'asc' : 'desc';
+                saveDashboardPreference('orbita-dashboard-worker-sort-direction', workerSortDirection);
                 button.setAttribute('aria-label', workerSortDirection === 'desc' ? 'Сначала недавняя активность' : 'Сначала давняя активность');
                 var icon = button.querySelector('i');
                 if (icon) {
@@ -871,6 +886,8 @@
             select.addEventListener('change', function () {
                 workerSortKey = select.value || 'activity';
                 workerSortDirection = workerSortKey === 'name' ? 'asc' : 'desc';
+                saveDashboardPreference('orbita-dashboard-worker-sort-key', workerSortKey);
+                saveDashboardPreference('orbita-dashboard-worker-sort-direction', workerSortDirection);
                 document.querySelectorAll('[data-dashboard-worker-sort]').forEach(function (button) {
                     button.setAttribute('aria-label', workerSortDirection === 'desc' ? 'Сначала большие значения' : 'Сначала меньшие значения');
                     var icon = button.querySelector('i');
@@ -892,6 +909,7 @@
             button.setAttribute('data-dashboard-worker-view-bound', '1');
             button.addEventListener('click', function () {
                 workerView = button.getAttribute('data-dashboard-worker-view') === 'cards' ? 'cards' : 'table';
+                saveDashboardPreference('orbita-dashboard-worker-view', workerView);
                 var workerCard = document.querySelector('.card--dashboard-workers');
                 if (workerCard) {
                     workerCard.classList.toggle('dashboard-workers-view--cards', workerView === 'cards');
