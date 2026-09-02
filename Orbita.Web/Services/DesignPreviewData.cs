@@ -1838,6 +1838,44 @@ internal static class DesignPreviewData
     public static IReadOnlyList<WorkerListItem> GetWorkers(Guid? officeId) =>
         FilterByOffice(BuildWorkerListItems(), officeId, x => x.OfficeId);
 
+    public static WorkersPageDto GetDashboardWorkersPage(
+        Guid? officeId,
+        int page = 1,
+        int? pageSize = null,
+        string? sort = null,
+        string? sortDir = null)
+    {
+        var tableSort = TableSort.Parse(sort, sortDir, TableSort.DashboardWorkers.Default, TableSort.DashboardWorkers.Columns);
+        var workers = GetWorkers(officeId).Select(w => new DashboardWorkerRowViewModel
+        {
+            Id = w.Id,
+            DisplayName = w.DisplayName,
+            IsOnline = w.IsOnline,
+            IsEnabled = w.IsEnabled,
+            IsMonitoringPaused = w.IsMonitoringPaused,
+            LastActivityUtc = w.LastSeenAtUtc
+        });
+        var orderedIds = TableSort.DashboardWorkers.Apply(workers, tableSort).Select(w => w.Id).ToList();
+        var byId = GetWorkers(officeId).ToDictionary(w => w.Id);
+        var sorted = orderedIds.Select(id => byId[id]).ToList();
+        var normalizedPageSize = ListPageSizeDefaults.Normalize(pageSize, ListPageSizeDefaults.Dashboard);
+        var total = sorted.Count;
+        var normalizedPage = WorkerListPaging.NormalizePage(page, normalizedPageSize, total);
+        var items = sorted
+            .Skip((normalizedPage - 1) * normalizedPageSize)
+            .Take(normalizedPageSize)
+            .ToList();
+        return new WorkersPageDto(
+            items,
+            total,
+            normalizedPage,
+            normalizedPageSize,
+            tableSort.Column,
+            tableSort.Dir,
+            sorted.Count(w => !w.IsMonitoringPaused),
+            sorted.Count(w => w.IsMonitoringPaused));
+    }
+
     public static GlobalDashboardSummary GetSummary(Guid? officeId)
     {
         if (officeId is null)
@@ -2321,7 +2359,13 @@ internal static class DesignPreviewData
         };
     }
 
-    public static DashboardViewModel BuildDashboardViewModel(DashboardPeriod? period = null, IOfficeContext? officeContext = null)
+    public static DashboardViewModel BuildDashboardViewModel(
+        DashboardPeriod? period = null,
+        IOfficeContext? officeContext = null,
+        int page = 1,
+        int pageSize = ListPageSizeDefaults.Dashboard,
+        string? sort = null,
+        string? sortDir = null)
     {
         period ??= DashboardPeriod.Today;
         officeContext ??= new OfficeContext();
@@ -2430,22 +2474,9 @@ internal static class DesignPreviewData
                 }
         ];
 
-        return new DashboardViewModel
-        {
-            Header = new PageHeaderViewModel
-            {
-                Title = "Панель управления",
-                Subtitle = "Общая сводка по всем воркерам",
-                ShowRefresh = true,
-                ShowDateRange = true,
-                UpdatedAtUtc = updatedAt,
-                DateRangeLabel = period.Label,
-                DateFrom = period.From,
-                DateTo = period.To,
-                ActivePeriodPreset = period.ActivePreset
-            },
-            KpiCards = kpiCards,
-            Workers = FilterWorkerRowsByOffice(BuildWorkerRows(), officeContext.EffectiveOfficeId).Take(3).Select(w => new DashboardWorkerRowViewModel
+        var tableSort = TableSort.Parse(sort, sortDir, TableSort.DashboardWorkers.Default, TableSort.DashboardWorkers.Columns);
+        var workerRows = FilterWorkerRowsByOffice(BuildWorkerRows(), officeContext.EffectiveOfficeId)
+            .Select(w => new DashboardWorkerRowViewModel
             {
                 Id = w.Id,
                 DisplayName = w.DisplayName,
@@ -2465,7 +2496,33 @@ internal static class DesignPreviewData
                 CurrentActivityPhase = w.CurrentActivityPhase,
                 CurrentActivityNextCycleAtUtc = w.CurrentActivityNextCycleAtUtc,
                 OfficeName = w.OfficeName
-            }).ToList(),
+            })
+            .ToList();
+        var sortedWorkers = TableSort.DashboardWorkers.Apply(workerRows, tableSort).ToList();
+        var totalWorkers = sortedWorkers.Count;
+        pageSize = ListPageSizeDefaults.Normalize(pageSize, ListPageSizeDefaults.Dashboard);
+        page = WorkerListPaging.NormalizePage(page, pageSize, totalWorkers);
+        var pagedWorkers = sortedWorkers
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
+            .ToList();
+
+        return new DashboardViewModel
+        {
+            Header = new PageHeaderViewModel
+            {
+                Title = "Панель управления",
+                Subtitle = "Общая сводка по всем воркерам",
+                ShowRefresh = true,
+                ShowDateRange = true,
+                UpdatedAtUtc = updatedAt,
+                DateRangeLabel = period.Label,
+                DateFrom = period.From,
+                DateTo = period.To,
+                ActivePeriodPreset = period.ActivePreset
+            },
+            KpiCards = kpiCards,
+            Workers = pagedWorkers,
             HourlyChart = hourlyChart,
             Events = Events
                 .Where(e => e.CreatedAtUtc >= DashboardRecentEvents.SinceUtc)
@@ -2476,9 +2533,17 @@ internal static class DesignPreviewData
             AccountStats = accountStats,
             Charts = DashboardChartsBuilder.FromPresentation(kpiCards, activityChart, accountStats),
             ShowOfficeColumn = officeContext.ShowOfficeColumn,
-            EnabledWorkersCount = FilterWorkerRowsByOffice(BuildWorkerRows(), officeContext.EffectiveOfficeId).Count(w => w.IsEnabled && !w.IsMonitoringPaused),
-            DisabledWorkersCount = FilterWorkerRowsByOffice(BuildWorkerRows(), officeContext.EffectiveOfficeId).Count(w => w.IsMonitoringPaused),
-            ShowWorkersMonitoringControls = FilterWorkerRowsByOffice(BuildWorkerRows(), officeContext.EffectiveOfficeId).Count > 0
+            EnabledWorkersCount = workerRows.Count(w => w.IsEnabled && !w.IsMonitoringPaused),
+            DisabledWorkersCount = workerRows.Count(w => w.IsMonitoringPaused),
+            ShowWorkersMonitoringControls = totalWorkers > 0,
+            Pagination = new PaginationViewModel
+            {
+                Page = page,
+                PageSize = pageSize,
+                TotalItems = totalWorkers
+            },
+            Sort = tableSort,
+            TimeZoneOffsetMinutes = period.TimeZoneOffsetMinutes
         };
     }
 

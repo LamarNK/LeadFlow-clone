@@ -15,10 +15,17 @@ public sealed class DashboardController(
     OrbitaAuthService auth) : Controller
 {
     [HttpGet]
-    public async Task<IActionResult> Index(string? from, string? to, CancellationToken ct)
+    public async Task<IActionResult> Index(
+        string? from,
+        string? to,
+        int page = 1,
+        int? pageSize = null,
+        string? sort = null,
+        string? dir = null,
+        CancellationToken ct = default)
     {
         var period = DashboardPeriod.Parse(from, to, BrowserTimeZone.Resolve(HttpContext));
-        var model = await dashboard.GetDashboardAsync(period, ct);
+        var model = await dashboard.GetDashboardAsync(period, page, pageSize, sort, dir, ct);
         if (!string.IsNullOrWhiteSpace(model.ErrorMessage) && IsApiSessionMissing())
         {
             await auth.SignOutAsync(ct);
@@ -33,10 +40,17 @@ public sealed class DashboardController(
         || session.Token.Count(c => c == '.') < 2;
 
     [HttpGet]
-    public async Task<IActionResult> Snapshot(string? from, string? to, CancellationToken ct)
+    public async Task<IActionResult> Snapshot(
+        string? from,
+        string? to,
+        int page = 1,
+        int? pageSize = null,
+        string? sort = null,
+        string? dir = null,
+        CancellationToken ct = default)
     {
         var period = DashboardPeriod.Parse(from, to, BrowserTimeZone.Resolve(HttpContext));
-        var model = await dashboard.GetDashboardAsync(period, ct);
+        var model = await dashboard.GetDashboardAsync(period, page, pageSize, sort, dir, ct);
         if (!string.IsNullOrWhiteSpace(model.ErrorMessage))
         {
             return StatusCode(StatusCodes.Status503ServiceUnavailable, new { error = model.ErrorMessage });
@@ -52,7 +66,9 @@ public sealed class DashboardController(
             Charts = model.Charts,
             EnabledWorkersCount = model.EnabledWorkersCount,
             DisabledWorkersCount = model.DisabledWorkersCount,
-            ShowWorkersMonitoringControls = model.ShowWorkersMonitoringControls
+            ShowWorkersMonitoringControls = model.ShowWorkersMonitoringControls,
+            Pagination = model.Pagination,
+            Sort = model.Sort
         });
     }
 

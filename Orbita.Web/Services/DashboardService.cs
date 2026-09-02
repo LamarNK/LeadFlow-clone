@@ -10,15 +10,30 @@ public sealed class DashboardService(
     IOfficeContext officeContext,
     IOptions<DesignPreviewOptions> previewOptions) : IDashboardService
 {
-    public async Task<DashboardViewModel> GetDashboardAsync(DashboardPeriod period, CancellationToken ct = default)
+    public async Task<DashboardViewModel> GetDashboardAsync(
+        DashboardPeriod period,
+        int page = 1,
+        int? pageSize = null,
+        string? sort = null,
+        string? sortDir = null,
+        CancellationToken ct = default)
     {
+        pageSize = ListPageSizeDefaults.Normalize(pageSize, ListPageSizeDefaults.Dashboard);
+        var tableSort = TableSort.Parse(sort, sortDir, TableSort.DashboardWorkers.Default, TableSort.DashboardWorkers.Columns);
+
         if (previewOptions.Value.Enabled)
         {
-            return DesignPreviewData.BuildDashboardViewModel(period, officeContext);
+            return DesignPreviewData.BuildDashboardViewModel(
+                period,
+                officeContext,
+                page,
+                pageSize.Value,
+                tableSort.Column,
+                tableSort.Dir);
         }
 
         var summaryTask = api.GetSummaryAsync(period.TimeZoneOffsetMinutes, period.From, period.To, ct);
-        var workersTask = api.GetWorkersAsync(ct);
+        var workersTask = api.GetDashboardWorkersAsync(page, pageSize, tableSort.Column, tableSort.Dir, ct);
         var eventsTask = api.GetEventsAsync(
             limit: DashboardRecentEvents.Limit,
             sinceUtc: DashboardRecentEvents.SinceUtc,
@@ -34,7 +49,17 @@ public sealed class DashboardService(
             };
         }
 
-        var workers = await workersTask ?? [];
+        var workersPage = await workersTask
+            ?? new WorkersPageDto(
+                [],
+                0,
+                1,
+                pageSize.Value,
+                tableSort.Column,
+                tableSort.Dir,
+                0,
+                0);
+        var workers = workersPage.Items;
         var events = await eventsTask ?? [];
         var accountStats = await BuildAccountStatsAsync(workers, summary, ct);
         var periodStats = AggregatePeriodStats(summary, period);
@@ -42,34 +67,7 @@ public sealed class DashboardService(
         var activityChart = BuildActivityChart(summary, period, periodStats);
         var charts = DashboardChartsBuilder.FromPresentation(kpiCards, activityChart, accountStats);
 
-        var workerRows = workers.Select(w =>
-        {
-            var activity = WorkerActivityPresenter.Present(
-                w.CurrentActivity,
-                w.IsOnline,
-                w.ActiveAccounts ?? w.CurrentActivity?.ActiveAccounts);
-            return new DashboardWorkerRowViewModel
-            {
-                Id = w.Id,
-                DisplayName = w.DisplayName,
-                MachineName = w.MachineName,
-                IsOnline = w.IsOnline,
-                IsEnabled = w.IsEnabled,
-                IsMonitoringPaused = w.IsMonitoringPaused,
-                ActiveAccounts = w.ActiveAccountCount,
-                TotalAccounts = w.AccountCount,
-                Responses = w.TotalToday,
-                Duplicates = w.DuplicatesToday,
-                Errors = w.Errors,
-                LastActivityUtc = w.LastSeenAtUtc,
-                CurrentActivityLabel = activity.Label,
-                CurrentActivityTone = activity.Tone,
-                IsActivityLive = activity.IsLive,
-                CurrentActivityPhase = activity.Phase,
-                CurrentActivityNextCycleAtUtc = activity.NextCycleAtUtc,
-                OfficeName = w.OfficeName
-            };
-        }).ToList();
+        var workerRows = workers.Select(MapWorkerRow).ToList();
 
         return new DashboardViewModel
         {
@@ -81,9 +79,46 @@ public sealed class DashboardService(
             AccountStats = accountStats,
             Charts = charts,
             ShowOfficeColumn = officeContext.ShowOfficeColumn,
-            EnabledWorkersCount = workerRows.Count(w => w.IsEnabled && !w.IsMonitoringPaused),
-            DisabledWorkersCount = workerRows.Count(w => w.IsMonitoringPaused),
-            ShowWorkersMonitoringControls = workerRows.Count > 0
+            EnabledWorkersCount = workersPage.EnabledCount,
+            DisabledWorkersCount = workersPage.PausedCount,
+            ShowWorkersMonitoringControls = workersPage.TotalCount > 0,
+            Pagination = new PaginationViewModel
+            {
+                Page = workersPage.Page,
+                PageSize = workersPage.PageSize,
+                TotalItems = workersPage.TotalCount
+            },
+            Sort = TableSortState.Create(workersPage.Sort, string.Equals(workersPage.Dir, "desc", StringComparison.OrdinalIgnoreCase)),
+            TimeZoneOffsetMinutes = period.TimeZoneOffsetMinutes
+        };
+    }
+
+    private static DashboardWorkerRowViewModel MapWorkerRow(WorkerListItem w)
+    {
+        var activity = WorkerActivityPresenter.Present(
+            w.CurrentActivity,
+            w.IsOnline,
+            w.ActiveAccounts ?? w.CurrentActivity?.ActiveAccounts);
+        return new DashboardWorkerRowViewModel
+        {
+            Id = w.Id,
+            DisplayName = w.DisplayName,
+            MachineName = w.MachineName,
+            IsOnline = w.IsOnline,
+            IsEnabled = w.IsEnabled,
+            IsMonitoringPaused = w.IsMonitoringPaused,
+            ActiveAccounts = w.ActiveAccountCount,
+            TotalAccounts = w.AccountCount,
+            Responses = w.TotalToday,
+            Duplicates = w.DuplicatesToday,
+            Errors = w.Errors,
+            LastActivityUtc = w.LastSeenAtUtc,
+            CurrentActivityLabel = activity.Label,
+            CurrentActivityTone = activity.Tone,
+            IsActivityLive = activity.IsLive,
+            CurrentActivityPhase = activity.Phase,
+            CurrentActivityNextCycleAtUtc = activity.NextCycleAtUtc,
+            OfficeName = w.OfficeName
         };
     }
 

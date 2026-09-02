@@ -4,6 +4,18 @@
     ViewData["Title"] = "Панель управления";
     var jsonOptions = new JsonSerializerOptions { PropertyNamingPolicy = JsonNamingPolicy.CamelCase };
     var chartsJson = JsonSerializer.Serialize(Model.Charts, jsonOptions);
+    var pagination = Model.Pagination;
+    var fromIso = Model.Header.DateFrom.ToString("yyyy-MM-dd");
+    var toIso = Model.Header.DateTo.ToString("yyyy-MM-dd");
+    var dashboardRoute = new
+    {
+        from = fromIso,
+        to = toIso,
+        tz = Model.TimeZoneOffsetMinutes,
+        pageSize = pagination.PageSize,
+        sort = Model.Sort.Column,
+        dir = Model.Sort.Dir
+    };
     var liveBootstrapJson = JsonSerializer.Serialize(new DashboardLiveSnapshotViewModel
     {
         UpdatedAtUtc = Model.Header.UpdatedAtUtc,
@@ -14,9 +26,20 @@
         Charts = Model.Charts,
         EnabledWorkersCount = Model.EnabledWorkersCount,
         DisabledWorkersCount = Model.DisabledWorkersCount,
-        ShowWorkersMonitoringControls = Model.ShowWorkersMonitoringControls
+        ShowWorkersMonitoringControls = Model.ShowWorkersMonitoringControls,
+        Pagination = pagination,
+        Sort = Model.Sort
     }, jsonOptions);
-    var snapshotUrl = Url.Action("Snapshot", "Dashboard", new { from = Model.Header.DateFrom.ToString("yyyy-MM-dd"), to = Model.Header.DateTo.ToString("yyyy-MM-dd") })!;
+    var snapshotUrl = Url.Action("Snapshot", "Dashboard", new
+    {
+        from = fromIso,
+        to = toIso,
+        tz = Model.TimeZoneOffsetMinutes,
+        page = pagination.Page,
+        pageSize = pagination.PageSize,
+        sort = Model.Sort.Column,
+        dir = Model.Sort.Dir
+    })!;
 }
 <partial name="_PageHeader" model="Model.Header" />
 <div class="orbita-main"
@@ -48,7 +71,18 @@
             }
         </div>
 
-        <div class="dashboard-grid">
+        <div class="dashboard-stack">
+            <div class="card card--chart-hourly">
+                <div class="card-header">
+                    <h2>Отклики по времени</h2>
+                    <span class="chart-period-label" title="Период задаётся в шапке страницы">@Model.Header.DateRangeLabel</span>
+                </div>
+                <div class="card-body">
+                    <div class="chart-canvas-wrap chart-canvas-wrap--hourly">
+                        <canvas id="chart-hourly-responses" aria-label="Отклики по времени"></canvas>
+                    </div>
+                </div>
+            </div>
             <div class="card card--dashboard-workers">
                 @{
                     var onlineWorkers = Model.Workers.Count(w => w.IsEnabled && w.IsOnline);
@@ -116,9 +150,7 @@
                     </div>
                 </div>
                 <div class="card-body dashboard-workers-table-wrap">
-                    <div class="dashboard-workers-table-scroll">
-                    @if (Model.Workers.Count == 0)
-                    {
+                    <div class="dashboard-workers-empty" data-dashboard-workers-empty @(pagination.TotalItems == 0 ? null : "hidden")>
                         <partial name="_TableEmptyState" model="@(new TableEmptyStateViewModel
                         {
                             IconClass = "fa-solid fa-server",
@@ -127,18 +159,18 @@
                             CtaLabel = "Все воркеры",
                             CtaUrl = Url.Action("Index", "Workers")
                         })" />
-                    }
-                    else
-                    {
+                    </div>
+                    <div class="dashboard-workers-table-panel" data-dashboard-workers-table @(pagination.TotalItems == 0 ? "hidden" : null)>
+                    <div class="dashboard-workers-table-scroll">
                     <table class="data-table data-table--cards data-table--dashboard-workers">
                         <thead>
                             <tr>
-                                <th>Воркер</th>
+                                <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Воркер", Column = "name", Sort = Model.Sort, Controller = "Dashboard", Action = "Index", RouteValues = dashboardRoute })" />
                                 @if (Model.ShowOfficeColumn)
                                 {
                                     <th>Офис</th>
                                 }
-                                <th>Статус</th>
+                                <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Статус", Column = "status", Sort = Model.Sort, Controller = "Dashboard", Action = "Index", RouteValues = dashboardRoute })" />
                                 <th>Сейчас</th>
                                 <th class="cell-num dashboard-accounts-th" title="Аккаунты">
                                     <span>Аккаунты</span>
@@ -147,7 +179,7 @@
                                 <th class="cell-num" title="Откликов">Откл.</th>
                                 <th class="cell-num" title="Дублей">Дубл.</th>
                                 <th class="cell-num" title="Ошибок">Ошиб.</th>
-                                <th title="Последняя активность">Активность</th>
+                                <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Активность", Column = "activity", Sort = Model.Sort, Controller = "Dashboard", Action = "Index", RouteValues = dashboardRoute })" />
                                 <th class="dashboard-worker-toggle-th" aria-label="Управление"></th>
                                 <th aria-hidden="true"></th>
                             </tr>
@@ -210,7 +242,7 @@
                                                 data-dashboard-disable-worker
                                                 data-worker-id="@w.Id"
                                                 title="Пауза мониторинга"
-                                            aria-label="Пауза мониторинга @w.DisplayName">
+                                                aria-label="Пауза мониторинга @w.DisplayName">
                                             <i class="fa-solid fa-circle-pause" aria-hidden="true"></i>
                                             <span class="dashboard-worker-toggle-label">Пауза</span>
                                         </button>
@@ -222,7 +254,7 @@
                                                 data-dashboard-enable-worker
                                                 data-worker-id="@w.Id"
                                                 title="Возобновить мониторинг"
-                                            aria-label="Возобновить мониторинг @w.DisplayName">
+                                                aria-label="Возобновить мониторинг @w.DisplayName">
                                             <i class="fa-solid fa-circle-play" aria-hidden="true"></i>
                                             <span class="dashboard-worker-toggle-label">Возобновить</span>
                                         </button>
@@ -245,19 +277,29 @@
                         }
                         </tbody>
                     </table>
-                    }
+                    </div>
+                    <div class="dashboard-workers-footer">
+                        <form method="get"
+                              action="@Url.Action("Index", "Dashboard")"
+                              class="dashboard-workers-page-size"
+                              data-orbita-page-size-form>
+                            <input type="hidden" name="from" value="@fromIso" />
+                            <input type="hidden" name="to" value="@toIso" />
+                            <input type="hidden" name="tz" value="@Model.TimeZoneOffsetMinutes" />
+                            <input type="hidden" name="sort" value="@Model.Sort.Column" />
+                            <input type="hidden" name="dir" value="@Model.Sort.Dir" />
+                            <partial name="_PageSizeFilterField" model="pagination.PageSize" />
+                        </form>
+                        <partial name="_Pagination" model="@(new PaginationPartialViewModel
+                        {
+                            Pagination = pagination,
+                            Controller = "Dashboard",
+                            Action = "Index",
+                            RouteValues = dashboardRoute,
+                            ExtraClass = "dashboard-workers-pagination"
+                        })" />
                     </div>
                     <a class="card-footer-btn" href="@Url.Action("Index", "Workers")">Показать все воркеры</a>
-                </div>
-            </div>
-            <div class="card card--chart-hourly">
-                <div class="card-header">
-                    <h2>Отклики по времени</h2>
-                    <span class="chart-period-label" title="Период задаётся в шапке страницы">@Model.Header.DateRangeLabel</span>
-                </div>
-                <div class="card-body">
-                    <div class="chart-canvas-wrap chart-canvas-wrap--hourly">
-                        <canvas id="chart-hourly-responses" aria-label="Отклики по времени"></canvas>
                     </div>
                 </div>
             </div>

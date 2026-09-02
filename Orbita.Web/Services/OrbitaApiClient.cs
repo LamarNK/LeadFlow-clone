@@ -123,6 +123,31 @@ public sealed class OrbitaApiClient(
             ? Task.FromResult<IReadOnlyList<WorkerListItem>?>(DesignPreviewData.GetWorkers(officeContext.EffectiveOfficeId))
             : GetAsync<IReadOnlyList<WorkerListItem>>(WithOfficeQuery("api/v1/workers"), ct);
 
+    public Task<WorkersPageDto?> GetDashboardWorkersAsync(
+        int page = 1,
+        int? pageSize = null,
+        string? sort = null,
+        string? sortDir = null,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return Task.FromResult<WorkersPageDto?>(DesignPreviewData.GetDashboardWorkersPage(
+                officeContext.EffectiveOfficeId,
+                page,
+                pageSize,
+                sort,
+                sortDir));
+        }
+
+        var path = WithOfficeQuery("api/v1/dashboard/workers");
+        path = AppendQuery(path, "page", page.ToString());
+        path = AppendQuery(path, "pageSize", WorkerListPaging.NormalizePageSize(pageSize).ToString());
+        path = AppendQuery(path, "sort", sort);
+        path = AppendQuery(path, "dir", sortDir);
+        return GetAsync<WorkersPageDto>(path, ct);
+    }
+
     public Task<WorkerDetail?> GetWorkerAsync(Guid id, CancellationToken ct = default) =>
         _preview.Enabled
             ? Task.FromResult(DesignPreviewData.GetWorker(id))

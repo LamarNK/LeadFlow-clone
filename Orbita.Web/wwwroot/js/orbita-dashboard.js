@@ -1030,7 +1030,7 @@
                         fetchSnapshot();
                     } else {
                         if (showToast) {
-                            showToast((result.payload && result.payload.error) || 'Не удалось изменить статус воркера', { variant: 'error' });
+                            showToast((result.payload && result.payload.error) || 'Не удалось изменить паузу мониторинга', { variant: 'error' });
                         }
                         btn.disabled = false;
                     }
@@ -1054,7 +1054,7 @@
             ? snapshot.enabledWorkersCount
             : 0;
 
-        // Все включены → только «Остановить»; иначе обе кнопки.
+        // Нет паузы → только «Пауза»; иначе обе кнопки.
         var allEnabled = disabledCount === 0 && enabledCount > 0;
 
         if (enableBtn) {
@@ -1086,9 +1086,9 @@
                 if (!enableUrl || !postForm) return;
                 if (confirmDialog) {
                     var confirmed = await confirmDialog({
-                        title: 'Запустить мониторинг?',
-                        message: 'Все воркеры в вашем офисе будут включены и начнут обработку аккаунтов.',
-                        confirmLabel: 'Запустить',
+                        title: 'Возобновить мониторинг?',
+                        message: 'Мониторинг откликов будет возобновлён. Воркеры, которые уже на связи, снова начнут парсинг по текущим правилам.',
+                        confirmLabel: 'Возобновить',
                         variant: 'primary'
                     });
                     if (!confirmed) return;
@@ -1123,9 +1123,9 @@
                 if (!disableUrl || !postForm) return;
                 if (confirmDialog) {
                     var confirmed = await confirmDialog({
-                        title: 'Остановить мониторинг?',
-                        message: 'Все воркеры будут приостановлены: мониторинг остановится, открытые браузеры закроются.',
-                        confirmLabel: 'Остановить',
+                        title: 'Пауза мониторинга?',
+                        message: 'Парсинг откликов остановится. Воркеры останутся на связи: heartbeat, команды, синхронизация каталогов и служебные сессии продолжатся.',
+                        confirmLabel: 'Пауза',
                         variant: 'danger'
                     });
                     if (!confirmed) return;
@@ -1388,8 +1388,69 @@
             workers: stableJson(snapshot.workers || []),
             events: stableJson(snapshot.events || []),
             accountStats: stableJson(snapshot.accountStats || {}),
-            hourly: stableJson(snapshot.charts ? snapshot.charts.hourlyResponses : null)
+            hourly: stableJson(snapshot.charts ? snapshot.charts.hourlyResponses : null),
+            pagination: stableJson(snapshot.pagination || null),
+            monitoring: stableJson({
+                enabled: snapshot.enabledWorkersCount,
+                disabled: snapshot.disabledWorkersCount
+            })
         };
+    }
+
+    function syncPaginationState(pagination) {
+        var shared = window.OrbitaLiveShared;
+        if (shared && typeof shared.updatePaginationInfo === 'function') {
+            shared.updatePaginationInfo(pagination);
+        }
+        if (!pagination || typeof pagination.page !== 'number') return;
+
+        var root = getLiveRoot();
+        if (!root) return;
+
+        function withPage(rawUrl) {
+            if (!rawUrl) return rawUrl;
+            try {
+                var url = new URL(rawUrl, window.location.origin);
+                url.searchParams.set('page', String(pagination.page));
+                if (pagination.pageSize) {
+                    url.searchParams.set('pageSize', String(pagination.pageSize));
+                }
+                return url.pathname + url.search;
+            } catch (e) {
+                return rawUrl;
+            }
+        }
+
+        var snapshotUrl = withPage(root.getAttribute('data-dashboard-snapshot') || root.getAttribute('data-orbita-snapshot'));
+        if (snapshotUrl) {
+            root.setAttribute('data-dashboard-snapshot', snapshotUrl);
+            root.setAttribute('data-orbita-snapshot', snapshotUrl);
+        }
+
+        try {
+            var loc = new URL(window.location.href);
+            if (loc.searchParams.get('page') !== String(pagination.page)) {
+                loc.searchParams.set('page', String(pagination.page));
+                if (pagination.pageSize) {
+                    loc.searchParams.set('pageSize', String(pagination.pageSize));
+                }
+                window.history.replaceState({}, '', loc.pathname + loc.search);
+            }
+        } catch (e) { }
+    }
+
+    function updateWorkersPanel(snapshot) {
+        var totalItems = snapshot && snapshot.pagination ? snapshot.pagination.totalItems : (snapshot.workers || []).length;
+        var emptyEl = document.querySelector('[data-dashboard-workers-empty]');
+        var tableEl = document.querySelector('[data-dashboard-workers-table]');
+        var hasWorkers = totalItems > 0;
+        if (emptyEl) emptyEl.hidden = hasWorkers;
+        if (tableEl) tableEl.hidden = !hasWorkers;
+        if (hasWorkers) {
+            renderWorkers(snapshot.workers || []);
+        }
+        updateMonitoringControls(snapshot);
+        syncPaginationState(snapshot.pagination);
     }
 
     function applySnapshot(snapshot, highlightChanged) {
@@ -1402,10 +1463,11 @@
             updateKpiCards(snapshot.kpiCards || [], snapshot.charts, highlightChanged);
         }
 
-        if (!prevFp || prevFp.workers !== nextFp.workers) {
-            renderWorkers(snapshot.workers || []);
-            updateMonitoringControls(snapshot);
-            if (highlightChanged) highlightCard(document.querySelector('.card--dashboard-workers'));
+        if (!prevFp || prevFp.workers !== nextFp.workers || prevFp.pagination !== nextFp.pagination || prevFp.monitoring !== nextFp.monitoring) {
+            updateWorkersPanel(snapshot);
+            if (highlightChanged && prevFp && prevFp.workers !== nextFp.workers) {
+                highlightCard(document.querySelector('.card--dashboard-workers'));
+            }
         }
 
         if (!prevFp || prevFp.hourly !== nextFp.hourly) {
@@ -1503,6 +1565,13 @@
         initDashboardRowNavigation();
         initDashboardMonitoringButtons();
         initDashboardWorkerToggleButtons();
+        initLiveRefresh();
+        if (window.Orbita && window.Orbita.initWorkerRestartButtons) {
+            window.Orbita.initWorkerRestartButtons();
+        }
+        if (liveState) {
+            updateMonitoringControls(liveState);
+        }
 
         if (typeof Chart === 'undefined') return;
 
@@ -1518,13 +1587,6 @@
         initSparklines(payload.sparklines);
         initHourlyChart(payload.hourlyResponses);
         initDonutChart(payload.accountStatus);
-        initLiveRefresh();
-        if (window.Orbita && window.Orbita.initWorkerRestartButtons) {
-            window.Orbita.initWorkerRestartButtons();
-        }
-        if (liveState) {
-            updateMonitoringControls(liveState);
-        }
     }
 
     var dashboardInitPending = false;

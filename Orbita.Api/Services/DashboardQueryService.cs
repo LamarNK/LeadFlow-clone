@@ -273,6 +273,7 @@ public sealed class DashboardQueryService(
                 w.IsMonitoringActive,
                 w.LastSeenAtUtc,
                 w.IsEnabled,
+                w.IsMonitoringPaused,
                 w.OfficeId,
                 OfficeName = w.Office.Name,
                 w.ActivityPhase,
@@ -341,8 +342,162 @@ public sealed class DashboardQueryService(
                     w.ActivityNextCycleAtUtc,
                     w.ActivityUpdatedAtUtc,
                     WorkerActivityMapper.DeserializeActiveAccounts(w.ActivityActiveAccountsJson)),
-                WorkerActivityMapper.DeserializeActiveAccounts(w.ActivityActiveAccountsJson));
+                WorkerActivityMapper.DeserializeActiveAccounts(w.ActivityActiveAccountsJson),
+                w.IsMonitoringPaused);
         }).ToList();
+    }
+
+    public async Task<WorkersPageDto> GetWorkersPageAsync(
+        OfficeScope scope,
+        Guid? officeFilter = null,
+        int page = 1,
+        int? pageSize = null,
+        string? sort = null,
+        string? dir = null,
+        CancellationToken ct = default)
+    {
+        var nowUtc = DateTime.UtcNow;
+        var todayStart = nowUtc.Date;
+        var normalizedPageSize = WorkerListPaging.NormalizePageSize(pageSize);
+        var (sortColumn, sortDescending) = WorkerListPaging.NormalizeSort(sort, dir);
+
+        var filtered = officeScope
+            .ApplyWorkerFilter(db.Workers.AsNoTracking(), scope, officeFilter)
+            .Where(x => x.MachineName != LeadFlowImportWorker.MachineName);
+
+        var pauseGroups = await filtered
+            .GroupBy(x => x.IsMonitoringPaused)
+            .Select(g => new { Paused = g.Key, Count = g.Count() })
+            .ToListAsync(ct);
+        var totalCount = pauseGroups.Sum(x => x.Count);
+        var pausedCount = pauseGroups.FirstOrDefault(x => x.Paused)?.Count ?? 0;
+        var enabledCount = totalCount - pausedCount;
+        var normalizedPage = WorkerListPaging.NormalizePage(page, normalizedPageSize, totalCount);
+
+        if (totalCount == 0)
+        {
+            return new WorkersPageDto(
+                [],
+                0,
+                normalizedPage,
+                normalizedPageSize,
+                sortColumn,
+                sortDescending ? "desc" : "asc",
+                0,
+                0);
+        }
+
+        var ordered = ApplyWorkerListSort(filtered, sortColumn, sortDescending);
+        var workers = await ordered
+            .Skip((normalizedPage - 1) * normalizedPageSize)
+            .Take(normalizedPageSize)
+            .Select(w => new
+            {
+                w.Id,
+                w.DisplayName,
+                w.MachineName,
+                w.AppVersion,
+                w.MonitoringStatus,
+                w.MonitoringStatusMessage,
+                w.IsMonitoringActive,
+                w.LastSeenAtUtc,
+                w.IsEnabled,
+                w.IsMonitoringPaused,
+                w.OfficeId,
+                OfficeName = w.Office.Name,
+                w.ActivityPhase,
+                w.ActivityMessage,
+                w.ActivityAccountId,
+                w.ActivityAccountName,
+                w.ActivitySubProfileId,
+                w.ActivitySubProfileName,
+                w.ActivityUpdatedAtUtc,
+                w.ActivityNextCycleAtUtc,
+                w.ActivityActiveAccountsJson
+            })
+            .ToListAsync(ct);
+
+        var workerIds = workers.Select(w => w.Id).ToList();
+        var operationalStats = await ComputeWorkerOperationalStatsAsync(workerIds, todayStart, ct);
+
+        var items = workers.Select(w =>
+        {
+            operationalStats.TryGetValue(w.Id, out var op);
+            op ??= WorkerOperationalStats.Empty;
+            return new WorkerListItem(
+                w.Id,
+                w.DisplayName,
+                w.MachineName,
+                w.AppVersion,
+                w.MonitoringStatus,
+                w.MonitoringStatusMessage,
+                w.IsMonitoringActive,
+                WorkerOnlineRules.IsOnline(w.LastSeenAtUtc, nowUtc, connectionRegistry.IsConnected(w.Id)),
+                w.LastSeenAtUtc,
+                op.TotalAccounts,
+                op.TodayResponses,
+                op.TodayDuplicates,
+                op.TodayEventErrors,
+                false,
+                null,
+                w.OfficeId,
+                w.OfficeName,
+                w.IsEnabled,
+                op.ActiveAccounts,
+                WorkerActivityMapper.ToDto(
+                    w.ActivityPhase,
+                    w.ActivityMessage,
+                    w.ActivityAccountId,
+                    w.ActivityAccountName,
+                    w.ActivitySubProfileId,
+                    w.ActivitySubProfileName,
+                    w.ActivityNextCycleAtUtc,
+                    w.ActivityUpdatedAtUtc,
+                    WorkerActivityMapper.DeserializeActiveAccounts(w.ActivityActiveAccountsJson)),
+                WorkerActivityMapper.DeserializeActiveAccounts(w.ActivityActiveAccountsJson),
+                w.IsMonitoringPaused);
+        }).ToList();
+
+        return new WorkersPageDto(
+            items,
+            totalCount,
+            normalizedPage,
+            normalizedPageSize,
+            sortColumn,
+            sortDescending ? "desc" : "asc",
+            enabledCount,
+            pausedCount);
+    }
+
+    private static IQueryable<WorkerEntity> ApplyWorkerListSort(
+        IQueryable<WorkerEntity> query,
+        string sort,
+        bool descending)
+    {
+        return sort.ToLowerInvariant() switch
+        {
+            "activity" => descending
+                ? query.OrderByDescending(x => x.LastSeenAtUtc ?? DateTime.MinValue)
+                    .ThenBy(x => x.DisplayName)
+                    .ThenBy(x => x.Id)
+                : query.OrderBy(x => x.LastSeenAtUtc ?? DateTime.MaxValue)
+                    .ThenBy(x => x.DisplayName)
+                    .ThenBy(x => x.Id),
+            "status" => descending
+                ? query.OrderBy(x => x.IsMonitoringPaused)
+                    .ThenBy(x => x.IsEnabled)
+                    .ThenByDescending(x => x.LastSeenAtUtc)
+                    .ThenBy(x => x.DisplayName)
+                    .ThenBy(x => x.Id)
+                : query.OrderByDescending(x => x.IsMonitoringPaused)
+                    .ThenByDescending(x => x.IsEnabled)
+                    .ThenBy(x => x.LastSeenAtUtc)
+                    .ThenBy(x => x.DisplayName)
+                    .ThenBy(x => x.Id),
+            _ => descending
+                ? query.OrderByDescending(x => x.DisplayName).ThenBy(x => x.Id)
+                : query.OrderBy(x => x.DisplayName).ThenBy(x => x.Id)
+        };
     }
 
     public async Task<WorkerDetail?> GetWorkerDetailAsync(
@@ -473,7 +628,8 @@ public sealed class DashboardQueryService(
             AdsPowerCheck: WorkerConfigService.MapProviderCheck(worker, WorkerBrowserProviderKinds.AdsPower),
             MultiloginCheck: WorkerConfigService.MapProviderCheck(worker, WorkerBrowserProviderKinds.Multilogin),
             LocalChromeCheck: WorkerConfigService.MapProviderCheck(worker, WorkerBrowserProviderKinds.Local),
-            PendingLocalChromeLoginAccountId: localChromeLoginSessions?.GetPendingForWorker(worker.Id)?.AccountId);
+            PendingLocalChromeLoginAccountId: localChromeLoginSessions?.GetPendingForWorker(worker.Id)?.AccountId,
+            IsMonitoringPaused: worker.IsMonitoringPaused);
     }
 
     public async Task<IReadOnlyList<WorkerAccountDto>> GetWorkerAccountsAsync(

@@ -130,7 +130,7 @@
     }
 
     runtime.initAutoFilterSubmit = function initAutoFilterSubmit() {
-        document.querySelectorAll('[data-orbita-collapsible-filters] select, .orbita-filter-panel select').forEach(function (select) {
+        document.querySelectorAll('[data-orbita-collapsible-filters] select, .orbita-filter-panel select, [data-orbita-page-size-form] select').forEach(function (select) {
             if (select.hasAttribute('data-orbita-auto-submit-bound')) return;
             select.setAttribute('data-orbita-auto-submit-bound', '1');
             select.addEventListener('change', function () {

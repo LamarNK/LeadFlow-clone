@@ -1,3 +1,4 @@
+using Orbita.Contracts;
 using Orbita.Web.Models.ViewModels;
 
 namespace Orbita.Web.Services;
@@ -95,6 +96,29 @@ internal static class TableSort
                 "responses" => OrderInt(rows, x => x.Responses, sort.Descending),
                 "duplicates" => OrderInt(rows, x => x.Duplicates, sort.Descending),
                 "errors" => OrderInt(rows, x => x.Errors, sort.Descending),
+                "activity" => OrderDate(rows, x => x.LastActivityUtc, sort.Descending),
+                _ => OrderString(rows, x => x.DisplayName, sort.Descending)
+            };
+        }
+    }
+
+    internal static class DashboardWorkers
+    {
+        public static readonly HashSet<string> Columns = WorkerListPaging.SortColumns;
+
+        public static readonly TableSortState Default = TableSortState.Create(
+            WorkerListPaging.DefaultSort,
+            descending: true);
+
+        public static IEnumerable<DashboardWorkerRowViewModel> Apply(
+            IEnumerable<DashboardWorkerRowViewModel> rows,
+            TableSortState sort)
+        {
+            return sort.Column switch
+            {
+                "status" => sort.Descending
+                    ? rows.OrderBy(x => x.IsMonitoringPaused).ThenBy(x => x.IsEnabled).ThenBy(x => x.IsOnline)
+                    : rows.OrderByDescending(x => x.IsMonitoringPaused).ThenByDescending(x => x.IsEnabled).ThenByDescending(x => x.IsOnline),
                 "activity" => OrderDate(rows, x => x.LastActivityUtc, sort.Descending),
                 _ => OrderString(rows, x => x.DisplayName, sort.Descending)
             };
