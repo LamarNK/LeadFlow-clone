@@ -4,11 +4,18 @@
     var ua = null;
     var uaKey = '';
     var registrationPromise = null;
+    var currentConfig = null;
+    var reconnectTimer = null;
+    var healthTimer = null;
+    var reconnectAttempt = 0;
+    var shuttingDown = false;
     var activeSession = null;
     var activeDirection = '';
     var closeTimer = null;
     var peerConnectionConfig = { iceServers: [], iceTransportPolicy: 'all' };
     var iceGatheringTimeoutMs = 6000;
+    var registrationExpiresSeconds = 120;
+    var registrationHealthIntervalMs = 15000;
     var modal = document.querySelector('[data-orbita-softphone]');
     var targetLabel = document.querySelector('[data-orbita-softphone-target]');
     var statusLabel = document.querySelector('[data-orbita-softphone-status]');
@@ -150,25 +157,65 @@
             try { error = await response.json(); } catch (e) { }
             throw new Error((error && error.error) || 'Для вашего аккаунта браузерная телефония не настроена.');
         }
-        return response.json();
+        currentConfig = await response.json();
+        return currentConfig;
+    }
+
+    function clearReconnectTimer() {
+        if (!reconnectTimer) return;
+        window.clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+    }
+
+    function isUserAgentHealthy(agent) {
+        return !!(agent
+            && agent.isConnected
+            && agent.isConnected()
+            && agent.isRegistered
+            && agent.isRegistered());
+    }
+
+    function disposeUserAgent(agent) {
+        if (!agent || ua !== agent) return;
+        registrationPromise = null;
+        ua = null;
+        uaKey = '';
+        try { agent.stop(); } catch (e) { }
     }
 
     function stopUserAgent() {
-        registrationPromise = null;
-        if (ua) {
-            try { ua.stop(); } catch (e) { }
-        }
-        ua = null;
-        uaKey = '';
+        clearReconnectTimer();
+        reconnectAttempt = 0;
+        if (ua) disposeUserAgent(ua);
+    }
+
+    function scheduleRegistrationRecovery(config, failedAgent) {
+        if (shuttingDown || !config || reconnectTimer) return;
+        if (failedAgent && ua !== failedAgent) return;
+
+        var delay = Math.min(30000, 1000 * Math.pow(2, Math.min(reconnectAttempt, 5)));
+        reconnectAttempt += 1;
+        reconnectTimer = window.setTimeout(function () {
+            reconnectTimer = null;
+            if (shuttingDown) return;
+            if (failedAgent && ua !== failedAgent) return;
+            if (ua) disposeUserAgent(ua);
+            ensureRegistered(config).catch(function () {
+                scheduleRegistrationRecovery(config, ua);
+            });
+        }, delay);
     }
 
     function ensureRegistered(config) {
+        currentConfig = config;
         peerConnectionConfig = buildPeerConnectionConfig(config);
         var key = [config.webSocketUrl, config.sipUri, config.authorizationUsername].join('|');
-        if (ua && uaKey === key && ua.isRegistered && ua.isRegistered()) {
+        if (ua && uaKey === key && isUserAgentHealthy(ua)) {
             return Promise.resolve(ua);
         }
-        if (ua && uaKey !== key) stopUserAgent();
+        // Never leave an unregistered UA running in the background. JsSIP would keep
+        // reconnecting it and multiple agents would replace the single AOR contact.
+        if (ua) disposeUserAgent(ua);
         if (registrationPromise) return registrationPromise;
         if (!window.JsSIP || !window.JsSIP.WebSocketInterface || !window.JsSIP.UA) {
             return Promise.reject(new Error('SIP-клиент не загрузился. Обновите страницу.'));
@@ -176,14 +223,19 @@
 
         registrationPromise = new Promise(function (resolve, reject) {
             var settled = false;
+            var agent = null;
             var timeout = window.setTimeout(function () {
                 if (settled) return;
                 settled = true;
                 registrationPromise = null;
+                scheduleRegistrationRecovery(config, agent);
                 reject(new Error('SIP-линия не ответила за 15 секунд.'));
             }, 15000);
 
             function succeed() {
+                if (ua !== agent) return;
+                reconnectAttempt = 0;
+                clearReconnectTimer();
                 if (settled) return;
                 settled = true;
                 window.clearTimeout(timeout);
@@ -192,6 +244,8 @@
             }
 
             function fail(event) {
+                if (ua !== agent) return;
+                scheduleRegistrationRecovery(config, agent);
                 if (settled) return;
                 settled = true;
                 window.clearTimeout(timeout);
@@ -202,19 +256,24 @@
 
             try {
                 var socket = new window.JsSIP.WebSocketInterface(config.webSocketUrl);
-                ua = new window.JsSIP.UA({
+                agent = new window.JsSIP.UA({
                     sockets: [socket],
                     uri: config.sipUri,
                     authorization_user: config.authorizationUsername,
                     password: config.password,
                     register: true,
+                    register_expires: registrationExpiresSeconds,
+                    connection_recovery_min_interval: 1,
+                    connection_recovery_max_interval: 10,
                     session_timers: false
                 });
+                ua = agent;
                 uaKey = key;
-                ua.on('registered', succeed);
-                ua.on('registrationFailed', fail);
-                ua.on('disconnected', fail);
-                ua.on('newRTCSession', function (event) {
+                agent.on('registered', succeed);
+                agent.on('registrationFailed', fail);
+                agent.on('disconnected', fail);
+                agent.on('unregistered', fail);
+                agent.on('newRTCSession', function (event) {
                     if (event.originator !== 'remote') return;
                     if (activeSession) {
                         event.session.terminate({ status_code: 486, reason_phrase: 'Busy Here' });
@@ -229,7 +288,7 @@
                     showIncomingControls();
                     attachSession(session, 'incoming');
                 });
-                ua.start();
+                agent.start();
             } catch (error) {
                 fail({ cause: error && error.message });
             }
@@ -488,12 +547,40 @@
     async function initializeIncomingLine() {
         try {
             var config = await loadConfig();
+            startRegistrationWatchdog();
             await ensureRegistered(config);
         } catch (error) {
             // У части ролей и окружений браузерная телефония не настроена.
             // Исходящий звонок покажет ошибку пользователю при явном действии.
         }
     }
+
+    async function checkRegistrationHealth() {
+        if (shuttingDown || !currentConfig || registrationPromise || isUserAgentHealthy(ua)) return;
+        try {
+            await ensureRegistered(currentConfig);
+        } catch (error) {
+            scheduleRegistrationRecovery(currentConfig, ua);
+        }
+    }
+
+    function startRegistrationWatchdog() {
+        if (healthTimer) return;
+        healthTimer = window.setInterval(checkRegistrationHealth, registrationHealthIntervalMs);
+    }
+
+    document.addEventListener('visibilitychange', function () {
+        if (!document.hidden) checkRegistrationHealth();
+    });
+    window.addEventListener('focus', checkRegistrationHealth);
+    window.addEventListener('online', checkRegistrationHealth);
+    window.addEventListener('pageshow', checkRegistrationHealth);
+    window.addEventListener('beforeunload', function () {
+        shuttingDown = true;
+        if (healthTimer) window.clearInterval(healthTimer);
+        healthTimer = null;
+        stopUserAgent();
+    });
 
     initializeIncomingLine();
 })();

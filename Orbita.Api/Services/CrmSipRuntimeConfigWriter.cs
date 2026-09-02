@@ -562,6 +562,9 @@ public sealed class CrmSipRuntimeConfigWriter(IOptions<CrmSipRuntimeOptions> con
             max_contacts=1
             remove_existing=yes
             support_path=yes
+            default_expiration=120
+            minimum_expiration=60
+            maximum_expiration=180
             ; JsSIP registers successfully over WSS but does not answer the
             ; out-of-dialog OPTIONS probes used by PJSIP qualification. Keeping
             ; qualification enabled marks a healthy browser contact Unavailable

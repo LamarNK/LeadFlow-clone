@@ -106,6 +106,9 @@ public sealed class CrmTelephonyServiceTests
             Assert.Contains("callerid=201 <201>", runtimeConfig, StringComparison.Ordinal);
             Assert.Contains("qualify_frequency=0", runtimeConfig, StringComparison.Ordinal);
             Assert.DoesNotContain("qualify_frequency=30", runtimeConfig, StringComparison.Ordinal);
+            Assert.Contains("default_expiration=120", runtimeConfig, StringComparison.Ordinal);
+            Assert.Contains("minimum_expiration=60", runtimeConfig, StringComparison.Ordinal);
+            Assert.Contains("maximum_expiration=180", runtimeConfig, StringComparison.Ordinal);
 
             var (sameEndpoint, sameEndpointError) = await sut.GetOrProvisionWebRtcEndpointAsync(officeId, userId);
             Assert.NotNull(sameEndpoint);
