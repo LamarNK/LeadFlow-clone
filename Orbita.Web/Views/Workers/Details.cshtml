@@ -66,8 +66,8 @@
                 @if (!Model.IsEnabled)
                 {
                     <span class="status-dot offline">
-                        <i class="fa-solid fa-circle-pause status-dot-icon" aria-hidden="true"></i>
-                        Приостановлен
+                        <i class="fa-solid fa-circle status-dot-icon" aria-hidden="true"></i>
+                        Отключён
                     </span>
                 }
                 else
@@ -77,6 +77,9 @@
                         @(Model.IsOnline ? "Онлайн" : "Оффлайн")
                     </span>
                 }
+                <span class="workers-status-badge workers-status-badge--paused" data-worker-pause-badge @(Model.IsMonitoringPaused ? null : "hidden")>
+                    Пауза мониторинга
+                </span>
             </div>
             <p class="worker-detail-sub">
                 Последняя активность:
@@ -120,28 +123,22 @@
                         <i class="fa-regular fa-pen-to-square" aria-hidden="true"></i>
                         Переименовать
                     </button>
-                    @if (Model.IsEnabled)
-                    {
-                        <form asp-action="Disable" method="post" class="settings-inline-form">
-                            @Html.AntiForgeryToken()
-                            <input type="hidden" name="workerId" value="@Model.WorkerId" />
-                            <button type="submit" class="row-menu-item">
-                                <i class="fa-solid fa-circle-pause" aria-hidden="true"></i>
-                                Приостановить
-                            </button>
-                        </form>
-                    }
-                    else
-                    {
-                        <form asp-action="Enable" method="post" class="settings-inline-form">
-                            @Html.AntiForgeryToken()
-                            <input type="hidden" name="workerId" value="@Model.WorkerId" />
-                            <button type="submit" class="row-menu-item">
-                                <i class="fa-solid fa-circle-play" aria-hidden="true"></i>
-                                Включить
-                            </button>
-                        </form>
-                    }
+                    <form asp-action="Disable" method="post" class="settings-inline-form" data-worker-pause-form @(Model.IsMonitoringPaused ? "hidden" : null)>
+                        @Html.AntiForgeryToken()
+                        <input type="hidden" name="workerId" value="@Model.WorkerId" />
+                        <button type="submit" class="row-menu-item">
+                            <i class="fa-solid fa-circle-pause" aria-hidden="true"></i>
+                            Пауза мониторинга
+                        </button>
+                    </form>
+                    <form asp-action="Enable" method="post" class="settings-inline-form" data-worker-resume-form @(Model.IsMonitoringPaused ? null : "hidden")>
+                        @Html.AntiForgeryToken()
+                        <input type="hidden" name="workerId" value="@Model.WorkerId" />
+                        <button type="submit" class="row-menu-item">
+                            <i class="fa-solid fa-circle-play" aria-hidden="true"></i>
+                            Возобновить
+                        </button>
+                    </form>
                     <form asp-action="RotateKey" method="post" class="settings-inline-form" onsubmit="return confirm('Перевыпустить API-ключ? Старый ключ перестанет работать.');">
                         @Html.AntiForgeryToken()
                         <input type="hidden" name="workerId" value="@Model.WorkerId" />

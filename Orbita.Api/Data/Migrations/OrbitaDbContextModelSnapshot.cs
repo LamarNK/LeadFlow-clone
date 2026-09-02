@@ -3100,6 +3100,11 @@ namespace Orbita.Api.Data.Migrations
                     b.Property<bool>("IsMonitoringActive")
                         .HasColumnType("boolean");
 
+                    b.Property<bool>("IsMonitoringPaused")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
                     b.Property<double?>("LastCpuPercent")
                         .HasColumnType("double precision");
 

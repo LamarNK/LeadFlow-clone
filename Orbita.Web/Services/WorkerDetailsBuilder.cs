@@ -88,6 +88,7 @@ internal static class WorkerDetailsBuilder
             MachineName = worker.MachineName,
             IsOnline = worker.IsOnline,
             IsEnabled = worker.IsEnabled,
+            IsMonitoringPaused = worker.IsMonitoringPaused,
             LastActivityUtc = lastActivity,
             UpdatedAtUtc = DateTime.UtcNow,
             KpiCards = BuildKpiCards(worker.Id, activeAccounts, totalAccounts, activePct, responses, duplicates, errors, uptime),

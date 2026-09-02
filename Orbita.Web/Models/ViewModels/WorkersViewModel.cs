@@ -52,6 +52,7 @@ public sealed class WorkerRowViewModel
     public string? LatestReleaseVersion { get; init; }
     public string OfficeName { get; init; } = string.Empty;
     public bool IsEnabled { get; init; } = true;
+    public bool IsMonitoringPaused { get; init; }
     public string? CurrentActivityLabel { get; init; }
     public string CurrentActivityTone { get; init; } = "muted";
     public bool IsActivityLive { get; init; }
@@ -210,6 +211,7 @@ public sealed class WorkerDetailsViewModel
     public string MachineName { get; init; } = string.Empty;
     public bool IsOnline { get; init; }
     public bool IsEnabled { get; init; } = true;
+    public bool IsMonitoringPaused { get; init; }
     public DateTime? LastActivityUtc { get; init; }
     public DateTime UpdatedAtUtc { get; init; } = DateTime.UtcNow;
     public IReadOnlyList<DashboardKpiCardViewModel> KpiCards { get; init; } = [];

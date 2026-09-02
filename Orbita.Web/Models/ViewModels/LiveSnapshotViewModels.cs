@@ -25,6 +25,7 @@ public sealed class WorkerDetailsLiveSnapshotViewModel
     public DateTime UpdatedAtUtc { get; init; }
     public bool IsOnline { get; init; }
     public bool IsEnabled { get; init; } = true;
+    public bool IsMonitoringPaused { get; init; }
     public DateTime? LastActivityUtc { get; init; }
     public double? CpuPercent { get; init; }
     public double? RamPercent { get; init; }

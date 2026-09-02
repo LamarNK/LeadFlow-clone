@@ -11,4 +11,6 @@ public sealed class DashboardLiveSnapshotViewModel
     public int EnabledWorkersCount { get; init; }
     public int DisabledWorkersCount { get; init; }
     public bool ShowWorkersMonitoringControls { get; init; }
+    public PaginationViewModel Pagination { get; init; } = new() { PageSize = ListPageSizeDefaults.Dashboard };
+    public TableSortState Sort { get; init; } = TableSortState.Create("activity", descending: true);
 }

@@ -27,30 +27,36 @@ public sealed class WorkerScheduleService(
         var officesToReset = new HashSet<Guid>();
         foreach (var worker in workers)
         {
-            var shouldBeEnabled = WorkerScheduleRules.IsActiveNow(
+            var shouldBeActive = WorkerScheduleRules.IsActiveNow(
                 worker.AutoScheduleEnabled,
                 worker.AutoScheduleDays,
                 worker.AutoScheduleFromLocalTime,
                 worker.AutoScheduleToLocalTime,
                 nowUtc);
+            var shouldBePaused = !shouldBeActive;
 
-            if (worker.IsEnabled == shouldBeEnabled)
+            if (worker.IsMonitoringPaused == shouldBePaused)
             {
                 continue;
             }
 
-            if (shouldBeEnabled)
+            if (!shouldBePaused)
             {
-                var otherEnabled = await db.Workers
-                    .CountAsync(x => x.OfficeId == worker.OfficeId && x.IsEnabled && x.Id != worker.Id, ct)
+                var otherRunning = await db.Workers
+                    .CountAsync(
+                        x => x.OfficeId == worker.OfficeId
+                            && x.IsEnabled
+                            && !x.IsMonitoringPaused
+                            && x.Id != worker.Id,
+                        ct)
                     .ConfigureAwait(false);
-                if (otherEnabled == 0)
+                if (otherRunning == 0)
                 {
                     officesToReset.Add(worker.OfficeId);
                 }
             }
 
-            worker.IsEnabled = shouldBeEnabled;
+            worker.IsMonitoringPaused = shouldBePaused;
             changed.Add(worker);
         }
 
@@ -68,14 +74,7 @@ public sealed class WorkerScheduleService(
 
         foreach (var worker in changed)
         {
-            if (worker.IsEnabled)
-            {
-                await workerPushNotifier.PushConfigChangedAsync(worker.Id, ct).ConfigureAwait(false);
-            }
-            else
-            {
-                await workerPushNotifier.TryPushCommandAsync(worker.Id, WorkerCommands.Pause, ct).ConfigureAwait(false);
-            }
+            await workerPushNotifier.PushConfigChangedAsync(worker.Id, ct).ConfigureAwait(false);
 
             panelRealtime.Notify(
                 [PanelChangeKind.Workers, PanelChangeKind.Dashboard],

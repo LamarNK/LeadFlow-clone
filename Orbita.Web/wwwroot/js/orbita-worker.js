@@ -810,6 +810,20 @@
             el.innerHTML = '<i class="fa-solid fa-circle status-dot-icon" aria-hidden="true"></i>' +
                 (online ? 'Онлайн' : 'Оффлайн');
         });
+        updateMonitoringPause(snapshot);
+    }
+
+    function updateMonitoringPause(snapshot) {
+        var paused = !!snapshot.isMonitoringPaused;
+        document.querySelectorAll('[data-worker-pause-badge]').forEach(function (el) {
+            el.hidden = !paused;
+        });
+        document.querySelectorAll('[data-worker-pause-form]').forEach(function (el) {
+            el.hidden = paused;
+        });
+        document.querySelectorAll('[data-worker-resume-form]').forEach(function (el) {
+            el.hidden = !paused;
+        });
     }
 
     function meterTone(percent) {

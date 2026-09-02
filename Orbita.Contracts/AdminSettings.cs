@@ -81,7 +81,8 @@ public sealed record AdminWorkerListItemDto(
     bool UpdateAvailable = false,
     string? LatestReleaseVersion = null,
     Guid OfficeId = default,
-    string OfficeName = "");
+    string OfficeName = "",
+    bool IsMonitoringPaused = false);
 
 public sealed record UpdateAdminWorkerRequest(string DisplayName);
 
@@ -141,6 +142,8 @@ public static class PanelAuditActions
     public const string WorkerRenamed = "worker.renamed";
     public const string WorkerDisabled = "worker.disabled";
     public const string WorkerEnabled = "worker.enabled";
+    public const string WorkerMonitoringPaused = "worker.monitoring_paused";
+    public const string WorkerMonitoringResumed = "worker.monitoring_resumed";
     public const string WorkersMonitoringDisabledAll = "workers.monitoring_disabled_all";
     public const string WorkersMonitoringEnabledAll = "workers.monitoring_enabled_all";
     public const string WorkerKeyRotated = "worker.key_rotated";

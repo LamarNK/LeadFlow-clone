@@ -108,10 +108,12 @@
         var detailsUrl = workerDetailsUrl(w.id);
         var items = '<a class="row-menu-item" href="' + shared.escapeHtml(detailsUrl) + '"><i class="fa-regular fa-eye" aria-hidden="true"></i>Открыть</a>';
         if (w.isEnabled) {
-            items += '<button type="button" class="row-menu-item" data-worker-restart data-worker-id="' + shared.escapeHtml(w.id) + '"><i class="fa-solid fa-rotate-right" aria-hidden="true"></i>Перезапустить</button>' +
-                '<form action="/Workers/Disable" method="post" class="settings-inline-form"><input type="hidden" name="__RequestVerificationToken" value="' + shared.escapeHtml(token) + '" /><input type="hidden" name="workerId" value="' + shared.escapeHtml(w.id) + '" /><input type="hidden" name="returnTo" value="index" /><button type="submit" class="row-menu-item"><i class="fa-solid fa-circle-pause" aria-hidden="true"></i>Приостановить</button></form>';
+            items += '<button type="button" class="row-menu-item" data-worker-restart data-worker-id="' + shared.escapeHtml(w.id) + '"><i class="fa-solid fa-rotate-right" aria-hidden="true"></i>Перезапустить</button>';
+        }
+        if (!w.isMonitoringPaused) {
+            items += '<form action="/Workers/Disable" method="post" class="settings-inline-form"><input type="hidden" name="__RequestVerificationToken" value="' + shared.escapeHtml(token) + '" /><input type="hidden" name="workerId" value="' + shared.escapeHtml(w.id) + '" /><input type="hidden" name="returnTo" value="index" /><button type="submit" class="row-menu-item"><i class="fa-solid fa-circle-pause" aria-hidden="true"></i>Пауза мониторинга</button></form>';
         } else {
-            items += '<form action="/Workers/Enable" method="post" class="settings-inline-form"><input type="hidden" name="__RequestVerificationToken" value="' + shared.escapeHtml(token) + '" /><input type="hidden" name="workerId" value="' + shared.escapeHtml(w.id) + '" /><input type="hidden" name="returnTo" value="index" /><button type="submit" class="row-menu-item"><i class="fa-solid fa-circle-play" aria-hidden="true"></i>Включить</button></form>';
+            items += '<form action="/Workers/Enable" method="post" class="settings-inline-form"><input type="hidden" name="__RequestVerificationToken" value="' + shared.escapeHtml(token) + '" /><input type="hidden" name="workerId" value="' + shared.escapeHtml(w.id) + '" /><input type="hidden" name="returnTo" value="index" /><button type="submit" class="row-menu-item"><i class="fa-solid fa-circle-play" aria-hidden="true"></i>Возобновить</button></form>';
         }
         items += '<a class="row-menu-item" href="' + shared.escapeHtml(detailsUrl + '#worker-settings') + '"><i class="fa-regular fa-pen-to-square" aria-hidden="true"></i>Настройки</a>';
         if (shared.getLiveAttr('data-show-admin-logs') === 'true') {
@@ -129,24 +131,27 @@
         tbody.innerHTML = (workers || []).map(function (w) {
             var detailsUrl = workerDetailsUrl(w.id);
             var statusClass = !w.isEnabled ? ' offline' : (w.isOnline ? '' : ' offline');
-            var statusText = !w.isEnabled ? 'Приостановлен' : (w.isOnline ? 'Онлайн' : 'Оффлайн');
+            var statusText = !w.isEnabled ? 'Отключён' : (w.isOnline ? 'Онлайн' : 'Оффлайн');
             var iso = w.lastActivityUtc || '';
             var timeHtml = iso
                 ? '<time data-orbita-utc="' + shared.escapeHtml(iso) + '" data-orbita-format="activity"></time>'
                 : '—';
             var disabledRow = !w.isEnabled ? ' workers-row--disabled' : '';
+            var pausedRow = w.isMonitoringPaused ? ' workers-row--paused' : '';
             var updateBadge = w.updateAvailable
                 ? '<span class="workers-update-badge"' + (w.latestReleaseVersion ? ' title="Доступна версия ' + shared.escapeHtml(w.latestReleaseVersion) + '"' : '') + '>Обновление</span>'
                 : '';
             var pausedBadge = !w.isEnabled
-                ? '<span class="workers-status-badge workers-status-badge--disabled">Приостановлен</span>'
-                : '';
+                ? '<span class="workers-status-badge workers-status-badge--disabled">Отключён</span>'
+                : (w.isMonitoringPaused
+                    ? '<span class="workers-status-badge workers-status-badge--paused">Пауза мониторинга</span>'
+                    : '');
 
             var officeCell = shared.getLiveAttr('data-show-office-column') === 'true'
                 ? '<td data-label="Офис">' + shared.escapeHtml(w.officeName || '—') + '</td>'
                 : '';
 
-            return '<tr class="workers-row' + disabledRow + '" data-href="' + shared.escapeHtml(detailsUrl) + '" data-worker-id="' + shared.escapeHtml(w.id) + '">' +
+            return '<tr class="workers-row' + disabledRow + pausedRow + '" data-href="' + shared.escapeHtml(detailsUrl) + '" data-worker-id="' + shared.escapeHtml(w.id) + '">' +
                 '<td class="cell-name" data-label="Воркер">' + renderWorkerNameCell(w) + pausedBadge + updateBadge + '</td>' +
                 officeCell +
                 '<td data-label="Статус"><span class="status-dot' + statusClass + '"><i class="fa-solid fa-circle status-dot-icon" aria-hidden="true"></i>' + statusText + '</span></td>' +

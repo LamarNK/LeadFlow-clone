@@ -15,10 +15,17 @@ public sealed class DashboardController(
     OrbitaAuthService auth) : Controller
 {
     [HttpGet]
-    public async Task<IActionResult> Index(string? from, string? to, CancellationToken ct)
+    public async Task<IActionResult> Index(
+        string? from,
+        string? to,
+        int page = 1,
+        int? pageSize = null,
+        string? sort = null,
+        string? dir = null,
+        CancellationToken ct = default)
     {
         var period = DashboardPeriod.Parse(from, to, BrowserTimeZone.Resolve(HttpContext));
-        var model = await dashboard.GetDashboardAsync(period, ct);
+        var model = await dashboard.GetDashboardAsync(period, page, pageSize, sort, dir, ct);
         if (!string.IsNullOrWhiteSpace(model.ErrorMessage) && IsApiSessionMissing())
         {
             await auth.SignOutAsync(ct);
@@ -33,10 +40,17 @@ public sealed class DashboardController(
         || session.Token.Count(c => c == '.') < 2;
 
     [HttpGet]
-    public async Task<IActionResult> Snapshot(string? from, string? to, CancellationToken ct)
+    public async Task<IActionResult> Snapshot(
+        string? from,
+        string? to,
+        int page = 1,
+        int? pageSize = null,
+        string? sort = null,
+        string? dir = null,
+        CancellationToken ct = default)
     {
         var period = DashboardPeriod.Parse(from, to, BrowserTimeZone.Resolve(HttpContext));
-        var model = await dashboard.GetDashboardAsync(period, ct);
+        var model = await dashboard.GetDashboardAsync(period, page, pageSize, sort, dir, ct);
         if (!string.IsNullOrWhiteSpace(model.ErrorMessage))
         {
             return StatusCode(StatusCodes.Status503ServiceUnavailable, new { error = model.ErrorMessage });
@@ -52,7 +66,9 @@ public sealed class DashboardController(
             Charts = model.Charts,
             EnabledWorkersCount = model.EnabledWorkersCount,
             DisabledWorkersCount = model.DisabledWorkersCount,
-            ShowWorkersMonitoringControls = model.ShowWorkersMonitoringControls
+            ShowWorkersMonitoringControls = model.ShowWorkersMonitoringControls,
+            Pagination = model.Pagination,
+            Sort = model.Sort
         });
     }
 
@@ -69,8 +85,8 @@ public sealed class DashboardController(
         return Ok(new
         {
             message = result.UpdatedCount > 0
-                ? $"Мониторинг включён на {result.UpdatedCount} воркерах."
-                : "Все воркеры уже были включены.",
+                ? $"Мониторинг возобновлён на {result.UpdatedCount} воркерах."
+                : "Мониторинг уже был активен на всех воркерах.",
             result
         });
     }
@@ -88,8 +104,8 @@ public sealed class DashboardController(
         return Ok(new
         {
             message = result.UpdatedCount > 0
-                ? $"Мониторинг остановлен на {result.UpdatedCount} воркерах."
-                : "Все воркеры уже были приостановлены.",
+                ? $"Мониторинг поставлен на паузу на {result.UpdatedCount} воркерах."
+                : "Мониторинг уже был на паузе на всех воркерах.",
             result
         });
     }
@@ -100,8 +116,8 @@ public sealed class DashboardController(
     {
         var (success, error) = await workers.SetWorkerEnabledAsync(workerId, true, ct);
         return success
-            ? Ok(new { message = "Воркер включён." })
-            : BadRequest(new { error = error ?? "Не удалось включить воркер." });
+            ? Ok(new { message = "Мониторинг возобновлён." })
+            : BadRequest(new { error = error ?? "Не удалось возобновить мониторинг." });
     }
 
     [HttpPost]
@@ -110,7 +126,7 @@ public sealed class DashboardController(
     {
         var (success, error) = await workers.SetWorkerEnabledAsync(workerId, false, ct);
         return success
-            ? Ok(new { message = "Воркер приостановлен." })
-            : BadRequest(new { error = error ?? "Не удалось приостановить воркер." });
+            ? Ok(new { message = "Мониторинг поставлен на паузу." })
+            : BadRequest(new { error = error ?? "Не удалось поставить мониторинг на паузу." });
     }
 }

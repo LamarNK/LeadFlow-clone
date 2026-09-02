@@ -31,15 +31,12 @@
                 <h1 class="orbita-browser-monitor-page__title">Активные браузеры</h1>
                 <p class="orbita-browser-monitor-page__subtitle">
                     @Model.WorkerName — только открытые на воркере сессии
-                    @if (!Model.IsEnabled)
+                    <span class="status-dot @(Model.IsOnline ? "" : "offline")">
+                        @(Model.IsOnline ? "Онлайн" : "Оффлайн")
+                    </span>
+                    @if (Model.IsMonitoringPaused)
                     {
-                        <span class="status-dot offline">Приостановлен</span>
-                    }
-                    else
-                    {
-                        <span class="status-dot @(Model.IsOnline ? "" : "offline")">
-                            @(Model.IsOnline ? "Онлайн" : "Оффлайн")
-                        </span>
+                        <span class="workers-status-badge workers-status-badge--paused">Пауза мониторинга</span>
                     }
                 </p>
             </div>

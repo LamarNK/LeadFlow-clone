@@ -21,6 +21,9 @@ public sealed class DashboardViewModel
     public int EnabledWorkersCount { get; init; }
     public int DisabledWorkersCount { get; init; }
     public bool ShowWorkersMonitoringControls { get; init; }
+    public PaginationViewModel Pagination { get; init; } = new() { PageSize = ListPageSizeDefaults.Dashboard };
+    public TableSortState Sort { get; init; } = TableSortState.Create("activity", descending: true);
+    public int TimeZoneOffsetMinutes { get; init; }
 }
 
 public sealed class DashboardKpiCardViewModel
@@ -48,6 +51,7 @@ public sealed class DashboardWorkerRowViewModel
     public string MachineName { get; init; } = string.Empty;
     public bool IsOnline { get; init; }
     public bool IsEnabled { get; init; } = true;
+    public bool IsMonitoringPaused { get; init; }
     public int ActiveAccounts { get; init; }
     public int TotalAccounts { get; init; }
     public int Responses { get; init; }

@@ -133,7 +133,8 @@ public sealed class WorkerConfigService(
             worker.LocalChromeEnabled,
             ToPendingCheck(worker),
             ToPendingSync(worker),
-            pendingLocalChromeLogin);
+            pendingLocalChromeLogin,
+            worker.IsMonitoringPaused);
     }
 
     public async Task<bool> SyncAccountsAsync(

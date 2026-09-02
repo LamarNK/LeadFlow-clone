@@ -6,6 +6,7 @@ public static class ListPageSizeDefaults
 
     public const int Accounts = 10;
     public const int Workers = 12;
+    public const int Dashboard = 25;
     public const int Responses = 10;
     public const int Events = 10;
     public const int Errors = 10;

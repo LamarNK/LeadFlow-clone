@@ -597,6 +597,7 @@ public sealed class WorkersService(
             LatestReleaseVersion = w.LatestReleaseVersion,
             OfficeName = w.OfficeName,
             IsEnabled = w.IsEnabled,
+            IsMonitoringPaused = w.IsMonitoringPaused,
             CurrentActivityLabel = activity.Label,
             CurrentActivityTone = activity.Tone,
             IsActivityLive = activity.IsLive
@@ -659,7 +660,7 @@ public sealed class WorkersService(
         var unchanged = 0;
         foreach (var worker in workers)
         {
-            if (worker.IsEnabled == enabled)
+            if (worker.IsMonitoringPaused == !enabled)
             {
                 unchanged++;
                 continue;

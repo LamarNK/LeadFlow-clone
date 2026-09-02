@@ -2675,6 +2675,10 @@
     opacity: 0.72;
 }
 
+.data-table--workers tbody tr.workers-row--paused {
+    opacity: 0.9;
+}
+
 .workers-status-badge {
     display: inline-flex;
     align-items: center;
@@ -2689,6 +2693,11 @@
 .workers-status-badge--disabled {
     background: rgba(239, 68, 68, 0.12);
     color: #b91c1c;
+}
+
+.workers-status-badge--paused {
+    background: rgba(217, 119, 6, 0.14);
+    color: #b45309;
 }
 
 .row-menu-dropdown--workers {

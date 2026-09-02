@@ -124,7 +124,11 @@ public sealed record WorkerConfigDto(
     bool LocalChromeEnabled = true,
     WorkerPendingBrowserProviderCheckDto? PendingProviderCheck = null,
     WorkerPendingBrowserProviderSyncDto? PendingProviderSync = null,
-    WorkerPendingLocalChromeLoginDto? PendingLocalChromeLogin = null)
+    WorkerPendingLocalChromeLoginDto? PendingLocalChromeLogin = null,
+    /// <summary>
+    /// Пауза основного мониторинга/парсинга откликов. Воркер остаётся авторизованным.
+    /// </summary>
+    bool IsMonitoringPaused = false)
 {
     public bool ShouldSyncAdsPowerCatalog => AdsPowerEnabled;
 
