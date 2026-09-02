@@ -1485,8 +1485,17 @@
     }
 
     function initDashboardAll() {
-        if (typeof Chart === 'undefined') return;
         if (!getLiveRoot()) return;
+
+        // Worker controls must not depend on Chart.js: with client-side page
+        // navigation the dashboard markup can appear before chart scripts do.
+        initDashboardWorkerToolbar();
+        initDashboardRowMenus();
+        initDashboardRowNavigation();
+        initDashboardMonitoringButtons();
+        initDashboardWorkerToggleButtons();
+
+        if (typeof Chart === 'undefined') return;
 
         destroyAllCharts();
 
@@ -1499,14 +1508,9 @@
         initHourlyChart(payload.hourlyResponses);
         initDonutChart(payload.accountStatus);
         initLiveRefresh();
-        initDashboardRowMenus();
-        initDashboardRowNavigation();
         if (window.Orbita && window.Orbita.initWorkerRestartButtons) {
             window.Orbita.initWorkerRestartButtons();
         }
-        initDashboardMonitoringButtons();
-        initDashboardWorkerToggleButtons();
-        initDashboardWorkerToolbar();
         if (liveState) {
             updateMonitoringControls(liveState);
         }
