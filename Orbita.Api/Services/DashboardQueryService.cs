@@ -477,49 +477,34 @@ public sealed class DashboardQueryService(
     {
         if (string.Equals(sort, "responses", StringComparison.OrdinalIgnoreCase))
         {
-            var responseCounts = db.CandidateResponses
-                .AsNoTracking()
-                .Where(x => x.WorkerId != null
-                    && x.CollectedAt >= todayStartUtc
-                    && query.Any(worker => worker.Id == x.WorkerId.Value))
-                .GroupBy(x => x.WorkerId!.Value)
-                .Select(g => new { WorkerId = g.Key, Count = g.Count() });
-
             return descending
-                ? from worker in query
-                  join response in responseCounts on worker.Id equals response.WorkerId into responses
-                  from response in responses.DefaultIfEmpty()
-                  orderby response == null ? 0 : response.Count descending, worker.DisplayName, worker.Id
-                  select worker
-                : from worker in query
-                  join response in responseCounts on worker.Id equals response.WorkerId into responses
-                  from response in responses.DefaultIfEmpty()
-                  orderby response == null ? 0 : response.Count, worker.DisplayName, worker.Id
-                  select worker;
+                ? query.OrderByDescending(worker => db.CandidateResponses.Count(response =>
+                    response.WorkerId == worker.Id && response.CollectedAt >= todayStartUtc))
+                    .ThenBy(worker => worker.DisplayName)
+                    .ThenBy(worker => worker.Id)
+                : query.OrderBy(worker => db.CandidateResponses.Count(response =>
+                    response.WorkerId == worker.Id && response.CollectedAt >= todayStartUtc))
+                    .ThenBy(worker => worker.DisplayName)
+                    .ThenBy(worker => worker.Id);
         }
 
         if (string.Equals(sort, "errors", StringComparison.OrdinalIgnoreCase))
         {
-            var errorCounts = db.WorkerEvents
-                .AsNoTracking()
-                .Where(x => !x.IsDismissed
-                    && x.CreatedAtUtc >= todayStartUtc
-                    && (x.Level == "Error" || x.Level == "Warning")
-                    && query.Any(worker => worker.Id == x.WorkerId))
-                .GroupBy(x => x.WorkerId)
-                .Select(g => new { WorkerId = g.Key, Count = g.Count() });
-
             return descending
-                ? from worker in query
-                  join error in errorCounts on worker.Id equals error.WorkerId into errors
-                  from error in errors.DefaultIfEmpty()
-                  orderby error == null ? 0 : error.Count descending, worker.DisplayName, worker.Id
-                  select worker
-                : from worker in query
-                  join error in errorCounts on worker.Id equals error.WorkerId into errors
-                  from error in errors.DefaultIfEmpty()
-                  orderby error == null ? 0 : error.Count, worker.DisplayName, worker.Id
-                  select worker;
+                ? query.OrderByDescending(worker => db.WorkerEvents.Count(error =>
+                    error.WorkerId == worker.Id
+                    && !error.IsDismissed
+                    && error.CreatedAtUtc >= todayStartUtc
+                    && (error.Level == "Error" || error.Level == "Warning")))
+                    .ThenBy(worker => worker.DisplayName)
+                    .ThenBy(worker => worker.Id)
+                : query.OrderBy(worker => db.WorkerEvents.Count(error =>
+                    error.WorkerId == worker.Id
+                    && !error.IsDismissed
+                    && error.CreatedAtUtc >= todayStartUtc
+                    && (error.Level == "Error" || error.Level == "Warning")))
+                    .ThenBy(worker => worker.DisplayName)
+                    .ThenBy(worker => worker.Id);
         }
 
         return sort.ToLowerInvariant() switch

@@ -1,3 +1,4 @@
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using Orbita.Api.Data;
@@ -175,7 +176,9 @@ public sealed class DashboardQueryServiceWorkersPageTests
     public async Task GetWorkersPageAsync_SortsResponsesAcrossPagesBeforePaging()
     {
         DashboardQueryService.ClearCacheForTests();
-        await using var db = CreateDb();
+        var (db, connection) = await CreateSqliteDbAsync();
+        await using var connectionScope = connection;
+        await using var dbScope = db;
         var now = DateTime.UtcNow;
         SeedOffice(db, now);
         var low = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbb11");
@@ -203,7 +206,9 @@ public sealed class DashboardQueryServiceWorkersPageTests
     public async Task GetWorkersPageAsync_SortsErrorsAcrossPagesBeforePaging()
     {
         DashboardQueryService.ClearCacheForTests();
-        await using var db = CreateDb();
+        var (db, connection) = await CreateSqliteDbAsync();
+        await using var connectionScope = connection;
+        await using var dbScope = db;
         var now = DateTime.UtcNow;
         SeedOffice(db, now);
         var low = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbb21");
@@ -260,6 +265,18 @@ public sealed class DashboardQueryServiceWorkersPageTests
         return new OrbitaDbContext(options);
     }
 
+    private static async Task<(OrbitaDbContext Db, SqliteConnection Connection)> CreateSqliteDbAsync()
+    {
+        var connection = new SqliteConnection("Data Source=:memory:");
+        await connection.OpenAsync();
+        var options = new DbContextOptionsBuilder<OrbitaDbContext>()
+            .UseSqlite(connection)
+            .Options;
+        var db = new OrbitaDbContext(options);
+        await db.Database.EnsureCreatedAsync();
+        return (db, connection);
+    }
+
     private static void SeedOffice(OrbitaDbContext db, DateTime now)
     {
         db.Offices.Add(new OfficeEntity
@@ -299,10 +316,18 @@ public sealed class DashboardQueryServiceWorkersPageTests
     {
         for (var index = 0; index < count; index++)
         {
+            var personId = Guid.NewGuid();
+            db.CandidatePersons.Add(new CandidatePersonEntity
+            {
+                Id = personId,
+                OfficeId = OfficeId,
+                CreatedAtUtc = now,
+                UpdatedAtUtc = now
+            });
             db.CandidateResponses.Add(new CandidateResponseEntity
             {
                 Id = Guid.NewGuid(),
-                PersonId = Guid.NewGuid(),
+                PersonId = personId,
                 OfficeId = OfficeId,
                 WorkerId = workerId,
                 AccountId = Guid.NewGuid(),
