@@ -75,13 +75,11 @@
     }
 
     var workerView = dashboardPreference('orbita-dashboard-worker-view', 'table');
-    var workerSortDirection = dashboardPreference('orbita-dashboard-worker-sort-direction', 'desc');
-    var workerSortKey = dashboardPreference('orbita-dashboard-worker-sort-key', 'activity');
     var highlightMs = 1800;
 
     // The dashboard script can be prefetched before Chart.js finishes loading.
-    // Keep the non-chart controls (including worker sorting) available in that
-    // case, then apply chart-specific defaults when charts are initialized.
+    // Keep the non-chart controls available in that case, then apply
+    // chart-specific defaults when charts are initialized.
     function configureChartDefaults() {
         if (!hasChart()) return;
         Chart.defaults.font.family = '"Segoe UI", system-ui, -apple-system, sans-serif';
@@ -820,27 +818,13 @@
         });
     }
 
-    function sortWorkerRows() {
-        var body = document.querySelector('[data-dashboard-workers-body]');
-        if (!body) return;
-        Array.prototype.slice.call(body.querySelectorAll('tr[data-href]'))
-            .sort(function (left, right) {
-                if (workerSortKey === 'name') {
-                    var leftName = left.getAttribute('data-dashboard-worker-name') || '';
-                    var rightName = right.getAttribute('data-dashboard-worker-name') || '';
-                    var nameOrder = leftName.localeCompare(rightName, 'ru', { sensitivity: 'base' });
-                    return workerSortDirection === 'desc' ? -nameOrder : nameOrder;
-                }
-                var attribute = workerSortKey === 'responses'
-                    ? 'data-dashboard-worker-responses'
-                    : workerSortKey === 'errors'
-                        ? 'data-dashboard-worker-errors'
-                        : 'data-dashboard-worker-activity';
-                var leftValue = Number(left.getAttribute(attribute)) || 0;
-                var rightValue = Number(right.getAttribute(attribute)) || 0;
-                return workerSortDirection === 'desc' ? rightValue - leftValue : leftValue - rightValue;
-            })
-            .forEach(function (row) { body.appendChild(row); });
+    function submitDashboardSortForm(form) {
+        if (!form) return;
+        if (typeof form.requestSubmit === 'function') {
+            form.requestSubmit();
+            return;
+        }
+        form.submit();
     }
 
     function initDashboardWorkerToolbar() {
@@ -869,44 +853,26 @@
                 applyWorkerFilter();
             });
         });
-        document.querySelectorAll('[data-dashboard-worker-sort]').forEach(function (button) {
-            if (button.hasAttribute('data-dashboard-worker-sort-bound')) return;
-            button.setAttribute('data-dashboard-worker-sort-bound', '1');
-            button.addEventListener('click', function () {
-                workerSortDirection = workerSortDirection === 'desc' ? 'asc' : 'desc';
-                saveDashboardPreference('orbita-dashboard-worker-sort-direction', workerSortDirection);
-                button.setAttribute('aria-label', workerSortDirection === 'desc' ? 'Сначала недавняя активность' : 'Сначала давняя активность');
-                var icon = button.querySelector('i');
-                if (icon) {
-                    icon.className = workerSortDirection === 'desc'
-                        ? 'fa-solid fa-arrow-down-short-wide'
-                        : 'fa-solid fa-arrow-up-short-wide';
-                }
-                sortWorkerRows();
-            });
-        });
-        document.querySelectorAll('[data-dashboard-worker-sort-key]').forEach(function (select) {
-            select.value = workerSortKey;
-            if (select.hasAttribute('data-dashboard-worker-sort-key-bound')) return;
-            select.setAttribute('data-dashboard-worker-sort-key-bound', '1');
-            select.addEventListener('change', function () {
-                workerSortKey = select.value || 'activity';
-                workerSortDirection = workerSortKey === 'name' ? 'asc' : 'desc';
-                saveDashboardPreference('orbita-dashboard-worker-sort-key', workerSortKey);
-                saveDashboardPreference('orbita-dashboard-worker-sort-direction', workerSortDirection);
-                document.querySelectorAll('[data-dashboard-worker-sort]').forEach(function (button) {
-                    button.setAttribute('aria-label', workerSortDirection === 'desc' ? 'Сначала большие значения' : 'Сначала меньшие значения');
-                    var icon = button.querySelector('i');
-                    if (icon) {
-                        icon.className = workerSortDirection === 'desc'
-                            ? 'fa-solid fa-arrow-down-short-wide'
-                            : 'fa-solid fa-arrow-up-short-wide';
-                    }
+        document.querySelectorAll('[data-dashboard-worker-sort-form]').forEach(function (form) {
+            if (form.hasAttribute('data-dashboard-worker-sort-form-bound')) return;
+            form.setAttribute('data-dashboard-worker-sort-form-bound', '1');
+            var select = form.querySelector('[data-dashboard-worker-sort-key]');
+            if (select) {
+                select.addEventListener('change', function () {
+                    submitDashboardSortForm(form);
                 });
-                sortWorkerRows();
-            });
+            }
+            var button = form.querySelector('[data-dashboard-worker-sort]');
+            if (button) {
+                button.addEventListener('click', function () {
+                    var dirInput = form.querySelector('input[name="dir"]');
+                    if (dirInput) {
+                        dirInput.value = dirInput.value === 'desc' ? 'asc' : 'desc';
+                    }
+                    submitDashboardSortForm(form);
+                });
+            }
         });
-        sortWorkerRows();
         document.querySelectorAll('[data-dashboard-worker-view]').forEach(function (button) {
             var isCurrentView = button.getAttribute('data-dashboard-worker-view') === workerView;
             button.classList.toggle('is-active', isCurrentView);

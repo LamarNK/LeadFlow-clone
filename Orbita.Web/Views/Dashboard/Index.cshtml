@@ -109,16 +109,28 @@
                         <input type="search" data-dashboard-worker-search placeholder="Поиск по воркеру" aria-label="Поиск по воркеру" autocomplete="off" />
                     </label>
                     <div class="dashboard-workers-toolbar-actions">
-                        <label class="dashboard-workers-sort-label">
+                        <form method="get"
+                              action="@Url.Action("Index", "Dashboard")"
+                              class="dashboard-workers-sort-label"
+                              data-dashboard-worker-sort-form>
+                            <input type="hidden" name="from" value="@fromIso" />
+                            <input type="hidden" name="to" value="@toIso" />
+                            <input type="hidden" name="tz" value="@Model.TimeZoneOffsetMinutes" />
+                            <input type="hidden" name="pageSize" value="@pagination.PageSize" />
+                            <input type="hidden" name="dir" value="@Model.Sort.Dir" />
                             <span>Сортировка:</span>
-                            <select data-dashboard-worker-sort-key aria-label="Поле сортировки воркеров">
-                                <option value="activity">По активности</option>
-                                <option value="name">По имени</option>
-                                <option value="responses">По откликам</option>
-                                <option value="errors">По ошибкам</option>
+                            <select name="sort" data-dashboard-worker-sort-key aria-label="Поле сортировки воркеров">
+                                <option value="activity" selected="@(string.Equals(Model.Sort.Column, "activity", StringComparison.OrdinalIgnoreCase))">По активности</option>
+                                <option value="name" selected="@(string.Equals(Model.Sort.Column, "name", StringComparison.OrdinalIgnoreCase))">По имени</option>
+                                <option value="status" selected="@(string.Equals(Model.Sort.Column, "status", StringComparison.OrdinalIgnoreCase))">По статусу</option>
                             </select>
-                            <button type="button" data-dashboard-worker-sort aria-label="Сначала недавняя активность" title="Изменить направление сортировки"><i class="fa-solid fa-arrow-down-short-wide" aria-hidden="true"></i></button>
-                        </label>
+                            <button type="button"
+                                    data-dashboard-worker-sort
+                                    aria-label="@(Model.Sort.Descending ? "Сортировка по убыванию" : "Сортировка по возрастанию")"
+                                    title="Изменить направление сортировки">
+                                <i class="fa-solid @(Model.Sort.Descending ? "fa-arrow-down-short-wide" : "fa-arrow-up-short-wide")" aria-hidden="true"></i>
+                            </button>
+                        </form>
                         <div class="dashboard-workers-view-toggle" aria-label="Вид таблицы">
                             <button type="button" class="is-active" data-dashboard-worker-view="table" aria-label="Список" aria-pressed="true"><i class="fa-solid fa-list" aria-hidden="true"></i></button>
                             <button type="button" data-dashboard-worker-view="cards" aria-label="Карточки" aria-pressed="false"><i class="fa-solid fa-table-cells-large" aria-hidden="true"></i></button>
@@ -165,12 +177,12 @@
                     <table class="data-table data-table--cards data-table--dashboard-workers">
                         <thead>
                             <tr>
-                                <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Воркер", Column = "name", Sort = Model.Sort, Controller = "Dashboard", Action = "Index", RouteValues = dashboardRoute })" />
+                                <th>Воркер</th>
                                 @if (Model.ShowOfficeColumn)
                                 {
                                     <th>Офис</th>
                                 }
-                                <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Статус", Column = "status", Sort = Model.Sort, Controller = "Dashboard", Action = "Index", RouteValues = dashboardRoute })" />
+                                <th>Статус</th>
                                 <th>Сейчас</th>
                                 <th class="cell-num dashboard-accounts-th" title="Аккаунты">
                                     <span>Аккаунты</span>
@@ -179,7 +191,7 @@
                                 <th class="cell-num" title="Откликов">Откл.</th>
                                 <th class="cell-num" title="Дублей">Дубл.</th>
                                 <th class="cell-num" title="Ошибок">Ошиб.</th>
-                                <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Активность", Column = "activity", Sort = Model.Sort, Controller = "Dashboard", Action = "Index", RouteValues = dashboardRoute })" />
+                                <th title="Последняя активность">Активность</th>
                                 <th class="dashboard-worker-toggle-th" aria-label="Управление"></th>
                                 <th aria-hidden="true"></th>
                             </tr>
