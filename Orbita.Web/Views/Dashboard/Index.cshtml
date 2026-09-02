@@ -97,19 +97,19 @@
                                 <button type="button"
                                         class="dashboard-monitoring-btn dashboard-monitoring-btn--start"
                                         data-dashboard-enable-all
-                                        title="Включить мониторинг на всех воркерах"
+                                        title="Возобновить мониторинг на всех воркерах"
                                         @(allWorkersEnabled ? "hidden" : null)
                                         @(Model.DisabledWorkersCount == 0 ? "disabled" : null)>
                                     <i class="fa-solid fa-circle-play" aria-hidden="true"></i>
-                                    <span>Запустить</span>
+                                    <span>Возобновить</span>
                                 </button>
                                 <button type="button"
                                         class="dashboard-monitoring-btn dashboard-monitoring-btn--stop"
                                         data-dashboard-disable-all
-                                        title="Остановить мониторинг на всех воркерах"
+                                        title="Пауза мониторинга на всех воркерах"
                                         @(Model.EnabledWorkersCount == 0 ? "disabled" : null)>
                                     <i class="fa-solid fa-circle-pause" aria-hidden="true"></i>
-                                    <span>Остановить</span>
+                                    <span>Пауза</span>
                                 </button>
                             </div>
                         }
@@ -165,6 +165,10 @@
                                 data-dashboard-worker-errors="@w.Errors">
                                 <td class="cell-name" data-label="Воркер">
                                     <partial name="_WorkerNameCell" model="@(new WorkerNameCellViewModel { DisplayName = w.DisplayName, MachineName = w.MachineName, Url = workerDetailsUrl })" />
+                                    @if (w.IsMonitoringPaused)
+                                    {
+                                        <span class="workers-status-badge workers-status-badge--paused">Пауза мониторинга</span>
+                                    }
                                 </td>
                                 @if (Model.ShowOfficeColumn)
                                 {
@@ -199,14 +203,14 @@
                                 <td class="cell-num" data-label="Ошибок">@w.Errors</td>
                                 <td data-label="Последняя активность"><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(w.LastActivityUtc, "activity"))" /></td>
                                 <td class="dashboard-worker-toggle" data-label="">
-                                    @if (w.IsEnabled)
+                                    @if (!w.IsMonitoringPaused)
                                     {
                                         <button type="button"
                                                 class="dashboard-worker-toggle-btn dashboard-worker-toggle-btn--pause"
                                                 data-dashboard-disable-worker
                                                 data-worker-id="@w.Id"
-                                                title="Приостановить воркер"
-                                            aria-label="Приостановить @w.DisplayName">
+                                                title="Пауза мониторинга"
+                                            aria-label="Пауза мониторинга @w.DisplayName">
                                             <i class="fa-solid fa-circle-pause" aria-hidden="true"></i>
                                             <span class="dashboard-worker-toggle-label">Пауза</span>
                                         </button>
@@ -217,10 +221,10 @@
                                                 class="dashboard-worker-toggle-btn dashboard-worker-toggle-btn--play"
                                                 data-dashboard-enable-worker
                                                 data-worker-id="@w.Id"
-                                                title="Запустить воркер"
-                                            aria-label="Запустить @w.DisplayName">
+                                                title="Возобновить мониторинг"
+                                            aria-label="Возобновить мониторинг @w.DisplayName">
                                             <i class="fa-solid fa-circle-play" aria-hidden="true"></i>
-                                            <span class="dashboard-worker-toggle-label">Запустить</span>
+                                            <span class="dashboard-worker-toggle-label">Возобновить</span>
                                         </button>
                                     }
                                 </td>

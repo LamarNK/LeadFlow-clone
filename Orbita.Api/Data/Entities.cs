@@ -154,6 +154,10 @@ public sealed class WorkerEntity
     public DateTime? LastSeenAtUtc { get; set; }
     public DateTime CreatedAtUtc { get; set; }
     public bool IsEnabled { get; set; } = true;
+    /// <summary>
+    /// Пауза рабочего цикла мониторинга/парсинга откликов. Не влияет на доступ воркера к API.
+    /// </summary>
+    public bool IsMonitoringPaused { get; set; }
     public DateTime? ApiKeyRotatedAtUtc { get; set; }
     public int MaxConcurrentAccounts { get; set; } = 1;
 

@@ -779,19 +779,19 @@
     }
 
     function renderWorkerToggleCell(w) {
-        if (w.isEnabled) {
+        if (!w.isMonitoringPaused) {
             return '<td class="dashboard-worker-toggle" data-label="">' +
                 '<button type="button" class="dashboard-worker-toggle-btn dashboard-worker-toggle-btn--pause" ' +
                 'data-dashboard-disable-worker data-worker-id="' + escapeHtml(w.id) + '" ' +
-                'title="Приостановить воркер" aria-label="Приостановить ' + escapeHtml(w.displayName) + '">' +
+                'title="Пауза мониторинга" aria-label="Пауза мониторинга ' + escapeHtml(w.displayName) + '">' +
                 '<i class="fa-solid fa-circle-pause" aria-hidden="true"></i><span class="dashboard-worker-toggle-label">Пауза</span></button></td>';
         }
 
         return '<td class="dashboard-worker-toggle" data-label="">' +
             '<button type="button" class="dashboard-worker-toggle-btn dashboard-worker-toggle-btn--play" ' +
             'data-dashboard-enable-worker data-worker-id="' + escapeHtml(w.id) + '" ' +
-            'title="Запустить воркер" aria-label="Запустить ' + escapeHtml(w.displayName) + '">' +
-            '<i class="fa-solid fa-circle-play" aria-hidden="true"></i><span class="dashboard-worker-toggle-label">Запустить</span></button></td>';
+            'title="Возобновить мониторинг" aria-label="Возобновить мониторинг ' + escapeHtml(w.displayName) + '">' +
+            '<i class="fa-solid fa-circle-play" aria-hidden="true"></i><span class="dashboard-worker-toggle-label">Возобновить</span></button></td>';
     }
 
     function updateWorkerToolbar(workers) {
@@ -946,10 +946,13 @@
             var machineName = (w.machineName || '').trim();
             var showMachine = machineName
                 && machineName.localeCompare((w.displayName || '').trim(), undefined, { sensitivity: 'accent' }) !== 0;
+            var pausedBadge = w.isMonitoringPaused
+                ? '<span class="workers-status-badge workers-status-badge--paused">Пауза мониторинга</span>'
+                : '';
             var nameCell = '<div class="cell-name-stack">' +
                 '<a href="' + escapeHtml(detailsUrl) + '">' + escapeHtml(w.displayName) + '</a>' +
                 (showMachine ? '<span class="cell-name-machine">' + escapeHtml(machineName) + '</span>' : '') +
-                '</div>';
+                '</div>' + pausedBadge;
             var officeCell = '';
             var liveRoot = getLiveRoot();
             if (liveRoot && liveRoot.getAttribute('data-show-office-column') === 'true') {

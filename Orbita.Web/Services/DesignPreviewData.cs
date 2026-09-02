@@ -2452,6 +2452,7 @@ internal static class DesignPreviewData
                 MachineName = w.MachineName,
                 IsOnline = w.IsOnline,
                 IsEnabled = w.IsEnabled,
+                IsMonitoringPaused = w.IsMonitoringPaused,
                 ActiveAccounts = w.ActiveAccounts,
                 TotalAccounts = w.TotalAccounts,
                 Responses = w.Responses,
@@ -2475,8 +2476,8 @@ internal static class DesignPreviewData
             AccountStats = accountStats,
             Charts = DashboardChartsBuilder.FromPresentation(kpiCards, activityChart, accountStats),
             ShowOfficeColumn = officeContext.ShowOfficeColumn,
-            EnabledWorkersCount = FilterWorkerRowsByOffice(BuildWorkerRows(), officeContext.EffectiveOfficeId).Count(w => w.IsEnabled),
-            DisabledWorkersCount = FilterWorkerRowsByOffice(BuildWorkerRows(), officeContext.EffectiveOfficeId).Count(w => !w.IsEnabled),
+            EnabledWorkersCount = FilterWorkerRowsByOffice(BuildWorkerRows(), officeContext.EffectiveOfficeId).Count(w => w.IsEnabled && !w.IsMonitoringPaused),
+            DisabledWorkersCount = FilterWorkerRowsByOffice(BuildWorkerRows(), officeContext.EffectiveOfficeId).Count(w => w.IsMonitoringPaused),
             ShowWorkersMonitoringControls = FilterWorkerRowsByOffice(BuildWorkerRows(), officeContext.EffectiveOfficeId).Count > 0
         };
     }

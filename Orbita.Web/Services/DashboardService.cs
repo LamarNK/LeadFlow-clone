@@ -55,6 +55,7 @@ public sealed class DashboardService(
                 MachineName = w.MachineName,
                 IsOnline = w.IsOnline,
                 IsEnabled = w.IsEnabled,
+                IsMonitoringPaused = w.IsMonitoringPaused,
                 ActiveAccounts = w.ActiveAccountCount,
                 TotalAccounts = w.AccountCount,
                 Responses = w.TotalToday,
@@ -80,8 +81,8 @@ public sealed class DashboardService(
             AccountStats = accountStats,
             Charts = charts,
             ShowOfficeColumn = officeContext.ShowOfficeColumn,
-            EnabledWorkersCount = workerRows.Count(w => w.IsEnabled),
-            DisabledWorkersCount = workerRows.Count(w => !w.IsEnabled),
+            EnabledWorkersCount = workerRows.Count(w => w.IsEnabled && !w.IsMonitoringPaused),
+            DisabledWorkersCount = workerRows.Count(w => w.IsMonitoringPaused),
             ShowWorkersMonitoringControls = workerRows.Count > 0
         };
     }

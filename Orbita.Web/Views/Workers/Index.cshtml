@@ -108,12 +108,16 @@
                 @foreach (var w in Model.Workers)
                 {
                     var detailsUrl = Url.Action("Details", new { id = w.Id });
-                    <tr class="workers-row@(!w.IsEnabled ? " workers-row--disabled" : "")" data-href="@detailsUrl">
+                    <tr class="workers-row@(w.IsMonitoringPaused ? " workers-row--paused" : "")@(!w.IsEnabled ? " workers-row--disabled" : "")" data-href="@detailsUrl">
                         <td class="cell-name" data-label="Воркер">
                             <partial name="_WorkerNameCell" model="@(new WorkerNameCellViewModel { DisplayName = w.DisplayName, MachineName = w.MachineName, Url = detailsUrl })" />
                             @if (!w.IsEnabled)
                             {
-                                <span class="workers-status-badge workers-status-badge--disabled">Приостановлен</span>
+                                <span class="workers-status-badge workers-status-badge--disabled">Отключён</span>
+                            }
+                            else if (w.IsMonitoringPaused)
+                            {
+                                <span class="workers-status-badge workers-status-badge--paused">Пауза мониторинга</span>
                             }
                             @if (w.UpdateAvailable)
                             {
@@ -129,7 +133,7 @@
                             {
                                 <span class="status-dot offline">
                                     <i class="fa-solid fa-circle status-dot-icon" aria-hidden="true"></i>
-                                    Приостановлен
+                                    Отключён
                                 </span>
                             }
                             else
@@ -164,13 +168,16 @@
                                             <i class="fa-solid fa-rotate-right" aria-hidden="true"></i>
                                             Перезапустить
                                         </button>
+                                    }
+                                    @if (!w.IsMonitoringPaused)
+                                    {
                                         <form asp-action="Disable" method="post" class="settings-inline-form">
                                             @Html.AntiForgeryToken()
                                             <input type="hidden" name="workerId" value="@w.Id" />
                                             <input type="hidden" name="returnTo" value="index" />
                                             <button type="submit" class="row-menu-item">
                                                 <i class="fa-solid fa-circle-pause" aria-hidden="true"></i>
-                                                Приостановить
+                                                Пауза мониторинга
                                             </button>
                                         </form>
                                     }
@@ -182,7 +189,7 @@
                                             <input type="hidden" name="returnTo" value="index" />
                                             <button type="submit" class="row-menu-item">
                                                 <i class="fa-solid fa-circle-play" aria-hidden="true"></i>
-                                                Включить
+                                                Возобновить
                                             </button>
                                         </form>
                                     }

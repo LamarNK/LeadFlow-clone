@@ -37,7 +37,8 @@ public sealed class WorkerOrchestrator(
     IWorkerRealtimeChannel realtime) : BackgroundService
 {
     private bool _monitoringRequested = true;
-    private bool _pausedByPanel;
+    private bool _pausedByUnauthorized;
+    private bool _pauseCommandThisIteration;
     private int _browserMonitorLaunching;
 
     public void RequestStartMonitoring() => _monitoringRequested = true;
@@ -79,16 +80,12 @@ public sealed class WorkerOrchestrator(
         {
             while (!stoppingToken.IsCancellationRequested)
             {
+                _pauseCommandThisIteration = false;
                 try
                 {
                     if (TryConsumePushedCommand(out var pushedCommand))
                     {
-                        if (await TryHandlePauseCommandAsync(pushedCommand, stoppingToken).ConfigureAwait(false))
-                        {
-                            await WaitNextIterationAsync(stoppingToken).ConfigureAwait(false);
-                            continue;
-                        }
-
+                        await TryHandlePauseCommandAsync(pushedCommand, stoppingToken).ConfigureAwait(false);
                         if (await TryHandleRestartCommandAsync(pushedCommand, null, stoppingToken).ConfigureAwait(false))
                         {
                             return;
@@ -100,7 +97,7 @@ public sealed class WorkerOrchestrator(
                     {
                         if (apiClient.LastConfigWasUnauthorized)
                         {
-                            await EnsureWorkerPausedAsync(stoppingToken).ConfigureAwait(false);
+                            await EnsureWorkerUnauthorizedAsync(stoppingToken).ConfigureAwait(false);
                         }
                         else
                         {
@@ -112,9 +109,9 @@ public sealed class WorkerOrchestrator(
                         continue;
                     }
 
-                    if (_pausedByPanel)
+                    if (_pausedByUnauthorized)
                     {
-                        _pausedByPanel = false;
+                        _pausedByUnauthorized = false;
                         RequestStartMonitoring();
                     }
 
@@ -124,17 +121,14 @@ public sealed class WorkerOrchestrator(
                     updateOfferSource.SetOffer(config.UpdateOffer);
 
                     var command = TryConsumePushedCommand(out var pushed) ? pushed : config.PendingCommand;
-                    if (await TryHandlePauseCommandAsync(command, stoppingToken).ConfigureAwait(false))
-                    {
-                        await WaitNextIterationAsync(stoppingToken).ConfigureAwait(false);
-                        continue;
-                    }
+                    await TryHandlePauseCommandAsync(command, stoppingToken).ConfigureAwait(false);
 
                     if (await TryHandleRestartCommandAsync(command, config.WorkerId, stoppingToken).ConfigureAwait(false))
                     {
                         return;
                     }
 
+                    var monitoringPaused = config.IsMonitoringPaused || _pauseCommandThisIteration;
                     var enabledCount = config.Accounts.Count(a => a.IsEnabled && config.IsBrowserProviderEnabled(a));
                     runtimeState.Status = "Онлайн";
 
@@ -182,15 +176,18 @@ public sealed class WorkerOrchestrator(
                         config,
                         stoppingToken);
 
-                    await SyncMonitoringStateAsync(config, enabledCount, stoppingToken).ConfigureAwait(false);
+                    await SyncMonitoringStateAsync(config, enabledCount, monitoringPaused, stoppingToken)
+                        .ConfigureAwait(false);
 
-                    if (pendingUpdateCoordinator.HasPendingInstall
+                    if (!monitoringPaused
+                        && pendingUpdateCoordinator.HasPendingInstall
                         && pendingUpdateCoordinator.TryApplyPendingInstallAtPause())
                     {
                         return;
                     }
 
-                    if (updateStore.TryGetPendingMsi() is { } pendingMsi
+                    if (!monitoringPaused
+                        && updateStore.TryGetPendingMsi() is { } pendingMsi
                         && !string.Equals(runtimeState.Status, "Обновление", StringComparison.Ordinal))
                     {
                         runtimeState.Detail = $"Обновление {pendingMsi.Version} скачано, ожидание паузы";
@@ -338,16 +335,17 @@ public sealed class WorkerOrchestrator(
         }, stoppingToken);
     }
 
-    private async Task<bool> TryHandlePauseCommandAsync(string? command, CancellationToken stoppingToken)
+    private async Task TryHandlePauseCommandAsync(string? command, CancellationToken stoppingToken)
     {
         if (!string.Equals(command, WorkerCommands.Pause, StringComparison.OrdinalIgnoreCase))
         {
-            return false;
+            return;
         }
 
-        await EnsureWorkerPausedAsync(stoppingToken).ConfigureAwait(false);
+        _pauseCommandThisIteration = true;
+        await StopPrimaryMonitoringAsync(stoppingToken).ConfigureAwait(false);
         await WorkerLifecycleLog.InfoAsync(
-            "Worker lifecycle: получена команда приостановки из панели",
+            "Worker lifecycle: получена команда паузы мониторинга из панели",
             nameof(TryHandlePauseCommandAsync),
             new Dictionary<string, object?>
             {
@@ -359,18 +357,21 @@ public sealed class WorkerOrchestrator(
         {
             _ = realtime.TryAckCommandAsync(WorkerCommands.Pause, stoppingToken);
         }
-
-        return true;
     }
 
-    private async Task EnsureWorkerPausedAsync(CancellationToken stoppingToken)
+    private async Task EnsureWorkerUnauthorizedAsync(CancellationToken stoppingToken)
     {
-        _pausedByPanel = true;
+        _pausedByUnauthorized = true;
         RequestStopMonitoring();
         captchaCoordinator.CancelCurrentSession();
         browserMonitorCoordinator.CancelCurrentSession();
         configProvider.InvalidateCache();
+        await StopPrimaryMonitoringAsync(stoppingToken).ConfigureAwait(false);
+        WorkerConnectionErrors.TryApplyUnauthorized(runtimeState);
+    }
 
+    private async Task StopPrimaryMonitoringAsync(CancellationToken stoppingToken)
+    {
         if (monitoringService.IsActive)
         {
             await monitoringService.StopAsync().ConfigureAwait(false);
@@ -380,7 +381,6 @@ public sealed class WorkerOrchestrator(
 
         runtimeState.IsMonitoring = false;
         updateGate.SetMonitoringActive(false);
-        WorkerConnectionErrors.TryApplyUnauthorized(runtimeState);
     }
 
     private async Task<bool> TryHandleRestartCommandAsync(
@@ -440,6 +440,7 @@ public sealed class WorkerOrchestrator(
     private async Task SyncMonitoringStateAsync(
         WorkerConfigDto config,
         int enabledCount,
+        bool monitoringPaused,
         CancellationToken stoppingToken)
     {
         var fingerprint = BuildEnabledAccountsFingerprint(config);
@@ -452,6 +453,14 @@ public sealed class WorkerOrchestrator(
 
         var hasEnabledAccounts = enabledCount > 0;
         var debounceElapsed = DateTime.UtcNow - _enabledAccountsChangedAtUtc >= MonitoringStartDebounce;
+
+        if (monitoringPaused)
+        {
+            await StopPrimaryMonitoringAsync(stoppingToken).ConfigureAwait(false);
+            runtimeState.Detail = "Пауза мониторинга";
+            activityReporter.ReportStopped();
+            return;
+        }
 
         if (!hasEnabledAccounts)
         {

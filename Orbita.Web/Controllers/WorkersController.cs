@@ -56,6 +56,7 @@ public sealed class WorkersController(IWorkersService workers) : Controller
             UpdatedAtUtc = model.UpdatedAtUtc,
             IsOnline = model.IsOnline,
             IsEnabled = model.IsEnabled,
+            IsMonitoringPaused = model.IsMonitoringPaused,
             LastActivityUtc = model.LastActivityUtc,
             CpuPercent = model.System.CpuPercent,
             RamPercent = model.System.RamPercent,
@@ -116,6 +117,7 @@ public sealed class WorkersController(IWorkersService workers) : Controller
             WorkerName = model.DisplayName,
             IsOnline = model.IsOnline,
             IsEnabled = model.IsEnabled,
+            IsMonitoringPaused = model.IsMonitoringPaused,
             Breadcrumbs =
             [
                 new BreadcrumbItemViewModel { Label = "Воркеры", Url = Url.Action(nameof(Index))! },
@@ -346,7 +348,7 @@ public sealed class WorkersController(IWorkersService workers) : Controller
     {
         var (success, error) = await workers.SetWorkerEnabledAsync(workerId, true, ct);
         TempData[success ? "WorkersSuccess" : "WorkersError"] = success
-            ? "Воркер включён."
+            ? "Мониторинг возобновлён."
             : error;
         return RedirectAfterWorkerAction(workerId, returnTo);
     }
@@ -357,7 +359,7 @@ public sealed class WorkersController(IWorkersService workers) : Controller
     {
         var (success, error) = await workers.SetWorkerEnabledAsync(workerId, false, ct);
         TempData[success ? "WorkersSuccess" : "WorkersError"] = success
-            ? "Воркер приостановлен."
+            ? "Мониторинг поставлен на паузу."
             : error;
         return RedirectAfterWorkerAction(workerId, returnTo);
     }

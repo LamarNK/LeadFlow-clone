@@ -196,7 +196,7 @@ public static class PanelEndpoints
                 return Results.Forbid();
             }
 
-            var (worker, error) = await workers.SetEnabledAsync(id, true, scope, ct);
+            var (worker, error) = await workers.SetMonitoringPausedAsync(id, false, scope, ct);
             if (error is not null)
             {
                 return Results.NotFound(new { error });
@@ -205,7 +205,7 @@ public static class PanelEndpoints
             await audit.LogAsync(
                 principal.FindFirstValue(ClaimTypes.NameIdentifier),
                 principal.FindFirstValue(ClaimTypes.Email),
-                PanelAuditActions.WorkerEnabled,
+                PanelAuditActions.WorkerMonitoringResumed,
                 "worker",
                 id.ToString(),
                 worker!.DisplayName,
@@ -230,7 +230,7 @@ public static class PanelEndpoints
                 return Results.Forbid();
             }
 
-            var (worker, error) = await workers.SetEnabledAsync(id, false, scope, ct);
+            var (worker, error) = await workers.SetMonitoringPausedAsync(id, true, scope, ct);
             if (error is not null)
             {
                 return Results.NotFound(new { error });
@@ -239,7 +239,7 @@ public static class PanelEndpoints
             await audit.LogAsync(
                 principal.FindFirstValue(ClaimTypes.NameIdentifier),
                 principal.FindFirstValue(ClaimTypes.Email),
-                PanelAuditActions.WorkerDisabled,
+                PanelAuditActions.WorkerMonitoringPaused,
                 "worker",
                 id.ToString(),
                 worker!.DisplayName,
@@ -263,7 +263,7 @@ public static class PanelEndpoints
                 return Results.Forbid();
             }
 
-            var (result, error) = await workers.SetAllEnabledAsync(true, scope, ct);
+            var (result, error) = await workers.SetAllMonitoringPausedAsync(false, scope, ct);
             if (error is not null)
             {
                 return Results.BadRequest(new { error });
@@ -296,7 +296,7 @@ public static class PanelEndpoints
                 return Results.Forbid();
             }
 
-            var (result, error) = await workers.SetAllEnabledAsync(false, scope, ct);
+            var (result, error) = await workers.SetAllMonitoringPausedAsync(true, scope, ct);
             if (error is not null)
             {
                 return Results.BadRequest(new { error });

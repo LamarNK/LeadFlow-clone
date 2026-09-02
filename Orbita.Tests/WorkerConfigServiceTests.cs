@@ -1043,6 +1043,7 @@ public sealed class WorkerConfigServiceTests
         Assert.Null(dto!.MultiloginLauncherUrl);
         Assert.Null(dto.MultiloginCloudApiUrl);
         Assert.Null(dto.MultiloginAutomationToken);
+        Assert.False(dto.IsMonitoringPaused);
         Assert.Empty(dto.Accounts);
     }
 
@@ -1461,6 +1462,23 @@ public sealed class WorkerConfigServiceTests
         Assert.True(config.ShouldSyncAdsPowerCatalog);
         Assert.True(config.ShouldSyncMultiloginCatalog);
         Assert.True(config.IsBrowserProviderEnabled(Assert.Single(config.Accounts)));
+        Assert.False(config.IsMonitoringPaused);
+    }
+
+    [Fact]
+    public async Task GetConfigForWorkerAsync_IncludesPersistedMonitoringPause()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db);
+        var worker = await db.Workers.SingleAsync();
+        worker.IsMonitoringPaused = true;
+        await db.SaveChangesAsync();
+
+        var config = await CreateService(db).GetConfigForWorkerAsync(WorkerId, OfficeScope.ForOffice(OfficeId));
+
+        Assert.NotNull(config);
+        Assert.True(config!.IsMonitoringPaused);
+        Assert.True((await db.Workers.SingleAsync()).IsMonitoringPaused);
     }
 
     [Fact]

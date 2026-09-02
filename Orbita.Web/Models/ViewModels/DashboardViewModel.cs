@@ -48,6 +48,7 @@ public sealed class DashboardWorkerRowViewModel
     public string MachineName { get; init; } = string.Empty;
     public bool IsOnline { get; init; }
     public bool IsEnabled { get; init; } = true;
+    public bool IsMonitoringPaused { get; init; }
     public int ActiveAccounts { get; init; }
     public int TotalAccounts { get; init; }
     public int Responses { get; init; }

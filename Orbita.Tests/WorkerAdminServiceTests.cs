@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Orbita.Api.Data;
 using Orbita.Api.Services;
+using Orbita.Contracts;
 
 namespace Orbita.Tests;
 
@@ -52,15 +53,71 @@ public sealed class WorkerAdminServiceTests
         Assert.Equal("Имя администратора", worker!.DisplayName);
     }
 
-    private static WorkerAdminService CreateService(OrbitaDbContext db) =>
+    [Fact]
+    public async Task SetMonitoringPausedAsync_OperatorFromWorkerOffice_PausesWithoutDisabling()
+    {
+        await using var db = CreateDb();
+        await SeedAsync(db);
+        var push = new CapturingPushNotifier();
+
+        var (worker, error) = await CreateService(db, push).SetMonitoringPausedAsync(
+            WorkerA, paused: true, OfficeScope.ForOffice(OfficeA));
+
+        Assert.Null(error);
+        Assert.True(worker!.IsMonitoringPaused);
+        Assert.True(worker.IsEnabled);
+
+        var stored = await db.Workers.SingleAsync(x => x.Id == WorkerA);
+        Assert.True(stored.IsMonitoringPaused);
+        Assert.True(stored.IsEnabled);
+        Assert.Equal([WorkerA], push.ConfigChanged);
+        Assert.Empty(push.Commands);
+    }
+
+    [Fact]
+    public async Task SetMonitoringPausedAsync_OperatorFromAnotherOffice_ReturnsNotFound()
+    {
+        await using var db = CreateDb();
+        await SeedAsync(db);
+
+        var (worker, error) = await CreateService(db).SetMonitoringPausedAsync(
+            WorkerA, paused: true, OfficeScope.ForOffice(OfficeB));
+
+        Assert.Null(worker);
+        Assert.Equal("Воркер не найден.", error);
+        Assert.False((await db.Workers.SingleAsync(x => x.Id == WorkerA)).IsMonitoringPaused);
+    }
+
+    [Fact]
+    public async Task SetMonitoringPausedAsync_Resume_ClearsFlagAndPushesConfig()
+    {
+        await using var db = CreateDb();
+        await SeedAsync(db);
+        var stored = await db.Workers.SingleAsync(x => x.Id == WorkerA);
+        stored.IsMonitoringPaused = true;
+        await db.SaveChangesAsync();
+        var push = new CapturingPushNotifier();
+
+        var (worker, error) = await CreateService(db, push).SetMonitoringPausedAsync(
+            WorkerA, paused: false, OfficeScope.ForOffice(OfficeA));
+
+        Assert.Null(error);
+        Assert.False(worker!.IsMonitoringPaused);
+        Assert.True(worker.IsEnabled);
+        Assert.False((await db.Workers.SingleAsync(x => x.Id == WorkerA)).IsMonitoringPaused);
+        Assert.Equal([WorkerA], push.ConfigChanged);
+        Assert.Empty(push.Commands);
+    }
+
+    private static WorkerAdminService CreateService(OrbitaDbContext db, CapturingPushNotifier? push = null) =>
         new(
             db,
             new ConfigurationBuilder().Build(),
             null!,
-            null!,
+            new NoopPanelRealtimeNotifier(),
             new WorkerConnectionRegistry(),
-            null!,
-            null!);
+            push ?? new CapturingPushNotifier(),
+            new LeadExportQuotaService(db));
 
     private static async Task SeedAsync(OrbitaDbContext db)
     {
@@ -84,4 +141,43 @@ public sealed class WorkerAdminServiceTests
         new(new DbContextOptionsBuilder<OrbitaDbContext>()
             .UseInMemoryDatabase(Guid.NewGuid().ToString())
             .Options);
+
+    private sealed class CapturingPushNotifier : IWorkerPushNotifier
+    {
+        public List<Guid> ConfigChanged { get; } = [];
+        public List<(Guid WorkerId, string Command)> Commands { get; } = [];
+
+        public Task<bool> TryPushCommandAsync(Guid workerId, string command, CancellationToken ct = default)
+        {
+            Commands.Add((workerId, command));
+            return Task.FromResult(true);
+        }
+
+        public Task PushConfigChangedAsync(Guid workerId, CancellationToken ct = default)
+        {
+            ConfigChanged.Add(workerId);
+            return Task.CompletedTask;
+        }
+
+        public Task<bool> TryPushCaptchaSessionAsync(
+            Guid workerId,
+            WorkerPendingCaptchaSessionDto session,
+            CancellationToken ct = default) =>
+            Task.FromResult(false);
+
+        public Task<bool> TryPushBrowserMonitorSessionAsync(
+            Guid workerId,
+            WorkerPendingBrowserMonitorSessionDto session,
+            CancellationToken ct = default) =>
+            Task.FromResult(false);
+
+        public Task<bool> TryPushLocalChromeLoginSessionAsync(
+            Guid workerId,
+            WorkerPendingLocalChromeLoginDto session,
+            CancellationToken ct = default) =>
+            Task.FromResult(false);
+
+        public Task DeliverPendingOnConnectAsync(Guid workerId, CancellationToken ct = default) =>
+            Task.CompletedTask;
+    }
 }

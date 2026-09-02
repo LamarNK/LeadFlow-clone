@@ -159,6 +159,50 @@ public sealed class WorkerAdminService(
         return (Map(worker, connectionRegistry), null);
     }
 
+    public async Task<(AdminWorkerListItemDto? Worker, string? Error)> SetMonitoringPausedAsync(
+        Guid id,
+        bool paused,
+        OfficeScope scope,
+        CancellationToken ct = default)
+    {
+        var worker = await db.Workers.Include(x => x.Office).FirstOrDefaultAsync(x => x.Id == id, ct);
+        if (worker is null || !scope.CanAccessWorker(worker.OfficeId))
+        {
+            return (null, "Воркер не найден.");
+        }
+
+        if (worker.IsMonitoringPaused == paused)
+        {
+            return (Map(worker, connectionRegistry), null);
+        }
+
+        if (!paused)
+        {
+            var otherRunning = await db.Workers
+                .CountAsync(
+                    x => x.OfficeId == worker.OfficeId
+                        && x.Id != id
+                        && x.IsEnabled
+                        && !x.IsMonitoringPaused,
+                    ct)
+                .ConfigureAwait(false);
+            if (otherRunning == 0)
+            {
+                await leadExportQuota.ResetSessionsForOfficeAsync(worker.OfficeId, ct).ConfigureAwait(false);
+            }
+        }
+
+        worker.IsMonitoringPaused = paused;
+        await db.SaveChangesAsync(ct);
+        await workerPushNotifier.PushConfigChangedAsync(worker.Id, ct).ConfigureAwait(false);
+
+        panelRealtime.Notify(
+            [PanelChangeKind.Workers, PanelChangeKind.Dashboard],
+            worker.OfficeId,
+            worker.Id);
+        return (Map(worker, connectionRegistry), null);
+    }
+
     public async Task<(BulkWorkersMonitoringResultDto? Result, string? Error)> SetAllEnabledAsync(
         bool enabled,
         OfficeScope scope,
@@ -212,6 +256,65 @@ public sealed class WorkerAdminService(
                     await workerPushNotifier.TryPushCommandAsync(worker.Id, WorkerCommands.Pause, ct)
                         .ConfigureAwait(false);
                 }
+            }
+
+            var officeIds = changed.Select(x => x.OfficeId).Distinct().ToList();
+            foreach (var officeId in officeIds)
+            {
+                panelRealtime.Notify(
+                    [PanelChangeKind.Workers, PanelChangeKind.Dashboard],
+                    officeId);
+            }
+        }
+
+        return (new BulkWorkersMonitoringResultDto(changed.Count, workers.Count - changed.Count, workers.Count), null);
+    }
+
+    public async Task<(BulkWorkersMonitoringResultDto? Result, string? Error)> SetAllMonitoringPausedAsync(
+        bool paused,
+        OfficeScope scope,
+        CancellationToken ct = default)
+    {
+        if (!scope.HasAccess)
+        {
+            return (null, "Нет доступа.");
+        }
+
+        var workers = await db.Workers
+            .Where(x => !LeadFlowImportWorker.IsImportWorker(x.MachineName))
+            .Where(x => scope.IsGlobalAdmin || x.OfficeId == scope.OfficeId)
+            .ToListAsync(ct);
+
+        var changed = new List<WorkerEntity>();
+        var officesToReset = new HashSet<Guid>();
+        foreach (var worker in workers)
+        {
+            if (!scope.CanAccessWorker(worker.OfficeId) || worker.IsMonitoringPaused == paused)
+            {
+                continue;
+            }
+
+            if (!paused
+                && workers.Count(x => x.OfficeId == worker.OfficeId && x.IsEnabled && !x.IsMonitoringPaused) == 0)
+            {
+                officesToReset.Add(worker.OfficeId);
+            }
+
+            worker.IsMonitoringPaused = paused;
+            changed.Add(worker);
+        }
+
+        if (changed.Count > 0)
+        {
+            if (!paused && officesToReset.Count > 0)
+            {
+                await leadExportQuota.ResetSessionsForOfficesAsync(officesToReset, ct).ConfigureAwait(false);
+            }
+
+            await db.SaveChangesAsync(ct);
+            foreach (var worker in changed)
+            {
+                await workerPushNotifier.PushConfigChangedAsync(worker.Id, ct).ConfigureAwait(false);
             }
 
             var officeIds = changed.Select(x => x.OfficeId).Distinct().ToList();
@@ -317,7 +420,8 @@ public sealed class WorkerAdminService(
             updateAvailable,
             latestReleaseVersion,
             worker.OfficeId,
-            worker.Office?.Name ?? string.Empty);
+            worker.Office?.Name ?? string.Empty,
+            worker.IsMonitoringPaused);
     }
 
     private static string MaskSecret(string secret)

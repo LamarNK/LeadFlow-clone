@@ -50,7 +50,70 @@ public sealed record WorkerListItem(
     bool IsEnabled = true,
     int ActiveAccountCount = 0,
     WorkerActivityDto? CurrentActivity = null,
-    IReadOnlyList<WorkerActiveAccountDto>? ActiveAccounts = null);
+    IReadOnlyList<WorkerActiveAccountDto>? ActiveAccounts = null,
+    bool IsMonitoringPaused = false);
+
+public sealed record WorkersPageDto(
+    IReadOnlyList<WorkerListItem> Items,
+    int TotalCount,
+    int Page,
+    int PageSize,
+    string Sort,
+    string Dir,
+    int EnabledCount,
+    int PausedCount);
+
+public static class WorkerListPaging
+{
+    public const int DefaultPageSize = 25;
+    public const int MaxPageSize = 100;
+    public const string DefaultSort = "activity";
+
+    public static readonly HashSet<string> SortColumns = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "name", "status", "activity"
+    };
+
+    public static int NormalizePageSize(int? pageSize)
+    {
+        if (pageSize is null or <= 0)
+        {
+            return DefaultPageSize;
+        }
+
+        return Math.Clamp(pageSize.Value, 1, MaxPageSize);
+    }
+
+    public static int NormalizePage(int page, int pageSize, int totalCount)
+    {
+        if (page < 1)
+        {
+            page = 1;
+        }
+
+        if (totalCount <= 0 || pageSize <= 0)
+        {
+            return 1;
+        }
+
+        var totalPages = Math.Max(1, (int)Math.Ceiling(totalCount / (double)pageSize));
+        return Math.Min(page, totalPages);
+    }
+
+    public static (string Column, bool Descending) NormalizeSort(string? sort, string? dir)
+    {
+        var column = string.IsNullOrWhiteSpace(sort) || !SortColumns.Contains(sort)
+            ? DefaultSort
+            : sort;
+        var descending = dir?.Trim().ToLowerInvariant() switch
+        {
+            "asc" => false,
+            "desc" => true,
+            _ => string.Equals(column, DefaultSort, StringComparison.OrdinalIgnoreCase)
+        };
+        return (column, descending);
+    }
+}
 
 public sealed record WorkerDetail(
     Guid Id,
@@ -119,7 +182,8 @@ public sealed record WorkerDetail(
     WorkerBrowserProviderCheckDto? AdsPowerCheck = null,
     WorkerBrowserProviderCheckDto? MultiloginCheck = null,
     WorkerBrowserProviderCheckDto? LocalChromeCheck = null,
-    Guid? PendingLocalChromeLoginAccountId = null);
+    Guid? PendingLocalChromeLoginAccountId = null,
+    bool IsMonitoringPaused = false);
 
 /// <summary>
 /// One row of the office-wide accounts page: account payload plus the worker
