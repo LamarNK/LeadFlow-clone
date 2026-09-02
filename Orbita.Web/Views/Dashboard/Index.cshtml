@@ -122,7 +122,8 @@
                             <select name="sort" data-dashboard-worker-sort-key aria-label="Поле сортировки воркеров">
                                 <option value="activity" selected="@(string.Equals(Model.Sort.Column, "activity", StringComparison.OrdinalIgnoreCase))">По активности</option>
                                 <option value="name" selected="@(string.Equals(Model.Sort.Column, "name", StringComparison.OrdinalIgnoreCase))">По имени</option>
-                                <option value="status" selected="@(string.Equals(Model.Sort.Column, "status", StringComparison.OrdinalIgnoreCase))">По статусу</option>
+                                <option value="responses" selected="@(string.Equals(Model.Sort.Column, "responses", StringComparison.OrdinalIgnoreCase))">По откликам</option>
+                                <option value="errors" selected="@(string.Equals(Model.Sort.Column, "errors", StringComparison.OrdinalIgnoreCase))">По ошибкам</option>
                             </select>
                             <button type="button"
                                     data-dashboard-worker-sort

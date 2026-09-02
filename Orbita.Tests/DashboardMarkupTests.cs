@@ -38,8 +38,7 @@ public sealed class DashboardMarkupTests
 
         Assert.DoesNotContain("_TableSortTh", view);
         Assert.DoesNotContain("data-table-sort", view);
-        Assert.DoesNotContain("По откликам", view);
-        Assert.DoesNotContain("По ошибкам", view);
+        Assert.DoesNotContain("По статусу", view);
         Assert.Contains("data-dashboard-worker-sort-form", view);
         Assert.Contains("data-dashboard-worker-sort-key", view);
         Assert.Contains("data-dashboard-worker-sort", view);
@@ -47,7 +46,8 @@ public sealed class DashboardMarkupTests
         Assert.Contains("name=\"dir\"", view);
         Assert.Contains("По активности", view);
         Assert.Contains("По имени", view);
-        Assert.Contains("По статусу", view);
+        Assert.Contains("По откликам", view);
+        Assert.Contains("По ошибкам", view);
         Assert.Contains("<th>Воркер</th>", view);
         Assert.Contains("<th>Статус</th>", view);
         Assert.Contains("<th title=\"Последняя активность\">Активность</th>", view);

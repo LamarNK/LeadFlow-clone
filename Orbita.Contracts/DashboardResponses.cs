@@ -71,7 +71,7 @@ public static class WorkerListPaging
 
     public static readonly HashSet<string> SortColumns = new(StringComparer.OrdinalIgnoreCase)
     {
-        "name", "status", "activity"
+        "name", "activity", "responses", "errors"
     };
 
     public static int NormalizePageSize(int? pageSize)
@@ -109,7 +109,7 @@ public static class WorkerListPaging
         {
             "asc" => false,
             "desc" => true,
-            _ => string.Equals(column, DefaultSort, StringComparison.OrdinalIgnoreCase)
+            _ => !string.Equals(column, "name", StringComparison.OrdinalIgnoreCase)
         };
         return (column, descending);
     }

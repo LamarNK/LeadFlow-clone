@@ -172,6 +172,62 @@ public sealed class DashboardQueryServiceWorkersPageTests
     }
 
     [Fact]
+    public async Task GetWorkersPageAsync_SortsResponsesAcrossPagesBeforePaging()
+    {
+        DashboardQueryService.ClearCacheForTests();
+        await using var db = CreateDb();
+        var now = DateTime.UtcNow;
+        SeedOffice(db, now);
+        var low = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbb11");
+        var high = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbb12");
+        var middle = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbb13");
+        SeedWorker(db, low, "alpha", now.AddHours(-3));
+        SeedWorker(db, high, "beta", now.AddHours(-2));
+        SeedWorker(db, middle, "gamma", now.AddHours(-1));
+        SeedResponses(db, low, 1, now);
+        SeedResponses(db, high, 4, now);
+        SeedResponses(db, middle, 2, now);
+        await db.SaveChangesAsync();
+
+        var firstPage = await CreateService(db).GetWorkersPageAsync(
+            OfficeScope.ForOffice(OfficeId), OfficeId, page: 1, pageSize: 2, sort: "responses", dir: "desc");
+        var secondPage = await CreateService(db).GetWorkersPageAsync(
+            OfficeScope.ForOffice(OfficeId), OfficeId, page: 2, pageSize: 2, sort: "responses", dir: "desc");
+
+        Assert.Equal([high, middle], firstPage.Items.Select(x => x.Id));
+        Assert.Single(secondPage.Items);
+        Assert.Equal(low, secondPage.Items[0].Id);
+    }
+
+    [Fact]
+    public async Task GetWorkersPageAsync_SortsErrorsAcrossPagesBeforePaging()
+    {
+        DashboardQueryService.ClearCacheForTests();
+        await using var db = CreateDb();
+        var now = DateTime.UtcNow;
+        SeedOffice(db, now);
+        var low = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbb21");
+        var high = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbb22");
+        var middle = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbb23");
+        SeedWorker(db, low, "alpha", now.AddHours(-3));
+        SeedWorker(db, high, "beta", now.AddHours(-2));
+        SeedWorker(db, middle, "gamma", now.AddHours(-1));
+        SeedErrors(db, low, 1, now);
+        SeedErrors(db, high, 4, now);
+        SeedErrors(db, middle, 2, now);
+        await db.SaveChangesAsync();
+
+        var firstPage = await CreateService(db).GetWorkersPageAsync(
+            OfficeScope.ForOffice(OfficeId), OfficeId, page: 1, pageSize: 2, sort: "errors", dir: "desc");
+        var secondPage = await CreateService(db).GetWorkersPageAsync(
+            OfficeScope.ForOffice(OfficeId), OfficeId, page: 2, pageSize: 2, sort: "errors", dir: "desc");
+
+        Assert.Equal([high, middle], firstPage.Items.Select(x => x.Id));
+        Assert.Single(secondPage.Items);
+        Assert.Equal(low, secondPage.Items[0].Id);
+    }
+
+    [Fact]
     public void WorkerListPaging_NormalizesOutOfRangeValues()
     {
         Assert.Equal(25, WorkerListPaging.NormalizePageSize(null));
@@ -237,5 +293,39 @@ public sealed class DashboardQueryServiceWorkersPageTests
             CreatedAtUtc = DateTime.UtcNow,
             IsMonitoringPaused = paused
         });
+    }
+
+    private static void SeedResponses(OrbitaDbContext db, Guid workerId, int count, DateTime now)
+    {
+        for (var index = 0; index < count; index++)
+        {
+            db.CandidateResponses.Add(new CandidateResponseEntity
+            {
+                Id = Guid.NewGuid(),
+                PersonId = Guid.NewGuid(),
+                OfficeId = OfficeId,
+                WorkerId = workerId,
+                AccountId = Guid.NewGuid(),
+                SourceResponseId = Guid.NewGuid().ToString("N"),
+                CreatedAt = now,
+                CollectedAt = now,
+                Status = "New"
+            });
+        }
+    }
+
+    private static void SeedErrors(OrbitaDbContext db, Guid workerId, int count, DateTime now)
+    {
+        for (var index = 0; index < count; index++)
+        {
+            db.WorkerEvents.Add(new WorkerEventEntity
+            {
+                Id = Guid.NewGuid(),
+                WorkerId = workerId,
+                Level = "Error",
+                Message = "Test error",
+                CreatedAtUtc = now
+            });
+        }
     }
 }

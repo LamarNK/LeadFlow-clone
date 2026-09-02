@@ -387,7 +387,7 @@ public sealed class DashboardQueryService(
                 0);
         }
 
-        var ordered = ApplyWorkerListSort(filtered, sortColumn, sortDescending);
+        var ordered = ApplyWorkerListSort(filtered, sortColumn, sortDescending, todayStart);
         var workers = await ordered
             .Skip((normalizedPage - 1) * normalizedPageSize)
             .Take(normalizedPageSize)
@@ -469,11 +469,56 @@ public sealed class DashboardQueryService(
             pausedCount);
     }
 
-    private static IQueryable<WorkerEntity> ApplyWorkerListSort(
+    private IQueryable<WorkerEntity> ApplyWorkerListSort(
         IQueryable<WorkerEntity> query,
         string sort,
-        bool descending)
+        bool descending,
+        DateTime todayStartUtc)
     {
+        if (string.Equals(sort, "responses", StringComparison.OrdinalIgnoreCase))
+        {
+            var responseCounts = db.CandidateResponses
+                .AsNoTracking()
+                .Where(x => x.WorkerId != null && x.CollectedAt >= todayStartUtc)
+                .GroupBy(x => x.WorkerId!.Value)
+                .Select(g => new { WorkerId = g.Key, Count = g.Count() });
+
+            return descending
+                ? from worker in query
+                  join response in responseCounts on worker.Id equals response.WorkerId into responses
+                  from response in responses.DefaultIfEmpty()
+                  orderby response == null ? 0 : response.Count descending, worker.DisplayName, worker.Id
+                  select worker
+                : from worker in query
+                  join response in responseCounts on worker.Id equals response.WorkerId into responses
+                  from response in responses.DefaultIfEmpty()
+                  orderby response == null ? 0 : response.Count, worker.DisplayName, worker.Id
+                  select worker;
+        }
+
+        if (string.Equals(sort, "errors", StringComparison.OrdinalIgnoreCase))
+        {
+            var errorCounts = db.WorkerEvents
+                .AsNoTracking()
+                .Where(x => !x.IsDismissed
+                    && x.CreatedAtUtc >= todayStartUtc
+                    && (x.Level == "Error" || x.Level == "Warning"))
+                .GroupBy(x => x.WorkerId)
+                .Select(g => new { WorkerId = g.Key, Count = g.Count() });
+
+            return descending
+                ? from worker in query
+                  join error in errorCounts on worker.Id equals error.WorkerId into errors
+                  from error in errors.DefaultIfEmpty()
+                  orderby error == null ? 0 : error.Count descending, worker.DisplayName, worker.Id
+                  select worker
+                : from worker in query
+                  join error in errorCounts on worker.Id equals error.WorkerId into errors
+                  from error in errors.DefaultIfEmpty()
+                  orderby error == null ? 0 : error.Count, worker.DisplayName, worker.Id
+                  select worker;
+        }
+
         return sort.ToLowerInvariant() switch
         {
             "activity" => descending
@@ -481,17 +526,6 @@ public sealed class DashboardQueryService(
                     .ThenBy(x => x.DisplayName)
                     .ThenBy(x => x.Id)
                 : query.OrderBy(x => x.LastSeenAtUtc ?? DateTime.MaxValue)
-                    .ThenBy(x => x.DisplayName)
-                    .ThenBy(x => x.Id),
-            "status" => descending
-                ? query.OrderBy(x => x.IsMonitoringPaused)
-                    .ThenBy(x => x.IsEnabled)
-                    .ThenByDescending(x => x.LastSeenAtUtc)
-                    .ThenBy(x => x.DisplayName)
-                    .ThenBy(x => x.Id)
-                : query.OrderByDescending(x => x.IsMonitoringPaused)
-                    .ThenByDescending(x => x.IsEnabled)
-                    .ThenBy(x => x.LastSeenAtUtc)
                     .ThenBy(x => x.DisplayName)
                     .ThenBy(x => x.Id),
             _ => descending
