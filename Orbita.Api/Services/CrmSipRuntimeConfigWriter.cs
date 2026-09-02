@@ -563,7 +563,10 @@ public sealed class CrmSipRuntimeConfigWriter(
 
             [{{endpoint.AuthorizationUsername}}]
             type=aor
-            max_contacts=1
+            ; Keep several browser tabs/connections for the same employee. The
+            ; inbound dialplan uses PJSIP_DIAL_CONTACTS, so the visible Kanban
+            ; tab still rings when another tab or a reconnect owns an older contact.
+            max_contacts=5
             remove_existing=yes
             support_path=yes
             default_expiration=120

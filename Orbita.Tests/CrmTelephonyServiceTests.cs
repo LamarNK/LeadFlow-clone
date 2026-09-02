@@ -108,6 +108,7 @@ public sealed class CrmTelephonyServiceTests
             Assert.Contains($"password={endpoint.Password}", runtimeConfig, StringComparison.Ordinal);
             Assert.Contains("callerid=201 <201>", runtimeConfig, StringComparison.Ordinal);
             Assert.Contains("from_domain=sip.orbitsu.ru", runtimeConfig, StringComparison.Ordinal);
+            Assert.Contains("max_contacts=5", runtimeConfig, StringComparison.Ordinal);
             Assert.Contains("qualify_frequency=0", runtimeConfig, StringComparison.Ordinal);
             Assert.DoesNotContain("qualify_frequency=30", runtimeConfig, StringComparison.Ordinal);
             Assert.Contains("default_expiration=120", runtimeConfig, StringComparison.Ordinal);
