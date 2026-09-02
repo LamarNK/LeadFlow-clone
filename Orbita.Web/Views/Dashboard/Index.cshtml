@@ -43,39 +43,68 @@
             @{ var sparkIdx = 0; }
             @foreach (var kpi in Model.KpiCards)
             {
-                <partial name="_KpiCard" model="@(new KpiCardPartialViewModel { Card = kpi, Index = sparkIdx, Layout = KpiCardLayout.Dashboard })" />
+                <partial name="_KpiCard" model="@(new KpiCardPartialViewModel { Card = kpi, Index = sparkIdx, Layout = KpiCardLayout.Dashboard, ExtraClass = " kpi-card--dashboard" })" />
                 sparkIdx++;
             }
         </div>
 
         <div class="dashboard-grid">
             <div class="card card--dashboard-workers">
-                <div class="card-header">
-                    <h2>Воркеры</h2>
-                    @if (Model.ShowWorkersMonitoringControls)
-                    {
-                        // Все включены → только «Остановить»; иначе обе кнопки.
-                        var allWorkersEnabled = Model.DisabledWorkersCount == 0 && Model.EnabledWorkersCount > 0;
-                        <div class="dashboard-workers-actions" data-dashboard-monitoring-controls>
-                            <button type="button"
-                                    class="dashboard-monitoring-btn dashboard-monitoring-btn--start"
-                                    data-dashboard-enable-all
-                                    title="Включить мониторинг на всех воркерах"
-                                    @(allWorkersEnabled ? "hidden" : null)
-                                    @(Model.DisabledWorkersCount == 0 ? "disabled" : null)>
-                                <i class="fa-solid fa-circle-play" aria-hidden="true"></i>
-                                <span>Запустить</span>
-                            </button>
-                            <button type="button"
-                                    class="dashboard-monitoring-btn dashboard-monitoring-btn--stop"
-                                    data-dashboard-disable-all
-                                    title="Остановить мониторинг на всех воркерах"
-                                    @(Model.EnabledWorkersCount == 0 ? "disabled" : null)>
-                                <i class="fa-solid fa-circle-pause" aria-hidden="true"></i>
-                                <span>Остановить</span>
-                            </button>
+                @{
+                    var onlineWorkers = Model.Workers.Count(w => w.IsEnabled && w.IsOnline);
+                    var offlineWorkers = Model.Workers.Count(w => !w.IsEnabled || !w.IsOnline);
+                    var workersWithoutAccounts = Model.Workers.Count(w => w.TotalAccounts == 0);
+                }
+                <div class="dashboard-workers-toolbar">
+                    <div class="dashboard-worker-filters" role="group" aria-label="Фильтр воркеров">
+                        <button type="button" class="dashboard-worker-filter is-active" data-dashboard-worker-filter="all" aria-pressed="true">
+                            Все <span data-dashboard-worker-count="all">@Model.Workers.Count</span>
+                        </button>
+                        <button type="button" class="dashboard-worker-filter" data-dashboard-worker-filter="online" aria-pressed="false">
+                            Онлайн <span data-dashboard-worker-count="online">@onlineWorkers</span>
+                        </button>
+                        <button type="button" class="dashboard-worker-filter" data-dashboard-worker-filter="offline" aria-pressed="false">
+                            Оффлайн <span data-dashboard-worker-count="offline">@offlineWorkers</span>
+                        </button>
+                        <button type="button" class="dashboard-worker-filter" data-dashboard-worker-filter="empty" aria-pressed="false">
+                            Нет аккаунтов <span data-dashboard-worker-count="empty">@workersWithoutAccounts</span>
+                        </button>
+                    </div>
+                    <label class="dashboard-worker-search">
+                        <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+                        <input type="search" data-dashboard-worker-search placeholder="Поиск по воркеру" aria-label="Поиск по воркеру" autocomplete="off" />
+                    </label>
+                    <div class="dashboard-workers-toolbar-actions">
+                        <span class="dashboard-workers-sort-label">Сортировка: <button type="button" data-dashboard-worker-sort>По активности <i class="fa-solid fa-arrow-down-short-wide" aria-hidden="true"></i></button></span>
+                        <div class="dashboard-workers-view-toggle" aria-label="Вид таблицы">
+                            <button type="button" class="is-active" data-dashboard-worker-view="table" aria-label="Список" aria-pressed="true"><i class="fa-solid fa-list" aria-hidden="true"></i></button>
+                            <button type="button" data-dashboard-worker-view="cards" aria-label="Карточки" aria-pressed="false"><i class="fa-solid fa-table-cells-large" aria-hidden="true"></i></button>
                         </div>
-                    }
+                        @if (Model.ShowWorkersMonitoringControls)
+                        {
+                            // Все включены → только «Остановить»; иначе обе кнопки.
+                            var allWorkersEnabled = Model.DisabledWorkersCount == 0 && Model.EnabledWorkersCount > 0;
+                            <div class="dashboard-workers-actions" data-dashboard-monitoring-controls>
+                                <button type="button"
+                                        class="dashboard-monitoring-btn dashboard-monitoring-btn--start"
+                                        data-dashboard-enable-all
+                                        title="Включить мониторинг на всех воркерах"
+                                        @(allWorkersEnabled ? "hidden" : null)
+                                        @(Model.DisabledWorkersCount == 0 ? "disabled" : null)>
+                                    <i class="fa-solid fa-circle-play" aria-hidden="true"></i>
+                                    <span>Запустить</span>
+                                </button>
+                                <button type="button"
+                                        class="dashboard-monitoring-btn dashboard-monitoring-btn--stop"
+                                        data-dashboard-disable-all
+                                        title="Остановить мониторинг на всех воркерах"
+                                        @(Model.EnabledWorkersCount == 0 ? "disabled" : null)>
+                                    <i class="fa-solid fa-circle-pause" aria-hidden="true"></i>
+                                    <span>Остановить</span>
+                                </button>
+                            </div>
+                        }
+                    </div>
                 </div>
                 <div class="card-body dashboard-workers-table-wrap">
                     <div class="dashboard-workers-table-scroll">
@@ -102,7 +131,10 @@
                                 }
                                 <th>Статус</th>
                                 <th>Сейчас</th>
-                                <th class="cell-num" title="Аккаунтов">Акк.</th>
+                                <th class="cell-num dashboard-accounts-th" title="Аккаунты">
+                                    <span>Аккаунты</span>
+                                    <small>активные / всего</small>
+                                </th>
                                 <th class="cell-num" title="Откликов">Откл.</th>
                                 <th class="cell-num" title="Дублей">Дубл.</th>
                                 <th class="cell-num" title="Ошибок">Ошиб.</th>
@@ -115,7 +147,10 @@
                         @foreach (var w in Model.Workers)
                         {
                             var workerDetailsUrl = Url.Action("Details", "Workers", new { id = w.Id });
-                            <tr data-href="@workerDetailsUrl">
+                            <tr data-href="@workerDetailsUrl"
+                                data-dashboard-worker-online="@(w.IsEnabled && w.IsOnline ? "true" : "false")"
+                                data-dashboard-worker-empty="@(w.TotalAccounts == 0 ? "true" : "false")"
+                                data-dashboard-worker-activity="@(w.LastActivityUtc?.Ticks ?? 0)">
                                 <td class="cell-name" data-label="Воркер">
                                     <partial name="_WorkerNameCell" model="@(new WorkerNameCellViewModel { DisplayName = w.DisplayName, MachineName = w.MachineName, Url = workerDetailsUrl })" />
                                 </td>
@@ -136,7 +171,17 @@
                                 <td data-label="Сейчас">
                                     <partial name="_WorkerActivityPillFromRow" model="@(w.CurrentActivityLabel, w.CurrentActivityTone, w.IsActivityLive, w.CurrentActivityPhase, w.CurrentActivityNextCycleAtUtc)" />
                                 </td>
-                                <td class="cell-num" data-label="Аккаунтов">@w.ActiveAccounts / @w.TotalAccounts</td>
+                                @{
+                                    var accountProgress = w.TotalAccounts > 0
+                                        ? Math.Clamp(w.ActiveAccounts * 100 / w.TotalAccounts, 0, 100)
+                                        : 0;
+                                }
+                                <td class="cell-num dashboard-account-cell" data-label="Аккаунтов">
+                                    <span>@w.ActiveAccounts / @w.TotalAccounts</span>
+                                    <span class="dashboard-account-progress" aria-label="Активно аккаунтов: @w.ActiveAccounts из @w.TotalAccounts">
+                                        <span style="width:@accountProgress%"></span>
+                                    </span>
+                                </td>
                                 <td class="cell-num" data-label="Откликов">@w.Responses</td>
                                 <td class="cell-num" data-label="Дублей">@w.Duplicates</td>
                                 <td class="cell-num" data-label="Ошибок">@w.Errors</td>
@@ -149,8 +194,9 @@
                                                 data-dashboard-disable-worker
                                                 data-worker-id="@w.Id"
                                                 title="Приостановить воркер"
-                                                aria-label="Приостановить @w.DisplayName">
+                                            aria-label="Приостановить @w.DisplayName">
                                             <i class="fa-solid fa-circle-pause" aria-hidden="true"></i>
+                                            <span class="dashboard-worker-toggle-label">Пауза</span>
                                         </button>
                                     }
                                     else
@@ -160,8 +206,9 @@
                                                 data-dashboard-enable-worker
                                                 data-worker-id="@w.Id"
                                                 title="Запустить воркер"
-                                                aria-label="Запустить @w.DisplayName">
+                                            aria-label="Запустить @w.DisplayName">
                                             <i class="fa-solid fa-circle-play" aria-hidden="true"></i>
+                                            <span class="dashboard-worker-toggle-label">Запустить</span>
                                         </button>
                                     }
                                 </td>

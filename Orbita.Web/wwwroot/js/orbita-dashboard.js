@@ -58,6 +58,10 @@
     }
 
     var liveState = null;
+    var activeWorkerFilter = 'all';
+    var workerSearchQuery = '';
+    var workerView = 'table';
+    var workerSortDirection = 'desc';
     var highlightMs = 1800;
 
     Chart.defaults.font.family = '"Segoe UI", system-ui, -apple-system, sans-serif';
@@ -249,7 +253,9 @@
         var yBounds = sparklineYBounds(values);
 
         chart.data.labels = labels;
-        chart.data.datasets[0].data = values;
+        chart.data.datasets.forEach(function (dataset) {
+            dataset.data = values;
+        });
         chart.options.scales.y.min = yBounds.yMin;
         chart.options.scales.y.max = yBounds.yMax;
         chart.$tooltipValues = tooltipValues;
@@ -268,6 +274,23 @@
         var metricLabel = cfg.metricLabel || 'Значение';
         var tooltipValues = resolveSparklineTooltipValues(cfg);
         var yBounds = sparklineYBounds(values);
+        var areaFill = function (context) {
+            var chart = context.chart;
+            var area = chart.chartArea;
+            if (!area) return 'transparent';
+
+            var match = color.match(/^#([\da-f]{2})([\da-f]{2})([\da-f]{2})$/i);
+            if (!match) return 'transparent';
+
+            var red = parseInt(match[1], 16);
+            var green = parseInt(match[2], 16);
+            var blue = parseInt(match[3], 16);
+            var gradient = chart.ctx.createLinearGradient(0, area.top, 0, area.bottom);
+            gradient.addColorStop(0, 'rgba(' + red + ', ' + green + ', ' + blue + ', 0.22)');
+            gradient.addColorStop(0.55, 'rgba(' + red + ', ' + green + ', ' + blue + ', 0.07)');
+            gradient.addColorStop(1, 'rgba(' + red + ', ' + green + ', ' + blue + ', 0)');
+            return gradient;
+        };
 
         var chart = new Chart(canvas, {
             type: 'line',
@@ -276,20 +299,20 @@
                 datasets: [{
                     data: values,
                     borderColor: color,
-                    backgroundColor: 'transparent',
-                    fill: false,
-                    cubicInterpolationMode: false,
-                    tension: 0,
-                    borderWidth: 2,
+                    backgroundColor: areaFill,
+                    fill: 'start',
+                    cubicInterpolationMode: 'monotone',
+                    tension: 0.36,
+                    borderWidth: 1.9,
                     borderCapStyle: 'round',
                     borderJoinStyle: 'round',
-                    pointRadius: values.length <= 6 ? 3 : 1.5,
+                    pointRadius: 0,
                     pointBackgroundColor: color,
                     pointBorderWidth: 0,
-                    pointHoverRadius: 4,
+                    pointHoverRadius: 3,
                     pointHoverBackgroundColor: color,
                     pointHoverBorderColor: '#ffffff',
-                    pointHoverBorderWidth: 2,
+                    pointHoverBorderWidth: 1.5,
                     pointHitRadius: 12
                 }]
             },
@@ -335,7 +358,7 @@
                     x: { display: false, offset: false },
                     y: { display: false, min: yBounds.yMin, max: yBounds.yMax }
                 },
-                layout: { padding: { top: 8, bottom: 4, left: 2, right: 2 } }
+                layout: { padding: { top: 4, bottom: 3, left: 2, right: 2 } }
             }
         });
 
@@ -397,24 +420,44 @@
         return values;
     }
 
-    function buildHourlyDatasets(chartData) {
-        return activityChartSeries(chartData).map(function (series) {
+    function buildHourlyDatasets(chartData, canvas) {
+        return activityChartSeries(chartData).map(function (series, seriesIndex) {
             var lineColor = series.color || '#2563eb';
+            var areaFill = function (context) {
+                if (seriesIndex !== 0 || !canvas) return 'transparent';
+
+                var area = context.chart.chartArea;
+                if (!area) return 'transparent';
+
+                var match = lineColor.match(/^#([\da-f]{2})([\da-f]{2})([\da-f]{2})$/i);
+                if (!match) return 'transparent';
+
+                var red = parseInt(match[1], 16);
+                var green = parseInt(match[2], 16);
+                var blue = parseInt(match[3], 16);
+                var gradient = context.chart.ctx.createLinearGradient(0, area.top, 0, area.bottom);
+                gradient.addColorStop(0, 'rgba(' + red + ', ' + green + ', ' + blue + ', 0.16)');
+                gradient.addColorStop(0.7, 'rgba(' + red + ', ' + green + ', ' + blue + ', 0.035)');
+                gradient.addColorStop(1, 'rgba(' + red + ', ' + green + ', ' + blue + ', 0)');
+                return gradient;
+            };
+
             return {
                 label: series.label || 'Значение',
                 data: series.values || [],
                 borderColor: lineColor,
-                backgroundColor: 'transparent',
-                fill: false,
-                tension: 0,
-                borderWidth: 2,
+                backgroundColor: areaFill,
+                fill: seriesIndex === 0 ? 'start' : false,
+                cubicInterpolationMode: 'monotone',
+                tension: 0.32,
+                borderWidth: 2.25,
                 borderCapStyle: 'round',
                 borderJoinStyle: 'round',
-                pointRadius: 3,
+                pointRadius: 2.5,
                 pointBackgroundColor: lineColor,
                 pointBorderColor: '#ffffff',
-                pointBorderWidth: 0,
-                pointHoverRadius: 5,
+                pointBorderWidth: 1,
+                pointHoverRadius: 4.5,
                 pointHoverBackgroundColor: lineColor,
                 pointHoverBorderColor: '#ffffff',
                 pointHoverBorderWidth: 2,
@@ -455,7 +498,7 @@
             type: 'line',
             data: {
                 labels: labels,
-                datasets: buildHourlyDatasets(chartData)
+                datasets: buildHourlyDatasets(chartData, canvas)
             },
             options: {
                 responsive: true,
@@ -501,12 +544,13 @@
                         display: true,
                         position: 'bottom',
                         labels: {
-                            boxWidth: 12,
-                            padding: 14,
+                            boxWidth: 8,
+                            boxHeight: 8,
+                            padding: 18,
                             color: '#667085',
-                            font: { size: 12, weight: '500' },
+                            font: { size: 13, weight: '600' },
                             usePointStyle: true,
-                            pointStyle: 'line'
+                            pointStyle: 'circle'
                         }
                     },
                     tooltip: {
@@ -559,7 +603,7 @@
                         min: yBounds.yMin,
                         max: yBounds.yMax,
                         grid: {
-                            color: '#f2f4f7',
+                            color: '#edf1f5',
                             lineWidth: 1
                         },
                         border: { display: false },
@@ -572,7 +616,7 @@
                     }
                 },
                 layout: {
-                    padding: { top: 8, right: 8, bottom: 0, left: 0 }
+                    padding: { top: 12, right: 12, bottom: 2, left: 0 }
                 }
             }
         });
@@ -627,17 +671,17 @@
                     borderWidth: 0,
                     borderRadius: function (ctx) {
                         var count = ctx.chart.data.datasets[0].data.length;
-                        return count > 1 ? 6 : 0;
+                        return count > 1 ? 4 : 0;
                     },
                     borderAlign: 'inner',
                     hoverOffset: 0,
-                    spacing: 0
+                    spacing: 2
                 }]
             },
             options: {
                 responsive: true,
                 maintainAspectRatio: false,
-                cutout: '68%',
+                cutout: '64%',
                 animation: false,
                 plugins: {
                     legend: { display: false },
@@ -719,14 +763,116 @@
                 '<button type="button" class="dashboard-worker-toggle-btn dashboard-worker-toggle-btn--pause" ' +
                 'data-dashboard-disable-worker data-worker-id="' + escapeHtml(w.id) + '" ' +
                 'title="Приостановить воркер" aria-label="Приостановить ' + escapeHtml(w.displayName) + '">' +
-                '<i class="fa-solid fa-circle-pause" aria-hidden="true"></i></button></td>';
+                '<i class="fa-solid fa-circle-pause" aria-hidden="true"></i><span class="dashboard-worker-toggle-label">Пауза</span></button></td>';
         }
 
         return '<td class="dashboard-worker-toggle" data-label="">' +
             '<button type="button" class="dashboard-worker-toggle-btn dashboard-worker-toggle-btn--play" ' +
             'data-dashboard-enable-worker data-worker-id="' + escapeHtml(w.id) + '" ' +
             'title="Запустить воркер" aria-label="Запустить ' + escapeHtml(w.displayName) + '">' +
-            '<i class="fa-solid fa-circle-play" aria-hidden="true"></i></button></td>';
+            '<i class="fa-solid fa-circle-play" aria-hidden="true"></i><span class="dashboard-worker-toggle-label">Запустить</span></button></td>';
+    }
+
+    function updateWorkerToolbar(workers) {
+        var counts = { all: workers.length, online: 0, offline: 0, empty: 0 };
+        workers.forEach(function (worker) {
+            if (worker.isEnabled && worker.isOnline) counts.online++;
+            else counts.offline++;
+            if (!worker.totalAccounts) counts.empty++;
+        });
+        Object.keys(counts).forEach(function (key) {
+            document.querySelectorAll('[data-dashboard-worker-count="' + key + '"]').forEach(function (el) {
+                el.textContent = String(counts[key]);
+            });
+        });
+    }
+
+    function applyWorkerFilter() {
+        document.querySelectorAll('[data-dashboard-workers-body] tr[data-href]').forEach(function (row) {
+            var matchesFilter = activeWorkerFilter === 'all'
+                || (activeWorkerFilter === 'online' && row.getAttribute('data-dashboard-worker-online') === 'true')
+                || (activeWorkerFilter === 'offline' && row.getAttribute('data-dashboard-worker-online') !== 'true')
+                || (activeWorkerFilter === 'empty' && row.getAttribute('data-dashboard-worker-empty') === 'true');
+            var matchesSearch = !workerSearchQuery
+                || row.textContent.toLocaleLowerCase().indexOf(workerSearchQuery) !== -1;
+            row.hidden = !(matchesFilter && matchesSearch);
+        });
+    }
+
+    function sortWorkerRows() {
+        var body = document.querySelector('[data-dashboard-workers-body]');
+        if (!body) return;
+        Array.prototype.slice.call(body.querySelectorAll('tr[data-href]'))
+            .sort(function (left, right) {
+                var leftValue = Number(left.getAttribute('data-dashboard-worker-activity')) || 0;
+                var rightValue = Number(right.getAttribute('data-dashboard-worker-activity')) || 0;
+                return workerSortDirection === 'desc' ? rightValue - leftValue : leftValue - rightValue;
+            })
+            .forEach(function (row) { body.appendChild(row); });
+    }
+
+    function initDashboardWorkerToolbar() {
+        var workerCard = document.querySelector('.card--dashboard-workers');
+        if (workerCard) {
+            workerCard.classList.toggle('dashboard-workers-view--cards', workerView === 'cards');
+        }
+        document.querySelectorAll('[data-dashboard-worker-filter]').forEach(function (button) {
+            if (button.hasAttribute('data-dashboard-worker-filter-bound')) return;
+            button.setAttribute('data-dashboard-worker-filter-bound', '1');
+            button.addEventListener('click', function () {
+                activeWorkerFilter = button.getAttribute('data-dashboard-worker-filter') || 'all';
+                document.querySelectorAll('[data-dashboard-worker-filter]').forEach(function (item) {
+                    var selected = item === button;
+                    item.classList.toggle('is-active', selected);
+                    item.setAttribute('aria-pressed', selected ? 'true' : 'false');
+                });
+                applyWorkerFilter();
+            });
+        });
+        document.querySelectorAll('[data-dashboard-worker-search]').forEach(function (input) {
+            if (input.hasAttribute('data-dashboard-worker-search-bound')) return;
+            input.setAttribute('data-dashboard-worker-search-bound', '1');
+            input.addEventListener('input', function () {
+                workerSearchQuery = String(input.value || '').trim().toLocaleLowerCase();
+                applyWorkerFilter();
+            });
+        });
+        document.querySelectorAll('[data-dashboard-worker-sort]').forEach(function (button) {
+            if (button.hasAttribute('data-dashboard-worker-sort-bound')) return;
+            button.setAttribute('data-dashboard-worker-sort-bound', '1');
+            button.addEventListener('click', function () {
+                workerSortDirection = workerSortDirection === 'desc' ? 'asc' : 'desc';
+                button.setAttribute('aria-label', workerSortDirection === 'desc' ? 'Сначала недавняя активность' : 'Сначала давняя активность');
+                var icon = button.querySelector('i');
+                if (icon) {
+                    icon.className = workerSortDirection === 'desc'
+                        ? 'fa-solid fa-arrow-down-short-wide'
+                        : 'fa-solid fa-arrow-up-short-wide';
+                }
+                sortWorkerRows();
+            });
+        });
+        sortWorkerRows();
+        document.querySelectorAll('[data-dashboard-worker-view]').forEach(function (button) {
+            var isCurrentView = button.getAttribute('data-dashboard-worker-view') === workerView;
+            button.classList.toggle('is-active', isCurrentView);
+            button.setAttribute('aria-pressed', isCurrentView ? 'true' : 'false');
+            if (button.hasAttribute('data-dashboard-worker-view-bound')) return;
+            button.setAttribute('data-dashboard-worker-view-bound', '1');
+            button.addEventListener('click', function () {
+                workerView = button.getAttribute('data-dashboard-worker-view') === 'cards' ? 'cards' : 'table';
+                var workerCard = document.querySelector('.card--dashboard-workers');
+                if (workerCard) {
+                    workerCard.classList.toggle('dashboard-workers-view--cards', workerView === 'cards');
+                }
+                document.querySelectorAll('[data-dashboard-worker-view]').forEach(function (item) {
+                    var selected = item === button;
+                    item.classList.toggle('is-active', selected);
+                    item.setAttribute('aria-pressed', selected ? 'true' : 'false');
+                });
+            });
+        });
+        applyWorkerFilter();
     }
 
     function renderWorkers(workers) {
@@ -754,13 +900,20 @@
             if (liveRoot && liveRoot.getAttribute('data-show-office-column') === 'true') {
                 officeCell = '<td data-label="Офис">' + escapeHtml(w.officeName || '—') + '</td>';
             }
+            var totalAccounts = Math.max(0, Number(w.totalAccounts) || 0);
+            var activeAccounts = Math.max(0, Number(w.activeAccounts) || 0);
+            var accountProgress = totalAccounts > 0 ? Math.min(100, Math.round(activeAccounts * 100 / totalAccounts)) : 0;
+            var accountsCell = '<td class="cell-num dashboard-account-cell" data-label="Аккаунтов">' +
+                '<span>' + activeAccounts + ' / ' + totalAccounts + '</span>' +
+                '<span class="dashboard-account-progress" aria-label="Активно аккаунтов: ' + activeAccounts + ' из ' + totalAccounts + '"><span style="width:' + accountProgress + '%"></span></span>' +
+                '</td>';
 
-            return '<tr data-href="' + escapeHtml(detailsUrl) + '">' +
+            return '<tr data-href="' + escapeHtml(detailsUrl) + '" data-dashboard-worker-online="' + (w.isEnabled && w.isOnline ? 'true' : 'false') + '" data-dashboard-worker-empty="' + (!w.totalAccounts ? 'true' : 'false') + '" data-dashboard-worker-activity="' + (iso ? Date.parse(iso) || 0 : 0) + '">' +
                 '<td class="cell-name" data-label="Воркер">' + nameCell + '</td>' +
                 officeCell +
                 '<td data-label="Статус"><span class="status-dot' + statusClass + '"><i class="fa-solid fa-circle status-dot-icon" aria-hidden="true"></i>' + statusText + '</span></td>' +
                 '<td data-label="Сейчас">' + (window.OrbitaLiveShared ? window.OrbitaLiveShared.renderActivityPill(w.currentActivityLabel, w.currentActivityTone, w.isActivityLive, window.OrbitaLiveShared.activityPillExtrasFromWorker(w)) : escapeHtml(w.currentActivityLabel || '—')) + '</td>' +
-                '<td class="cell-num" data-label="Аккаунтов">' + w.activeAccounts + ' / ' + w.totalAccounts + '</td>' +
+                accountsCell +
                 '<td class="cell-num" data-label="Откликов">' + w.responses + '</td>' +
                 '<td class="cell-num" data-label="Дублей">' + w.duplicates + '</td>' +
                 '<td class="cell-num" data-label="Ошибок">' + w.errors + '</td>' +
@@ -785,6 +938,8 @@
         initDashboardRowMenus();
         initDashboardRowNavigation();
         initDashboardWorkerToggleButtons();
+        updateWorkerToolbar(workers);
+        initDashboardWorkerToolbar();
         if (window.Orbita && window.Orbita.initWorkerRestartButtons) {
             window.Orbita.initWorkerRestartButtons();
         }
@@ -1138,22 +1293,8 @@
             if (changed) {
                 var localized = localizeChartData(chartData);
                 var yBounds = hourlyYBounds(chartData);
-                var datasets = buildHourlyDatasets(chartData);
                 chartRegistry.hourly.data.labels = localized.labels;
-                datasets.forEach(function (dataset, index) {
-                    if (chartRegistry.hourly.data.datasets[index]) {
-                        chartRegistry.hourly.data.datasets[index].label = dataset.label;
-                        chartRegistry.hourly.data.datasets[index].data = dataset.data;
-                        chartRegistry.hourly.data.datasets[index].borderColor = dataset.borderColor;
-                        chartRegistry.hourly.data.datasets[index].pointBackgroundColor = dataset.pointBackgroundColor;
-                        chartRegistry.hourly.data.datasets[index].pointHoverBackgroundColor = dataset.pointHoverBackgroundColor;
-                    } else {
-                        chartRegistry.hourly.data.datasets.push(dataset);
-                    }
-                });
-                while (chartRegistry.hourly.data.datasets.length > datasets.length) {
-                    chartRegistry.hourly.data.datasets.pop();
-                }
+                chartRegistry.hourly.data.datasets = buildHourlyDatasets(localized, chartRegistry.hourly.canvas);
                 chartRegistry.hourly.options.scales.y.min = yBounds.yMin;
                 chartRegistry.hourly.options.scales.y.max = yBounds.yMax;
                 chartRegistry.hourly.options.scales.y.ticks.stepSize = yBounds.step;
@@ -1316,6 +1457,7 @@
         }
         initDashboardMonitoringButtons();
         initDashboardWorkerToggleButtons();
+        initDashboardWorkerToolbar();
         if (liveState) {
             updateMonitoringControls(liveState);
         }
