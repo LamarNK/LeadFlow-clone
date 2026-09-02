@@ -1396,6 +1396,60 @@ public sealed class CrmTelephonyServiceTests
     }
 
     [Fact]
+    public async Task AsteriskInboundRoute_KnownCardTargetsOnlyItsCurrentResponsibleManager()
+    {
+        await using var harness = await Harness.CreateAsync();
+        var receiver = await harness.CreateReceiverAsync(CrmTelephonyProviders.Asterisk);
+        await harness.SetManagerOnShiftAsync(Harness.ManagerId);
+        const string responsibleManagerId = "current-card-responsible";
+        await harness.AddAsteriskManagerAsync(responsibleManagerId, "202", onShift: false);
+        var card = await harness.Db.CrmCandidateCards.SingleAsync(x => x.Id == harness.CardId);
+        card.ManagerUserId = responsibleManagerId;
+        card.IsClosed = true;
+        await harness.Db.SaveChangesAsync();
+        await harness.AddAsteriskCallAsync(
+            "other-manager-outbound-affinity",
+            CrmCallDirections.Outgoing,
+            Harness.ManagerId,
+            "201",
+            harness.Now.UtcDateTime.AddMinutes(-5));
+
+        var route = await harness.Sut.ResolveAsteriskInboundRouteAsync(
+            receiver.PublicId,
+            receiver.Secret,
+            "+7 (999) 111-22-33",
+            "74950000000");
+
+        Assert.Equal(AsteriskInboundRouteOutcome.Resolved, route.Outcome);
+        Assert.Equal("202", route.PreferredExtension);
+        Assert.Empty(route.FallbackExtensions ?? []);
+        Assert.True(route.IsExclusive);
+        Assert.Null(route.AffinityExpiresAtUtc);
+    }
+
+    [Fact]
+    public async Task AsteriskInboundRoute_KnownCardWithoutTelephonyNeverFallsBackToAnotherManager()
+    {
+        await using var harness = await Harness.CreateAsync();
+        var receiver = await harness.CreateReceiverAsync(CrmTelephonyProviders.Asterisk);
+        await harness.SetManagerOnShiftAsync(Harness.ManagerId);
+        var card = await harness.Db.CrmCandidateCards.SingleAsync(x => x.Id == harness.CardId);
+        card.ManagerUserId = "responsible-without-telephony";
+        await harness.Db.SaveChangesAsync();
+
+        var route = await harness.Sut.ResolveAsteriskInboundRouteAsync(
+            receiver.PublicId,
+            receiver.Secret,
+            "+7 (999) 111-22-33",
+            "74950000000");
+
+        Assert.Equal(AsteriskInboundRouteOutcome.Resolved, route.Outcome);
+        Assert.Null(route.PreferredExtension);
+        Assert.Empty(route.FallbackExtensions ?? []);
+        Assert.True(route.IsExclusive);
+    }
+
+    [Fact]
     public async Task AsteriskInboundRoute_FallbackAnswerDoesNotReplaceOutboundAffinity()
     {
         await using var harness = await Harness.CreateAsync();

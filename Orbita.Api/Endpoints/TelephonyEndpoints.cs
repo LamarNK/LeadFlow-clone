@@ -15,6 +15,7 @@ public static class TelephonyEndpoints
 {
     private const long MaxWebhookBodyBytes = 64 * 1024;
     private const long MaxAsteriskWebhookBodyBytes = 105L * 1024 * 1024;
+    private const string AsteriskExclusiveRouteMarker = "PJSIP/orbita-exclusive-route";
 
     public static void Map(WebApplication app)
     {
@@ -148,10 +149,12 @@ public static class TelephonyEndpoints
                 }
 
                 var preferred = result.PreferredExtension ?? string.Empty;
-                var fallback = string.Join(
-                    '&',
-                    (result.FallbackExtensions ?? [])
-                        .Select(extension => $"PJSIP/{extension}-webrtc"));
+                var fallback = result.IsExclusive
+                    ? AsteriskExclusiveRouteMarker
+                    : string.Join(
+                        '&',
+                        (result.FallbackExtensions ?? [])
+                            .Select(extension => $"PJSIP/{extension}-webrtc"));
                 return Results.Text($"{preferred}^{fallback}", "text/plain");
             })
             .AllowAnonymous()

@@ -1693,18 +1693,30 @@ public sealed class CrmTelephonyService(
         }
 
         var now = timeProvider.GetUtcNow().UtcDateTime;
-        var cutoff = now - CallbackAffinityLifetime;
-        var lastOutbound = await db.CrmCalls.AsNoTracking()
-            .Where(x => x.OfficeId == receiver.OfficeId
-                && x.Provider == CrmTelephonyProviders.Asterisk
-                && x.Direction == CrmCallDirections.Outgoing
-                && x.ClientPhoneNormalized == clientPhone
-                && x.ManagerUserId != null
-                && x.StartedAtUtc >= cutoff
-                && x.StartedAtUtc <= now.AddMinutes(5))
-            .OrderByDescending(x => x.StartedAtUtc)
-            .Select(x => new { x.ManagerUserId, x.StartedAtUtc })
-            .FirstOrDefaultAsync(ct);
+        var card = await FindCardAsync(receiver.OfficeId, [clientPhone], ct);
+        if (!string.IsNullOrWhiteSpace(card?.ManagerUserId))
+        {
+            var responsibleExtension = await db.CrmTelephonyUserBindings.AsNoTracking()
+                .Where(x => x.OfficeId == receiver.OfficeId
+                    && x.Provider == CrmTelephonyProviders.Asterisk
+                    && x.UserId == card.ManagerUserId)
+                .Select(x => x.ProviderUserKey)
+                .FirstOrDefaultAsync(ct);
+            if (!IsValidAsteriskExtension(responsibleExtension))
+            {
+                responsibleExtension = null;
+            }
+
+            // A manager cannot work with another manager's card. Keep the route
+            // exclusive even when the responsible user has no active SIP contact
+            // or no Asterisk binding, so the dialplan never leaks the call to a
+            // fallback employee or the office default extension.
+            return new AsteriskInboundRouteResult(
+                AsteriskInboundRouteOutcome.Resolved,
+                responsibleExtension,
+                [],
+                IsExclusive: true);
+        }
 
         string? preferredExtension = await ResolvePersonalInboundExtensionAsync(
             receiver.OfficeId,
@@ -1712,21 +1724,36 @@ public sealed class CrmTelephonyService(
             inboundAccountKey,
             ct);
         DateTime? affinityExpiresAtUtc = null;
-        if (preferredExtension is null && lastOutbound is not null)
+        if (preferredExtension is null)
         {
-            preferredExtension = await db.CrmTelephonyUserBindings.AsNoTracking()
+            var cutoff = now - CallbackAffinityLifetime;
+            var lastOutbound = await db.CrmCalls.AsNoTracking()
                 .Where(x => x.OfficeId == receiver.OfficeId
                     && x.Provider == CrmTelephonyProviders.Asterisk
-                    && x.UserId == lastOutbound.ManagerUserId)
-                .Select(x => x.ProviderUserKey)
+                    && x.Direction == CrmCallDirections.Outgoing
+                    && x.ClientPhoneNormalized == clientPhone
+                    && x.ManagerUserId != null
+                    && x.StartedAtUtc >= cutoff
+                    && x.StartedAtUtc <= now.AddMinutes(5))
+                .OrderByDescending(x => x.StartedAtUtc)
+                .Select(x => new { x.ManagerUserId, x.StartedAtUtc })
                 .FirstOrDefaultAsync(ct);
-            if (!IsValidAsteriskExtension(preferredExtension))
+            if (lastOutbound is not null)
             {
-                preferredExtension = null;
-            }
-            else
-            {
-                affinityExpiresAtUtc = lastOutbound.StartedAtUtc + CallbackAffinityLifetime;
+                preferredExtension = await db.CrmTelephonyUserBindings.AsNoTracking()
+                    .Where(x => x.OfficeId == receiver.OfficeId
+                        && x.Provider == CrmTelephonyProviders.Asterisk
+                        && x.UserId == lastOutbound.ManagerUserId)
+                    .Select(x => x.ProviderUserKey)
+                    .FirstOrDefaultAsync(ct);
+                if (!IsValidAsteriskExtension(preferredExtension))
+                {
+                    preferredExtension = null;
+                }
+                else
+                {
+                    affinityExpiresAtUtc = lastOutbound.StartedAtUtc + CallbackAffinityLifetime;
+                }
             }
         }
 

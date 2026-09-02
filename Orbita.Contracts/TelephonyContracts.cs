@@ -264,15 +264,15 @@ public enum AsteriskInboundRouteOutcome
 }
 
 /// <summary>
-/// Inbound callback routing derived from the latest Asterisk outbound call.
-/// Fallback extensions may answer the call, but never replace the preferred
-/// manager or CRM responsible person.
+/// Inbound callback routing. A known CRM card is routed exclusively to its
+/// current responsible manager; unknown callers may use ordinary fallbacks.
 /// </summary>
 public sealed record AsteriskInboundRouteResult(
     AsteriskInboundRouteOutcome Outcome,
     string? PreferredExtension = null,
     IReadOnlyList<string>? FallbackExtensions = null,
     DateTime? AffinityExpiresAtUtc = null,
+    bool IsExclusive = false,
     string? Message = null);
 
 public enum SipoutCallReceiveOutcome
