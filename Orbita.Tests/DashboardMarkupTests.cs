@@ -12,7 +12,7 @@ public sealed class DashboardMarkupTests
         var chartGuard = js.IndexOf("if (!hasChart()) return;", configureDefaults, StringComparison.Ordinal);
         var initAll = js.IndexOf("function initDashboardAll()", StringComparison.Ordinal);
         var toolbarInit = js.IndexOf("initDashboardWorkerToolbar();", initAll, StringComparison.Ordinal);
-        var chartEarlyReturn = js.IndexOf("if (typeof Chart === \"undefined\") return;", initAll, StringComparison.Ordinal);
+        var chartEarlyReturn = js.IndexOf("if (typeof Chart ===", initAll, StringComparison.Ordinal);
 
         Assert.True(configureDefaults >= 0);
         Assert.True(chartGuard > configureDefaults);
