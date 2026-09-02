@@ -31,12 +31,13 @@
                            ?? analytics.Managers.FirstOrDefault()?.DisplayName
                            ?? "Мои показатели";
         var managerCohortSelected = !string.IsNullOrWhiteSpace(analytics.ManagerUserId);
+        var closedInPeriod = analytics.CloseReasons.Sum(x => x.Count);
         var visibleFunnels = analytics.Funnels
             .Where(x => x.Received > 0 || string.IsNullOrWhiteSpace(analytics.ManagerUserId))
             .ToList();
         var kpis = new[]
         {
-            new { Label = managerCohortSelected ? "Получено менеджером" : "Получено кандидатов", Value = cards.Received.ToString("N0"), Caption = managerCohortSelected ? "Впервые выдано за период" : "Карточек создано за период", Icon = "fa-solid fa-user-plus", Tone = "blue" },
+            new { Label = managerCohortSelected ? "Получено менеджером" : "Поступило лидов", Value = cards.Received.ToString("N0"), Caption = managerCohortSelected ? "Впервые выдано за период" : "Карточек поступило в CRM за период", Icon = "fa-solid fa-user-plus", Tone = "blue" },
             new { Label = managerCohortSelected ? "Сейчас назначены" : "Назначено", Value = cards.Assigned.ToString("N0"), Caption = managerCohortSelected ? $"{Percent(cards.AssignmentRatePercent)} сейчас имеют ответственного" : $"{Percent(cards.AssignmentRatePercent)} от полученных", Icon = "fa-solid fa-user-check", Tone = "indigo" },
             new { Label = "Активные", Value = cards.Active.ToString("N0"), Caption = "Сейчас не закрыты", Icon = "fa-regular fa-folder-open", Tone = "orange" },
             new { Label = "Закрытые", Value = cards.Closed.ToString("N0"), Caption = $"{Percent(cards.CloseRatePercent)} от полученных", Icon = "fa-solid fa-box-archive", Tone = "slate" },
@@ -115,7 +116,7 @@
         {
             var decompositionSteps = new[]
             {
-                new { Label = "Лиды", Count = decomposition.Leads, Caption = "Выдано во время смены", Icon = "fa-solid fa-user-plus", Tone = "leads", Conversion = (double?)null },
+                new { Label = "Лиды", Count = decomposition.Leads, Caption = managerCohortSelected ? "Впервые выданы менеджеру за период" : "Поступили в CRM за период", Icon = "fa-solid fa-user-plus", Tone = "leads", Conversion = (double?)null },
                 new { Label = "Дозвоны", Count = decomposition.Contacts, Caption = managerCohortSelected ? "Подтвердил сотрудник" : "Подтвердили сотрудники", Icon = "fa-solid fa-phone-volume", Tone = "contacts", Conversion = (double?)decomposition.ContactConversionPercent },
                 new { Label = "Анкеты", Count = decomposition.Questionnaires, Caption = "Дошли до анкеты", Icon = "fa-solid fa-clipboard-list", Tone = "questionnaires", Conversion = (double?)decomposition.QuestionnaireConversionPercent },
                 new { Label = "Билеты", Count = decomposition.Tickets, Caption = "Дошли до билета", Icon = "fa-solid fa-ticket", Tone = "tickets", Conversion = (double?)decomposition.TicketConversionPercent },
@@ -128,8 +129,8 @@
                 <div>
                     <h2 id="crm-decomposition-title">Декомпозиция</h2>
                     <p>@(managerCohortSelected
-                        ? "Лиды — выдача во время смены; остальные шаги — фактические действия сотрудника в выбранном периоде."
-                        : "Сумма результатов сотрудников: выдачи и фактические действия в выбранном периоде, только внутри смен.")</p>
+                        ? $"Лиды, впервые выданные «{managerLabel}» за период, и только его действия по этим лидам."
+                        : "Лиды, поступившие в CRM за выбранный период, и действия только по этим лидам. Каждая карточка считается один раз.")</p>
                 </div>
                 <span>Конверсия от предыдущего шага</span>
             </header>
@@ -168,7 +169,7 @@
                 }
                 else
                 {
-                    <p>Каждая карточка учитывается один раз у каждого сотрудника: достигнутый этап имеет приоритет перед причиной закрытия.</p>
+                    <p>Каждая карточка учитывается один раз: достигнутый этап имеет приоритет перед причиной закрытия.</p>
                     <div class="crm-analytics-contact-breakdown">
                         @foreach (var item in contactBreakdown)
                         {
@@ -185,13 +186,13 @@
                 <header class="crm-analytics-panel__header">
                     <div>
                         <h2>Результаты закрытия</h2>
-                        <p>@(managerCohortSelected ? "Состояние лидов, впервые выданных выбранному менеджеру." : "Доля каждой причины среди закрытых карточек периода.")</p>
+                        <p>@(managerCohortSelected ? "Причины карточек, закрытых выбранным сотрудником за период." : "Доля каждой причины среди закрытий за период.")</p>
                     </div>
-                    <span>@cards.Closed.ToString("N0") закрыто</span>
+                    <span>@closedInPeriod.ToString("N0") закрыто</span>
                 </header>
-                @if (cards.Closed == 0 || analytics.CloseReasons.All(x => x.Count == 0))
+                @if (closedInPeriod == 0)
                 {
-                    <div class="crm-analytics-panel-empty"><i class="fa-regular fa-circle-check" aria-hidden="true"></i><span>За период нет закрытых карточек</span></div>
+                    <div class="crm-analytics-panel-empty"><i class="fa-regular fa-circle-check" aria-hidden="true"></i><span>За период нет закрытий</span></div>
                 }
                 else
                 {
@@ -235,7 +236,7 @@
             <header class="crm-analytics-panel__header">
                 <div>
                     <h2>Воронка по этапам</h2>
-                    <p>«Дошли» — карточка достигла этапа в выбранном периоде; «сейчас» — её текущий или последний этап, включая закрытые.</p>
+                    <p>Карточки, поступившие за выбранный период: сколько из них перевели на каждый этап в этом же периоде.</p>
                 </div>
             </header>
             @if (visibleFunnels.Count == 0)
@@ -283,12 +284,13 @@
                                         </span>
                                         <h3>@stage.Stage</h3>
                                         <div class="crm-analytics-funnel-stage__metrics">
-                                            <div><span>Дошли</span><strong>@stage.ReachedCount.ToString("N0")</strong></div>
-                                            <div><span>Сейчас</span><strong>@stage.CurrentCount.ToString("N0")</strong></div>
+                                            <div><span>@(stage.Position == 0 ? "Поступило" : "Перевели")</span><strong>@stage.ReachedCount.ToString("N0")</strong></div>
                                         </div>
                                         <p>@(stage.IsArchive
                                             ? "Последний этап удалён из текущей настройки"
-                                            : $"{Percent(stage.ConversionFromReceivedPercent)} от полученных")</p>
+                                            : stage.Position == 0
+                                                ? "База выбранного периода"
+                                                : $"{Percent(stage.ConversionFromPreviousPercent)} от прошлого этапа · {Percent(stage.ConversionFromReceivedPercent)} от поступивших")</p>
                                     </div>
                                 }
                             </div>
