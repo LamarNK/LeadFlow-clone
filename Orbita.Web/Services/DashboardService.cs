@@ -233,7 +233,7 @@ public sealed class DashboardService(
                 IconClass = "fa-solid fa-triangle-exclamation",
                 IconTone = "orange",
                 Sparkline = SparklineGenerator.FromSeries(errorsSeries),
-                SparkColor = "#f59e0b"
+                SparkColor = "#f04438"
             },
             new()
             {
