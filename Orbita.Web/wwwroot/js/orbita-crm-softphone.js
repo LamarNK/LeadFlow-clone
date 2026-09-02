@@ -16,9 +16,9 @@
     var peerConnectionConfig = { iceServers: [], iceTransportPolicy: 'all' };
     var iceGatheringTimeoutMs = 6000;
     var registrationExpiresSeconds = 120;
-    var registrationHealthIntervalMs = 15000;
+    var registrationHealthIntervalMs = 10000;
     var registrationRecoveryDelayMs = 30000;
-    var registrationProbeTimeoutMs = 8000;
+    var registrationProbeTimeoutMs = 4000;
     var modal = document.querySelector('[data-orbita-softphone]');
     var targetLabel = document.querySelector('[data-orbita-softphone-target]');
     var statusLabel = document.querySelector('[data-orbita-softphone-status]');

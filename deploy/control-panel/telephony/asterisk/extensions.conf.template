@@ -51,7 +51,17 @@ exten => _X.,1,NoOp(Orbita incoming call)
  same => n,Set(ORBITA_FALLBACK=${CUT(ORBITA_ROUTE,^,2)})
  same => n,GotoIf($["${ORBITA_PREFERRED}"=""]?fallback)
  same => n,Set(__ORBITA_INTERNAL=${ORBITA_PREFERRED})
- same => n,Dial(PJSIP/${ORBITA_PREFERRED}-webrtc,15)
+ same => n,Set(ORBITA_PREFERRED_DIAL=${PJSIP_DIAL_CONTACTS(${ORBITA_PREFERRED}-webrtc)})
+ same => n,GotoIf($["${ORBITA_PREFERRED_DIAL}"=""]?fallback)
+ same => n,Dial(${ORBITA_PREFERRED_DIAL},15)
+ same => n,GotoIf($["${DIALSTATUS}"="ANSWER"]?done)
+ ; A browser can replace a stale WebSocket contact while the first Dial is
+ ; still waiting on the old contact. Retry only when the resolved contact
+ ; actually changed, so an ordinary unanswered call is never duplicated.
+ same => n,Set(ORBITA_PREFERRED_RETRY_DIAL=${PJSIP_DIAL_CONTACTS(${ORBITA_PREFERRED}-webrtc)})
+ same => n,GotoIf($["${ORBITA_PREFERRED_RETRY_DIAL}"=""]?fallback)
+ same => n,GotoIf($["${ORBITA_PREFERRED_RETRY_DIAL}"="${ORBITA_PREFERRED_DIAL}"]?fallback)
+ same => n,Dial(${ORBITA_PREFERRED_RETRY_DIAL},15)
  same => n,GotoIf($["${DIALSTATUS}"="ANSWER"]?done)
  same => n(fallback),GotoIf($["${ORBITA_FALLBACK}"=""]?default)
  same => n,Dial(${ORBITA_FALLBACK},45)
