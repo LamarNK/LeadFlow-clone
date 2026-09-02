@@ -16,6 +16,7 @@
     var iceGatheringTimeoutMs = 6000;
     var registrationExpiresSeconds = 120;
     var registrationHealthIntervalMs = 15000;
+    var registrationRecoveryDelayMs = 30000;
     var modal = document.querySelector('[data-orbita-softphone]');
     var targetLabel = document.querySelector('[data-orbita-softphone-target]');
     var statusLabel = document.querySelector('[data-orbita-softphone-status]');
@@ -193,17 +194,61 @@
         if (shuttingDown || !config || reconnectTimer) return;
         if (failedAgent && ua !== failedAgent) return;
 
-        var delay = Math.min(30000, 1000 * Math.pow(2, Math.min(reconnectAttempt, 5)));
+        // JsSIP already reconnects its WebSocket transport. Give it enough time to
+        // recover in place so an active AOR contact is not torn down during a call.
+        var delay = Math.min(60000, registrationRecoveryDelayMs * Math.pow(2, Math.min(reconnectAttempt, 1)));
         reconnectAttempt += 1;
         reconnectTimer = window.setTimeout(function () {
             reconnectTimer = null;
             if (shuttingDown) return;
             if (failedAgent && ua !== failedAgent) return;
+            if (isUserAgentHealthy(ua)) {
+                reconnectAttempt = 0;
+                return;
+            }
             if (ua) disposeUserAgent(ua);
             ensureRegistered(config).catch(function () {
                 scheduleRegistrationRecovery(config, ua);
             });
         }, delay);
+    }
+
+    function waitForExistingRegistration(agent, config) {
+        if (registrationPromise) return registrationPromise;
+
+        registrationPromise = new Promise(function (resolve, reject) {
+            var startedAt = Date.now();
+
+            function poll() {
+                if (shuttingDown) {
+                    registrationPromise = null;
+                    reject(new Error('SIP-линия остановлена.'));
+                    return;
+                }
+                if (ua !== agent) {
+                    registrationPromise = null;
+                    ensureRegistered(config).then(resolve, reject);
+                    return;
+                }
+                if (isUserAgentHealthy(agent)) {
+                    registrationPromise = null;
+                    reconnectAttempt = 0;
+                    clearReconnectTimer();
+                    resolve(agent);
+                    return;
+                }
+                if (Date.now() - startedAt >= 15000) {
+                    registrationPromise = null;
+                    scheduleRegistrationRecovery(config, agent);
+                    reject(new Error('SIP-линия переподключается. Повторите через несколько секунд.'));
+                    return;
+                }
+                window.setTimeout(poll, 250);
+            }
+
+            poll();
+        });
+        return registrationPromise;
     }
 
     function ensureRegistered(config) {
@@ -213,8 +258,10 @@
         if (ua && uaKey === key && isUserAgentHealthy(ua)) {
             return Promise.resolve(ua);
         }
-        // Never leave an unregistered UA running in the background. JsSIP would keep
-        // reconnecting it and multiple agents would replace the single AOR contact.
+        if (ua && uaKey === key) {
+            scheduleRegistrationRecovery(config, ua);
+            return waitForExistingRegistration(ua, config);
+        }
         if (ua) disposeUserAgent(ua);
         if (registrationPromise) return registrationPromise;
         if (!window.JsSIP || !window.JsSIP.WebSocketInterface || !window.JsSIP.UA) {
@@ -557,6 +604,10 @@
 
     async function checkRegistrationHealth() {
         if (shuttingDown || !currentConfig || registrationPromise || isUserAgentHealthy(ua)) return;
+        if (ua) {
+            scheduleRegistrationRecovery(currentConfig, ua);
+            return;
+        }
         try {
             await ensureRegistered(currentConfig);
         } catch (error) {
