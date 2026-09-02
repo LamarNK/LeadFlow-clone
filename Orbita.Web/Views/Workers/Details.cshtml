@@ -77,7 +77,7 @@
                         @(Model.IsOnline ? "Онлайн" : "Оффлайн")
                     </span>
                 }
-                <span class="workers-status-badge workers-status-badge--paused" data-worker-pause-badge @(Model.IsMonitoringPaused ? null : "hidden")>
+                <span class="workers-status-badge workers-status-badge--paused" data-worker-pause-badge hidden="@(!Model.IsMonitoringPaused)">
                     Пауза мониторинга
                 </span>
             </div>
@@ -123,7 +123,7 @@
                         <i class="fa-regular fa-pen-to-square" aria-hidden="true"></i>
                         Переименовать
                     </button>
-                    <form asp-action="Disable" method="post" class="settings-inline-form" data-worker-pause-form @(Model.IsMonitoringPaused ? "hidden" : null)>
+                    <form asp-action="Disable" method="post" class="settings-inline-form" data-worker-pause-form hidden="@Model.IsMonitoringPaused">
                         @Html.AntiForgeryToken()
                         <input type="hidden" name="workerId" value="@Model.WorkerId" />
                         <button type="submit" class="row-menu-item">
@@ -131,7 +131,7 @@
                             Пауза мониторинга
                         </button>
                     </form>
-                    <form asp-action="Enable" method="post" class="settings-inline-form" data-worker-resume-form @(Model.IsMonitoringPaused ? null : "hidden")>
+                    <form asp-action="Enable" method="post" class="settings-inline-form" data-worker-resume-form hidden="@(!Model.IsMonitoringPaused)">
                         @Html.AntiForgeryToken()
                         <input type="hidden" name="workerId" value="@Model.WorkerId" />
                         <button type="submit" class="row-menu-item">
