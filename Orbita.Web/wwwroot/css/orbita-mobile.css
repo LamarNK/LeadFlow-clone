@@ -466,6 +466,37 @@
         font-size: clamp(28px, 8vw, 36px);
     }
 
+    .kpi-card--stat {
+        padding: 14px;
+    }
+
+    .kpi-card--stat .kpi-card-head {
+        margin: 0;
+    }
+
+    .kpi-card--stat .kpi-icon-box {
+        display: grid;
+        width: 26px;
+        height: 26px;
+        border-radius: 8px;
+        font-size: 12px;
+    }
+
+    .kpi-card--stat .kpi-card-label {
+        font-size: 10px;
+    }
+
+    .kpi-card--stat .kpi-card-metric {
+        align-items: flex-start;
+        flex-direction: column;
+        gap: 3px;
+        margin: auto 0 0;
+    }
+
+    .kpi-card--stat .kpi-value {
+        font-size: clamp(26px, 8vw, 32px);
+    }
+
     .responses-page {
         padding-top: 8px;
     }

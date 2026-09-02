@@ -1505,6 +1505,18 @@
 .crm-team-metric.kpi-card { min-height: 166px; padding: 22px; }
 .crm-team-metric.kpi-card .kpi-card-head { margin-bottom: 12px; }.crm-team-metric__metric { min-height: 42px; margin-bottom: 8px; }.crm-team-metric__caption { margin: auto 0 0; color: #98a2b3; font-size: 11px; line-height: 1.35; }.crm-team-metric--queue .kpi-value, .crm-team-metric--redistributed .kpi-value { color: #b54708; }.crm-team-metric--shift .kpi-value, .crm-team-metric--closed .kpi-value { color: #039855; }.crm-team-metric--assigned .kpi-value { color: #6938d3; }
 
+/* CRM KPI variants keep their domain colours, but share the dashboard reading order. */
+.crm-task-metric.kpi-card .kpi-card-head,
+.crm-team-metric.kpi-card .kpi-card-head { margin: 0; }
+.crm-task-metric.kpi-card .kpi-icon-box,
+.crm-team-metric.kpi-card .kpi-icon-box { display: grid; width: 28px; height: 28px; border-radius: 9px; font-size: 13px; }
+.crm-task-metric.kpi-card .kpi-card-label,
+.crm-team-metric.kpi-card .kpi-card-label { color: #98a2b3; font-size: 10px; font-weight: 700; letter-spacing: .055em; line-height: 1.2; text-transform: uppercase; }
+.crm-task-metric.kpi-card .kpi-card-metric,
+.crm-team-metric.kpi-card .kpi-card-metric { align-items: flex-start; flex-direction: column; gap: 5px; margin: auto 0 0; }
+.crm-task-metric.kpi-card .kpi-value,
+.crm-team-metric.kpi-card .kpi-value { font-size: clamp(28px, 2vw, 36px); letter-spacing: -.035em; }
+
 .crm-team-grid { grid-template-columns: minmax(0, 1.35fr) minmax(340px, .8fr); gap: 16px; }
 .crm-team-panel { overflow: hidden; padding: 0; border-color: #edf0f5; box-shadow: 0 7px 22px rgba(16, 24, 40, .035); }
 .crm-team-panel--tasks { grid-column: 1 / -1; }.crm-team-panel--settings { grid-column: 1; }.crm-team-panel--funnel { grid-column: 2; }
