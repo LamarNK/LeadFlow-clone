@@ -2577,7 +2577,66 @@ internal static class DesignPreviewData
             sort: tableSort,
             accountSearchQuery: accountSearchQuery,
             accountGroupId: accountGroupId,
-            accountProvider: accountProvider);
+            accountProvider: accountProvider,
+            settingsTemplates: GetWorkerSettingsTemplates(id));
+    }
+
+    public static IReadOnlyList<WorkerSettingsTemplateDto> GetWorkerSettingsTemplates(Guid workerId)
+    {
+        var officeId = GetWorker(workerId)?.OfficeId is Guid id && id != default ? id : PreviewOfficeId;
+        return
+        [
+            CreatePreviewSettingsTemplate(
+                workerId,
+                "Будни 07–19",
+                new WorkerSettingsTemplatePayload(
+                    MaxConcurrentAccounts: 3,
+                    ResponseFilterExcludeMale: false,
+                    ResponseFilterExcludeFemale: false,
+                    ResponseHighlightEnabled: true,
+                    ResponseHighlightAgeBuckets: "63+",
+                    AutoScheduleEnabled: true,
+                    AutoScheduleDays: "Mon,Tue,Wed,Thu,Fri",
+                    AutoScheduleFromLocalTime: "07:00",
+                    AutoScheduleToLocalTime: "19:00",
+                    AutoDeliverToCrm: true,
+                    AutoDeliverToBitrix: false),
+                Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-111111111101"),
+                officeId),
+            CreatePreviewSettingsTemplate(
+                workerId,
+                "Ночной сбор",
+                new WorkerSettingsTemplatePayload(
+                    MaxConcurrentAccounts: 1,
+                    AutoScheduleEnabled: true,
+                    AutoScheduleDays: "Mon,Tue,Wed,Thu,Fri,Sat,Sun",
+                    AutoScheduleFromLocalTime: "22:00",
+                    AutoScheduleToLocalTime: "06:00",
+                    AdsPowerEnabled: true,
+                    MultiloginEnabled: false,
+                    LocalChromeEnabled: true),
+                Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-111111111102"),
+                officeId)
+        ];
+    }
+
+    public static WorkerSettingsTemplateDto CreatePreviewSettingsTemplate(
+        Guid workerId,
+        string name,
+        WorkerSettingsTemplatePayload settings,
+        Guid? templateId = null,
+        Guid? officeId = null)
+    {
+        var resolvedOfficeId = officeId
+            ?? (GetWorker(workerId)?.OfficeId is Guid id && id != default ? id : PreviewOfficeId);
+        var now = DateTime.UtcNow;
+        return new WorkerSettingsTemplateDto(
+            templateId ?? Guid.NewGuid(),
+            resolvedOfficeId,
+            string.IsNullOrWhiteSpace(name) ? "Новый шаблон" : name.Trim(),
+            now,
+            now,
+            WorkerSettingsTemplatePayload.Normalize(settings));
     }
 
     private static IReadOnlyList<WorkerBalanceDto> BuildWorkerBalances(Guid workerId) =>

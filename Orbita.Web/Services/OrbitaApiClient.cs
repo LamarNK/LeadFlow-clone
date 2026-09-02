@@ -1012,6 +1012,82 @@ public sealed class OrbitaApiClient(
             : (false, await ReadApiErrorAsync(response, ct));
     }
 
+    public Task<IReadOnlyList<WorkerSettingsTemplateDto>?> GetWorkerSettingsTemplatesAsync(
+        Guid workerId,
+        CancellationToken ct = default) =>
+        GetAsync<IReadOnlyList<WorkerSettingsTemplateDto>>($"api/v1/workers/{workerId}/settings-templates", ct);
+
+    public Task<(WorkerSettingsTemplateDto? Template, IReadOnlyList<WorkerSettingsTemplateDto> Templates, string? Error)> CreateWorkerSettingsTemplateAsync(
+        Guid workerId,
+        string name,
+        WorkerSettingsTemplatePayload settings,
+        CancellationToken ct = default) =>
+        SendWorkerSettingsTemplateMutationAsync(
+            HttpMethod.Post,
+            $"api/v1/workers/{workerId}/settings-templates",
+            new CreateWorkerSettingsTemplateRequest(name, settings),
+            ct);
+
+    public Task<(WorkerSettingsTemplateDto? Template, IReadOnlyList<WorkerSettingsTemplateDto> Templates, string? Error)> UpdateWorkerSettingsTemplateAsync(
+        Guid workerId,
+        Guid templateId,
+        string name,
+        WorkerSettingsTemplatePayload settings,
+        CancellationToken ct = default) =>
+        SendWorkerSettingsTemplateMutationAsync(
+            HttpMethod.Put,
+            $"api/v1/workers/{workerId}/settings-templates/{templateId}",
+            new UpdateWorkerSettingsTemplateRequest(name, settings),
+            ct);
+
+    public async Task<(IReadOnlyList<WorkerSettingsTemplateDto> Templates, string? Error)> DeleteWorkerSettingsTemplateAsync(
+        Guid workerId,
+        Guid templateId,
+        CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Delete,
+            $"api/v1/workers/{workerId}/settings-templates/{templateId}");
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return ([], InvalidApiSessionError);
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            return ([], await ReadApiErrorAsync(response, ct));
+        }
+
+        var result = await response.Content.ReadFromJsonAsync<WorkerSettingsTemplateMutationResultDto>(ApiJsonOptions, ct);
+        return (result?.Templates ?? [], null);
+    }
+
+    private async Task<(WorkerSettingsTemplateDto? Template, IReadOnlyList<WorkerSettingsTemplateDto> Templates, string? Error)> SendWorkerSettingsTemplateMutationAsync<T>(
+        HttpMethod method,
+        string url,
+        T body,
+        CancellationToken ct)
+    {
+        using var request = new HttpRequestMessage(method, url);
+        request.Content = JsonContent.Create(body);
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (null, [], InvalidApiSessionError);
+        }
+
+        if (!response.IsSuccessStatusCode)
+        {
+            return (null, [], await ReadApiErrorAsync(response, ct));
+        }
+
+        var result = await response.Content.ReadFromJsonAsync<WorkerSettingsTemplateMutationResultDto>(ApiJsonOptions, ct);
+        return result is null
+            ? (null, [], "Не удалось прочитать ответ API.")
+            : (result.Template, result.Templates, null);
+    }
+
     public async Task<(bool Success, string? Error)> SendWorkerCommandAsync(
         Guid workerId,
         string command,

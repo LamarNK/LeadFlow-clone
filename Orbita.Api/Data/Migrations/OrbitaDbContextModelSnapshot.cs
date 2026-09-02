@@ -3306,6 +3306,113 @@ namespace Orbita.Api.Data.Migrations
                     b.ToTable("WorkerEvents");
                 });
 
+            modelBuilder.Entity("Orbita.Api.Data.WorkerSettingsTemplateEntity", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<bool>("AdsPowerEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
+
+                    b.Property<bool>("AutoDeliverToBitrix")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("AutoDeliverToCrm")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("AutoScheduleDays")
+                        .HasMaxLength(64)
+                        .HasColumnType("character varying(64)");
+
+                    b.Property<bool>("AutoScheduleEnabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("AutoScheduleFromLocalTime")
+                        .HasMaxLength(5)
+                        .HasColumnType("character varying(5)");
+
+                    b.Property<string>("AutoScheduleToLocalTime")
+                        .HasMaxLength(5)
+                        .HasColumnType("character varying(5)");
+
+                    b.Property<DateTime>("CreatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<bool>("LocalChromeEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
+
+                    b.Property<int>("MaxConcurrentAccounts")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("MessengerAutoReplyEnabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<string>("MessengerAutoReplyMessage")
+                        .HasMaxLength(2000)
+                        .HasColumnType("character varying(2000)");
+
+                    b.Property<bool>("MultiloginEnabled")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(true);
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("NameNormalized")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<Guid>("OfficeId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int?>("PhoneUnchangedHours")
+                        .HasColumnType("integer");
+
+                    b.Property<bool>("ResponseFilterEnabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("ResponseFilterExcludeFemale")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("ResponseFilterExcludeMale")
+                        .HasColumnType("boolean");
+
+                    b.Property<int?>("ResponseFilterMaxAgeDays")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("ResponseFilterMaxAgeFemale")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("ResponseFilterMaxAgeMale")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ResponseHighlightAgeBuckets")
+                        .HasMaxLength(256)
+                        .HasColumnType("character varying(256)");
+
+                    b.Property<bool>("ResponseHighlightEnabled")
+                        .HasColumnType("boolean");
+
+                    b.Property<DateTime>("UpdatedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OfficeId", "NameNormalized")
+                        .IsUnique();
+
+                    b.ToTable("WorkerSettingsTemplates");
+                });
+
             modelBuilder.Entity("Orbita.Api.Data.WorkerSnapshotEntity", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3938,6 +4045,17 @@ namespace Orbita.Api.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("Worker");
+                });
+
+            modelBuilder.Entity("Orbita.Api.Data.WorkerSettingsTemplateEntity", b =>
+                {
+                    b.HasOne("Orbita.Api.Data.OfficeEntity", "Office")
+                        .WithMany()
+                        .HasForeignKey("OfficeId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Office");
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.WorkerSnapshotEntity", b =>

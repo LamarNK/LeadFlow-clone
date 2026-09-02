@@ -267,6 +267,7 @@ public static class OrbitaApiStartupExtensions
         builder.Services.AddScoped<OfficeAdminService>();
         builder.Services.AddScoped<WorkerAdminService>();
         builder.Services.AddScoped<WorkerConfigService>();
+        builder.Services.AddScoped<WorkerSettingsTemplateService>();
         builder.Services.AddHttpClient<IMultiloginAutomationTokenIssuer, MultiloginAutomationTokenIssuer>(client =>
             {
                 client.Timeout = TimeSpan.FromSeconds(15);
