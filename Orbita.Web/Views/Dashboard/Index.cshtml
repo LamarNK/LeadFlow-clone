@@ -75,7 +75,16 @@
                         <input type="search" data-dashboard-worker-search placeholder="Поиск по воркеру" aria-label="Поиск по воркеру" autocomplete="off" />
                     </label>
                     <div class="dashboard-workers-toolbar-actions">
-                        <span class="dashboard-workers-sort-label">Сортировка: <button type="button" data-dashboard-worker-sort>По активности <i class="fa-solid fa-arrow-down-short-wide" aria-hidden="true"></i></button></span>
+                        <label class="dashboard-workers-sort-label">
+                            <span>Сортировка:</span>
+                            <select data-dashboard-worker-sort-key aria-label="Поле сортировки воркеров">
+                                <option value="activity">По активности</option>
+                                <option value="name">По имени</option>
+                                <option value="responses">По откликам</option>
+                                <option value="errors">По ошибкам</option>
+                            </select>
+                            <button type="button" data-dashboard-worker-sort aria-label="Сначала недавняя активность" title="Изменить направление сортировки"><i class="fa-solid fa-arrow-down-short-wide" aria-hidden="true"></i></button>
+                        </label>
                         <div class="dashboard-workers-view-toggle" aria-label="Вид таблицы">
                             <button type="button" class="is-active" data-dashboard-worker-view="table" aria-label="Список" aria-pressed="true"><i class="fa-solid fa-list" aria-hidden="true"></i></button>
                             <button type="button" data-dashboard-worker-view="cards" aria-label="Карточки" aria-pressed="false"><i class="fa-solid fa-table-cells-large" aria-hidden="true"></i></button>
@@ -150,7 +159,10 @@
                             <tr data-href="@workerDetailsUrl"
                                 data-dashboard-worker-online="@(w.IsEnabled && w.IsOnline ? "true" : "false")"
                                 data-dashboard-worker-empty="@(w.TotalAccounts == 0 ? "true" : "false")"
-                                data-dashboard-worker-activity="@(w.LastActivityUtc?.Ticks ?? 0)">
+                                data-dashboard-worker-activity="@(w.LastActivityUtc?.Ticks ?? 0)"
+                                data-dashboard-worker-name="@w.DisplayName"
+                                data-dashboard-worker-responses="@w.Responses"
+                                data-dashboard-worker-errors="@w.Errors">
                                 <td class="cell-name" data-label="Воркер">
                                     <partial name="_WorkerNameCell" model="@(new WorkerNameCellViewModel { DisplayName = w.DisplayName, MachineName = w.MachineName, Url = workerDetailsUrl })" />
                                 </td>

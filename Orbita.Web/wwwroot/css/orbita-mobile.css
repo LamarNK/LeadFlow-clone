@@ -213,7 +213,16 @@
         gap: 10px;
     }
 
-    .dashboard-workers-sort-label { display: none; }
+    .dashboard-workers-sort-label {
+        display: inline-flex;
+        flex: 1 1 150px;
+        min-width: 0;
+    }
+
+    .dashboard-workers-sort-label select {
+        min-width: 0;
+        flex: 1;
+    }
 
     .dashboard-workers-view-toggle {
         margin-left: auto;
@@ -224,6 +233,8 @@
     .dashboard-workers-toolbar-actions .dashboard-workers-actions {
         order: -1;
     }
+
+    .dashboard-workers-toolbar-actions { flex-wrap: wrap; }
 
     .dashboard-workers-toolbar-actions .dashboard-monitoring-btn {
         height: 34px;

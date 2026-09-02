@@ -682,9 +682,24 @@ a.kpi-card:focus-visible {
 }
 
 .dashboard-workers-sort-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
     color: #98a2b3;
     font-size: 12px;
     white-space: nowrap;
+}
+
+.dashboard-workers-sort-label select {
+    max-width: 132px;
+    padding: 0;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: #667085;
+    font: inherit;
+    font-weight: 600;
+    cursor: pointer;
 }
 
 .dashboard-workers-sort-label button {
@@ -735,6 +750,7 @@ a.kpi-card:focus-visible {
 [data-theme="dark"] .dashboard-worker-filter.is-active { color: #93c5fd; border-bottom-color: #60a5fa; }
 [data-theme="dark"] .dashboard-workers-sort-label { color: var(--text-muted); }
 [data-theme="dark"] .dashboard-workers-sort-label button { color: var(--text-secondary); }
+[data-theme="dark"] .dashboard-workers-sort-label select { color: var(--text-secondary); }
 [data-theme="dark"] .dashboard-workers-view-toggle { border-color: var(--border); }
 [data-theme="dark"] .dashboard-workers-view-toggle button:hover,
 [data-theme="dark"] .dashboard-workers-view-toggle button.is-active { background: var(--bg-hover); color: var(--text-primary); }

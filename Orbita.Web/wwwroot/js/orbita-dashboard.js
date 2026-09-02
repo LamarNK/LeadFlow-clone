@@ -62,6 +62,7 @@
     var workerSearchQuery = '';
     var workerView = 'table';
     var workerSortDirection = 'desc';
+    var workerSortKey = 'activity';
     var highlightMs = 1800;
 
     Chart.defaults.font.family = '"Segoe UI", system-ui, -apple-system, sans-serif';
@@ -804,8 +805,19 @@
         if (!body) return;
         Array.prototype.slice.call(body.querySelectorAll('tr[data-href]'))
             .sort(function (left, right) {
-                var leftValue = Number(left.getAttribute('data-dashboard-worker-activity')) || 0;
-                var rightValue = Number(right.getAttribute('data-dashboard-worker-activity')) || 0;
+                if (workerSortKey === 'name') {
+                    var leftName = left.getAttribute('data-dashboard-worker-name') || '';
+                    var rightName = right.getAttribute('data-dashboard-worker-name') || '';
+                    var nameOrder = leftName.localeCompare(rightName, 'ru', { sensitivity: 'base' });
+                    return workerSortDirection === 'desc' ? -nameOrder : nameOrder;
+                }
+                var attribute = workerSortKey === 'responses'
+                    ? 'data-dashboard-worker-responses'
+                    : workerSortKey === 'errors'
+                        ? 'data-dashboard-worker-errors'
+                        : 'data-dashboard-worker-activity';
+                var leftValue = Number(left.getAttribute(attribute)) || 0;
+                var rightValue = Number(right.getAttribute(attribute)) || 0;
                 return workerSortDirection === 'desc' ? rightValue - leftValue : leftValue - rightValue;
             })
             .forEach(function (row) { body.appendChild(row); });
@@ -849,6 +861,25 @@
                         ? 'fa-solid fa-arrow-down-short-wide'
                         : 'fa-solid fa-arrow-up-short-wide';
                 }
+                sortWorkerRows();
+            });
+        });
+        document.querySelectorAll('[data-dashboard-worker-sort-key]').forEach(function (select) {
+            select.value = workerSortKey;
+            if (select.hasAttribute('data-dashboard-worker-sort-key-bound')) return;
+            select.setAttribute('data-dashboard-worker-sort-key-bound', '1');
+            select.addEventListener('change', function () {
+                workerSortKey = select.value || 'activity';
+                workerSortDirection = workerSortKey === 'name' ? 'asc' : 'desc';
+                document.querySelectorAll('[data-dashboard-worker-sort]').forEach(function (button) {
+                    button.setAttribute('aria-label', workerSortDirection === 'desc' ? 'Сначала большие значения' : 'Сначала меньшие значения');
+                    var icon = button.querySelector('i');
+                    if (icon) {
+                        icon.className = workerSortDirection === 'desc'
+                            ? 'fa-solid fa-arrow-down-short-wide'
+                            : 'fa-solid fa-arrow-up-short-wide';
+                    }
+                });
                 sortWorkerRows();
             });
         });
@@ -908,7 +939,7 @@
                 '<span class="dashboard-account-progress" aria-label="Активно аккаунтов: ' + activeAccounts + ' из ' + totalAccounts + '"><span style="width:' + accountProgress + '%"></span></span>' +
                 '</td>';
 
-            return '<tr data-href="' + escapeHtml(detailsUrl) + '" data-dashboard-worker-online="' + (w.isEnabled && w.isOnline ? 'true' : 'false') + '" data-dashboard-worker-empty="' + (!w.totalAccounts ? 'true' : 'false') + '" data-dashboard-worker-activity="' + (iso ? Date.parse(iso) || 0 : 0) + '">' +
+            return '<tr data-href="' + escapeHtml(detailsUrl) + '" data-dashboard-worker-online="' + (w.isEnabled && w.isOnline ? 'true' : 'false') + '" data-dashboard-worker-empty="' + (!w.totalAccounts ? 'true' : 'false') + '" data-dashboard-worker-activity="' + (iso ? Date.parse(iso) || 0 : 0) + '" data-dashboard-worker-name="' + escapeHtml(w.displayName || '') + '" data-dashboard-worker-responses="' + (Number(w.responses) || 0) + '" data-dashboard-worker-errors="' + (Number(w.errors) || 0) + '">' +
                 '<td class="cell-name" data-label="Воркер">' + nameCell + '</td>' +
                 officeCell +
                 '<td data-label="Статус"><span class="status-dot' + statusClass + '"><i class="fa-solid fa-circle status-dot-icon" aria-hidden="true"></i>' + statusText + '</span></td>' +
