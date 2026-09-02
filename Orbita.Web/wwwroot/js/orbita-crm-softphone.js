@@ -7,6 +7,7 @@
     var currentConfig = null;
     var reconnectTimer = null;
     var healthTimer = null;
+    var healthProbe = null;
     var reconnectAttempt = 0;
     var shuttingDown = false;
     var activeSession = null;
@@ -17,6 +18,7 @@
     var registrationExpiresSeconds = 120;
     var registrationHealthIntervalMs = 15000;
     var registrationRecoveryDelayMs = 30000;
+    var registrationProbeTimeoutMs = 8000;
     var modal = document.querySelector('[data-orbita-softphone]');
     var targetLabel = document.querySelector('[data-orbita-softphone-target]');
     var statusLabel = document.querySelector('[data-orbita-softphone-status]');
@@ -168,6 +170,12 @@
         reconnectTimer = null;
     }
 
+    function clearHealthProbe(agent) {
+        if (!healthProbe || (agent && healthProbe.agent !== agent)) return;
+        window.clearTimeout(healthProbe.timeout);
+        healthProbe = null;
+    }
+
     function isUserAgentHealthy(agent) {
         return !!(agent
             && agent.isConnected
@@ -178,10 +186,56 @@
 
     function disposeUserAgent(agent) {
         if (!agent || ua !== agent) return;
+        clearHealthProbe(agent);
         registrationPromise = null;
         ua = null;
         uaKey = '';
         try { agent.stop(); } catch (e) { }
+    }
+
+    function recoverUnresponsiveUserAgent(agent, config) {
+        if (shuttingDown || !agent || ua !== agent) return;
+        if (activeSession) {
+            clearHealthProbe(agent);
+            return;
+        }
+
+        clearReconnectTimer();
+        reconnectAttempt = 0;
+        disposeUserAgent(agent);
+        ensureRegistered(config).catch(function () {
+            scheduleRegistrationRecovery(config, ua);
+        });
+    }
+
+    function probeUserAgent(agent, config) {
+        if (shuttingDown || activeSession || healthProbe || !config || !isUserAgentHealthy(agent)) return;
+
+        var settled = false;
+        function finish(succeeded) {
+            if (settled) return;
+            settled = true;
+            clearHealthProbe(agent);
+            if (!succeeded) recoverUnresponsiveUserAgent(agent, config);
+        }
+
+        healthProbe = {
+            agent: agent,
+            timeout: window.setTimeout(function () {
+                finish(false);
+            }, registrationProbeTimeoutMs)
+        };
+
+        try {
+            agent.sendOptions(config.sipUri, null, {
+                eventHandlers: {
+                    succeeded: function () { finish(true); },
+                    failed: function () { finish(false); }
+                }
+            });
+        } catch (error) {
+            finish(false);
+        }
     }
 
     function stopUserAgent() {
@@ -603,7 +657,11 @@
     }
 
     async function checkRegistrationHealth() {
-        if (shuttingDown || !currentConfig || registrationPromise || isUserAgentHealthy(ua)) return;
+        if (shuttingDown || !currentConfig || registrationPromise) return;
+        if (isUserAgentHealthy(ua)) {
+            probeUserAgent(ua, currentConfig);
+            return;
+        }
         if (ua) {
             scheduleRegistrationRecovery(currentConfig, ua);
             return;
@@ -630,6 +688,7 @@
         shuttingDown = true;
         if (healthTimer) window.clearInterval(healthTimer);
         healthTimer = null;
+        clearHealthProbe();
         stopUserAgent();
     });
 
