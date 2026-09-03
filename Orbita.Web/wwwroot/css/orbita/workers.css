@@ -2690,6 +2690,10 @@
     vertical-align: middle;
 }
 
+.workers-status-badge[hidden] {
+    display: none !important;
+}
+
 .workers-status-badge--disabled {
     background: rgba(239, 68, 68, 0.12);
     color: #b91c1c;
