@@ -306,8 +306,13 @@ internal static class StatisticsIndexBuilder
         };
     }
 
-    private static MonitoringCycleReportViewModel MapMonitoringCycles(MonitoringCycleReportDto report)
+    private static MonitoringCycleReportViewModel MapMonitoringCycles(MonitoringCycleReportDto? report)
     {
+        if (report is null)
+        {
+            return MonitoringCycleReportViewModel.Empty;
+        }
+
         var leadSummaries = report.LeadSummaries
             .Select(x => new MonitoringCycleLeadSummaryViewModel
             {

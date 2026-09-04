@@ -228,6 +228,22 @@ public sealed class StatisticsIndexBuilderTests
         Assert.Empty(row.Passes);
     }
 
+    [Fact]
+    public void Build_MissingMonitoringCyclesFromOlderApi_ReturnsEmptyReport()
+    {
+        var data = CreateData(lowBalanceCount: 0) with
+        {
+            // A rolling Web/API deployment can deserialize this newly-added field
+            // as null until the API instance has been updated.
+            MonitoringCycles = null!
+        };
+
+        var model = BuildModel(data, DashboardPeriod.Today, new FakeOfficeContext());
+
+        Assert.False(model.MonitoringCycles.HasData);
+        Assert.Empty(model.MonitoringCycles.AccountReports);
+    }
+
     private static StatisticsViewModel BuildModel(
         OfficeStatisticsDto data,
         DashboardPeriod period,
