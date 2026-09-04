@@ -64,7 +64,7 @@ public sealed class OrbitaQueryCacheTests
     public void MapDomains_WorkerTelemetryDoesNotThrashWorkerDetails()
     {
         var domains = OrbitaQueryCache.MapDomains(
-            [PanelChangeKind.Workers, PanelChangeKind.Accounts, PanelChangeKind.Events, PanelChangeKind.Errors, PanelChangeKind.Responses]);
+            [PanelChangeKind.Dashboard, PanelChangeKind.Workers, PanelChangeKind.Accounts, PanelChangeKind.Events, PanelChangeKind.Errors, PanelChangeKind.Responses]);
 
         Assert.DoesNotContain(OrbitaCacheDomain.WorkerDetails, domains);
     }

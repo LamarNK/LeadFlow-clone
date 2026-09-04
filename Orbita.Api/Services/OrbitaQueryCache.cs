@@ -194,11 +194,11 @@ public sealed class OrbitaQueryCache(
                 // seconds old, so they rely on the Realtime TTL rather than making
                 // every in-flight summary cache miss. Meaningful writes include
                 // Dashboard explicitly and still invalidate immediately.
-                PanelChangeKind.Dashboard => new[] { OrbitaCacheDomain.Dashboard, OrbitaCacheDomain.WorkerDetails },
+                PanelChangeKind.Dashboard => new[] { OrbitaCacheDomain.Dashboard },
                 // Heartbeats, account telemetry, response ingestion and event
                 // streams are all high frequency. Worker details rely on their
-                // five-second TTL for those live counters; worker configuration
-                // writes include Dashboard and still invalidate immediately.
+                // five-second TTL for those live counters. Dedicated worker-detail
+                // writes can invalidate immediately without evicting this hot path.
                 PanelChangeKind.WorkerDetails => new[] { OrbitaCacheDomain.WorkerDetails },
                 PanelChangeKind.Reference => new[] { OrbitaCacheDomain.Reference },
                 _ => Array.Empty<OrbitaCacheDomain>()
