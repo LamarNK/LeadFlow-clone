@@ -295,6 +295,32 @@ public sealed class DashboardQueryServiceWorkersPageTests
     }
 
     [Fact]
+    public async Task GetWorkersPageAsync_ExcludesUnknownBalanceFromLowBalanceCount()
+    {
+        DashboardQueryService.ClearCacheForTests();
+        var (db, connection) = await CreateSqliteDbAsync();
+        await using var connectionScope = connection;
+        await using var dbScope = db;
+        var now = DateTime.UtcNow;
+        SeedOffice(db, now);
+        var worker = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbb42");
+        SeedWorker(db, worker, "worker", now.AddMinutes(-1));
+        SeedAccount(db, worker, "unknown", totalBalance: 0m);
+        SeedAccount(
+            db,
+            worker,
+            "known-zero",
+            totalBalance: 0m,
+            subProfilesJson: """[{"Id":"sp-1","Name":"Основной","Balance":0,"WalletBalance":0}]""");
+        await db.SaveChangesAsync();
+
+        var page = await CreateService(db).GetWorkersPageAsync(
+            OfficeScope.ForOffice(OfficeId), OfficeId, page: 1, pageSize: 25);
+
+        Assert.Equal(1, Assert.Single(page.Items).LowBalanceAccountCount);
+    }
+
+    [Fact]
     public void WorkerListPaging_NormalizesOutOfRangeValues()
     {
         Assert.Equal(25, WorkerListPaging.NormalizePageSize(0));
@@ -373,7 +399,12 @@ public sealed class DashboardQueryServiceWorkersPageTests
         });
     }
 
-    private static void SeedAccount(OrbitaDbContext db, Guid workerId, string displayName, decimal totalBalance)
+    private static void SeedAccount(
+        OrbitaDbContext db,
+        Guid workerId,
+        string displayName,
+        decimal totalBalance,
+        string subProfilesJson = "[]")
     {
         db.WorkerAccounts.Add(new WorkerAccountEntity
         {
@@ -383,7 +414,8 @@ public sealed class DashboardQueryServiceWorkersPageTests
             Status = "Active",
             IsEnabled = true,
             IsEnabledInPanel = true,
-            TotalBalance = totalBalance
+            TotalBalance = totalBalance,
+            SubProfilesJson = subProfilesJson
         });
     }
 

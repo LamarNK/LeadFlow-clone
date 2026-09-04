@@ -1326,7 +1326,15 @@
                 '<span class="worker-toggle-slider"></span></label></td>' +
                 '<td class="cell-name" data-label="Аккаунт">' + identityHtml + subProfiles + '</td>' +
                 '<td data-label="Статус">' + statusHtml + '</td>' +
-                '<td class="cell-num cell-balance" data-label="Баланс"><span class="account-balance-multiline">' + shared.escapeHtml(account.balanceText || '—') + '</span></td>' +
+                '<td class="cell-num cell-balance" data-label="Баланс"><span class="account-balance-multiline">' + shared.escapeHtml(account.balanceText || '—') + '</span>' +
+                (account.canTopUp
+                    ? '<button type="button" class="worker-topup-trigger" data-topup-trigger' +
+                        ' data-worker-id="' + shared.escapeHtml(workerId) + '"' +
+                        ' data-account-id="' + shared.escapeHtml(account.id) + '"' +
+                        ' data-account-name="' + shared.escapeHtml(account.displayName || '') + '"' +
+                        ' data-current-balance="' + shared.escapeHtml(String(account.balance || 0)) + '"' +
+                        ' title="Пополнить баланс">Пополнить</button>'
+                    : '') + '</td>' +
                 (function () {
                     var metrics = shared.resolveAccountMetricLinks(account, workerId, account.id);
                     return '<td class="cell-num" data-label="Откликов">' + shared.renderMetricLink(account.responses, metrics.responses, 'Отклики за сегодня') + '</td>' +
@@ -1416,6 +1424,7 @@
         if (window.Orbita && typeof window.Orbita.initLocalOpenBrowserButtons === 'function') {
             window.Orbita.initLocalOpenBrowserButtons();
         }
+        initTopUpModal();
         initAccountRowNavigation();
     }
 
@@ -1614,8 +1623,9 @@
     function initTopUpModal() {
         var modal = document.getElementById('topUpModal');
         if (!modal) return;
+        if (modal.dataset.topupInitialized === 'true') return;
+        modal.dataset.topupInitialized = 'true';
 
-        var triggers = document.querySelectorAll('[data-topup-trigger]');
         var closeBtns = modal.querySelectorAll('[data-topup-close]');
         var cancelBtn = modal.querySelector('[data-topup-cancel]');
 
@@ -1647,15 +1657,16 @@
         var MAX_POLL_DURATION_MS = 2.5 * 60 * 60 * 1000; // 2.5 часа
         var MAX_CONSECUTIVE_FAILURES = 3;
 
-        triggers.forEach(function (btn) {
-            btn.addEventListener('click', function () {
-                var workerId = btn.getAttribute('data-worker-id');
-                var accountId = btn.getAttribute('data-account-id');
-                var accountName = btn.getAttribute('data-account-name') || '';
+        document.addEventListener('click', function (event) {
+            var btn = event.target.closest('[data-topup-trigger]');
+            if (!btn) return;
 
-                openModal();
-                startSession(workerId, accountId, accountName);
-            });
+            var workerId = btn.getAttribute('data-worker-id');
+            var accountId = btn.getAttribute('data-account-id');
+            var accountName = btn.getAttribute('data-account-name') || '';
+
+            openModal();
+            startSession(workerId, accountId, accountName);
         });
 
         closeBtns.forEach(function (btn) {

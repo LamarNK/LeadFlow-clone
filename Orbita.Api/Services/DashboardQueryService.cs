@@ -391,6 +391,7 @@ public sealed class DashboardQueryService(
         var lowBalanceFirst = filtered
             .OrderByDescending(worker => db.WorkerAccounts.Any(account =>
                 account.WorkerId == worker.Id
+                && account.TotalBalance > 0
                 && account.TotalBalance < BalanceDisplayRules.WorkerDetailsLowBalanceThresholdRub));
         var ordered = ApplyWorkerListSort(lowBalanceFirst, sortColumn, sortDescending, todayStart);
         var workers = await ordered
@@ -1572,13 +1573,23 @@ public sealed class DashboardQueryService(
         var accountRows = await db.WorkerAccounts
             .AsNoTracking()
             .Where(x => workerIds.Contains(x.WorkerId))
-            .Select(x => new { x.WorkerId, x.Status, x.IsEnabledInPanel, x.TotalBalance })
+            .Select(x => new
+            {
+                x.WorkerId,
+                x.Status,
+                x.IsEnabledInPanel,
+                x.TotalBalance,
+                x.SubProfilesJson
+            })
             .ToListAsync(ct);
 
         var accountCounts = BuildAccountCounts(
             accountRows.Select(x => (x.WorkerId, x.Status, x.IsEnabledInPanel)));
         var lowBalanceAccountCounts = accountRows
-            .Where(x => x.TotalBalance < BalanceDisplayRules.WorkerDetailsLowBalanceThresholdRub)
+            .Where(x => x.TotalBalance < BalanceDisplayRules.WorkerDetailsLowBalanceThresholdRub
+                && BalanceSnapshotHelper.HasMeaningfulPersistedBalanceData(
+                    x.TotalBalance,
+                    x.SubProfilesJson))
             .GroupBy(x => x.WorkerId)
             .ToDictionary(g => g.Key, g => g.Count());
         var responseStats = await ComputeWorkerTodayStatsAsync(workerIds, todayStartUtc, ct);

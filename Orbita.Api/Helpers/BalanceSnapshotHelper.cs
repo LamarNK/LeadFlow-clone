@@ -70,6 +70,15 @@ internal static class BalanceSnapshotHelper
         return new WorkerBalanceDto(account.AccountId, account.DisplayName, total, items, wallet);
     }
 
+    public static bool HasMeaningfulPersistedBalanceData(
+        decimal totalBalance,
+        string? subProfilesJson) =>
+        FromWorkerAccount(new WorkerAccountEntity
+        {
+            TotalBalance = totalBalance,
+            SubProfilesJson = subProfilesJson ?? "[]"
+        }) is not null;
+
     public static IReadOnlyList<WorkerBalanceDto> MergeWithPersisted(
         IReadOnlyList<WorkerBalanceDto> incoming,
         IReadOnlyList<WorkerBalanceDto>? previousSnapshot,
