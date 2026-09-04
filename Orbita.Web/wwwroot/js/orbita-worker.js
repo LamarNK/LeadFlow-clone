@@ -1223,9 +1223,14 @@
     function syncWorkerAccountsEmptyState(accounts) {
         var empty = document.querySelector('[data-worker-accounts-empty]');
         var table = document.querySelector('.card--worker-accounts table.data-table--accounts');
+        var toolbar = document.querySelector('.worker-accounts-toolbar');
+        var localPanel = document.querySelector('.worker-local-account-panel');
         var isEmpty = !accounts || !accounts.length;
-        if (empty) empty.hidden = !isEmpty;
+        var skipLocalCreate = !!(empty && empty.getAttribute('data-worker-accounts-empty-local-create') === 'true');
+        if (empty) empty.hidden = !isEmpty || skipLocalCreate;
         if (table) table.hidden = isEmpty;
+        if (toolbar && skipLocalCreate) toolbar.hidden = isEmpty;
+        if (localPanel && skipLocalCreate) localPanel.classList.toggle('worker-local-account-panel--empty', isEmpty);
     }
 
     function updateAccountGroupFilterOptions(options) {

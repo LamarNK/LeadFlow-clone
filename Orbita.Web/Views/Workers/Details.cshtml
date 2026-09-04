@@ -26,6 +26,16 @@
         ["Sat"] = "Суббота",
         ["Sun"] = "Воскресенье"
     };
+    var scheduleDayShortLabels = new Dictionary<string, string>(StringComparer.Ordinal)
+    {
+        ["Mon"] = "Пн",
+        ["Tue"] = "Вт",
+        ["Wed"] = "Ср",
+        ["Thu"] = "Чт",
+        ["Fri"] = "Пт",
+        ["Sat"] = "Сб",
+        ["Sun"] = "Вс"
+    };
 }
 <partial name="_PageHeader" model="Model.Header" />
 <div class="orbita-main worker-detail-page"
@@ -198,7 +208,6 @@
         <div class="card card--worker-system">
             <div class="card-header">
                 <h2>Система</h2>
-                <p class="worker-settings-subtitle">Ресурсы VDS и параметры машины</p>
             </div>
             <div class="card-body">
                 <partial name="_WorkerSystemCard" model="Model.System" />
@@ -206,8 +215,7 @@
         </div>
         <div class="card card--worker-settings" id="worker-settings">
             <div class="card-header">
-                <h2>Настройки воркера</h2>
-                <p class="worker-settings-subtitle">Параллелизм и подключение к AdsPower, Multilogin X и обычному Chrome</p>
+                <h2>Настройки</h2>
             </div>
             <div class="card-body">
                 <form asp-action="UpdateSettings" method="post" class="worker-settings-form">
@@ -217,121 +225,84 @@
 
                     <div class="worker-settings-shell">
                     <div class="worker-settings-rail">
+                    <nav class="worker-settings-nav" role="tablist" aria-label="Разделы настроек воркера">
+                        <button type="button" class="worker-settings-nav-link is-active" id="worker-settings-tab-performance" role="tab" aria-selected="true" aria-controls="worker-settings-performance" data-worker-settings-tab="performance">Режим</button>
+                        <button type="button" class="worker-settings-nav-link" id="worker-settings-tab-schedule" role="tab" aria-selected="false" aria-controls="worker-settings-schedule" data-worker-settings-tab="schedule">Расписание</button>
+                        <button type="button" class="worker-settings-nav-link" id="worker-settings-tab-collection" role="tab" aria-selected="false" aria-controls="worker-settings-collection" data-worker-settings-tab="collection">Сбор</button>
+                        <button type="button" class="worker-settings-nav-link" id="worker-settings-tab-processing" role="tab" aria-selected="false" aria-controls="worker-settings-processing" data-worker-settings-tab="processing">Обработка</button>
+                        <button type="button" class="worker-settings-nav-link" id="worker-settings-tab-connection" role="tab" aria-selected="false" aria-controls="worker-settings-connection" data-worker-settings-tab="connection">Подключение</button>
+                    </nav>
                     <div class="worker-settings-templates"
                          data-worker-settings-templates
                          data-worker-id="@Model.WorkerId"
                          data-create-url="@Url.Action("CreateSettingsTemplate")"
                          data-update-url="@Url.Action("UpdateSettingsTemplate")"
                          data-delete-url="@Url.Action("DeleteSettingsTemplate")">
-                        <div class="worker-settings-templates-head">
-                            <span class="worker-settings-templates-title">Шаблоны настроек</span>
-                            <span class="worker-settings-hint">Применение только подставляет значения в форму. Чтобы отправить их воркеру, нажмите «Сохранить настройки».</span>
-                        </div>
+                        <span class="visually-hidden">Шаблоны настроек</span>
                         <label class="worker-settings-templates-select" for="workerSettingsTemplateSelect">
                             <span class="visually-hidden">Шаблон</span>
                             <select id="workerSettingsTemplateSelect"
                                     class="worker-settings-input"
                                     data-worker-settings-template-select>
-                                <option value="">Выберите шаблон</option>
+                                <option value="">Шаблон</option>
                                 @foreach (var template in Model.SettingsTemplates)
                                 {
                                     <option value="@template.Id" data-settings="@JsonSerializer.Serialize(template.Settings, subProfileJsonOptions)">@template.Name</option>
                                 }
                             </select>
                         </label>
-                        <button type="button" class="worker-provider-btn worker-provider-btn--secondary worker-settings-templates-create" data-worker-settings-template-create>
-                            <i class="fa-solid fa-plus" aria-hidden="true"></i>
-                            Сохранить как новый
-                        </button>
-                        <label class="worker-settings-templates-name" for="workerSettingsTemplateName">
-                            <span class="visually-hidden">Название шаблона</span>
-                            <input type="text"
-                                   id="workerSettingsTemplateName"
-                                   class="worker-settings-input"
-                                   maxlength="200"
-                                   placeholder="Название шаблона"
-                                   autocomplete="off"
-                                   data-worker-settings-template-name />
-                        </label>
-                        <div class="worker-settings-templates-actions">
-                            <button type="button" class="worker-provider-btn" data-worker-settings-template-apply>Применить</button>
-                            <button type="button" class="worker-provider-btn" data-worker-settings-template-update>Обновить</button>
-                            <button type="button" class="worker-provider-btn worker-settings-templates-delete" data-worker-settings-template-delete>Удалить</button>
-                        </div>
+                        <button type="button" class="worker-provider-btn" data-worker-settings-template-apply>Применить</button>
+                        <details class="worker-settings-templates-more">
+                            <summary>Ещё</summary>
+                            <div class="worker-settings-templates-more-panel">
+                                <p class="worker-settings-hint">Применение только подставляет значения в форму. Чтобы отправить их воркеру, нажмите «Сохранить настройки».</p>
+                                <label class="worker-settings-templates-name" for="workerSettingsTemplateName">
+                                    <span class="visually-hidden">Название шаблона</span>
+                                    <input type="text"
+                                           id="workerSettingsTemplateName"
+                                           class="worker-settings-input"
+                                           maxlength="200"
+                                           placeholder="Название шаблона"
+                                           autocomplete="off"
+                                           data-worker-settings-template-name />
+                                </label>
+                                <div class="worker-settings-templates-actions">
+                                    <button type="button" class="worker-provider-btn worker-provider-btn--secondary worker-settings-templates-create" data-worker-settings-template-create>
+                                        Сохранить как новый
+                                    </button>
+                                    <button type="button" class="worker-provider-btn" data-worker-settings-template-update>Обновить</button>
+                                    <button type="button" class="worker-provider-btn worker-settings-templates-delete" data-worker-settings-template-delete>Удалить</button>
+                                </div>
+                            </div>
+                        </details>
                     </div>
-
-                    <nav class="worker-settings-nav" role="tablist" aria-label="Разделы настроек воркера">
-                        <button type="button" class="worker-settings-nav-link" id="worker-settings-tab-performance" role="tab" aria-selected="true" aria-controls="worker-settings-performance" data-worker-settings-tab="performance">
-                            <i class="fa-solid fa-gauge-high" aria-hidden="true"></i>
-                            Режим работы
-                        </button>
-                        <button type="button" class="worker-settings-nav-link" id="worker-settings-tab-schedule" role="tab" aria-selected="false" aria-controls="worker-settings-schedule" data-worker-settings-tab="schedule">
-                            <i class="fa-regular fa-calendar" aria-hidden="true"></i>
-                            Расписание
-                        </button>
-                        <button type="button" class="worker-settings-nav-link" id="worker-settings-tab-collection" role="tab" aria-selected="false" aria-controls="worker-settings-collection" data-worker-settings-tab="collection">
-                            <i class="fa-solid fa-filter" aria-hidden="true"></i>
-                            Сбор откликов
-                        </button>
-                        <button type="button" class="worker-settings-nav-link" id="worker-settings-tab-processing" role="tab" aria-selected="false" aria-controls="worker-settings-processing" data-worker-settings-tab="processing">
-                            <i class="fa-solid fa-comments" aria-hidden="true"></i>
-                            Обработка откликов
-                        </button>
-                        <button type="button" class="worker-settings-nav-link" id="worker-settings-tab-connection" role="tab" aria-selected="false" aria-controls="worker-settings-connection" data-worker-settings-tab="connection">
-                            <i class="fa-solid fa-plug" aria-hidden="true"></i>
-                            Подключение
-                        </button>
-                    </nav>
                     </div>
 
                     <div class="worker-settings-layout">
                         <div class="worker-settings-groups">
                     <div class="worker-settings-group" id="worker-settings-performance" role="tabpanel" aria-labelledby="worker-settings-tab-performance" data-worker-settings-panel="performance">
-                        <div class="worker-settings-panel-head">
-                            <div class="worker-settings-panel-copy">
-                                <h3 class="worker-settings-panel-title">Режим работы</h3>
-                                <p class="worker-settings-panel-desc">Лимит параллельных аккаунтов рассчитывается автоматически по ОЗУ воркера.</p>
+                        <h3 class="visually-hidden">Режим</h3>
+                        <label class="worker-settings-field" for="maxConcurrentAccounts">
+                            <span class="worker-settings-label">Аккаунтов одновременно</span>
+                            <div class="worker-parallel-controls">
+                                <input type="range" id="maxConcurrentAccounts" name="maxConcurrentAccounts" min="1" max="@Model.MaxConcurrentAccountsLimit" value="@Model.MaxConcurrentAccounts" />
+                                <output id="maxConcurrentAccountsOut">@Model.MaxConcurrentAccounts</output>
                             </div>
-                        </div>
-                        <section class="worker-settings-block">
-                            <div class="worker-settings-block-head">
-                                <span class="worker-settings-block-icon" aria-hidden="true"><i class="fa-solid fa-gauge-high"></i></span>
-                                <div class="worker-settings-block-copy">
-                                    <span class="worker-settings-block-title">Параллелизм</span>
-                                    <p class="worker-settings-block-desc">Аккаунтов одновременно. Применяется в текущем цикле перед стартом следующего аккаунта. Уже открытые браузеры не закрываются при уменьшении лимита.</p>
-                                </div>
-                            </div>
-                            <label class="worker-settings-field" for="maxConcurrentAccounts">
-                                <span class="worker-settings-label">Аккаунтов одновременно</span>
-                                <div class="worker-parallel-controls">
-                                    <input type="range" id="maxConcurrentAccounts" name="maxConcurrentAccounts" min="1" max="@Model.MaxConcurrentAccountsLimit" value="@Model.MaxConcurrentAccounts" />
-                                    <output id="maxConcurrentAccountsOut">@Model.MaxConcurrentAccounts</output>
-                                </div>
-                            </label>
-                        </section>
+                            <span class="worker-settings-hint">Лимит считается по ОЗУ воркера. Меняется перед стартом следующего аккаунта — уже открытые браузеры не закрываются.</span>
+                        </label>
                     </div>
 
-                    <div class="worker-settings-group" id="worker-settings-collection" role="tabpanel" aria-labelledby="worker-settings-tab-collection" data-worker-settings-panel="collection">
-                        <div class="worker-settings-panel-head">
-                            <div class="worker-settings-panel-copy">
-                                <h3 class="worker-settings-panel-title">Сбор откликов</h3>
-                                <p class="worker-settings-panel-desc">Отсекают карточки до раскрытия телефона и не отправляют их в панель. Любая включенная галка или лимит ниже начинает работать сразу. Пустые лимиты возраста — без ограничения.</p>
-                            </div>
-                        </div>
+                    <div class="worker-settings-group" id="worker-settings-collection" role="tabpanel" aria-labelledby="worker-settings-tab-collection" data-worker-settings-panel="collection" hidden>
+                        <h3 class="visually-hidden">Сбор</h3>
+                        <p class="worker-settings-panel-desc">Фильтры срабатывают до раскрытия телефона. Пустое поле — без ограничения.</p>
 
                         <section class="worker-settings-block">
-                            <div class="worker-settings-block-head">
-                                <span class="worker-settings-block-icon" aria-hidden="true"><i class="fa-solid fa-venus-mars"></i></span>
-                                <div class="worker-settings-block-copy">
-                                    <span class="worker-settings-block-title">Пол — кого не собирать</span>
-                                </div>
-                            </div>
-                            <div class="worker-settings-rows">
-                                <div class="worker-settings-row">
-                                    <span class="worker-settings-row-icon" aria-hidden="true"><i class="fa-solid fa-mars"></i></span>
-                                    <div class="worker-settings-row-copy">
-                                        <span class="worker-settings-row-title">Исключать мужчин</span>
-                                        <span class="worker-settings-row-desc">По метке «Мужчина» или мужскому ФИО; ники и неоднозначные имена не отсекаем</span>
+                            <span class="worker-settings-block-title">Кого не собирать</span>
+                            <div class="settings-options worker-settings-options">
+                                <div class="settings-option">
+                                    <div class="settings-option-text">
+                                        <span class="settings-option-label">Мужчин</span>
+                                        <span class="settings-option-desc">По метке «Мужчина» или мужскому ФИО. Ники не отсекаем.</span>
                                     </div>
                                     <label class="worker-toggle" title="Исключать мужчин">
                                         <input type="checkbox"
@@ -342,11 +313,10 @@
                                         <span class="worker-toggle-slider"></span>
                                     </label>
                                 </div>
-                                <div class="worker-settings-row">
-                                    <span class="worker-settings-row-icon" aria-hidden="true"><i class="fa-solid fa-venus"></i></span>
-                                    <div class="worker-settings-row-copy">
-                                        <span class="worker-settings-row-title">Исключать женщин</span>
-                                        <span class="worker-settings-row-desc">По метке «Женщина» или женскому ФИО; ники и неоднозначные имена не отсекаем</span>
+                                <div class="settings-option">
+                                    <div class="settings-option-text">
+                                        <span class="settings-option-label">Женщин</span>
+                                        <span class="settings-option-desc">По метке «Женщина» или женскому ФИО. Ники не отсекаем.</span>
                                     </div>
                                     <label class="worker-toggle" title="Исключать женщин">
                                         <input type="checkbox"
@@ -361,16 +331,11 @@
                         </section>
 
                         <section class="worker-settings-block">
-                            <div class="worker-settings-block-head">
-                                <span class="worker-settings-block-icon" aria-hidden="true"><i class="fa-regular fa-id-card"></i></span>
-                                <div class="worker-settings-block-copy">
-                                    <span class="worker-settings-block-title">Макс. возраст по полу</span>
-                                    <p class="worker-settings-block-desc">Включительно: «62» оставляет 62 и отсекает 63+. Разные лимиты для мужчин и женщин. Без возраста в карточке — оставляем.</p>
-                                </div>
-                            </div>
+                            <span class="worker-settings-block-title">Максимальный возраст</span>
+                            <p class="worker-settings-block-desc">Включительно: 62 оставляет 62 и отсекает 63+. Без возраста в карточке — оставляем.</p>
                             <div class="worker-settings-age-grid">
                                 <label class="worker-settings-field" for="responseFilterMaxAgeMale">
-                                    <span class="worker-settings-label">Мужчины, до (лет)</span>
+                                    <span class="worker-settings-label">Мужчины, до</span>
                                     <input type="number"
                                            id="responseFilterMaxAgeMale"
                                            name="responseFilterMaxAgeMale"
@@ -383,7 +348,7 @@
                                            inputmode="numeric" />
                                 </label>
                                 <label class="worker-settings-field" for="responseFilterMaxAgeFemale">
-                                    <span class="worker-settings-label">Женщины, до (лет)</span>
+                                    <span class="worker-settings-label">Женщины, до</span>
                                     <input type="number"
                                            id="responseFilterMaxAgeFemale"
                                            name="responseFilterMaxAgeFemale"
@@ -399,15 +364,8 @@
                         </section>
 
                         <section class="worker-settings-block">
-                            <div class="worker-settings-block-head">
-                                <span class="worker-settings-block-icon" aria-hidden="true"><i class="fa-regular fa-clock"></i></span>
-                                <div class="worker-settings-block-copy">
-                                    <span class="worker-settings-block-title">Давность отклика</span>
-                                    <p class="worker-settings-block-desc">Отклики, созданные на Avito раньше этого срока, не собираются. По дате отклика из чата. Пусто — без ограничения.</p>
-                                </div>
-                            </div>
                             <label class="worker-settings-field" for="responseFilterMaxAgeDays">
-                                <span class="worker-settings-label">Пропускать отклики старше (дней)</span>
+                                <span class="worker-settings-label">Пропускать отклики старше, дней</span>
                                 <input type="number"
                                        id="responseFilterMaxAgeDays"
                                        name="responseFilterMaxAgeDays"
@@ -422,15 +380,8 @@
                         </section>
 
                         <section class="worker-settings-block">
-                            <div class="worker-settings-block-head">
-                                <span class="worker-settings-block-icon" aria-hidden="true"><i class="fa-solid fa-mobile-screen"></i></span>
-                                <div class="worker-settings-block-copy">
-                                    <span class="worker-settings-block-title">Временные номера Avito</span>
-                                    <p class="worker-settings-block-desc">При первом появлении номера отклик сразу уходит в Орбиту. Дальше N часов следим за сменой номера и дописываем историю в тот же отклик; после окна наблюдение закрывается. Ключ: субпрофиль + ФИО (не ID отклика/аккаунта). 0 — не наблюдать после первой отправки. По умолчанию 120 (5 суток).</p>
-                                </div>
-                            </div>
                             <label class="worker-settings-field" for="phoneUnchangedHours">
-                                <span class="worker-settings-label">Окно наблюдения (часов) после первой отправки</span>
+                                <span class="worker-settings-label">Следить за сменой номера Avito, часов</span>
                                 <input type="number"
                                        id="phoneUnchangedHours"
                                        name="phoneUnchangedHours"
@@ -441,36 +392,31 @@
                                        value="@(Model.PhoneUnchangedHours?.ToString() ?? "120")"
                                        placeholder="120"
                                        inputmode="numeric" />
+                                <span class="worker-settings-hint">После первой отправки. 0 — не наблюдать. По умолчанию 120 часов (5 суток).</span>
                             </label>
                         </section>
                     </div>
 
-                    <div class="worker-settings-group" id="worker-settings-processing" role="tabpanel" aria-labelledby="worker-settings-tab-processing" data-worker-settings-panel="processing">
-                        <div class="worker-settings-panel-head">
-                            <div class="worker-settings-panel-copy">
-                                <h3 class="worker-settings-panel-title">Обработка откликов</h3>
-                                <p class="worker-settings-panel-desc">Подсвечивает отклики этого воркера в общем списке — по возрасту, профилю или субпрофилю Avito.</p>
-                            </div>
-                            <label class="worker-settings-switch" title="Включить пометку откликов">
-                                <span class="worker-settings-switch-label">Включить пометку откликов</span>
-                                <span class="worker-toggle">
-                                    <input type="checkbox"
-                                           id="responseHighlightEnabled"
-                                           name="responseHighlightEnabled"
-                                           value="true"
-                                           @(Model.ResponseHighlightEnabled ? "checked" : null) />
-                                    <span class="worker-toggle-slider"></span>
-                                </span>
-                            </label>
-                        </div>
+                    <div class="worker-settings-group" id="worker-settings-processing" role="tabpanel" aria-labelledby="worker-settings-tab-processing" data-worker-settings-panel="processing" hidden>
+                        <h3 class="visually-hidden">Обработка</h3>
 
                         <section class="worker-settings-block">
-                            <div class="worker-settings-block-head">
-                                <span class="worker-settings-block-icon" aria-hidden="true"><i class="fa-regular fa-clock"></i></span>
-                                <div class="worker-settings-block-copy">
-                                    <span class="worker-settings-block-title">Подсветка откликов</span>
-                                    <p class="worker-settings-block-desc">Выберите возрастные группы, профили или субпрофили ниже</p>
+                            <div class="worker-settings-panel-head">
+                                <div class="worker-settings-panel-copy">
+                                    <span class="worker-settings-block-title">Подсветка в списке откликов</span>
+                                    <p class="worker-settings-block-desc">По возрасту, профилю или субпрофилю Avito.</p>
                                 </div>
+                                <label class="worker-settings-switch" title="Включить пометку откликов">
+                                    <span class="worker-settings-switch-label">Включить</span>
+                                    <span class="worker-toggle">
+                                        <input type="checkbox"
+                                               id="responseHighlightEnabled"
+                                               name="responseHighlightEnabled"
+                                               value="true"
+                                               @(Model.ResponseHighlightEnabled ? "checked" : null) />
+                                        <span class="worker-toggle-slider"></span>
+                                    </span>
+                                </label>
                             </div>
                             <div class="worker-settings-dependent" data-worker-settings-depends-on="responseHighlightEnabled">
                                 @{
@@ -580,11 +526,10 @@
                         </section>
 
                         <section class="worker-settings-block">
-                            <div class="worker-settings-block-head">
-                                <span class="worker-settings-block-icon" aria-hidden="true"><i class="fa-regular fa-user"></i></span>
-                                <div class="worker-settings-block-copy">
+                            <div class="worker-settings-panel-head">
+                                <div class="worker-settings-panel-copy">
                                     <span class="worker-settings-block-title">Автоответ в чатах Avito</span>
-                                    <p class="worker-settings-block-desc">Ответ отправляется, если кандидат написал в чат, а менеджер ещё не ответил.</p>
+                                    <p class="worker-settings-block-desc">Если кандидат написал, а менеджер ещё не ответил.</p>
                                 </div>
                                 <label class="worker-toggle" title="Включить автоответы">
                                     <input type="checkbox"
@@ -604,30 +549,19 @@
                                               maxlength="2000"
                                               rows="3"
                                               placeholder="Доброго времени суток, наши коллеги с вами свяжутся и поподробнее расскажут о вакансии.">@Model.MessengerAutoReplyMessage</textarea>
-                                    <span class="worker-settings-hint">
-                                        Максимум 2000 символов. Если поле пустое, автоответ не отправляется даже при включённой опции.
-                                    </span>
+                                    <span class="worker-settings-hint">До 2000 символов. Пустое поле — автоответ не уходит.</span>
                                 </label>
                             </div>
                         </section>
 
                         <section class="worker-settings-block">
-                            <div class="worker-settings-block-head">
-                                <span class="worker-settings-block-icon" aria-hidden="true"><i class="fa-solid fa-share"></i></span>
-                                <div class="worker-settings-block-copy">
-                                    <span class="worker-settings-block-title">Авто-отправка откликов</span>
-                                    <p class="worker-settings-block-desc">
-                                        Офис назначения: <strong>@(string.IsNullOrWhiteSpace(Model.OfficeName) ? "—" : Model.OfficeName)</strong>.
-                                        CRM — основной канал; Bitrix24 — временный (legacy).
-                                    </p>
-                                </div>
-                            </div>
-                            <div class="worker-settings-rows">
-                                <div class="worker-settings-row">
-                                    <span class="worker-settings-row-icon" aria-hidden="true"><i class="fa-regular fa-comments"></i></span>
-                                    <div class="worker-settings-row-copy">
-                                        <span class="worker-settings-row-title">Авто в CRM</span>
-                                        <span class="worker-settings-row-desc">Создавать карточку CRM и назначать менеджеру на смене</span>
+                            <span class="worker-settings-block-title">Авто-отправка</span>
+                            <p class="worker-settings-block-desc">Офис: <strong>@(string.IsNullOrWhiteSpace(Model.OfficeName) ? "—" : Model.OfficeName)</strong>. CRM — основной канал, Bitrix24 — legacy.</p>
+                            <div class="settings-options worker-settings-options">
+                                <div class="settings-option">
+                                    <div class="settings-option-text">
+                                        <span class="settings-option-label">Авто в CRM</span>
+                                        <span class="settings-option-desc">Создать карточку и назначить менеджеру на смене</span>
                                     </div>
                                     <label class="worker-toggle" title="Авто в CRM">
                                         <input type="checkbox"
@@ -638,11 +572,10 @@
                                         <span class="worker-toggle-slider"></span>
                                     </label>
                                 </div>
-                                <div class="worker-settings-row">
-                                    <span class="worker-settings-row-icon" aria-hidden="true"><i class="fa-solid fa-diagram-project"></i></span>
-                                    <div class="worker-settings-row-copy">
-                                        <span class="worker-settings-row-title">Авто в Bitrix24 (legacy)</span>
-                                        <span class="worker-settings-row-desc">Отправлять по схеме связей офиса</span>
+                                <div class="settings-option">
+                                    <div class="settings-option-text">
+                                        <span class="settings-option-label">Авто в Bitrix24</span>
+                                        <span class="settings-option-desc">Отправлять по схеме связей офиса</span>
                                     </div>
                                     <label class="worker-toggle" title="Авто в Bitrix">
                                         <input type="checkbox"
@@ -657,14 +590,14 @@
                         </section>
                     </div>
 
-                    <div class="worker-settings-group" id="worker-settings-schedule" role="tabpanel" aria-labelledby="worker-settings-tab-schedule" data-worker-settings-panel="schedule">
+                    <div class="worker-settings-group" id="worker-settings-schedule" role="tabpanel" aria-labelledby="worker-settings-tab-schedule" data-worker-settings-panel="schedule" hidden>
                         <div class="worker-settings-panel-head">
                             <div class="worker-settings-panel-copy">
                                 <h3 class="worker-settings-panel-title">Расписание</h3>
-                                <p class="worker-settings-panel-desc">Воркер будет автоматически включаться только в выбранные дни и часы, а вне окна сам выключится.</p>
+                                <p class="worker-settings-panel-desc">В выбранные дни и часы воркер сам включится, вне окна — выключится.</p>
                             </div>
                             <label class="worker-settings-switch" title="Включить расписание">
-                                <span class="worker-settings-switch-label">Включить расписание</span>
+                                <span class="worker-settings-switch-label">Включить</span>
                                 <span class="worker-toggle">
                                     <input type="checkbox"
                                            id="autoScheduleEnabled"
@@ -675,76 +608,56 @@
                                 </span>
                             </label>
                         </div>
-                        <section class="worker-settings-block">
-                            <div class="worker-settings-block-head">
-                                <span class="worker-settings-block-icon" aria-hidden="true"><i class="fa-regular fa-calendar"></i></span>
-                                <div class="worker-settings-block-copy">
-                                    <span class="worker-settings-block-title">Автовключение по расписанию</span>
-                                    <p class="worker-settings-block-desc">Пример: будни с 07:00 до 19:00</p>
-                                </div>
-                            </div>
-                            <div class="worker-settings-dependent" data-worker-settings-depends-on="autoScheduleEnabled">
-                                @{
-                                    var selectedScheduleDays = (Model.AutoScheduleDays ?? string.Empty)
-                                        .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                        <div class="worker-settings-dependent" data-worker-settings-depends-on="autoScheduleEnabled">
+                            @{
+                                var selectedScheduleDays = (Model.AutoScheduleDays ?? string.Empty)
+                                    .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                            }
+                            <span class="worker-settings-subsection-title" id="schedule-days-title">Дни</span>
+                            <div class="worker-schedule-days" role="group" aria-labelledby="schedule-days-title">
+                                @foreach (var day in Model.AutoScheduleDayOptions)
+                                {
+                                    var isChecked = selectedScheduleDays.Contains(day);
+                                    var dayLabel = scheduleDayLabels.TryGetValue(day, out var label) ? label : day;
+                                    var dayShort = scheduleDayShortLabels.TryGetValue(day, out var shortLabel) ? shortLabel : day;
+                                    <label class="worker-schedule-day" title="@dayLabel">
+                                        <input type="checkbox"
+                                               name="autoScheduleDays"
+                                               value="@day"
+                                               aria-label="@dayLabel"
+                                               @(isChecked ? "checked" : null) />
+                                        <span aria-hidden="true">@dayShort</span>
+                                    </label>
                                 }
-                                <span class="worker-settings-subsection-title" id="schedule-days-title">Дни работы</span>
-                                <div class="worker-schedule-days" role="group" aria-labelledby="schedule-days-title">
-                                    @foreach (var day in Model.AutoScheduleDayOptions)
-                                    {
-                                        var isChecked = selectedScheduleDays.Contains(day);
-                                        var dayLabel = scheduleDayLabels.TryGetValue(day, out var label) ? label : day;
-                                        <label class="worker-schedule-day" title="@dayLabel">
-                                            <input type="checkbox"
-                                                   name="autoScheduleDays"
-                                                   value="@day"
-                                                   aria-label="@dayLabel"
-                                                   @(isChecked ? "checked" : null) />
-                                            <span aria-hidden="true">@dayLabel</span>
-                                        </label>
-                                    }
-                                </div>
-
-                                <span class="worker-settings-subsection-title">Рабочее время</span>
-                                <div class="worker-settings-age-grid worker-schedule-time-grid">
-                                    <label class="worker-settings-field" for="autoScheduleFromLocalTime">
-                                        <span class="worker-settings-label">С</span>
-                                        <input type="time"
-                                               id="autoScheduleFromLocalTime"
-                                               name="autoScheduleFromLocalTime"
-                                               class="worker-settings-input"
-                                               value="@Model.AutoScheduleFromLocalTime" />
-                                    </label>
-                                    <label class="worker-settings-field" for="autoScheduleToLocalTime">
-                                        <span class="worker-settings-label">До</span>
-                                        <input type="time"
-                                               id="autoScheduleToLocalTime"
-                                               name="autoScheduleToLocalTime"
-                                               class="worker-settings-input"
-                                               value="@Model.AutoScheduleToLocalTime" />
-                                    </label>
-                                </div>
-                                <span class="worker-settings-hint">
-                                    Время московское. Если окно пересекает полночь, например 19:00-07:00, оно тоже поддерживается.
-                                </span>
                             </div>
-                        </section>
-                    </div>
 
-                    <div class="worker-settings-group worker-settings-group--advanced" id="worker-settings-connection" role="tabpanel" aria-labelledby="worker-settings-tab-connection" data-worker-settings-panel="connection">
-                    <div class="worker-settings-panel-head">
-                        <div class="worker-settings-panel-copy">
-                            <h3 class="worker-settings-panel-title">Подключение</h3>
-                            <p class="worker-settings-panel-desc">Источники браузеров, ключи API и проверка связи с AdsPower, Multilogin X и обычным Chrome.</p>
+                            <span class="worker-settings-subsection-title">Время, МСК</span>
+                            <div class="worker-settings-age-grid worker-schedule-time-grid">
+                                <label class="worker-settings-field" for="autoScheduleFromLocalTime">
+                                    <span class="worker-settings-label">С</span>
+                                    <input type="time"
+                                           id="autoScheduleFromLocalTime"
+                                           name="autoScheduleFromLocalTime"
+                                           class="worker-settings-input"
+                                           value="@Model.AutoScheduleFromLocalTime" />
+                                </label>
+                                <label class="worker-settings-field" for="autoScheduleToLocalTime">
+                                    <span class="worker-settings-label">До</span>
+                                    <input type="time"
+                                           id="autoScheduleToLocalTime"
+                                           name="autoScheduleToLocalTime"
+                                           class="worker-settings-input"
+                                           value="@Model.AutoScheduleToLocalTime" />
+                                </label>
+                            </div>
+                            <span class="worker-settings-hint">Окно через полночь тоже работает, например 19:00–07:00.</span>
                         </div>
                     </div>
+
+                    <div class="worker-settings-group" id="worker-settings-connection" role="tabpanel" aria-labelledby="worker-settings-tab-connection" data-worker-settings-panel="connection" hidden>
+                    <h3 class="visually-hidden">Подключение</h3>
                     <section class="worker-settings-block">
-                        <div class="worker-settings-block-head">
-                            <span class="worker-settings-block-icon" aria-hidden="true"><i class="fa-solid fa-window-restore"></i></span>
-                            <div class="worker-settings-block-copy">
-                                <span class="worker-settings-block-title">Источники браузеров</span>
-                            </div>
-                        </div>
+                        <span class="worker-settings-block-title">Источники браузеров</span>
                         <div class="worker-provider-sources" data-provider-sources>
                         @foreach (var card in new[] { Model.AdsPowerCheck, Model.MultiloginCheck, Model.LocalChromeCheck })
                         {
@@ -989,13 +902,6 @@
                     </div>
 
                     <section class="worker-settings-block">
-                        <div class="worker-settings-block-head">
-                            <span class="worker-settings-block-icon" aria-hidden="true"><i class="fa-solid fa-shield-halved"></i></span>
-                            <div class="worker-settings-block-copy">
-                                <span class="worker-settings-block-title">RuCaptcha</span>
-                                <p class="worker-settings-block-desc">Ключ с rucaptcha.com для автопрохождения GeeTest v4. Пока пусто — воркер останавливает аккаунт на капче.</p>
-                            </div>
-                        </div>
                         <label class="worker-settings-field" for="ruCaptchaApiKey">
                             <span class="worker-settings-label">RuCaptcha API Key</span>
                             <input type="password"
@@ -1006,6 +912,7 @@
                                    placeholder="@(string.IsNullOrWhiteSpace(Model.RuCaptchaApiKey) ? "Не задан — капча Avito вручную" : "Ключ задан")"
                                    autocomplete="new-password"
                                    spellcheck="false" />
+                            <span class="worker-settings-hint">Ключ с rucaptcha.com для GeeTest v4. Пока пусто — воркер останавливает аккаунт на капче.</span>
                         </label>
                     </section>
                     </div>
@@ -1126,7 +1033,7 @@
                 </a>
             </nav>
         </div>
-        <div class="worker-accounts-toolbar">
+        <div class="worker-accounts-toolbar" @(isLocalProvider && Model.Accounts.Count == 0 && !Model.HasActiveAccountFilters ? "hidden" : null)>
             <form class="worker-accounts-controls" method="get" action="@Url.Action("Details", "Workers", new { id = Model.WorkerId })">
                 <input type="hidden" name="provider" value="@Model.AccountProvider" />
                 <input type="hidden" name="sort" value="@Model.Sort.Column" />
@@ -1160,14 +1067,17 @@
         </div>
         @if (isLocalProvider)
         {
-            <div class="worker-local-account-panel">
-                <p class="worker-local-account-steps">Создайте аккаунт → Откройте браузер → Войдите в Avito → Закройте браузер → Включите мониторинг.</p>
+            var localCreateIsEmpty = Model.Accounts.Count == 0 && !Model.HasActiveAccountFilters;
+            <div class="worker-local-account-panel@(localCreateIsEmpty ? " worker-local-account-panel--empty" : "")">
+                <div class="worker-local-account-copy">
+                    <span class="worker-local-account-form-title">Новый браузерный аккаунт</span>
+                    <p class="worker-local-account-hint">Создайте аккаунт, откройте браузер, войдите в Avito, закройте его и включите мониторинг.</p>
+                </div>
                 <form asp-action="CreateLocalAccount" method="post" class="worker-local-account-form">
                     @Html.AntiForgeryToken()
                     <input type="hidden" name="workerId" value="@Model.WorkerId" />
-                    <span class="worker-local-account-form-title">Создать браузерный аккаунт</span>
                     <label class="worker-settings-field" for="localAccountDisplayName">
-                        <span class="worker-settings-label">Название</span>
+                        <span class="visually-hidden">Название</span>
                         <input type="text"
                                id="localAccountDisplayName"
                                name="displayName"
@@ -1177,7 +1087,7 @@
                                placeholder="Например, Авито — кабинет 1"
                                autocomplete="off" />
                     </label>
-                    <button type="submit" class="worker-refresh-btn">Создать браузерный аккаунт</button>
+                    <button type="submit" class="worker-refresh-btn">Создать</button>
                 </form>
                 <details class="worker-local-account-advanced">
                     <summary>Подключить существующую папку профиля</summary>
@@ -1206,7 +1116,7 @@
                                    placeholder="D:\Orbita\ChromeProfiles\account-1"
                                    autocomplete="off"
                                    spellcheck="false" />
-                            <span class="worker-settings-hint">Только отдельная папка на машине воркера. Системный Chrome User Data и Default использовать нельзя. При удалении записи папка на диске не удаляется.</span>
+                            <span class="worker-settings-hint">Отдельная папка на машине воркера. Системный Chrome User Data и Default нельзя. При удалении записи папка на диске остаётся.</span>
                         </label>
                         <button type="submit" class="worker-refresh-btn">Подключить папку</button>
                     </form>
@@ -1214,16 +1124,16 @@
             </div>
         }
         <div class="card-body card-body-table worker-accounts-wrap">
-            <div data-worker-accounts-empty @(Model.Accounts.Count == 0 ? null : "hidden")>
+            <div data-worker-accounts-empty
+                 data-worker-accounts-empty-local-create="@(isLocalProvider && !Model.HasActiveAccountFilters ? "true" : "false")"
+                 @(Model.Accounts.Count == 0 && !(isLocalProvider && !Model.HasActiveAccountFilters) ? null : "hidden")>
                 <partial name="_TableEmptyState" model="@(new TableEmptyStateViewModel
                 {
                     IconClass = "fa-solid fa-users",
                     Title = Model.HasActiveAccountFilters ? "Аккаунты не найдены" : "Аккаунтов пока нет",
                     Description = Model.HasActiveAccountFilters
                         ? "Измените поисковый запрос."
-                        : isLocalProvider
-                            ? "Создайте аккаунт, откройте браузер, войдите в Avito и затем включите мониторинг."
-                            : "Дождитесь синхронизации профилей AdsPower или Multilogin с воркером.",
+                        : "Дождитесь синхронизации профилей AdsPower или Multilogin с воркером.",
                     CtaLabel = Model.HasActiveAccountFilters ? "Сбросить фильтры" : null,
                     CtaUrl = Model.HasActiveAccountFilters
                         ? Url.Action("Details", "Workers", new { id = Model.WorkerId, provider = Model.AccountProvider, sort = Model.Sort.Column, dir = Model.Sort.Dir })
@@ -1531,7 +1441,7 @@
         <div class="card card--worker-logs" id="worker-logs">
             <div class="card-header worker-logs-header">
                 <h2>Логи воркера</h2>
-                <a class="card-footer-btn card-footer-btn--inline" href="@Url.Action("Index", "Settings", new { tab = "logs", service = "Orbita.Worker", q = $"worker:{Model.WorkerId:D}" })">Открыть журнал</a>
+                <a class="settings-link-btn" href="@Url.Action("Index", "Settings", new { tab = "logs", service = "Orbita.Worker", q = $"worker:{Model.WorkerId:D}" })">Открыть журнал</a>
             </div>
         </div>
     }
