@@ -405,3 +405,4 @@ deploy/control-panel/telephony/asterisk/config/pjsip.endpoints.conf
 .local-data/
 .codex-data-protection-web/
 Orbita.Api/Data/dataprotection-api/
+.slim/deepwork/
