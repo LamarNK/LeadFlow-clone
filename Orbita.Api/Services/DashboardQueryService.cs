@@ -783,7 +783,7 @@ public sealed class DashboardQueryService(
                 scope.ResolveFilter(null),
                 ScopeAudience(scope),
                 new { Kind = "worker-accounts", workerId },
-                OrbitaCachePolicy.Realtime,
+                OrbitaCachePolicy.LargeRealtime,
                 Load,
                 ct);
     }

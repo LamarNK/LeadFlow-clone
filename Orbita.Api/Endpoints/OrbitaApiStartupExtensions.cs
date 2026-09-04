@@ -217,9 +217,10 @@ public static class OrbitaApiStartupExtensions
 
         builder.Services.AddHybridCache(options =>
         {
-            // Cache only compact DTOs. Files, images and other large values never
-            // enter either cache tier through this layer.
-            options.MaximumPayloadBytes = 512 * 1024;
+            // Files and unbounded payloads never use this layer. One worker can
+            // legitimately have a compact account DTO just above 512 KiB; those
+            // use the distributed-only LargeRealtime policy, never the API L1.
+            options.MaximumPayloadBytes = 1024 * 1024;
         });
         builder.Services.AddSingleton<IOrbitaQueryCache, OrbitaQueryCache>();
         builder.Services.AddHostedService<RedisCacheInvalidationListener>();

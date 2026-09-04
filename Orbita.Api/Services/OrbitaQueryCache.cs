@@ -23,9 +23,12 @@ public enum OrbitaCacheDomain
     Logs
 }
 
-public sealed record OrbitaCachePolicy(TimeSpan LocalTtl, TimeSpan DistributedTtl)
+public sealed record OrbitaCachePolicy(TimeSpan LocalTtl, TimeSpan DistributedTtl, bool UseLocalCache = true)
 {
     public static readonly OrbitaCachePolicy Realtime = new(TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(5));
+    // Large account lists are valuable in Redis but must not inflate every API
+    // instance's in-process cache. The distributed TTL still remains five seconds.
+    public static readonly OrbitaCachePolicy LargeRealtime = new(TimeSpan.Zero, TimeSpan.FromSeconds(5), UseLocalCache: false);
     public static readonly OrbitaCachePolicy Interactive = new(TimeSpan.FromSeconds(1), TimeSpan.FromSeconds(30));
     public static readonly OrbitaCachePolicy Analytics = new(TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(60));
     public static readonly OrbitaCachePolicy Reference = new(TimeSpan.FromSeconds(30), TimeSpan.FromMinutes(15));
@@ -101,7 +104,10 @@ public sealed class OrbitaQueryCache(
         var entryOptions = new HybridCacheEntryOptions
         {
             Expiration = policy.DistributedTtl,
-            LocalCacheExpiration = policy.LocalTtl
+            LocalCacheExpiration = policy.LocalTtl,
+            Flags = policy.UseLocalCache
+                ? HybridCacheEntryFlags.None
+                : HybridCacheEntryFlags.DisableLocalCache
         };
         var factoryStarted = 0;
 
