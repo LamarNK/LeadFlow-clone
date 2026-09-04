@@ -218,9 +218,10 @@ public static class OrbitaApiStartupExtensions
         builder.Services.AddHybridCache(options =>
         {
             // Files and unbounded payloads never use this layer. One worker can
-            // legitimately have a compact account DTO just above 512 KiB; those
-            // use the distributed-only LargeRealtime policy, never the API L1.
-            options.MaximumPayloadBytes = 1024 * 1024;
+            // legitimately have a 648 KiB account response, for which the JSON
+            // serializer needs a 2 MiB buffer. That DTO uses distributed-only
+            // LargeRealtime and therefore never enters API L1 memory.
+            options.MaximumPayloadBytes = 2 * 1024 * 1024;
         });
         builder.Services.AddSingleton<IOrbitaQueryCache, OrbitaQueryCache>();
         builder.Services.AddHostedService<RedisCacheInvalidationListener>();
