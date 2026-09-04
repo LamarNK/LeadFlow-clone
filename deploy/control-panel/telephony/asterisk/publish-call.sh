@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-if [[ "$#" -ne 9 ]]; then
+if [[ "$#" -ne 12 ]]; then
   exit 2
 fi
 
@@ -18,6 +18,8 @@ fi
 
 meta="${recording}.meta"
 temporary="${meta}.$$"
-printf '%s\n' "$recording" "$call_id" "$2" "$3" "$4" "$5" "$6" "$7" "$office_id" > "$temporary"
+printf '%s\n' \
+  "$recording" "$call_id" "$2" "$3" "$4" "$5" "$6" "$7" "$office_id" \
+  "${10}" "${11}" "${12}" > "$temporary"
 mv -f "$temporary" "$meta"
 /opt/orbita-asterisk/deliver-recording.sh "$meta" || true

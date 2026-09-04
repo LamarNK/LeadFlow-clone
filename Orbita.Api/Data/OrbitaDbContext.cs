@@ -528,6 +528,9 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
             entity.Property(x => x.ClientPhoneNormalized).HasMaxLength(32);
             entity.Property(x => x.ProviderUserKey).HasMaxLength(128);
             entity.Property(x => x.ManagerUserId).HasMaxLength(128);
+            entity.Property(x => x.Status).HasMaxLength(16);
+            entity.Property(x => x.Disposition).HasMaxLength(32);
+            entity.Property(x => x.DialStatus).HasMaxLength(32);
             entity.HasOne<CrmTelephonyProviderAccountEntity>()
                 .WithMany()
                 .HasForeignKey(x => x.ProviderAccountId)

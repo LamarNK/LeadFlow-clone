@@ -52,6 +52,9 @@ curl_args=(
   --form-string "internal=${values[5]:-}"
   --form-string "started_at=${values[6]:-}"
   --form-string "duration_seconds=${values[7]:-0}"
+  --form-string "disposition=${values[9]:-}"
+  --form-string "dial_status=${values[10]:-}"
+  --form-string "hangup_cause=${values[11]:-}"
 )
 if [[ -s "$recording" ]]; then
   curl_args+=(--form "recording=@${recording};type=audio/wav")

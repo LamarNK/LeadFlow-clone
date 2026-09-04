@@ -1131,6 +1131,10 @@ public sealed class CrmCallEntity
     public string? ManagerUserId { get; set; }
     public DateTime StartedAtUtc { get; set; }
     public int DurationSeconds { get; set; }
+    public string Status { get; set; } = CrmCallStatuses.Unknown;
+    public string? Disposition { get; set; }
+    public string? DialStatus { get; set; }
+    public int? HangupCause { get; set; }
     public string? RecordingUrl { get; set; }
     public string? RecordingStoragePath { get; set; }
     public string? RecordingContentType { get; set; }

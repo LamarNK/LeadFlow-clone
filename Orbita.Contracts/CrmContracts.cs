@@ -226,9 +226,10 @@ public static class CrmTaskNotificationKinds
     public const string DueIn1Hour = "due_1h";
     public const string Overdue = "overdue";
     public const string PhoneChanged = "phone_changed";
+    public const string MissedCall = "missed_call";
 
     public static bool IsValid(string? kind) =>
-        kind is DueIn24Hours or DueIn1Hour or Overdue or PhoneChanged;
+        kind is DueIn24Hours or DueIn1Hour or Overdue or PhoneChanged or MissedCall;
 }
 
 public static class CrmContactPhoneLimits
@@ -836,7 +837,8 @@ public sealed record CrmActivityItemDto(
     string? CallRecordingUrl = null,
     bool CallRecordingStored = false,
     string? CallClientPhone = null,
-    string? CallAiStatus = null);
+    string? CallAiStatus = null,
+    string? CallStatus = null);
 
 public static class CrmCallAiStatuses
 {

@@ -740,7 +740,7 @@ public sealed class CrmTelephonyServiceTests
     [Theory]
     [InlineData(CrmTelephonyProviders.Plusofon)]
     [InlineData(CrmTelephonyProviders.Sipout)]
-    public async Task AsteriskInboundRoute_PersonalProviderLineTargetsItsAssignedManager(string provider)
+    public async Task AsteriskInboundRoute_UnknownCallerOnPersonalLineTargetsOnlyItsAssignedManager(string provider)
     {
         var runtimePath = Path.Combine(Path.GetTempPath(), "orbita-sip-runtime-tests", Guid.NewGuid().ToString("N"));
         try
@@ -828,6 +828,8 @@ public sealed class CrmTelephonyServiceTests
 
             Assert.Equal(AsteriskInboundRouteOutcome.Resolved, route.Outcome);
             Assert.Equal("301", route.PreferredExtension);
+            Assert.Empty(route.FallbackExtensions ?? []);
+            Assert.True(route.IsExclusive);
             Assert.Null(route.AffinityExpiresAtUtc);
         }
         finally
@@ -1322,7 +1324,10 @@ public sealed class CrmTelephonyServiceTests
                 "outbound",
                 "201",
                 "1786968000",
-                "27"),
+                "27",
+                "ANSWERED",
+                "ANSWER",
+                "16"),
             new MemoryStream(audio),
             audio.Length,
             "asterisk-100.wav",
@@ -1333,10 +1338,14 @@ public sealed class CrmTelephonyServiceTests
         var call = Assert.Single(await harness.Db.CrmCalls.ToListAsync());
         Assert.Equal(CrmTelephonyProviders.Asterisk, call.Provider);
         Assert.Equal(Harness.ManagerId, call.ManagerUserId);
+        Assert.Equal(CrmCallStatuses.Answered, call.Status);
+        Assert.Equal("ANSWER", call.DialStatus);
         Assert.Equal("audio/wav", call.RecordingContentType);
         Assert.Equal("asterisk-100.wav", call.RecordingFileName);
         Assert.NotNull(call.RecordingStoragePath);
         Assert.Equal(audio, await File.ReadAllBytesAsync(Path.Combine(harness.RecordingPath, call.RecordingStoragePath)));
+        Assert.Empty(await harness.Db.CrmDeskAlerts.ToListAsync());
+        Assert.Empty(harness.Notifier.Notifications);
     }
 
     [Fact]
@@ -1344,6 +1353,11 @@ public sealed class CrmTelephonyServiceTests
     {
         await using var harness = await Harness.CreateAsync();
         var receiver = await harness.CreateReceiverAsync(CrmTelephonyProviders.Asterisk);
+        const string responsibleManagerId = "current-card-responsible";
+        await harness.AddAsteriskManagerAsync(responsibleManagerId, "202", onShift: true);
+        var card = await harness.Db.CrmCandidateCards.SingleAsync(x => x.Id == harness.CardId);
+        card.ManagerUserId = responsibleManagerId;
+        await harness.Db.SaveChangesAsync();
 
         var result = await harness.Sut.ReceiveAsteriskCallAsync(
             receiver.PublicId,
@@ -1355,7 +1369,10 @@ public sealed class CrmTelephonyServiceTests
                 "inbound",
                 "201",
                 "1786968000",
-                "0"),
+                "0",
+                "NOANSWER",
+                "NOANSWER",
+                "19"),
             recording: null,
             recordingLength: 0,
             recordingFileName: null,
@@ -1365,8 +1382,43 @@ public sealed class CrmTelephonyServiceTests
         Assert.Equal(harness.CardId, result.CardId);
         var call = Assert.Single(await harness.Db.CrmCalls.ToListAsync());
         Assert.Equal(CrmCallDirections.Incoming, call.Direction);
+        Assert.Equal(CrmCallStatuses.Missed, call.Status);
+        Assert.Equal("NOANSWER", call.Disposition);
+        Assert.Equal("NOANSWER", call.DialStatus);
+        Assert.Equal(19, call.HangupCause);
         Assert.Null(call.RecordingStoragePath);
         Assert.Null(call.RecordingContentType);
+        var alert = Assert.Single(await harness.Db.CrmDeskAlerts.ToListAsync());
+        Assert.Equal(responsibleManagerId, alert.RecipientUserId);
+        Assert.Equal(CrmTaskNotificationKinds.MissedCall, alert.Kind);
+        Assert.Equal(harness.CardId, alert.CardId);
+        var realtime = Assert.Single(harness.Notifier.Notifications);
+        Assert.Equal(responsibleManagerId, realtime.RecipientUserId);
+        Assert.Equal(harness.CardId, realtime.Notification.CardId);
+        Assert.Equal(CrmTaskNotificationKinds.MissedCall, realtime.Notification.Kind);
+
+        var repeated = await harness.Sut.ReceiveAsteriskCallAsync(
+            receiver.PublicId,
+            receiver.Secret,
+            new AsteriskCallWebhookPayload(
+                "asterisk-missed-101",
+                "+7 (999) 111-22-33",
+                "201",
+                "inbound",
+                "201",
+                "1786968000",
+                "0",
+                "NOANSWER",
+                "NOANSWER",
+                "19"),
+            recording: null,
+            recordingLength: 0,
+            recordingFileName: null,
+            recordingContentType: null);
+
+        Assert.Equal(SipoutCallReceiveOutcome.Updated, repeated.Outcome);
+        Assert.Single(await harness.Db.CrmDeskAlerts.ToListAsync());
+        Assert.Single(harness.Notifier.Notifications);
     }
 
     [Fact]
@@ -1560,6 +1612,7 @@ public sealed class CrmTelephonyServiceTests
         public Guid PersonId { get; }
         public Guid CardId { get; }
         public string RecordingPath { get; }
+        public CapturingCrmNotificationRealtimeNotifier Notifier { get; } = new();
 
         private Harness(OrbitaDbContext db, Guid officeId, Guid personId, Guid cardId, string recordingPath)
         {
@@ -1577,7 +1630,8 @@ public sealed class CrmTelephonyServiceTests
                 db,
                 new PhoneNormalizer(),
                 new FixedTimeProvider(Now),
-                callRecordingStorage: storage);
+                callRecordingStorage: storage,
+                crmNotificationRealtime: Notifier);
         }
 
         public static async Task<Harness> CreateAsync()
@@ -1790,5 +1844,19 @@ public sealed class CrmTelephonyServiceTests
     private sealed class FixedTimeProvider(DateTimeOffset now) : TimeProvider
     {
         public override DateTimeOffset GetUtcNow() => now;
+    }
+
+    private sealed class CapturingCrmNotificationRealtimeNotifier : ICrmNotificationRealtimeNotifier
+    {
+        public List<(string RecipientUserId, CrmTaskNotificationDto Notification)> Notifications { get; } = [];
+
+        public Task NotifyAsync(
+            string recipientUserId,
+            CrmTaskNotificationDto notification,
+            CancellationToken ct = default)
+        {
+            Notifications.Add((recipientUserId, notification));
+            return Task.CompletedTask;
+        }
     }
 }

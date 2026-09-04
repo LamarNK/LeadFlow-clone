@@ -89,7 +89,10 @@ public static class TelephonyEndpoints
                     form["direction"].ToString(),
                     form["internal"].ToString(),
                     form["started_at"].ToString(),
-                    form["duration_seconds"].ToString());
+                    form["duration_seconds"].ToString(),
+                    form["disposition"].ToString(),
+                    form["dial_status"].ToString(),
+                    form["hangup_cause"].ToString());
                 var secret = request.Headers.TryGetValue("X-Orbita-Webhook-Secret", out var secretHeader)
                     ? secretHeader.ToString()
                     : null;

@@ -1245,6 +1245,14 @@ namespace Orbita.Api.Data.Migrations
                         .HasMaxLength(32)
                         .HasColumnType("character varying(32)");
 
+                    b.Property<string>("DialStatus")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("Disposition")
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
                     b.Property<int>("DurationSeconds")
                         .HasColumnType("integer");
 
@@ -1252,6 +1260,9 @@ namespace Orbita.Api.Data.Migrations
                         .IsRequired()
                         .HasMaxLength(128)
                         .HasColumnType("character varying(128)");
+
+                    b.Property<int?>("HangupCause")
+                        .HasColumnType("integer");
 
                     b.Property<string>("ManagerUserId")
                         .HasMaxLength(128)
@@ -1305,6 +1316,11 @@ namespace Orbita.Api.Data.Migrations
 
                     b.Property<DateTime>("StartedAtUtc")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("Status")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
 
                     b.Property<DateTime>("UpdatedAtUtc")
                         .HasColumnType("timestamp with time zone");

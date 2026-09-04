@@ -193,7 +193,11 @@
                     }
                     else
                     {
-                        <p class="crm-feed-item__call-pending">Запись ещё не получена от оператора телефонии.</p>
+                        <p class="crm-feed-item__call-pending">
+                            @(CrmCallStatuses.IsUnanswered(item.CallStatus)
+                                ? "Разговор не состоялся."
+                                : "Запись ещё не получена от оператора телефонии.")
+                        </p>
                     }
                     @if (item.CallId is Guid aiCallId && !string.IsNullOrWhiteSpace(item.CallAiStatus))
                     {

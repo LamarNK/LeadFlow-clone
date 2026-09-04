@@ -20,6 +20,8 @@
 .orbita-notification-item__icon { display: inline-flex; width: 32px; height: 32px; align-items: center; justify-content: center; border-radius: 10px; font-size: 13px; }
 .orbita-notification-item__icon.is-upcoming { background: #eef4ff; color: #315cde; }
 .orbita-notification-item__icon.is-overdue { background: #fff1f0; color: #d92d20; }
+.orbita-notification-item__icon.is-phone { background: #eef4ff; color: #315cde; }
+.orbita-notification-item__icon.is-missed { background: #fff4e8; color: #c2410c; }
 .orbita-notification-item__body { display: grid; min-width: 0; gap: 3px; }
 .orbita-notification-item__meta { color: var(--text-secondary); font-size: 9px; font-weight: 650; text-transform: uppercase; }
 .orbita-notification-item__body strong { overflow: hidden; color: var(--text-primary); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
@@ -35,8 +37,10 @@
 .orbita-crm-realtime-notification.is-visible { opacity: 1; transform: translateX(0); }
 .orbita-crm-realtime-notification:hover { box-shadow: 0 18px 48px rgba(30, 45, 80, .28); color: #344054; transform: translateY(-1px); }
 .orbita-crm-realtime-notification.is-overdue { border-color: #f6c9c6; border-left-color: #e5484d; }
+.orbita-crm-realtime-notification.is-missed { border-color: #fed7aa; border-left-color: #ea580c; }
 .orbita-crm-realtime-notification__icon { display: inline-flex; width: 40px; height: 40px; align-items: center; justify-content: center; border-radius: 12px; background: #eef4ff; color: #315cde; font-size: 16px; }
 .orbita-crm-realtime-notification.is-overdue .orbita-crm-realtime-notification__icon { background: #fff1f0; color: #d92d20; }
+.orbita-crm-realtime-notification.is-missed .orbita-crm-realtime-notification__icon { background: #fff4e8; color: #c2410c; }
 .orbita-crm-realtime-notification__body { display: grid; min-width: 0; gap: 4px; }
 .orbita-crm-realtime-notification__meta { color: #667085; font-size: 10px; font-weight: 750; letter-spacing: .02em; text-transform: uppercase; }
 .orbita-crm-realtime-notification__body strong { overflow: hidden; color: #1d2939; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }

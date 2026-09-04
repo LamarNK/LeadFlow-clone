@@ -94,6 +94,18 @@ public static class CrmCallDirections
     public const string Unknown = "unknown";
 }
 
+public static class CrmCallStatuses
+{
+    public const string Answered = "answered";
+    public const string Missed = "missed";
+    public const string Rejected = "rejected";
+    public const string Failed = "failed";
+    public const string Unknown = "unknown";
+
+    public static bool IsUnanswered(string? status) =>
+        status is Missed or Rejected or Failed;
+}
+
 public sealed record CrmTelephonyUserBindingDto(
     string UserId,
     string UserName,
@@ -235,7 +247,10 @@ public sealed record SipoutCallWebhookPayload(
     string? LastCaller,
     string? StartedAt,
     string? DurationSeconds,
-    string? RecordingUrl);
+    string? RecordingUrl,
+    string? Disposition = null,
+    string? DialStatus = null,
+    string? HangupCause = null);
 
 public sealed record PlusofonCallWebhookPayload(
     string ExternalCallId,
@@ -254,7 +269,10 @@ public sealed record AsteriskCallWebhookPayload(
     string? Direction,
     string? InternalNumber,
     string? StartedAt,
-    string? DurationSeconds);
+    string? DurationSeconds,
+    string? Disposition = null,
+    string? DialStatus = null,
+    string? HangupCause = null);
 
 public enum AsteriskInboundRouteOutcome
 {
@@ -265,7 +283,8 @@ public enum AsteriskInboundRouteOutcome
 
 /// <summary>
 /// Inbound callback routing. A known CRM card is routed exclusively to its
-/// current responsible manager; unknown callers may use ordinary fallbacks.
+/// current responsible manager. An unknown caller on a personal provider line
+/// is routed exclusively to the line owner; shared lines may use fallbacks.
 /// </summary>
 public sealed record AsteriskInboundRouteResult(
     AsteriskInboundRouteOutcome Outcome,

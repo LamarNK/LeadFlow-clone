@@ -4331,10 +4331,13 @@ public sealed class CrmWorkspaceService(
             }));
         items.AddRange(calls.Select(call =>
         {
-            var title = call.Direction switch
+            var title = (call.Direction, call.Status) switch
             {
-                CrmCallDirections.Incoming => "Входящий звонок",
-                CrmCallDirections.Outgoing => "Исходящий звонок",
+                (CrmCallDirections.Incoming, CrmCallStatuses.Missed) => "Пропущенный входящий звонок",
+                (CrmCallDirections.Incoming, CrmCallStatuses.Rejected) => "Отклонённый входящий звонок",
+                (CrmCallDirections.Incoming, CrmCallStatuses.Failed) => "Недоставленный входящий звонок",
+                (CrmCallDirections.Incoming, _) => "Входящий звонок",
+                (CrmCallDirections.Outgoing, _) => "Исходящий звонок",
                 _ => "Телефонный звонок"
             };
             var actorName = string.IsNullOrWhiteSpace(call.ManagerUserId)
@@ -4357,7 +4360,8 @@ public sealed class CrmWorkspaceService(
                 CallRecordingUrl: call.RecordingUrl,
                 CallRecordingStored: !string.IsNullOrWhiteSpace(call.RecordingStoragePath),
                 CallClientPhone: call.ClientPhoneNormalized,
-                CallAiStatus: callAiStatuses.GetValueOrDefault(call.Id));
+                CallAiStatus: callAiStatuses.GetValueOrDefault(call.Id),
+                CallStatus: call.Status);
         }));
         return items
             .OrderByDescending(x => x.IsPinned)

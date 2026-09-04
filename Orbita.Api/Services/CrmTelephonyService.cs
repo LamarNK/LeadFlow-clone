@@ -15,7 +15,9 @@ public sealed class CrmTelephonyService(
     IPanelRealtimeNotifier? panelRealtime = null,
     CrmTelephonyCredentialProtector? credentialProtector = null,
     CrmCallRecordingStorageService? callRecordingStorage = null,
-    CrmSipRuntimeConfigWriter? sipRuntimeConfigWriter = null)
+    CrmSipRuntimeConfigWriter? sipRuntimeConfigWriter = null,
+    ICrmNotificationRealtimeNotifier? crmNotificationRealtime = null,
+    ILogger<CrmTelephonyService>? logger = null)
 {
     private static readonly TimeSpan CallbackAffinityLifetime = TimeSpan.FromDays(30);
 
@@ -1612,7 +1614,10 @@ public sealed class CrmTelephonyService(
                 null,
                 payload.StartedAt,
                 payload.DurationSeconds,
-                null),
+                null,
+                payload.Disposition,
+                payload.DialStatus,
+                payload.HangupCause),
             ct);
         if (result.CallId is not Guid callId
             || result.Outcome is SipoutCallReceiveOutcome.Unauthorized or SipoutCallReceiveOutcome.Invalid)
@@ -1723,37 +1728,46 @@ public sealed class CrmTelephonyService(
             inboundProvider,
             inboundAccountKey,
             ct);
-        DateTime? affinityExpiresAtUtc = null;
-        if (preferredExtension is null)
+        if (preferredExtension is not null)
         {
-            var cutoff = now - CallbackAffinityLifetime;
-            var lastOutbound = await db.CrmCalls.AsNoTracking()
+            // An unknown caller to a personal provider line belongs to that
+            // line's assigned manager. Do not leak the call to another manager
+            // when the owner is offline or does not answer.
+            return new AsteriskInboundRouteResult(
+                AsteriskInboundRouteOutcome.Resolved,
+                preferredExtension,
+                [],
+                IsExclusive: true);
+        }
+
+        DateTime? affinityExpiresAtUtc = null;
+        var cutoff = now - CallbackAffinityLifetime;
+        var lastOutbound = await db.CrmCalls.AsNoTracking()
+            .Where(x => x.OfficeId == receiver.OfficeId
+                && x.Provider == CrmTelephonyProviders.Asterisk
+                && x.Direction == CrmCallDirections.Outgoing
+                && x.ClientPhoneNormalized == clientPhone
+                && x.ManagerUserId != null
+                && x.StartedAtUtc >= cutoff
+                && x.StartedAtUtc <= now.AddMinutes(5))
+            .OrderByDescending(x => x.StartedAtUtc)
+            .Select(x => new { x.ManagerUserId, x.StartedAtUtc })
+            .FirstOrDefaultAsync(ct);
+        if (lastOutbound is not null)
+        {
+            preferredExtension = await db.CrmTelephonyUserBindings.AsNoTracking()
                 .Where(x => x.OfficeId == receiver.OfficeId
                     && x.Provider == CrmTelephonyProviders.Asterisk
-                    && x.Direction == CrmCallDirections.Outgoing
-                    && x.ClientPhoneNormalized == clientPhone
-                    && x.ManagerUserId != null
-                    && x.StartedAtUtc >= cutoff
-                    && x.StartedAtUtc <= now.AddMinutes(5))
-                .OrderByDescending(x => x.StartedAtUtc)
-                .Select(x => new { x.ManagerUserId, x.StartedAtUtc })
+                    && x.UserId == lastOutbound.ManagerUserId)
+                .Select(x => x.ProviderUserKey)
                 .FirstOrDefaultAsync(ct);
-            if (lastOutbound is not null)
+            if (!IsValidAsteriskExtension(preferredExtension))
             {
-                preferredExtension = await db.CrmTelephonyUserBindings.AsNoTracking()
-                    .Where(x => x.OfficeId == receiver.OfficeId
-                        && x.Provider == CrmTelephonyProviders.Asterisk
-                        && x.UserId == lastOutbound.ManagerUserId)
-                    .Select(x => x.ProviderUserKey)
-                    .FirstOrDefaultAsync(ct);
-                if (!IsValidAsteriskExtension(preferredExtension))
-                {
-                    preferredExtension = null;
-                }
-                else
-                {
-                    affinityExpiresAtUtc = lastOutbound.StartedAtUtc + CallbackAffinityLifetime;
-                }
+                preferredExtension = null;
+            }
+            else
+            {
+                affinityExpiresAtUtc = lastOutbound.StartedAtUtc + CallbackAffinityLifetime;
             }
         }
 
@@ -1974,6 +1988,10 @@ public sealed class CrmTelephonyService(
         var startedAt = ParseStartedAt(payload.StartedAt, now);
         var durationSeconds = ParseNonNegativeInt(payload.DurationSeconds);
         var recordingUrl = NormalizeRecordingUrl(payload.RecordingUrl);
+        var disposition = NormalizeCallSignal(payload.Disposition);
+        var dialStatus = NormalizeCallSignal(payload.DialStatus);
+        var hangupCause = ParseNullableNonNegativeInt(payload.HangupCause);
+        var status = ResolveCallStatus(provider, durationSeconds, disposition, dialStatus);
 
         var call = existing ?? new CrmCallEntity
         {
@@ -1993,6 +2011,10 @@ public sealed class CrmTelephonyService(
         call.ManagerUserId = managerUserId ?? call.ManagerUserId;
         call.StartedAtUtc = startedAt;
         call.DurationSeconds = durationSeconds;
+        call.Status = status;
+        call.Disposition = disposition;
+        call.DialStatus = dialStatus;
+        call.HangupCause = hangupCause;
         call.RecordingUrl = recordingUrl ?? call.RecordingUrl;
         if (call.RecordingUrl is not null && call.RecordingStoragePath is null)
         {
@@ -2006,6 +2028,37 @@ public sealed class CrmTelephonyService(
         if (existing is null)
         {
             db.CrmCalls.Add(call);
+        }
+
+        CrmDeskAlertEntity? missedCallAlert = null;
+        string? missedCallRecipient = null;
+        if (existing is null
+            && card is not null
+            && direction == CrmCallDirections.Incoming
+            && CrmCallStatuses.IsUnanswered(status))
+        {
+            missedCallRecipient = !string.IsNullOrWhiteSpace(card.ManagerUserId)
+                ? card.ManagerUserId
+                : managerUserId;
+            if (!string.IsNullOrWhiteSpace(missedCallRecipient))
+            {
+                var candidateName = await db.CandidateResponses.AsNoTracking()
+                    .Where(x => x.Id == card.ResponseId)
+                    .Select(x => x.FullName)
+                    .FirstOrDefaultAsync(ct);
+                missedCallAlert = new CrmDeskAlertEntity
+                {
+                    Id = Guid.NewGuid(),
+                    OfficeId = officeId,
+                    RecipientUserId = missedCallRecipient,
+                    Kind = CrmTaskNotificationKinds.MissedCall,
+                    CardId = card.Id,
+                    Title = string.IsNullOrWhiteSpace(candidateName) ? "Кандидат" : candidateName,
+                    Message = BuildUnansweredCallMessage(status, clientPhone),
+                    CreatedAtUtc = now
+                };
+                db.CrmDeskAlerts.Add(missedCallAlert);
+            }
         }
 
         if (providerAccountId is Guid statusAccountId)
@@ -2025,6 +2078,37 @@ public sealed class CrmTelephonyService(
         if (call.CardId is Guid)
         {
             panelRealtime?.Notify([PanelChangeKind.Crm], officeId);
+        }
+        if (missedCallAlert is not null
+            && missedCallRecipient is not null
+            && crmNotificationRealtime is not null)
+        {
+            var notification = new CrmTaskNotificationDto(
+                missedCallAlert.Id,
+                Guid.Empty,
+                missedCallAlert.CardId,
+                missedCallAlert.Kind,
+                missedCallAlert.Title,
+                missedCallAlert.Message,
+                missedCallAlert.CreatedAtUtc,
+                missedCallAlert.CreatedAtUtc,
+                null);
+            try
+            {
+                await crmNotificationRealtime.NotifyAsync(missedCallRecipient, notification, ct);
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch (Exception ex)
+            {
+                logger?.LogWarning(
+                    ex,
+                    "Missed call alert {AlertId} was saved but realtime delivery to user {UserId} failed.",
+                    missedCallAlert.Id,
+                    missedCallRecipient);
+            }
         }
 
         return new SipoutCallReceiveResult(
@@ -2583,6 +2667,85 @@ public sealed class CrmTelephonyService(
         int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
             ? Math.Max(0, parsed)
             : 0;
+
+    private static int? ParseNullableNonNegativeInt(string? value) =>
+        int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out var parsed)
+            ? Math.Max(0, parsed)
+            : null;
+
+    private static string? NormalizeCallSignal(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var normalized = new string(value
+            .Trim()
+            .ToUpperInvariant()
+            .Where(char.IsAsciiLetterOrDigit)
+            .Take(32)
+            .ToArray());
+        return normalized.Length == 0 ? null : normalized;
+    }
+
+    private static string ResolveCallStatus(
+        string provider,
+        int durationSeconds,
+        string? disposition,
+        string? dialStatus)
+    {
+        if (provider != CrmTelephonyProviders.Asterisk)
+        {
+            return durationSeconds > 0 ? CrmCallStatuses.Answered : CrmCallStatuses.Unknown;
+        }
+
+        if (dialStatus == "ANSWER")
+        {
+            return CrmCallStatuses.Answered;
+        }
+        if (dialStatus == "BUSY")
+        {
+            return CrmCallStatuses.Rejected;
+        }
+        if (dialStatus is "NOANSWER" or "CANCEL")
+        {
+            return CrmCallStatuses.Missed;
+        }
+        if (dialStatus is "CHANUNAVAIL" or "CONGESTION" or "DONTCALL" or "TORTURE" or "INVALIDARGS")
+        {
+            return CrmCallStatuses.Failed;
+        }
+        if (disposition == "ANSWERED")
+        {
+            return CrmCallStatuses.Answered;
+        }
+        if (disposition == "BUSY")
+        {
+            return CrmCallStatuses.Rejected;
+        }
+        if (disposition == "NOANSWER")
+        {
+            return CrmCallStatuses.Missed;
+        }
+        if (disposition == "FAILED")
+        {
+            return CrmCallStatuses.Failed;
+        }
+
+        return durationSeconds > 0 ? CrmCallStatuses.Answered : CrmCallStatuses.Unknown;
+    }
+
+    private static string BuildUnansweredCallMessage(string status, string clientPhone)
+    {
+        var phone = string.IsNullOrWhiteSpace(clientPhone) ? string.Empty : $" от +{clientPhone}";
+        return status switch
+        {
+            CrmCallStatuses.Rejected => $"Входящий звонок{phone} был отклонён.",
+            CrmCallStatuses.Failed => $"Входящий звонок{phone} не удалось доставить.",
+            _ => $"Пропущен входящий звонок{phone}."
+        };
+    }
 
     private static string? NormalizeRecordingUrl(string? value)
     {
