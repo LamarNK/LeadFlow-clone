@@ -1853,6 +1853,7 @@ internal static class DesignPreviewData
             IsOnline = w.IsOnline,
             IsEnabled = w.IsEnabled,
             IsMonitoringPaused = w.IsMonitoringPaused,
+            LowBalanceAccountCount = w.LowBalanceAccountCount,
             LastActivityUtc = w.LastSeenAtUtc
         });
         var orderedIds = TableSort.DashboardWorkers.Apply(workers, tableSort).Select(w => w.Id).ToList();
@@ -2234,6 +2235,7 @@ internal static class DesignPreviewData
             i >= 6 ? "Сибирь" : "Основной",
             true,
             w.ActiveAccounts,
+            w.LowBalanceAccountCount,
             BuildPreviewWorkerActivity(i, w.IsOnline))).ToList();
 
     private static IReadOnlyList<WorkerRowViewModel> BuildWorkerRows()
@@ -2251,6 +2253,8 @@ internal static class DesignPreviewData
             (10, 10), (10, 10), (10, 10), (10, 10), (8, 10), (10, 10),
             (9, 10), (10, 10), (7, 10), (10, 10), (6, 10), (0, 10)
         };
+
+        var lowBalance = new[] { 3, 2, 0, 1, 0, 4, 0, 0, 2, 0, 1, 0 };
 
         var responses = new[] { 432, 401, 401, 388, 356, 342, 318, 295, 271, 248, 192, 0 };
         var duplicates = new[] { 98, 87, 71, 64, 58, 52, 47, 41, 36, 29, 18, 0 };
@@ -2273,6 +2277,7 @@ internal static class DesignPreviewData
                 LatestReleaseVersion = "1.0.0.2",
                 ActiveAccounts = accounts[i].Active,
                 TotalAccounts = accounts[i].Total,
+                LowBalanceAccountCount = lowBalance[i],
                 Responses = responses[i],
                 Duplicates = duplicates[i],
                 Errors = errors[i],
@@ -2486,6 +2491,7 @@ internal static class DesignPreviewData
                 IsMonitoringPaused = w.IsMonitoringPaused,
                 ActiveAccounts = w.ActiveAccounts,
                 TotalAccounts = w.TotalAccounts,
+                LowBalanceAccountCount = w.LowBalanceAccountCount,
                 Responses = w.Responses,
                 Duplicates = w.Duplicates,
                 Errors = w.Errors,

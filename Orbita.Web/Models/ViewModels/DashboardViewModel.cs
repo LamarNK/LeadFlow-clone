@@ -54,6 +54,7 @@ public sealed class DashboardWorkerRowViewModel
     public bool IsMonitoringPaused { get; init; }
     public int ActiveAccounts { get; init; }
     public int TotalAccounts { get; init; }
+    public int LowBalanceAccountCount { get; init; }
     public int Responses { get; init; }
     public int Duplicates { get; init; }
     public int Errors { get; init; }

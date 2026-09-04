@@ -49,6 +49,7 @@ public sealed record WorkerListItem(
     string OfficeName = "",
     bool IsEnabled = true,
     int ActiveAccountCount = 0,
+    int LowBalanceAccountCount = 0,
     WorkerActivityDto? CurrentActivity = null,
     IReadOnlyList<WorkerActiveAccountDto>? ActiveAccounts = null,
     bool IsMonitoringPaused = false);

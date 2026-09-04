@@ -201,7 +201,10 @@
                         @foreach (var w in Model.Workers)
                         {
                             var workerDetailsUrl = Url.Action("Details", "Workers", new { id = w.Id });
+                            var hasLowBalance = w.LowBalanceAccountCount > 0;
+                            var lowBalanceClass = hasLowBalance ? " dashboard-worker-row--low-balance" : "";
                             <tr data-href="@workerDetailsUrl"
+                                class="@lowBalanceClass"
                                 data-dashboard-worker-online="@(w.IsEnabled && w.IsOnline ? "true" : "false")"
                                 data-dashboard-worker-empty="@(w.TotalAccounts == 0 ? "true" : "false")"
                                 data-dashboard-worker-activity="@(w.LastActivityUtc?.Ticks ?? 0)"
@@ -213,6 +216,14 @@
                                     @if (w.IsMonitoringPaused)
                                     {
                                         <span class="workers-status-badge workers-status-badge--paused">Пауза мониторинга</span>
+                                    }
+                                    @if (hasLowBalance)
+                                    {
+                                        <span class="dashboard-low-balance-tooltip"
+                                              title="Аккаунтов с балансом ниже 150 ₽: @w.LowBalanceAccountCount"
+                                              aria-label="Предупреждение: @w.LowBalanceAccountCount аккаунтов с низким балансом">
+                                            <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+                                        </span>
                                     }
                                 </td>
                                 @if (Model.ShowOfficeColumn)

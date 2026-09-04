@@ -44,6 +44,7 @@ public sealed class WorkerRowViewModel
     public bool IsOnline { get; init; }
     public int ActiveAccounts { get; init; }
     public int TotalAccounts { get; init; }
+    public int LowBalanceAccountCount { get; init; }
     public int Responses { get; init; }
     public int Duplicates { get; init; }
     public int Errors { get; init; }
@@ -384,6 +385,10 @@ public sealed class WorkerAccountRowViewModel
     public string StatusTone { get; init; } = "success";
     public string BalanceText { get; init; } = "—";
     public decimal? Balance { get; init; }
+    public bool IsLowBalance { get; init; }
+    public bool CanTopUp { get; init; }
+    public bool HasActiveTopUpSession { get; init; }
+    public Guid? ActiveTopUpSessionId { get; init; }
     public int Responses { get; init; }
     public DateTime? LastActivityUtc { get; init; }
     public int Errors { get; init; }

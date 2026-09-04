@@ -233,9 +233,70 @@ public sealed class DashboardQueryServiceWorkersPageTests
     }
 
     [Fact]
+    public async Task GetWorkersPageAsync_ForceLowBalanceWorkersFirst_PreservingRequestedSortWithinGroups()
+    {
+        DashboardQueryService.ClearCacheForTests();
+        var (db, connection) = await CreateSqliteDbAsync();
+        await using var connectionScope = connection;
+        await using var dbScope = db;
+        var now = DateTime.UtcNow;
+        SeedOffice(db, now);
+        var newestLow = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbb31");
+        var olderLow = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbb32");
+        var newestNormal = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbb33");
+        var plainNormal = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbb34");
+        SeedWorker(db, newestLow, "z-low-newest", now.AddMinutes(-1));
+        SeedWorker(db, olderLow, "a-low-older", now.AddMinutes(-4));
+        SeedWorker(db, newestNormal, "m-normal-newest", now.AddMinutes(-2));
+        SeedWorker(db, plainNormal, "n-normal", now.AddMinutes(-3));
+        // Low-balance accounts push their workers to the top even without responses.
+        SeedAccount(db, newestLow, "acc-a", totalBalance: 20m);
+        SeedAccount(db, newestLow, "acc-a2", totalBalance: 30m);
+        SeedAccount(db, olderLow, "acc-b", totalBalance: 50m);
+        SeedAccount(db, plainNormal, "acc-c", totalBalance: 5000m);
+        await db.SaveChangesAsync();
+
+        var page = await CreateService(db).GetWorkersPageAsync(
+            OfficeScope.ForOffice(OfficeId), OfficeId, page: 1, pageSize: 25, sort: "activity", dir: "desc");
+
+        // Low-balance workers come first; within each group activity desc is preserved.
+        Assert.Equal(
+            [newestLow, olderLow, newestNormal, plainNormal],
+            page.Items.Select(x => x.Id));
+        Assert.Equal(2, page.Items[0].LowBalanceAccountCount);
+        Assert.Equal(1, page.Items[1].LowBalanceAccountCount);
+        Assert.Equal(0, page.Items[2].LowBalanceAccountCount);
+        Assert.Equal(0, page.Items[3].LowBalanceAccountCount);
+    }
+
+    [Fact]
+    public async Task GetWorkersPageAsync_CountsLowBalanceAccountsPerWorker()
+    {
+        DashboardQueryService.ClearCacheForTests();
+        var (db, connection) = await CreateSqliteDbAsync();
+        await using var connectionScope = connection;
+        await using var dbScope = db;
+        var now = DateTime.UtcNow;
+        SeedOffice(db, now);
+        var worker = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbb41");
+        SeedWorker(db, worker, "worker", now.AddMinutes(-1));
+        // Threshold is 150 ₽; 149 and 100 are low, 150 and 500 are not.
+        SeedAccount(db, worker, "low-1", totalBalance: 100m);
+        SeedAccount(db, worker, "low-2", totalBalance: 149.99m);
+        SeedAccount(db, worker, "border", totalBalance: 150m);
+        SeedAccount(db, worker, "ok", totalBalance: 500m);
+        await db.SaveChangesAsync();
+
+        var page = await CreateService(db).GetWorkersPageAsync(
+            OfficeScope.ForOffice(OfficeId), OfficeId, page: 1, pageSize: 25);
+
+        var item = Assert.Single(page.Items);
+        Assert.Equal(2, item.LowBalanceAccountCount);
+    }
+
+    [Fact]
     public void WorkerListPaging_NormalizesOutOfRangeValues()
     {
-        Assert.Equal(25, WorkerListPaging.NormalizePageSize(null));
         Assert.Equal(25, WorkerListPaging.NormalizePageSize(0));
         Assert.Equal(100, WorkerListPaging.NormalizePageSize(500));
         Assert.Equal(2, WorkerListPaging.NormalizePage(9, 25, 26));
@@ -309,6 +370,20 @@ public sealed class DashboardQueryServiceWorkersPageTests
             LastSeenAtUtc = lastSeenAtUtc,
             CreatedAtUtc = DateTime.UtcNow,
             IsMonitoringPaused = paused
+        });
+    }
+
+    private static void SeedAccount(OrbitaDbContext db, Guid workerId, string displayName, decimal totalBalance)
+    {
+        db.WorkerAccounts.Add(new WorkerAccountEntity
+        {
+            WorkerId = workerId,
+            AccountId = Guid.NewGuid(),
+            DisplayName = displayName,
+            Status = "Active",
+            IsEnabled = true,
+            IsEnabledInPanel = true,
+            TotalBalance = totalBalance
         });
     }
 

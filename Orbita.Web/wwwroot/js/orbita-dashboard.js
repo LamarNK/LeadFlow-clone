@@ -932,8 +932,15 @@
                 '<span class="dashboard-account-progress" aria-label="Активно аккаунтов: ' + activeAccounts + ' из ' + totalAccounts + '"><span style="width:' + accountProgress + '%"></span></span>' +
                 '</td>';
 
-            return '<tr data-href="' + escapeHtml(detailsUrl) + '" data-dashboard-worker-online="' + (w.isEnabled && w.isOnline ? 'true' : 'false') + '" data-dashboard-worker-empty="' + (!w.totalAccounts ? 'true' : 'false') + '" data-dashboard-worker-activity="' + (iso ? Date.parse(iso) || 0 : 0) + '" data-dashboard-worker-name="' + escapeHtml(w.displayName || '') + '" data-dashboard-worker-responses="' + (Number(w.responses) || 0) + '" data-dashboard-worker-errors="' + (Number(w.errors) || 0) + '">' +
-                '<td class="cell-name" data-label="Воркер">' + nameCell + '</td>' +
+            var lowBalanceCount = Number(w.lowBalanceAccounts) || 0;
+            var hasLowBalance = lowBalanceCount > 0;
+            var lowBalanceClass = hasLowBalance ? ' dashboard-worker-row--low-balance' : '';
+            var lowBalanceTooltip = hasLowBalance
+                ? '<span class="dashboard-low-balance-tooltip" title="Аккаунтов с балансом ниже 150 ₽: ' + lowBalanceCount + '" aria-label="Предупреждение: ' + lowBalanceCount + ' аккаунтов с низким балансом"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i></span>'
+                : '';
+
+            return '<tr data-href="' + escapeHtml(detailsUrl) + '"' + lowBalanceClass + ' data-dashboard-worker-online="' + (w.isEnabled && w.isOnline ? 'true' : 'false') + '" data-dashboard-worker-empty="' + (!w.totalAccounts ? 'true' : 'false') + '" data-dashboard-worker-activity="' + (iso ? Date.parse(iso) || 0 : 0) + '" data-dashboard-worker-name="' + escapeHtml(w.displayName || '') + '" data-dashboard-worker-responses="' + (Number(w.responses) || 0) + '" data-dashboard-worker-errors="' + (Number(w.errors) || 0) + '">' +
+                '<td class="cell-name" data-label="Воркер">' + nameCell + lowBalanceTooltip + '</td>' +
                 officeCell +
                 '<td data-label="Статус"><span class="status-dot' + statusClass + '"><i class="fa-solid fa-circle status-dot-icon" aria-hidden="true"></i>' + statusText + '</span></td>' +
                 '<td data-label="Сейчас">' + (window.OrbitaLiveShared ? window.OrbitaLiveShared.renderActivityPill(w.currentActivityLabel, w.currentActivityTone, w.isActivityLive, window.OrbitaLiveShared.activityPillExtrasFromWorker(w)) : escapeHtml(w.currentActivityLabel || '—')) + '</td>' +

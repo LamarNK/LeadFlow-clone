@@ -114,7 +114,7 @@ internal static class TableSort
             IEnumerable<DashboardWorkerRowViewModel> rows,
             TableSortState sort)
         {
-            return sort.Column switch
+            var sorted = sort.Column switch
             {
                 "status" => sort.Descending
                     ? rows.OrderBy(x => x.IsMonitoringPaused).ThenBy(x => x.IsEnabled).ThenBy(x => x.IsOnline)
@@ -122,6 +122,12 @@ internal static class TableSort
                 "activity" => OrderDate(rows, x => x.LastActivityUtc, sort.Descending),
                 _ => OrderString(rows, x => x.DisplayName, sort.Descending)
             };
+
+            // Force workers with low-balance accounts to the top, preserving the
+            // requested sort order within each group.
+            var lowBalance = sorted.Where(x => x.LowBalanceAccountCount > 0).ToList();
+            var normalBalance = sorted.Where(x => x.LowBalanceAccountCount <= 0).ToList();
+            return lowBalance.Concat(normalBalance);
         }
     }
 
@@ -234,7 +240,7 @@ internal static class TableSort
             IEnumerable<WorkerAccountRowViewModel> rows,
             TableSortState sort)
         {
-            return sort.Column switch
+            var sorted = sort.Column switch
             {
                 "status" => OrderString(rows, x => x.StatusLabel, sort.Descending),
                 "balance" => OrderDecimalNullable(rows, x => x.Balance, sort.Descending),
@@ -243,6 +249,11 @@ internal static class TableSort
                 "errors" => OrderInt(rows, x => x.Errors, sort.Descending),
                 _ => OrderString(rows, x => x.DisplayName, sort.Descending)
             };
+
+            // Always move low-balance accounts to the top regardless of sorting
+            var lowBalance = sorted.Where(x => x.IsLowBalance).ToList();
+            var normalBalance = sorted.Where(x => !x.IsLowBalance).ToList();
+            return lowBalance.Concat(normalBalance);
         }
     }
 

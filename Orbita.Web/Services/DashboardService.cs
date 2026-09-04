@@ -109,6 +109,7 @@ public sealed class DashboardService(
             IsMonitoringPaused = w.IsMonitoringPaused,
             ActiveAccounts = w.ActiveAccountCount,
             TotalAccounts = w.AccountCount,
+            LowBalanceAccountCount = w.LowBalanceAccountCount,
             Responses = w.TotalToday,
             Duplicates = w.DuplicatesToday,
             Errors = w.Errors,

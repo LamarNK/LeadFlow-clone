@@ -332,6 +332,7 @@ public sealed class DashboardQueryService(
                 w.OfficeName,
                 w.IsEnabled,
                 op.ActiveAccounts,
+                op.LowBalanceAccountCount,
                 WorkerActivityMapper.ToDto(
                     w.ActivityPhase,
                     w.ActivityMessage,
@@ -387,7 +388,11 @@ public sealed class DashboardQueryService(
                 0);
         }
 
-        var ordered = ApplyWorkerListSort(filtered, sortColumn, sortDescending, todayStart);
+        var lowBalanceFirst = filtered
+            .OrderByDescending(worker => db.WorkerAccounts.Any(account =>
+                account.WorkerId == worker.Id
+                && account.TotalBalance < BalanceDisplayRules.WorkerDetailsLowBalanceThresholdRub));
+        var ordered = ApplyWorkerListSort(lowBalanceFirst, sortColumn, sortDescending, todayStart);
         var workers = await ordered
             .Skip((normalizedPage - 1) * normalizedPageSize)
             .Take(normalizedPageSize)
@@ -444,6 +449,7 @@ public sealed class DashboardQueryService(
                 w.OfficeName,
                 w.IsEnabled,
                 op.ActiveAccounts,
+                op.LowBalanceAccountCount,
                 WorkerActivityMapper.ToDto(
                     w.ActivityPhase,
                     w.ActivityMessage,
@@ -469,8 +475,8 @@ public sealed class DashboardQueryService(
             pausedCount);
     }
 
-    private IQueryable<WorkerEntity> ApplyWorkerListSort(
-        IQueryable<WorkerEntity> query,
+    private IOrderedQueryable<WorkerEntity> ApplyWorkerListSort(
+        IOrderedQueryable<WorkerEntity> query,
         string sort,
         bool descending,
         DateTime todayStartUtc)
@@ -478,11 +484,11 @@ public sealed class DashboardQueryService(
         if (string.Equals(sort, "responses", StringComparison.OrdinalIgnoreCase))
         {
             return descending
-                ? query.OrderByDescending(worker => db.CandidateResponses.Count(response =>
+                ? query.ThenByDescending(worker => db.CandidateResponses.Count(response =>
                     response.WorkerId == worker.Id && response.CollectedAt >= todayStartUtc))
-                    .ThenBy(worker => worker.DisplayName)
-                    .ThenBy(worker => worker.Id)
-                : query.OrderBy(worker => db.CandidateResponses.Count(response =>
+                    .ThenByDescending(worker => worker.DisplayName)
+                    .ThenByDescending(worker => worker.Id)
+                : query.ThenBy(worker => db.CandidateResponses.Count(response =>
                     response.WorkerId == worker.Id && response.CollectedAt >= todayStartUtc))
                     .ThenBy(worker => worker.DisplayName)
                     .ThenBy(worker => worker.Id);
@@ -491,14 +497,14 @@ public sealed class DashboardQueryService(
         if (string.Equals(sort, "errors", StringComparison.OrdinalIgnoreCase))
         {
             return descending
-                ? query.OrderByDescending(worker => db.WorkerEvents.Count(error =>
+                ? query.ThenByDescending(worker => db.WorkerEvents.Count(error =>
                     error.WorkerId == worker.Id
                     && !error.IsDismissed
                     && error.CreatedAtUtc >= todayStartUtc
                     && (error.Level == "Error" || error.Level == "Warning")))
-                    .ThenBy(worker => worker.DisplayName)
-                    .ThenBy(worker => worker.Id)
-                : query.OrderBy(worker => db.WorkerEvents.Count(error =>
+                    .ThenByDescending(worker => worker.DisplayName)
+                    .ThenByDescending(worker => worker.Id)
+                : query.ThenBy(worker => db.WorkerEvents.Count(error =>
                     error.WorkerId == worker.Id
                     && !error.IsDismissed
                     && error.CreatedAtUtc >= todayStartUtc
@@ -510,15 +516,15 @@ public sealed class DashboardQueryService(
         return sort.ToLowerInvariant() switch
         {
             "activity" => descending
-                ? query.OrderByDescending(x => x.LastSeenAtUtc ?? DateTime.MinValue)
-                    .ThenBy(x => x.DisplayName)
-                    .ThenBy(x => x.Id)
-                : query.OrderBy(x => x.LastSeenAtUtc ?? DateTime.MaxValue)
+                ? query.ThenByDescending(x => x.LastSeenAtUtc ?? DateTime.MinValue)
+                    .ThenByDescending(x => x.DisplayName)
+                    .ThenByDescending(x => x.Id)
+                : query.ThenBy(x => x.LastSeenAtUtc ?? DateTime.MaxValue)
                     .ThenBy(x => x.DisplayName)
                     .ThenBy(x => x.Id),
             _ => descending
-                ? query.OrderByDescending(x => x.DisplayName).ThenBy(x => x.Id)
-                : query.OrderBy(x => x.DisplayName).ThenBy(x => x.Id)
+                ? query.ThenByDescending(x => x.DisplayName).ThenByDescending(x => x.Id)
+                : query.ThenBy(x => x.DisplayName).ThenBy(x => x.Id)
         };
     }
 
@@ -1566,11 +1572,15 @@ public sealed class DashboardQueryService(
         var accountRows = await db.WorkerAccounts
             .AsNoTracking()
             .Where(x => workerIds.Contains(x.WorkerId))
-            .Select(x => new { x.WorkerId, x.Status, x.IsEnabledInPanel })
+            .Select(x => new { x.WorkerId, x.Status, x.IsEnabledInPanel, x.TotalBalance })
             .ToListAsync(ct);
 
         var accountCounts = BuildAccountCounts(
             accountRows.Select(x => (x.WorkerId, x.Status, x.IsEnabledInPanel)));
+        var lowBalanceAccountCounts = accountRows
+            .Where(x => x.TotalBalance < BalanceDisplayRules.WorkerDetailsLowBalanceThresholdRub)
+            .GroupBy(x => x.WorkerId)
+            .ToDictionary(g => g.Key, g => g.Count());
         var responseStats = await ComputeWorkerTodayStatsAsync(workerIds, todayStartUtc, ct);
         var workerEventErrors = await ComputeWorkerEventErrorStatsAsync(
             workerIds.ToHashSet(),
@@ -1584,7 +1594,8 @@ public sealed class DashboardQueryService(
                 x => x.Key,
                 x => (x.Value.Total, x.Value.Duplicates, x.Value.Errors)),
             workerEventErrors.PerWorkerToday,
-            accountCounts);
+            accountCounts,
+            lowBalanceAccountCounts);
     }
 
     // Per-worker today response totals.
