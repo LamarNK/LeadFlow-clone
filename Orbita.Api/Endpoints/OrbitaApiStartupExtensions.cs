@@ -17,6 +17,7 @@ using Orbita.Api.Services;
 using Orbita.Api.Services.Bitrix;
 using Orbita.Contracts;
 using Orbita.Logging.Audit;
+using StackExchange.Redis;
 using System.Threading.RateLimiting;
 
 namespace Orbita.Api.Endpoints;
@@ -189,8 +190,42 @@ public static class OrbitaApiStartupExtensions
                 policy.RequireAuthenticatedUser();
             });
         });
+        builder.Services.Configure<OrbitaCacheOptions>(builder.Configuration.GetSection(OrbitaCacheOptions.SectionName));
+        builder.Services.AddMemoryCache();
+        var redisConfiguration = builder.Configuration["Cache:RedisConfiguration"];
+        if (!string.IsNullOrWhiteSpace(redisConfiguration))
+        {
+            builder.Services.AddStackExchangeRedisCache(options =>
+            {
+                options.Configuration = redisConfiguration;
+                options.InstanceName = builder.Configuration["Cache:InstanceName"] ?? "orbita:";
+            });
+            builder.Services.AddSingleton<IConnectionMultiplexer>(_ =>
+            {
+                var configuration = ConfigurationOptions.Parse(redisConfiguration);
+                configuration.AbortOnConnectFail = false;
+                configuration.ConnectRetry = 1;
+                configuration.ConnectTimeout = 1_000;
+                configuration.SyncTimeout = 1_000;
+                return ConnectionMultiplexer.Connect(configuration);
+            });
+        }
+        else
+        {
+            builder.Services.AddDistributedMemoryCache();
+        }
+
+        builder.Services.AddHybridCache(options =>
+        {
+            // Cache only compact DTOs. Files, images and other large values never
+            // enter either cache tier through this layer.
+            options.MaximumPayloadBytes = 512 * 1024;
+        });
+        builder.Services.AddSingleton<IOrbitaQueryCache, OrbitaQueryCache>();
+        builder.Services.AddHostedService<RedisCacheInvalidationListener>();
+
         builder.Services.AddOpenApi();
-        builder.Services.AddSignalR(options =>
+        var signalR = builder.Services.AddSignalR(options =>
             {
                 // MHTML captcha snapshots are far above the 32 KB default.
                 options.MaximumReceiveMessageSize = 16 * 1024 * 1024;
@@ -201,6 +236,10 @@ public static class OrbitaApiStartupExtensions
                 options.PayloadSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
                 options.PayloadSerializerOptions.Converters.Add(new System.Text.Json.Serialization.JsonStringEnumConverter());
             });
+        if (!string.IsNullOrWhiteSpace(redisConfiguration))
+        {
+            signalR.AddStackExchangeRedis(redisConfiguration);
+        }
         builder.Services.AddSingleton<IPanelRealtimeNotifier, PanelRealtimeNotifier>();
         builder.Services.AddSingleton<WorkerConnectionRegistry>();
         builder.Services.AddSingleton<IWorkerPushNotifier, WorkerPushNotifier>();

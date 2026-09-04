@@ -14,7 +14,8 @@ public sealed class DashboardQueryService(
     WorkerReleaseService releases,
     OfficeScopeService officeScope,
     WorkerConnectionRegistry connectionRegistry,
-    LocalChromeLoginSessionService? localChromeLoginSessions = null)
+    LocalChromeLoginSessionService? localChromeLoginSessions = null,
+    IOrbitaQueryCache? queryCache = null)
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
@@ -35,16 +36,19 @@ public sealed class DashboardQueryService(
             toLocal,
             timeZoneOffsetMinutes,
             nowUtc);
-        var summary = await PanelAggregateCache.GetOrCreateAsync(
-            PanelAggregateCache.SummaryKey(scope, officeFilter, timeZoneOffsetMinutes, startLocal, endLocal),
-            PanelAggregateCache.DashboardTtl,
-            () => ComputeGlobalSummaryCoreAsync(
-                scope,
-                officeFilter,
-                timeZoneOffsetMinutes,
-                startLocal,
-                endLocal,
-                ct));
+        var summary = queryCache is null
+            ? await PanelAggregateCache.GetOrCreateAsync(
+                PanelAggregateCache.SummaryKey(scope, officeFilter, timeZoneOffsetMinutes, startLocal, endLocal),
+                PanelAggregateCache.DashboardTtl,
+                () => ComputeGlobalSummaryCoreAsync(scope, officeFilter, timeZoneOffsetMinutes, startLocal, endLocal, ct))
+            : await queryCache.GetOrCreateAsync(
+                OrbitaCacheDomain.Dashboard,
+                scope.ResolveFilter(officeFilter),
+                ScopeAudience(scope),
+                new { Kind = "summary", timeZoneOffsetMinutes, startLocal, endLocal },
+                OrbitaCachePolicy.Realtime,
+                token => ComputeGlobalSummaryCoreAsync(scope, officeFilter, timeZoneOffsetMinutes, startLocal, endLocal, token),
+                ct);
         return await RefreshOnlineWorkersAsync(summary, scope, officeFilter, ct);
     }
 
@@ -54,11 +58,23 @@ public sealed class DashboardQueryService(
         int? timeZoneOffsetMinutes = null,
         CancellationToken ct = default)
     {
-        return await PanelAggregateCache.GetOrCreateAsync(
-            PanelAggregateCache.NavBadgesKey(scope, officeFilter, timeZoneOffsetMinutes),
-            PanelAggregateCache.NavBadgesTtl,
-            () => ComputeNavBadgesCoreAsync(scope, officeFilter, timeZoneOffsetMinutes, ct));
+        return queryCache is null
+            ? await PanelAggregateCache.GetOrCreateAsync(
+                PanelAggregateCache.NavBadgesKey(scope, officeFilter, timeZoneOffsetMinutes),
+                PanelAggregateCache.NavBadgesTtl,
+                () => ComputeNavBadgesCoreAsync(scope, officeFilter, timeZoneOffsetMinutes, ct))
+            : await queryCache.GetOrCreateAsync(
+                OrbitaCacheDomain.Dashboard,
+                scope.ResolveFilter(officeFilter),
+                ScopeAudience(scope),
+                new { Kind = "nav-badges", timeZoneOffsetMinutes },
+                OrbitaCachePolicy.Realtime,
+                token => ComputeNavBadgesCoreAsync(scope, officeFilter, timeZoneOffsetMinutes, token),
+                ct);
     }
+
+    private static string ScopeAudience(OfficeScope scope) =>
+        scope.IsGlobalAdmin ? "global-admin" : $"office:{scope.OfficeId?.ToString("D") ?? "-"}";
 
     private async Task<GlobalDashboardSummary> ComputeGlobalSummaryCoreAsync(
         OfficeScope scope,
@@ -186,15 +202,6 @@ public sealed class DashboardQueryService(
                     ct),
                 workerEventErrors.Daily),
             AggregatedAtUtc: nowUtc);
-
-        PanelAggregateCache.Set(
-            PanelAggregateCache.NavBadgesKey(scope, officeFilter, timeZoneOffsetMinutes),
-            new NavBadgesDto(
-                result.Errors,
-                result.UniqueResponsesToday,
-                result.ActionRequired,
-                result.AggregatedAtUtc),
-            PanelAggregateCache.NavBadgesTtl);
 
         return result;
     }
@@ -701,10 +708,19 @@ public sealed class DashboardQueryService(
             return [];
         }
 
-        return await PanelAggregateCache.GetOrCreateAsync(
-            PanelAggregateCache.AccountsKey(scope, officeFilter, workerId),
-            PanelAggregateCache.AccountsTtl,
-            () => ComputeOfficeAccountsCoreAsync(scope, officeFilter, workerId, ct));
+        return queryCache is null
+            ? await PanelAggregateCache.GetOrCreateAsync(
+                PanelAggregateCache.AccountsKey(scope, officeFilter, workerId),
+                PanelAggregateCache.AccountsTtl,
+                () => ComputeOfficeAccountsCoreAsync(scope, officeFilter, workerId, ct))
+            : await queryCache.GetOrCreateAsync(
+                OrbitaCacheDomain.Dashboard,
+                scope.ResolveFilter(officeFilter),
+                ScopeAudience(scope),
+                new { Kind = "office-accounts", workerId },
+                OrbitaCachePolicy.Realtime,
+                token => ComputeOfficeAccountsCoreAsync(scope, officeFilter, workerId, token),
+                ct);
     }
 
     private async Task<IReadOnlyList<OfficeAccountListItem>> ComputeOfficeAccountsCoreAsync(

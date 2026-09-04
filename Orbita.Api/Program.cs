@@ -8,6 +8,13 @@ builder.ConfigureOrbitaApi();
 var app = builder.Build();
 app.UseOrbitaLogging();
 app.UseForwardedHeaders();
+app.Use(async (context, next) =>
+{
+    // Server-side DTO caching must never make a panel response cacheable by a
+    // browser or an intermediary. Files and streaming endpoints stay uncached too.
+    context.Response.Headers.CacheControl = "no-store, no-cache, max-age=0";
+    await next();
+});
 
 await app.SeedAsync();
 

@@ -7,7 +7,8 @@ namespace Orbita.Api.Services;
 
 public sealed class ResponsesQueryService(
     OrbitaDbContext db,
-    ResponseBitrixDeliveryService deliveries)
+    ResponseBitrixDeliveryService deliveries,
+    IOrbitaQueryCache? queryCache = null)
 {
     public Task<ResponsesPageDto> GetPageAsync(
         OfficeScope scope,
@@ -27,28 +28,57 @@ public sealed class ResponsesQueryService(
         int pageSize,
         string? sort = null,
         string? sortDir = null,
-        CancellationToken ct = default) =>
-        GetPageInternalAsync(
-            scope,
-            officeFilter,
-            status,
-            search,
-            vacancy,
-            workerId,
-            accountId,
-            bitrixDestination,
-            gender,
-            ageFrom,
-            ageTo,
-            fromUtc,
-            toUtc,
-            page,
-            pageSize,
-            sort,
-            sortDir,
-            ct);
+        CancellationToken ct = default)
+    {
+        Task<ResponsesPageDto> Load(CancellationToken token) => GetPageInternalAsync(
+            scope, officeFilter, status, search, vacancy, workerId, accountId, bitrixDestination,
+            gender, ageFrom, ageTo, fromUtc, toUtc, page, pageSize, sort, sortDir, token);
 
-    public async Task<ResponsesSummaryDto> GetSummaryAsync(
+        return queryCache is null
+            ? Load(ct)
+            : queryCache.GetOrCreateAsync(
+                OrbitaCacheDomain.Responses,
+                scope.ResolveFilter(officeFilter),
+                scope.IsGlobalAdmin ? "global-admin" : $"office:{scope.OfficeId?.ToString("D") ?? "-"}",
+                new { Kind = "page", status, search, vacancy, workerId, accountId, bitrixDestination, gender, ageFrom, ageTo, fromUtc, toUtc, page, pageSize, sort, sortDir },
+                OrbitaCachePolicy.Realtime,
+                Load,
+                ct);
+    }
+
+    public Task<ResponsesSummaryDto> GetSummaryAsync(
+        OfficeScope scope,
+        Guid? officeFilter,
+        string? status,
+        string? search,
+        string? vacancy,
+        Guid? workerId,
+        Guid? accountId,
+        string? bitrixDestination,
+        string? gender,
+        int? ageFrom,
+        int? ageTo,
+        DateTime? fromUtc,
+        DateTime? toUtc,
+        CancellationToken ct = default)
+    {
+        Task<ResponsesSummaryDto> Load(CancellationToken token) => GetSummaryUncachedAsync(
+            scope, officeFilter, status, search, vacancy, workerId, accountId, bitrixDestination,
+            gender, ageFrom, ageTo, fromUtc, toUtc, token);
+
+        return queryCache is null
+            ? Load(ct)
+            : queryCache.GetOrCreateAsync(
+                OrbitaCacheDomain.Responses,
+                scope.ResolveFilter(officeFilter),
+                scope.IsGlobalAdmin ? "global-admin" : $"office:{scope.OfficeId?.ToString("D") ?? "-"}",
+                new { Kind = "summary", status, search, vacancy, workerId, accountId, bitrixDestination, gender, ageFrom, ageTo, fromUtc, toUtc },
+                OrbitaCachePolicy.Realtime,
+                Load,
+                ct);
+    }
+
+    private async Task<ResponsesSummaryDto> GetSummaryUncachedAsync(
         OfficeScope scope,
         Guid? officeFilter,
         string? status,
@@ -202,13 +232,17 @@ public sealed class ResponsesQueryService(
         Guid? officeFilter,
         CancellationToken ct = default)
     {
-        var query = ApplyOfficeFilter(db.CandidateResponses.AsNoTracking(), scope, officeFilter);
-        var rows = await query
-            .Select(x => new { x.AccountId, x.AccountName })
-            .Distinct()
-            .OrderBy(x => x.AccountName)
-            .ToListAsync(ct);
-        return rows.Select(x => new ResponseFilterAccountDto(x.AccountId, x.AccountName)).ToList();
+        async Task<IReadOnlyList<ResponseFilterAccountDto>> Load(CancellationToken token)
+        {
+            var query = ApplyOfficeFilter(db.CandidateResponses.AsNoTracking(), scope, officeFilter);
+            var rows = await query.Select(x => new { x.AccountId, x.AccountName }).Distinct().OrderBy(x => x.AccountName).ToListAsync(token);
+            return rows.Select(x => new ResponseFilterAccountDto(x.AccountId, x.AccountName)).ToList();
+        }
+        return queryCache is null
+            ? await Load(ct)
+            : await queryCache.GetOrCreateAsync(OrbitaCacheDomain.Responses, scope.ResolveFilter(officeFilter),
+                scope.IsGlobalAdmin ? "global-admin" : $"office:{scope.OfficeId?.ToString("D") ?? "-"}",
+                new { Kind = "filter-accounts" }, OrbitaCachePolicy.Interactive, Load, ct);
     }
 
     public async Task<IReadOnlyList<ResponseFilterVacancyDto>> GetFilterVacanciesAsync(
@@ -218,31 +252,41 @@ public sealed class ResponsesQueryService(
         DateTime? toUtc,
         CancellationToken ct = default)
     {
-        var query = ApplyOfficeFilter(db.CandidateResponses.AsNoTracking(), scope, officeFilter)
-            .Where(x => x.Vacancy != "");
-
-        if (fromUtc is not null)
+        async Task<IReadOnlyList<ResponseFilterVacancyDto>> Load(CancellationToken token)
         {
-            query = query.Where(x => x.CollectedAt >= fromUtc.Value);
+            var query = ApplyOfficeFilter(db.CandidateResponses.AsNoTracking(), scope, officeFilter).Where(x => x.Vacancy != "");
+            if (fromUtc is not null) query = query.Where(x => x.CollectedAt >= fromUtc.Value);
+            if (toUtc is not null) query = query.Where(x => x.CollectedAt < toUtc.Value);
+            var rows = await query.GroupBy(x => x.Vacancy).Select(g => new { Vacancy = g.Key, Count = g.Count() })
+                .OrderByDescending(x => x.Count).ThenBy(x => x.Vacancy).Take(100).ToListAsync(token);
+            return rows.Select(x => new ResponseFilterVacancyDto(x.Vacancy, x.Count)).ToList();
         }
-
-        if (toUtc is not null)
-        {
-            query = query.Where(x => x.CollectedAt < toUtc.Value);
-        }
-
-        var rows = await query
-            .GroupBy(x => x.Vacancy)
-            .Select(g => new { Vacancy = g.Key, Count = g.Count() })
-            .OrderByDescending(x => x.Count)
-            .ThenBy(x => x.Vacancy)
-            .Take(100)
-            .ToListAsync(ct);
-
-        return rows.Select(x => new ResponseFilterVacancyDto(x.Vacancy, x.Count)).ToList();
+        return queryCache is null
+            ? await Load(ct)
+            : await queryCache.GetOrCreateAsync(OrbitaCacheDomain.Responses, scope.ResolveFilter(officeFilter),
+                scope.IsGlobalAdmin ? "global-admin" : $"office:{scope.OfficeId?.ToString("D") ?? "-"}",
+                new { Kind = "filter-vacancies", fromUtc, toUtc }, OrbitaCachePolicy.Interactive, Load, ct);
     }
 
-    public async Task<ResponseDetailDto?> GetDetailAsync(
+    public Task<ResponseDetailDto?> GetDetailAsync(
+        Guid id,
+        OfficeScope scope,
+        CancellationToken ct = default)
+    {
+        Task<ResponseDetailDto?> Load(CancellationToken token) => GetDetailUncachedAsync(id, scope, token);
+        return queryCache is null
+            ? Load(ct)
+            : queryCache.GetOrCreateAsync(
+                OrbitaCacheDomain.Responses,
+                scope.ResolveFilter(null),
+                scope.IsGlobalAdmin ? "global-admin" : $"office:{scope.OfficeId?.ToString("D") ?? "-"}",
+                new { Kind = "detail", id },
+                OrbitaCachePolicy.Realtime,
+                Load,
+                ct);
+    }
+
+    private async Task<ResponseDetailDto?> GetDetailUncachedAsync(
         Guid id,
         OfficeScope scope,
         CancellationToken ct = default)

@@ -27,7 +27,8 @@ public sealed class CrmWorkspaceService(
     PhoneNormalizer? phoneNormalizer = null,
     CandidateParser? candidateParser = null,
     CandidatePersonPhoneService? personPhone = null,
-    ICrmNotificationRealtimeNotifier? crmNotificationRealtime = null)
+    ICrmNotificationRealtimeNotifier? crmNotificationRealtime = null,
+    IOrbitaQueryCache? queryCache = null)
 {
     private readonly PhoneNormalizer _phoneNormalizer = phoneNormalizer ?? new PhoneNormalizer();
     private readonly CandidateParser _candidateParser = candidateParser ?? new CandidateParser();
@@ -111,14 +112,37 @@ public sealed class CrmWorkspaceService(
         CrmBoardQuery? query = null,
         CancellationToken ct = default)
     {
+        // Keep the existing self-healing behaviour out of the cached payload.
+        await ExpireStaleShiftsAsync(ct);
+        query ??= new CrmBoardQuery();
+
+        Task<CrmBoardDto?> Load(CancellationToken token) =>
+            GetBoardUncachedAsync(officeId, userId, isAdmin, query, token);
+
+        return queryCache is null
+            ? await Load(ct)
+            : await queryCache.GetOrCreateAsync(
+                OrbitaCacheDomain.Crm,
+                officeId,
+                $"{userId}:{isAdmin}",
+                new { Kind = "crm-board", query.Scope, query.View, query.Page, query.PageSize, query.Sort, query.SortDir, query.ManagerUserId, query.Search, query.City, query.Vacancy, query.Stage, query.CreatedFromUtc, query.CreatedToUtc, query.CloseReason, query.ActiveLoadOnly, query.OverdueOnly, query.IncludeClosed, query.TimeZoneOffsetMinutes },
+                OrbitaCachePolicy.Realtime,
+                Load,
+                ct);
+    }
+
+    private async Task<CrmBoardDto?> GetBoardUncachedAsync(
+        Guid officeId,
+        string userId,
+        bool isAdmin,
+        CrmBoardQuery? query = null,
+        CancellationToken ct = default)
+    {
         var office = await db.Offices.AsNoTracking().FirstOrDefaultAsync(x => x.Id == officeId, ct);
         if (office is null)
         {
             return null;
         }
-
-        // Самовосстановление UI: забытый «Стоп» не должен показывать «На смене» сутками.
-        await ExpireStaleShiftsAsync(ct);
 
         query ??= new CrmBoardQuery();
         // isAdmin here means elevated office access (Admin / OfficeLead / SeniorManager), not only global admin.

@@ -9,7 +9,8 @@ namespace Orbita.Api.Services;
 public sealed class OfficeStatisticsQueryService(
     OrbitaDbContext db,
     OfficeScopeService officeScope,
-    WorkerConnectionRegistry connectionRegistry)
+    WorkerConnectionRegistry connectionRegistry,
+    IOrbitaQueryCache? queryCache = null)
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
@@ -181,10 +182,25 @@ public sealed class OfficeStatisticsQueryService(
             nowUtc);
         }
 
-        var result = await PanelAggregateCache.GetOrCreateAsync(
-            cacheKey,
-            PanelAggregateCache.StatisticsTtl,
-            ComputeAsync);
+        var result = queryCache is null
+            ? await PanelAggregateCache.GetOrCreateAsync(cacheKey, PanelAggregateCache.StatisticsTtl, ComputeAsync)
+            : await queryCache.GetOrCreateAsync(
+                OrbitaCacheDomain.Dashboard,
+                scope.ResolveFilter(officeFilter),
+                scope.IsGlobalAdmin ? "global-admin" : $"office:{scope.OfficeId?.ToString("D") ?? "-"}",
+                new
+                {
+                    Kind = "statistics",
+                    startLocal,
+                    endLocal,
+                    timeZoneOffsetMinutes,
+                    Workers = workerFilterSet?.OrderBy(x => x).ToArray(),
+                    Accounts = accountFilterSet?.OrderBy(x => x).ToArray(),
+                    vacancyFilterKey
+                },
+                OrbitaCachePolicy.Realtime,
+                _ => ComputeAsync(),
+                ct);
         return await RefreshOnlineStatusAsync(result, ct);
     }
 

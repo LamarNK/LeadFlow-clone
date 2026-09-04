@@ -4,7 +4,9 @@ using Orbita.Contracts;
 
 namespace Orbita.Api.Services;
 
-public sealed class PanelRealtimeNotifier(IHubContext<PanelHub> hub) : IPanelRealtimeNotifier, IDisposable
+public sealed class PanelRealtimeNotifier(
+    IHubContext<PanelHub> hub,
+    IOrbitaQueryCache queryCache) : IPanelRealtimeNotifier, IDisposable
 {
     private static readonly TimeSpan FlushDelay = TimeSpan.FromMilliseconds(500);
 
@@ -24,8 +26,10 @@ public sealed class PanelRealtimeNotifier(IHubContext<PanelHub> hub) : IPanelRea
             return;
         }
 
-        // Drop aggregates before the SignalR flush so the client refresh reads fresh data.
-        PanelAggregateCache.Invalidate(kinds);
+        // Bump cache versions before the SignalR flush so clients never refresh into
+        // a value produced before this write. The cache implementation is explicitly
+        // best-effort and falls back to PostgreSQL if Redis is unavailable.
+        _ = queryCache.InvalidateAsync(kinds, officeId);
 
         lock (_sync)
         {

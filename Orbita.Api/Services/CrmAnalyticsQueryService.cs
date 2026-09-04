@@ -42,7 +42,8 @@ public sealed record CrmAnalyticsQueryResult(
 /// </summary>
 public sealed class CrmAnalyticsQueryService(
     OrbitaDbContext db,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    IOrbitaQueryCache? queryCache = null)
 {
     private const string NoCloseReason = "Без причины";
     private const string RemovedStagesBucket = "Удалённые этапы";
@@ -62,7 +63,29 @@ public sealed class CrmAnalyticsQueryService(
         CrmCloseReasons.Officer
     ];
 
-    public async Task<CrmAnalyticsQueryResult> GetAsync(
+    public Task<CrmAnalyticsQueryResult> GetAsync(
+        OfficeScope scope,
+        string requesterUserId,
+        bool isAdmin,
+        CrmAnalyticsQuery query,
+        CancellationToken ct = default)
+    {
+        Task<CrmAnalyticsQueryResult> Load(CancellationToken token) =>
+            GetUncachedAsync(scope, requesterUserId, isAdmin, query, token);
+
+        return queryCache is null
+            ? Load(ct)
+            : queryCache.GetOrCreateAsync(
+                OrbitaCacheDomain.Analytics,
+                scope.ResolveFilter(query.OfficeId),
+                $"{requesterUserId}:{isAdmin}:{scope.IsGlobalAdmin}:{scope.OfficeId?.ToString("D") ?? "-"}",
+                new { Kind = "crm-analytics", query.OfficeId, query.ManagerUserId, query.FromUtc, query.ToUtc },
+                OrbitaCachePolicy.Analytics,
+                Load,
+                ct);
+    }
+
+    private async Task<CrmAnalyticsQueryResult> GetUncachedAsync(
         OfficeScope scope,
         string requesterUserId,
         bool isAdmin,
