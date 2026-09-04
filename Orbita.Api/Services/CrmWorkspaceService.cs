@@ -1825,10 +1825,12 @@ public sealed class CrmWorkspaceService(
 
         var documents = await db.CrmSuccessDocuments.AsNoTracking()
             .Where(document => document.CardId == cardId)
+            .ToListAsync(ct);
+        documents = documents
             .OrderBy(document => SuccessReportArchiveOrder(document.Category))
             .ThenBy(document => document.CreatedAtUtc)
             .ThenBy(document => document.FileName)
-            .ToListAsync(ct);
+            .ToList();
         if (documents.Count == 0)
         {
             return (null, null);
