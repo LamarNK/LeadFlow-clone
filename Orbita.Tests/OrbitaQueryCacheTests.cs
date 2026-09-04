@@ -52,10 +52,9 @@ public sealed class OrbitaQueryCacheTests
     }
 
     [Fact]
-    public void MapDomains_WorkerAccountWritesInvalidateOnlyWorkerDetails()
+    public void MapDomains_ExplicitWorkerDetailWritesInvalidateOnlyWorkerDetails()
     {
-        var domains = OrbitaQueryCache.MapDomains(
-            [PanelChangeKind.Accounts, PanelChangeKind.WorkerDetails]);
+        var domains = OrbitaQueryCache.MapDomains([PanelChangeKind.WorkerDetails]);
 
         Assert.Contains(OrbitaCacheDomain.WorkerDetails, domains);
         Assert.DoesNotContain(OrbitaCacheDomain.Dashboard, domains);
@@ -65,7 +64,7 @@ public sealed class OrbitaQueryCacheTests
     public void MapDomains_WorkerTelemetryDoesNotThrashWorkerDetails()
     {
         var domains = OrbitaQueryCache.MapDomains(
-            [PanelChangeKind.Workers, PanelChangeKind.Events, PanelChangeKind.Errors, PanelChangeKind.Responses]);
+            [PanelChangeKind.Workers, PanelChangeKind.Accounts, PanelChangeKind.Events, PanelChangeKind.Errors, PanelChangeKind.Responses]);
 
         Assert.DoesNotContain(OrbitaCacheDomain.WorkerDetails, domains);
     }

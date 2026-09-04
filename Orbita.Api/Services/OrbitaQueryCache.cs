@@ -195,12 +195,11 @@ public sealed class OrbitaQueryCache(
                 // every in-flight summary cache miss. Meaningful writes include
                 // Dashboard explicitly and still invalidate immediately.
                 PanelChangeKind.Dashboard => new[] { OrbitaCacheDomain.Dashboard, OrbitaCacheDomain.WorkerDetails },
-                // Heartbeats, response ingestion and event streams are all high
-                // frequency. Worker details rely on their five-second TTL for
-                // those live counters; explicit account/configuration writes
-                // still invalidate immediately.
+                // Heartbeats, account telemetry, response ingestion and event
+                // streams are all high frequency. Worker details rely on their
+                // five-second TTL for those live counters; worker configuration
+                // writes include Dashboard and still invalidate immediately.
                 PanelChangeKind.WorkerDetails => new[] { OrbitaCacheDomain.WorkerDetails },
-                PanelChangeKind.Accounts => new[] { OrbitaCacheDomain.WorkerDetails },
                 PanelChangeKind.Reference => new[] { OrbitaCacheDomain.Reference },
                 _ => Array.Empty<OrbitaCacheDomain>()
             }))
