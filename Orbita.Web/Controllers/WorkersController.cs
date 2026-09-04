@@ -713,9 +713,15 @@ public sealed class WorkersController(IWorkersService workers) : Controller
     public async Task<IActionResult> CreateTopUpSession(
         Guid workerId,
         Guid accountId,
+        string subProfileId,
         CancellationToken ct)
     {
-        var result = await workers.CreateTopUpSessionAsync(workerId, accountId, ct);
+        if (string.IsNullOrWhiteSpace(subProfileId))
+        {
+            return BadRequest(new { error = "Нужно выбрать субпрофиль для пополнения." });
+        }
+
+        var result = await workers.CreateTopUpSessionAsync(workerId, accountId, subProfileId, ct);
         if (result.Error is not null)
         {
             return result.ConflictSessionId.HasValue

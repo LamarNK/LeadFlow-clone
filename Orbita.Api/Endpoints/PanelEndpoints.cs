@@ -84,11 +84,17 @@ public static class PanelEndpoints
         workers.MapPost("/workers/{id:guid}/accounts/{accountId:guid}/top-up-sessions", async (
             Guid id,
             Guid accountId,
+            string subProfileId,
             TopUpSessionService topUpSessions,
             ClaimsPrincipal principal,
             CancellationToken ct) =>
         {
-            var (session, conflict) = await topUpSessions.CreateAsync(id, accountId, principal, ct);
+            if (string.IsNullOrWhiteSpace(subProfileId))
+            {
+                return Results.BadRequest(new { error = "Нужно выбрать субпрофиль для пополнения." });
+            }
+
+            var (session, conflict) = await topUpSessions.CreateAsync(id, accountId, principal, subProfileId, ct);
             if (conflict is not null)
             {
                 return Results.Conflict(new

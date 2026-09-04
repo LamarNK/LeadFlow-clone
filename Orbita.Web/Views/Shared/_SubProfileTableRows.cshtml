@@ -78,6 +78,13 @@
         }
         <td class="cell-num cell-balance" data-label="Баланс">
             <span class="subprofiles-balance">@sub.BalanceText</span>
+            @if (Model.Layout == SubProfileTableLayout.WorkerDetails && sub.CanTopUp)
+            {
+                <button type="button" class="worker-topup-trigger" data-topup-trigger
+                        data-worker-id="@Model.WorkerId" data-account-id="@Model.AccountId"
+                        data-subprofile-id="@sub.Id" data-account-name="@sub.Name"
+                        title="Пополнить аванс выбранного субпрофиля">Пополнить</button>
+            }
         </td>
         <td class="cell-num" data-label="Откликов">
             <partial name="_MetricLink" model="@AccountMetricLinks.Responses(Model.WorkerId, Model.AccountId, sub.Responses)" />

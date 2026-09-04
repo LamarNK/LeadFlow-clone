@@ -704,6 +704,7 @@ public sealed class WorkersService(
     public async Task<(TopUpSessionViewModel? Session, string? Error, Guid? ConflictSessionId)> CreateTopUpSessionAsync(
         Guid workerId,
         Guid accountId,
+        string subProfileId,
         CancellationToken ct = default)
     {
         if (previewOptions.Value.Enabled)
@@ -711,7 +712,7 @@ public sealed class WorkersService(
             return (null, "Preview mode", null);
         }
 
-        var (dto, conflict) = await api.CreateTopUpSessionAsync(workerId, accountId, ct);
+        var (dto, conflict) = await api.CreateTopUpSessionAsync(workerId, accountId, subProfileId, ct);
         if (conflict is not null)
         {
             return (null, conflict.Message, conflict.ActiveSessionId);

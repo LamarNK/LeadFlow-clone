@@ -904,6 +904,8 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
                 .IsUnique()
                 .HasFilter("\"Status\" IN ('requested', 'started', 'payment_claimed', 'qr_ready')");
             entity.Property(x => x.AccountName).HasMaxLength(200);
+            entity.Property(x => x.SubProfileId).HasMaxLength(128);
+            entity.Property(x => x.SubProfileName).HasMaxLength(200);
             entity.Property(x => x.OperatorUserId).HasMaxLength(128);
             entity.Property(x => x.OperatorDisplayName).HasMaxLength(256);
             entity.Property(x => x.Status).HasMaxLength(32);

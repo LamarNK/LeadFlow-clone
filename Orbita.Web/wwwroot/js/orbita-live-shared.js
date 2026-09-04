@@ -476,6 +476,7 @@
             statusLabel: sub.statusLabel || sub.StatusLabel || '',
             statusTone: sub.statusTone || sub.StatusTone || 'success',
             balanceText: sub.balanceText || sub.BalanceText || '—',
+            canTopUp: !!(sub.canTopUp || sub.CanTopUp),
             ratingText: sub.ratingText || sub.RatingText || '',
             responses: sub.responses || sub.Responses || 0,
             uniqueResponses: sub.uniqueResponses || sub.UniqueResponses || 0,
@@ -555,7 +556,10 @@
             extraCols +
             '<td data-label="Статус">' + statusHtml + '</td>' +
             processingCol +
-            '<td class="cell-num cell-balance" data-label="Баланс"><span class="subprofiles-balance">' + escapeHtml(sub.balanceText || '—') + '</span></td>' +
+            '<td class="cell-num cell-balance" data-label="Баланс"><span class="subprofiles-balance">' + escapeHtml(sub.balanceText || '—') + '</span>' +
+            (layout === 'worker' && sub.canTopUp
+                ? '<button type="button" class="worker-topup-trigger" data-topup-trigger data-worker-id="' + escapeHtml(workerId) + '" data-account-id="' + escapeHtml(accountId) + '" data-subprofile-id="' + escapeHtml(sub.id) + '" data-account-name="' + escapeHtml(sub.name || '') + '" title="Пополнить аванс выбранного субпрофиля">Пополнить</button>'
+                : '') + '</td>' +
             '<td class="cell-num" data-label="Откликов">' + renderMetricLink(sub.responses, metrics.responses, 'Отклики за сегодня') + '</td>' +
             tail;
     }

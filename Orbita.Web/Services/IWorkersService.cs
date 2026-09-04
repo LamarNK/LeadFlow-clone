@@ -139,6 +139,7 @@ public interface IWorkersService
     Task<(TopUpSessionViewModel? Session, string? Error, Guid? ConflictSessionId)> CreateTopUpSessionAsync(
         Guid workerId,
         Guid accountId,
+        string subProfileId,
         CancellationToken ct = default);
     Task<TopUpSessionViewModel?> GetTopUpSessionAsync(Guid sessionId, CancellationToken ct = default);
     Task<(bool Success, string? Error)> CancelTopUpSessionAsync(Guid sessionId, CancellationToken ct = default);

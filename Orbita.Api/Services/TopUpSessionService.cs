@@ -2,6 +2,7 @@ using System.Security.Claims;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using Orbita.Api.Data;
+using Orbita.Api.Helpers;
 using Orbita.Contracts;
 
 namespace Orbita.Api.Services;
@@ -39,6 +40,14 @@ public sealed class TopUpSessionService(
         Guid accountId,
         ClaimsPrincipal principal,
         CancellationToken ct = default)
+        => await CreateAsync(workerId, accountId, principal, subProfileId: null, ct).ConfigureAwait(false);
+
+    public async Task<(TopUpSessionDto? Session, TopUpSessionConflictDto? Conflict)> CreateAsync(
+        Guid workerId,
+        Guid accountId,
+        ClaimsPrincipal principal,
+        string? subProfileId,
+        CancellationToken ct = default)
     {
         var scope = await officeScope.ResolveAsync(principal, ct).ConfigureAwait(false);
         if (!scope.HasAccess)
@@ -54,18 +63,11 @@ public sealed class TopUpSessionService(
         await using var transaction = await db.Database.BeginTransactionAsync(ct).ConfigureAwait(false);
 
         var worker = await db.Workers
-            .Include(x => x.Accounts)
             .FirstOrDefaultAsync(x => x.Id == workerId, ct)
             .ConfigureAwait(false);
         if (worker is null || !await officeScope.CanAccessWorkerAsync(scope, worker.Id, ct).ConfigureAwait(false))
         {
             return (null, new TopUpSessionConflictDto("Воркер не найден."));
-        }
-
-        var account = worker.Accounts.FirstOrDefault(x => x.AccountId == accountId);
-        if (account is null)
-        {
-            return (null, new TopUpSessionConflictDto("Аккаунт не найден на воркере."));
         }
 
         var now = timeProvider.GetUtcNow().UtcDateTime;
@@ -105,16 +107,32 @@ public sealed class TopUpSessionService(
         // и созданием сессии: конкурентная синхронизация баланса воркером не создаст
         // недопустимую сессию по устаревшему снимку. В InMemory/SQLite (тесты) блокировка
         // недоступна — читаем обычным запросом.
-        var currentBalance = db.Database.IsNpgsql()
-            ? await ReadBalanceWithLockAsync(workerId, accountId, ct).ConfigureAwait(false)
-            : account.TotalBalance;
+        var lockedAccount = await ReadAccountWithLockAsync(workerId, accountId, ct).ConfigureAwait(false);
+        if (lockedAccount is null)
+        {
+            return (null, new TopUpSessionConflictDto("Аккаунт не найден на воркере."));
+        }
+
+        // Panel requests always name a subprofile. The account fallback exists only for
+        // existing non-panel callers while they migrate to the explicit operation.
+        var subProfile = string.IsNullOrWhiteSpace(subProfileId)
+            ? null
+            : SubProfileDeserializer.Deserialize(lockedAccount.SubProfilesJson)
+                ?.FirstOrDefault(x => string.Equals(x.Id, subProfileId, StringComparison.Ordinal));
+        if (!string.IsNullOrWhiteSpace(subProfileId)
+            && (subProfile is null || string.IsNullOrWhiteSpace(subProfile.Id)))
+        {
+            return (null, new TopUpSessionConflictDto("Субпрофиль не найден у аккаунта."));
+        }
+
+        var currentBalance = subProfile?.Balance ?? lockedAccount.TotalBalance;
         if (!TopUpSessionRules.IsEligible(currentBalance))
         {
             return (null, new TopUpSessionConflictDto(
                 $"Баланс аккаунта ({currentBalance:0.##} ₽) не ниже порога пополнения."));
         }
 
-        var dailyResponses = await CountDailyResponsesAsync(workerId, accountId, now, ct).ConfigureAwait(false);
+        var dailyResponses = await CountDailyResponsesAsync(workerId, accountId, subProfile?.Id, now, ct).ConfigureAwait(false);
         var targetBalance = TopUpSessionRules.ResolveTargetBalance(dailyResponses);
         var requestedAmount = TopUpSessionRules.ResolveRequestedAmount(currentBalance, dailyResponses);
         if (requestedAmount <= 0m)
@@ -128,8 +146,10 @@ public sealed class TopUpSessionService(
         {
             Id = Guid.NewGuid(),
             WorkerId = worker.Id,
-            AccountId = account.AccountId,
-            AccountName = account.DisplayName,
+            AccountId = lockedAccount.AccountId,
+            AccountName = lockedAccount.DisplayName,
+            SubProfileId = subProfile?.Id ?? string.Empty,
+            SubProfileName = subProfile?.Name ?? string.Empty,
             OfficeId = worker.OfficeId,
             OperatorUserId = operatorUserId,
             OperatorDisplayName = operatorDisplayName,
@@ -497,7 +517,9 @@ public sealed class TopUpSessionService(
             session.TargetBalance,
             session.RequestedAmount,
             session.CurrentBalance,
-            session.DailyResponseCount);
+            session.DailyResponseCount,
+            session.SubProfileId,
+            session.SubProfileName);
     }
 
     public async Task<TopUpSessionDto?> GetForWorkerAsync(
@@ -584,22 +606,29 @@ public sealed class TopUpSessionService(
         session.QrImageUrl = null;
     }
 
-    private async Task<decimal> ReadBalanceWithLockAsync(
+    private async Task<WorkerAccountEntity?> ReadAccountWithLockAsync(
         Guid workerId,
         Guid accountId,
         CancellationToken ct)
     {
-        var locked = await db.WorkerAccounts
-            .FromSqlInterpolated(
-                $"SELECT * FROM \"WorkerAccounts\" WHERE \"WorkerId\" = {workerId} AND \"AccountId\" = {accountId} FOR UPDATE")
-            .FirstOrDefaultAsync(ct)
+        if (db.Database.IsNpgsql())
+        {
+            return await db.WorkerAccounts
+                .FromSqlInterpolated(
+                    $"SELECT * FROM \"WorkerAccounts\" WHERE \"WorkerId\" = {workerId} AND \"AccountId\" = {accountId} FOR UPDATE")
+                .FirstOrDefaultAsync(ct)
+                .ConfigureAwait(false);
+        }
+
+        return await db.WorkerAccounts
+            .FirstOrDefaultAsync(x => x.WorkerId == workerId && x.AccountId == accountId, ct)
             .ConfigureAwait(false);
-        return locked?.TotalBalance ?? 0m;
     }
 
     private async Task<int> CountDailyResponsesAsync(
         Guid workerId,
         Guid accountId,
+        string? subProfileId,
         DateTime nowUtc,
         CancellationToken ct)
     {
@@ -608,6 +637,7 @@ public sealed class TopUpSessionService(
             .CountAsync(x =>
                     x.WorkerId == workerId
                     && x.AccountId == accountId
+                    && (string.IsNullOrWhiteSpace(subProfileId) || x.AvitoSubProfileId == subProfileId)
                     && x.CollectedAt >= start
                     && x.CollectedAt < end,
                 ct)
@@ -694,5 +724,7 @@ public sealed class TopUpSessionService(
             session.QrReadyAtUtc,
             session.QrImageBase64,
             session.QrImageUrl,
-            session.FailureMessage);
+            session.FailureMessage,
+            session.SubProfileId,
+            session.SubProfileName);
 }

@@ -1327,14 +1327,7 @@
                 '<td class="cell-name" data-label="Аккаунт">' + identityHtml + subProfiles + '</td>' +
                 '<td data-label="Статус">' + statusHtml + '</td>' +
                 '<td class="cell-num cell-balance" data-label="Баланс"><span class="account-balance-multiline">' + shared.escapeHtml(account.balanceText || '—') + '</span>' +
-                (account.canTopUp
-                    ? '<button type="button" class="worker-topup-trigger" data-topup-trigger' +
-                        ' data-worker-id="' + shared.escapeHtml(workerId) + '"' +
-                        ' data-account-id="' + shared.escapeHtml(account.id) + '"' +
-                        ' data-account-name="' + shared.escapeHtml(account.displayName || '') + '"' +
-                        ' data-current-balance="' + shared.escapeHtml(String(account.balance || 0)) + '"' +
-                        ' title="Пополнить баланс">Пополнить</button>'
-                    : '') + '</td>' +
+                '</td>' +
                 (function () {
                     var metrics = shared.resolveAccountMetricLinks(account, workerId, account.id);
                     return '<td class="cell-num" data-label="Откликов">' + shared.renderMetricLink(account.responses, metrics.responses, 'Отклики за сегодня') + '</td>' +
@@ -1663,10 +1656,11 @@
 
             var workerId = btn.getAttribute('data-worker-id');
             var accountId = btn.getAttribute('data-account-id');
+            var subProfileId = btn.getAttribute('data-subprofile-id');
             var accountName = btn.getAttribute('data-account-name') || '';
 
             openModal();
-            startSession(workerId, accountId, accountName);
+            startSession(workerId, accountId, subProfileId, accountName);
         });
 
         closeBtns.forEach(function (btn) {
@@ -1838,9 +1832,9 @@
             }
         }
 
-        function startSession(workerId, accountId, accountName) {
+        function startSession(workerId, accountId, subProfileId, accountName) {
             var token = getAntiForgeryToken();
-            fetch('/Workers/CreateTopUpSession?workerId=' + workerId + '&accountId=' + accountId, {
+            fetch('/Workers/CreateTopUpSession?workerId=' + workerId + '&accountId=' + accountId + '&subProfileId=' + encodeURIComponent(subProfileId || ''), {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',

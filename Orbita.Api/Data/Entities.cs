@@ -887,6 +887,8 @@ public sealed class TopUpSessionEntity
     public Guid WorkerId { get; set; }
     public Guid AccountId { get; set; }
     public string AccountName { get; set; } = string.Empty;
+    public string SubProfileId { get; set; } = string.Empty;
+    public string SubProfileName { get; set; } = string.Empty;
     public Guid OfficeId { get; set; }
     public string OperatorUserId { get; set; } = string.Empty;
     public string OperatorDisplayName { get; set; } = string.Empty;

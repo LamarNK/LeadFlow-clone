@@ -145,6 +145,62 @@ public sealed class TopUpSessionServiceTests
     }
 
     [Fact]
+    public async Task CreateAsync_ForSelectedSubProfile_UsesItsBalanceAndResponses()
+    {
+        await using var db = CreateDb();
+        var officeId = Guid.NewGuid();
+        var workerId = Guid.NewGuid();
+        var accountId = Guid.NewGuid();
+        SeedWorker(
+            db,
+            officeId,
+            workerId,
+            accountId,
+            balance: 999m,
+            subProfilesJson: """[{"Id":"target","Name":"Целевой","Balance":120},{"Id":"other","Name":"Другой","Balance":10}]""");
+
+        var (start, _) = TopUpSessionRules.GetMoscowDayRange(Now.UtcDateTime);
+        for (var i = 0; i < 6; i++)
+        {
+            db.CandidateResponses.Add(new CandidateResponseEntity
+            {
+                Id = Guid.NewGuid(),
+                WorkerId = workerId,
+                AccountId = accountId,
+                AvitoSubProfileId = "target",
+                CollectedAt = start.AddMinutes(i),
+                CreatedAt = start.AddMinutes(i),
+                SourceResponseId = $"target-{i}"
+            });
+        }
+
+        db.CandidateResponses.Add(new CandidateResponseEntity
+        {
+            Id = Guid.NewGuid(),
+            WorkerId = workerId,
+            AccountId = accountId,
+            AvitoSubProfileId = "other",
+            CollectedAt = start,
+            CreatedAt = start,
+            SourceResponseId = "other-0"
+        });
+        await db.SaveChangesAsync();
+
+        var service = CreateService(db);
+        var principal = TestPrincipalFactory.Operator("op1", "Operator 1", officeId);
+        var (session, conflict) = await service.CreateAsync(workerId, accountId, principal, "target");
+
+        Assert.Null(conflict);
+        Assert.NotNull(session);
+        Assert.Equal("target", session!.SubProfileId);
+        Assert.Equal("Целевой", session.SubProfileName);
+        Assert.Equal(120m, session.CurrentBalance);
+        Assert.Equal(6, session.DailyResponseCount);
+        Assert.Equal(900m, session.TargetBalance);
+        Assert.Equal(780m, session.RequestedAmount);
+    }
+
+    [Fact]
     public async Task CancelAsync_RestoresPause_WhenSessionPausedWorker()
     {
         await using var db = CreateDb();
@@ -1023,7 +1079,8 @@ public sealed class TopUpSessionServiceTests
         Guid workerId,
         Guid accountId,
         decimal balance,
-        bool monitoringPaused = false)
+        bool monitoringPaused = false,
+        string subProfilesJson = "[]")
     {
         if (!db.Offices.Any(x => x.Id == officeId))
         {
@@ -1042,7 +1099,7 @@ public sealed class TopUpSessionServiceTests
             LastSeenAtUtc = Now.UtcDateTime,
             IsMonitoringPaused = monitoringPaused
         });
-        SeedWorkerAccount(db, workerId, accountId, balance);
+        SeedWorkerAccount(db, workerId, accountId, balance, subProfilesJson);
         db.SaveChanges();
     }
 
@@ -1050,7 +1107,8 @@ public sealed class TopUpSessionServiceTests
         OrbitaDbContext db,
         Guid workerId,
         Guid accountId,
-        decimal balance)
+        decimal balance,
+        string subProfilesJson = "[]")
     {
         db.WorkerAccounts.Add(new WorkerAccountEntity
         {
@@ -1059,6 +1117,7 @@ public sealed class TopUpSessionServiceTests
             AdsPowerProfileId = "p1",
             DisplayName = "Acc1",
             TotalBalance = balance,
+            SubProfilesJson = subProfilesJson,
             UpdatedAtUtc = DateTime.UtcNow
         });
     }

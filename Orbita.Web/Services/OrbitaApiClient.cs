@@ -3938,11 +3938,12 @@ public sealed class OrbitaApiClient(
     public async Task<(TopUpSessionDto? Session, TopUpSessionConflictDto? Conflict)> CreateTopUpSessionAsync(
         Guid workerId,
         Guid accountId,
+        string subProfileId,
         CancellationToken ct = default)
     {
         using var request = new HttpRequestMessage(
             HttpMethod.Post,
-            $"api/v1/panel/workers/{workerId:D}/accounts/{accountId:D}/top-up-sessions");
+            $"api/v1/panel/workers/{workerId:D}/accounts/{accountId:D}/top-up-sessions?subProfileId={Uri.EscapeDataString(subProfileId)}");
         using var response = await SendAuthenticatedAsync(request, ct);
         if (response is null) return (null, new TopUpSessionConflictDto(InvalidApiSessionError));
         if (response.StatusCode == System.Net.HttpStatusCode.Conflict)

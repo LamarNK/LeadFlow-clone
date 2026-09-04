@@ -133,6 +133,24 @@ public sealed class TopUpSessionCoordinator(
                     .OpenAsync(account, adsOptions, reportStartupStage: null, linkedCts.Token)
                     .ConfigureAwait(false);
 
+                if (!string.IsNullOrWhiteSpace(pending.SubProfileId))
+                {
+                    var switchResult = await opened.Session
+                        .SwitchSubProfileAsync(pending.SubProfileId, linkedCts.Token)
+                        .ConfigureAwait(false);
+                    if (!switchResult.Ok
+                        || !await opened.Session.VerifyActiveSubProfileAsync(pending.SubProfileId, linkedCts.Token)
+                            .ConfigureAwait(false))
+                    {
+                        await ReportFailedAsync(
+                                pending.SessionId,
+                                "Не удалось переключиться на выбранный субпрофиль.",
+                                cancellationToken)
+                            .ConfigureAwait(false);
+                        return;
+                    }
+                }
+
                 // Проверка перед запуском сценария пополнения.
                 if (guard.IsCancelled)
                 {

@@ -285,7 +285,9 @@ public sealed record TopUpSessionDto(
     DateTime? QrReadyAtUtc,
     string? QrImageBase64,
     string? QrImageUrl,
-    string? FailureMessage);
+    string? FailureMessage,
+    string SubProfileId = "",
+    string SubProfileName = "");
 
 /// <summary>
 /// Pending-снимок сессии для воркера (через worker config / push). Воркер уже знает
@@ -299,7 +301,9 @@ public sealed record WorkerPendingTopUpSessionDto(
     decimal TargetBalance,
     decimal RequestedAmount,
     decimal CurrentBalance,
-    int DailyResponseCount);
+    int DailyResponseCount,
+    string SubProfileId = "",
+    string SubProfileName = "");
 
 public sealed record UpdateTopUpSessionStatusRequest(
     Guid SessionId,

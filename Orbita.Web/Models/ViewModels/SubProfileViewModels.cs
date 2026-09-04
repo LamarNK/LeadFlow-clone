@@ -14,6 +14,8 @@ public sealed class SubProfileRowViewModel
     public string StatusLabel { get; init; } = string.Empty;
     public string StatusTone { get; init; } = "success";
     public string BalanceText { get; init; } = "—";
+    public decimal? Balance { get; init; }
+    public bool CanTopUp { get; init; }
     public string? RatingText { get; init; }
     public int Responses { get; init; }
     public int UniqueResponses { get; init; }
@@ -166,6 +168,10 @@ public static class SubProfileViewModelMapper
                     StatusLabel = statusLabel,
                     StatusTone = statusTone,
                     BalanceText = BalanceDisplay.FormatSubProfile(wallet, advance, duration),
+                    Balance = advance,
+                    CanTopUp = !string.IsNullOrWhiteSpace(sp.Id)
+                               && advance is decimal balance
+                               && balance < TopUpSessionRules.LowBalanceThresholdRub,
                     RatingText = RatingDisplay.FormatSubProfile(sp.Rating, sp.ReviewsCount, sp.ReviewsText),
                     Responses = responses,
                     UniqueResponses = uniqueResponses,
