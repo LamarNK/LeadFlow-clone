@@ -776,17 +776,17 @@ public sealed class DashboardQueryService(
         }
 
         // Keep the public return type broad while storing a concrete array.
-        // The account graph is large and nested, so it uses the cache's explicit
-        // byte-payload path rather than default interface-collection hydration.
+        // The account graph is large and nested, so it uses the query cache's
+        // direct Redis payload path rather than HybridCache collection hydration.
         async Task<WorkerAccountDto[]> Load(CancellationToken token) =>
             [.. await LoadWorkerAccountsAsync(workerId, token).ConfigureAwait(false)];
         return queryCache is null
             ? await Load(ct)
-            : await queryCache.GetOrCreateSerializedAsync(
+            : await queryCache.GetOrCreateDistributedAsync(
                 OrbitaCacheDomain.WorkerDetails,
                 scope.ResolveFilter(null),
                 ScopeAudience(scope),
-                new { Kind = "worker-accounts", workerId },
+                new { Kind = "worker-accounts", CacheFormat = 2, workerId },
                 OrbitaCachePolicy.LargeRealtime,
                 Load,
                 ct);

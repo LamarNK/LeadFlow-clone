@@ -4,6 +4,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Caching.Hybrid;
+using Microsoft.Extensions.Caching.Distributed;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Options;
 using Orbita.Api.Options;
@@ -46,12 +47,10 @@ public interface IOrbitaQueryCache
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Uses HybridCache for coordination and storage, but serializes the DTO
-    /// payload explicitly. Intended for large, nested read models whose
-    /// collection interfaces are not reliably rehydrated by the default
-    /// HybridCache serializer.
+    /// Reads a large DTO from Redis directly while retaining the same versioned
+    /// keys and cache-aside fallback policy as the HybridCache path.
     /// </summary>
-    Task<T> GetOrCreateSerializedAsync<T>(
+    Task<T> GetOrCreateDistributedAsync<T>(
         OrbitaCacheDomain domain,
         Guid? officeId,
         string? audience,
@@ -158,7 +157,7 @@ public sealed class OrbitaQueryCache(
         }
     }
 
-    public async Task<T> GetOrCreateSerializedAsync<T>(
+    public async Task<T> GetOrCreateDistributedAsync<T>(
         OrbitaCacheDomain domain,
         Guid? officeId,
         string? audience,
@@ -167,19 +166,64 @@ public sealed class OrbitaQueryCache(
         Func<CancellationToken, Task<T>> factory,
         CancellationToken cancellationToken = default)
     {
-        var payload = await GetOrCreateAsync(
-            domain,
-            officeId,
-            audience,
-            parameters,
-            policy,
-            async token => JsonSerializer.SerializeToUtf8Bytes(
-                await factory(token).ConfigureAwait(false),
-                PayloadJsonOptions),
-            cancellationToken).ConfigureAwait(false);
+        CacheRequests.Add(1, DomainTag(domain));
+        if (!IsEnabled(domain)
+            || !TryGetConnectedMultiplexer(out var multiplexer)
+            || serviceProvider.GetService<IDistributedCache>() is not { } distributedCache)
+        {
+            CacheBypasses.Add(1, DomainTag(domain));
+            return await factory(cancellationToken).ConfigureAwait(false);
+        }
 
-        return JsonSerializer.Deserialize<T>(payload, PayloadJsonOptions)
-            ?? throw new JsonException($"Cached {typeof(T).Name} payload was null.");
+        var version = await GetVersionAsync(multiplexer, domain, officeId, cancellationToken).ConfigureAwait(false);
+        if (version is null)
+        {
+            CacheBypasses.Add(1, DomainTag(domain));
+            return await factory(cancellationToken).ConfigureAwait(false);
+        }
+
+        var key = BuildDataKey(domain, officeId, audience, version.Value, parameters);
+        try
+        {
+            var payload = await distributedCache.GetAsync(key, cancellationToken).ConfigureAwait(false);
+            if (payload is { Length: > 0 })
+            {
+                var cached = JsonSerializer.Deserialize<T>(payload, PayloadJsonOptions);
+                if (cached is not null)
+                {
+                    return cached;
+                }
+
+                await distributedCache.RemoveAsync(key, cancellationToken).ConfigureAwait(false);
+            }
+        }
+        catch (Exception exception)
+        {
+            LogRedisFailure(domain, exception);
+            CacheFallbacks.Add(1, DomainTag(domain));
+            return await factory(cancellationToken).ConfigureAwait(false);
+        }
+
+        CacheMisses.Add(1, DomainTag(domain));
+        var value = await factory(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            await distributedCache.SetAsync(
+                key,
+                JsonSerializer.SerializeToUtf8Bytes(value, PayloadJsonOptions),
+                new DistributedCacheEntryOptions
+                {
+                    AbsoluteExpirationRelativeToNow = policy.DistributedTtl
+                },
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            LogRedisFailure(domain, exception);
+            CacheFallbacks.Add(1, DomainTag(domain));
+        }
+
+        return value;
     }
 
     public async Task InvalidateAsync(IReadOnlyList<PanelChangeKind> changes, Guid? officeId)
