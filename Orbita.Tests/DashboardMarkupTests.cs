@@ -55,6 +55,30 @@ public sealed class DashboardMarkupTests
         Assert.Equal(1, CountOccurrences(view, "data-dashboard-worker-sort-form"));
     }
 
+    [Fact]
+    public void Dashboard_MonitoringPauseWarningPersistsAfterLiveRefresh()
+    {
+        var js = ReadRepoFile("Orbita.Web/wwwroot/js/orbita-dashboard.js");
+        var view = ReadRepoFile("Orbita.Web/Views/Dashboard/Index.cshtml");
+        var css = ReadRepoFile("Orbita.Web/wwwroot/css/orbita/dashboard.css");
+
+        Assert.Contains("data-dashboard-worker-filter=\"paused\"", view);
+        Assert.Contains("data-dashboard-worker-count=\"paused\"", view);
+        Assert.Contains("data-dashboard-worker-paused", view);
+        Assert.Contains("dashboard-worker-row--monitoring-paused", view);
+        Assert.Contains("dashboard-monitoring-paused-tooltip", view);
+
+        Assert.Contains("counts = { all: workers.length, online: 0, offline: 0, empty: 0, paused: 0 }", js);
+        Assert.Contains("activeWorkerFilter === 'paused'", js);
+        Assert.Contains("data-dashboard-worker-paused", js);
+        Assert.Contains("dashboard-worker-row--monitoring-paused", js);
+        Assert.Contains("dashboard-monitoring-paused-tooltip", js);
+
+        Assert.Contains("dashboard-worker-filter[data-dashboard-worker-filter=\"paused\"]", css);
+        Assert.Contains("dashboard-worker-row--monitoring-paused", css);
+        Assert.Contains("dashboard-monitoring-paused-tooltip", css);
+    }
+
     private static int CountOccurrences(string text, string value)
     {
         var count = 0;

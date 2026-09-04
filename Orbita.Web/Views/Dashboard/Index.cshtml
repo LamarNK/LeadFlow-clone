@@ -88,6 +88,7 @@
                     var onlineWorkers = Model.Workers.Count(w => w.IsEnabled && w.IsOnline);
                     var offlineWorkers = Model.Workers.Count(w => !w.IsEnabled || !w.IsOnline);
                     var workersWithoutAccounts = Model.Workers.Count(w => w.TotalAccounts == 0);
+                    var workersWithMonitoringPaused = Model.Workers.Count(w => w.IsMonitoringPaused);
                 }
                 <div class="dashboard-workers-toolbar">
                     <div class="dashboard-worker-filters" role="group" aria-label="Фильтр воркеров">
@@ -102,6 +103,9 @@
                         </button>
                         <button type="button" class="dashboard-worker-filter" data-dashboard-worker-filter="empty" aria-pressed="false">
                             Нет аккаунтов <span data-dashboard-worker-count="empty">@workersWithoutAccounts</span>
+                        </button>
+                        <button type="button" class="dashboard-worker-filter" data-dashboard-worker-filter="paused" aria-pressed="false" title="Воркеры с приостановленным мониторингом">
+                            Пауза <span data-dashboard-worker-count="paused">@workersWithMonitoringPaused</span>
                         </button>
                     </div>
                     <label class="dashboard-worker-search">
@@ -203,10 +207,12 @@
                             var workerDetailsUrl = Url.Action("Details", "Workers", new { id = w.Id });
                             var hasLowBalance = w.LowBalanceAccountCount > 0;
                             var lowBalanceClass = hasLowBalance ? " dashboard-worker-row--low-balance" : "";
+                            var monitoringPausedClass = w.IsMonitoringPaused ? " dashboard-worker-row--monitoring-paused" : "";
                             <tr data-href="@workerDetailsUrl"
-                                class="@lowBalanceClass"
+                                class="@lowBalanceClass@monitoringPausedClass"
                                 data-dashboard-worker-online="@(w.IsEnabled && w.IsOnline ? "true" : "false")"
                                 data-dashboard-worker-empty="@(w.TotalAccounts == 0 ? "true" : "false")"
+                                data-dashboard-worker-paused="@(w.IsMonitoringPaused ? "true" : "false")"
                                 data-dashboard-worker-activity="@(w.LastActivityUtc?.Ticks ?? 0)"
                                 data-dashboard-worker-name="@w.DisplayName"
                                 data-dashboard-worker-ip="@w.IpAddress"
@@ -223,6 +229,14 @@
                                         <span class="dashboard-low-balance-tooltip"
                                               title="Аккаунтов с балансом ниже 150 ₽: @w.LowBalanceAccountCount"
                                               aria-label="Предупреждение: @w.LowBalanceAccountCount аккаунтов с низким балансом">
+                                            <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+                                        </span>
+                                    }
+                                    @if (w.IsMonitoringPaused)
+                                    {
+                                        <span class="dashboard-monitoring-paused-tooltip"
+                                              title="Мониторинг приостановлен"
+                                              aria-label="Предупреждение: мониторинг приостановлен">
                                             <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
                                         </span>
                                     }
