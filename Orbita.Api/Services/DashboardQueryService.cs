@@ -775,7 +775,12 @@ public sealed class DashboardQueryService(
             return [];
         }
 
-        Task<IReadOnlyList<WorkerAccountDto>> Load(CancellationToken token) => LoadWorkerAccountsAsync(workerId, token);
+        // HybridCache must deserialize the same concrete shape it serialized.
+        // IReadOnlyList<T> is a useful public return type, but using it as the
+        // cache generic causes an L2 entry to be treated as a miss on this large
+        // payload. Keep the API contract broad while storing a concrete array.
+        async Task<WorkerAccountDto[]> Load(CancellationToken token) =>
+            [.. await LoadWorkerAccountsAsync(workerId, token).ConfigureAwait(false)];
         return queryCache is null
             ? await Load(ct)
             : await queryCache.GetOrCreateAsync(
