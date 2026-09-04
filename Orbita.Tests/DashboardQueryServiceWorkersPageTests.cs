@@ -1,6 +1,7 @@
 using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using System.Text.Json;
 using Orbita.Api.Data;
 using Orbita.Api.Options;
 using Orbita.Api.Services;
@@ -297,6 +298,44 @@ public sealed class DashboardQueryServiceWorkersPageTests
     }
 
     [Fact]
+    public async Task GetWorkersPageAsync_UsesLatestMeaningfulSnapshotForLowBalanceLiveUpdates()
+    {
+        DashboardQueryService.ClearCacheForTests();
+        var (db, connection) = await CreateSqliteDbAsync();
+        await using var connectionScope = connection;
+        await using var dbScope = db;
+        var now = DateTime.UtcNow;
+        SeedOffice(db, now);
+        var low = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbb37");
+        var normal = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbb38");
+        SeedWorker(db, low, "low", now.AddMinutes(-2));
+        SeedWorker(db, normal, "normal", now.AddMinutes(-1));
+        var accountId = SeedAccount(db, low, "telemetry-zero", totalBalance: 0m);
+        db.WorkerSnapshots.Add(new WorkerSnapshotEntity
+        {
+            Id = Guid.NewGuid(),
+            WorkerId = low,
+            CapturedAtUtc = now,
+            StatsJson = "{}",
+            BalancesJson = JsonSerializer.Serialize<IReadOnlyList<WorkerBalanceDto>>(
+            [
+                new WorkerBalanceDto(
+                    accountId,
+                    "telemetry-zero",
+                    0m,
+                    [new SubProfileBalanceDto("Основной", 0m)])
+            ])
+        });
+        await db.SaveChangesAsync();
+
+        var page = await CreateService(db).GetWorkersPageAsync(
+            OfficeScope.ForOffice(OfficeId), OfficeId, page: 1, pageSize: 25);
+
+        Assert.Equal([low, normal], page.Items.Select(x => x.Id));
+        Assert.Equal(1, page.Items[0].LowBalanceAccountCount);
+    }
+
+    [Fact]
     public async Task GetWorkersPageAsync_CountsLowBalanceAccountsPerWorker()
     {
         DashboardQueryService.ClearCacheForTests();
@@ -426,17 +465,18 @@ public sealed class DashboardQueryServiceWorkersPageTests
         });
     }
 
-    private static void SeedAccount(
+    private static Guid SeedAccount(
         OrbitaDbContext db,
         Guid workerId,
         string displayName,
         decimal totalBalance,
         string subProfilesJson = "[]")
     {
+        var accountId = Guid.NewGuid();
         db.WorkerAccounts.Add(new WorkerAccountEntity
         {
             WorkerId = workerId,
-            AccountId = Guid.NewGuid(),
+            AccountId = accountId,
             DisplayName = displayName,
             Status = "Active",
             IsEnabled = true,
@@ -444,6 +484,7 @@ public sealed class DashboardQueryServiceWorkersPageTests
             TotalBalance = totalBalance,
             SubProfilesJson = subProfilesJson
         });
+        return accountId;
     }
 
     private static void SeedResponses(OrbitaDbContext db, Guid workerId, int count, DateTime now)

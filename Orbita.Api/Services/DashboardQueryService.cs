@@ -390,17 +390,12 @@ public sealed class DashboardQueryService(
                 0);
         }
 
-        var lowBalanceFirst = filtered
-            .OrderByDescending(worker => db.WorkerAccounts.Any(account =>
-                account.WorkerId == worker.Id
-                && account.TotalBalance < BalanceDisplayRules.WorkerDetailsLowBalanceThresholdRub
-                && (account.TotalBalance > 0
-                    || account.SubProfilesJson.Contains("\"Balance\":0")
-                    || account.SubProfilesJson.Contains("\"balance\":0"))));
-        var ordered = ApplyWorkerListSort(lowBalanceFirst, sortColumn, sortDescending, todayStart);
+        // The latest telemetry snapshot is the source of truth for a balance. WorkerAccounts
+        // can lag behind it when the worker sends a balance for an account that is not in the
+        // current account catalogue. Load the ordered candidate set first, then apply the
+        // low-balance group after computing those snapshots below.
+        var ordered = ApplyWorkerListSort(filtered, sortColumn, sortDescending, todayStart);
         var workers = await ordered
-            .Skip((normalizedPage - 1) * normalizedPageSize)
-            .Take(normalizedPageSize)
             .Select(w => new
             {
                 w.Id,
@@ -471,8 +466,14 @@ public sealed class DashboardQueryService(
                 w.IpAddress ?? string.Empty);
         }).ToList();
 
+        var pageItems = items
+            .OrderByDescending(x => x.LowBalanceAccountCount > 0)
+            .Skip((normalizedPage - 1) * normalizedPageSize)
+            .Take(normalizedPageSize)
+            .ToList();
+
         return new WorkersPageDto(
-            items,
+            pageItems,
             totalCount,
             normalizedPage,
             normalizedPageSize,
@@ -483,7 +484,7 @@ public sealed class DashboardQueryService(
     }
 
     private IOrderedQueryable<WorkerEntity> ApplyWorkerListSort(
-        IOrderedQueryable<WorkerEntity> query,
+        IQueryable<WorkerEntity> query,
         string sort,
         bool descending,
         DateTime todayStartUtc)
@@ -491,11 +492,11 @@ public sealed class DashboardQueryService(
         if (string.Equals(sort, "responses", StringComparison.OrdinalIgnoreCase))
         {
             return descending
-                ? query.ThenByDescending(worker => db.CandidateResponses.Count(response =>
+                ? query.OrderByDescending(worker => db.CandidateResponses.Count(response =>
                     response.WorkerId == worker.Id && response.CollectedAt >= todayStartUtc))
                     .ThenByDescending(worker => worker.DisplayName)
                     .ThenByDescending(worker => worker.Id)
-                : query.ThenBy(worker => db.CandidateResponses.Count(response =>
+                : query.OrderBy(worker => db.CandidateResponses.Count(response =>
                     response.WorkerId == worker.Id && response.CollectedAt >= todayStartUtc))
                     .ThenBy(worker => worker.DisplayName)
                     .ThenBy(worker => worker.Id);
@@ -504,14 +505,14 @@ public sealed class DashboardQueryService(
         if (string.Equals(sort, "errors", StringComparison.OrdinalIgnoreCase))
         {
             return descending
-                ? query.ThenByDescending(worker => db.WorkerEvents.Count(error =>
+                ? query.OrderByDescending(worker => db.WorkerEvents.Count(error =>
                     error.WorkerId == worker.Id
                     && !error.IsDismissed
                     && error.CreatedAtUtc >= todayStartUtc
                     && (error.Level == "Error" || error.Level == "Warning")))
                     .ThenByDescending(worker => worker.DisplayName)
                     .ThenByDescending(worker => worker.Id)
-                : query.ThenBy(worker => db.WorkerEvents.Count(error =>
+                : query.OrderBy(worker => db.WorkerEvents.Count(error =>
                     error.WorkerId == worker.Id
                     && !error.IsDismissed
                     && error.CreatedAtUtc >= todayStartUtc
@@ -523,15 +524,15 @@ public sealed class DashboardQueryService(
         return sort.ToLowerInvariant() switch
         {
             "activity" => descending
-                ? query.ThenByDescending(x => x.LastSeenAtUtc ?? DateTime.MinValue)
+                ? query.OrderByDescending(x => x.LastSeenAtUtc ?? DateTime.MinValue)
                     .ThenByDescending(x => x.DisplayName)
                     .ThenByDescending(x => x.Id)
-                : query.ThenBy(x => x.LastSeenAtUtc ?? DateTime.MaxValue)
+                : query.OrderBy(x => x.LastSeenAtUtc ?? DateTime.MaxValue)
                     .ThenBy(x => x.DisplayName)
                     .ThenBy(x => x.Id),
             _ => descending
-                ? query.ThenByDescending(x => x.DisplayName).ThenByDescending(x => x.Id)
-                : query.ThenBy(x => x.DisplayName).ThenBy(x => x.Id)
+                ? query.OrderByDescending(x => x.DisplayName).ThenByDescending(x => x.Id)
+                : query.OrderBy(x => x.DisplayName).ThenBy(x => x.Id)
         };
     }
 
@@ -1582,6 +1583,7 @@ public sealed class DashboardQueryService(
             .Select(x => new
             {
                 x.WorkerId,
+                x.AccountId,
                 x.Status,
                 x.IsEnabledInPanel,
                 x.TotalBalance,
@@ -1591,11 +1593,22 @@ public sealed class DashboardQueryService(
 
         var accountCounts = BuildAccountCounts(
             accountRows.Select(x => (x.WorkerId, x.Status, x.IsEnabledInPanel)));
+        var latestSnapshotBalances = await LoadLatestSnapshotBalancesAsync(workerIds, ct).ConfigureAwait(false);
         var lowBalanceAccountCounts = accountRows
-            .Where(x => x.TotalBalance < BalanceDisplayRules.WorkerDetailsLowBalanceThresholdRub
-                && BalanceSnapshotHelper.HasMeaningfulPersistedBalanceData(
-                    x.TotalBalance,
-                    x.SubProfilesJson))
+            .Where(x =>
+            {
+                if (latestSnapshotBalances.TryGetValue(x.WorkerId, out var balances)
+                    && balances.TryGetValue(x.AccountId, out var snapshotBalance))
+                {
+                    return snapshotBalance.TotalBalance < BalanceDisplayRules.WorkerDetailsLowBalanceThresholdRub
+                        && BalanceSnapshotHelper.HasMeaningfulBalanceData(snapshotBalance);
+                }
+
+                return x.TotalBalance < BalanceDisplayRules.WorkerDetailsLowBalanceThresholdRub
+                    && BalanceSnapshotHelper.HasMeaningfulPersistedBalanceData(
+                        x.TotalBalance,
+                        x.SubProfilesJson);
+            })
             .GroupBy(x => x.WorkerId)
             .ToDictionary(g => g.Key, g => g.Count());
         var responseStats = await ComputeWorkerTodayStatsAsync(workerIds, todayStartUtc, ct);
@@ -1613,6 +1626,31 @@ public sealed class DashboardQueryService(
             workerEventErrors.PerWorkerToday,
             accountCounts,
             lowBalanceAccountCounts);
+    }
+
+    private async Task<Dictionary<Guid, Dictionary<Guid, WorkerBalanceDto>>> LoadLatestSnapshotBalancesAsync(
+        IReadOnlyList<Guid> workerIds,
+        CancellationToken ct)
+    {
+        var snapshots = await db.WorkerSnapshots
+            .AsNoTracking()
+            .Where(x => workerIds.Contains(x.WorkerId))
+            .GroupBy(x => x.WorkerId)
+            .Select(g => new
+            {
+                WorkerId = g.Key,
+                BalancesJson = g.OrderByDescending(x => x.CapturedAtUtc)
+                    .Select(x => x.BalancesJson)
+                    .First()
+            })
+            .ToListAsync(ct)
+            .ConfigureAwait(false);
+
+        return snapshots.ToDictionary(
+            x => x.WorkerId,
+            x => (JsonSerializer.Deserialize<List<WorkerBalanceDto>>(x.BalancesJson, JsonOptions) ?? [])
+                .GroupBy(balance => balance.AccountId)
+                .ToDictionary(group => group.Key, group => group.Last()));
     }
 
     // Per-worker today response totals.
