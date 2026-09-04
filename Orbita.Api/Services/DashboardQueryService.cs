@@ -775,15 +775,14 @@ public sealed class DashboardQueryService(
             return [];
         }
 
-        // HybridCache must deserialize the same concrete shape it serialized.
-        // IReadOnlyList<T> is a useful public return type, but using it as the
-        // cache generic causes an L2 entry to be treated as a miss on this large
-        // payload. Keep the API contract broad while storing a concrete array.
+        // Keep the public return type broad while storing a concrete array.
+        // The account graph is large and nested, so it uses the cache's explicit
+        // byte-payload path rather than default interface-collection hydration.
         async Task<WorkerAccountDto[]> Load(CancellationToken token) =>
             [.. await LoadWorkerAccountsAsync(workerId, token).ConfigureAwait(false)];
         return queryCache is null
             ? await Load(ct)
-            : await queryCache.GetOrCreateAsync(
+            : await queryCache.GetOrCreateSerializedAsync(
                 OrbitaCacheDomain.WorkerDetails,
                 scope.ResolveFilter(null),
                 ScopeAudience(scope),

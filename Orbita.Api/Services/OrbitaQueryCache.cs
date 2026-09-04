@@ -45,6 +45,21 @@ public interface IOrbitaQueryCache
         Func<CancellationToken, Task<T>> factory,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Uses HybridCache for coordination and storage, but serializes the DTO
+    /// payload explicitly. Intended for large, nested read models whose
+    /// collection interfaces are not reliably rehydrated by the default
+    /// HybridCache serializer.
+    /// </summary>
+    Task<T> GetOrCreateSerializedAsync<T>(
+        OrbitaCacheDomain domain,
+        Guid? officeId,
+        string? audience,
+        object? parameters,
+        OrbitaCachePolicy policy,
+        Func<CancellationToken, Task<T>> factory,
+        CancellationToken cancellationToken = default);
+
     Task InvalidateAsync(IReadOnlyList<PanelChangeKind> changes, Guid? officeId);
     void ClearLocalVersion(OrbitaCacheDomain domain, Guid? officeId);
 }
@@ -67,6 +82,7 @@ public sealed class OrbitaQueryCache(
     private const string IncrementVersionScript = "local version = redis.call('INCR', KEYS[1]); redis.call('EXPIRE', KEYS[1], ARGV[1]); return version";
     private static readonly TimeSpan VersionTtl = TimeSpan.FromDays(30);
     private static readonly JsonSerializerOptions KeyJsonOptions = new(JsonSerializerDefaults.Web);
+    private static readonly JsonSerializerOptions PayloadJsonOptions = new(JsonSerializerDefaults.Web);
     private static readonly Meter CacheMeter = new("Orbita.Api.Cache", "1.0");
     private static readonly Counter<long> CacheRequests = CacheMeter.CreateCounter<long>("orbita.cache.requests");
     private static readonly Counter<long> CacheMisses = CacheMeter.CreateCounter<long>("orbita.cache.misses");
@@ -140,6 +156,30 @@ public sealed class OrbitaQueryCache(
             CacheFallbacks.Add(1, DomainTag(domain));
             return await factory(cancellationToken).ConfigureAwait(false);
         }
+    }
+
+    public async Task<T> GetOrCreateSerializedAsync<T>(
+        OrbitaCacheDomain domain,
+        Guid? officeId,
+        string? audience,
+        object? parameters,
+        OrbitaCachePolicy policy,
+        Func<CancellationToken, Task<T>> factory,
+        CancellationToken cancellationToken = default)
+    {
+        var payload = await GetOrCreateAsync(
+            domain,
+            officeId,
+            audience,
+            parameters,
+            policy,
+            async token => JsonSerializer.SerializeToUtf8Bytes(
+                await factory(token).ConfigureAwait(false),
+                PayloadJsonOptions),
+            cancellationToken).ConfigureAwait(false);
+
+        return JsonSerializer.Deserialize<T>(payload, PayloadJsonOptions)
+            ?? throw new JsonException($"Cached {typeof(T).Name} payload was null.");
     }
 
     public async Task InvalidateAsync(IReadOnlyList<PanelChangeKind> changes, Guid? officeId)
