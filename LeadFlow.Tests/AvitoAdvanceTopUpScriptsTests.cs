@@ -17,6 +17,9 @@ public sealed class AvitoAdvanceTopUpScriptsTests
         Assert.Equal("input[data-marker='amount/input']", AvitoAdvanceTopUpScripts.AmountInputSelector);
         Assert.Equal("button[data-marker='submit-btn']", AvitoAdvanceTopUpScripts.SubmitButtonSelector);
         Assert.Equal("button[data-marker='payButton']", AvitoAdvanceTopUpScripts.PayButtonSelector);
+        Assert.Contains("[data-marker='payButton']", AvitoAdvanceTopUpScripts.PaymentPageReadySelector, StringComparison.Ordinal);
+        Assert.Contains("[data-marker='sbp']", AvitoAdvanceTopUpScripts.PaymentPageReadySelector, StringComparison.Ordinal);
+        Assert.Contains("img[alt='qr']", AvitoAdvanceTopUpScripts.QrImageSelector, StringComparison.Ordinal);
 
         // Ни один селектор не должен опираться на CSS-module классы.
         Assert.DoesNotContain("styles-", AvitoAdvanceTopUpScripts.AmountInputSelector, StringComparison.Ordinal);
@@ -66,6 +69,9 @@ public sealed class AvitoAdvanceTopUpScriptsTests
 
         Assert.Contains("sbp", script, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("click()", script, StringComparison.Ordinal);
+        Assert.Contains("[role=\"option\"]", script, StringComparison.Ordinal);
+        Assert.Contains("paymentVariant", script, StringComparison.Ordinal);
+        Assert.Contains("aria-selected", script, StringComparison.Ordinal);
         // Не должен кликать другие способы оплаты (карта/кошелёк).
         Assert.DoesNotContain("payment-method/card", script, StringComparison.Ordinal);
         Assert.DoesNotContain("payment-method/wallet", script, StringComparison.Ordinal);
@@ -78,8 +84,37 @@ public sealed class AvitoAdvanceTopUpScriptsTests
         var script = AvitoAdvanceTopUpScripts.BuildCaptureQrScript();
 
         Assert.Contains("sbp/confirmation", script, StringComparison.Ordinal);
+        Assert.Contains("img[alt='qr']", script, StringComparison.Ordinal);
+        Assert.Contains("Подтвердите платёж по СБП", script, StringComparison.Ordinal);
         Assert.Contains("toDataURL", script, StringComparison.Ordinal);
         Assert.Contains("getAttribute('src')", script, StringComparison.Ordinal);
+        Assert.Contains("blob:", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void QrReadyWaitExpression_MatchesLiveAvitoQrScreen()
+    {
+        var expression = AvitoAdvanceTopUpScripts.QrReadyWaitExpression;
+        Assert.Contains("img[alt='qr']", expression, StringComparison.Ordinal);
+        Assert.Contains("Подтвердите платёж по СБП", expression, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void Selectors_MatchLiveAvitoHtmlSnippets()
+    {
+        const string amountHtml = "<input placeholder=\"0\" type=\"text\" name=\"amount\" data-marker=\"amount/input\" value=\"\">";
+        const string submitHtml = "<button type=\"button\" data-marker=\"submit-btn\">Подтвердить</button>";
+        const string payHtml = "<button type=\"button\" data-marker=\"payButton\">Перейти к оплате</button>";
+        const string sbpHtml = "<span data-marker=\"sbp\">СБП</span>";
+        const string qrHtml = "<img src=\"data:image/png;base64,AAAA\" alt=\"qr\" width=\"122\">";
+
+        Assert.Contains("data-marker=\"amount/input\"", amountHtml, StringComparison.Ordinal);
+        Assert.Contains("data-marker=\"submit-btn\"", submitHtml, StringComparison.Ordinal);
+        Assert.Contains("data-marker=\"payButton\"", payHtml, StringComparison.Ordinal);
+        Assert.Contains("data-marker=\"sbp\"", sbpHtml, StringComparison.Ordinal);
+        Assert.Contains("alt=\"qr\"", qrHtml, StringComparison.Ordinal);
+        Assert.Contains("img[alt='qr']", AvitoAdvanceTopUpScripts.QrImageSelector, StringComparison.Ordinal);
+        Assert.Contains("[data-marker='sbp']", string.Join(" ", AvitoAdvanceTopUpScripts.SbpVariantSelectors), StringComparison.Ordinal);
     }
 
     [Fact]

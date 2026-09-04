@@ -115,6 +115,19 @@ public sealed class TopUpSessionRulesTests
     }
 
     [Fact]
+    public void SanitizeProgressMessage_TrimsAndLimits()
+    {
+        Assert.Null(TopUpSessionRules.SanitizeProgressMessage(null));
+        Assert.Null(TopUpSessionRules.SanitizeProgressMessage("   "));
+        Assert.Equal("Открываем браузер", TopUpSessionRules.SanitizeProgressMessage("  Открываем браузер \n"));
+        var longMessage = new string('x', 250);
+        var sanitized = TopUpSessionRules.SanitizeProgressMessage(longMessage);
+        Assert.NotNull(sanitized);
+        Assert.True(sanitized!.Length <= 201);
+        Assert.EndsWith("…", sanitized);
+    }
+
+    [Fact]
     public void QrValidator_AcceptsValidPngBase64()
     {
         // Минимальный валидный PNG: сигнатура + IHDR (без полной структуры — валидатор проверяет только сигнатуру).

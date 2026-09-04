@@ -920,6 +920,7 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
             entity.Property(x => x.QrImageUrl).HasMaxLength(2048);
             entity.Property(x => x.QrImageBase64).HasColumnType("text");
             entity.Property(x => x.FailureMessage).HasMaxLength(2000);
+            entity.Property(x => x.ProgressMessage).HasMaxLength(200);
             entity.Property(x => x.RowVersion)
                 .IsRowVersion()
                 .HasColumnName("xmin");

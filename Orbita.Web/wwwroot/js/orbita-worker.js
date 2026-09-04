@@ -1725,12 +1725,17 @@
         var errorMessageEl = modal.querySelector('[data-topup-error-message]');
 
         var accountNameEl = modal.querySelector('[data-topup-account-name]');
+        var subProfileRowEl = modal.querySelector('[data-topup-subprofile-row]');
+        var subProfileNameEl = modal.querySelector('[data-topup-subprofile-name]');
         var currentBalanceEl = modal.querySelector('[data-topup-current-balance]');
         var targetBalanceEl = modal.querySelector('[data-topup-target-balance]');
         var requestedAmountEl = modal.querySelector('[data-topup-requested-amount]');
         var dailyResponsesEl = modal.querySelector('[data-topup-daily-responses]');
         var tierLabelEl = modal.querySelector('[data-topup-tier-label]');
         var statusEl = modal.querySelector('[data-topup-status]');
+        var statusLabelEl = modal.querySelector('[data-topup-status-label]');
+        var statusDetailEl = modal.querySelector('[data-topup-status-detail]');
+        var statusSpinnerEl = modal.querySelector('[data-topup-status-spinner]');
         var qrSectionEl = modal.querySelector('[data-topup-qr-section]');
         var qrImageEl = modal.querySelector('[data-topup-qr-image]');
         var terminalMessageEl = modal.querySelector('[data-topup-terminal-message]');
@@ -1743,7 +1748,7 @@
         var consecutiveFailures = 0;
         var cancelInFlight = false;
 
-        var POLL_INTERVAL_MS = 3000;
+        var POLL_INTERVAL_MS = 1500;
         var MAX_POLL_DURATION_MS = 2.5 * 60 * 60 * 1000; // 2.5 часа
         var MAX_CONSECUTIVE_FAILURES = 3;
 
@@ -1815,6 +1820,16 @@
             contentEl.removeAttribute('hidden');
 
             if (accountNameEl) accountNameEl.textContent = session.accountName || '';
+            if (subProfileRowEl && subProfileNameEl) {
+                var subName = session.subProfileName || '';
+                if (subName) {
+                    subProfileNameEl.textContent = subName;
+                    subProfileRowEl.removeAttribute('hidden');
+                } else {
+                    subProfileNameEl.textContent = '';
+                    subProfileRowEl.setAttribute('hidden', '');
+                }
+            }
             if (currentBalanceEl) currentBalanceEl.textContent = formatBalance(session.currentBalance);
             if (targetBalanceEl) targetBalanceEl.textContent = formatBalance(session.targetBalance);
             if (requestedAmountEl) requestedAmountEl.textContent = formatBalance(session.requestedAmount);
@@ -1833,11 +1848,27 @@
         function updateStatus(session) {
             if (!statusEl) return;
             var label = getStatusLabel(session.status);
-            var previous = statusEl.textContent;
-            statusEl.textContent = label;
-            statusEl.className = 'topup-status topup-status--' + session.status;
-            if (previous !== label) {
-                announce('Статус: ' + label);
+            var detail = getStatusDetail(session);
+            var previous = statusLabelEl ? statusLabelEl.textContent : '';
+            var previousDetail = statusDetailEl ? statusDetailEl.textContent : '';
+            var terminal = !isActive(session.status);
+            var ready = session.status === 'qr_ready';
+
+            statusEl.removeAttribute('hidden');
+            statusEl.className = 'topup-status topup-status--' + session.status
+                + (ready ? ' is-ready' : '')
+                + (terminal ? ' is-terminal' : '');
+            if (statusLabelEl) statusLabelEl.textContent = label;
+            if (statusDetailEl) {
+                statusDetailEl.textContent = detail;
+                statusDetailEl.hidden = !detail;
+            }
+            if (statusSpinnerEl) {
+                statusSpinnerEl.hidden = terminal || ready;
+            }
+
+            if (previous !== label || previousDetail !== detail) {
+                announce(detail ? (label + '. ' + detail) : ('Статус: ' + label));
             }
         }
 
@@ -2068,15 +2099,25 @@
 
         function getStatusLabel(status) {
             var labels = {
-                'requested': 'Запрошено',
-                'started': 'Обработка воркером',
-                'payment_claimed': 'Оплата инициируется',
+                'requested': 'Задача передана воркеру',
+                'started': 'Воркер выполняет пополнение',
+                'payment_claimed': 'Формируем QR-код',
                 'qr_ready': 'QR-код готов к оплате',
-                'expired': 'Истекло',
-                'failed': 'Ошибка',
-                'cancelled': 'Отменено'
+                'expired': 'Сессия истекла',
+                'failed': 'Не удалось пополнить',
+                'cancelled': 'Сессия отменена'
             };
             return labels[status] || 'Неизвестно';
+        }
+
+        function getStatusDetail(session) {
+            if (session.progressMessage) return session.progressMessage;
+            var status = session.status;
+            if (status === 'requested') return 'Ставим мониторинг на паузу и передаём задачу воркеру…';
+            if (status === 'started') return 'Открываем браузер, переключаем субпрофиль и вводим сумму…';
+            if (status === 'payment_claimed') return 'Переходим к оплате через СБП и ждём QR-код…';
+            if (status === 'qr_ready') return 'Отсканируйте код в приложении банка.';
+            return '';
         }
 
         function getTierLabel(count, targetBalance) {

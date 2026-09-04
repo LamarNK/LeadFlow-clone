@@ -22,6 +22,13 @@ public static class AvitoAdvanceTopUpScripts
     public const string PayButtonSelector = "button[data-marker='payButton']";
 
     /// <summary>
+    /// Страница выбора способа оплаты: СБП-маркер, карусель вариантов, кнопка оплаты
+    /// или заголовок заказа. Используется как ожидание после «Подтвердить» сумму.
+    /// </summary>
+    public const string PaymentPageReadySelector =
+        "[data-marker='payButton'], [data-marker='sbp'], [data-marker='orderId'], [data-marker='paymentVariant']";
+
+    /// <summary>
     /// Стабильные маркеры варианта оплаты «СБП» (Система быстрых платежей).
     /// Проверяются по порядку; выбор считается валидным только если найден и кликнут
     /// один из этих маркеров, а не произвольный элемент списка способов.
@@ -37,11 +44,33 @@ public static class AvitoAdvanceTopUpScripts
         "[data-marker='sbp/radio']"
     ];
 
-    /// <summary>QR-изображение в области подтверждения СБП.</summary>
-    public const string QrImageSelector = "[data-marker='sbp/qr'] img, [data-marker='payment/qr'] img, [data-marker='qr-code'] img";
+    /// <summary>
+    /// QR-изображение. На актуальной странице СБП Avito маркер часто отсутствует —
+    /// остаётся <c>img[alt=qr]</c>.
+    /// </summary>
+    public const string QrImageSelector =
+        "[data-marker='sbp/qr'] img, [data-marker='payment/qr'] img, [data-marker='qr-code'] img, img[alt='qr'], img[alt='QR']";
 
     /// <summary>Корневой контейнер подтверждения СБП (для проверки, что QR действительно на экране СБП).</summary>
-    public const string SbpConfirmationSelector = "[data-marker='sbp/confirmation'], [data-marker='payment/sbp/confirmation'], [data-marker='sbp/qr']";
+    public const string SbpConfirmationSelector =
+        "[data-marker='sbp/confirmation'], [data-marker='payment/sbp/confirmation'], [data-marker='sbp/qr']";
+
+    /// <summary>
+    /// Ожидание экрана QR: маркеры, <c>img[alt=qr]</c> или заголовок «Подтвердите платёж по СБП».
+    /// </summary>
+    public const string QrReadyWaitExpression = """
+        () => {
+            const byMarker = document.querySelector("[data-marker='sbp/confirmation'], [data-marker='payment/sbp/confirmation'], [data-marker='sbp/qr']");
+            const byAlt = document.querySelector("img[alt='qr'], img[alt='QR']");
+            if (byMarker || byAlt) return true;
+            const nodes = document.querySelectorAll('h1,h2,h3,h4,h5,p');
+            for (const el of nodes) {
+                const text = (el.textContent || '').replace(/\s+/g, ' ');
+                if (text.includes('Подтвердите платёж по СБП') || text.includes('отсканируйте QR')) return true;
+            }
+            return false;
+        }
+        """;
 
     /// <summary>Форматирует сумму для ввода (инвариантная культура, без лишних нулей).</summary>
     public static string FormatAmount(decimal amount) =>
@@ -75,7 +104,8 @@ public static class AvitoAdvanceTopUpScripts
 
     /// <summary>
     /// Выбирает вариант оплаты «СБП» по стабильному маркеру и кликает его.
-    /// Возвращает <c>true</c> только если найден и кликнут именно СБП-маркер.
+    /// Возвращает <c>true</c> только если найден именно СБП-маркер (уже выбранный
+    /// пункт карусели тоже считается успехом — клик не нужен).
     /// </summary>
     public static string BuildSelectSbpScript()
     {
@@ -86,10 +116,11 @@ public static class AvitoAdvanceTopUpScripts
                 for (const selector of selectors) {
                     const el = document.querySelector(selector);
                     if (!el) continue;
+                    const clickable = el.closest('[role="option"], [data-marker="paymentVariant"], button, a, [role="button"], label, li') || el;
+                    if (clickable.getAttribute('aria-selected') === 'true') return true;
                     try {
-                        el.scrollIntoView({ block: 'center', inline: 'nearest' });
+                        clickable.scrollIntoView({ block: 'center', inline: 'nearest' });
                     } catch {}
-                    const clickable = el.closest('button, a, [role="button"], label') || el;
                     try {
                         clickable.click();
                         return true;
@@ -103,21 +134,43 @@ public static class AvitoAdvanceTopUpScripts
     }
 
     /// <summary>
-    /// Снимает QR-изображение из области подтверждения СБП. Предпочитает реальные байты
-    /// изображения (data URL из canvas), иначе <c>src</c>. Никогда не логирует содержимое.
+    /// Снимает QR-изображение с экрана подтверждения СБП. Ищет маркер, <c>img[alt=qr]</c>
+    /// или заголовок «Подтвердите платёж по СБП». Предпочитает байты (canvas / blob),
+    /// иначе <c>src</c>. Никогда не логирует содержимое.
     /// </summary>
     public static string BuildCaptureQrScript()
     {
         var qrSelector = JsonSerializer.Serialize(QrImageSelector);
         var confirmationSelector = JsonSerializer.Serialize(SbpConfirmationSelector);
         return $$"""
-            (() => {
-                const confirmation = document.querySelector({{confirmationSelector}});
+            (async () => {
+                const byMarker = document.querySelector({{confirmationSelector}});
+                const byAlt = document.querySelector("img[alt='qr'], img[alt='QR']");
+                let confirmation = byMarker || byAlt;
+                if (!confirmation) {
+                    const nodes = document.querySelectorAll('h1,h2,h3,h4,h5,p');
+                    for (const el of nodes) {
+                        const text = (el.textContent || '').replace(/\s+/g, ' ');
+                        if (text.includes('Подтвердите платёж по СБП') || text.includes('отсканируйте QR')) {
+                            confirmation = el.closest('div') || el;
+                            break;
+                        }
+                    }
+                }
                 if (!confirmation) return JSON.stringify({ found: false, reason: 'no_sbp_confirmation' });
-                const img = confirmation.querySelector("img") || document.querySelector({{qrSelector}});
+                const img = (confirmation.tagName === 'IMG' ? confirmation : confirmation.querySelector('img'))
+                    || document.querySelector({{qrSelector}});
                 if (!img) return JSON.stringify({ found: false, reason: 'no_qr_image' });
+                if (!img.complete || (img.naturalWidth === 0 && !img.src)) {
+                    await new Promise((resolve) => {
+                        const done = () => resolve();
+                        img.addEventListener('load', done, { once: true });
+                        img.addEventListener('error', done, { once: true });
+                        setTimeout(done, 2000);
+                    });
+                }
                 let dataUrl = null;
-                let src = null;
+                let src = img.getAttribute('src') || img.currentSrc || null;
                 try {
                     const canvas = document.createElement('canvas');
                     const naturalW = img.naturalWidth || img.width;
@@ -130,7 +183,21 @@ public static class AvitoAdvanceTopUpScripts
                         dataUrl = canvas.toDataURL('image/png');
                     }
                 } catch {}
-                src = img.getAttribute('src') || img.currentSrc || null;
+                if (!dataUrl && src && src.indexOf('blob:') === 0) {
+                    try {
+                        const resp = await fetch(src);
+                        const blob = await resp.blob();
+                        dataUrl = await new Promise((resolve) => {
+                            const reader = new FileReader();
+                            reader.onload = () => resolve(reader.result);
+                            reader.onerror = () => resolve(null);
+                            reader.readAsDataURL(blob);
+                        });
+                    } catch {}
+                }
+                if (!dataUrl && src && src.indexOf('data:') === 0) {
+                    dataUrl = src;
+                }
                 if (!dataUrl && !src) return JSON.stringify({ found: false, reason: 'no_qr_payload' });
                 return JSON.stringify({ found: true, dataUrl, src });
             })()
@@ -149,7 +216,7 @@ public static class AvitoAdvanceTopUpScripts
                 const sbpSelectors = {{sbpSelectors}};
                 const sbpVariant = sbpSelectors.some((s) => !!document.querySelector(s));
                 const sbpConfirmation = !!document.querySelector("[data-marker='sbp/confirmation'], [data-marker='payment/sbp/confirmation'], [data-marker='sbp/qr']");
-                const qrImage = !!document.querySelector("[data-marker='sbp/qr'] img, [data-marker='payment/qr'] img, [data-marker='qr-code'] img");
+                const qrImage = !!document.querySelector("[data-marker='sbp/qr'] img, [data-marker='payment/qr'] img, [data-marker='qr-code'] img, img[alt='qr'], img[alt='QR']");
                 return JSON.stringify({
                     url: window.location.href,
                     amountInput,

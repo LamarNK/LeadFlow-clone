@@ -1587,7 +1587,7 @@
         <div class="workers-modal-body topup-modal-body">
             <div class="topup-loading" data-topup-loading>
                 <div class="topup-spinner"></div>
-                <p>Создание сессии пополнения...</p>
+                <p data-topup-loading-text>Создаём сессию пополнения…</p>
             </div>
             <div class="topup-error" data-topup-error hidden>
                 <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
@@ -1599,6 +1599,10 @@
                     <div class="topup-info-row">
                         <span class="topup-info-label">Аккаунт:</span>
                         <span class="topup-info-value" data-topup-account-name></span>
+                    </div>
+                    <div class="topup-info-row" data-topup-subprofile-row hidden>
+                        <span class="topup-info-label">Субпрофиль:</span>
+                        <span class="topup-info-value" data-topup-subprofile-name></span>
                     </div>
                     <div class="topup-info-row">
                         <span class="topup-info-label">Текущий баланс:</span>
@@ -1619,7 +1623,13 @@
                     <div class="topup-tier-hint" data-topup-tier-label></div>
                 </div>
 
-                <div class="topup-status" data-topup-status></div>
+                <div class="topup-status" data-topup-status hidden>
+                    <div class="topup-spinner topup-spinner--inline" data-topup-status-spinner></div>
+                    <div class="topup-status-copy">
+                        <div class="topup-status-label" data-topup-status-label></div>
+                        <div class="topup-status-detail" data-topup-status-detail></div>
+                    </div>
+                </div>
 
                 <div class="topup-stale-warning" data-topup-stale-warning hidden>
                     <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>

@@ -23,6 +23,9 @@ public sealed class TopUpSessionViewModel
     public string? QrImageUrl { get; init; }
     public string? FailureMessage { get; init; }
     public string OperatorDisplayName { get; init; } = string.Empty;
+    public string SubProfileId { get; init; } = string.Empty;
+    public string SubProfileName { get; init; } = string.Empty;
+    public string? ProgressMessage { get; init; }
 
     public bool IsActive => Status is "requested" or "started" or "payment_claimed" or "qr_ready";
     public bool IsTerminal => !IsActive;
@@ -30,10 +33,10 @@ public sealed class TopUpSessionViewModel
 
     public string StatusLabel => Status switch
     {
-        "requested" => "Запрошено",
-        "started" => "Обработка",
-        "payment_claimed" => "Оплата инициируется",
-        "qr_ready" => "QR готов",
+        "requested" => "Задача передана воркеру",
+        "started" => "Воркер выполняет пополнение",
+        "payment_claimed" => "Формируем QR-код",
+        "qr_ready" => "QR-код готов к оплате",
         "expired" => "Истекло",
         "failed" => "Ошибка",
         "cancelled" => "Отменено",

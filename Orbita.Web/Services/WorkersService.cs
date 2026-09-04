@@ -788,6 +788,9 @@ public sealed class WorkersService(
         QrImageBase64 = dto.QrImageBase64,
         QrImageUrl = dto.QrImageUrl,
         FailureMessage = dto.FailureMessage,
-        OperatorDisplayName = dto.OperatorDisplayName
+        OperatorDisplayName = dto.OperatorDisplayName,
+        SubProfileId = dto.SubProfileId,
+        SubProfileName = dto.SubProfileName,
+        ProgressMessage = dto.ProgressMessage
     };
 }

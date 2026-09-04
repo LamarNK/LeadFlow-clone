@@ -139,6 +139,25 @@ public static class TopUpSessionRules
         _ => DateTime.SpecifyKind(value, DateTimeKind.Utc)
     };
 
+    /// <summary>Санитизация текста прогресса для UI. Пустая строка становится null.</summary>
+    public static string? SanitizeProgressMessage(string? message)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+        {
+            return null;
+        }
+
+        var cleaned = message
+            .Replace('\r', ' ')
+            .Replace('\n', ' ')
+            .Trim();
+
+        const int maxLength = 200;
+        return cleaned.Length > maxLength
+            ? cleaned[..maxLength] + "…"
+            : cleaned;
+    }
+
     private static TimeZoneInfo ResolveMoscow()
     {
         foreach (var id in new[] { "Europe/Moscow", "Russian Standard Time" })
@@ -311,7 +330,8 @@ public sealed record TopUpSessionDto(
     string? QrImageUrl,
     string? FailureMessage,
     string SubProfileId = "",
-    string SubProfileName = "");
+    string SubProfileName = "",
+    string? ProgressMessage = null);
 
 /// <summary>
 /// Pending-снимок сессии для воркера (через worker config / push). Воркер уже знает
@@ -334,7 +354,8 @@ public sealed record UpdateTopUpSessionStatusRequest(
     string Status,
     string? QrImageBase64 = null,
     string? QrImageUrl = null,
-    string? FailureMessage = null);
+    string? FailureMessage = null,
+    string? ProgressMessage = null);
 
 /// <summary>
 /// Запрос воркера на атомарное заявление права на клик по оплате (линеаризационный барьер).

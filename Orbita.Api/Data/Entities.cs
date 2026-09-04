@@ -921,6 +921,9 @@ public sealed class TopUpSessionEntity
     public string? QrImageUrl { get; set; }
     public string? FailureMessage { get; set; }
 
+    /// <summary>Текущий шаг сценария для UI оператора (не влияет на автомат статусов).</summary>
+    public string? ProgressMessage { get; set; }
+
     /// <summary>
     /// Версия строки (PostgreSQL xmin) для оптимистичной блокировки при обновлении статуса.
     /// </summary>

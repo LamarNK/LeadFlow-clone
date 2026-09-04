@@ -171,7 +171,8 @@ public sealed class TopUpSessionService(
             RequestedAmount = requestedAmount,
             DailyResponseCount = dailyResponses,
             CreatedAtUtc = now,
-            ExpiresAtUtc = now.Add(SessionTtl)
+            ExpiresAtUtc = now.Add(SessionTtl),
+            ProgressMessage = "Ставим мониторинг на паузу и передаём задачу воркеру…"
         };
 
         if (!worker.IsMonitoringPaused)
@@ -361,27 +362,45 @@ public sealed class TopUpSessionService(
             return (false, $"Недопустимый переход статуса '{session.Status}' → '{request.Status}'.");
         }
 
-        session.Status = request.Status;
-        if (request.Status == TopUpSessionStatuses.Started)
+        var statusChanged = !string.Equals(session.Status, request.Status, StringComparison.OrdinalIgnoreCase);
+        var applyingQr = request.Status == TopUpSessionStatuses.QrReady
+                         && (statusChanged || request.QrImageBase64 is not null || request.QrImageUrl is not null);
+        if (applyingQr)
         {
-            session.StartedAtUtc = now;
-        }
-        else if (request.Status == TopUpSessionStatuses.PaymentClaimed)
-        {
-            session.PaymentClaimedAtUtc = now;
-        }
-        else if (request.Status == TopUpSessionStatuses.QrReady)
-        {
-            // Валидируем QR-данные до сохранения: только корректный base64 PNG или HTTPS Avito URL.
             var (qrValid, qrError) = TopUpSessionQrValidator.Validate(request.QrImageBase64, request.QrImageUrl);
             if (!qrValid)
             {
                 return (false, qrError ?? "Некорректные QR-данные.");
             }
+        }
 
-            session.QrReadyAtUtc = now;
+        if (statusChanged)
+        {
+            session.Status = request.Status;
+            if (request.Status == TopUpSessionStatuses.Started)
+            {
+                session.StartedAtUtc ??= now;
+            }
+            else if (request.Status == TopUpSessionStatuses.PaymentClaimed)
+            {
+                session.PaymentClaimedAtUtc ??= now;
+            }
+            else if (request.Status == TopUpSessionStatuses.QrReady)
+            {
+                session.QrReadyAtUtc ??= now;
+                session.QrImageBase64 = request.QrImageBase64;
+                session.QrImageUrl = request.QrImageUrl;
+            }
+        }
+        else if (applyingQr)
+        {
             session.QrImageBase64 = request.QrImageBase64;
             session.QrImageUrl = request.QrImageUrl;
+        }
+
+        if (request.ProgressMessage is not null)
+        {
+            session.ProgressMessage = TopUpSessionRules.SanitizeProgressMessage(request.ProgressMessage);
         }
 
         if (!TopUpSessionStatuses.IsActive(request.Status))
@@ -825,5 +844,6 @@ public sealed class TopUpSessionService(
             session.QrImageUrl,
             session.FailureMessage,
             session.SubProfileId,
-            session.SubProfileName);
+            session.SubProfileName,
+            session.ProgressMessage);
 }

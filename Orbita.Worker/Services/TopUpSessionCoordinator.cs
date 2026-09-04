@@ -108,6 +108,10 @@ public sealed class TopUpSessionCoordinator(
                 return;
             }
 
+            var reportedStatus = TopUpSessionStatuses.Started;
+            async Task ReportProgressAsync(string message, CancellationToken ct) =>
+                await ReportProgressCoreAsync(pending.SessionId, reportedStatus, message, ct).ConfigureAwait(false);
+
             var adsOptions = new AdsPowerConnectionOptions(
                 string.IsNullOrWhiteSpace(account.AdsPowerApiBaseUrl) ? string.Empty : account.AdsPowerApiBaseUrl,
                 string.IsNullOrWhiteSpace(account.AdsPowerApiKey) ? null : account.AdsPowerApiKey);
@@ -135,6 +139,13 @@ public sealed class TopUpSessionCoordinator(
 
                 if (!string.IsNullOrWhiteSpace(pending.SubProfileId))
                 {
+                    var subProfileLabel = string.IsNullOrWhiteSpace(pending.SubProfileName)
+                        ? pending.SubProfileId
+                        : pending.SubProfileName;
+                    await ReportProgressAsync(
+                            $"Переключаем субпрофиль «{subProfileLabel}»…",
+                            linkedCts.Token)
+                        .ConfigureAwait(false);
                     var switchResult = await opened.Session
                         .SwitchSubProfileAsync(pending.SubProfileId, linkedCts.Token)
                         .ConfigureAwait(false);
@@ -162,6 +173,9 @@ public sealed class TopUpSessionCoordinator(
                     return;
                 }
 
+                await ReportProgressAsync("Открываем страницу пополнения аванса…", linkedCts.Token)
+                    .ConfigureAwait(false);
+
                 var result = await opened.Session
                     .RunAdvanceTopUpAsync(
                         pending.RequestedAmount,
@@ -179,9 +193,14 @@ public sealed class TopUpSessionCoordinator(
                                     new Dictionary<string, object?> { ["topup.sessionId"] = pending.SessionId })
                                     .ConfigureAwait(false);
                             }
+                            else
+                            {
+                                reportedStatus = TopUpSessionStatuses.PaymentClaimed;
+                            }
 
                             return claim.Claimed;
-                        })
+                        },
+                        reportProgressAsync: ReportProgressAsync)
                     .ConfigureAwait(false);
 
                 // Финальная проверка: не даём позднему QrReady оживить отменённую сессию.
@@ -267,11 +286,41 @@ public sealed class TopUpSessionCoordinator(
         return account;
     }
 
+    private async Task ReportProgressCoreAsync(
+        Guid sessionId,
+        string status,
+        string message,
+        CancellationToken cancellationToken)
+    {
+        var sanitized = TopUpSessionRules.SanitizeProgressMessage(message);
+        if (string.IsNullOrWhiteSpace(sanitized))
+        {
+            return;
+        }
+
+        var (ok, error) = await apiClient
+            .UpdateTopUpSessionStatusAsync(
+                new UpdateTopUpSessionStatusRequest(sessionId, status, ProgressMessage: sanitized),
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (!ok)
+        {
+            await TopUpWorkerLog.WarningAsync(
+                $"Top-up: прогресс не принят API — {error ?? "без сообщения"}.",
+                nameof(ReportProgressCoreAsync),
+                new Dictionary<string, object?> { ["topup.sessionId"] = sessionId })
+                .ConfigureAwait(false);
+        }
+    }
+
     private async Task<bool> ReportStartedAsync(Guid sessionId, CancellationToken cancellationToken)
     {
         var (ok, error) = await apiClient
             .UpdateTopUpSessionStatusAsync(
-                new UpdateTopUpSessionStatusRequest(sessionId, TopUpSessionStatuses.Started),
+                new UpdateTopUpSessionStatusRequest(
+                    sessionId,
+                    TopUpSessionStatuses.Started,
+                    ProgressMessage: "Открываем браузер аккаунта…"),
                 cancellationToken)
             .ConfigureAwait(false);
         if (!ok)
@@ -298,7 +347,8 @@ public sealed class TopUpSessionCoordinator(
                     sessionId,
                     TopUpSessionStatuses.QrReady,
                     qrBase64,
-                    qrUrl),
+                    qrUrl,
+                    ProgressMessage: "QR-код готов к оплате"),
                 cancellationToken)
             .ConfigureAwait(false);
         if (!ok)

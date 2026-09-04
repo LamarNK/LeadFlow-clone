@@ -35,6 +35,7 @@ public sealed class TopUpSessionServiceTests
         Assert.Null(conflict);
         Assert.NotNull(session);
         Assert.Equal(TopUpSessionStatuses.Requested, session!.Status);
+        Assert.False(string.IsNullOrWhiteSpace(session.ProgressMessage));
         Assert.Equal(100m, session.CurrentBalance);
         Assert.Equal(300m, session.TargetBalance);
         Assert.Equal(200m, session.RequestedAmount);
@@ -404,6 +405,20 @@ public sealed class TopUpSessionServiceTests
             workerId,
             new UpdateTopUpSessionStatusRequest(session!.Id, TopUpSessionStatuses.Started));
         Assert.True(started, startError);
+
+        var startedAt = (await db.TopUpSessions.AsNoTracking().FirstAsync(x => x.Id == session.Id)).StartedAtUtc;
+        var (progress, progressError) = await service.UpdateStatusFromWorkerAsync(
+            workerId,
+            new UpdateTopUpSessionStatusRequest(
+                session.Id,
+                TopUpSessionStatuses.Started,
+                ProgressMessage: "Переключаем субпрофиль «Тест»…"));
+        Assert.True(progress, progressError);
+
+        var afterProgress = await db.TopUpSessions.AsNoTracking().FirstAsync(x => x.Id == session.Id);
+        Assert.Equal(TopUpSessionStatuses.Started, afterProgress.Status);
+        Assert.Equal("Переключаем субпрофиль «Тест»…", afterProgress.ProgressMessage);
+        Assert.Equal(startedAt, afterProgress.StartedAtUtc);
 
         var (qr, qrError) = await service.UpdateStatusFromWorkerAsync(
             workerId,

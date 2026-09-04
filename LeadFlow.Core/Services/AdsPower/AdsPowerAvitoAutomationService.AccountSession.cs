@@ -1023,7 +1023,8 @@ public sealed partial class AdsPowerAvitoAutomationService
         string adsPowerUserId,
         decimal amount,
         CancellationToken cancellationToken,
-        Func<CancellationToken, Task<bool>>? beforePayClickAsync = null)
+        Func<CancellationToken, Task<bool>>? beforePayClickAsync = null,
+        Func<string, CancellationToken, Task>? reportProgressAsync = null)
     {
         if (amount <= 0m)
         {
@@ -1045,18 +1046,35 @@ public sealed partial class AdsPowerAvitoAutomationService
         {
             // 1) Переход на страницу пополнения аванса.
             cancellationToken.ThrowIfCancellationRequested();
+            await ReportTopUpProgressAsync(
+                    reportProgressAsync,
+                    "Открываем страницу пополнения аванса…",
+                    cancellationToken)
+                .ConfigureAwait(false);
             await NavigateToAdvancePageAsync(page, cancellationToken).ConfigureAwait(false);
 
             // 2) Ввод суммы.
             cancellationToken.ThrowIfCancellationRequested();
+            await ReportTopUpProgressAsync(
+                    reportProgressAsync,
+                    $"Вводим сумму {amount:0.##} ₽…",
+                    cancellationToken)
+                .ConfigureAwait(false);
             if (!await EnterAmountAsync(page, amount, cancellationToken).ConfigureAwait(false))
             {
                 return AvitoAdvanceTopUpResult.Failed(
                     "Не удалось ввести сумму пополнения: поле ввода не найдено.");
             }
 
+            await Task.Delay(400, cancellationToken).ConfigureAwait(false);
+
             // 3) Подтверждение суммы.
             cancellationToken.ThrowIfCancellationRequested();
+            await ReportTopUpProgressAsync(
+                    reportProgressAsync,
+                    "Подтверждаем сумму пополнения…",
+                    cancellationToken)
+                .ConfigureAwait(false);
             if (!await ClickSubmitAsync(page, cancellationToken).ConfigureAwait(false))
             {
                 return AvitoAdvanceTopUpResult.Failed(
@@ -1065,6 +1083,11 @@ public sealed partial class AdsPowerAvitoAutomationService
 
             // 4) Выбор СБП (обязательная валидация выбора).
             cancellationToken.ThrowIfCancellationRequested();
+            await ReportTopUpProgressAsync(
+                    reportProgressAsync,
+                    "Выбираем оплату через СБП…",
+                    cancellationToken)
+                .ConfigureAwait(false);
             if (!await SelectSbpAsync(page, cancellationToken).ConfigureAwait(false))
             {
                 return AvitoAdvanceTopUpResult.Failed(
@@ -1100,6 +1123,11 @@ public sealed partial class AdsPowerAvitoAutomationService
 
             // 5) Переход к оплате.
             cancellationToken.ThrowIfCancellationRequested();
+            await ReportTopUpProgressAsync(
+                    reportProgressAsync,
+                    "Переходим к оплате и ждём QR-код…",
+                    cancellationToken)
+                .ConfigureAwait(false);
             if (!await ClickPayAsync(page, cancellationToken).ConfigureAwait(false))
             {
                 return AvitoAdvanceTopUpResult.Failed(
@@ -1108,6 +1136,11 @@ public sealed partial class AdsPowerAvitoAutomationService
 
             // 6) Снятие QR из области подтверждения СБП.
             cancellationToken.ThrowIfCancellationRequested();
+            await ReportTopUpProgressAsync(
+                    reportProgressAsync,
+                    "Снимаем QR-код СБП…",
+                    cancellationToken)
+                .ConfigureAwait(false);
             var qr = await CaptureQrAsync(page, cancellationToken).ConfigureAwait(false);
             if (qr is null)
             {
@@ -1260,6 +1293,18 @@ public sealed partial class AdsPowerAvitoAutomationService
     private async Task<bool> SelectSbpAsync(IPage page, CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        try
+        {
+            await page.WaitForSelectorAsync(
+                    AvitoAdvanceTopUpScripts.PaymentPageReadySelector,
+                    new WaitForSelectorOptions { Timeout = 20_000 })
+                .ConfigureAwait(false);
+        }
+        catch
+        {
+            return false;
+        }
+
         var selected = await PuppeteerJsonEvaluator.EvaluateBoolAsync(
                 page,
                 AvitoAdvanceTopUpScripts.BuildSelectSbpScript(),
@@ -1315,11 +1360,10 @@ public sealed partial class AdsPowerAvitoAutomationService
     {
         cancellationToken.ThrowIfCancellationRequested();
 
-        // Ждём появления области подтверждения СБП с QR.
         try
         {
             await page.WaitForFunctionAsync(
-                    "() => !!document.querySelector(\"[data-marker='sbp/confirmation'], [data-marker='payment/sbp/confirmation'], [data-marker='sbp/qr']\")",
+                    AvitoAdvanceTopUpScripts.QrReadyWaitExpression,
                     new WaitForFunctionOptions { Timeout = 30_000, PollingInterval = 500 })
                 .ConfigureAwait(false);
         }
@@ -1328,17 +1372,51 @@ public sealed partial class AdsPowerAvitoAutomationService
             // Пробуем снять QR напрямую — скрипт сам проверит наличие.
         }
 
-        cancellationToken.ThrowIfCancellationRequested();
+        for (var attempt = 0; attempt < 5; attempt++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
 
-        var raw = await EvaluateWithRetryAsync<string>(
-                page,
-                AvitoAdvanceTopUpScripts.BuildCaptureQrScript(),
-                cancellationToken,
-                TimeSpan.FromSeconds(15))
-            .ConfigureAwait(false);
+            var raw = await EvaluateWithRetryAsync<string>(
+                    page,
+                    AvitoAdvanceTopUpScripts.BuildCaptureQrScript(),
+                    cancellationToken,
+                    TimeSpan.FromSeconds(15))
+                .ConfigureAwait(false);
 
-        var result = AvitoAdvanceTopUpScripts.TryParseQrCapture(raw);
-        return result is { Found: true } ? result : null;
+            var result = AvitoAdvanceTopUpScripts.TryParseQrCapture(raw);
+            if (result is { Found: true })
+            {
+                return result;
+            }
+
+            await Task.Delay(800, cancellationToken).ConfigureAwait(false);
+        }
+
+        return null;
+    }
+
+    private static async Task ReportTopUpProgressAsync(
+        Func<string, CancellationToken, Task>? reportProgressAsync,
+        string message,
+        CancellationToken cancellationToken)
+    {
+        if (reportProgressAsync is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await reportProgressAsync(message, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            // Статус для UI не должен срывать сценарий пополнения.
+        }
     }
 
     private async Task<string> LoadProfileItemsHtmlOnPageAsync(
@@ -1631,10 +1709,17 @@ public sealed partial class AdsPowerAvitoAutomationService
         public async Task<AvitoAdvanceTopUpResult> RunAdvanceTopUpAsync(
             decimal amount,
             CancellationToken cancellationToken = default,
-            Func<CancellationToken, Task<bool>>? beforePayClickAsync = null)
+            Func<CancellationToken, Task<bool>>? beforePayClickAsync = null,
+            Func<string, CancellationToken, Task>? reportProgressAsync = null)
         {
             using var _ = AvitoCaptchaTaskContext.Use(captchaOptions);
-            return await owner.RunAdvanceTopUpOnPageAsync(page, AdsPowerUserId, amount, cancellationToken, beforePayClickAsync)
+            return await owner.RunAdvanceTopUpOnPageAsync(
+                    page,
+                    AdsPowerUserId,
+                    amount,
+                    cancellationToken,
+                    beforePayClickAsync,
+                    reportProgressAsync)
                 .ConfigureAwait(false);
         }
 

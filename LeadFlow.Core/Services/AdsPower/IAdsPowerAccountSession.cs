@@ -30,11 +30,13 @@ public interface IAdsPowerAccountSession : IAsyncDisposable
     /// выбор СБП, переход к оплате и снятие QR-изображения. Оплату не выполняет.
     /// <paramref name="beforePayClickAsync"/> вызывается после выбора СБП и непосредственно
     /// перед кликом по оплате; возврат <c>false</c> прерывает сценарий без клика.
+    /// <paramref name="reportProgressAsync"/> — необязательный статус для UI оператора.
     /// </summary>
     Task<AvitoAdvanceTopUpResult> RunAdvanceTopUpAsync(
         decimal amount,
         CancellationToken cancellationToken = default,
-        Func<CancellationToken, Task<bool>>? beforePayClickAsync = null);
+        Func<CancellationToken, Task<bool>>? beforePayClickAsync = null,
+        Func<string, CancellationToken, Task>? reportProgressAsync = null);
 
     /// <summary>HTML модалки «Выбор профиля» в текущей CDP-сессии.</summary>
     Task<string> CaptureProfileSwitchHtmlAsync(CancellationToken cancellationToken = default);
