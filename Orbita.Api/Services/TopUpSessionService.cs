@@ -21,6 +21,15 @@ public sealed class TopUpSessionService(
     TimeProvider timeProvider)
 {
     private static readonly TimeSpan SessionTtl = TimeSpan.FromHours(2);
+    // Keep this as data rather than calling IsActive inside EF expressions: EF Core cannot
+    // translate arbitrary CLR methods and worker config polling must never return HTTP 500.
+    private static readonly string[] ActiveStatuses =
+    [
+        TopUpSessionStatuses.Requested,
+        TopUpSessionStatuses.Started,
+        TopUpSessionStatuses.PaymentClaimed,
+        TopUpSessionStatuses.QrReady
+    ];
 
     /// <summary>Срок хранения QR-данных после завершения сессии, после которого они удаляются.</summary>
     private static readonly TimeSpan QrRetention = TimeSpan.FromHours(6);
@@ -74,7 +83,7 @@ public sealed class TopUpSessionService(
         var active = await db.TopUpSessions
             .FirstOrDefaultAsync(x =>
                     x.AccountId == accountId
-                    && TopUpSessionStatuses.IsActive(x.Status),
+                    && ActiveStatuses.Contains(x.Status),
                 ct)
             .ConfigureAwait(false);
         if (active is not null)
@@ -159,7 +168,7 @@ public sealed class TopUpSessionService(
             var winner = await db.TopUpSessions.AsNoTracking()
                 .FirstOrDefaultAsync(x =>
                         x.AccountId == accountId
-                        && TopUpSessionStatuses.IsActive(x.Status),
+                        && ActiveStatuses.Contains(x.Status),
                     ct)
                 .ConfigureAwait(false);
             return (null, new TopUpSessionConflictDto(
@@ -471,7 +480,7 @@ public sealed class TopUpSessionService(
     {
         var now = timeProvider.GetUtcNow().UtcDateTime;
         var session = await db.TopUpSessions.AsNoTracking()
-            .Where(x => x.WorkerId == workerId && TopUpSessionStatuses.IsActive(x.Status))
+            .Where(x => x.WorkerId == workerId && ActiveStatuses.Contains(x.Status))
             .OrderByDescending(x => x.CreatedAtUtc)
             .FirstOrDefaultAsync(ct)
             .ConfigureAwait(false);
@@ -508,7 +517,7 @@ public sealed class TopUpSessionService(
         var now = timeProvider.GetUtcNow().UtcDateTime;
         var expired = await db.TopUpSessions
             .Include(x => x.Worker)
-            .Where(x => TopUpSessionStatuses.IsActive(x.Status) && x.ExpiresAtUtc <= now)
+            .Where(x => ActiveStatuses.Contains(x.Status) && x.ExpiresAtUtc <= now)
             .ToListAsync(ct)
             .ConfigureAwait(false);
 
@@ -540,7 +549,7 @@ public sealed class TopUpSessionService(
     {
         var cutoff = timeProvider.GetUtcNow().UtcDateTime - QrRetention;
         var stale = await db.TopUpSessions
-            .Where(x => !TopUpSessionStatuses.IsActive(x.Status)
+            .Where(x => !ActiveStatuses.Contains(x.Status)
                         && (x.QrImageBase64 != null || x.QrImageUrl != null)
                         && x.CompletedAtUtc != null
                         && x.CompletedAtUtc <= cutoff)
@@ -620,7 +629,7 @@ public sealed class TopUpSessionService(
             .AnyAsync(x =>
                     x.WorkerId == session.WorkerId
                     && x.Id != session.Id
-                    && TopUpSessionStatuses.IsActive(x.Status),
+                    && ActiveStatuses.Contains(x.Status),
                 ct)
             .ConfigureAwait(false);
         if (hasOtherActiveSession)
