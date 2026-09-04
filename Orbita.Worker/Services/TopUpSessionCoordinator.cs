@@ -192,13 +192,11 @@ public sealed class TopUpSessionCoordinator(
                                     nameof(RunAsync),
                                     new Dictionary<string, object?> { ["topup.sessionId"] = pending.SessionId })
                                     .ConfigureAwait(false);
-                            }
-                            else
-                            {
-                                reportedStatus = TopUpSessionStatuses.PaymentClaimed;
+                                return (false, claim.Error);
                             }
 
-                            return claim.Claimed;
+                            reportedStatus = TopUpSessionStatuses.PaymentClaimed;
+                            return (true, null);
                         },
                         reportProgressAsync: ReportProgressAsync)
                     .ConfigureAwait(false);

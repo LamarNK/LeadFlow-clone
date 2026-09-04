@@ -301,17 +301,39 @@ public sealed class TopUpSessionService(
         return (true, null);
     }
 
-    private async Task<TopUpSessionEntity?> LockSessionByIdAsync(Guid sessionId, CancellationToken ct)
+    private async Task<TopUpSessionEntity?> LockSessionByIdAsync(Guid sessionId, CancellationToken ct) =>
+        await LockTopUpSessionRowAsync(
+                $"SELECT *, xmin FROM \"TopUpSessions\" WHERE \"Id\" = {sessionId} FOR UPDATE",
+                x => x.Id == sessionId,
+                ct)
+            .ConfigureAwait(false);
+
+    /// <summary>
+    /// Блокирует строку сессии. <c>SELECT *</c> не возвращает системный <c>xmin</c>, а сущность
+    /// мапит его как RowVersion: EF тогда делает UPDATE WHERE xmin = 0 и падает с 500.
+    /// Поэтому в raw-SQL явно читаем xmin и не компонуем FirstOrDefault вокруг FOR UPDATE.
+    /// </summary>
+    private async Task<TopUpSessionEntity?> LockTopUpSessionRowAsync(
+        FormattableString sql,
+        System.Linq.Expressions.Expression<Func<TopUpSessionEntity, bool>> fallbackPredicate,
+        CancellationToken ct)
     {
-        if (db.Database.IsNpgsql())
+        if (!db.Database.IsNpgsql())
         {
-            return await db.TopUpSessions
-                .FromSqlInterpolated($"SELECT * FROM \"TopUpSessions\" WHERE \"Id\" = {sessionId} FOR UPDATE")
-                .FirstOrDefaultAsync(ct)
-                .ConfigureAwait(false);
+            return await db.TopUpSessions.FirstOrDefaultAsync(fallbackPredicate, ct).ConfigureAwait(false);
         }
 
-        return await db.TopUpSessions.FirstOrDefaultAsync(x => x.Id == sessionId, ct).ConfigureAwait(false);
+        var rows = await db.TopUpSessions
+            .FromSqlInterpolated(sql)
+            .ToListAsync(ct)
+            .ConfigureAwait(false);
+        var session = rows.Count == 0 ? null : rows[0];
+        if (session is not null && session.RowVersion == 0)
+        {
+            await db.Entry(session).ReloadAsync(ct).ConfigureAwait(false);
+        }
+
+        return session;
     }
 
     public async Task<(bool Success, string? Error)> UpdateStatusFromWorkerAsync(
@@ -434,96 +456,106 @@ public sealed class TopUpSessionService(
         Guid sessionId,
         CancellationToken ct = default)
     {
-        await using var transaction = await db.Database.BeginTransactionAsync(ct).ConfigureAwait(false);
-
-        var session = await LockSessionAsync(sessionId, workerId, ct).ConfigureAwait(false);
-        if (session is null)
+        try
         {
-            return new ClaimTopUpPaymentResult(false, "Сессия не найдена.");
-        }
+            await using var transaction = await db.Database.BeginTransactionAsync(ct).ConfigureAwait(false);
 
-        var now = timeProvider.GetUtcNow().UtcDateTime;
+            var session = await LockSessionAsync(sessionId, workerId, ct).ConfigureAwait(false);
+            if (session is null)
+            {
+                return new ClaimTopUpPaymentResult(false, "Сессия не найдена.");
+            }
 
-        if (!TopUpSessionStatuses.IsActive(session.Status))
-        {
-            return new ClaimTopUpPaymentResult(
-                false,
-                $"Сессия уже завершена статусом '{session.Status}'.");
-        }
+            var now = timeProvider.GetUtcNow().UtcDateTime;
 
-        if (session.ExpiresAtUtc <= now)
-        {
-            await ExpireSessionAsync(session, now, ct).ConfigureAwait(false);
+            if (!TopUpSessionStatuses.IsActive(session.Status))
+            {
+                return new ClaimTopUpPaymentResult(
+                    false,
+                    $"Сессия уже завершена статусом '{session.Status}'.");
+            }
+
+            if (session.ExpiresAtUtc <= now)
+            {
+                await ExpireSessionAsync(session, now, ct).ConfigureAwait(false);
+                await db.SaveChangesAsync(ct).ConfigureAwait(false);
+                await transaction.CommitAsync(ct).ConfigureAwait(false);
+                return new ClaimTopUpPaymentResult(false, "Сессия истекла.");
+            }
+
+            // Заявлять право на оплату можно только из started (после выбора СБП, до клика).
+            // Повторный claim уже заявленной сессии идемпотентен.
+            if (session.Status == TopUpSessionStatuses.PaymentClaimed)
+            {
+                await transaction.CommitAsync(ct).ConfigureAwait(false);
+                return new ClaimTopUpPaymentResult(true);
+            }
+
+            if (session.Status != TopUpSessionStatuses.Started)
+            {
+                return new ClaimTopUpPaymentResult(
+                    false,
+                    $"Недопустимое состояние для оплаты: '{session.Status}'.");
+            }
+
+            // Линеаризационный барьер: блокируем и читаем воркера, чтобы проверить, что пауза
+            // не была изменена вручную после создания сессии. Если версия аренды изменилась —
+            // оплата отклоняется (оператор вмешался в паузу после старта сессии).
+            var worker = await LockWorkerAsync(session.WorkerId, ct).ConfigureAwait(false);
+            if (worker is null)
+            {
+                return new ClaimTopUpPaymentResult(false, "Воркер не найден.");
+            }
+
+            if (worker.TopUpPauseLeaseVersion != session.ExpectedPauseLeaseVersion)
+            {
+                return new ClaimTopUpPaymentResult(
+                    false,
+                    "Пауза воркера была изменена вручную — оплата недоступна.");
+            }
+
+            if (session.OwnsPauseLease && worker.TopUpPauseLeaseId != session.Id)
+            {
+                return new ClaimTopUpPaymentResult(
+                    false,
+                    "Аренда паузы утрачена — оплата недоступна.");
+            }
+
+            session.Status = TopUpSessionStatuses.PaymentClaimed;
+            session.PaymentClaimedAtUtc = now;
+
             await db.SaveChangesAsync(ct).ConfigureAwait(false);
             await transaction.CommitAsync(ct).ConfigureAwait(false);
-            return new ClaimTopUpPaymentResult(false, "Сессия истекла.");
-        }
 
-        // Заявлять право на оплату можно только из started (после выбора СБП, до клика).
-        // Повторный claim уже заявленной сессии идемпотентен.
-        if (session.Status == TopUpSessionStatuses.PaymentClaimed)
-        {
-            await transaction.CommitAsync(ct).ConfigureAwait(false);
             return new ClaimTopUpPaymentResult(true);
         }
-
-        if (session.Status != TopUpSessionStatuses.Started)
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (DbUpdateConcurrencyException)
         {
             return new ClaimTopUpPaymentResult(
                 false,
-                $"Недопустимое состояние для оплаты: '{session.Status}'.");
+                "Сессия была изменена параллельно. Попробуйте ещё раз.");
         }
-
-        // Линеаризационный барьер: блокируем и читаем воркера, чтобы проверить, что пауза
-        // не была изменена вручную после создания сессии. Если версия аренды изменилась —
-        // оплата отклоняется (оператор вмешался в паузу после старта сессии).
-        var worker = await LockWorkerAsync(session.WorkerId, ct).ConfigureAwait(false);
-        if (worker is null)
-        {
-            return new ClaimTopUpPaymentResult(false, "Воркер не найден.");
-        }
-
-        if (worker.TopUpPauseLeaseVersion != session.ExpectedPauseLeaseVersion)
+        catch (Exception)
         {
             return new ClaimTopUpPaymentResult(
                 false,
-                "Пауза воркера была изменена вручную — оплата недоступна.");
+                "Не удалось подтвердить оплату. Попробуйте ещё раз.");
         }
-
-        if (session.OwnsPauseLease && worker.TopUpPauseLeaseId != session.Id)
-        {
-            return new ClaimTopUpPaymentResult(
-                false,
-                "Аренда паузы утрачена — оплата недоступна.");
-        }
-
-        session.Status = TopUpSessionStatuses.PaymentClaimed;
-        session.PaymentClaimedAtUtc = now;
-
-        await db.SaveChangesAsync(ct).ConfigureAwait(false);
-        await transaction.CommitAsync(ct).ConfigureAwait(false);
-
-        return new ClaimTopUpPaymentResult(true);
     }
 
     private async Task<TopUpSessionEntity?> LockSessionAsync(
         Guid sessionId,
         Guid workerId,
-        CancellationToken ct)
-    {
-        if (db.Database.IsNpgsql())
-        {
-            return await db.TopUpSessions
-                .FromSqlInterpolated(
-                    $"SELECT * FROM \"TopUpSessions\" WHERE \"Id\" = {sessionId} AND \"WorkerId\" = {workerId} FOR UPDATE")
-                .FirstOrDefaultAsync(ct)
-                .ConfigureAwait(false);
-        }
-
-        return await db.TopUpSessions
-            .FirstOrDefaultAsync(x => x.Id == sessionId && x.WorkerId == workerId, ct)
+        CancellationToken ct) =>
+        await LockTopUpSessionRowAsync(
+                $"SELECT *, xmin FROM \"TopUpSessions\" WHERE \"Id\" = {sessionId} AND \"WorkerId\" = {workerId} FOR UPDATE",
+                x => x.Id == sessionId && x.WorkerId == workerId,
+                ct)
             .ConfigureAwait(false);
-    }
 
     public async Task<WorkerPendingTopUpSessionDto?> GetPendingForWorkerAsync(
         Guid workerId,

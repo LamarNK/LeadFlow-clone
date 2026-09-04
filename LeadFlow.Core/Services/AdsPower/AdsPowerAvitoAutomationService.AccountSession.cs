@@ -1023,7 +1023,7 @@ public sealed partial class AdsPowerAvitoAutomationService
         string adsPowerUserId,
         decimal amount,
         CancellationToken cancellationToken,
-        Func<CancellationToken, Task<bool>>? beforePayClickAsync = null,
+        Func<CancellationToken, Task<(bool Allowed, string? Error)>>? beforePayClickAsync = null,
         Func<string, CancellationToken, Task>? reportProgressAsync = null)
     {
         if (amount <= 0m)
@@ -1101,9 +1101,10 @@ public sealed partial class AdsPowerAvitoAutomationService
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 bool claimed;
+                string? claimError = null;
                 try
                 {
-                    claimed = await beforePayClickAsync(cancellationToken).ConfigureAwait(false);
+                    (claimed, claimError) = await beforePayClickAsync(cancellationToken).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
@@ -1117,7 +1118,9 @@ public sealed partial class AdsPowerAvitoAutomationService
                 if (!claimed)
                 {
                     return AvitoAdvanceTopUpResult.Failed(
-                        "Оплата не разрешена: сессия отменена или истекла.");
+                        string.IsNullOrWhiteSpace(claimError)
+                            ? "Не удалось подтвердить оплату перед QR."
+                            : claimError);
                 }
             }
 
@@ -1709,7 +1712,7 @@ public sealed partial class AdsPowerAvitoAutomationService
         public async Task<AvitoAdvanceTopUpResult> RunAdvanceTopUpAsync(
             decimal amount,
             CancellationToken cancellationToken = default,
-            Func<CancellationToken, Task<bool>>? beforePayClickAsync = null,
+            Func<CancellationToken, Task<(bool Allowed, string? Error)>>? beforePayClickAsync = null,
             Func<string, CancellationToken, Task>? reportProgressAsync = null)
         {
             using var _ = AvitoCaptchaTaskContext.Use(captchaOptions);

@@ -987,6 +987,36 @@ public sealed class TopUpSessionServiceTests
     }
 
     [Fact]
+    public async Task ClaimPaymentAsync_AfterProgressMessageUpdate_StillClaims()
+    {
+        await using var db = CreateDb();
+        var officeId = Guid.NewGuid();
+        var workerId = Guid.NewGuid();
+        var accountId = Guid.NewGuid();
+        SeedWorker(db, officeId, workerId, accountId, balance: 100m);
+
+        var service = CreateService(db);
+        var principal = TestPrincipalFactory.Operator("op1", "Operator 1", officeId);
+        var (session, _) = await service.CreateAsync(workerId, accountId, principal);
+        Assert.NotNull(session);
+
+        var (started, startError) = await service.UpdateStatusFromWorkerAsync(
+            workerId,
+            new UpdateTopUpSessionStatusRequest(
+                session!.Id,
+                TopUpSessionStatuses.Started,
+                ProgressMessage: "Выбираем оплату через СБП…"));
+        Assert.True(started, startError);
+
+        var result = await service.ClaimPaymentAsync(workerId, session.Id);
+
+        Assert.True(result.Claimed, result.Error);
+        var stored = await db.TopUpSessions.AsNoTracking().FirstAsync(x => x.Id == session.Id);
+        Assert.Equal(TopUpSessionStatuses.PaymentClaimed, stored.Status);
+        Assert.Equal("Выбираем оплату через СБП…", stored.ProgressMessage);
+    }
+
+    [Fact]
     public async Task ClaimPaymentAsync_AfterCancel_Rejects()
     {
         await using var db = CreateDb();

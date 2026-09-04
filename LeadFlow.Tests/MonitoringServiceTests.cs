@@ -810,7 +810,7 @@ public sealed class MonitoringServiceTests
             public Task<AvitoAdvanceTopUpResult> RunAdvanceTopUpAsync(
                 decimal amount,
                 CancellationToken cancellationToken = default,
-                Func<CancellationToken, Task<bool>>? beforePayClickAsync = null,
+                Func<CancellationToken, Task<(bool Allowed, string? Error)>>? beforePayClickAsync = null,
                 Func<string, CancellationToken, Task>? reportProgressAsync = null) =>
                 Task.FromResult(AvitoAdvanceTopUpResult.Failed("Не поддерживается в тестовом двойнике."));
 
