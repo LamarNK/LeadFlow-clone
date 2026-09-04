@@ -198,6 +198,14 @@ def assert_wxs_upgrade_contract(text: str, worker_executable_id: str) -> None:
         errors.append("StopWorkerBeforeUpgrade must force-kill the running worker")
     if "taskkill /IM Orbita.Worker.exe /T" in text:
         errors.append("StopWorkerBeforeUpgrade must not use /T (it can kill msiexec)")
+    if 'Shortcut Id="OrbitaWorkerDesktopShortcut"' not in text:
+        errors.append("MSI must create the Orbita Worker desktop shortcut")
+    if 'Directory="DesktopFolder"' not in text:
+        errors.append("desktop shortcut must use the per-user DesktopFolder")
+    if 'Target="[INSTALLFOLDER]Orbita.Worker.exe"' not in text:
+        errors.append("desktop shortcut must target Orbita.Worker.exe in INSTALLFOLDER")
+    if 'ComponentRef Id="DesktopShortcutComponent"' not in text:
+        errors.append("desktop shortcut component must be included in the main feature")
     if f'Sequence="{REMOVE_EXISTING_PRODUCTS_SEQUENCE}"' not in text:
         errors.append("RemoveExistingProducts must be pinned immediately after InstallInitialize")
     if f'Sequence="{LAUNCH_WORKER_SEQUENCE}"' not in text:
@@ -408,6 +416,12 @@ def generate(publish_dir: Path, output: Path, version: str) -> None:
         f'                       Name="OrbitaWorker" Type="string"',
         f'                       Value="{autorun_value}" KeyPath="yes" />',
         '      </Component>',
+        f'      <Component Id="DesktopShortcutComponent" Guid="{component_guid(version, "desktop-shortcut")}">',
+        '        <Shortcut Id="OrbitaWorkerDesktopShortcut" Directory="DesktopFolder" Name="Orbita Worker"',
+        '                  Target="[INSTALLFOLDER]Orbita.Worker.exe" WorkingDirectory="INSTALLFOLDER" />',
+        '        <RegistryValue Root="HKCU" Key="Software\\Orbita\\Worker" Name="DesktopShortcut"',
+        '                       Type="integer" Value="1" KeyPath="yes" />',
+        '      </Component>',
         f'      <Component Id="CleanupInstallFolder" Guid="{component_guid(version, "cleanup-install-folder")}">',
         '        <RemoveFolder Id="RemoveInstallFolder" On="uninstall" />',
         '        <RegistryValue Root="HKCU" Key="Software\\Orbita\\Worker" Name="InstallFolder"',
@@ -426,6 +440,7 @@ def generate(publish_dir: Path, output: Path, version: str) -> None:
     lines.extend(f'      <ComponentRef Id="{component_id}" />' for component_id in component_ids)
     lines.extend([
         '      <ComponentRef Id="AutoStartComponent" />',
+        '      <ComponentRef Id="DesktopShortcutComponent" />',
         '      <ComponentRef Id="CleanupInstallFolder" />',
         '      <ComponentRef Id="CleanupCompanyFolder" />',
         '    </Feature>',

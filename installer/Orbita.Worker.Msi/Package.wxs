@@ -44,6 +44,21 @@
           Value="&quot;[INSTALLFOLDER]Orbita.Worker.exe&quot;"
           KeyPath="yes" />
       </Component>
+      <Component Id="DesktopShortcutComponent" Guid="e1a8b6c5-3f7b-4e0a-8d2c-5f6a7b8c9d0e">
+        <Shortcut
+          Id="OrbitaWorkerDesktopShortcut"
+          Directory="DesktopFolder"
+          Name="Orbita Worker"
+          Target="[INSTALLFOLDER]Orbita.Worker.exe"
+          WorkingDirectory="INSTALLFOLDER" />
+        <RegistryValue
+          Root="HKCU"
+          Key="Software\Orbita\Worker"
+          Name="DesktopShortcut"
+          Type="integer"
+          Value="1"
+          KeyPath="yes" />
+      </Component>
       <Component Id="CleanupInstallFolder" Guid="c9e6f4a3-1d5f-6c8e-0e2b-3f4a5b6c7d8e">
         <RemoveFolder Id="RemoveInstallFolder" On="uninstall" />
         <RegistryValue
@@ -72,6 +87,7 @@
     <Feature Id="MainFeature" Title="Orbita Worker" Level="1">
       <ComponentGroupRef Id="AppFiles" />
       <ComponentRef Id="AutoStartComponent" />
+      <ComponentRef Id="DesktopShortcutComponent" />
       <ComponentRef Id="CleanupInstallFolder" />
       <ComponentRef Id="CleanupCompanyFolder" />
     </Feature>
