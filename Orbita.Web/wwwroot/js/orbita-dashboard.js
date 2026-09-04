@@ -928,7 +928,7 @@
             var lowBalanceClass = hasLowBalance ? ' dashboard-worker-row--low-balance' : '';
             var monitoringPausedClass = isMonitoringPaused ? ' dashboard-worker-row--monitoring-paused' : '';
             var lowBalanceTooltip = hasLowBalance
-                ? '<span class="dashboard-low-balance-tooltip" title="Аккаунтов с балансом ниже 150 ₽: ' + lowBalanceCount + '" aria-label="Предупреждение: ' + lowBalanceCount + ' аккаунтов с низким балансом"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i></span>'
+                ? '<span class="dashboard-low-balance-tooltip" title="Субпрофилей с авансом ниже 150 ₽: ' + lowBalanceCount + '" aria-label="Предупреждение: ' + lowBalanceCount + ' субпрофилей с низким авансом"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i></span>'
                 : '';
             var monitoringPausedTooltip = isMonitoringPaused
                 ? '<span class="dashboard-monitoring-paused-tooltip" title="Мониторинг приостановлен" aria-label="Предупреждение: мониторинг приостановлен"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i></span>'

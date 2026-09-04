@@ -365,6 +365,80 @@ public sealed class DashboardQueryServiceWorkersPageTests
     }
 
     [Fact]
+    public async Task GetWorkersPageAsync_FlagsEveryLowBalanceSubProfileWhenAccountTotalIsHigh()
+    {
+        DashboardQueryService.ClearCacheForTests();
+        var (db, connection) = await CreateSqliteDbAsync();
+        await using var connectionScope = connection;
+        await using var dbScope = db;
+        var now = DateTime.UtcNow;
+        SeedOffice(db, now);
+        var worker = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbb40");
+        SeedWorker(db, worker, "worker", now.AddMinutes(-1));
+        var accountId = SeedAccount(db, worker, "high-total", totalBalance: 4209m);
+        db.WorkerSnapshots.Add(new WorkerSnapshotEntity
+        {
+            Id = Guid.NewGuid(),
+            WorkerId = worker,
+            CapturedAtUtc = now,
+            StatsJson = "{}",
+            BalancesJson = JsonSerializer.Serialize<IReadOnlyList<WorkerBalanceDto>>(
+            [
+                new WorkerBalanceDto(
+                    accountId,
+                    "high-total",
+                    4209m,
+                    [
+                        new SubProfileBalanceDto("Первый", 47m),
+                        new SubProfileBalanceDto("Второй", 53m),
+                        new SubProfileBalanceDto("Третий", 4109m)
+                    ])
+            ])
+        });
+        await db.SaveChangesAsync();
+
+        var page = await CreateService(db).GetWorkersPageAsync(
+            OfficeScope.ForOffice(OfficeId), OfficeId, page: 1, pageSize: 25);
+
+        var item = Assert.Single(page.Items);
+        Assert.Equal(2, item.LowBalanceAccountCount);
+    }
+
+    [Fact]
+    public async Task GetWorkersPageAsync_KeepsPersistedLowSubProfilesWhenLatestLiveSnapshotOmitsThem()
+    {
+        DashboardQueryService.ClearCacheForTests();
+        var (db, connection) = await CreateSqliteDbAsync();
+        await using var connectionScope = connection;
+        await using var dbScope = db;
+        var now = DateTime.UtcNow;
+        SeedOffice(db, now);
+        var worker = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbb43");
+        SeedWorker(db, worker, "worker", now.AddMinutes(-1));
+        var accountId = SeedAccount(
+            db,
+            worker,
+            "high-total",
+            totalBalance: 4209m,
+            subProfilesJson: """[{"Id":"one","Name":"Первый","Balance":47},{"Id":"two","Name":"Второй","Balance":53}]""");
+        db.WorkerSnapshots.Add(new WorkerSnapshotEntity
+        {
+            Id = Guid.NewGuid(),
+            WorkerId = worker,
+            CapturedAtUtc = now,
+            StatsJson = "{}",
+            BalancesJson = JsonSerializer.Serialize<IReadOnlyList<WorkerBalanceDto>>(
+            [new WorkerBalanceDto(accountId, "high-total", 4209m, [])])
+        });
+        await db.SaveChangesAsync();
+
+        var page = await CreateService(db).GetWorkersPageAsync(
+            OfficeScope.ForOffice(OfficeId), OfficeId, page: 1, pageSize: 25);
+
+        Assert.Equal(2, Assert.Single(page.Items).LowBalanceAccountCount);
+    }
+
+    [Fact]
     public async Task GetWorkersPageAsync_CountsLowBalanceAccountsPerWorker()
     {
         DashboardQueryService.ClearCacheForTests();

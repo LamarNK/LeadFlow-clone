@@ -1718,22 +1718,23 @@ public sealed class DashboardQueryService(
             accountRows.Select(x => (x.WorkerId, x.Status, x.IsEnabledInPanel)));
         var latestSnapshotBalances = await LoadLatestSnapshotBalancesAsync(workerIds, ct).ConfigureAwait(false);
         var lowBalanceAccountCounts = accountRows
-            .Where(x =>
+            .Select(x =>
             {
-                if (latestSnapshotBalances.TryGetValue(x.WorkerId, out var balances)
-                    && balances.TryGetValue(x.AccountId, out var snapshotBalance))
+                var snapshotBalance = latestSnapshotBalances.TryGetValue(x.WorkerId, out var balances)
+                        && balances.TryGetValue(x.AccountId, out var liveSnapshotBalance)
+                    ? liveSnapshotBalance
+                    : null;
+                return new
                 {
-                    return snapshotBalance.TotalBalance < BalanceDisplayRules.WorkerDetailsLowBalanceThresholdRub
-                        && BalanceSnapshotHelper.HasMeaningfulBalanceData(snapshotBalance);
-                }
-
-                return x.TotalBalance < BalanceDisplayRules.WorkerDetailsLowBalanceThresholdRub
-                    && BalanceSnapshotHelper.HasMeaningfulPersistedBalanceData(
+                    x.WorkerId,
+                    Count = ResolveLowBalanceSubProfileCount(
+                        snapshotBalance,
                         x.TotalBalance,
-                        x.SubProfilesJson);
+                        x.SubProfilesJson)
+                };
             })
             .GroupBy(x => x.WorkerId)
-            .ToDictionary(g => g.Key, g => g.Count());
+            .ToDictionary(g => g.Key, g => g.Sum(static x => x.Count));
         var responseStats = await ComputeWorkerTodayStatsAsync(workerIds, todayStartUtc, ct);
         var workerEventErrors = await ComputeWorkerEventErrorStatsAsync(
             workerIds.ToHashSet(),
@@ -1749,6 +1750,31 @@ public sealed class DashboardQueryService(
             workerEventErrors.PerWorkerToday,
             accountCounts,
             lowBalanceAccountCounts);
+    }
+
+    private static int ResolveLowBalanceSubProfileCount(
+        WorkerBalanceDto? snapshotBalance,
+        decimal persistedTotalBalance,
+        string? persistedSubProfilesJson)
+    {
+        if (snapshotBalance is null)
+        {
+            return BalanceSnapshotHelper.CountLowBalancePersistedSubProfiles(
+                persistedTotalBalance,
+                persistedSubProfilesJson);
+        }
+
+        if (BalanceSnapshotHelper.HasKnownSubProfileAdvance(snapshotBalance))
+        {
+            return BalanceSnapshotHelper.CountLowBalanceSubProfiles(snapshotBalance);
+        }
+
+        var persistedCount = BalanceSnapshotHelper.CountLowBalancePersistedSubProfiles(
+            persistedTotalBalance,
+            persistedSubProfilesJson);
+        return persistedCount > 0
+            ? persistedCount
+            : BalanceSnapshotHelper.CountLowBalanceSubProfiles(snapshotBalance);
     }
 
     private async Task<Dictionary<Guid, Dictionary<Guid, WorkerBalanceDto>>> LoadLatestSnapshotBalancesAsync(
