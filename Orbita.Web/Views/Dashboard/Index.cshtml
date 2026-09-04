@@ -14,7 +14,8 @@
         tz = Model.TimeZoneOffsetMinutes,
         pageSize = pagination.PageSize,
         sort = Model.Sort.Column,
-        dir = Model.Sort.Dir
+        dir = Model.Sort.Dir,
+        workerFilter = Model.WorkerFilter
     };
     var liveBootstrapJson = JsonSerializer.Serialize(new DashboardLiveSnapshotViewModel
     {
@@ -27,6 +28,7 @@
         EnabledWorkersCount = Model.EnabledWorkersCount,
         DisabledWorkersCount = Model.DisabledWorkersCount,
         ShowWorkersMonitoringControls = Model.ShowWorkersMonitoringControls,
+        WorkerTabCounts = Model.WorkerTabCounts,
         Pagination = pagination,
         Sort = Model.Sort
     }, jsonOptions);
@@ -38,7 +40,8 @@
         page = pagination.Page,
         pageSize = pagination.PageSize,
         sort = Model.Sort.Column,
-        dir = Model.Sort.Dir
+        dir = Model.Sort.Dir,
+        workerFilter = Model.WorkerFilter
     })!;
 }
 <partial name="_PageHeader" model="Model.Header" />
@@ -85,27 +88,24 @@
             </div>
             <div class="card card--dashboard-workers">
                 @{
-                    var onlineWorkers = Model.Workers.Count(w => w.IsEnabled && w.IsOnline);
-                    var offlineWorkers = Model.Workers.Count(w => !w.IsEnabled || !w.IsOnline);
-                    var workersWithoutAccounts = Model.Workers.Count(w => w.TotalAccounts == 0);
-                    var workersWithMonitoringPaused = Model.Workers.Count(w => w.IsMonitoringPaused);
+                    var workerTabCounts = Model.WorkerTabCounts;
                 }
                 <div class="dashboard-workers-toolbar">
                     <div class="dashboard-worker-filters" role="group" aria-label="Фильтр воркеров">
-                        <button type="button" class="dashboard-worker-filter is-active" data-dashboard-worker-filter="all" aria-pressed="true">
-                            Все <span data-dashboard-worker-count="all">@Model.Workers.Count</span>
+                        <button type="button" class="dashboard-worker-filter @(Model.WorkerFilter == DashboardWorkerFilter.All ? "is-active" : null)" data-dashboard-worker-filter="all" aria-pressed="@(Model.WorkerFilter == DashboardWorkerFilter.All ? "true" : "false")">
+                            Все <span data-dashboard-worker-count="all">@workerTabCounts.All</span>
                         </button>
-                        <button type="button" class="dashboard-worker-filter" data-dashboard-worker-filter="online" aria-pressed="false">
-                            Онлайн <span data-dashboard-worker-count="online">@onlineWorkers</span>
+                        <button type="button" class="dashboard-worker-filter @(Model.WorkerFilter == DashboardWorkerFilter.Online ? "is-active" : null)" data-dashboard-worker-filter="online" aria-pressed="@(Model.WorkerFilter == DashboardWorkerFilter.Online ? "true" : "false")">
+                            Онлайн <span data-dashboard-worker-count="online">@workerTabCounts.Online</span>
                         </button>
-                        <button type="button" class="dashboard-worker-filter" data-dashboard-worker-filter="offline" aria-pressed="false">
-                            Оффлайн <span data-dashboard-worker-count="offline">@offlineWorkers</span>
+                        <button type="button" class="dashboard-worker-filter @(Model.WorkerFilter == DashboardWorkerFilter.Offline ? "is-active" : null)" data-dashboard-worker-filter="offline" aria-pressed="@(Model.WorkerFilter == DashboardWorkerFilter.Offline ? "true" : "false")">
+                            Оффлайн <span data-dashboard-worker-count="offline">@workerTabCounts.Offline</span>
                         </button>
-                        <button type="button" class="dashboard-worker-filter" data-dashboard-worker-filter="empty" aria-pressed="false">
-                            Нет аккаунтов <span data-dashboard-worker-count="empty">@workersWithoutAccounts</span>
+                        <button type="button" class="dashboard-worker-filter @(Model.WorkerFilter == DashboardWorkerFilter.Empty ? "is-active" : null)" data-dashboard-worker-filter="empty" aria-pressed="@(Model.WorkerFilter == DashboardWorkerFilter.Empty ? "true" : "false")">
+                            Нет аккаунтов <span data-dashboard-worker-count="empty">@workerTabCounts.Empty</span>
                         </button>
-                        <button type="button" class="dashboard-worker-filter" data-dashboard-worker-filter="paused" aria-pressed="false" title="Воркеры с приостановленным мониторингом">
-                            Пауза <span data-dashboard-worker-count="paused">@workersWithMonitoringPaused</span>
+                        <button type="button" class="dashboard-worker-filter @(Model.WorkerFilter == DashboardWorkerFilter.Paused ? "is-active" : null)" data-dashboard-worker-filter="paused" aria-pressed="@(Model.WorkerFilter == DashboardWorkerFilter.Paused ? "true" : "false")" title="Воркеры с приостановленным мониторингом">
+                            Пауза <span data-dashboard-worker-count="paused">@workerTabCounts.Paused</span>
                         </button>
                     </div>
                     <label class="dashboard-worker-search">
@@ -122,6 +122,7 @@
                             <input type="hidden" name="tz" value="@Model.TimeZoneOffsetMinutes" />
                             <input type="hidden" name="pageSize" value="@pagination.PageSize" />
                             <input type="hidden" name="dir" value="@Model.Sort.Dir" />
+                            <input type="hidden" name="workerFilter" value="@Model.WorkerFilter" />
                             <span>Сортировка:</span>
                             <select name="sort" data-dashboard-worker-sort-key aria-label="Поле сортировки воркеров">
                                 <option value="activity" selected="@(string.Equals(Model.Sort.Column, "activity", StringComparison.OrdinalIgnoreCase))">По активности</option>
@@ -327,6 +328,7 @@
                             <input type="hidden" name="tz" value="@Model.TimeZoneOffsetMinutes" />
                             <input type="hidden" name="sort" value="@Model.Sort.Column" />
                             <input type="hidden" name="dir" value="@Model.Sort.Dir" />
+                            <input type="hidden" name="workerFilter" value="@Model.WorkerFilter" />
                             <partial name="_PageSizeFilterField" model="pagination.PageSize" />
                         </form>
                         <partial name="_Pagination" model="@(new PaginationPartialViewModel

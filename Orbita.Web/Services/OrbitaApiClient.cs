@@ -128,7 +128,8 @@ public sealed class OrbitaApiClient(
         int? pageSize = null,
         string? sort = null,
         string? sortDir = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        string? workerFilter = null)
     {
         if (_preview.Enabled)
         {
@@ -137,7 +138,8 @@ public sealed class OrbitaApiClient(
                 page,
                 pageSize,
                 sort,
-                sortDir));
+                sortDir,
+                workerFilter));
         }
 
         var path = WithOfficeQuery("api/v1/dashboard/workers");
@@ -145,6 +147,7 @@ public sealed class OrbitaApiClient(
         path = AppendQuery(path, "pageSize", WorkerListPaging.NormalizePageSize(pageSize).ToString());
         path = AppendQuery(path, "sort", sort);
         path = AppendQuery(path, "dir", sortDir);
+        path = AppendQuery(path, "workerFilter", workerFilter);
         return GetAsync<WorkersPageDto>(path, ct);
     }
 

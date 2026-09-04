@@ -1,3 +1,5 @@
+using Orbita.Contracts;
+
 namespace Orbita.Web.Models.ViewModels;
 
 public sealed class DashboardLiveSnapshotViewModel
@@ -11,6 +13,7 @@ public sealed class DashboardLiveSnapshotViewModel
     public int EnabledWorkersCount { get; init; }
     public int DisabledWorkersCount { get; init; }
     public bool ShowWorkersMonitoringControls { get; init; }
+    public DashboardWorkerTabCounts WorkerTabCounts { get; init; } = DashboardWorkerTabCounts.None;
     public PaginationViewModel Pagination { get; init; } = new() { PageSize = ListPageSizeDefaults.Dashboard };
     public TableSortState Sort { get; init; } = TableSortState.Create("activity", descending: true);
 }

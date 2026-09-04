@@ -63,7 +63,54 @@ public sealed record WorkersPageDto(
     string Sort,
     string Dir,
     int EnabledCount,
-    int PausedCount);
+    int PausedCount)
+{
+    public DashboardWorkerTabCounts TabCounts { get; init; } = DashboardWorkerTabCounts.None;
+}
+
+public sealed record DashboardWorkerTabCounts(
+    int All,
+    int Online,
+    int Offline,
+    int Empty,
+    int Paused)
+{
+    public static DashboardWorkerTabCounts None { get; } = new(0, 0, 0, 0, 0);
+}
+
+public static class DashboardWorkerFilter
+{
+    public const string All = "all";
+    public const string Online = "online";
+    public const string Offline = "offline";
+    public const string Empty = "empty";
+    public const string Paused = "paused";
+
+    public static string Normalize(string? value) => value?.Trim().ToLowerInvariant() switch
+    {
+        Online => Online,
+        Offline => Offline,
+        Empty => Empty,
+        Paused => Paused,
+        _ => All
+    };
+
+    public static bool Matches(WorkerListItem worker, string filter) => filter switch
+    {
+        Online => worker.IsEnabled && worker.IsOnline,
+        Offline => !worker.IsEnabled || !worker.IsOnline,
+        Empty => worker.AccountCount == 0,
+        Paused => worker.IsMonitoringPaused,
+        _ => true
+    };
+
+    public static DashboardWorkerTabCounts Count(IReadOnlyList<WorkerListItem> workers) => new(
+        workers.Count,
+        workers.Count(worker => Matches(worker, Online)),
+        workers.Count(worker => Matches(worker, Offline)),
+        workers.Count(worker => Matches(worker, Empty)),
+        workers.Count(worker => Matches(worker, Paused)));
+}
 
 public static class WorkerListPaging
 {

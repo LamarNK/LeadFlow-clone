@@ -1,3 +1,5 @@
+using Orbita.Contracts;
+
 namespace Orbita.Web.Models.ViewModels;
 
 public sealed class DashboardViewModel
@@ -21,6 +23,8 @@ public sealed class DashboardViewModel
     public int EnabledWorkersCount { get; init; }
     public int DisabledWorkersCount { get; init; }
     public bool ShowWorkersMonitoringControls { get; init; }
+    public string WorkerFilter { get; init; } = DashboardWorkerFilter.All;
+    public DashboardWorkerTabCounts WorkerTabCounts { get; init; } = DashboardWorkerTabCounts.None;
     public PaginationViewModel Pagination { get; init; } = new() { PageSize = ListPageSizeDefaults.Dashboard };
     public TableSortState Sort { get; init; } = TableSortState.Create("activity", descending: true);
     public int TimeZoneOffsetMinutes { get; init; }

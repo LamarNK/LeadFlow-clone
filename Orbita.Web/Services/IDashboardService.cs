@@ -10,5 +10,6 @@ public interface IDashboardService
         int? pageSize = null,
         string? sort = null,
         string? sortDir = null,
-        CancellationToken ct = default);
+        CancellationToken ct = default,
+        string? workerFilter = null);
 }

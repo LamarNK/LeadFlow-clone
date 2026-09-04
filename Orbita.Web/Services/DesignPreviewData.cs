@@ -1843,10 +1843,12 @@ internal static class DesignPreviewData
         int page = 1,
         int? pageSize = null,
         string? sort = null,
-        string? sortDir = null)
+        string? sortDir = null,
+        string? workerFilter = null)
     {
         var tableSort = TableSort.Parse(sort, sortDir, TableSort.DashboardWorkers.Default, TableSort.DashboardWorkers.Columns);
-        var workers = GetWorkers(officeId).Select(w => new DashboardWorkerRowViewModel
+        var allWorkers = GetWorkers(officeId);
+        var workers = allWorkers.Select(w => new DashboardWorkerRowViewModel
         {
             Id = w.Id,
             DisplayName = w.DisplayName,
@@ -1857,9 +1859,11 @@ internal static class DesignPreviewData
             LastActivityUtc = w.LastSeenAtUtc
         });
         var orderedIds = TableSort.DashboardWorkers.Apply(workers, tableSort).Select(w => w.Id).ToList();
-        var byId = GetWorkers(officeId).ToDictionary(w => w.Id);
+        var byId = allWorkers.ToDictionary(w => w.Id);
         var sorted = orderedIds.Select(id => byId[id]).ToList();
         var normalizedPageSize = ListPageSizeDefaults.Normalize(pageSize, ListPageSizeDefaults.Dashboard);
+        var tabCounts = DashboardWorkerFilter.Count(sorted);
+        sorted = sorted.Where(worker => DashboardWorkerFilter.Matches(worker, DashboardWorkerFilter.Normalize(workerFilter))).ToList();
         var total = sorted.Count;
         var normalizedPage = WorkerListPaging.NormalizePage(page, normalizedPageSize, total);
         var items = sorted
@@ -1873,8 +1877,11 @@ internal static class DesignPreviewData
             normalizedPageSize,
             tableSort.Column,
             tableSort.Dir,
-            sorted.Count(w => !w.IsMonitoringPaused),
-            sorted.Count(w => w.IsMonitoringPaused));
+            allWorkers.Count(w => !w.IsMonitoringPaused),
+            allWorkers.Count(w => w.IsMonitoringPaused))
+        {
+            TabCounts = tabCounts
+        };
     }
 
     public static GlobalDashboardSummary GetSummary(Guid? officeId)
@@ -2371,7 +2378,8 @@ internal static class DesignPreviewData
         int page = 1,
         int pageSize = ListPageSizeDefaults.Dashboard,
         string? sort = null,
-        string? sortDir = null)
+        string? sortDir = null,
+        string? workerFilter = null)
     {
         period ??= DashboardPeriod.Today;
         officeContext ??= new OfficeContext();
@@ -2505,7 +2513,23 @@ internal static class DesignPreviewData
                 OfficeName = w.OfficeName
             })
             .ToList();
-        var sortedWorkers = TableSort.DashboardWorkers.Apply(workerRows, tableSort).ToList();
+        var normalizedWorkerFilter = DashboardWorkerFilter.Normalize(workerFilter);
+        var workerTabCounts = new DashboardWorkerTabCounts(
+            workerRows.Count,
+            workerRows.Count(w => w.IsEnabled && w.IsOnline),
+            workerRows.Count(w => !w.IsEnabled || !w.IsOnline),
+            workerRows.Count(w => w.TotalAccounts == 0),
+            workerRows.Count(w => w.IsMonitoringPaused));
+        var sortedWorkers = TableSort.DashboardWorkers.Apply(workerRows, tableSort)
+            .Where(w => normalizedWorkerFilter switch
+            {
+                DashboardWorkerFilter.Online => w.IsEnabled && w.IsOnline,
+                DashboardWorkerFilter.Offline => !w.IsEnabled || !w.IsOnline,
+                DashboardWorkerFilter.Empty => w.TotalAccounts == 0,
+                DashboardWorkerFilter.Paused => w.IsMonitoringPaused,
+                _ => true
+            })
+            .ToList();
         var totalWorkers = sortedWorkers.Count;
         pageSize = ListPageSizeDefaults.Normalize(pageSize, ListPageSizeDefaults.Dashboard);
         page = WorkerListPaging.NormalizePage(page, pageSize, totalWorkers);
@@ -2543,6 +2567,8 @@ internal static class DesignPreviewData
             EnabledWorkersCount = workerRows.Count(w => w.IsEnabled && !w.IsMonitoringPaused),
             DisabledWorkersCount = workerRows.Count(w => w.IsMonitoringPaused),
             ShowWorkersMonitoringControls = totalWorkers > 0,
+            WorkerFilter = normalizedWorkerFilter,
+            WorkerTabCounts = workerTabCounts,
             Pagination = new PaginationViewModel
             {
                 Page = page,

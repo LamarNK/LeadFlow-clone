@@ -792,14 +792,8 @@
             '<i class="fa-solid fa-circle-play" aria-hidden="true"></i><span class="dashboard-worker-toggle-label">Возобновить</span></button></td>';
     }
 
-    function updateWorkerToolbar(workers) {
-        var counts = { all: workers.length, online: 0, offline: 0, empty: 0, paused: 0 };
-        workers.forEach(function (worker) {
-            if (worker.isEnabled && worker.isOnline) counts.online++;
-            else counts.offline++;
-            if (!worker.totalAccounts) counts.empty++;
-            if (worker.isMonitoringPaused) counts.paused++;
-        });
+    function updateWorkerToolbar(tabCounts) {
+        var counts = tabCounts || { all: 0, online: 0, offline: 0, empty: 0, paused: 0 };
         Object.keys(counts).forEach(function (key) {
             document.querySelectorAll('[data-dashboard-worker-count="' + key + '"]').forEach(function (el) {
                 el.textContent = String(counts[key]);
@@ -809,15 +803,10 @@
 
     function applyWorkerFilter() {
         document.querySelectorAll('[data-dashboard-workers-body] tr[data-href]').forEach(function (row) {
-            var matchesFilter = activeWorkerFilter === 'all'
-                || (activeWorkerFilter === 'online' && row.getAttribute('data-dashboard-worker-online') === 'true')
-                || (activeWorkerFilter === 'offline' && row.getAttribute('data-dashboard-worker-online') !== 'true')
-                || (activeWorkerFilter === 'empty' && row.getAttribute('data-dashboard-worker-empty') === 'true')
-                || (activeWorkerFilter === 'paused' && row.getAttribute('data-dashboard-worker-paused') === 'true');
             var workerSearchText = (row.textContent + ' ' + (row.getAttribute('data-dashboard-worker-ip') || ''))
                 .toLocaleLowerCase();
             var matchesSearch = !workerSearchQuery || workerSearchText.indexOf(workerSearchQuery) !== -1;
-            row.hidden = !(matchesFilter && matchesSearch);
+            row.hidden = !matchesSearch;
         });
     }
 
@@ -840,12 +829,10 @@
             button.setAttribute('data-dashboard-worker-filter-bound', '1');
             button.addEventListener('click', function () {
                 activeWorkerFilter = button.getAttribute('data-dashboard-worker-filter') || 'all';
-                document.querySelectorAll('[data-dashboard-worker-filter]').forEach(function (item) {
-                    var selected = item === button;
-                    item.classList.toggle('is-active', selected);
-                    item.setAttribute('aria-pressed', selected ? 'true' : 'false');
-                });
-                applyWorkerFilter();
+                var url = new URL(window.location.href);
+                url.searchParams.set('workerFilter', activeWorkerFilter);
+                url.searchParams.set('page', '1');
+                window.location.assign(url.toString());
             });
         });
         document.querySelectorAll('[data-dashboard-worker-search]').forEach(function (input) {
@@ -977,7 +964,6 @@
         initDashboardRowMenus();
         initDashboardRowNavigation();
         initDashboardWorkerToggleButtons();
-        updateWorkerToolbar(workers);
         initDashboardWorkerToolbar();
         if (window.Orbita && window.Orbita.initWorkerRestartButtons) {
             window.Orbita.initWorkerRestartButtons();
@@ -1430,6 +1416,7 @@
         if (hasWorkers) {
             renderWorkers(snapshot.workers || []);
         }
+        updateWorkerToolbar(snapshot.workerTabCounts);
         updateMonitoringControls(snapshot);
         syncPaginationState(snapshot.pagination);
     }

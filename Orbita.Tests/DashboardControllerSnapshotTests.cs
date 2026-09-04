@@ -69,6 +69,7 @@ public sealed class DashboardControllerSnapshotTests
             int? pageSize = null,
             string? sort = null,
             string? sortDir = null,
-            CancellationToken ct = default) => Task.FromResult(model);
+            CancellationToken ct = default,
+            string? workerFilter = null) => Task.FromResult(model);
     }
 }

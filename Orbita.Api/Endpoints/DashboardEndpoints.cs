@@ -69,6 +69,7 @@ public static class DashboardEndpoints
             int? pageSize,
             string? sort,
             string? dir,
+            string? workerFilter,
             DashboardQueryService query,
             OfficeScopeService officeScope,
             ClaimsPrincipal principal,
@@ -87,7 +88,8 @@ public static class DashboardEndpoints
                 pageSize,
                 sort,
                 dir,
-                ct));
+                ct,
+                workerFilter));
         });
 
         app.MapGet("/api/v1/nav/badges", async (

@@ -22,10 +22,11 @@ public sealed class DashboardController(
         int? pageSize = null,
         string? sort = null,
         string? dir = null,
+        string? workerFilter = null,
         CancellationToken ct = default)
     {
         var period = DashboardPeriod.Parse(from, to, BrowserTimeZone.Resolve(HttpContext));
-        var model = await dashboard.GetDashboardAsync(period, page, pageSize, sort, dir, ct);
+        var model = await dashboard.GetDashboardAsync(period, page, pageSize, sort, dir, ct, workerFilter);
         if (!string.IsNullOrWhiteSpace(model.ErrorMessage) && IsApiSessionMissing())
         {
             await auth.SignOutAsync(ct);
@@ -47,10 +48,11 @@ public sealed class DashboardController(
         int? pageSize = null,
         string? sort = null,
         string? dir = null,
+        string? workerFilter = null,
         CancellationToken ct = default)
     {
         var period = DashboardPeriod.Parse(from, to, BrowserTimeZone.Resolve(HttpContext));
-        var model = await dashboard.GetDashboardAsync(period, page, pageSize, sort, dir, ct);
+        var model = await dashboard.GetDashboardAsync(period, page, pageSize, sort, dir, ct, workerFilter);
         if (!string.IsNullOrWhiteSpace(model.ErrorMessage))
         {
             return StatusCode(StatusCodes.Status503ServiceUnavailable, new { error = model.ErrorMessage });
@@ -67,6 +69,7 @@ public sealed class DashboardController(
             EnabledWorkersCount = model.EnabledWorkersCount,
             DisabledWorkersCount = model.DisabledWorkersCount,
             ShowWorkersMonitoringControls = model.ShowWorkersMonitoringControls,
+            WorkerTabCounts = model.WorkerTabCounts,
             Pagination = model.Pagination,
             Sort = model.Sort
         });

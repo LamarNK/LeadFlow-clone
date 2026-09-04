@@ -357,7 +357,8 @@ public sealed class DashboardQueryService(
         int? pageSize = null,
         string? sort = null,
         string? dir = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        string? workerFilter = null)
     {
         var nowUtc = DateTime.UtcNow;
         var todayStart = nowUtc.Date;
@@ -375,14 +376,12 @@ public sealed class DashboardQueryService(
         var totalCount = pauseGroups.Sum(x => x.Count);
         var pausedCount = pauseGroups.FirstOrDefault(x => x.Paused)?.Count ?? 0;
         var enabledCount = totalCount - pausedCount;
-        var normalizedPage = WorkerListPaging.NormalizePage(page, normalizedPageSize, totalCount);
-
         if (totalCount == 0)
         {
             return new WorkersPageDto(
                 [],
                 0,
-                normalizedPage,
+                WorkerListPaging.NormalizePage(page, normalizedPageSize, 0),
                 normalizedPageSize,
                 sortColumn,
                 sortDescending ? "desc" : "asc",
@@ -466,7 +465,12 @@ public sealed class DashboardQueryService(
                 w.IpAddress ?? string.Empty);
         }).ToList();
 
-        var pageItems = items
+        var tabCounts = DashboardWorkerFilter.Count(items);
+        var selectedItems = items
+            .Where(item => DashboardWorkerFilter.Matches(item, DashboardWorkerFilter.Normalize(workerFilter)))
+            .ToList();
+        var normalizedPage = WorkerListPaging.NormalizePage(page, normalizedPageSize, selectedItems.Count);
+        var pageItems = selectedItems
             .OrderByDescending(x => x.LowBalanceAccountCount > 0)
             .Skip((normalizedPage - 1) * normalizedPageSize)
             .Take(normalizedPageSize)
@@ -474,13 +478,16 @@ public sealed class DashboardQueryService(
 
         return new WorkersPageDto(
             pageItems,
-            totalCount,
+            selectedItems.Count,
             normalizedPage,
             normalizedPageSize,
             sortColumn,
             sortDescending ? "desc" : "asc",
             enabledCount,
-            pausedCount);
+            pausedCount)
+        {
+            TabCounts = tabCounts
+        };
     }
 
     private IOrderedQueryable<WorkerEntity> ApplyWorkerListSort(

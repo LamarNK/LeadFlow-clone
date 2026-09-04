@@ -16,10 +16,12 @@ public sealed class DashboardService(
         int? pageSize = null,
         string? sort = null,
         string? sortDir = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        string? workerFilter = null)
     {
         pageSize = ListPageSizeDefaults.Normalize(pageSize, ListPageSizeDefaults.Dashboard);
         var tableSort = TableSort.Parse(sort, sortDir, TableSort.DashboardWorkers.Default, TableSort.DashboardWorkers.Columns);
+        workerFilter = DashboardWorkerFilter.Normalize(workerFilter);
 
         if (previewOptions.Value.Enabled)
         {
@@ -29,11 +31,12 @@ public sealed class DashboardService(
                 page,
                 pageSize.Value,
                 tableSort.Column,
-                tableSort.Dir);
+                tableSort.Dir,
+                workerFilter);
         }
 
         var summaryTask = api.GetSummaryAsync(period.TimeZoneOffsetMinutes, period.From, period.To, ct);
-        var workersTask = api.GetDashboardWorkersAsync(page, pageSize, tableSort.Column, tableSort.Dir, ct);
+        var workersTask = api.GetDashboardWorkersAsync(page, pageSize, tableSort.Column, tableSort.Dir, ct, workerFilter);
         var eventsTask = api.GetEventsAsync(
             limit: DashboardRecentEvents.Limit,
             sinceUtc: DashboardRecentEvents.SinceUtc,
@@ -81,7 +84,9 @@ public sealed class DashboardService(
             ShowOfficeColumn = officeContext.ShowOfficeColumn,
             EnabledWorkersCount = workersPage.EnabledCount,
             DisabledWorkersCount = workersPage.PausedCount,
-            ShowWorkersMonitoringControls = workersPage.TotalCount > 0,
+            ShowWorkersMonitoringControls = workersPage.TabCounts.All > 0,
+            WorkerFilter = workerFilter,
+            WorkerTabCounts = workersPage.TabCounts,
             Pagination = new PaginationViewModel
             {
                 Page = workersPage.Page,

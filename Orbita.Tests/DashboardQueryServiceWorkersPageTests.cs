@@ -174,6 +174,35 @@ public sealed class DashboardQueryServiceWorkersPageTests
     }
 
     [Fact]
+    public async Task GetWorkersPageAsync_FiltersPausedWorkersBeforePagination()
+    {
+        DashboardQueryService.ClearCacheForTests();
+        await using var db = CreateDb();
+        var now = DateTime.UtcNow;
+        SeedOffice(db, now);
+        SeedWorker(db, Guid.NewGuid(), "first", now.AddMinutes(-1));
+        SeedWorker(db, Guid.NewGuid(), "second", now.AddMinutes(-2));
+        var pausedWorker = Guid.NewGuid();
+        SeedWorker(db, pausedWorker, "paused", now.AddMinutes(-3), paused: true);
+        await db.SaveChangesAsync();
+
+        var page = await CreateService(db).GetWorkersPageAsync(
+            OfficeScope.ForOffice(OfficeId),
+            OfficeId,
+            page: 1,
+            pageSize: 1,
+            sort: "activity",
+            dir: "desc",
+            workerFilter: DashboardWorkerFilter.Paused);
+
+        Assert.Equal(1, page.TotalCount);
+        Assert.Single(page.Items);
+        Assert.Equal(pausedWorker, page.Items[0].Id);
+        Assert.Equal(3, page.TabCounts.All);
+        Assert.Equal(1, page.TabCounts.Paused);
+    }
+
+    [Fact]
     public async Task GetWorkersPageAsync_SortsResponsesAcrossPagesBeforePaging()
     {
         DashboardQueryService.ClearCacheForTests();

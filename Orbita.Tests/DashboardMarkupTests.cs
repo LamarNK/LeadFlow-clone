@@ -73,8 +73,10 @@ public sealed class DashboardMarkupTests
         Assert.Contains("var monitoringPausedClass = w.IsMonitoringPaused ? \" dashboard-worker-row--monitoring-paused\" : \"\";", view);
         Assert.Contains("class=\"@lowBalanceClass@monitoringPausedClass\"", view);
 
-        Assert.Contains("counts = { all: workers.length, online: 0, offline: 0, empty: 0, paused: 0 }", js);
-        Assert.Contains("activeWorkerFilter === 'paused'", js);
+        Assert.Contains("function updateWorkerToolbar(tabCounts)", js);
+        Assert.Contains("updateWorkerToolbar(snapshot.workerTabCounts);", js);
+        Assert.Contains("url.searchParams.set('workerFilter', activeWorkerFilter);", js);
+        Assert.Contains("url.searchParams.set('page', '1');", js);
         Assert.Contains("data-dashboard-worker-paused", js);
         Assert.Contains("dashboard-worker-row--monitoring-paused", js);
         Assert.Contains("dashboard-monitoring-paused-tooltip", js);
@@ -118,9 +120,9 @@ public sealed class DashboardMarkupTests
               ],
               pagination: { totalItems: 3, page: 1 },
               enabledWorkersCount: 1,
-              disabledWorkersCount: 2
+              disabledWorkersCount: 2,
+              workerTabCounts: { all: 3, online: 3, offline: 0, empty: 1, paused: 2 }
             }, false);
-            document.querySelector('[data-dashboard-worker-filter="paused"]').click();
             var pausedOnly = document.querySelector('[data-dashboard-workers-body] tr[data-href="/workers/paused-only"]');
             var pausedLow = document.querySelector('[data-dashboard-workers-body] tr[data-href="/workers/paused-low"]');
             var lowBalanceIcon = pausedLow.querySelector('.dashboard-low-balance-tooltip');
@@ -167,10 +169,10 @@ public sealed class DashboardMarkupTests
             Assert.Equal("rgb(247, 144, 9)", ExtractAttribute(dom, "data-dashboard-test-paused-border-left-color"));
             Assert.Equal("2", ExtractElementText(dom, "data-dashboard-worker-count=\"paused\""));
             Assert.Equal("2", ExtractAttribute(dom, "data-dashboard-test-paused-row-count"));
-            Assert.Equal("2", ExtractAttribute(dom, "data-dashboard-test-visible-row-count"));
+            Assert.Equal("3", ExtractAttribute(dom, "data-dashboard-test-visible-row-count"));
             Assert.Matches("<tr[^>]*data-href=\"/workers/paused-low\"(?![^>]* hidden)[^>]*>", dom);
             Assert.Matches("<tr[^>]*data-href=\"/workers/paused-only\"(?![^>]* hidden)[^>]*>", dom);
-            Assert.Matches("<tr[^>]*data-href=\"/workers/active\"[^>]* hidden[^>]*>", dom);
+            Assert.Matches("<tr[^>]*data-href=\"/workers/active\"(?![^>]* hidden)[^>]*>", dom);
         }
         finally
         {
