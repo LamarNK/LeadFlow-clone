@@ -189,10 +189,24 @@ public sealed class AvitoAutoLoginRecoveryTests
         var script = AvitoAutoLoginScripts.BuildSelectSavedUserScript();
 
         Assert.Contains("user/link", script);
-        Assert.Contains("login-form-with-avatar", script);
         Assert.Contains("users-list", script);
+        Assert.Contains("user/delete", script);
         Assert.Contains("войти\\s+в\\s+другой\\s+профиль", script);
         Assert.Contains("phone_card", script);
+        Assert.Contains("no_matching_profile", script);
+        Assert.DoesNotContain("login-form-with-avatar", script);
+        Assert.DoesNotContain("another-profile-link", script);
+    }
+
+    [Fact]
+    public void BuildSelectSavedUserScript_PrefersOrbitPhoneWhenProvided()
+    {
+        var script = AvitoAutoLoginScripts.BuildSelectSavedUserScript("+7 901 078-51-82");
+
+        Assert.Contains("901 078-51-82", script);
+        Assert.Contains("saved_user_matched", script);
+        Assert.Contains("no_matching_profile", script);
+        Assert.Contains("normalizePhone", script);
     }
 
     [Fact]
@@ -224,6 +238,8 @@ public sealed class AvitoAutoLoginRecoveryTests
         Assert.Contains("войти\\s+в\\s+другой\\s+профиль", script);
         Assert.Contains("login-form/other", script);
         Assert.Contains("users-list/button", script);
+        Assert.DoesNotContain("another-profile-link", script);
+        Assert.DoesNotContain("вернуться\\s+к\\s+списку", script);
     }
 
     [Fact]
@@ -235,5 +251,21 @@ public sealed class AvitoAutoLoginRecoveryTests
         Assert.Contains("users-list", script);
         Assert.Contains("user/link", script);
         Assert.Contains("hasProfileChooser", script);
+        Assert.Contains("login-form-with-avatar", script);
+        Assert.DoesNotContain("[data-marker='login-form-with-avatar'] button", script);
+        Assert.DoesNotContain("[data-marker*='other-profile']", script);
+        Assert.DoesNotContain("another-profile-link", script);
+    }
+
+    [Fact]
+    public void BuildFillCredentialsAndSubmitScript_TreatsHiddenReadonlyLoginAsPasswordOnly()
+    {
+        var script = AvitoAutoLoginScripts.BuildFillCredentialsAndSubmitScript("+79010785182", "orbit-secret");
+
+        Assert.Contains("passwordOnlyForm", script);
+        Assert.Contains("loginInput.readOnly", script);
+        Assert.Contains("loginInput.style.display === \"none\"", script);
+        Assert.Contains("[data-marker='login-form/password/input']", script);
+        Assert.Contains("[data-marker='login-form/submit']", script);
     }
 }

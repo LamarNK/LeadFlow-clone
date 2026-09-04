@@ -140,7 +140,8 @@ public static class AvitoAutoLoginRecovery
             if (!state.HasCredentialInputs &&
                 (state.HasUsersList || state.HasSavedUserCard || state.HasProfileChooser))
             {
-                var selected = await TrySelectSavedUserAsync(page, cancellationToken).ConfigureAwait(false);
+                var selected = await TrySelectSavedUserAsync(page, credentials.Login, cancellationToken)
+                    .ConfigureAwait(false);
                 steps.Add(selected ? "выбран сохранённый профиль" : "не удалось выбрать профиль");
                 if (selected)
                 {
@@ -340,21 +341,11 @@ public static class AvitoAutoLoginRecovery
         return TryReadBoolProperty(raw, "clicked");
     }
 
-    private static readonly string[] SavedUserClickSelectors =
-    [
-        "[data-marker='users-list'] button[data-marker='user/link']",
-        "[data-marker='users-list'] [data-marker='user/link']",
-        "[data-marker='user'] button[data-marker='user/link']",
-        "button[data-marker='user/link']",
-        "[data-marker='user/link']"
-    ];
-
     private static readonly string[] OtherProfileClickSelectors =
     [
         "[data-marker='users-list/button']",
         "[data-marker='login-form/other']",
-        "[data-marker='login-form/other-profile']",
-        "[data-marker='another-profile-link'] a"
+        "[data-marker='login-form/other-profile']"
     ];
 
     private static readonly string[] PasswordInputSelectors =
@@ -374,11 +365,14 @@ public static class AvitoAutoLoginRecovery
         "input[autocomplete='username']"
     ];
 
-    private static async Task<bool> TrySelectSavedUserAsync(IPage page, CancellationToken cancellationToken)
+    private static async Task<bool> TrySelectSavedUserAsync(
+        IPage page,
+        string? preferredLogin,
+        CancellationToken cancellationToken)
     {
         if (await TryClickAndWaitForCredentialsAsync(
                 page,
-                () => TryMouseClickFirstAsync(page, SavedUserClickSelectors, cancellationToken),
+                () => TryClickMatchingSavedUserAsync(page, preferredLogin, useHumanPointer: true, cancellationToken),
                 cancellationToken).ConfigureAwait(false))
         {
             return true;
@@ -386,17 +380,123 @@ public static class AvitoAutoLoginRecovery
 
         if (await TryClickAndWaitForCredentialsAsync(
                 page,
-                () => TryClickFirstAsync(page, SavedUserClickSelectors, cancellationToken),
+                () => TryClickMatchingSavedUserAsync(page, preferredLogin, useHumanPointer: false, cancellationToken),
                 cancellationToken).ConfigureAwait(false))
         {
             return true;
         }
 
-        var raw = await EvaluateJsonStringAsync(page, AvitoAutoLoginScripts.BuildSelectSavedUserScript(), cancellationToken)
+        var raw = await EvaluateJsonStringAsync(
+                page,
+                AvitoAutoLoginScripts.BuildSelectSavedUserScript(preferredLogin),
+                cancellationToken)
             .ConfigureAwait(false);
         return TryReadBoolProperty(raw, "clicked")
                && await WaitForCredentialInputsAsync(page, cancellationToken).ConfigureAwait(false);
     }
+
+    private static async Task<bool> TryClickMatchingSavedUserAsync(
+        IPage page,
+        string? preferredLogin,
+        bool useHumanPointer,
+        CancellationToken cancellationToken)
+    {
+        IElementHandle[] handles;
+        try
+        {
+            handles = await page.QuerySelectorAllAsync(
+                    "button[data-marker='user/link'], [data-marker='users-list'] [data-marker='user/link']")
+                .ConfigureAwait(false);
+        }
+        catch
+        {
+            return false;
+        }
+
+        if (handles.Length == 0)
+        {
+            return false;
+        }
+
+        var want = NormalizePhoneDigits(preferredLogin);
+        IElementHandle? first = null;
+        foreach (var handle in handles)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            string? label;
+            try
+            {
+                label = await handle.EvaluateFunctionAsync<string>(
+                        "el => ((el.getAttribute('aria-label') || '') + ' ' + (el.textContent || '')).trim()")
+                    .ConfigureAwait(false);
+            }
+            catch
+            {
+                continue;
+            }
+
+            first ??= handle;
+            var got = NormalizePhoneDigits(label);
+            if (string.IsNullOrEmpty(want) || PhonesMatch(want, got))
+            {
+                if (await TryClickHandleAsync(page, handle, useHumanPointer, cancellationToken).ConfigureAwait(false))
+                {
+                    return true;
+                }
+            }
+        }
+
+        // Телефон из Орбиты не совпал ни с одной карточкой — не жмём чужой профиль.
+        if (!string.IsNullOrEmpty(want))
+        {
+            return false;
+        }
+
+        return first is not null
+               && await TryClickHandleAsync(page, first, useHumanPointer, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<bool> TryClickHandleAsync(
+        IPage page,
+        IElementHandle handle,
+        bool useHumanPointer,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (useHumanPointer)
+            {
+                return await AvitoHumanPointer.TryClickHandleAsync(page, handle, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            await handle.EvaluateFunctionAsync("el => el.scrollIntoView({ block: 'center', inline: 'center' })")
+                .ConfigureAwait(false);
+            await handle.ClickAsync(new ClickOptions { Delay = 35 }).ConfigureAwait(false);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static string NormalizePhoneDigits(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        return new PhoneNormalizer().Normalize(value);
+    }
+
+    private static bool PhonesMatch(string want, string got) =>
+        !string.IsNullOrEmpty(want) &&
+        !string.IsNullOrEmpty(got) &&
+        (want == got ||
+         want.EndsWith(got, StringComparison.Ordinal) ||
+         got.EndsWith(want, StringComparison.Ordinal));
 
     private static async Task<bool> TrySwitchToOtherProfileAsync(IPage page, CancellationToken cancellationToken)
     {

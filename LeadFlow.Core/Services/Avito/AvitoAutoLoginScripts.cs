@@ -46,11 +46,13 @@ public static class AvitoAutoLoginScripts
                 document.querySelector("[data-marker^='users-list(']") ||
                 document.querySelector("[data-marker='users-list/button']")
             );
+            // Карточка только на users-list. На форме пароля (login-form-with-avatar)
+            // есть submit-кнопка и «Вернуться к списку» — это не выбор профиля.
             const hasSavedUserCard = !!(
-                document.querySelector("[data-marker='user/link']") ||
-                document.querySelector("[data-marker='login-form-with-avatar'] [data-marker='user/link']") ||
-                document.querySelector("[data-marker='login-form-with-avatar'] button") ||
-                document.querySelector("[data-marker='auth-app-root'] [data-marker='user/link']")
+                document.querySelector("[data-marker='users-list'] [data-marker='user/link']") ||
+                document.querySelector("[data-marker^='users-list('] [data-marker='user/link']") ||
+                document.querySelector("[data-marker='user'] [data-marker='user/link']") ||
+                document.querySelector("button[data-marker='user/link']")
             );
             const hasGuestLoginButton = !!document.querySelector("[data-marker='header/login-button']");
             const hasLoggedInProfile = !!(
@@ -66,9 +68,7 @@ public static class AvitoAutoLoginScripts
             const findOtherProfileLink = () =>
                 document.querySelector("[data-marker='login-form/other']") ||
                 document.querySelector("[data-marker='login-form/other-profile']") ||
-                document.querySelector("[data-marker*='other-profile']") ||
                 document.querySelector("[data-marker='users-list/button']") ||
-                document.querySelector("[data-marker='another-profile-link'] a") ||
                 Array.from(document.querySelectorAll("a, button, span, div[role='button']"))
                     .find((el) => /войти\s+в\s+другой\s+профиль/i.test((el.textContent || "").trim()));
 
@@ -88,11 +88,9 @@ public static class AvitoAutoLoginScripts
             const hasCredentialInputs = !!(loginInput || passwordInput);
             const hasPasswordValue = !!(passwordInput && String(passwordInput.value || "").trim());
 
-            // Экран выбора: карточка «База» / список профилей, ещё без полей логина/пароля.
+            // Экран выбора профилей — users-list. login-form-with-avatar — уже пароль.
             const hasProfileChooser =
-                ((hasUsersList || hasSavedUserCard || hasOtherProfileLink ||
-                  !!document.querySelector("[data-marker='login-form-with-avatar']")) &&
-                 !hasCredentialInputs);
+                (hasUsersList || hasSavedUserCard) && !hasCredentialInputs;
 
             const needsLogin =
                 hasLoginDom ||
@@ -168,10 +166,13 @@ public static class AvitoAutoLoginScripts
         })();
         """;
 
-    /// <summary>Кликает карточку сохранённого профиля («База» / users-list).</summary>
-    public static string BuildSelectSavedUserScript() =>
-        """
+    /// <summary>Кликает карточку сохранённого профиля (users-list / user/link).</summary>
+    public static string BuildSelectSavedUserScript(string? preferredLogin = null)
+    {
+        var loginJson = JsonSerializer.Serialize(preferredLogin ?? "");
+        return """
         (() => {
+            const preferredLogin = __PREFERRED_LOGIN__;
             const tryClick = (el) => {
                 if (!el) return false;
                 try {
@@ -199,51 +200,65 @@ public static class AvitoAutoLoginScripts
                 }
             };
 
-            const isOtherProfile = (el) =>
-                /войти\s+в\s+другой\s+профиль/i.test((el?.textContent || "").trim());
+            const normalizePhone = (value) => {
+                let d = String(value || "").replace(/\D/g, "");
+                if (d.length === 11 && d.startsWith("8")) d = "7" + d.slice(1);
+                else if (d.length === 10) d = "7" + d;
+                return d;
+            };
+            const want = normalizePhone(preferredLogin);
+            const phoneOf = (el) =>
+                normalizePhone((el?.getAttribute?.("aria-label") || "") + " " + (el?.textContent || ""));
+            const matchesPreferred = (el) => {
+                if (!want) return true;
+                const got = phoneOf(el);
+                return !!got && (got === want || got.endsWith(want) || want.endsWith(got));
+            };
 
-            const candidates = [
-                document.querySelector("[data-marker='users-list'] [data-marker='user/link']"),
-                document.querySelector("[data-marker^='users-list('] [data-marker='user/link']"),
-                document.querySelector("[data-marker='users-list'] button[data-marker='user/link']"),
-                document.querySelector("[data-marker='user'] [data-marker='user/link']"),
-                document.querySelector("button[data-marker='user/link']"),
-                document.querySelector("[data-marker='login-form-with-avatar'] [data-marker='user/link']"),
-                document.querySelector("[data-marker='auth-app-root'] [data-marker='user/link']"),
-                document.querySelector("[data-marker='user/link']"),
-                document.querySelector("[data-marker^='users-list(']"),
-                document.querySelector("[data-marker='login-form-with-avatar'] button:not([type='submit'])"),
-                document.querySelector("[data-marker='login-form-with-avatar'] [role='button']"),
-                document.querySelector("[data-marker='login-form-with-avatar'] a"),
-            ];
+            const isIgnored = (el) => {
+                const marker = el?.getAttribute?.("data-marker") || "";
+                if (marker === "user/delete" || /\/delete$/i.test(marker)) return true;
+                return /войти\s+в\s+другой\s+профиль|забыли\s+пароль|вернуться\s+к\s+списку/i
+                    .test((el?.textContent || "").trim());
+            };
 
-            for (const el of candidates) {
-                if (el && !isOtherProfile(el) && tryClick(el)) {
-                    return { clicked: true, step: "saved_user" };
-                }
+            const cards = Array.from(document.querySelectorAll(
+                "[data-marker='users-list'] button[data-marker='user/link'], " +
+                "[data-marker='users-list'] [data-marker='user/link'], " +
+                "[data-marker^='users-list('] [data-marker='user/link'], " +
+                "[data-marker='user'] [data-marker='user/link'], " +
+                "button[data-marker='user/link']"
+            )).filter((el) => el && !isIgnored(el));
+
+            const unique = [...new Set(cards)];
+            const matching = want ? unique.filter(matchesPreferred) : unique;
+            if (want && matching.length === 0 && unique.length > 0) {
+                return { clicked: false, step: "no_matching_profile" };
             }
 
-            // Fallback: кликабельная карточка с телефоном (+7 …) внутри модалки входа.
+            for (const el of matching) {
+                if (tryClick(el)) return { clicked: true, step: want ? "saved_user_matched" : "saved_user" };
+            }
+
+            // Fallback: карточка с телефоном внутри списка профилей, не форма пароля.
             const roots = [
                 document.querySelector("[data-marker='users-list']"),
-                document.querySelector("[data-marker='login-form-with-avatar']"),
                 document.querySelector("[data-marker='auth-app-root']"),
-                document.querySelector("[data-marker='login-form']"),
             ].filter(Boolean);
 
             for (const root of roots) {
-                const card = Array.from(root.querySelectorAll("button, a, [role='button'], div"))
-                    .find((el) => {
-                        if (isOtherProfile(el)) return false;
-                        const t = (el.textContent || "").trim();
-                        return /\+7[\s\d\-()]{8,}/.test(t) || /data-marker=['"]user\/link/.test(el.outerHTML || "");
-                    });
+                const card = Array.from(root.querySelectorAll("button[data-marker='user/link'], [data-marker='user/link']"))
+                    .find((el) => !isIgnored(el) && matchesPreferred(el) && (
+                        /\+7[\s\d\-()]{8,}/.test((el.textContent || "").trim()) ||
+                        /data-marker=['"]user\/link/.test(el.outerHTML || "")
+                    ));
                 if (tryClick(card)) return { clicked: true, step: "phone_card" };
             }
 
             return { clicked: false, step: "none" };
         })();
-        """;
+        """.Replace("__PREFERRED_LOGIN__", loginJson, StringComparison.Ordinal);
+    }
 
     /// <summary>
     /// Кликает «Войти в другой профиль» на экране выбора сохранённого аккаунта,
@@ -282,13 +297,11 @@ public static class AvitoAutoLoginScripts
             const byMarker =
                 document.querySelector("[data-marker='login-form/other']") ||
                 document.querySelector("[data-marker='login-form/other-profile']") ||
-                document.querySelector("[data-marker*='other-profile']") ||
-                document.querySelector("[data-marker='users-list/button']") ||
-                document.querySelector("[data-marker='another-profile-link'] a");
+                document.querySelector("[data-marker='users-list/button']");
             if (tryClick(byMarker)) return { clicked: true, step: "marker" };
 
             const byText = Array.from(document.querySelectorAll("a, button, span, div[role='button']"))
-                .find((el) => /войти\s+в\s+другой\s+профиль|вернуться\s+к\s+списку/i.test((el.textContent || "").trim()));
+                .find((el) => /войти\s+в\s+другой\s+профиль/i.test((el.textContent || "").trim()));
             if (tryClick(byText)) return { clicked: true, step: "text" };
 
             return { clicked: false, step: "none" };
