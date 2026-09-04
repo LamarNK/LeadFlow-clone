@@ -60,6 +60,8 @@ public sealed class OrbitaQueryCache(
     private const string VersionPrefix = "cache-version:v1:";
     private const string LocalVersionPrefix = "orbita-cache-version:";
     private const string InvalidationChannel = "orbita:cache:invalidate:v1";
+    private const string IncrementVersionScript = "local version = redis.call('INCR', KEYS[1]); redis.call('EXPIRE', KEYS[1], ARGV[1]); return version";
+    private static readonly TimeSpan VersionTtl = TimeSpan.FromDays(30);
     private static readonly JsonSerializerOptions KeyJsonOptions = new(JsonSerializerDefaults.Web);
     private static readonly Meter CacheMeter = new("Orbita.Api.Cache", "1.0");
     private static readonly Counter<long> CacheRequests = CacheMeter.CreateCounter<long>("orbita.cache.requests");
@@ -151,8 +153,11 @@ public sealed class OrbitaQueryCache(
             {
                 try
                 {
-                    var version = await multiplexer.GetDatabase()
-                        .StringIncrementAsync(VersionKey(domain, targetOfficeId))
+                    var version = (long)await multiplexer.GetDatabase()
+                        .ScriptEvaluateAsync(
+                            IncrementVersionScript,
+                            [VersionKey(domain, targetOfficeId)],
+                            [(long)VersionTtl.TotalSeconds])
                         .ConfigureAwait(false);
                     CacheInvalidations.Add(1, DomainTag(domain));
                     ClearLocalVersion(domain, targetOfficeId);
