@@ -779,6 +779,12 @@ public sealed class WorkerAccountRuntimeTests
             CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
 
+        public Task<LeadFlow.Core.Services.Avito.AvitoAdvanceTopUpResult> RunAdvanceTopUpAsync(
+            decimal amount,
+            CancellationToken cancellationToken = default,
+            Func<CancellationToken, Task<bool>>? beforePayClickAsync = null) =>
+            throw new NotSupportedException();
+
         public Task<string> CaptureProfileSwitchHtmlAsync(CancellationToken cancellationToken = default) =>
             throw new NotSupportedException();
 

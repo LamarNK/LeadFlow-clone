@@ -319,6 +319,10 @@ internal static class WorkerDetailsBuilder
                     account.LastMonitoringAt)
                 : "Открыть браузер",
             Balance = balance?.TotalBalance,
+            IsLowBalance = balance?.TotalBalance is decimal bal
+                && bal < BalanceDisplayRules.WorkerDetailsLowBalanceThresholdRub,
+            CanTopUp = balance?.TotalBalance is decimal topUpBal
+                && topUpBal < TopUpSessionRules.LowBalanceThresholdRub,
             BalanceText = balance is null
                 ? "—"
                 : FormatAccountBalanceText(balance),

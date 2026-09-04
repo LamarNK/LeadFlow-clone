@@ -40,6 +40,8 @@ public sealed class WorkerHubConnection(
 
     public event Action<WorkerPendingLocalChromeLoginDto>? LocalChromeLoginSessionReceived;
 
+    public event Action<WorkerPendingTopUpSessionDto>? TopUpSessionReceived;
+
     public void RequestWake() => _wakeChannel.Writer.TryWrite(true);
 
     public async Task TryAckCommandAsync(string command, CancellationToken ct)
@@ -214,6 +216,13 @@ public sealed class WorkerHubConnection(
         connection.On<WorkerPendingLocalChromeLoginDto>(WorkerHubEvents.LocalChromeLoginSession, session =>
         {
             LocalChromeLoginSessionReceived?.Invoke(session);
+            RequestWake();
+            return Task.CompletedTask;
+        });
+
+        connection.On<WorkerPendingTopUpSessionDto>(WorkerHubEvents.TopUpSession, session =>
+        {
+            TopUpSessionReceived?.Invoke(session);
             RequestWake();
             return Task.CompletedTask;
         });

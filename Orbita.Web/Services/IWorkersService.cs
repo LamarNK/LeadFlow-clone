@@ -135,4 +135,11 @@ public interface IWorkersService
     Task<(string? ApiKey, string? Error)> RotateWorkerApiKeyAsync(Guid workerId, CancellationToken ct = default);
 
     Task<(Stream? Stream, string? FileName, string? Error)> OpenLatestWorkerReleaseDownloadAsync(CancellationToken ct = default);
+
+    Task<(TopUpSessionViewModel? Session, string? Error, Guid? ConflictSessionId)> CreateTopUpSessionAsync(
+        Guid workerId,
+        Guid accountId,
+        CancellationToken ct = default);
+    Task<TopUpSessionViewModel?> GetTopUpSessionAsync(Guid sessionId, CancellationToken ct = default);
+    Task<(bool Success, string? Error)> CancelTopUpSessionAsync(Guid sessionId, CancellationToken ct = default);
 }

@@ -92,6 +92,23 @@ public sealed class WorkerPushNotifier(
         return true;
     }
 
+    public async Task<bool> TryPushTopUpSessionAsync(
+        Guid workerId,
+        WorkerPendingTopUpSessionDto session,
+        CancellationToken ct = default)
+    {
+        if (!registry.TryGetConnectionId(workerId, out var connectionId) || connectionId is null)
+        {
+            return false;
+        }
+
+        await hub.Clients
+            .Client(connectionId)
+            .SendAsync(WorkerHubEvents.TopUpSession, session, ct)
+            .ConfigureAwait(false);
+        return true;
+    }
+
     public async Task DeliverPendingOnConnectAsync(Guid workerId, CancellationToken ct = default)
     {
         if (!registry.IsConnected(workerId))
@@ -138,6 +155,15 @@ public sealed class WorkerPushNotifier(
         if (pendingLocalLogin is not null)
         {
             await TryPushLocalChromeLoginSessionAsync(workerId, pendingLocalLogin, ct).ConfigureAwait(false);
+        }
+
+        var topUpSessions = scope.ServiceProvider.GetRequiredService<TopUpSessionService>();
+        var pendingTopUp = await topUpSessions
+            .GetPendingForWorkerAsync(workerId, ct)
+            .ConfigureAwait(false);
+        if (pendingTopUp is not null)
+        {
+            await TryPushTopUpSessionAsync(workerId, pendingTopUp, ct).ConfigureAwait(false);
         }
 
         await PushConfigChangedAsync(workerId, ct).ConfigureAwait(false);

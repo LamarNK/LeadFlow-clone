@@ -19,6 +19,8 @@ public interface IWorkerRealtimeChannel
 
     event Action<WorkerPendingLocalChromeLoginDto>? LocalChromeLoginSessionReceived;
 
+    event Action<WorkerPendingTopUpSessionDto>? TopUpSessionReceived;
+
     void RequestWake();
 
     Task<bool> TrySendHeartbeatAsync(WorkerHeartbeatRequest heartbeat, CancellationToken ct);

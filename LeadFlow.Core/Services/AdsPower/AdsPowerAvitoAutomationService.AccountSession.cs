@@ -1013,6 +1013,334 @@ public sealed partial class AdsPowerAvitoAutomationService
         return money;
     }
 
+    /// <summary>
+    /// Ручное пополнение аванса Avito: переход на /account/advance, ввод суммы, выбор СБП,
+    /// переход к оплате и снятие QR. Оплату не выполняет и не сообщает об оплате.
+    /// Возвращает QR (base64 из data URL, иначе src) или санитизированную диагностику ошибки.
+    /// </summary>
+    private async Task<AvitoAdvanceTopUpResult> RunAdvanceTopUpOnPageAsync(
+        IPage page,
+        string adsPowerUserId,
+        decimal amount,
+        CancellationToken cancellationToken,
+        Func<CancellationToken, Task<bool>>? beforePayClickAsync = null)
+    {
+        if (amount <= 0m)
+        {
+            return AvitoAdvanceTopUpResult.Failed("Сумма пополнения должна быть больше нуля.");
+        }
+
+        _ = GlobalLogger.Instance.LogAsync(
+            $"AdsPower advance top-up: start for user {adsPowerUserId}.",
+            DeskLinkAuditLogLevel.Info,
+            memberName: nameof(RunAdvanceTopUpOnPageAsync),
+            properties: new Dictionary<string, object?>
+            {
+                ["step"] = "start",
+                ["adsPower.userId"] = adsPowerUserId,
+                ["topup.amount"] = amount
+            });
+
+        try
+        {
+            // 1) Переход на страницу пополнения аванса.
+            cancellationToken.ThrowIfCancellationRequested();
+            await NavigateToAdvancePageAsync(page, cancellationToken).ConfigureAwait(false);
+
+            // 2) Ввод суммы.
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!await EnterAmountAsync(page, amount, cancellationToken).ConfigureAwait(false))
+            {
+                return AvitoAdvanceTopUpResult.Failed(
+                    "Не удалось ввести сумму пополнения: поле ввода не найдено.");
+            }
+
+            // 3) Подтверждение суммы.
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!await ClickSubmitAsync(page, cancellationToken).ConfigureAwait(false))
+            {
+                return AvitoAdvanceTopUpResult.Failed(
+                    "Не удалось подтвердить сумму пополнения: кнопка не найдена.");
+            }
+
+            // 4) Выбор СБП (обязательная валидация выбора).
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!await SelectSbpAsync(page, cancellationToken).ConfigureAwait(false))
+            {
+                return AvitoAdvanceTopUpResult.Failed(
+                    "Не удалось выбрать способ оплаты СБП: вариант не найден.");
+            }
+
+            // 4.5) Линеаризационный барьер: заявляем право на оплату (claim) после выбора СБП
+            // и непосредственно перед кликом по оплате. Если claim не удался (сессия отменена/
+            // истекла) — прерываем сценарий без клика.
+            if (beforePayClickAsync is not null)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                bool claimed;
+                try
+                {
+                    claimed = await beforePayClickAsync(cancellationToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch
+                {
+                    claimed = false;
+                }
+
+                if (!claimed)
+                {
+                    return AvitoAdvanceTopUpResult.Failed(
+                        "Оплата не разрешена: сессия отменена или истекла.");
+                }
+            }
+
+            // 5) Переход к оплате.
+            cancellationToken.ThrowIfCancellationRequested();
+            if (!await ClickPayAsync(page, cancellationToken).ConfigureAwait(false))
+            {
+                return AvitoAdvanceTopUpResult.Failed(
+                    "Не удалось перейти к оплате: кнопка оплаты не найдена.");
+            }
+
+            // 6) Снятие QR из области подтверждения СБП.
+            cancellationToken.ThrowIfCancellationRequested();
+            var qr = await CaptureQrAsync(page, cancellationToken).ConfigureAwait(false);
+            if (qr is null)
+            {
+                return AvitoAdvanceTopUpResult.Failed(
+                    "QR-код СБП не найден на странице подтверждения.");
+            }
+
+            var base64 = AvitoAdvanceTopUpScripts.ExtractBase64FromDataUrl(qr.DataUrl);
+            if (!string.IsNullOrWhiteSpace(base64))
+            {
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"AdsPower advance top-up: QR captured for user {adsPowerUserId} (data URL).",
+                    DeskLinkAuditLogLevel.Info,
+                    memberName: nameof(RunAdvanceTopUpOnPageAsync),
+                    properties: new Dictionary<string, object?>
+                    {
+                        ["step"] = "qr_ready",
+                        ["adsPower.userId"] = adsPowerUserId,
+                        ["topup.qrSource"] = "dataUrl"
+                    });
+                return AvitoAdvanceTopUpResult.QrReady(base64);
+            }
+
+            if (!string.IsNullOrWhiteSpace(qr.Src))
+            {
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"AdsPower advance top-up: QR captured for user {adsPowerUserId} (src URL).",
+                    DeskLinkAuditLogLevel.Info,
+                    memberName: nameof(RunAdvanceTopUpOnPageAsync),
+                    properties: new Dictionary<string, object?>
+                    {
+                        ["step"] = "qr_ready",
+                        ["adsPower.userId"] = adsPowerUserId,
+                        ["topup.qrSource"] = "src"
+                    });
+                return AvitoAdvanceTopUpResult.QrReady(string.Empty, qr.Src);
+            }
+
+            return AvitoAdvanceTopUpResult.Failed(
+                "QR-код СБП найден, но не удалось извлечь изображение.");
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (AvitoCaptchaDetectedException)
+        {
+            return AvitoAdvanceTopUpResult.Failed(
+                "На странице пополнения капча — нужна ручная проверка в браузере.");
+        }
+        catch (AvitoLoginRequiredException)
+        {
+            return AvitoAdvanceTopUpResult.Failed(
+                "Требуется повторная авторизация в Avito — автовход не удался.");
+        }
+        catch (Exception ex)
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                $"AdsPower advance top-up failed for user {adsPowerUserId}: {ex.Message}",
+                DeskLinkAuditLogLevel.Warning,
+                memberName: nameof(RunAdvanceTopUpOnPageAsync),
+                properties: new Dictionary<string, object?>
+                {
+                    ["step"] = "failed",
+                    ["adsPower.userId"] = adsPowerUserId,
+                    ["error.type"] = ex.GetType().FullName
+                });
+            return AvitoAdvanceTopUpResult.Failed(ex.Message);
+        }
+    }
+
+    private async Task NavigateToAdvancePageAsync(IPage page, CancellationToken cancellationToken)
+    {
+        var target = AvitoAdvanceTopUpScripts.AdvancePageUrl;
+        if (!string.Equals(page.Url, target, StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                await page.GoToAsync(target, MonitoringNavigation(page, 60_000)).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (IsRecoverableNavigationError(ex))
+            {
+                await Task.Delay(1400, cancellationToken).ConfigureAwait(false);
+                await page.GoToAsync(target, MonitoringNavigation(page, 60_000)).ConfigureAwait(false);
+            }
+        }
+
+        await ThrowIfCaptchaOnPageAsync(page, cancellationToken).ConfigureAwait(false);
+
+        // Ждём появления поля суммы (или формы входа — тогда автовход).
+        try
+        {
+            await page.WaitForSelectorAsync(
+                    AvitoAdvanceTopUpScripts.AmountInputSelector,
+                    new WaitForSelectorOptions { Timeout = 30_000 })
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            var state = await ProbePageStateAsync(page, cancellationToken).ConfigureAwait(false);
+            if (AvitoAutomationFailureFormatter.SuggestsLogin(state))
+            {
+                if (await TryRecoverAvitoLoginAsync(page, cancellationToken).ConfigureAwait(false))
+                {
+                    await page.GoToAsync(target, MonitoringNavigation(page, 60_000)).ConfigureAwait(false);
+                    await page.WaitForSelectorAsync(
+                            AvitoAdvanceTopUpScripts.AmountInputSelector,
+                            new WaitForSelectorOptions { Timeout = 30_000 })
+                        .ConfigureAwait(false);
+                    return;
+                }
+
+                throw new AvitoLoginRequiredException(state?.Url, state?.Title);
+            }
+
+            throw new InvalidOperationException(
+                $"AdsPower advance top-up: поле суммы не появилось на {page.Url}: {ex.Message}",
+                ex);
+        }
+    }
+
+    private async Task<bool> EnterAmountAsync(IPage page, decimal amount, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        return await PuppeteerJsonEvaluator.EvaluateBoolAsync(
+                page,
+                AvitoAdvanceTopUpScripts.BuildEnterAmountScript(amount),
+                cancellationToken,
+                TimeSpan.FromSeconds(10))
+            .ConfigureAwait(false);
+    }
+
+    private async Task<bool> ClickSubmitAsync(IPage page, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var clicked = await AvitoHumanPointer.TryClickSelectorAsync(
+                page,
+                AvitoAdvanceTopUpScripts.SubmitButtonSelector,
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (!clicked)
+        {
+            return false;
+        }
+
+        await Task.Delay(800, cancellationToken).ConfigureAwait(false);
+        return true;
+    }
+
+    private async Task<bool> SelectSbpAsync(IPage page, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        var selected = await PuppeteerJsonEvaluator.EvaluateBoolAsync(
+                page,
+                AvitoAdvanceTopUpScripts.BuildSelectSbpScript(),
+                cancellationToken,
+                TimeSpan.FromSeconds(10))
+            .ConfigureAwait(false);
+        if (!selected)
+        {
+            return false;
+        }
+
+        await Task.Delay(600, cancellationToken).ConfigureAwait(false);
+        return true;
+    }
+
+    private async Task<bool> ClickPayAsync(IPage page, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        try
+        {
+            await page.WaitForSelectorAsync(
+                    AvitoAdvanceTopUpScripts.PayButtonSelector,
+                    new WaitForSelectorOptions { Timeout = 20_000 })
+                .ConfigureAwait(false);
+        }
+        catch
+        {
+            return false;
+        }
+
+        // Последняя возможная проверка отмены непосредственно перед кликом по оплате.
+        // Между этой проверкой и диспетчеризацией клика нет намеренных задержек: сам клик
+        // выполняется через AvitoHumanPointer, который ещё раз проверяет отмену перед ClickAsync.
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var clicked = await AvitoHumanPointer.TryClickSelectorAsync(
+                page,
+                AvitoAdvanceTopUpScripts.PayButtonSelector,
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (!clicked)
+        {
+            return false;
+        }
+
+        await Task.Delay(800, cancellationToken).ConfigureAwait(false);
+        return true;
+    }
+
+    private async Task<AvitoAdvanceTopUpScripts.QrCaptureResult?> CaptureQrAsync(
+        IPage page,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // Ждём появления области подтверждения СБП с QR.
+        try
+        {
+            await page.WaitForFunctionAsync(
+                    "() => !!document.querySelector(\"[data-marker='sbp/confirmation'], [data-marker='payment/sbp/confirmation'], [data-marker='sbp/qr']\")",
+                    new WaitForFunctionOptions { Timeout = 30_000, PollingInterval = 500 })
+                .ConfigureAwait(false);
+        }
+        catch
+        {
+            // Пробуем снять QR напрямую — скрипт сам проверит наличие.
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+
+        var raw = await EvaluateWithRetryAsync<string>(
+                page,
+                AvitoAdvanceTopUpScripts.BuildCaptureQrScript(),
+                cancellationToken,
+                TimeSpan.FromSeconds(15))
+            .ConfigureAwait(false);
+
+        var result = AvitoAdvanceTopUpScripts.TryParseQrCapture(raw);
+        return result is { Found: true } ? result : null;
+    }
+
     private async Task<string> LoadProfileItemsHtmlOnPageAsync(
         IPage page,
         string adsPowerUserId,
@@ -1298,6 +1626,16 @@ public sealed partial class AdsPowerAvitoAutomationService
         {
             using var _ = AvitoCaptchaTaskContext.Use(captchaOptions);
             return await owner.TryReadMoneySidebarOnPageAsync(page, AdsPowerUserId, cancellationToken).ConfigureAwait(false);
+        }
+
+        public async Task<AvitoAdvanceTopUpResult> RunAdvanceTopUpAsync(
+            decimal amount,
+            CancellationToken cancellationToken = default,
+            Func<CancellationToken, Task<bool>>? beforePayClickAsync = null)
+        {
+            using var _ = AvitoCaptchaTaskContext.Use(captchaOptions);
+            return await owner.RunAdvanceTopUpOnPageAsync(page, AdsPowerUserId, amount, cancellationToken, beforePayClickAsync)
+                .ConfigureAwait(false);
         }
 
         public async Task<string> CaptureProfileSwitchHtmlAsync(CancellationToken cancellationToken = default)

@@ -34,6 +34,7 @@ public sealed class WorkerOrchestrator(
     BrowserMonitorCoordinator browserMonitorCoordinator,
     BrowserMonitorSource browserMonitorSource,
     LocalChromeLoginCoordinator localChromeLoginCoordinator,
+    TopUpSessionCoordinator topUpSessionCoordinator,
     IWorkerRealtimeChannel realtime) : BackgroundService
 {
     private bool _monitoringRequested = true;
@@ -52,6 +53,7 @@ public sealed class WorkerOrchestrator(
     private WorkerPendingCaptchaSessionDto? _pushedCaptchaSession;
     private WorkerPendingBrowserMonitorSessionDto? _pushedBrowserMonitorSession;
     private WorkerPendingLocalChromeLoginDto? _pushedLocalChromeLogin;
+    private WorkerPendingTopUpSessionDto? _pushedTopUpSession;
 
     private static readonly TimeSpan AccountSyncInterval = TimeSpan.FromMinutes(5);
     private static readonly TimeSpan ConnectedLoopInterval = TimeSpan.FromSeconds(30);
@@ -70,6 +72,7 @@ public sealed class WorkerOrchestrator(
         realtime.CaptchaSessionReceived += OnCaptchaSessionReceived;
         realtime.BrowserMonitorSessionReceived += OnBrowserMonitorSessionReceived;
         realtime.LocalChromeLoginSessionReceived += OnLocalChromeLoginSessionReceived;
+        realtime.TopUpSessionReceived += OnTopUpSessionReceived;
 
         await WorkerLifecycleLog.InfoAsync(
             "Worker lifecycle: оркестратор запущен",
@@ -175,6 +178,7 @@ public sealed class WorkerOrchestrator(
                         config.PendingLocalChromeLogin,
                         config,
                         stoppingToken);
+                    TryLaunchTopUpSession(config, stoppingToken);
 
                     await SyncMonitoringStateAsync(config, enabledCount, monitoringPaused, stoppingToken)
                         .ConfigureAwait(false);
@@ -216,6 +220,7 @@ public sealed class WorkerOrchestrator(
             realtime.CaptchaSessionReceived -= OnCaptchaSessionReceived;
             realtime.BrowserMonitorSessionReceived -= OnBrowserMonitorSessionReceived;
             realtime.LocalChromeLoginSessionReceived -= OnLocalChromeLoginSessionReceived;
+            realtime.TopUpSessionReceived -= OnTopUpSessionReceived;
         }
 
         await WorkerLifecycleLog.InfoAsync(
@@ -247,6 +252,13 @@ public sealed class WorkerOrchestrator(
     private void OnLocalChromeLoginSessionReceived(WorkerPendingLocalChromeLoginDto session)
     {
         _pushedLocalChromeLogin = session;
+        configProvider.InvalidateCache();
+        realtime.RequestWake();
+    }
+
+    private void OnTopUpSessionReceived(WorkerPendingTopUpSessionDto session)
+    {
+        _pushedTopUpSession = session;
         configProvider.InvalidateCache();
         realtime.RequestWake();
     }
@@ -330,6 +342,27 @@ public sealed class WorkerOrchestrator(
         _ = Task.Run(async () =>
         {
             await localChromeLoginCoordinator
+                .TryRunPendingSessionAsync(pending, config, stoppingToken)
+                .ConfigureAwait(false);
+        }, stoppingToken);
+    }
+
+    private void TryLaunchTopUpSession(WorkerConfigDto config, CancellationToken stoppingToken)
+    {
+        var pending = _pushedTopUpSession ?? config.PendingTopUpSession;
+        if (pending is null || topUpSessionCoordinator.IsRunning)
+        {
+            return;
+        }
+
+        if (ReferenceEquals(pending, _pushedTopUpSession))
+        {
+            _pushedTopUpSession = null;
+        }
+
+        _ = Task.Run(async () =>
+        {
+            await topUpSessionCoordinator
                 .TryRunPendingSessionAsync(pending, config, stoppingToken)
                 .ConfigureAwait(false);
         }, stoppingToken);

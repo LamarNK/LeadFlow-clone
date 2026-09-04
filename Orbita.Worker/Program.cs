@@ -166,6 +166,7 @@ internal static class Program
         host.Services.AddSingleton<IBrowserMonitorSource>(sp => sp.GetRequiredService<BrowserMonitorSource>());
         host.Services.AddSingleton<BrowserMonitorCoordinator>();
         host.Services.AddSingleton<LocalChromeLoginCoordinator>();
+        host.Services.AddSingleton<TopUpSessionCoordinator>();
         host.Services.AddSingleton<AvitoDemoResponseSource>();
         host.Services.AddSingleton<AvitoParserService>();
         host.Services.AddSingleton<IAvitoResponseSource, AvitoResponseSource>();

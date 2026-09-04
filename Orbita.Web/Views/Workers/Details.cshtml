@@ -1248,11 +1248,16 @@
                 {
                     var accountSearchUrl = Url.Action("Index", "Accounts", new { q = account.DisplayName });
                     var responsesUrl = Url.Action("Index", "Responses", new { accountId = account.Id });
-                    <tr class="worker-account-row@(account.IsProcessingNow ? " worker-account-row--processing" : "")"
+                    var rowClass = "worker-account-row"
+                        + (account.IsProcessingNow ? " worker-account-row--processing" : "")
+                        + (account.IsLowBalance ? " worker-account-row--low-balance" : "");
+                    var rowTitle = account.IsLowBalance ? "Низкий баланс — требуется пополнение" : "";
+                    <tr class="@rowClass"
                         data-account-id="@account.Id"
                         data-subprofiles-layout="worker"
                         data-processing-subprofile-id="@(account.IsProcessingNow ? account.ProcessingSubProfileId : null)"
-                        data-subprofiles-json="@JsonSerializer.Serialize(account.SubProfiles, subProfileJsonOptions)">
+                        data-subprofiles-json="@JsonSerializer.Serialize(account.SubProfiles, subProfileJsonOptions)"
+                        @(string.IsNullOrEmpty(rowTitle) ? null : $"title=\"{rowTitle}\"")>
                         <td class="cell-toggle" data-label="Вкл">
                             <label class="worker-toggle@(account.IsProviderEnabled ? "" : " is-disabled")" title="@(account.IsProviderEnabled ? (account.IsEnabledInPanel ? "Отключить аккаунт в панели" : "Включить аккаунт в панели") : WorkerBrowserProviderMessages.DisabledHint)">
                                 <input type="checkbox"
@@ -1324,7 +1329,22 @@
                                 <span class="worker-local-browser-status">@account.BrowserSessionStatus</span>
                             }
                         </td>
-                        <td class="cell-num cell-balance" data-label="Баланс"><span class="account-balance-multiline">@account.BalanceText</span></td>
+                        <td class="cell-num cell-balance" data-label="Баланс">
+                            <span class="account-balance-multiline">@account.BalanceText</span>
+                            @if (account.CanTopUp)
+                            {
+                                <button type="button"
+                                        class="worker-topup-trigger"
+                                        data-topup-trigger
+                                        data-worker-id="@Model.WorkerId"
+                                        data-account-id="@account.Id"
+                                        data-account-name="@account.DisplayName"
+                                        data-current-balance="@(account.Balance?.ToString("0.##") ?? "0")"
+                                        title="Пополнить баланс">
+                                    Пополнить
+                                </button>
+                            }
+                        </td>
                         <td class="cell-num" data-label="Откликов">
                             <partial name="_MetricLink" model="@AccountMetricLinks.Responses(Model.WorkerId, account.Id, account.Responses)" />
                         </td>
@@ -1552,6 +1572,80 @@
                 <button type="submit" class="workers-modal-btn workers-modal-btn--primary">Сохранить</button>
             </footer>
         </form>
+    </div>
+</div>
+
+<div class="workers-modal" id="topUpModal" hidden>
+    <div class="workers-modal-backdrop" data-topup-close></div>
+    <div class="workers-modal-dialog topup-modal-dialog" role="dialog" aria-labelledby="topUpTitle" aria-modal="true">
+        <header class="workers-modal-head">
+            <h2 id="topUpTitle">Пополнение баланса</h2>
+            <button type="button" class="workers-modal-close" data-topup-close aria-label="Закрыть">
+                <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+            </button>
+        </header>
+        <div class="workers-modal-body topup-modal-body">
+            <div class="topup-loading" data-topup-loading>
+                <div class="topup-spinner"></div>
+                <p>Создание сессии пополнения...</p>
+            </div>
+            <div class="topup-error" data-topup-error hidden>
+                <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+                <p data-topup-error-message></p>
+                <button type="button" class="workers-modal-btn workers-modal-btn--ghost" data-topup-close>Закрыть</button>
+            </div>
+            <div class="topup-content" data-topup-content hidden>
+                <div class="topup-info">
+                    <div class="topup-info-row">
+                        <span class="topup-info-label">Аккаунт:</span>
+                        <span class="topup-info-value" data-topup-account-name></span>
+                    </div>
+                    <div class="topup-info-row">
+                        <span class="topup-info-label">Текущий баланс:</span>
+                        <span class="topup-info-value"><span data-topup-current-balance></span> ₽</span>
+                    </div>
+                    <div class="topup-info-row">
+                        <span class="topup-info-label">Целевой баланс:</span>
+                        <span class="topup-info-value"><span data-topup-target-balance></span> ₽</span>
+                    </div>
+                    <div class="topup-info-row">
+                        <span class="topup-info-label">Сумма пополнения:</span>
+                        <span class="topup-info-value topup-amount"><span data-topup-requested-amount></span> ₽</span>
+                    </div>
+                    <div class="topup-info-row">
+                        <span class="topup-info-label">Откликов сегодня:</span>
+                        <span class="topup-info-value" data-topup-daily-responses></span>
+                    </div>
+                    <div class="topup-tier-hint" data-topup-tier-label></div>
+                </div>
+
+                <div class="topup-status" data-topup-status></div>
+
+                <div class="topup-stale-warning" data-topup-stale-warning hidden>
+                    <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+                    <span>Не удаётся обновить статус сессии. Данные могут быть устаревшими.</span>
+                </div>
+
+                <div class="topup-qr-section" data-topup-qr-section hidden>
+                    <div class="topup-qr-container">
+                        <img data-topup-qr-image alt="QR-код для оплаты" class="topup-qr-image" />
+                    </div>
+                    <div class="topup-payment-notice">
+                        <i class="fa-solid fa-info-circle" aria-hidden="true"></i>
+                        <p>Отсканируйте QR-код в приложении банка для оплаты через СБП. Оплата производится вручную и не подтверждается автоматически в Орбите. После пополнения обновите страницу для актуального баланса.</p>
+                    </div>
+                </div>
+
+                <div class="topup-terminal-message" data-topup-terminal-message hidden></div>
+
+                <div class="topup-live-region" data-topup-live-region role="status" aria-live="polite" aria-atomic="true"></div>
+
+                <footer class="workers-modal-footer topup-modal-footer">
+                    <button type="button" class="workers-modal-btn workers-modal-btn--ghost" data-topup-close>Закрыть</button>
+                    <button type="button" class="workers-modal-btn workers-modal-btn--danger" data-topup-cancel hidden>Отменить сессию</button>
+                </footer>
+            </div>
+        </div>
     </div>
 </div>
 

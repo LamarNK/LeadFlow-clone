@@ -210,8 +210,10 @@ public static class OrbitaApiStartupExtensions
         builder.Services.AddSingleton<LocalChromeLoginSessionService>();
         builder.Services.AddSingleton<ICaptchaSessionRelayNotifier, CaptchaSessionRelayNotifier>();
         builder.Services.AddScoped<CaptchaSessionService>();
+        builder.Services.AddScoped<TopUpSessionService>();
         builder.Services.AddSingleton<ICaptchaLockNotifier, CaptchaLockNotifier>();
         builder.Services.AddHostedService<CaptchaSessionSweeperService>();
+        builder.Services.AddHostedService<TopUpSessionSweeperService>();
         builder.Services.AddCors(options =>
         {
             options.AddPolicy("Web", policy =>

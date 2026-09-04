@@ -217,6 +217,77 @@ public sealed class OrbitaApiClient
         await _http.SendAsync(request, ct).ConfigureAwait(false);
     }
 
+    public async Task<(bool Success, string? Error)> UpdateTopUpSessionStatusAsync(
+        UpdateTopUpSessionStatusRequest request,
+        CancellationToken ct)
+    {
+        using var httpRequest = new HttpRequestMessage(HttpMethod.Post, "api/v1/workers/top-up-sessions/status");
+        ApplyAuth(httpRequest);
+        httpRequest.Content = JsonContent.Create(request);
+        var response = await _http.SendAsync(httpRequest, ct).ConfigureAwait(false);
+        if (response.IsSuccessStatusCode)
+        {
+            return (true, null);
+        }
+
+        var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+        return (false, string.IsNullOrWhiteSpace(body) ? $"HTTP {(int)response.StatusCode}" : body);
+    }
+
+    public async Task<TopUpSessionPollResult> GetTopUpSessionAsync(Guid sessionId, CancellationToken ct)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"api/v1/workers/top-up-sessions/{sessionId:D}");
+        ApplyAuth(request);
+
+        HttpResponseMessage response;
+        try
+        {
+            response = await _http.SendAsync(request, ct).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            // Транспортная ошибка (сеть/таймаут) — транзиентная, не окончательная.
+            return new TopUpSessionPollResult(TopUpSessionPollStatus.Transient);
+        }
+
+        if (response.IsSuccessStatusCode)
+        {
+            var session = await response.Content.ReadFromJsonAsync<TopUpSessionDto>(cancellationToken: ct).ConfigureAwait(false);
+            if (session is null)
+            {
+                // Успешный ответ без тела — считаем транзиентным (неоднозначно).
+                return new TopUpSessionPollResult(TopUpSessionPollStatus.Transient);
+            }
+
+            return TopUpSessionStatuses.IsActive(session.Status)
+                ? new TopUpSessionPollResult(TopUpSessionPollStatus.Active, session)
+                : new TopUpSessionPollResult(TopUpSessionPollStatus.Terminal, session);
+        }
+
+        return new TopUpSessionPollResult(
+            TopUpSessionPollStatusClassifier.FromHttpStatusCode((int)response.StatusCode));
+    }
+
+    public async Task<ClaimTopUpPaymentResult> ClaimTopUpPaymentAsync(Guid sessionId, CancellationToken ct)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "api/v1/workers/top-up-sessions/claim-payment");
+        ApplyAuth(request);
+        request.Content = JsonContent.Create(new ClaimTopUpPaymentRequest(sessionId));
+        var response = await _http.SendAsync(request, ct).ConfigureAwait(false);
+        if (response.IsSuccessStatusCode)
+        {
+            return await response.Content.ReadFromJsonAsync<ClaimTopUpPaymentResult>(cancellationToken: ct).ConfigureAwait(false)
+                   ?? new ClaimTopUpPaymentResult(false, "Пустой ответ.");
+        }
+
+        var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+        return new ClaimTopUpPaymentResult(false, string.IsNullOrWhiteSpace(body) ? $"HTTP {(int)response.StatusCode}" : body);
+    }
+
     public async Task SendHeartbeatAsync(WorkerHeartbeatRequest heartbeat, CancellationToken ct)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, "api/v1/workers/heartbeat");

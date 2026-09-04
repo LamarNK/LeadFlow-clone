@@ -177,6 +177,12 @@ public sealed class WorkerAdminServiceTests
             CancellationToken ct = default) =>
             Task.FromResult(false);
 
+        public Task<bool> TryPushTopUpSessionAsync(
+            Guid workerId,
+            WorkerPendingTopUpSessionDto session,
+            CancellationToken ct = default) =>
+            Task.FromResult(false);
+
         public Task DeliverPendingOnConnectAsync(Guid workerId, CancellationToken ct = default) =>
             Task.CompletedTask;
     }

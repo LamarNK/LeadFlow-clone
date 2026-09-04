@@ -3935,6 +3935,46 @@ public sealed class OrbitaApiClient(
         return response is null ? (false, InvalidApiSessionError) : response.IsSuccessStatusCode ? (true, null) : (false, await ReadApiErrorAsync(response, ct));
     }
 
+    public async Task<(TopUpSessionDto? Session, TopUpSessionConflictDto? Conflict)> CreateTopUpSessionAsync(
+        Guid workerId,
+        Guid accountId,
+        CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Post,
+            $"api/v1/panel/workers/{workerId:D}/accounts/{accountId:D}/top-up-sessions");
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null) return (null, new TopUpSessionConflictDto(InvalidApiSessionError));
+        if (response.StatusCode == System.Net.HttpStatusCode.Conflict)
+        {
+            var conflict = await response.Content.ReadFromJsonAsync<TopUpSessionConflictDto>(ApiJsonOptions, ct);
+            return (null, conflict ?? new TopUpSessionConflictDto("Конфликт при создании сессии."));
+        }
+        if (!response.IsSuccessStatusCode) return (null, new TopUpSessionConflictDto(await ReadApiErrorAsync(response, ct) ?? "Ошибка."));
+        var session = await response.Content.ReadFromJsonAsync<TopUpSessionDto>(ApiJsonOptions, ct);
+        return (session, null);
+    }
+
+    public async Task<TopUpSessionDto?> GetTopUpSessionAsync(Guid sessionId, CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"api/v1/panel/top-up-sessions/{sessionId:D}");
+        using var response = await SendAuthenticatedAsync(request, ct);
+        return response?.IsSuccessStatusCode == true
+            ? await response.Content.ReadFromJsonAsync<TopUpSessionDto>(ApiJsonOptions, ct)
+            : null;
+    }
+
+    public async Task<(bool Success, string? Error)> CancelTopUpSessionAsync(Guid sessionId, CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"api/v1/panel/top-up-sessions/{sessionId:D}/cancel");
+        using var response = await SendAuthenticatedAsync(request, ct);
+        return response is null
+            ? (false, InvalidApiSessionError)
+            : response.IsSuccessStatusCode
+                ? (true, null)
+                : (false, await ReadApiErrorAsync(response, ct));
+    }
+
     private static string AppendQuery(string url, string key, string? value)
     {
         if (string.IsNullOrWhiteSpace(value))

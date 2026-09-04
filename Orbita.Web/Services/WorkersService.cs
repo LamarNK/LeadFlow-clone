@@ -699,4 +699,66 @@ public sealed class WorkersService(
         var (result, error) = await api.RotateWorkerKeyAsync(workerId, ct);
         return result is null ? (null, error ?? "Не удалось перевыпустить API-ключ.") : (result.ApiKey, null);
     }
+
+    public async Task<(TopUpSessionViewModel? Session, string? Error, Guid? ConflictSessionId)> CreateTopUpSessionAsync(
+        Guid workerId,
+        Guid accountId,
+        CancellationToken ct = default)
+    {
+        if (previewOptions.Value.Enabled)
+        {
+            return (null, "Preview mode", null);
+        }
+
+        var (dto, conflict) = await api.CreateTopUpSessionAsync(workerId, accountId, ct);
+        if (conflict is not null)
+        {
+            return (null, conflict.Message, conflict.ActiveSessionId);
+        }
+
+        if (dto is null)
+        {
+            return (null, "Не удалось создать сессию пополнения.", null);
+        }
+
+        return (MapTopUpSession(dto), null, null);
+    }
+
+    public async Task<TopUpSessionViewModel?> GetTopUpSessionAsync(Guid sessionId, CancellationToken ct = default)
+    {
+        if (previewOptions.Value.Enabled)
+        {
+            return null;
+        }
+
+        var dto = await api.GetTopUpSessionAsync(sessionId, ct);
+        return dto is null ? null : MapTopUpSession(dto);
+    }
+
+    public Task<(bool Success, string? Error)> CancelTopUpSessionAsync(Guid sessionId, CancellationToken ct = default) =>
+        previewOptions.Value.Enabled
+            ? Task.FromResult<(bool, string?)>((true, null))
+            : api.CancelTopUpSessionAsync(sessionId, ct);
+
+    private static TopUpSessionViewModel MapTopUpSession(TopUpSessionDto dto) => new()
+    {
+        SessionId = dto.Id,
+        WorkerId = dto.WorkerId,
+        WorkerName = dto.WorkerName,
+        AccountId = dto.AccountId,
+        AccountName = dto.AccountName,
+        Status = dto.Status,
+        CurrentBalance = dto.CurrentBalance,
+        TargetBalance = dto.TargetBalance,
+        RequestedAmount = dto.RequestedAmount,
+        DailyResponseCount = dto.DailyResponseCount,
+        CreatedAtUtc = dto.CreatedAtUtc,
+        ExpiresAtUtc = dto.ExpiresAtUtc,
+        CompletedAtUtc = dto.CompletedAtUtc,
+        QrReadyAtUtc = dto.QrReadyAtUtc,
+        QrImageBase64 = dto.QrImageBase64,
+        QrImageUrl = dto.QrImageUrl,
+        FailureMessage = dto.FailureMessage,
+        OperatorDisplayName = dto.OperatorDisplayName
+    };
 }

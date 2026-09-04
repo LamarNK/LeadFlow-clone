@@ -19,6 +19,8 @@ internal static class AvitoHumanPointer
 
         try
         {
+            cancellationToken.ThrowIfCancellationRequested();
+
             await handle.EvaluateFunctionAsync(
                     "el => { try { el.scrollIntoView({ block: 'center', inline: 'nearest' }); } catch {} }")
                 .ConfigureAwait(false);
@@ -47,9 +49,18 @@ internal static class AvitoHumanPointer
             await page.Mouse.MoveAsync(x, y, new MoveOptions { Steps = Random.Shared.Next(5, 14) })
                 .ConfigureAwait(false);
             await HumanDelay.DelayAsync(25, 80, cancellationToken).ConfigureAwait(false);
+
+            // Последняя возможная проверка отмены непосредственно перед диспетчеризацией клика.
+            // Puppeteer-клик после отправки нельзя атомарно отменить, поэтому между этой проверкой
+            // и ClickAsync нет намеренных задержек.
+            cancellationToken.ThrowIfCancellationRequested();
             await page.Mouse.ClickAsync(x, y, new ClickOptions { Delay = Random.Shared.Next(35, 90) })
                 .ConfigureAwait(false);
             return true;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch
         {

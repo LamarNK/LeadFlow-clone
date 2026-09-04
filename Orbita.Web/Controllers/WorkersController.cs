@@ -708,6 +708,39 @@ public sealed class WorkersController(IWorkersService workers) : Controller
         });
     }
 
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> CreateTopUpSession(
+        Guid workerId,
+        Guid accountId,
+        CancellationToken ct)
+    {
+        var result = await workers.CreateTopUpSessionAsync(workerId, accountId, ct);
+        if (result.Error is not null)
+        {
+            return result.ConflictSessionId.HasValue
+                ? Conflict(new { error = result.Error, sessionId = result.ConflictSessionId })
+                : BadRequest(new { error = result.Error });
+        }
+
+        return Ok(result.Session);
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> GetTopUpSession(Guid sessionId, CancellationToken ct)
+    {
+        var session = await workers.GetTopUpSessionAsync(sessionId, ct);
+        return session is null ? NotFound() : Ok(session);
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> CancelTopUpSession(Guid sessionId, CancellationToken ct)
+    {
+        var (success, error) = await workers.CancelTopUpSessionAsync(sessionId, ct);
+        return success ? Ok(new { message = "Сессия пополнения отменена." }) : BadRequest(new { error });
+    }
+
     private IActionResult RedirectAfterWorkerAction(Guid workerId, string? returnTo) =>
         string.Equals(returnTo, "index", StringComparison.OrdinalIgnoreCase)
             ? RedirectToAction(nameof(Index))

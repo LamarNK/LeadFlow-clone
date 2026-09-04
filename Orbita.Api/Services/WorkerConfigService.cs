@@ -17,7 +17,8 @@ public sealed class WorkerConfigService(
     BrowserMonitorService browserMonitorSessions,
     AvitoAccountSecretProtector avitoSecrets,
     IMultiloginAutomationTokenIssuer? multiloginTokenIssuer = null,
-    LocalChromeLoginSessionService? localChromeLoginSessions = null)
+    LocalChromeLoginSessionService? localChromeLoginSessions = null,
+    TopUpSessionService? topUpSessions = null)
 {
     public Task<WorkerConfigDto?> GetConfigForWorkerAsync(
         Guid workerId,
@@ -89,6 +90,10 @@ public sealed class WorkerConfigService(
             ? null
             : localChromeLoginSessions.GetPendingForWorker(worker.Id);
 
+        var pendingTopUp = topUpSessions is null
+            ? null
+            : await topUpSessions.GetPendingForWorkerAsync(worker.Id, ct).ConfigureAwait(false);
+
         var configuredParallelism = worker.MaxConcurrentAccounts;
         var ramBasedParallelism = WorkerParallelismRules.GetMaximumConcurrentAccounts(worker.LastRamTotalMb);
         var effectiveParallelism = ramBasedParallelism is null
@@ -134,6 +139,7 @@ public sealed class WorkerConfigService(
             ToPendingCheck(worker),
             ToPendingSync(worker),
             pendingLocalChromeLogin,
+            pendingTopUp,
             worker.IsMonitoringPaused);
     }
 

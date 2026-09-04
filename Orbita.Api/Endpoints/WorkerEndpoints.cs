@@ -143,6 +143,53 @@ public static class WorkerEndpoints
             return session is null ? Results.NotFound() : Results.Ok(session);
         }).RequireAuthorization("Worker");
 
+        workers.MapPost("/top-up-sessions/status", async (
+            UpdateTopUpSessionStatusRequest request,
+            TopUpSessionService topUpSessions,
+            ClaimsPrincipal user,
+            CancellationToken ct) =>
+        {
+            if (!TryGetWorkerId(user, out var workerId))
+            {
+                return Results.Forbid();
+            }
+
+            var (success, error) = await topUpSessions.UpdateStatusFromWorkerAsync(workerId, request, ct);
+            return success ? Results.Ok() : Results.BadRequest(new { error });
+        }).RequireAuthorization("Worker");
+
+        workers.MapPost("/top-up-sessions/claim-payment", async (
+            ClaimTopUpPaymentRequest request,
+            TopUpSessionService topUpSessions,
+            ClaimsPrincipal user,
+            CancellationToken ct) =>
+        {
+            if (!TryGetWorkerId(user, out var workerId))
+            {
+                return Results.Forbid();
+            }
+
+            var result = await topUpSessions.ClaimPaymentAsync(workerId, request.SessionId, ct);
+            return result.Claimed
+                ? Results.Ok(result)
+                : Results.Conflict(result);
+        }).RequireAuthorization("Worker");
+
+        workers.MapGet("/top-up-sessions/{id:guid}", async (
+            Guid id,
+            TopUpSessionService topUpSessions,
+            ClaimsPrincipal user,
+            CancellationToken ct) =>
+        {
+            if (!TryGetWorkerId(user, out var workerId))
+            {
+                return Results.Forbid();
+            }
+
+            var session = await topUpSessions.GetForWorkerAsync(workerId, id, ct);
+            return session is null ? Results.NotFound() : Results.Ok(session);
+        }).RequireAuthorization("Worker");
+
         workers.MapPost("/accounts/sync", async (
             WorkerAccountSyncRequest request,
             WorkerConfigService configService,

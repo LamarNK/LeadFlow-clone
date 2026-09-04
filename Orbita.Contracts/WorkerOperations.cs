@@ -125,6 +125,7 @@ public sealed record WorkerConfigDto(
     WorkerPendingBrowserProviderCheckDto? PendingProviderCheck = null,
     WorkerPendingBrowserProviderSyncDto? PendingProviderSync = null,
     WorkerPendingLocalChromeLoginDto? PendingLocalChromeLogin = null,
+    WorkerPendingTopUpSessionDto? PendingTopUpSession = null,
     /// <summary>
     /// Пауза основного мониторинга/парсинга откликов. Воркер остаётся авторизованным.
     /// </summary>

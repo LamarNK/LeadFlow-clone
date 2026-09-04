@@ -2,6 +2,7 @@
 using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using Orbita.Api.Data;
@@ -11,9 +12,11 @@ using Orbita.Api.Data;
 namespace Orbita.Api.Data.Migrations
 {
     [DbContext(typeof(OrbitaDbContext))]
-    partial class OrbitaDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260903132424_AddTopUpSessions")]
+    partial class AddTopUpSessions
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -280,7 +283,7 @@ namespace Orbita.Api.Data.Migrations
 
                     b.HasIndex("State", "NextAttemptAtUtc");
 
-                    b.ToTable("BitrixDealEventInbox", (string)null);
+                    b.ToTable("BitrixDealEventInbox");
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.BitrixInstanceEntity", b =>
@@ -359,7 +362,7 @@ namespace Orbita.Api.Data.Migrations
 
                     b.HasIndex("OfficeId", "DeletedAtUtc");
 
-                    b.ToTable("BitrixInstances", (string)null);
+                    b.ToTable("BitrixInstances");
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.BitrixWorkforceAssignmentEntity", b =>
@@ -444,7 +447,7 @@ namespace Orbita.Api.Data.Migrations
 
                     b.HasIndex("BitrixInstanceId", "DealId", "CreatedAtUtc");
 
-                    b.ToTable("BitrixWorkforceAssignments", (string)null);
+                    b.ToTable("BitrixWorkforceAssignments");
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.BitrixWorkforceConfigurationEntity", b =>
@@ -505,7 +508,7 @@ namespace Orbita.Api.Data.Migrations
 
                     b.HasKey("BitrixInstanceId");
 
-                    b.ToTable("BitrixWorkforceConfigurations", (string)null);
+                    b.ToTable("BitrixWorkforceConfigurations");
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.BitrixWorkforceCursorEntity", b =>
@@ -529,7 +532,7 @@ namespace Orbita.Api.Data.Migrations
 
                     b.HasKey("BitrixInstanceId", "Scenario", "OperationMode");
 
-                    b.ToTable("BitrixWorkforceCursors", (string)null);
+                    b.ToTable("BitrixWorkforceCursors");
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.BitrixWorkforceDealStateEntity", b =>
@@ -569,7 +572,7 @@ namespace Orbita.Api.Data.Migrations
 
                     b.HasKey("BitrixInstanceId", "DealId");
 
-                    b.ToTable("BitrixWorkforceDealStates", (string)null);
+                    b.ToTable("BitrixWorkforceDealStates");
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.BitrixWorkforceEventCredentialEntity", b =>
@@ -600,7 +603,7 @@ namespace Orbita.Api.Data.Migrations
                     b.HasIndex("PublicId")
                         .IsUnique();
 
-                    b.ToTable("BitrixWorkforceEventCredentials", (string)null);
+                    b.ToTable("BitrixWorkforceEventCredentials");
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.BitrixWorkforceManagerEntity", b =>
@@ -628,7 +631,7 @@ namespace Orbita.Api.Data.Migrations
 
                     b.HasIndex("BitrixInstanceId", "SortOrder");
 
-                    b.ToTable("BitrixWorkforceManagers", (string)null);
+                    b.ToTable("BitrixWorkforceManagers");
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.BitrixWorkforceMorningStateEntity", b =>
@@ -664,7 +667,7 @@ namespace Orbita.Api.Data.Migrations
 
                     b.HasKey("BitrixInstanceId", "LocalDate", "Scenario", "OperationMode");
 
-                    b.ToTable("BitrixWorkforceMorningStates", (string)null);
+                    b.ToTable("BitrixWorkforceMorningStates");
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.BitrixWorkforceStageRuleEntity", b =>
@@ -705,7 +708,7 @@ namespace Orbita.Api.Data.Migrations
                     b.HasIndex("BitrixInstanceId", "SourceStageId")
                         .IsUnique();
 
-                    b.ToTable("BitrixWorkforceStageRules", (string)null);
+                    b.ToTable("BitrixWorkforceStageRules");
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.CandidateContactPhoneEntity", b =>
@@ -748,7 +751,7 @@ namespace Orbita.Api.Data.Migrations
                     b.HasIndex("PersonId", "PhoneNormalized")
                         .IsUnique();
 
-                    b.ToTable("CandidateContactPhones", (string)null);
+                    b.ToTable("CandidateContactPhones");
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.CandidatePersonEntity", b =>
@@ -810,7 +813,7 @@ namespace Orbita.Api.Data.Migrations
 
                     b.HasIndex("LastName", "FirstName", "MiddleName");
 
-                    b.ToTable("CandidatePersons", (string)null);
+                    b.ToTable("CandidatePersons");
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.CandidatePhoneHistoryEntity", b =>
@@ -846,7 +849,7 @@ namespace Orbita.Api.Data.Migrations
 
                     b.HasIndex("PersonId", "RecordedAtUtc");
 
-                    b.ToTable("CandidatePhoneHistory", (string)null);
+                    b.ToTable("CandidatePhoneHistory");
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.CandidateResponseEntity", b =>
@@ -1075,7 +1078,7 @@ namespace Orbita.Api.Data.Migrations
 
                     b.HasIndex("OfficeId", "AccountId", "AvitoSubProfileId", "PhoneNormalized");
 
-                    b.ToTable("CandidateResponses", (string)null);
+                    b.ToTable("CandidateResponses");
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.CaptchaSessionEntity", b =>
@@ -1150,7 +1153,7 @@ namespace Orbita.Api.Data.Migrations
 
                     b.HasIndex("WorkerId", "Status");
 
-                    b.ToTable("CaptchaSessions", (string)null);
+                    b.ToTable("CaptchaSessions");
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.CrmCallAiInsightEntity", b =>
@@ -1213,7 +1216,7 @@ namespace Orbita.Api.Data.Migrations
 
                     b.HasIndex("Status", "NextAttemptAtUtc");
 
-                    b.ToTable("CrmCallAiInsights", (string)null);
+                    b.ToTable("CrmCallAiInsights");
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.CrmCallEntity", b =>
@@ -1327,7 +1330,7 @@ namespace Orbita.Api.Data.Migrations
                         .IsUnique()
                         .HasFilter("\"ProviderAccountId\" IS NULL");
 
-                    b.ToTable("CrmCalls", (string)null);
+                    b.ToTable("CrmCalls");
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.CrmCandidateCardEntity", b =>
@@ -1404,7 +1407,7 @@ namespace Orbita.Api.Data.Migrations
 
                     b.HasIndex("OfficeId", "ManagerUserId", "IsInActiveLoad");
 
-                    b.ToTable("CrmCandidateCards", (string)null);
+                    b.ToTable("CrmCandidateCards");
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.CrmCandidateHistoryEntity", b =>
@@ -1445,7 +1448,7 @@ namespace Orbita.Api.Data.Migrations
                     b.HasIndex("Action", "CreatedAtUtc", "CardId")
                         .HasDatabaseName("IX_CrmHistory_Action_CreatedAt_Card");
 
-                    b.ToTable("CrmCandidateHistory", (string)null);
+                    b.ToTable("CrmCandidateHistory");
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.CrmCandidateNoteEntity", b =>
@@ -1487,7 +1490,7 @@ namespace Orbita.Api.Data.Migrations
 
                     b.HasIndex("CardId", "IsPinned", "CreatedAtUtc");
 
-                    b.ToTable("CrmCandidateNotes", (string)null);
+                    b.ToTable("CrmCandidateNotes");
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.CrmCardChatReadEntity", b =>
@@ -1509,7 +1512,7 @@ namespace Orbita.Api.Data.Migrations
 
                     b.HasKey("CardId", "UserId");
 
-                    b.ToTable("CrmCardChatReads", (string)null);
+                    b.ToTable("CrmCardChatReads");
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.CrmDailyDistributionCounterEntity", b =>
@@ -1536,7 +1539,7 @@ namespace Orbita.Api.Data.Migrations
 
                     b.HasKey("OfficeId", "LocalDate", "Pool", "ManagerUserId");
 
-                    b.ToTable("CrmDailyDistributionCounters", (string)null);
+                    b.ToTable("CrmDailyDistributionCounters");
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.CrmDailyDistributionSessionEntity", b =>
@@ -1581,7 +1584,7 @@ namespace Orbita.Api.Data.Migrations
                     b.HasIndex("OfficeId", "LocalDate")
                         .IsUnique();
 
-                    b.ToTable("CrmDailyDistributionSessions", (string)null);
+                    b.ToTable("CrmDailyDistributionSessions");
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.CrmDeskAlertEntity", b =>
@@ -1628,7 +1631,7 @@ namespace Orbita.Api.Data.Migrations
 
                     b.HasIndex("OfficeId", "RecipientUserId", "ReadAtUtc", "CreatedAtUtc");
 
-                    b.ToTable("CrmDeskAlerts", (string)null);
+                    b.ToTable("CrmDeskAlerts");
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.CrmManagerShiftEntity", b =>
@@ -1665,7 +1668,7 @@ namespace Orbita.Api.Data.Migrations
 
                     b.HasIndex("OfficeId", "StartedAtUtc");
 
-                    b.ToTable("CrmManagerShifts", (string)null);
+                    b.ToTable("CrmManagerShifts");
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.CrmOutboundChatMessageEntity", b =>
@@ -1722,7 +1725,7 @@ namespace Orbita.Api.Data.Migrations
 
                     b.HasIndex("ResponseId", "Status", "CreatedAtUtc");
 
-                    b.ToTable("CrmOutboundChatMessages", (string)null);
+                    b.ToTable("CrmOutboundChatMessages");
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.CrmSuccessDocumentEntity", b =>
@@ -1774,7 +1777,7 @@ namespace Orbita.Api.Data.Migrations
 
                     b.HasIndex("CardId", "Category", "CreatedAtUtc");
 
-                    b.ToTable("CrmSuccessDocuments", (string)null);
+                    b.ToTable("CrmSuccessDocuments");
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.CrmTaskAttachmentEntity", b =>
@@ -1821,7 +1824,7 @@ namespace Orbita.Api.Data.Migrations
 
                     b.HasIndex("TaskId", "CreatedAtUtc");
 
-                    b.ToTable("CrmTaskAttachments", (string)null);
+                    b.ToTable("CrmTaskAttachments");
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.CrmTaskCommentEntity", b =>
@@ -1858,7 +1861,7 @@ namespace Orbita.Api.Data.Migrations
 
                     b.HasIndex("TaskId", "CreatedAtUtc");
 
-                    b.ToTable("CrmTaskComments", (string)null);
+                    b.ToTable("CrmTaskComments");
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.CrmTaskEntity", b =>
@@ -1942,7 +1945,7 @@ namespace Orbita.Api.Data.Migrations
 
                     b.HasIndex("OfficeId", "Status", "DueAtUtc");
 
-                    b.ToTable("CrmTasks", (string)null);
+                    b.ToTable("CrmTasks");
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.CrmTaskNotificationEntity", b =>
@@ -1989,7 +1992,7 @@ namespace Orbita.Api.Data.Migrations
 
                     b.HasIndex("OfficeId", "RecipientUserId", "ReadAtUtc", "CreatedAtUtc");
 
-                    b.ToTable("CrmTaskNotifications", (string)null);
+                    b.ToTable("CrmTaskNotifications");
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.CrmTelephonyProviderAccountBindingEntity", b =>
@@ -2025,7 +2028,7 @@ namespace Orbita.Api.Data.Migrations
                     b.HasIndex("ProviderAccountId", "UserId")
                         .IsUnique();
 
-                    b.ToTable("CrmTelephonyProviderAccountBindings", (string)null);
+                    b.ToTable("CrmTelephonyProviderAccountBindings");
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.CrmTelephonyProviderAccountEntity", b =>
@@ -2109,7 +2112,7 @@ namespace Orbita.Api.Data.Migrations
 
                     b.HasIndex("Provider", "IsEnabled", "SyncCursorUtc");
 
-                    b.ToTable("CrmTelephonyProviderAccounts", (string)null);
+                    b.ToTable("CrmTelephonyProviderAccounts");
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.CrmTelephonyUserBindingEntity", b =>
@@ -2168,7 +2171,7 @@ namespace Orbita.Api.Data.Migrations
                     b.HasIndex("OfficeId", "Provider", "UserId")
                         .IsUnique();
 
-                    b.ToTable("CrmTelephonyUserBindings", (string)null);
+                    b.ToTable("CrmTelephonyUserBindings");
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.CrmTelephonyWebhookEntity", b =>
@@ -2222,7 +2225,7 @@ namespace Orbita.Api.Data.Migrations
                     b.HasIndex("OfficeId", "Provider")
                         .IsUnique();
 
-                    b.ToTable("CrmTelephonyWebhooks", (string)null);
+                    b.ToTable("CrmTelephonyWebhooks");
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.DistributionNodeEntity", b =>
@@ -2259,7 +2262,7 @@ namespace Orbita.Api.Data.Migrations
 
                     b.HasIndex("RouteId", "ParentNodeId", "SortOrder");
 
-                    b.ToTable("DistributionNodes", (string)null);
+                    b.ToTable("DistributionNodes");
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.DistributionRoundRobinStateEntity", b =>
@@ -2284,7 +2287,7 @@ namespace Orbita.Api.Data.Migrations
                     b.HasIndex("RouteId", "ParentNodeId")
                         .IsUnique();
 
-                    b.ToTable("DistributionRoundRobinStates", (string)null);
+                    b.ToTable("DistributionRoundRobinStates");
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.DistributionRouteEntity", b =>
@@ -2311,7 +2314,7 @@ namespace Orbita.Api.Data.Migrations
                     b.HasIndex("OfficeId")
                         .IsUnique();
 
-                    b.ToTable("DistributionRoutes", (string)null);
+                    b.ToTable("DistributionRoutes");
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.MonitoringCycleRunEntity", b =>
@@ -2354,7 +2357,7 @@ namespace Orbita.Api.Data.Migrations
 
                     b.HasIndex("WorkerId", "StartedAtUtc");
 
-                    b.ToTable("MonitoringCycleRuns", (string)null);
+                    b.ToTable("MonitoringCycleRuns");
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.MonitoringSubProfileRunEntity", b =>
@@ -2428,7 +2431,7 @@ namespace Orbita.Api.Data.Migrations
 
                     b.HasIndex("CycleRunId", "Position");
 
-                    b.ToTable("MonitoringSubProfileRuns", (string)null);
+                    b.ToTable("MonitoringSubProfileRuns");
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.OfficeEntity", b =>
@@ -2506,7 +2509,7 @@ namespace Orbita.Api.Data.Migrations
                     b.HasIndex("Name")
                         .IsUnique();
 
-                    b.ToTable("Offices", (string)null);
+                    b.ToTable("Offices");
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.PanelAuditLogEntity", b =>
@@ -2554,7 +2557,7 @@ namespace Orbita.Api.Data.Migrations
 
                     b.HasIndex("TimestampUtc");
 
-                    b.ToTable("PanelAuditLogs", (string)null);
+                    b.ToTable("PanelAuditLogs");
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.PanelUserBitrixSettingsEntity", b =>
@@ -2592,7 +2595,7 @@ namespace Orbita.Api.Data.Migrations
 
                     b.HasKey("UserId");
 
-                    b.ToTable("PanelUserBitrixSettings", (string)null);
+                    b.ToTable("PanelUserBitrixSettings");
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.PanelUserPresenceHourEntity", b =>
@@ -2608,7 +2611,7 @@ namespace Orbita.Api.Data.Migrations
 
                     b.HasIndex("HourUtc");
 
-                    b.ToTable("PanelUserPresenceHours", (string)null);
+                    b.ToTable("PanelUserPresenceHours");
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.PanelUserProfileEntity", b =>
@@ -2642,7 +2645,7 @@ namespace Orbita.Api.Data.Migrations
 
                     b.HasIndex("OfficeId");
 
-                    b.ToTable("PanelUserProfiles", (string)null);
+                    b.ToTable("PanelUserProfiles");
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.ResponseBitrixDeliveryEntity", b =>
@@ -2697,7 +2700,7 @@ namespace Orbita.Api.Data.Migrations
 
                     b.HasIndex("ResponseId", "CreatedAtUtc");
 
-                    b.ToTable("ResponseBitrixDeliveries", (string)null);
+                    b.ToTable("ResponseBitrixDeliveries");
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.ResponseCrmDeliveryEntity", b =>
@@ -2745,7 +2748,7 @@ namespace Orbita.Api.Data.Migrations
 
                     b.HasIndex("ResponseId", "CreatedAtUtc");
 
-                    b.ToTable("ResponseCrmDeliveries", (string)null);
+                    b.ToTable("ResponseCrmDeliveries");
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.TopUpSessionEntity", b =>
@@ -2854,7 +2857,7 @@ namespace Orbita.Api.Data.Migrations
 
                     b.HasIndex("WorkerId", "AccountId", "Status");
 
-                    b.ToTable("TopUpSessions", (string)null);
+                    b.ToTable("TopUpSessions");
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.WorkerAccountEntity", b =>
@@ -3035,7 +3038,7 @@ namespace Orbita.Api.Data.Migrations
 
                     b.HasKey("WorkerId", "AccountId");
 
-                    b.ToTable("WorkerAccounts", (string)null);
+                    b.ToTable("WorkerAccounts");
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.WorkerDiagnosticAttachmentEntity", b =>
@@ -3074,7 +3077,7 @@ namespace Orbita.Api.Data.Migrations
 
                     b.HasIndex("WorkerId", "CreatedAtUtc");
 
-                    b.ToTable("WorkerDiagnosticAttachments", (string)null);
+                    b.ToTable("WorkerDiagnosticAttachments");
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.WorkerEntity", b =>
@@ -3389,7 +3392,7 @@ namespace Orbita.Api.Data.Migrations
 
                     b.HasIndex("OwnerUserId");
 
-                    b.ToTable("Workers", (string)null);
+                    b.ToTable("Workers");
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.WorkerEventEntity", b =>
@@ -3430,7 +3433,7 @@ namespace Orbita.Api.Data.Migrations
 
                     b.HasIndex("WorkerId", "CreatedAtUtc");
 
-                    b.ToTable("WorkerEvents", (string)null);
+                    b.ToTable("WorkerEvents");
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.WorkerSettingsTemplateEntity", b =>
@@ -3537,7 +3540,7 @@ namespace Orbita.Api.Data.Migrations
                     b.HasIndex("OfficeId", "NameNormalized")
                         .IsUnique();
 
-                    b.ToTable("WorkerSettingsTemplates", (string)null);
+                    b.ToTable("WorkerSettingsTemplates");
                 });
 
             modelBuilder.Entity("Orbita.Api.Data.WorkerSnapshotEntity", b =>
@@ -3564,7 +3567,7 @@ namespace Orbita.Api.Data.Migrations
 
                     b.HasIndex("WorkerId", "CapturedAtUtc");
 
-                    b.ToTable("WorkerSnapshots", (string)null);
+                    b.ToTable("WorkerSnapshots");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityRoleClaim<string>", b =>

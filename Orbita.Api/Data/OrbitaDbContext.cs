@@ -61,6 +61,7 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
     public DbSet<DistributionNodeEntity> DistributionNodes => Set<DistributionNodeEntity>();
     public DbSet<DistributionRoundRobinStateEntity> DistributionRoundRobinStates => Set<DistributionRoundRobinStateEntity>();
     public DbSet<CaptchaSessionEntity> CaptchaSessions => Set<CaptchaSessionEntity>();
+    public DbSet<TopUpSessionEntity> TopUpSessions => Set<TopUpSessionEntity>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -152,6 +153,9 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
             entity.Property(x => x.MultiloginEnabled).HasDefaultValue(true);
             entity.Property(x => x.LocalChromeEnabled).HasDefaultValue(true);
             entity.Property(x => x.IsMonitoringPaused).HasDefaultValue(false);
+            entity.Property(x => x.TopUpPauseLeaseId);
+            entity.Property(x => x.TopUpPauseLeaseVersion).HasDefaultValue(0L);
+            entity.Property(x => x.TopUpPauseBaselinePaused).HasDefaultValue(false);
             entity.Property(x => x.PendingBrowserProviderCheck).HasMaxLength(32);
             entity.Property(x => x.PendingBrowserProviderSync).HasMaxLength(32);
             entity.Property(x => x.BrowserProviderChecksJson).HasMaxLength(4000);
@@ -887,6 +891,34 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
             entity.Property(x => x.TargetId).HasMaxLength(128);
             entity.Property(x => x.Details).HasMaxLength(2000);
             entity.Property(x => x.IpAddress).HasMaxLength(64);
+        });
+
+        modelBuilder.Entity<TopUpSessionEntity>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => new { x.WorkerId, x.Status });
+            entity.HasIndex(x => new { x.WorkerId, x.AccountId, x.Status });
+            // Идемпотентность: не более одной активной сессии на аккаунт (глобально по AccountId).
+            entity.HasIndex(x => x.AccountId)
+                .HasDatabaseName("IX_TopUpSessions_Account_Active")
+                .IsUnique()
+                .HasFilter("\"Status\" IN ('requested', 'started', 'payment_claimed', 'qr_ready')");
+            entity.Property(x => x.AccountName).HasMaxLength(200);
+            entity.Property(x => x.OperatorUserId).HasMaxLength(128);
+            entity.Property(x => x.OperatorDisplayName).HasMaxLength(256);
+            entity.Property(x => x.Status).HasMaxLength(32);
+            entity.Property(x => x.CurrentBalance).HasPrecision(18, 2);
+            entity.Property(x => x.TargetBalance).HasPrecision(18, 2);
+            entity.Property(x => x.RequestedAmount).HasPrecision(18, 2);
+            entity.Property(x => x.ExpectedPauseLeaseVersion).HasDefaultValue(0L);
+            entity.Property(x => x.OwnsPauseLease).HasDefaultValue(false);
+            entity.Property(x => x.QrImageUrl).HasMaxLength(2048);
+            entity.Property(x => x.QrImageBase64).HasColumnType("text");
+            entity.Property(x => x.FailureMessage).HasMaxLength(2000);
+            entity.Property(x => x.RowVersion)
+                .IsRowVersion()
+                .HasColumnName("xmin");
+            entity.HasOne(x => x.Worker).WithMany().HasForeignKey(x => x.WorkerId);
         });
     }
 }

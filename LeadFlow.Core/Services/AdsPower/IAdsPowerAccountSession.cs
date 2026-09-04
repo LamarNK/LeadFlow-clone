@@ -25,6 +25,17 @@ public interface IAdsPowerAccountSession : IAsyncDisposable
     /// <summary>Читает «Кошелёк» и «Аванс» из сайдбара Avito Pro на странице кабинета (не на откликах).</summary>
     Task<AvitoMoneySidebar?> TryReadMoneySidebarAsync(CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Выполняет ручное пополнение аванса: переход на <c>/account/advance</c>, ввод суммы,
+    /// выбор СБП, переход к оплате и снятие QR-изображения. Оплату не выполняет.
+    /// <paramref name="beforePayClickAsync"/> вызывается после выбора СБП и непосредственно
+    /// перед кликом по оплате; возврат <c>false</c> прерывает сценарий без клика.
+    /// </summary>
+    Task<AvitoAdvanceTopUpResult> RunAdvanceTopUpAsync(
+        decimal amount,
+        CancellationToken cancellationToken = default,
+        Func<CancellationToken, Task<bool>>? beforePayClickAsync = null);
+
     /// <summary>HTML модалки «Выбор профиля» в текущей CDP-сессии.</summary>
     Task<string> CaptureProfileSwitchHtmlAsync(CancellationToken cancellationToken = default);
 

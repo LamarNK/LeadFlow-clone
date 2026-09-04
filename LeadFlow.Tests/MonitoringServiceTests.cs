@@ -807,6 +807,12 @@ public sealed class MonitoringServiceTests
             public Task<AvitoMoneySidebar?> TryReadMoneySidebarAsync(CancellationToken cancellationToken = default) =>
                 Task.FromResult<AvitoMoneySidebar?>(null);
 
+            public Task<AvitoAdvanceTopUpResult> RunAdvanceTopUpAsync(
+                decimal amount,
+                CancellationToken cancellationToken = default,
+                Func<CancellationToken, Task<bool>>? beforePayClickAsync = null) =>
+                Task.FromResult(AvitoAdvanceTopUpResult.Failed("Не поддерживается в тестовом двойнике."));
+
             public Task<string> CaptureProfileSwitchHtmlAsync(CancellationToken cancellationToken = default) =>
                 Task.FromResult(string.Empty);
 

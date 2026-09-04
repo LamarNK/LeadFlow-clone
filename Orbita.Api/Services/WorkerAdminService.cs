@@ -193,6 +193,10 @@ public sealed class WorkerAdminService(
         }
 
         worker.IsMonitoringPaused = paused;
+        // Ручная смена паузы инвалидирует любую активную аренду паузы от сессии пополнения,
+        // чтобы устаревшая сессия не могла восстановить паузу позже.
+        worker.TopUpPauseLeaseId = null;
+        worker.TopUpPauseLeaseVersion++;
         await db.SaveChangesAsync(ct);
         await workerPushNotifier.PushConfigChangedAsync(worker.Id, ct).ConfigureAwait(false);
 
@@ -301,6 +305,9 @@ public sealed class WorkerAdminService(
             }
 
             worker.IsMonitoringPaused = paused;
+            // Ручная смена паузы инвалидирует аренду паузы от сессии пополнения.
+            worker.TopUpPauseLeaseId = null;
+            worker.TopUpPauseLeaseVersion++;
             changed.Add(worker);
         }
 

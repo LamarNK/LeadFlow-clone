@@ -81,6 +81,49 @@ public static class PanelEndpoints
             return lockState is null ? Results.NotFound() : Results.Ok(lockState);
         });
 
+        workers.MapPost("/workers/{id:guid}/accounts/{accountId:guid}/top-up-sessions", async (
+            Guid id,
+            Guid accountId,
+            TopUpSessionService topUpSessions,
+            ClaimsPrincipal principal,
+            CancellationToken ct) =>
+        {
+            var (session, conflict) = await topUpSessions.CreateAsync(id, accountId, principal, ct);
+            if (conflict is not null)
+            {
+                return Results.Conflict(new
+                {
+                    error = conflict.Message,
+                    activeSessionId = conflict.ActiveSessionId,
+                    activeAccountName = conflict.ActiveAccountName
+                });
+            }
+
+            return session is null
+                ? Results.BadRequest(new { error = "Не удалось создать сессию пополнения." })
+                : Results.Ok(session);
+        });
+
+        workers.MapGet("/top-up-sessions/{id:guid}", async (
+            Guid id,
+            TopUpSessionService topUpSessions,
+            ClaimsPrincipal principal,
+            CancellationToken ct) =>
+        {
+            var session = await topUpSessions.GetAsync(id, principal, ct);
+            return session is null ? Results.NotFound() : Results.Ok(session);
+        });
+
+        workers.MapPost("/top-up-sessions/{id:guid}/cancel", async (
+            Guid id,
+            TopUpSessionService topUpSessions,
+            ClaimsPrincipal principal,
+            CancellationToken ct) =>
+        {
+            var (success, error) = await topUpSessions.CancelAsync(id, principal, ct);
+            return success ? Results.Ok() : Results.BadRequest(new { error });
+        });
+
         workers.MapPost("/browser-monitor-sessions", async (
             Guid workerId,
             BrowserMonitorService browserMonitorSessions,

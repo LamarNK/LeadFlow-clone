@@ -158,6 +158,25 @@ public sealed class WorkerEntity
     /// Пауза рабочего цикла мониторинга/парсинга откликов. Не влияет на доступ воркера к API.
     /// </summary>
     public bool IsMonitoringPaused { get; set; }
+
+    /// <summary>
+    /// Идентификатор активной «аренды» паузы, установленной сессией пополнения.
+    /// null — аренды нет (пауза ручная или отсутствует). Авторитетен для восстановления паузы.
+    /// </summary>
+    public Guid? TopUpPauseLeaseId { get; set; }
+
+    /// <summary>
+    /// Версия аренды паузы. Инкрементируется при любой ручной смене паузы, чтобы устаревшая
+    /// сессия не могла восстановить паузу после того, как оператор вручную её изменил.
+    /// </summary>
+    public long TopUpPauseLeaseVersion { get; set; }
+
+    /// <summary>
+    /// Состояние паузы до того, как сессия пополнения поставила аренду. Используется для
+    /// восстановления при освобождении аренды.
+    /// </summary>
+    public bool TopUpPauseBaselinePaused { get; set; }
+
     public DateTime? ApiKeyRotatedAtUtc { get; set; }
     public int MaxConcurrentAccounts { get; set; } = 1;
 
@@ -855,6 +874,57 @@ public sealed class PanelAuditLogEntity
     public string? TargetId { get; set; }
     public string? Details { get; set; }
     public string? IpAddress { get; set; }
+}
+
+/// <summary>
+/// Сессия ручного пополнения баланса одного аккаунта воркера. Запрошена оператором,
+/// исполняется воркером в отдельной фазе автоматизации; оплата по QR/переводу не является
+/// подтверждением пополнения, поэтому завершение фиксируется статусами expired/failed/cancelled.
+/// </summary>
+public sealed class TopUpSessionEntity
+{
+    public Guid Id { get; set; }
+    public Guid WorkerId { get; set; }
+    public Guid AccountId { get; set; }
+    public string AccountName { get; set; } = string.Empty;
+    public Guid OfficeId { get; set; }
+    public string OperatorUserId { get; set; } = string.Empty;
+    public string OperatorDisplayName { get; set; } = string.Empty;
+    public string Status { get; set; } = TopUpSessionStatuses.Requested;
+    public decimal CurrentBalance { get; set; }
+    public decimal TargetBalance { get; set; }
+    public decimal RequestedAmount { get; set; }
+    public int DailyResponseCount { get; set; }
+
+    /// <summary>
+    /// Снимок версии аренды паузы воркера, зафиксированный атомарно при создании сессии.
+    /// Используется при claim оплаты: если текущая версия воркера отличается — пауза была
+    /// изменена вручную после создания сессии, и оплата должна быть отклонена.
+    /// </summary>
+    public long ExpectedPauseLeaseVersion { get; set; }
+
+    /// <summary>
+    /// Признак, что сессия приобрела аренду паузы при создании (воркер был не на паузе).
+    /// Если true — при claim оплаты требуется, чтобы текущий TopUpPauseLeaseId == Id сессии.
+    /// </summary>
+    public bool OwnsPauseLease { get; set; }
+
+    public DateTime CreatedAtUtc { get; set; }
+    public DateTime ExpiresAtUtc { get; set; }
+    public DateTime? CompletedAtUtc { get; set; }
+    public DateTime? StartedAtUtc { get; set; }
+    public DateTime? PaymentClaimedAtUtc { get; set; }
+    public DateTime? QrReadyAtUtc { get; set; }
+    public string? QrImageBase64 { get; set; }
+    public string? QrImageUrl { get; set; }
+    public string? FailureMessage { get; set; }
+
+    /// <summary>
+    /// Версия строки (PostgreSQL xmin) для оптимистичной блокировки при обновлении статуса.
+    /// </summary>
+    public uint RowVersion { get; set; }
+
+    public WorkerEntity Worker { get; set; } = null!;
 }
 
 public sealed class CrmCandidateCardEntity
