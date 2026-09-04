@@ -52,6 +52,7 @@ services:
       Cache__Enabled: ${CACHE_ENABLED:-false}
       Cache__RedisConfiguration: redis:6379,password=${REDIS_PASSWORD:?REDIS_PASSWORD must be set},abortConnect=false,connectTimeout=1000,syncTimeout=1000
       Cache__Domains__Dashboard: ${CACHE_DASHBOARD_ENABLED:-false}
+      Cache__Domains__WorkerDetails: ${CACHE_WORKER_DETAILS_ENABLED:-false}
       Cache__Domains__Responses: ${CACHE_RESPONSES_ENABLED:-false}
       Cache__Domains__Crm: ${CACHE_CRM_ENABLED:-false}
       Cache__Domains__Analytics: ${CACHE_ANALYTICS_ENABLED:-false}

@@ -50,4 +50,22 @@ public sealed class OrbitaQueryCacheTests
 
         Assert.DoesNotContain(OrbitaCacheDomain.Dashboard, domains);
     }
+
+    [Fact]
+    public void MapDomains_WorkerPageWritesInvalidateOnlyWorkerDetails()
+    {
+        var domains = OrbitaQueryCache.MapDomains(
+            [PanelChangeKind.Accounts, PanelChangeKind.Events, PanelChangeKind.WorkerDetails]);
+
+        Assert.Contains(OrbitaCacheDomain.WorkerDetails, domains);
+        Assert.DoesNotContain(OrbitaCacheDomain.Dashboard, domains);
+    }
+
+    [Fact]
+    public void MapDomains_TemplateWriteInvalidatesReferenceData()
+    {
+        var domains = OrbitaQueryCache.MapDomains([PanelChangeKind.Reference]);
+
+        Assert.Equal([OrbitaCacheDomain.Reference], domains);
+    }
 }

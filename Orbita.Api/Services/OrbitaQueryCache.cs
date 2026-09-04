@@ -15,6 +15,7 @@ namespace Orbita.Api.Services;
 public enum OrbitaCacheDomain
 {
     Dashboard,
+    WorkerDetails,
     Responses,
     Crm,
     Analytics,
@@ -180,14 +181,21 @@ public sealed class OrbitaQueryCache(
             .SelectMany(static change => (IEnumerable<OrbitaCacheDomain>)(change switch
             {
                 PanelChangeKind.Crm => new[] { OrbitaCacheDomain.Crm, OrbitaCacheDomain.Responses, OrbitaCacheDomain.Analytics },
-                PanelChangeKind.Responses => new[] { OrbitaCacheDomain.Responses, OrbitaCacheDomain.Dashboard, OrbitaCacheDomain.Analytics },
+                PanelChangeKind.Responses => new[] { OrbitaCacheDomain.Responses, OrbitaCacheDomain.Dashboard, OrbitaCacheDomain.WorkerDetails, OrbitaCacheDomain.Analytics },
                 PanelChangeKind.Statistics => new[] { OrbitaCacheDomain.Dashboard, OrbitaCacheDomain.Analytics },
                 // Worker heartbeats, telemetry snapshots and event streams are high
                 // frequency. Their dashboard fields are allowed to be up to five
                 // seconds old, so they rely on the Realtime TTL rather than making
                 // every in-flight summary cache miss. Meaningful writes include
                 // Dashboard explicitly and still invalidate immediately.
-                PanelChangeKind.Dashboard => new[] { OrbitaCacheDomain.Dashboard },
+                PanelChangeKind.Dashboard => new[] { OrbitaCacheDomain.Dashboard, OrbitaCacheDomain.WorkerDetails },
+                // A telemetry heartbeat emits Workers only and intentionally relies
+                // on the five-second WorkerDetails TTL. Account mutations and new
+                // events, however, must make a worker page fresh immediately.
+                PanelChangeKind.WorkerDetails => new[] { OrbitaCacheDomain.WorkerDetails },
+                PanelChangeKind.Accounts => new[] { OrbitaCacheDomain.WorkerDetails },
+                PanelChangeKind.Events => new[] { OrbitaCacheDomain.WorkerDetails },
+                PanelChangeKind.Reference => new[] { OrbitaCacheDomain.Reference },
                 _ => Array.Empty<OrbitaCacheDomain>()
             }))
             .Distinct()
@@ -256,6 +264,7 @@ public sealed class OrbitaQueryCache(
         return domain switch
         {
             OrbitaCacheDomain.Dashboard => value.Domains.Dashboard,
+            OrbitaCacheDomain.WorkerDetails => value.Domains.WorkerDetails,
             OrbitaCacheDomain.Responses => value.Domains.Responses,
             OrbitaCacheDomain.Crm => value.Domains.Crm,
             OrbitaCacheDomain.Analytics => value.Domains.Analytics,

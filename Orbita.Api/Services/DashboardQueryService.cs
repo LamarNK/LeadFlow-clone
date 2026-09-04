@@ -603,6 +603,46 @@ public sealed class DashboardQueryService(
             return null;
         }
 
+        Task<WorkerDetail?> Load(CancellationToken token) => GetWorkerDetailUncachedAsync(workerId, token);
+        var detail = queryCache is null
+            ? await Load(ct)
+            : await queryCache.GetOrCreateAsync(
+                OrbitaCacheDomain.WorkerDetails,
+                scope.ResolveFilter(null),
+                ScopeAudience(scope),
+                new { Kind = "worker-detail", workerId },
+                OrbitaCachePolicy.Realtime,
+                Load,
+                ct);
+        if (detail is null)
+        {
+            return null;
+        }
+
+        // Secrets and process-local login state must never enter either cache tier.
+        // This indexed lookup is deliberately small compared with the aggregate
+        // snapshot/account queries cached above.
+        var requestOnly = await db.Workers.AsNoTracking()
+            .Where(x => x.Id == workerId)
+            .Select(x => new { x.AdsPowerApiKey, x.RuCaptchaApiKey })
+            .FirstOrDefaultAsync(ct);
+        if (requestOnly is null)
+        {
+            return null;
+        }
+
+        return detail with
+        {
+            AdsPowerApiKey = requestOnly.AdsPowerApiKey,
+            RuCaptchaApiKey = requestOnly.RuCaptchaApiKey,
+            PendingLocalChromeLoginAccountId = localChromeLoginSessions?.GetPendingForWorker(workerId)?.AccountId
+        };
+    }
+
+    private async Task<WorkerDetail?> GetWorkerDetailUncachedAsync(
+        Guid workerId,
+        CancellationToken ct)
+    {
         var nowUtc = DateTime.UtcNow;
         var worker = await db.Workers.AsNoTracking()
             .Include(x => x.Office)
@@ -677,7 +717,7 @@ public sealed class DashboardQueryService(
             worker.StartedAtUtc,
             worker.AgentVersion,
             worker.AdsPowerApiBaseUrl,
-            worker.AdsPowerApiKey,
+            AdsPowerApiKey: null,
             worker.IsEnabled,
             op.TodayResponses,
             op.TodayDuplicates,
@@ -710,7 +750,7 @@ public sealed class DashboardQueryService(
             worker.AdsPowerGroupId,
             worker.AdsPowerGroupName,
             AdsPowerGroupsJson.Parse(worker.AdsPowerGroupsJson),
-            worker.RuCaptchaApiKey,
+            RuCaptchaApiKey: null,
             worker.MultiloginLauncherUrl,
             worker.MultiloginCloudApiUrl,
             HasMultiloginAutomationToken: !string.IsNullOrWhiteSpace(worker.MultiloginAutomationToken),
@@ -721,7 +761,7 @@ public sealed class DashboardQueryService(
             AdsPowerCheck: WorkerConfigService.MapProviderCheck(worker, WorkerBrowserProviderKinds.AdsPower),
             MultiloginCheck: WorkerConfigService.MapProviderCheck(worker, WorkerBrowserProviderKinds.Multilogin),
             LocalChromeCheck: WorkerConfigService.MapProviderCheck(worker, WorkerBrowserProviderKinds.Local),
-            PendingLocalChromeLoginAccountId: localChromeLoginSessions?.GetPendingForWorker(worker.Id)?.AccountId,
+            PendingLocalChromeLoginAccountId: null,
             IsMonitoringPaused: worker.IsMonitoringPaused);
     }
 
@@ -735,6 +775,23 @@ public sealed class DashboardQueryService(
             return [];
         }
 
+        Task<IReadOnlyList<WorkerAccountDto>> Load(CancellationToken token) => LoadWorkerAccountsAsync(workerId, token);
+        return queryCache is null
+            ? await Load(ct)
+            : await queryCache.GetOrCreateAsync(
+                OrbitaCacheDomain.WorkerDetails,
+                scope.ResolveFilter(null),
+                ScopeAudience(scope),
+                new { Kind = "worker-accounts", workerId },
+                OrbitaCachePolicy.Realtime,
+                Load,
+                ct);
+    }
+
+    private async Task<IReadOnlyList<WorkerAccountDto>> LoadWorkerAccountsAsync(
+        Guid workerId,
+        CancellationToken ct)
+    {
         var byWorker = await LoadAccountsByWorkerAsync([workerId], ct);
         return byWorker.TryGetValue(workerId, out var accounts) ? accounts : [];
     }

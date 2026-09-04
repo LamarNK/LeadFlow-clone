@@ -17,6 +17,7 @@ public sealed class OrbitaCacheOptions
 public sealed class OrbitaCacheDomainOptions
 {
     public bool Dashboard { get; set; } = true;
+    public bool WorkerDetails { get; set; } = true;
     public bool Responses { get; set; } = true;
     public bool Crm { get; set; } = true;
     public bool Analytics { get; set; } = true;

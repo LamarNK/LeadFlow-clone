@@ -10,7 +10,11 @@ public enum PanelChangeKind
     Accounts,
     Statistics,
     NavBadges,
-    Crm
+    Crm,
+    /// <summary>Read models backing an individual worker page.</summary>
+    WorkerDetails,
+    /// <summary>Office-scoped reference/settings data.</summary>
+    Reference
 }
 
 public sealed record PanelChangeNotification(
