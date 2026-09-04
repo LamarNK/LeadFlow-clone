@@ -187,7 +187,7 @@ public sealed class OrbitaQueryCache(
             .SelectMany(static change => (IEnumerable<OrbitaCacheDomain>)(change switch
             {
                 PanelChangeKind.Crm => new[] { OrbitaCacheDomain.Crm, OrbitaCacheDomain.Responses, OrbitaCacheDomain.Analytics },
-                PanelChangeKind.Responses => new[] { OrbitaCacheDomain.Responses, OrbitaCacheDomain.Dashboard, OrbitaCacheDomain.WorkerDetails, OrbitaCacheDomain.Analytics },
+                PanelChangeKind.Responses => new[] { OrbitaCacheDomain.Responses, OrbitaCacheDomain.Dashboard, OrbitaCacheDomain.Analytics },
                 PanelChangeKind.Statistics => new[] { OrbitaCacheDomain.Dashboard, OrbitaCacheDomain.Analytics },
                 // Worker heartbeats, telemetry snapshots and event streams are high
                 // frequency. Their dashboard fields are allowed to be up to five
@@ -195,12 +195,12 @@ public sealed class OrbitaQueryCache(
                 // every in-flight summary cache miss. Meaningful writes include
                 // Dashboard explicitly and still invalidate immediately.
                 PanelChangeKind.Dashboard => new[] { OrbitaCacheDomain.Dashboard, OrbitaCacheDomain.WorkerDetails },
-                // A telemetry heartbeat emits Workers only and intentionally relies
-                // on the five-second WorkerDetails TTL. Account mutations and new
-                // events, however, must make a worker page fresh immediately.
+                // Heartbeats, response ingestion and event streams are all high
+                // frequency. Worker details rely on their five-second TTL for
+                // those live counters; explicit account/configuration writes
+                // still invalidate immediately.
                 PanelChangeKind.WorkerDetails => new[] { OrbitaCacheDomain.WorkerDetails },
                 PanelChangeKind.Accounts => new[] { OrbitaCacheDomain.WorkerDetails },
-                PanelChangeKind.Events => new[] { OrbitaCacheDomain.WorkerDetails },
                 PanelChangeKind.Reference => new[] { OrbitaCacheDomain.Reference },
                 _ => Array.Empty<OrbitaCacheDomain>()
             }))
