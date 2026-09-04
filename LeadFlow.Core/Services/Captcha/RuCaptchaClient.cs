@@ -1,6 +1,9 @@
 using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using TwoCaptchaClient = TwoCaptcha.TwoCaptcha;
+using TwoCaptchaApiClient = TwoCaptcha.ApiClient;
+using TwoCaptchaGeeTestV4 = TwoCaptcha.Captcha.GeeTestV4;
 
 namespace LeadFlow.Core.Services.Captcha;
 
@@ -47,14 +50,34 @@ public sealed class RuCaptchaClient(HttpClient http) : IRuCaptchaClient
             throw new RuCaptchaException("Не задан captcha_id для GeeTest v4.");
         }
 
-        var taskId = await CreateTaskAsync(
-                apiKey.Trim(),
-                websiteUrl.Trim(),
-                captchaId.Trim(),
-                taskOptions,
-                cancellationToken)
-            .ConfigureAwait(false);
-        return await WaitForResultAsync(apiKey.Trim(), taskId, cancellationToken).ConfigureAwait(false);
+        var captcha = new TwoCaptchaGeeTestV4();
+        captcha.SetCaptchaId(captchaId.Trim());
+        captcha.SetUrl(websiteUrl.Trim());
+
+        if (taskOptions?.Proxy is { } proxy)
+        {
+            captcha.SetProxy(
+                proxy.Type.ToUpperInvariant(),
+                BuildV1ProxyUri(proxy));
+        }
+
+        var solver = new TwoCaptchaClient(apiKey.Trim())
+        {
+            DefaultTimeout = Math.Max(1, (int)Math.Ceiling(SolveTimeout.TotalSeconds)),
+            PollingInterval = Math.Max(1, (int)Math.Ceiling(PollInterval.TotalSeconds))
+        };
+        solver.SetApiClient(new RuCaptchaV1ApiClient(http));
+
+        try
+        {
+            await solver.Solve(captcha).WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            throw new RuCaptchaException($"RuCaptcha GeeTest v4 API v1: {ex.Message}", ex);
+        }
+
+        return RuCaptchaResponseParser.ParseGeeTestV4V1Solution(captcha.Code);
     }
 
     public async Task<HCaptchaSolution> SolveHCaptchaAsync(
@@ -103,57 +126,6 @@ public sealed class RuCaptchaClient(HttpClient http) : IRuCaptchaClient
 
         var taskId = await CreateImageToTextTaskAsync(apiKey.Trim(), body, cancellationToken).ConfigureAwait(false);
         return await WaitForImageToTextResultAsync(apiKey.Trim(), taskId, cancellationToken).ConfigureAwait(false);
-    }
-
-    private async Task<long> CreateTaskAsync(
-        string apiKey,
-        string websiteUrl,
-        string captchaId,
-        GeeTestV4TaskOptions? taskOptions,
-        CancellationToken cancellationToken)
-    {
-        var proxy = taskOptions?.Proxy;
-        var body = new Dictionary<string, object?>
-        {
-            ["clientKey"] = apiKey,
-            ["task"] = new Dictionary<string, object?>
-            {
-                ["type"] = proxy is null ? "GeeTestTaskProxyless" : "GeeTestTask",
-                ["websiteURL"] = websiteUrl,
-                ["version"] = 4,
-                ["initParameters"] = new Dictionary<string, string>
-                {
-                    ["captcha_id"] = captchaId,
-                    // Как initGeetest4 на firewall-странице Avito: product bind + rus.
-                    ["product"] = "bind",
-                    ["language"] = "rus"
-                }
-            }
-        };
-        var task = (Dictionary<string, object?>)body["task"]!;
-        if (!string.IsNullOrWhiteSpace(taskOptions?.UserAgent))
-        {
-            task["userAgent"] = taskOptions.UserAgent.Trim();
-        }
-
-        if (proxy is not null)
-        {
-            task["proxyType"] = proxy.Type;
-            task["proxyAddress"] = proxy.Address;
-            task["proxyPort"] = proxy.Port;
-            task["proxyLogin"] = proxy.Login;
-            task["proxyPassword"] = proxy.Password;
-        }
-
-        using var response = await http.PostAsJsonAsync("createTask", body, JsonOptions, cancellationToken)
-            .ConfigureAwait(false);
-        var json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-        if (!response.IsSuccessStatusCode)
-        {
-            throw new RuCaptchaException($"RuCaptcha createTask HTTP {(int)response.StatusCode}: {Trim(json)}");
-        }
-
-        return RuCaptchaResponseParser.ParseCreateTaskId(json);
     }
 
     private async Task<long> CreateHCaptchaTaskAsync(
@@ -360,5 +332,47 @@ public sealed class RuCaptchaClient(HttpClient http) : IRuCaptchaClient
         }
 
         return value.Contains("://", StringComparison.Ordinal) ? null : value;
+    }
+
+    private static string BuildV1ProxyUri(GeeTestV4Proxy proxy)
+    {
+        var credentials = string.IsNullOrWhiteSpace(proxy.Login)
+            ? string.Empty
+            : string.IsNullOrWhiteSpace(proxy.Password)
+                ? proxy.Login + "@"
+                : proxy.Login + ":" + proxy.Password + "@";
+        return credentials + proxy.Address + ":" + proxy.Port;
+    }
+
+    private sealed class RuCaptchaV1ApiClient(HttpClient client) : TwoCaptchaApiClient
+    {
+        public override async Task<string> In(
+            Dictionary<string, string> parameters,
+            Dictionary<string, FileInfo> files)
+        {
+            using var content = new FormUrlEncodedContent(parameters);
+            using var response = await client.PostAsync("https://rucaptcha.com/in.php", content).ConfigureAwait(false);
+            var body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new HttpRequestException($"RuCaptcha in.php HTTP {(int)response.StatusCode}: {Trim(body)}");
+            }
+
+            return body;
+        }
+
+        public override async Task<string> Res(Dictionary<string, string> parameters)
+        {
+            var query = string.Join("&", parameters.Select(pair =>
+                Uri.EscapeDataString(pair.Key) + "=" + Uri.EscapeDataString(pair.Value)));
+            using var response = await client.GetAsync("https://rucaptcha.com/res.php?" + query).ConfigureAwait(false);
+            var body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+            {
+                throw new HttpRequestException($"RuCaptcha res.php HTTP {(int)response.StatusCode}: {Trim(body)}");
+            }
+
+            return body;
+        }
     }
 }

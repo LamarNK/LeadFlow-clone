@@ -13,21 +13,16 @@ public sealed class RuCaptchaClientTests
         var handler = new StubHttpMessageHandler((request, body) =>
         {
             var path = request.RequestUri?.AbsolutePath ?? string.Empty;
-            if (path.Contains("createTask", StringComparison.OrdinalIgnoreCase))
+            if (path.Contains("/in.php", StringComparison.OrdinalIgnoreCase))
             {
-                Assert.Contains("GeeTestTaskProxyless", body, StringComparison.Ordinal);
-                Assert.Contains("\"version\":4", body, StringComparison.Ordinal);
+                Assert.Contains("method=geetest_v4", body, StringComparison.Ordinal);
                 Assert.Contains("2d9c743cf7d63dbc9db578a608196bcd", body, StringComparison.Ordinal);
-                Assert.Contains("\"product\":\"bind\"", body, StringComparison.Ordinal);
-                Assert.Contains("\"language\":\"rus\"", body, StringComparison.Ordinal);
-                return Task.FromResult(StubHttpMessageHandler.Ok("""{"errorId":0,"taskId":42}"""));
+                Assert.Contains("pageurl=https%3A%2F%2Fwww.avito.ru%2Fprofile%2Fcandidates", body, StringComparison.Ordinal);
+                return Task.FromResult(StubHttpMessageHandler.Ok("OK|42"));
             }
 
             return Task.FromResult(StubHttpMessageHandler.Ok("""
-                {"errorId":0,"status":"ready","solution":{
-                  "captcha_id":"2d9c743cf7d63dbc9db578a608196bcd",
-                  "lot_number":"ln","pass_token":"pt","gen_time":"1","captcha_output":"co"
-                }}
+                OK|{"captcha_id":"2d9c743cf7d63dbc9db578a608196bcd","lot_number":"ln","pass_token":"pt","gen_time":"1","captcha_output":"co"}
                 """));
         });
 
@@ -77,20 +72,15 @@ public sealed class RuCaptchaClientTests
     {
         var handler = new StubHttpMessageHandler((request, body) =>
         {
-            if (request.RequestUri!.AbsolutePath.Contains("createTask", StringComparison.OrdinalIgnoreCase))
+            if (request.RequestUri!.AbsolutePath.Contains("/in.php", StringComparison.OrdinalIgnoreCase))
             {
-                Assert.Contains("\"type\":\"GeeTestTask\"", body, StringComparison.Ordinal);
-                Assert.Contains("\"userAgent\":\"Mozilla/5.0 test\"", body, StringComparison.Ordinal);
-                Assert.Contains("\"proxyType\":\"socks5\"", body, StringComparison.Ordinal);
-                Assert.Contains("\"proxyAddress\":\"203.0.113.10\"", body, StringComparison.Ordinal);
-                Assert.Contains("\"proxyPort\":1080", body, StringComparison.Ordinal);
-                return Task.FromResult(StubHttpMessageHandler.Ok("""{"errorId":0,"taskId":77}"""));
+                Assert.Contains("proxytype=SOCKS5", body, StringComparison.Ordinal);
+                Assert.Contains("proxy=login%3Asecret%40203.0.113.10%3A1080", body, StringComparison.Ordinal);
+                return Task.FromResult(StubHttpMessageHandler.Ok("OK|77"));
             }
 
             return Task.FromResult(StubHttpMessageHandler.Ok("""
-                {"errorId":0,"status":"ready","solution":{
-                  "captcha_id":"id","lot_number":"ln","pass_token":"pt","gen_time":"1","captcha_output":"co"
-                }}
+                OK|{"captcha_id":"id","lot_number":"ln","pass_token":"pt","gen_time":"1","captcha_output":"co"}
                 """));
         });
         var client = new RuCaptchaClient(new HttpClient(handler) { BaseAddress = new Uri("https://api.rucaptcha.com/") })

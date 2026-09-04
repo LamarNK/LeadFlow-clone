@@ -4,6 +4,36 @@ namespace LeadFlow.Core.Services.Captcha;
 
 public static class RuCaptchaResponseParser
 {
+    /// <summary>
+    /// Разбирает значение <c>Captcha.Code</c> из SDK 2captcha-csharp для GeeTest v4.
+    /// Поддерживает и обычный JSON решения, и формат <c>ExtendedResponse = 1</c>,
+    /// в котором оно находится в поле <c>request</c>.
+    /// </summary>
+    public static GeeTestV4Solution ParseGeeTestV4V1Solution(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new RuCaptchaException("RuCaptcha API v1 не вернул решение GeeTest v4.");
+        }
+
+        using var doc = ParseObject(value);
+        var root = doc.RootElement;
+        if (root.TryGetProperty("request", out var request))
+        {
+            if (request.ValueKind == JsonValueKind.String)
+            {
+                return ParseGeeTestV4V1Solution(request.GetString());
+            }
+
+            if (request.ValueKind == JsonValueKind.Object)
+            {
+                return ParseGeeTestV4Solution(request);
+            }
+        }
+
+        return ParseGeeTestV4Solution(root);
+    }
+
     public static long ParseCreateTaskId(string json)
     {
         using var doc = ParseObject(json);
@@ -49,27 +79,7 @@ public static class RuCaptchaResponseParser
             throw new RuCaptchaException("RuCaptcha getTaskResult: нет solution.");
         }
 
-        var captchaId = ReadString(solution, "captcha_id");
-        var lotNumber = ReadString(solution, "lot_number");
-        var passToken = ReadString(solution, "pass_token");
-        var genTime = ReadString(solution, "gen_time");
-        var captchaOutput = ReadString(solution, "captcha_output");
-
-        if (string.IsNullOrWhiteSpace(lotNumber)
-            || string.IsNullOrWhiteSpace(passToken)
-            || string.IsNullOrWhiteSpace(genTime)
-            || string.IsNullOrWhiteSpace(captchaOutput))
-        {
-            throw new RuCaptchaException(
-                "RuCaptcha solution неполный: нужны lot_number, pass_token, gen_time, captcha_output.");
-        }
-
-        return new GeeTestV4Solution(
-            CaptchaId: captchaId ?? string.Empty,
-            LotNumber: lotNumber,
-            PassToken: passToken,
-            GenTime: genTime,
-            CaptchaOutput: captchaOutput);
+        return ParseGeeTestV4Solution(solution);
     }
 
     /// <summary>Разбирает token / gRecaptchaResponse, возвращаемый HCaptchaTask.</summary>
@@ -225,6 +235,31 @@ public static class RuCaptchaResponseParser
             ? $"RuCaptcha errorId={id}" + (string.IsNullOrWhiteSpace(code) ? string.Empty : $" ({code})")
             : description;
         throw new RuCaptchaException(message) { ErrorCode = code };
+    }
+
+    private static GeeTestV4Solution ParseGeeTestV4Solution(JsonElement solution)
+    {
+        var captchaId = ReadString(solution, "captcha_id");
+        var lotNumber = ReadString(solution, "lot_number");
+        var passToken = ReadString(solution, "pass_token");
+        var genTime = ReadString(solution, "gen_time");
+        var captchaOutput = ReadString(solution, "captcha_output");
+
+        if (string.IsNullOrWhiteSpace(lotNumber)
+            || string.IsNullOrWhiteSpace(passToken)
+            || string.IsNullOrWhiteSpace(genTime)
+            || string.IsNullOrWhiteSpace(captchaOutput))
+        {
+            throw new RuCaptchaException(
+                "RuCaptcha solution неполный: нужны lot_number, pass_token, gen_time, captcha_output.");
+        }
+
+        return new GeeTestV4Solution(
+            CaptchaId: captchaId ?? string.Empty,
+            LotNumber: lotNumber,
+            PassToken: passToken,
+            GenTime: genTime,
+            CaptchaOutput: captchaOutput);
     }
 
     private static string? ReadString(JsonElement obj, string name)

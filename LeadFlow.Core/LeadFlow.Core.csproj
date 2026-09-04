@@ -13,6 +13,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Orbita.Contracts\Orbita.Contracts.csproj" />
+    <PackageReference Include="2captcha-csharp" Version="1.4.8" />
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
     <PackageReference Include="Microsoft.Data.Sqlite.Core" Version="10.0.7" />
     <PackageReference Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.7" />
