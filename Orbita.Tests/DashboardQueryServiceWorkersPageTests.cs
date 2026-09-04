@@ -203,6 +203,38 @@ public sealed class DashboardQueryServiceWorkersPageTests
     }
 
     [Fact]
+    public async Task GetWorkersPageAsync_EmptyFilterIncludesWorkersWithNoActiveAccounts()
+    {
+        DashboardQueryService.ClearCacheForTests();
+        await using var db = CreateDb();
+        var now = DateTime.UtcNow;
+        SeedOffice(db, now);
+        var noAccountsWorker = Guid.NewGuid();
+        var noActiveAccountsWorker = Guid.NewGuid();
+        var activeAccountsWorker = Guid.NewGuid();
+        SeedWorker(db, noAccountsWorker, "no accounts", now.AddMinutes(-1));
+        SeedWorker(db, noActiveAccountsWorker, "no active accounts", now.AddMinutes(-2));
+        SeedWorker(db, activeAccountsWorker, "active accounts", now.AddMinutes(-3));
+        SeedAccount(db, noActiveAccountsWorker, "inactive", 500m, status: "Inactive");
+        SeedAccount(db, activeAccountsWorker, "active", 500m);
+        await db.SaveChangesAsync();
+
+        var page = await CreateService(db).GetWorkersPageAsync(
+            OfficeScope.ForOffice(OfficeId),
+            OfficeId,
+            page: 1,
+            pageSize: 25,
+            workerFilter: DashboardWorkerFilter.Empty);
+
+        Assert.Equal(2, page.TotalCount);
+        Assert.Equal(2, page.TabCounts.Empty);
+        Assert.Equal(
+            [noAccountsWorker, noActiveAccountsWorker],
+            page.Items.Select(item => item.Id));
+        Assert.DoesNotContain(page.Items, item => item.Id == activeAccountsWorker);
+    }
+
+    [Fact]
     public async Task GetWorkersPageAsync_SortsResponsesAcrossPagesBeforePaging()
     {
         DashboardQueryService.ClearCacheForTests();
@@ -573,7 +605,8 @@ public sealed class DashboardQueryServiceWorkersPageTests
         Guid workerId,
         string displayName,
         decimal totalBalance,
-        string subProfilesJson = "[]")
+        string subProfilesJson = "[]",
+        string status = "Active")
     {
         var accountId = Guid.NewGuid();
         db.WorkerAccounts.Add(new WorkerAccountEntity
@@ -581,7 +614,7 @@ public sealed class DashboardQueryServiceWorkersPageTests
             WorkerId = workerId,
             AccountId = accountId,
             DisplayName = displayName,
-            Status = "Active",
+            Status = status,
             IsEnabled = true,
             IsEnabledInPanel = true,
             TotalBalance = totalBalance,

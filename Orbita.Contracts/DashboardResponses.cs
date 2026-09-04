@@ -99,7 +99,9 @@ public static class DashboardWorkerFilter
     {
         Online => worker.IsEnabled && worker.IsOnline,
         Offline => !worker.IsEnabled || !worker.IsOnline,
-        Empty => worker.AccountCount == 0,
+        // The dashboard's "Нет аккаунтов" tab also surfaces workers whose
+        // configured accounts are all inactive. Both states require attention.
+        Empty => worker.AccountCount == 0 || worker.ActiveAccountCount == 0,
         Paused => worker.IsMonitoringPaused,
         _ => true
     };

@@ -2518,14 +2518,14 @@ internal static class DesignPreviewData
             workerRows.Count,
             workerRows.Count(w => w.IsEnabled && w.IsOnline),
             workerRows.Count(w => !w.IsEnabled || !w.IsOnline),
-            workerRows.Count(w => w.TotalAccounts == 0),
+            workerRows.Count(w => w.TotalAccounts == 0 || w.ActiveAccounts == 0),
             workerRows.Count(w => w.IsMonitoringPaused));
         var sortedWorkers = TableSort.DashboardWorkers.Apply(workerRows, tableSort)
             .Where(w => normalizedWorkerFilter switch
             {
                 DashboardWorkerFilter.Online => w.IsEnabled && w.IsOnline,
                 DashboardWorkerFilter.Offline => !w.IsEnabled || !w.IsOnline,
-                DashboardWorkerFilter.Empty => w.TotalAccounts == 0,
+                DashboardWorkerFilter.Empty => w.TotalAccounts == 0 || w.ActiveAccounts == 0,
                 DashboardWorkerFilter.Paused => w.IsMonitoringPaused,
                 _ => true
             })
