@@ -270,6 +270,33 @@ public sealed class DashboardQueryServiceWorkersPageTests
     }
 
     [Fact]
+    public async Task GetWorkersPageAsync_PutsConfirmedZeroBalanceFirst()
+    {
+        DashboardQueryService.ClearCacheForTests();
+        var (db, connection) = await CreateSqliteDbAsync();
+        await using var connectionScope = connection;
+        await using var dbScope = db;
+        var now = DateTime.UtcNow;
+        SeedOffice(db, now);
+        var low = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbb35");
+        var normal = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbb36");
+        SeedWorker(db, low, "low", now.AddMinutes(-2));
+        SeedWorker(db, normal, "normal", now.AddMinutes(-1));
+        SeedAccount(
+            db,
+            low,
+            "confirmed-zero",
+            totalBalance: 0m,
+            subProfilesJson: """[{"Id":"sp-1","Name":"Основной","Balance":0,"WalletBalance":0}]""");
+        await db.SaveChangesAsync();
+
+        var page = await CreateService(db).GetWorkersPageAsync(
+            OfficeScope.ForOffice(OfficeId), OfficeId, page: 1, pageSize: 25);
+
+        Assert.Equal([low, normal], page.Items.Select(x => x.Id));
+    }
+
+    [Fact]
     public async Task GetWorkersPageAsync_CountsLowBalanceAccountsPerWorker()
     {
         DashboardQueryService.ClearCacheForTests();

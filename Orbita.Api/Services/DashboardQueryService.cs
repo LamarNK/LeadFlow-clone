@@ -393,8 +393,10 @@ public sealed class DashboardQueryService(
         var lowBalanceFirst = filtered
             .OrderByDescending(worker => db.WorkerAccounts.Any(account =>
                 account.WorkerId == worker.Id
-                && account.TotalBalance > 0
-                && account.TotalBalance < BalanceDisplayRules.WorkerDetailsLowBalanceThresholdRub));
+                && account.TotalBalance < BalanceDisplayRules.WorkerDetailsLowBalanceThresholdRub
+                && (account.TotalBalance > 0
+                    || account.SubProfilesJson.Contains("\"Balance\":0")
+                    || account.SubProfilesJson.Contains("\"balance\":0"))));
         var ordered = ApplyWorkerListSort(lowBalanceFirst, sortColumn, sortDescending, todayStart);
         var workers = await ordered
             .Skip((normalizedPage - 1) * normalizedPageSize)
