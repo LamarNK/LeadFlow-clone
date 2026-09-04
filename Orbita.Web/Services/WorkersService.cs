@@ -100,10 +100,7 @@ public sealed class WorkersService(
         CancellationToken ct = default)
     {
         var tableSort = TableSort.Parse(sort, sortDir, TableSort.WorkerAccounts.Default, TableSort.WorkerAccounts.Columns);
-        var monitoringCyclesTask = statistics.GetIndexAsync(
-            DashboardPeriod.CreateToday(BrowserTimeZone.Resolve(httpContextAccessor.HttpContext)),
-            workerIds: [id],
-            ct: ct);
+        var monitoringCyclesTask = GetMonitoringCyclesAsync(id, ct);
 
         if (previewOptions.Value.Enabled)
         {
@@ -116,7 +113,7 @@ public sealed class WorkersService(
                 accountProvider);
             if (previewModel is not null)
             {
-                previewModel.MonitoringCycles = (await monitoringCyclesTask).MonitoringCycles;
+                previewModel.MonitoringCycles = await monitoringCyclesTask;
             }
 
             return previewModel;
@@ -177,7 +174,24 @@ public sealed class WorkersService(
             accountGroupId: accountGroupId,
             accountProvider: accountProvider,
             settingsTemplates: await templatesTask ?? [],
-            monitoringCycles: (await monitoringCyclesTask).MonitoringCycles);
+            monitoringCycles: await monitoringCyclesTask);
+    }
+
+    private async Task<MonitoringCycleReportViewModel> GetMonitoringCyclesAsync(Guid workerId, CancellationToken ct)
+    {
+        try
+        {
+            var statisticsViewModel = await statistics.GetIndexAsync(
+                DashboardPeriod.CreateToday(BrowserTimeZone.Resolve(httpContextAccessor.HttpContext)),
+                workerIds: [workerId],
+                ct: ct);
+            return statisticsViewModel.MonitoringCycles;
+        }
+        catch (Exception)
+        {
+            ct.ThrowIfCancellationRequested();
+            return MonitoringCycleReportViewModel.Empty;
+        }
     }
 
     public async Task<(CreateWorkerResultViewModel? Result, string? Error)> CreateWorkerAsync(
