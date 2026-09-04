@@ -106,7 +106,7 @@
                     </div>
                     <label class="dashboard-worker-search">
                         <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
-                        <input type="search" data-dashboard-worker-search placeholder="Поиск по воркеру" aria-label="Поиск по воркеру" autocomplete="off" />
+                        <input type="search" data-dashboard-worker-search placeholder="Поиск по имени, ПК или IP" aria-label="Поиск по имени, ПК или IP" autocomplete="off" />
                     </label>
                     <div class="dashboard-workers-toolbar-actions">
                         <form method="get"
@@ -209,6 +209,7 @@
                                 data-dashboard-worker-empty="@(w.TotalAccounts == 0 ? "true" : "false")"
                                 data-dashboard-worker-activity="@(w.LastActivityUtc?.Ticks ?? 0)"
                                 data-dashboard-worker-name="@w.DisplayName"
+                                data-dashboard-worker-ip="@w.IpAddress"
                                 data-dashboard-worker-responses="@w.Responses"
                                 data-dashboard-worker-errors="@w.Errors">
                                 <td class="cell-name" data-label="Воркер">

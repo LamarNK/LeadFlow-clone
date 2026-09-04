@@ -104,6 +104,7 @@ public sealed class DashboardService(
             Id = w.Id,
             DisplayName = w.DisplayName,
             MachineName = w.MachineName,
+            IpAddress = w.IpAddress,
             IsOnline = w.IsOnline,
             IsEnabled = w.IsEnabled,
             IsMonitoringPaused = w.IsMonitoringPaused,

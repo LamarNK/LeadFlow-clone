@@ -37,11 +37,13 @@ public sealed class WorkerRowActivityMappingTests
                 null,
                 null,
                 nextCycleAtUtc,
-                now.AddSeconds(-5))));
+                now.AddSeconds(-5)),
+            IpAddress: "203.0.113.42"));
 
         Assert.Equal("muted", row.CurrentActivityTone);
         Assert.Equal(WorkerActivityPhases.Waiting, row.CurrentActivityPhase);
         Assert.Equal(nextCycleAtUtc, row.CurrentActivityNextCycleAtUtc);
+        Assert.Equal("203.0.113.42", row.IpAddress);
     }
 
     [Fact]

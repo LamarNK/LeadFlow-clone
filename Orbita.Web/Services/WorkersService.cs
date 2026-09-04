@@ -52,7 +52,7 @@ public sealed class WorkersService(
         if (!string.IsNullOrWhiteSpace(searchQuery))
         {
             rows = rows
-                .Where(w => SearchQueryNormalizer.MatchesTokens(searchQuery, w.DisplayName, w.MachineName))
+                .Where(w => SearchQueryNormalizer.MatchesTokens(searchQuery, w.DisplayName, w.MachineName, w.IpAddress))
                 .ToList();
         }
 
@@ -586,6 +586,7 @@ public sealed class WorkersService(
             Id = w.Id,
             DisplayName = w.DisplayName,
             MachineName = w.MachineName,
+            IpAddress = w.IpAddress,
             IsOnline = w.IsOnline,
             ActiveAccounts = w.ActiveAccountCount,
             TotalAccounts = w.AccountCount,

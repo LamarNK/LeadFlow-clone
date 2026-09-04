@@ -52,7 +52,8 @@ public sealed record WorkerListItem(
     int LowBalanceAccountCount = 0,
     WorkerActivityDto? CurrentActivity = null,
     IReadOnlyList<WorkerActiveAccountDto>? ActiveAccounts = null,
-    bool IsMonitoringPaused = false);
+    bool IsMonitoringPaused = false,
+    string IpAddress = "");
 
 public sealed record WorkersPageDto(
     IReadOnlyList<WorkerListItem> Items,

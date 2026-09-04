@@ -2161,7 +2161,7 @@ internal static class DesignPreviewData
         if (!string.IsNullOrWhiteSpace(searchQuery))
         {
             rows = rows
-                .Where(w => SearchQueryNormalizer.MatchesTokens(searchQuery, w.DisplayName, w.MachineName))
+                .Where(w => SearchQueryNormalizer.MatchesTokens(searchQuery, w.DisplayName, w.MachineName, w.IpAddress))
                 .ToList();
         }
 
@@ -2236,7 +2236,8 @@ internal static class DesignPreviewData
             true,
             w.ActiveAccounts,
             w.LowBalanceAccountCount,
-            BuildPreviewWorkerActivity(i, w.IsOnline))).ToList();
+            BuildPreviewWorkerActivity(i, w.IsOnline),
+            IpAddress: $"185.22.{174 + i}.{101 + i}")).ToList();
 
     private static IReadOnlyList<WorkerRowViewModel> BuildWorkerRows()
     {

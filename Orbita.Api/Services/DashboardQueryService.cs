@@ -267,6 +267,7 @@ public sealed class DashboardQueryService(
                 w.Id,
                 w.DisplayName,
                 w.MachineName,
+                w.IpAddress,
                 w.AppVersion,
                 w.MonitoringStatus,
                 w.MonitoringStatusMessage,
@@ -344,7 +345,8 @@ public sealed class DashboardQueryService(
                     w.ActivityUpdatedAtUtc,
                     WorkerActivityMapper.DeserializeActiveAccounts(w.ActivityActiveAccountsJson)),
                 WorkerActivityMapper.DeserializeActiveAccounts(w.ActivityActiveAccountsJson),
-                w.IsMonitoringPaused);
+                w.IsMonitoringPaused,
+                w.IpAddress ?? string.Empty);
         }).ToList();
     }
 
@@ -402,6 +404,7 @@ public sealed class DashboardQueryService(
                 w.Id,
                 w.DisplayName,
                 w.MachineName,
+                w.IpAddress,
                 w.AppVersion,
                 w.MonitoringStatus,
                 w.MonitoringStatusMessage,
@@ -462,7 +465,8 @@ public sealed class DashboardQueryService(
                     w.ActivityUpdatedAtUtc,
                     WorkerActivityMapper.DeserializeActiveAccounts(w.ActivityActiveAccountsJson)),
                 WorkerActivityMapper.DeserializeActiveAccounts(w.ActivityActiveAccountsJson),
-                w.IsMonitoringPaused);
+                w.IsMonitoringPaused,
+                w.IpAddress ?? string.Empty);
         }).ToList();
 
         return new WorkersPageDto(
