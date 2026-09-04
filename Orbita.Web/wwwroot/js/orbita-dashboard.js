@@ -932,7 +932,7 @@
                 '<span class="dashboard-account-progress" aria-label="Активно аккаунтов: ' + activeAccounts + ' из ' + totalAccounts + '"><span style="width:' + accountProgress + '%"></span></span>' +
                 '</td>';
 
-            var lowBalanceCount = Number(w.lowBalanceAccounts) || 0;
+            var lowBalanceCount = Number(w.lowBalanceAccountCount) || 0;
             var hasLowBalance = lowBalanceCount > 0;
             var lowBalanceClass = hasLowBalance ? ' dashboard-worker-row--low-balance' : '';
             var lowBalanceTooltip = hasLowBalance
