@@ -169,7 +169,18 @@ public static class WorkerEndpoints
                 return Results.Forbid();
             }
 
-            var result = await topUpSessions.ClaimPaymentAsync(workerId, request.SessionId, ct);
+            ClaimTopUpPaymentResult result;
+            try
+            {
+                result = await topUpSessions.ClaimPaymentAsync(workerId, request.SessionId, ct);
+            }
+            catch (Exception)
+            {
+                result = new ClaimTopUpPaymentResult(
+                    false,
+                    "Не удалось подтвердить оплату. Попробуйте ещё раз.");
+            }
+
             return result.Claimed
                 ? Results.Ok(result)
                 : Results.Conflict(result);

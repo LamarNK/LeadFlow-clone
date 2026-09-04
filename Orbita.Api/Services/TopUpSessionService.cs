@@ -302,38 +302,43 @@ public sealed class TopUpSessionService(
     }
 
     private async Task<TopUpSessionEntity?> LockSessionByIdAsync(Guid sessionId, CancellationToken ct) =>
-        await LockTopUpSessionRowAsync(
-                $"SELECT *, xmin FROM \"TopUpSessions\" WHERE \"Id\" = {sessionId} FOR UPDATE",
-                x => x.Id == sessionId,
-                ct)
-            .ConfigureAwait(false);
+        await LockTopUpSessionRowAsync(sessionId, workerId: null, ct).ConfigureAwait(false);
 
     /// <summary>
-    /// Блокирует строку сессии. <c>SELECT *</c> не возвращает системный <c>xmin</c>, а сущность
-    /// мапит его как RowVersion: EF тогда делает UPDATE WHERE xmin = 0 и падает с 500.
-    /// Поэтому в raw-SQL явно читаем xmin и не компонуем FirstOrDefault вокруг FOR UPDATE.
+    /// Берёт Postgres-блокировку отдельным <c>SELECT 1 … FOR UPDATE</c>, затем читает строку
+    /// обычным LINQ. Нельзя материализовать сущность через <c>FromSql SELECT *</c>: системный
+    /// <c>xmin</c> (RowVersion) в звёздочку не входит, EF делает UPDATE WHERE xmin = 0 → HTTP 500.
     /// </summary>
     private async Task<TopUpSessionEntity?> LockTopUpSessionRowAsync(
-        FormattableString sql,
-        System.Linq.Expressions.Expression<Func<TopUpSessionEntity, bool>> fallbackPredicate,
+        Guid sessionId,
+        Guid? workerId,
         CancellationToken ct)
     {
-        if (!db.Database.IsNpgsql())
+        if (db.Database.IsNpgsql())
         {
-            return await db.TopUpSessions.FirstOrDefaultAsync(fallbackPredicate, ct).ConfigureAwait(false);
+            if (workerId is Guid lockedWorkerId)
+            {
+                await db.Database.ExecuteSqlInterpolatedAsync(
+                        $"SELECT 1 FROM \"TopUpSessions\" WHERE \"Id\" = {sessionId} AND \"WorkerId\" = {lockedWorkerId} FOR UPDATE",
+                        ct)
+                    .ConfigureAwait(false);
+            }
+            else
+            {
+                await db.Database.ExecuteSqlInterpolatedAsync(
+                        $"SELECT 1 FROM \"TopUpSessions\" WHERE \"Id\" = {sessionId} FOR UPDATE",
+                        ct)
+                    .ConfigureAwait(false);
+            }
         }
 
-        var rows = await db.TopUpSessions
-            .FromSqlInterpolated(sql)
-            .ToListAsync(ct)
-            .ConfigureAwait(false);
-        var session = rows.Count == 0 ? null : rows[0];
-        if (session is not null && session.RowVersion == 0)
-        {
-            await db.Entry(session).ReloadAsync(ct).ConfigureAwait(false);
-        }
-
-        return session;
+        return workerId is Guid filterWorkerId
+            ? await db.TopUpSessions
+                .FirstOrDefaultAsync(x => x.Id == sessionId && x.WorkerId == filterWorkerId, ct)
+                .ConfigureAwait(false)
+            : await db.TopUpSessions
+                .FirstOrDefaultAsync(x => x.Id == sessionId, ct)
+                .ConfigureAwait(false);
     }
 
     public async Task<(bool Success, string? Error)> UpdateStatusFromWorkerAsync(
@@ -551,11 +556,7 @@ public sealed class TopUpSessionService(
         Guid sessionId,
         Guid workerId,
         CancellationToken ct) =>
-        await LockTopUpSessionRowAsync(
-                $"SELECT *, xmin FROM \"TopUpSessions\" WHERE \"Id\" = {sessionId} AND \"WorkerId\" = {workerId} FOR UPDATE",
-                x => x.Id == sessionId && x.WorkerId == workerId,
-                ct)
-            .ConfigureAwait(false);
+        await LockTopUpSessionRowAsync(sessionId, workerId, ct).ConfigureAwait(false);
 
     public async Task<WorkerPendingTopUpSessionDto?> GetPendingForWorkerAsync(
         Guid workerId,

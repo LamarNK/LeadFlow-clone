@@ -1669,6 +1669,7 @@
     function initWorkerPage() {
         if (shared && shared.registerLivePage) {
             shared.registerLivePage('worker', snapshotFetcher, function () {
+                initTopUpModal();
                 initKpiCounters();
                 if (window.Orbita && typeof window.Orbita.initWorkerRestartButtons === 'function') {
                     window.Orbita.initWorkerRestartButtons();
@@ -1715,37 +1716,21 @@
         }
     }
 
+    var topUpDocBound = false;
+
     function initTopUpModal() {
-        var modal = document.getElementById('topUpModal');
-        if (!modal) return;
-        if (modal.dataset.topupInitialized === 'true') return;
-        modal.dataset.topupInitialized = 'true';
+        if (topUpDocBound) return;
+        if (!document.getElementById('topUpModal')) return;
+        topUpDocBound = true;
 
-        var closeBtns = modal.querySelectorAll('[data-topup-close]');
-        var cancelBtn = modal.querySelector('[data-topup-cancel]');
+        function root() {
+            return document.getElementById('topUpModal');
+        }
 
-        var loadingEl = modal.querySelector('[data-topup-loading]');
-        var errorEl = modal.querySelector('[data-topup-error]');
-        var contentEl = modal.querySelector('[data-topup-content]');
-        var errorMessageEl = modal.querySelector('[data-topup-error-message]');
-
-        var accountNameEl = modal.querySelector('[data-topup-account-name]');
-        var subProfileRowEl = modal.querySelector('[data-topup-subprofile-row]');
-        var subProfileNameEl = modal.querySelector('[data-topup-subprofile-name]');
-        var currentBalanceEl = modal.querySelector('[data-topup-current-balance]');
-        var targetBalanceEl = modal.querySelector('[data-topup-target-balance]');
-        var requestedAmountEl = modal.querySelector('[data-topup-requested-amount]');
-        var dailyResponsesEl = modal.querySelector('[data-topup-daily-responses]');
-        var tierLabelEl = modal.querySelector('[data-topup-tier-label]');
-        var statusEl = modal.querySelector('[data-topup-status]');
-        var statusLabelEl = modal.querySelector('[data-topup-status-label]');
-        var statusDetailEl = modal.querySelector('[data-topup-status-detail]');
-        var statusSpinnerEl = modal.querySelector('[data-topup-status-spinner]');
-        var qrSectionEl = modal.querySelector('[data-topup-qr-section]');
-        var qrImageEl = modal.querySelector('[data-topup-qr-image]');
-        var terminalMessageEl = modal.querySelector('[data-topup-terminal-message]');
-        var staleWarningEl = modal.querySelector('[data-topup-stale-warning]');
-        var liveRegionEl = modal.querySelector('[data-topup-live-region]');
+        function el(sel) {
+            var modal = root();
+            return modal ? modal.querySelector(sel) : null;
+        }
 
         var currentSessionId = null;
         var pollTimer = null;
@@ -1758,8 +1743,27 @@
         var MAX_CONSECUTIVE_FAILURES = 3;
 
         document.addEventListener('click', function (event) {
+            var modal = root();
+            var cancelBtn = event.target.closest('[data-topup-cancel]');
+            if (cancelBtn && modal && modal.contains(cancelBtn)) {
+                event.preventDefault();
+                if (currentSessionId && confirm('Отменить сессию пополнения?')) {
+                    cancelSession(currentSessionId);
+                }
+                return;
+            }
+
+            var closeBtn = event.target.closest('[data-topup-close]');
+            if (closeBtn && modal && modal.contains(closeBtn)) {
+                event.preventDefault();
+                closeModal();
+                return;
+            }
+
             var btn = event.target.closest('[data-topup-trigger]');
             if (!btn) return;
+            event.preventDefault();
+            event.stopPropagation();
 
             var workerId = btn.getAttribute('data-worker-id');
             var accountId = btn.getAttribute('data-account-id');
@@ -1770,26 +1774,17 @@
             startSession(workerId, accountId, subProfileId, accountName);
         });
 
-        closeBtns.forEach(function (btn) {
-            btn.addEventListener('click', closeModal);
-        });
-
-        if (cancelBtn) {
-            cancelBtn.addEventListener('click', function () {
-                if (currentSessionId && confirm('Отменить сессию пополнения?')) {
-                    cancelSession(currentSessionId);
-                }
-            });
-        }
-
         function openModal() {
+            var modal = root();
+            if (!modal) return;
             modal.removeAttribute('hidden');
             document.body.style.overflow = 'hidden';
             showLoading();
         }
 
         function closeModal() {
-            modal.setAttribute('hidden', '');
+            var modal = root();
+            if (modal) modal.setAttribute('hidden', '');
             document.body.style.overflow = '';
             stopPolling();
             currentSessionId = null;
@@ -1798,31 +1793,52 @@
         }
 
         function announce(message) {
+            var liveRegionEl = el('[data-topup-live-region]');
             if (!liveRegionEl) return;
             liveRegionEl.textContent = '';
-            // Принудительно очищаем и перезаписываем, чтобы скринридеры озвучили повторно.
             window.setTimeout(function () {
-                liveRegionEl.textContent = message;
+                var current = el('[data-topup-live-region]');
+                if (current) current.textContent = message;
             }, 0);
         }
 
         function showLoading() {
-            loadingEl.removeAttribute('hidden');
-            errorEl.setAttribute('hidden', '');
-            contentEl.setAttribute('hidden', '');
+            var loadingEl = el('[data-topup-loading]');
+            var errorEl = el('[data-topup-error]');
+            var contentEl = el('[data-topup-content]');
+            if (loadingEl) loadingEl.removeAttribute('hidden');
+            if (errorEl) errorEl.setAttribute('hidden', '');
+            if (contentEl) contentEl.setAttribute('hidden', '');
         }
 
         function showError(message) {
-            loadingEl.setAttribute('hidden', '');
-            contentEl.setAttribute('hidden', '');
-            errorEl.removeAttribute('hidden');
+            var loadingEl = el('[data-topup-loading]');
+            var errorEl = el('[data-topup-error]');
+            var contentEl = el('[data-topup-content]');
+            var errorMessageEl = el('[data-topup-error-message]');
+            if (loadingEl) loadingEl.setAttribute('hidden', '');
+            if (contentEl) contentEl.setAttribute('hidden', '');
+            if (errorEl) errorEl.removeAttribute('hidden');
             if (errorMessageEl) errorMessageEl.textContent = message || 'Ошибка при создании сессии.';
         }
 
         function showContent(session) {
-            loadingEl.setAttribute('hidden', '');
-            errorEl.setAttribute('hidden', '');
-            contentEl.removeAttribute('hidden');
+            var loadingEl = el('[data-topup-loading]');
+            var errorEl = el('[data-topup-error]');
+            var contentEl = el('[data-topup-content]');
+            var accountNameEl = el('[data-topup-account-name]');
+            var subProfileRowEl = el('[data-topup-subprofile-row]');
+            var subProfileNameEl = el('[data-topup-subprofile-name]');
+            var currentBalanceEl = el('[data-topup-current-balance]');
+            var targetBalanceEl = el('[data-topup-target-balance]');
+            var requestedAmountEl = el('[data-topup-requested-amount]');
+            var dailyResponsesEl = el('[data-topup-daily-responses]');
+            var tierLabelEl = el('[data-topup-tier-label]');
+            var cancelBtn = el('[data-topup-cancel]');
+
+            if (loadingEl) loadingEl.setAttribute('hidden', '');
+            if (errorEl) errorEl.setAttribute('hidden', '');
+            if (contentEl) contentEl.removeAttribute('hidden');
 
             if (accountNameEl) accountNameEl.textContent = session.accountName || '';
             if (subProfileRowEl && subProfileNameEl) {
@@ -1851,6 +1867,10 @@
         }
 
         function updateStatus(session) {
+            var statusEl = el('[data-topup-status]');
+            var statusLabelEl = el('[data-topup-status-label]');
+            var statusDetailEl = el('[data-topup-status-detail]');
+            var statusSpinnerEl = el('[data-topup-status-spinner]');
             if (!statusEl) return;
             var label = getStatusLabel(session.status);
             var detail = getStatusDetail(session);
@@ -1878,12 +1898,13 @@
         }
 
         function updateQr(session) {
+            var qrSectionEl = el('[data-topup-qr-section]');
+            var qrImageEl = el('[data-topup-qr-image]');
             if (!qrSectionEl || !qrImageEl) return;
 
             if (session.status === 'qr_ready' && (session.qrImageBase64 || session.qrImageUrl)) {
                 var src = resolveQrSrc(session.qrImageBase64, session.qrImageUrl);
                 if (!src) {
-                    // Некорректные QR-данные: не подставляем в src.
                     qrImageEl.removeAttribute('src');
                     qrSectionEl.setAttribute('hidden', '');
                     announce('QR-код недоступен: некорректные данные.');
@@ -1941,6 +1962,7 @@
         }
 
         function updateTerminalState(session) {
+            var terminalMessageEl = el('[data-topup-terminal-message]');
             if (!terminalMessageEl) return;
 
             if (!isActive(session.status)) {
@@ -2031,7 +2053,8 @@
                 });
             })
             .then(function (session) {
-                if (!session || modal.hasAttribute('hidden')) return;
+                var modal = root();
+                if (!session || !modal || modal.hasAttribute('hidden')) return;
                 consecutiveFailures = 0;
                 showStaleWarning(false);
                 showContent(session);
@@ -2048,6 +2071,7 @@
         }
 
         function showStaleWarning(show) {
+            var staleWarningEl = el('[data-topup-stale-warning]');
             if (!staleWarningEl) return;
             staleWarningEl.hidden = !show;
         }
@@ -2109,6 +2133,7 @@
         }
 
         function setCancelBusy(busy) {
+            var cancelBtn = el('[data-topup-cancel]');
             if (!cancelBtn) return;
             if (busy) {
                 cancelBtn.disabled = true;
@@ -2166,7 +2191,7 @@
         }
 
         function getAntiForgeryToken() {
-            var local = modal.querySelector('input[name="__RequestVerificationToken"]');
+            var local = el('input[name="__RequestVerificationToken"]');
             if (local && local.value) return local.value;
             var tokenInput = document.querySelector('input[name="__RequestVerificationToken"]');
             return tokenInput ? tokenInput.value : '';
