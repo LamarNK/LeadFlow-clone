@@ -156,6 +156,7 @@ public sealed class ResponseDetailViewModel
     public string? AvatarUrl { get; init; }
     public Guid AccountId { get; init; }
     public string AccountName { get; init; } = string.Empty;
+    public string? OfficeName { get; init; }
     public string? AvitoSubProfileId { get; init; }
     public string? AvitoSubProfileName { get; init; }
     public Guid WorkerId { get; init; }

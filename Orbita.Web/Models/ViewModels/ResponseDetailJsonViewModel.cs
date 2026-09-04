@@ -38,6 +38,7 @@ public sealed class ResponseDetailProfileViewModel
     public string Vacancy { get; init; } = string.Empty;
     public string? VacancyUrl { get; init; }
     public string Source { get; init; } = string.Empty;
+    public string? Office { get; init; }
 }
 
 public sealed class DetailSectionItemViewModel

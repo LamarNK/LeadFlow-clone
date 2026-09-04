@@ -223,6 +223,7 @@ public sealed class WorkerDetailsViewModel
     public LineChartViewModel ActivityChart { get; init; } = new();
     public IReadOnlyList<DashboardEventRowViewModel> Events { get; init; } = [];
     public IReadOnlyList<WorkerPeriodStatViewModel> PeriodStats { get; init; } = [];
+    public MonitoringCycleReportViewModel MonitoringCycles { get; set; } = MonitoringCycleReportViewModel.Empty;
     public IReadOnlyList<WorkerAccountRowViewModel> Accounts { get; init; } = [];
     public IReadOnlyList<WorkerAccountRowViewModel> HighlightAccounts { get; init; } = [];
     public int CatalogAccountCount { get; init; }

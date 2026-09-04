@@ -130,7 +130,8 @@ public sealed class WorkerTelemetryCollector(
                 string.IsNullOrWhiteSpace(sp.Name) ? sp.Id : sp.Name,
                 sp.Balance,
                 sp.WalletBalance,
-                string.IsNullOrWhiteSpace(sp.AdvanceDurationText) ? null : sp.AdvanceDurationText))
+                string.IsNullOrWhiteSpace(sp.AdvanceDurationText) ? null : sp.AdvanceDurationText,
+                sp.Id))
             .ToList();
 
         return new WorkerBalanceDto(

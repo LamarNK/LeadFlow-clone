@@ -44,6 +44,16 @@ public sealed class TopUpSessionViewModel
     {
         get
         {
+            if (DailyResponseCount <= 5 && TargetBalance == 900m)
+            {
+                return "Быстрый расход за последний час → 900 ₽";
+            }
+
+            if (DailyResponseCount <= 10 && TargetBalance == 2000m)
+            {
+                return "Быстрый расход за последний час → 2 000 ₽";
+            }
+
             if (DailyResponseCount <= 5) return "0–5 откликов → 300 ₽";
             if (DailyResponseCount <= 10) return "6–10 откликов → 900 ₽";
             return "11+ откликов → 2000 ₽";

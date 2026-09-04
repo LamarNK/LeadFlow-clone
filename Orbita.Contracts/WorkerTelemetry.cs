@@ -138,7 +138,8 @@ public sealed record SubProfileBalanceDto(
     string SubProfileName,
     decimal? Balance,
     decimal? WalletBalance = null,
-    string? AdvanceDurationText = null);
+    string? AdvanceDurationText = null,
+    string? SubProfileId = null);
 
 public sealed record WorkerEventBatchRequest(
     Guid WorkerId,

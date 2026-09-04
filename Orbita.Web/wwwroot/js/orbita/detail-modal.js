@@ -229,6 +229,13 @@
         identity.appendChild(person);
         hero.appendChild(identity);
 
+        if (profile.office && !editing) {
+            var officeContext = document.createElement('p');
+            officeContext.className = 'orbita-response-detail__office-context';
+            officeContext.textContent = 'Отклик офиса: ' + profile.office;
+            hero.appendChild(officeContext);
+        }
+
         var quickActions = document.createElement('div');
         quickActions.className = 'orbita-response-detail__quick-actions';
         if (!editing && profile.phoneHref) {

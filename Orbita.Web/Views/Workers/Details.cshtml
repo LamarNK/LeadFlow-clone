@@ -1513,6 +1513,19 @@
         </div>
     </div>
 
+    @if (Model.MonitoringCycles != null && Model.MonitoringCycles.HasData)
+    {
+        <div class="card card--worker-monitoring-cycles" id="worker-monitoring-cycles">
+            <div class="card-header">
+                <h2>Мониторинг аккаунтов</h2>
+                <p class="worker-settings-subtitle">Циклы, субпрофили и результаты сбора откликов</p>
+            </div>
+            <div class="card-body">
+                <partial name="../Statistics/_MonitoringCycleAccounts" model="Model.MonitoringCycles" />
+            </div>
+        </div>
+    }
+
     @if (User.IsInRole(PanelRoles.Admin))
     {
         <div class="card card--worker-logs" id="worker-logs">

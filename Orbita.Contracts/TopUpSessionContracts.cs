@@ -77,6 +77,12 @@ public static class TopUpSessionRules
     /// <summary>6–10 откликов → 900 (11+ → 2000).</summary>
     public const int TierMidMaxResponses = 10;
 
+    /// <summary>Расход 300 ₽ за последний час поднимает цель как минимум до 900 ₽.</summary>
+    public const decimal RapidSpendMidThresholdRub = 300m;
+
+    /// <summary>Расход 900 ₽ за последний час поднимает цель до 2 000 ₽.</summary>
+    public const decimal RapidSpendHighThresholdRub = 900m;
+
     public static TimeZoneInfo MoscowTimeZone { get; } = ResolveMoscow();
 
     public static decimal ResolveTargetBalance(int dailyResponses) =>
@@ -86,11 +92,29 @@ public static class TopUpSessionRules
                 ? TierMidTargetRub
                 : TierHighTargetRub;
 
+    /// <summary>
+    /// Целевой баланс с учётом темпа сгорания аванса за последний час.
+    /// Базовый уровень определяют отклики за текущий московский день; быстрый расход
+    /// может только повысить этот уровень.
+    /// </summary>
+    public static decimal ResolveTargetBalance(int dailyResponses, decimal spentLastHour) =>
+        Math.Max(ResolveTargetBalance(dailyResponses), ResolveTargetBalanceByHourlySpend(spentLastHour));
+
     public static bool IsEligible(decimal currentBalance) =>
         currentBalance < LowBalanceThresholdRub;
 
     public static decimal ResolveRequestedAmount(decimal currentBalance, int dailyResponses) =>
         Math.Max(0m, ResolveTargetBalance(dailyResponses) - currentBalance);
+
+    public static decimal ResolveRequestedAmount(decimal currentBalance, int dailyResponses, decimal spentLastHour) =>
+        Math.Max(0m, ResolveTargetBalance(dailyResponses, spentLastHour) - currentBalance);
+
+    private static decimal ResolveTargetBalanceByHourlySpend(decimal spentLastHour) =>
+        spentLastHour >= RapidSpendHighThresholdRub
+            ? TierHighTargetRub
+            : spentLastHour >= RapidSpendMidThresholdRub
+                ? TierMidTargetRub
+                : TierLowTargetRub;
 
     /// <summary>
     /// Границы текущего московского календарного дня в UTC (включительно/исключительно).

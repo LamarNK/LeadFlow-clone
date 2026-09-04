@@ -53,7 +53,8 @@ internal static class BalanceSnapshotHelper
                 string.IsNullOrWhiteSpace(sp.Name) ? sp.Id : sp.Name,
                 sp.Balance,
                 sp.WalletBalance,
-                sp.AdvanceDurationText))
+                sp.AdvanceDurationText,
+                sp.Id))
             .ToList();
 
         var total = account.TotalBalance > 0

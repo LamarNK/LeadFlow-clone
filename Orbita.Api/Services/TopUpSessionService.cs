@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using Orbita.Api.Data;
@@ -22,6 +23,8 @@ public sealed class TopUpSessionService(
     TimeProvider timeProvider)
 {
     private static readonly TimeSpan SessionTtl = TimeSpan.FromHours(2);
+    private static readonly TimeSpan BalanceSpendLookback = TimeSpan.FromHours(1);
+    private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     // Keep this as data rather than calling IsActive inside EF expressions: EF Core cannot
     // translate arbitrary CLR methods and worker config polling must never return HTTP 500.
     private static readonly string[] ActiveStatuses =
@@ -133,8 +136,17 @@ public sealed class TopUpSessionService(
         }
 
         var dailyResponses = await CountDailyResponsesAsync(workerId, accountId, subProfile?.Id, now, ct).ConfigureAwait(false);
-        var targetBalance = TopUpSessionRules.ResolveTargetBalance(dailyResponses);
-        var requestedAmount = TopUpSessionRules.ResolveRequestedAmount(currentBalance, dailyResponses);
+        var spentLastHour = await GetBalanceSpentLastHourAsync(
+                workerId,
+                accountId,
+                subProfile?.Id,
+                subProfile?.Name,
+                currentBalance,
+                now,
+                ct)
+            .ConfigureAwait(false);
+        var targetBalance = TopUpSessionRules.ResolveTargetBalance(dailyResponses, spentLastHour);
+        var requestedAmount = TopUpSessionRules.ResolveRequestedAmount(currentBalance, dailyResponses, spentLastHour);
         if (requestedAmount <= 0m)
         {
             return (null, new TopUpSessionConflictDto("Сумма пополнения не требуется."));
@@ -642,6 +654,93 @@ public sealed class TopUpSessionService(
                     && x.CollectedAt < end,
                 ct)
             .ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Возвращает подтверждённый расход аванса за последний час. Берётся максимальный
+    /// корректно идентифицированный баланс из снимков и сравнивается с текущим: рост
+    /// баланса (ручное пополнение) не интерпретируется как расход.
+    /// </summary>
+    private async Task<decimal> GetBalanceSpentLastHourAsync(
+        Guid workerId,
+        Guid accountId,
+        string? subProfileId,
+        string? subProfileName,
+        decimal currentBalance,
+        DateTime nowUtc,
+        CancellationToken ct)
+    {
+        var sinceUtc = nowUtc - BalanceSpendLookback;
+        var snapshotJson = await db.WorkerSnapshots.AsNoTracking()
+            .Where(x => x.WorkerId == workerId && x.CapturedAtUtc >= sinceUtc && x.CapturedAtUtc <= nowUtc)
+            .OrderByDescending(x => x.CapturedAtUtc)
+            .Select(x => x.BalancesJson)
+            .ToListAsync(ct)
+            .ConfigureAwait(false);
+
+        decimal? highestObservedBalance = null;
+        foreach (var json in snapshotJson)
+        {
+            var balance = TryGetSnapshotBalance(json, accountId, subProfileId, subProfileName);
+            if (!balance.HasValue)
+            {
+                continue;
+            }
+
+            highestObservedBalance = !highestObservedBalance.HasValue || balance.Value > highestObservedBalance.Value
+                ? balance.Value
+                : highestObservedBalance;
+        }
+
+        return highestObservedBalance.HasValue
+            ? Math.Max(0m, highestObservedBalance.Value - currentBalance)
+            : 0m;
+    }
+
+    private static decimal? TryGetSnapshotBalance(
+        string? balancesJson,
+        Guid accountId,
+        string? subProfileId,
+        string? subProfileName)
+    {
+        if (string.IsNullOrWhiteSpace(balancesJson))
+        {
+            return null;
+        }
+
+        try
+        {
+            var account = (JsonSerializer.Deserialize<List<WorkerBalanceDto>>(balancesJson, JsonOptions) ?? [])
+                .LastOrDefault(x => x.AccountId == accountId);
+            if (account is null)
+            {
+                return null;
+            }
+
+            if (string.IsNullOrWhiteSpace(subProfileId))
+            {
+                return account.TotalBalance;
+            }
+
+            var byId = account.SubProfiles
+                .FirstOrDefault(x => string.Equals(x.SubProfileId, subProfileId, StringComparison.Ordinal));
+            if (byId?.Balance is not null)
+            {
+                return byId.Balance.Value;
+            }
+
+            // Старые снимки не содержали Id. Имя годится только если оно однозначно,
+            // иначе чужой субпрофиль мог бы искусственно увеличить сумму пополнения.
+            var nameMatches = account.SubProfiles
+                .Where(x => string.IsNullOrWhiteSpace(x.SubProfileId)
+                            && string.Equals(x.SubProfileName, subProfileName, StringComparison.Ordinal))
+                .ToList();
+            return nameMatches.Count == 1 ? nameMatches[0].Balance : null;
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
     }
 
     private async Task ReleasePauseAsync(TopUpSessionEntity session, CancellationToken ct)

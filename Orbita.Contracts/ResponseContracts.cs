@@ -115,7 +115,8 @@ public sealed record ResponseDetailDto(
     DateTime? PhoneChangedAtUtc = null,
     string? PhoneMetricLabel = null,
     IReadOnlyList<CandidatePhoneHistoryDto>? PhoneHistory = null,
-    bool HasAvatar = false);
+    bool HasAvatar = false,
+    string? OfficeName = null);
 
 public sealed record ResponsesPageDto(
     IReadOnlyList<ResponseListItemDto> Items,

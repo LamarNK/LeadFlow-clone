@@ -18,6 +18,22 @@ public sealed class TopUpSessionRulesTests
     }
 
     [Theory]
+    [InlineData(0, 0, 300)]
+    [InlineData(0, 299.99, 300)]
+    [InlineData(0, 300, 900)]
+    [InlineData(0, 899.99, 900)]
+    [InlineData(0, 900, 2000)]
+    [InlineData(6, 0, 900)]
+    [InlineData(11, 0, 2000)]
+    public void ResolveTargetBalance_UsesTheHigherOfDailyVolumeAndHourlySpend(
+        int responses,
+        decimal spentLastHour,
+        decimal expected)
+    {
+        Assert.Equal(expected, TopUpSessionRules.ResolveTargetBalance(responses, spentLastHour));
+    }
+
+    [Theory]
     [InlineData(0, 300)]
     [InlineData(149.99, 300)]
     [InlineData(149, 300)]

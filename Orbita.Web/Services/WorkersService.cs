@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Microsoft.Extensions.Options;
 using Orbita.Contracts;
+using Orbita.Web.Helpers;
 using Orbita.Web.Models.ViewModels;
 using Orbita.Web.Options;
 
@@ -10,6 +11,7 @@ public sealed class WorkersService(
     OrbitaApiClient api,
     IOfficeContext officeContext,
     IHttpContextAccessor httpContextAccessor,
+    IStatisticsService statistics,
     IOptions<DesignPreviewOptions> previewOptions) : IWorkersService
 {
     public async Task<WorkersIndexViewModel> GetIndexAsync(
@@ -98,23 +100,33 @@ public sealed class WorkersService(
         CancellationToken ct = default)
     {
         var tableSort = TableSort.Parse(sort, sortDir, TableSort.WorkerAccounts.Default, TableSort.WorkerAccounts.Columns);
+        var monitoringCyclesTask = statistics.GetIndexAsync(
+            DashboardPeriod.CreateToday(BrowserTimeZone.Resolve(httpContextAccessor.HttpContext)),
+            workerIds: [id],
+            ct: ct);
 
         if (previewOptions.Value.Enabled)
         {
-            return DesignPreviewData.BuildWorkerDetailsViewModel(
+            var previewModel = DesignPreviewData.BuildWorkerDetailsViewModel(
                 id,
                 sort,
                 sortDir,
                 accountSearchQuery,
                 accountGroupId,
                 accountProvider);
+            if (previewModel is not null)
+            {
+                previewModel.MonitoringCycles = (await monitoringCyclesTask).MonitoringCycles;
+            }
+
+            return previewModel;
         }
 
         var workerTask = api.GetWorkerAsync(id, ct);
         var accountsTask = api.GetWorkerAccountsAsync(id, ct);
         var eventsTask = api.GetEventsAsync(workerId: id, limit: 10, ct: ct);
         var templatesTask = api.GetWorkerSettingsTemplatesAsync(id, ct);
-        await Task.WhenAll(workerTask, accountsTask, eventsTask, templatesTask);
+        await Task.WhenAll(workerTask, accountsTask, eventsTask, templatesTask, monitoringCyclesTask);
 
         var apiWorker = await workerTask;
         if (apiWorker is null) return null;
@@ -164,7 +176,8 @@ public sealed class WorkersService(
             accountSearchQuery: accountSearchQuery,
             accountGroupId: accountGroupId,
             accountProvider: accountProvider,
-            settingsTemplates: await templatesTask ?? []);
+            settingsTemplates: await templatesTask ?? [],
+            monitoringCycles: (await monitoringCyclesTask).MonitoringCycles);
     }
 
     public async Task<(CreateWorkerResultViewModel? Result, string? Error)> CreateWorkerAsync(

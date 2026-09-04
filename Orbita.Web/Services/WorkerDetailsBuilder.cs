@@ -16,7 +16,8 @@ internal static class WorkerDetailsBuilder
         string? accountSearchQuery = null,
         string? accountGroupId = null,
         string? accountProvider = null,
-        IReadOnlyList<WorkerSettingsTemplateDto>? settingsTemplates = null)
+        IReadOnlyList<WorkerSettingsTemplateDto>? settingsTemplates = null,
+        MonitoringCycleReportViewModel? monitoringCycles = null)
     {
         extra ??= new WorkerExtraInfoViewModel();
         var stats = worker.LatestStats;
@@ -96,6 +97,7 @@ internal static class WorkerDetailsBuilder
             ActivityChart = activityChart,
             Events = events,
             PeriodStats = BuildPeriodStats(stats, responses, duplicates, errors),
+            MonitoringCycles = monitoringCycles ?? MonitoringCycleReportViewModel.Empty,
             Accounts = filteredAccounts,
             HighlightAccounts = accounts,
             CatalogAccountCount = accounts.Count,

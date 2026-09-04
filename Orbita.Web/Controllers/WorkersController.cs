@@ -65,6 +65,7 @@ public sealed class WorkersController(IWorkersService workers) : Controller
             KpiCards = model.KpiCards,
             InfoItems = model.InfoItems,
             PeriodStats = model.PeriodStats,
+            MonitoringCycles = model.MonitoringCycles,
             Accounts = model.Accounts,
             Events = model.Events,
             ActivityChart = model.ActivityChart,
@@ -80,6 +81,15 @@ public sealed class WorkersController(IWorkersService workers) : Controller
             MultiloginCheck = model.MultiloginCheck,
             LocalChromeCheck = model.LocalChromeCheck
         });
+    }
+
+    [HttpGet]
+    public async Task<IActionResult> MonitoringCycles(Guid id, CancellationToken ct = default)
+    {
+        var model = await workers.GetDetailsAsync(id, ct: ct);
+        return model is null
+            ? NotFound()
+            : PartialView("~/Views/Statistics/_MonitoringCycleAccounts.cshtml", model.MonitoringCycles);
     }
 
     [HttpGet]

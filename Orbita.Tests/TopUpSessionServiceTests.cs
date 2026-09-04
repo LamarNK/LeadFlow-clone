@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore.Diagnostics;
 using Orbita.Api.Data;
 using Orbita.Api.Services;
 using Orbita.Contracts;
+using System.Text.Json;
 
 namespace Orbita.Tests;
 
@@ -198,6 +199,144 @@ public sealed class TopUpSessionServiceTests
         Assert.Equal(6, session.DailyResponseCount);
         Assert.Equal(900m, session.TargetBalance);
         Assert.Equal(780m, session.RequestedAmount);
+    }
+
+    [Fact]
+    public async Task CreateAsync_RapidBalanceSpendRaisesTargetAboveDailyFallback()
+    {
+        await using var db = CreateDb();
+        var officeId = Guid.NewGuid();
+        var workerId = Guid.NewGuid();
+        var accountId = Guid.NewGuid();
+        SeedWorker(db, officeId, workerId, accountId, balance: 100m);
+        db.WorkerSnapshots.Add(new WorkerSnapshotEntity
+        {
+            Id = Guid.NewGuid(),
+            WorkerId = workerId,
+            CapturedAtUtc = Now.UtcDateTime.AddMinutes(-20),
+            BalancesJson = JsonSerializer.Serialize(new[]
+            {
+                new WorkerBalanceDto(accountId, "Acc1", 400m, [])
+            })
+        });
+        await db.SaveChangesAsync();
+
+        var service = CreateService(db);
+        var principal = TestPrincipalFactory.Operator("op1", "Operator 1", officeId);
+        var (session, conflict) = await service.CreateAsync(workerId, accountId, principal);
+
+        Assert.Null(conflict);
+        Assert.NotNull(session);
+        Assert.Equal(0, session!.DailyResponseCount);
+        Assert.Equal(900m, session.TargetBalance);
+        Assert.Equal(800m, session.RequestedAmount);
+    }
+
+    [Fact]
+    public async Task CreateAsync_BalanceHistoryOlderThanOneHourDoesNotRaiseTarget()
+    {
+        await using var db = CreateDb();
+        var officeId = Guid.NewGuid();
+        var workerId = Guid.NewGuid();
+        var accountId = Guid.NewGuid();
+        SeedWorker(db, officeId, workerId, accountId, balance: 100m);
+        db.WorkerSnapshots.Add(new WorkerSnapshotEntity
+        {
+            Id = Guid.NewGuid(),
+            WorkerId = workerId,
+            CapturedAtUtc = Now.UtcDateTime.AddHours(-1).AddSeconds(-1),
+            BalancesJson = JsonSerializer.Serialize(new[]
+            {
+                new WorkerBalanceDto(accountId, "Acc1", 2_000m, [])
+            })
+        });
+        await db.SaveChangesAsync();
+
+        var service = CreateService(db);
+        var principal = TestPrincipalFactory.Operator("op1", "Operator 1", officeId);
+        var (session, conflict) = await service.CreateAsync(workerId, accountId, principal);
+
+        Assert.Null(conflict);
+        Assert.NotNull(session);
+        Assert.Equal(300m, session!.TargetBalance);
+        Assert.Equal(200m, session.RequestedAmount);
+    }
+
+    [Fact]
+    public async Task CreateAsync_RapidSpendUsesTheSelectedSubProfileOnly()
+    {
+        await using var db = CreateDb();
+        var officeId = Guid.NewGuid();
+        var workerId = Guid.NewGuid();
+        var accountId = Guid.NewGuid();
+        SeedWorker(
+            db,
+            officeId,
+            workerId,
+            accountId,
+            balance: 2_100m,
+            subProfilesJson: """[{"Id":"target","Name":"Целевой","Balance":100},{"Id":"other","Name":"Другой","Balance":2000}]""");
+        db.WorkerSnapshots.Add(new WorkerSnapshotEntity
+        {
+            Id = Guid.NewGuid(),
+            WorkerId = workerId,
+            CapturedAtUtc = Now.UtcDateTime.AddMinutes(-15),
+            BalancesJson = JsonSerializer.Serialize(new[]
+            {
+                new WorkerBalanceDto(accountId, "Acc1", 2_500m,
+                [
+                    new SubProfileBalanceDto("Целевой", 400m, SubProfileId: "target"),
+                    new SubProfileBalanceDto("Другой", 2_100m, SubProfileId: "other")
+                ])
+            })
+        });
+        await db.SaveChangesAsync();
+
+        var service = CreateService(db);
+        var principal = TestPrincipalFactory.Operator("op1", "Operator 1", officeId);
+        var (session, conflict) = await service.CreateAsync(workerId, accountId, principal, "target");
+
+        Assert.Null(conflict);
+        Assert.NotNull(session);
+        Assert.Equal(900m, session!.TargetBalance);
+        Assert.Equal(800m, session.RequestedAmount);
+    }
+
+    [Fact]
+    public async Task CreateAsync_RapidSpendCanUseAUniqueLegacySubProfileName()
+    {
+        await using var db = CreateDb();
+        var officeId = Guid.NewGuid();
+        var workerId = Guid.NewGuid();
+        var accountId = Guid.NewGuid();
+        SeedWorker(
+            db,
+            officeId,
+            workerId,
+            accountId,
+            balance: 100m,
+            subProfilesJson: """[{"Id":"target","Name":"Целевой","Balance":100}]""");
+        db.WorkerSnapshots.Add(new WorkerSnapshotEntity
+        {
+            Id = Guid.NewGuid(),
+            WorkerId = workerId,
+            CapturedAtUtc = Now.UtcDateTime.AddMinutes(-15),
+            BalancesJson = JsonSerializer.Serialize(new[]
+            {
+                new WorkerBalanceDto(accountId, "Acc1", 400m,
+                [new SubProfileBalanceDto("Целевой", 400m)])
+            })
+        });
+        await db.SaveChangesAsync();
+
+        var service = CreateService(db);
+        var principal = TestPrincipalFactory.Operator("op1", "Operator 1", officeId);
+        var (session, conflict) = await service.CreateAsync(workerId, accountId, principal, "target");
+
+        Assert.Null(conflict);
+        Assert.NotNull(session);
+        Assert.Equal(900m, session!.TargetBalance);
+        Assert.Equal(800m, session.RequestedAmount);
     }
 
     [Fact]

@@ -241,6 +241,7 @@ internal static class ResponsesIndexBuilder
             AvatarUrl = detail.HasAvatar ? $"/Responses/{detail.Id:D}/Avatar" : null,
             AccountId = detail.AccountId,
             AccountName = detail.AccountName,
+            OfficeName = detail.OfficeName,
             AvitoSubProfileId = string.IsNullOrWhiteSpace(detail.AvitoSubProfileId) ? null : detail.AvitoSubProfileId,
             AvitoSubProfileName = detail.AvitoSubProfileName,
             WorkerId = detail.WorkerId,
@@ -625,6 +626,7 @@ internal static class ResponsesIndexBuilder
             new() { Label = "Город", Value = string.IsNullOrWhiteSpace(detail.City) ? "—" : detail.City },
             new() { Label = "Объявление", Value = detail.Vacancy, Href = detail.VacancyUrl },
             new() { Label = "Аккаунт", Value = ResponseDisplay.FormatAccountWithSubProfile(detail.AccountName, detail.AvitoSubProfileName) },
+            new() { Label = "Офис", Value = string.IsNullOrWhiteSpace(detail.OfficeName) ? "—" : detail.OfficeName },
             new() { Label = "Воркер", Value = detail.WorkerName },
             new() { Label = "Источник", Value = detail.Source },
             new() { Label = "ID отклика", Value = detail.SourceResponseId },
@@ -754,7 +756,8 @@ internal static class ResponsesIndexBuilder
                 AvatarUrl = detail.AvatarUrl,
                 Vacancy = string.IsNullOrWhiteSpace(detail.Vacancy) ? "Вакансия не указана" : detail.Vacancy,
                 VacancyUrl = string.IsNullOrWhiteSpace(detail.VacancyUrl) ? null : detail.VacancyUrl,
-                Source = detail.Source
+                Source = detail.Source,
+                Office = string.IsNullOrWhiteSpace(detail.OfficeName) ? null : detail.OfficeName
             },
             Sections = sections,
             ChatMessages = detail.ChatMessages

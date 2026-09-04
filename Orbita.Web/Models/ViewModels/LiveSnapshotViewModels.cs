@@ -34,6 +34,7 @@ public sealed class WorkerDetailsLiveSnapshotViewModel
     public IReadOnlyList<DashboardKpiCardViewModel> KpiCards { get; init; } = [];
     public IReadOnlyList<WorkerInfoItemViewModel> InfoItems { get; init; } = [];
     public IReadOnlyList<WorkerPeriodStatViewModel> PeriodStats { get; init; } = [];
+    public MonitoringCycleReportViewModel MonitoringCycles { get; init; } = MonitoringCycleReportViewModel.Empty;
     public IReadOnlyList<WorkerAccountRowViewModel> Accounts { get; init; } = [];
     public IReadOnlyList<DashboardEventRowViewModel> Events { get; init; } = [];
     public LineChartViewModel ActivityChart { get; init; } = new();

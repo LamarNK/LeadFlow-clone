@@ -1478,6 +1478,74 @@
         });
     }
 
+    var monitoringCyclesFetchAbort = null;
+    var monitoringCyclesFetchSeq = 0;
+
+    function updateMonitoringCycles(monitoringCycles, highlight) {
+        var card = document.querySelector('.card--worker-monitoring-cycles');
+        if (!card) return;
+
+        if (!monitoringCycles || !monitoringCycles.hasData) {
+            if (monitoringCyclesFetchAbort) {
+                monitoringCyclesFetchAbort.abort();
+                monitoringCyclesFetchAbort = null;
+            }
+            ++monitoringCyclesFetchSeq;
+            card.hidden = true;
+            return;
+        }
+
+        var workerId = getWorkerId();
+        if (!workerId) return;
+
+        if (monitoringCyclesFetchAbort) {
+            monitoringCyclesFetchAbort.abort();
+            monitoringCyclesFetchAbort = null;
+        }
+
+        var currentSeq = ++monitoringCyclesFetchSeq;
+        var controller = new AbortController();
+        monitoringCyclesFetchAbort = controller;
+
+        fetch('/Workers/MonitoringCycles?id=' + encodeURIComponent(workerId), {
+            method: 'GET',
+            signal: controller.signal,
+            headers: {
+                'X-Requested-With': 'XMLHttpRequest'
+            }
+        })
+        .then(function (response) {
+            if (!response.ok) throw new Error('HTTP ' + response.status);
+            return response.text();
+        })
+        .then(function (html) {
+            if (currentSeq !== monitoringCyclesFetchSeq) return;
+            monitoringCyclesFetchAbort = null;
+
+            var cardBody = card.querySelector('.card-body');
+            if (!cardBody) return;
+
+            cardBody.innerHTML = html;
+            card.hidden = false;
+
+            if (window.OrbitaTime) {
+                window.OrbitaTime.localizeAll(cardBody);
+            }
+
+            initMonitoringAccountAccordions();
+
+            if (highlight) {
+                shared.highlightCard(card);
+            }
+        })
+        .catch(function (err) {
+            if (err.name === 'AbortError') return;
+            if (currentSeq !== monitoringCyclesFetchSeq) return;
+            monitoringCyclesFetchAbort = null;
+            console.warn('Failed to update monitoring cycles:', err);
+        });
+    }
+
     function applyProviderCard(kind, check) {
         if (!check) return;
         var card = document.querySelector('[data-provider-card="' + kind + '"]');
@@ -1548,6 +1616,12 @@
         updateAccountCatalogSummary(snapshot);
         updateProviderCards(snapshot);
 
+        if (liveState && shared.stableJson(liveState.monitoringCycles) !== shared.stableJson(snapshot.monitoringCycles)) {
+            updateMonitoringCycles(snapshot.monitoringCycles, highlightChanged);
+        } else if (!liveState && snapshot.monitoringCycles) {
+            updateMonitoringCycles(snapshot.monitoringCycles, false);
+        }
+
         if (activityChart && snapshot.activityChart && snapshot.activityChart.values) {
             var chartData = snapshot.activityChart;
             if (window.OrbitaTime && window.OrbitaTime.localizeHourlyChart) {
@@ -1565,6 +1639,27 @@
     var snapshotFetcher = shared && shared.createSnapshotFetcher
         ? shared.createSnapshotFetcher('worker', function (payload) { applySnapshot(payload, true); }, { errorName: 'Worker details' })
         : null;
+
+    function initMonitoringAccountAccordions() {
+        document.querySelectorAll('[data-monitoring-account-toggle]').forEach(function (row) {
+            if (row.hasAttribute('data-monitoring-account-bound')) return;
+            row.setAttribute('data-monitoring-account-bound', '1');
+
+            row.addEventListener('click', function (e) {
+                if (e.target.closest('a') || e.target.closest('button') || e.target.closest('form')) return;
+                var accountName = row.getAttribute('data-monitoring-account') || '';
+                if (!accountName) return;
+                var root = row.closest('[data-monitoring-accounts]');
+                if (!root) return;
+                var detailRow = root.querySelector('[data-monitoring-account-detail="' + accountName + '"]');
+                var expanded = row.getAttribute('aria-expanded') === 'true';
+                row.setAttribute('aria-expanded', expanded ? 'false' : 'true');
+                if (detailRow) {
+                    detailRow.hidden = expanded;
+                }
+            });
+        });
+    }
 
     function initWorkerPage() {
         if (shared && shared.registerLivePage) {
@@ -1585,6 +1680,7 @@
                 initWorkerSettings();
                 initWorkerAccountsControls();
                 initCopyButtons();
+                initMonitoringAccountAccordions();
                 if (shared.localizeWaitingActivityPills) {
                     shared.localizeWaitingActivityPills();
                 }
@@ -1608,6 +1704,7 @@
         initWorkerAccountsControls();
         initCopyButtons();
         initTopUpModal();
+        initMonitoringAccountAccordions();
         if (shared && shared.localizeWaitingActivityPills) {
             shared.localizeWaitingActivityPills();
         }
@@ -1722,7 +1819,7 @@
             if (targetBalanceEl) targetBalanceEl.textContent = formatBalance(session.targetBalance);
             if (requestedAmountEl) requestedAmountEl.textContent = formatBalance(session.requestedAmount);
             if (dailyResponsesEl) dailyResponsesEl.textContent = session.dailyResponseCount || '0';
-            if (tierLabelEl) tierLabelEl.textContent = getTierLabel(session.dailyResponseCount);
+            if (tierLabelEl) tierLabelEl.textContent = getTierLabel(session.dailyResponseCount, session.targetBalance);
 
             updateStatus(session);
             updateQr(session);
@@ -1982,7 +2079,13 @@
             return labels[status] || 'Неизвестно';
         }
 
-        function getTierLabel(count) {
+        function getTierLabel(count, targetBalance) {
+            if (count <= 5 && Number(targetBalance) === 900) {
+                return 'Быстрый расход за последний час → 900 ₽';
+            }
+            if (count <= 10 && Number(targetBalance) === 2000) {
+                return 'Быстрый расход за последний час → 2 000 ₽';
+            }
             if (count <= 5) return '0–5 откликов → 300 ₽';
             if (count <= 10) return '6–10 откликов → 900 ₽';
             return '11+ откликов → 2000 ₽';

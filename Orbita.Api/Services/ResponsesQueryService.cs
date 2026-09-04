@@ -249,6 +249,7 @@ public sealed class ResponsesQueryService(
     {
         var entity = await db.CandidateResponses
             .AsNoTracking()
+            .Include(x => x.Office)
             .Include(x => x.Worker)
             .Include(x => x.BitrixInstance)
             .Include(x => x.DuplicateBitrixInstance)
@@ -1029,7 +1030,8 @@ public sealed class ResponsesQueryService(
             entity.PhoneChangedAtUtc,
             string.IsNullOrWhiteSpace(phoneMetricLabel) ? null : phoneMetricLabel,
             phoneHistory ?? [],
-            entity.AvatarImage is { Length: > 0 });
+            entity.AvatarImage is { Length: > 0 },
+            entity.Office?.Name);
     }
 }
 

@@ -996,7 +996,8 @@ public sealed class OfficeStatisticsQueryService(
                     p.Name,
                     p.Balance,
                     p.WalletBalance,
-                    p.AdvanceDurationText))
+                    p.AdvanceDurationText,
+                    p.Id))
                 .ToList();
         }
         catch (JsonException)
