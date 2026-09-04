@@ -258,7 +258,26 @@ public sealed class DashboardQueryService(
         };
     }
 
-    public async Task<IReadOnlyList<WorkerListItem>> GetWorkersAsync(
+    public Task<IReadOnlyList<WorkerListItem>> GetWorkersAsync(
+        OfficeScope scope,
+        Guid? officeFilter = null,
+        CancellationToken ct = default)
+    {
+        Task<IReadOnlyList<WorkerListItem>> Load(CancellationToken token) =>
+            GetWorkersUncachedAsync(scope, officeFilter, token);
+        return queryCache is null
+            ? Load(ct)
+            : queryCache.GetOrCreateAsync(
+                OrbitaCacheDomain.Dashboard,
+                scope.ResolveFilter(officeFilter),
+                ScopeAudience(scope),
+                new { Kind = "workers" },
+                OrbitaCachePolicy.Realtime,
+                Load,
+                ct);
+    }
+
+    private async Task<IReadOnlyList<WorkerListItem>> GetWorkersUncachedAsync(
         OfficeScope scope,
         Guid? officeFilter = null,
         CancellationToken ct = default)
@@ -357,7 +376,31 @@ public sealed class DashboardQueryService(
         }).ToList();
     }
 
-    public async Task<WorkersPageDto> GetWorkersPageAsync(
+    public Task<WorkersPageDto> GetWorkersPageAsync(
+        OfficeScope scope,
+        Guid? officeFilter = null,
+        int page = 1,
+        int? pageSize = null,
+        string? sort = null,
+        string? dir = null,
+        CancellationToken ct = default,
+        string? workerFilter = null)
+    {
+        Task<WorkersPageDto> Load(CancellationToken token) => GetWorkersPageUncachedAsync(
+            scope, officeFilter, page, pageSize, sort, dir, token, workerFilter);
+        return queryCache is null
+            ? Load(ct)
+            : queryCache.GetOrCreateAsync(
+                OrbitaCacheDomain.Dashboard,
+                scope.ResolveFilter(officeFilter),
+                ScopeAudience(scope),
+                new { Kind = "workers-page", page, pageSize, sort, dir, workerFilter },
+                OrbitaCachePolicy.Realtime,
+                Load,
+                ct);
+    }
+
+    private async Task<WorkersPageDto> GetWorkersPageUncachedAsync(
         OfficeScope scope,
         Guid? officeFilter = null,
         int page = 1,

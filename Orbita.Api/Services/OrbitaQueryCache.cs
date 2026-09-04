@@ -182,8 +182,12 @@ public sealed class OrbitaQueryCache(
                 PanelChangeKind.Crm => new[] { OrbitaCacheDomain.Crm, OrbitaCacheDomain.Responses, OrbitaCacheDomain.Analytics },
                 PanelChangeKind.Responses => new[] { OrbitaCacheDomain.Responses, OrbitaCacheDomain.Dashboard, OrbitaCacheDomain.Analytics },
                 PanelChangeKind.Statistics => new[] { OrbitaCacheDomain.Dashboard, OrbitaCacheDomain.Analytics },
-                PanelChangeKind.Dashboard or PanelChangeKind.NavBadges or PanelChangeKind.Workers
-                    or PanelChangeKind.Accounts or PanelChangeKind.Events or PanelChangeKind.Errors => new[] { OrbitaCacheDomain.Dashboard },
+                // Worker heartbeats, telemetry snapshots and event streams are high
+                // frequency. Their dashboard fields are allowed to be up to five
+                // seconds old, so they rely on the Realtime TTL rather than making
+                // every in-flight summary cache miss. Meaningful writes include
+                // Dashboard explicitly and still invalidate immediately.
+                PanelChangeKind.Dashboard => new[] { OrbitaCacheDomain.Dashboard },
                 _ => Array.Empty<OrbitaCacheDomain>()
             }))
             .Distinct()

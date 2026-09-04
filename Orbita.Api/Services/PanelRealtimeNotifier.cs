@@ -26,11 +26,6 @@ public sealed class PanelRealtimeNotifier(
             return;
         }
 
-        // Bump cache versions before the SignalR flush so clients never refresh into
-        // a value produced before this write. The cache implementation is explicitly
-        // best-effort and falls back to PostgreSQL if Redis is unavailable.
-        _ = queryCache.InvalidateAsync(kinds, officeId);
-
         lock (_sync)
         {
             var key = officeId?.ToString("D") ?? "none";
@@ -100,6 +95,11 @@ public sealed class PanelRealtimeNotifier(
             {
                 continue;
             }
+
+            // Coalesce the cache invalidation with the notification. Worker telemetry
+            // arrives in bursts; versioning once per burst avoids invalidating a value
+            // while its database factory is still running.
+            await queryCache.InvalidateAsync(entry.Kinds.ToArray(), entry.OfficeId);
 
             var notification = new PanelChangeNotification(
                 entry.Kinds.OrderBy(static x => x).ToArray(),

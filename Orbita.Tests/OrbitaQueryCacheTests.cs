@@ -41,4 +41,13 @@ public sealed class OrbitaQueryCacheTests
         Assert.Contains(OrbitaCacheDomain.Dashboard, domains);
         Assert.Contains(OrbitaCacheDomain.Analytics, domains);
     }
+
+    [Fact]
+    public void MapDomains_TelemetryChangesUseRealtimeTtlInsteadOfInvalidatingDashboard()
+    {
+        var domains = OrbitaQueryCache.MapDomains(
+            [PanelChangeKind.Workers, PanelChangeKind.Accounts, PanelChangeKind.Events, PanelChangeKind.Errors, PanelChangeKind.NavBadges]);
+
+        Assert.DoesNotContain(OrbitaCacheDomain.Dashboard, domains);
+    }
 }
