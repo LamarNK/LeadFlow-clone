@@ -3,6 +3,14 @@ namespace Orbita.Tests;
 public sealed class WorkerDetailsLiveMarkupTests
 {
     [Fact]
+    public void WorkerMonitoringReport_UsesAbsolutePathForNestedPassChip()
+    {
+        var view = ReadRepoFile("Orbita.Web/Views/Statistics/_MonitoringCycleAccounts.cshtml");
+
+        Assert.Contains("<partial name=\"~/Views/Statistics/_MonitoringCyclePassChip.cshtml\" model=\"pass\" />", view);
+    }
+
+    [Fact]
     public void WorkerLiveRenderer_PlacesTopUpTriggerOnTheSelectedSubProfile()
     {
         var workerJs = ReadRepoFile("Orbita.Web/wwwroot/js/orbita-worker.js");
