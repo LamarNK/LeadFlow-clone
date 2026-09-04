@@ -989,6 +989,17 @@
     position: relative;
 }
 
+.topup-loading[hidden],
+.topup-error[hidden],
+.topup-content[hidden],
+.topup-status[hidden],
+.topup-qr-section[hidden],
+.topup-stale-warning[hidden],
+.topup-terminal-message[hidden],
+.topup-info-row[hidden] {
+    display: none !important;
+}
+
 .topup-loading {
     display: flex;
     flex-direction: column;

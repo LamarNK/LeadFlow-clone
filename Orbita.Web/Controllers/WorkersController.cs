@@ -739,6 +739,11 @@ public sealed class WorkersController(IWorkersService workers) : Controller
                 : BadRequest(new { error = result.Error });
         }
 
+        if (result.Session is null)
+        {
+            return BadRequest(new { error = "Не удалось создать сессию пополнения." });
+        }
+
         return Ok(result.Session);
     }
 

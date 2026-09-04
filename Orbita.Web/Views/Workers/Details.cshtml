@@ -1495,6 +1495,7 @@
             </button>
         </header>
         <div class="workers-modal-body topup-modal-body">
+            @Html.AntiForgeryToken()
             <div class="topup-loading" data-topup-loading>
                 <div class="topup-spinner"></div>
                 <p data-topup-loading-text>Создаём сессию пополнения…</p>

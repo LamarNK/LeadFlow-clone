@@ -1966,36 +1966,49 @@
         }
 
         function startSession(workerId, accountId, subProfileId, accountName) {
+            if (!workerId || !accountId || !subProfileId) {
+                showError('Не выбран субпрофиль для пополнения.');
+                return;
+            }
+
             var token = getAntiForgeryToken();
-            fetch('/Workers/CreateTopUpSession?workerId=' + workerId + '&accountId=' + accountId + '&subProfileId=' + encodeURIComponent(subProfileId || ''), {
+            var body = new URLSearchParams();
+            if (token) body.set('__RequestVerificationToken', token);
+
+            fetch('/Workers/CreateTopUpSession?workerId=' + encodeURIComponent(workerId) + '&accountId=' + encodeURIComponent(accountId) + '&subProfileId=' + encodeURIComponent(subProfileId), {
                 method: 'POST',
+                credentials: 'same-origin',
                 headers: {
-                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
                     'RequestVerificationToken': token
-                }
+                },
+                body: body
             })
             .then(function (response) {
+                return readJson(response).then(function (data) {
+                    return { response: response, data: data };
+                });
+            })
+            .then(function (result) {
+                var response = result.response;
+                var data = result.data;
                 if (response.status === 409) {
-                    return response.json().then(function (data) {
-                        throw new Error(data.error || 'Конфликт: уже есть активная сессия.');
-                    });
+                    throw new Error((data && data.error) || 'Для этого аккаунта уже есть активная сессия.');
                 }
                 if (!response.ok) {
-                    return response.json().then(function (data) {
-                        throw new Error(data.error || 'Не удалось создать сессию.');
-                    });
+                    throw new Error(errorFromResponse(response, data, 'Не удалось создать сессию пополнения.'));
                 }
-                return response.json();
-            })
-            .then(function (session) {
-                currentSessionId = session.sessionId;
-                showContent(session);
-                if (isActive(session.status)) {
-                    startPolling(session.sessionId);
+                if (!data || !data.sessionId) {
+                    throw new Error('Сервер вернул пустой ответ. Обновите страницу и попробуйте снова.');
+                }
+                currentSessionId = data.sessionId;
+                showContent(data);
+                if (isActive(data.status)) {
+                    startPolling(data.sessionId);
                 }
             })
             .catch(function (err) {
-                showError(err.message);
+                showError(err && err.message ? err.message : 'Не удалось создать сессию пополнения.');
             });
         }
 
@@ -2008,11 +2021,14 @@
 
             fetch('/Workers/GetTopUpSession?sessionId=' + sessionId, {
                 method: 'GET',
-                headers: { 'Content-Type': 'application/json' }
+                credentials: 'same-origin',
+                headers: { 'Accept': 'application/json' }
             })
             .then(function (response) {
                 if (!response.ok) return null;
-                return response.json();
+                return readJson(response).then(function (data) {
+                    return data && data.sessionId ? data : null;
+                });
             })
             .then(function (session) {
                 if (!session || modal.hasAttribute('hidden')) return;
@@ -2060,16 +2076,23 @@
             setCancelBusy(true);
 
             var token = getAntiForgeryToken();
+            var body = new URLSearchParams();
+            if (token) body.set('__RequestVerificationToken', token);
             fetch('/Workers/CancelTopUpSession?sessionId=' + sessionId, {
                 method: 'POST',
+                credentials: 'same-origin',
                 headers: {
-                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
                     'RequestVerificationToken': token
-                }
+                },
+                body: body
             })
             .then(function (response) {
-                if (!response.ok) throw new Error('Не удалось отменить сессию.');
-                return response.json();
+                return readJson(response).then(function (data) {
+                    if (!response.ok) {
+                        throw new Error(errorFromResponse(response, data, 'Не удалось отменить сессию.'));
+                    }
+                });
             })
             .then(function () {
                 stopPolling();
@@ -2143,8 +2166,30 @@
         }
 
         function getAntiForgeryToken() {
+            var local = modal.querySelector('input[name="__RequestVerificationToken"]');
+            if (local && local.value) return local.value;
             var tokenInput = document.querySelector('input[name="__RequestVerificationToken"]');
             return tokenInput ? tokenInput.value : '';
+        }
+
+        function readJson(response) {
+            return response.text().then(function (text) {
+                var trimmed = (text || '').trim();
+                if (!trimmed) return {};
+                try {
+                    return JSON.parse(trimmed);
+                } catch (e) {
+                    return {};
+                }
+            });
+        }
+
+        function errorFromResponse(response, data, fallback) {
+            if (data && data.error) return data.error;
+            if (response.status === 401 || response.status === 403) return 'Нет доступа к пополнению.';
+            if (response.status === 409) return 'Для этого аккаунта уже есть активная сессия.';
+            if (response.status >= 500) return 'Сервер не смог выполнить запрос. Попробуйте ещё раз.';
+            return fallback || 'Не удалось выполнить запрос. Обновите страницу и попробуйте снова.';
         }
     }
 
