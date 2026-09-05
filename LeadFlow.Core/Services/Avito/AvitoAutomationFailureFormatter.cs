@@ -135,4 +135,15 @@ public static class AvitoAutomationFailureFormatter
                    || url.Contains("avito.ru/login", StringComparison.OrdinalIgnoreCase)
                    || url.Contains("#login", StringComparison.OrdinalIgnoreCase));
     }
+
+    /// <summary>
+    /// После firewall/GeeTest сессия часто становится гостевой на /profile/pro/items
+    /// без формы входа в первом probe. Автовход всё равно нужно запустить.
+    /// </summary>
+    public static bool ShouldAttemptAutoLoginAfterCaptcha(AvitoPageState? pageState) =>
+        pageState is null
+        || !pageState.LooksLoggedIn
+        || SuggestsLogin(pageState)
+        || pageState.HasLoginForm
+        || pageState.PageKind is AvitoPageKind.Login or AvitoPageKind.Captcha;
 }

@@ -251,6 +251,22 @@ public static class AvitoCaptchaDetector
     /// <summary>Фиксированный captcha_id GeeTest v4 для avito.ru (RuCaptcha / 2captcha).</summary>
     public const string AvitoGeeTestCaptchaId = "2d9c743cf7d63dbc9db578a608196bcd";
 
+    /// <summary>На странице уже форма входа Avito — firewall-капча позади, дальше автовход.</summary>
+    public static bool ShowsLoginForm(string? html)
+    {
+        if (string.IsNullOrWhiteSpace(html))
+        {
+            return false;
+        }
+
+        return html.Contains("data-marker=\"login-form", StringComparison.OrdinalIgnoreCase)
+               || html.Contains("data-marker='login-form", StringComparison.OrdinalIgnoreCase)
+               || html.Contains("data-marker=\"users-list", StringComparison.OrdinalIgnoreCase)
+               || html.Contains("data-marker='users-list", StringComparison.OrdinalIgnoreCase)
+               || html.Contains("login-form-with-avatar", StringComparison.OrdinalIgnoreCase)
+               || html.Contains("data-marker=\"user/link", StringComparison.OrdinalIgnoreCase);
+    }
+
     /// <summary>
     /// Есть ли в HTML признаки «обычной» страницы Avito — это страховка против ложных срабатываний
     /// текстовых маркеров (вроде слова «капча» в подсказке/футере).

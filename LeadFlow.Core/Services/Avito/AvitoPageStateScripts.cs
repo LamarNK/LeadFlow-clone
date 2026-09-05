@@ -102,23 +102,32 @@ public static class AvitoPageStateScripts
                 const rect = el.getBoundingClientRect();
                 return rect.width > 0 && rect.height > 0;
             };
+            const liveCaptchaWidget = !!(
+                isVisibleEl(document.getElementById("geetest_captcha")) ||
+                isVisibleEl(document.getElementById("inner-captcha")) ||
+                isVisibleEl(document.getElementById("h-captcha")) ||
+                isVisibleEl(document.querySelector(".h-captcha[data-sitekey]")) ||
+                isVisibleEl(document.querySelector(
+                    ".geetest_box, .geetest_nine, [class*='geetest_box'], [class*='geetest_nine']"))
+            );
             const hasCaptchaWidget = !!(
+                liveCaptchaWidget ||
                 document.getElementById("geetest_captcha") ||
                 document.getElementById("inner-captcha") ||
                 document.getElementById("h-captcha") ||
-                document.querySelector(".h-captcha[data-sitekey]") ||
-                isVisibleEl(document.querySelector(
-                    ".geetest_box, .geetest_nine, [class*='geetest_box'], [class*='geetest_nine']"))
+                document.querySelector(".h-captcha[data-sitekey]")
             );
             const hasCaptchaContinue = /Продолжить/i.test(probeText)
               && (/капч/i.test(probeText)
                   || !!document.querySelector('.firewall-container, .js-firewall-form, .firewall-title, form.js-firewall-form, [role="dialog"][aria-modal="true"]'));
-            const hasCaptchaChallenge = hasCaptchaWidget
+            const hasCaptchaChallenge = liveCaptchaWidget
               || /решени[еюя]\s+капч/i.test(probeText)
               || hasCaptchaContinue;
             const hasIpBlock = !hasCaptchaChallenge && (hasIpText || hasStaticIpBlock);
             const hasFirewallIp = hasIpBlock;
-            const hasCaptcha = hasFirewallDom || hasFirewallText || hasCaptchaWidget || hasIpBlock || hasCaptchaChallenge;
+            const hasCaptcha = hasLoginForm
+                ? (liveCaptchaWidget || hasFirewallDom)
+                : (hasFirewallDom || hasFirewallText || hasCaptchaWidget || hasIpBlock || hasCaptchaChallenge);
             // Баннер Avito Pro: скрытые объявления из-за нулевого/недостаточного аванса.
             // Оба текста обязательны, чтобы не принять обычный блок баланса за ошибку.
             const hasInsufficientAdvance =
@@ -132,10 +141,12 @@ public static class AvitoPageStateScripts
                 || /обязательно\s+всё\s+починим/i.test(probeText);
 
             let pageKind = "unknown";
-            if (hasCaptcha) {
+            if (hasLoginForm && liveCaptchaWidget) {
                 pageKind = "captcha";
             } else if (hasLoginForm) {
                 pageKind = "login";
+            } else if (hasCaptcha) {
+                pageKind = "captcha";
             } else if (hasTransientError) {
                 pageKind = "transientError";
             } else if (profileSwitchModalOpen) {

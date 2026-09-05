@@ -26,17 +26,23 @@ public static class AvitoAutoLoginScripts
                 const rect = el.getBoundingClientRect();
                 return rect.width > 0 && rect.height > 0;
             };
-            const hasCaptchaWidget = !!(
-                document.getElementById("geetest_captcha") ||
-                document.getElementById("inner-captcha") ||
-                document.getElementById("h-captcha") ||
-                document.querySelector(".h-captcha[data-sitekey]") ||
+            const liveCaptchaWidget = !!(
+                isVisibleEl(document.getElementById("geetest_captcha")) ||
+                isVisibleEl(document.getElementById("inner-captcha")) ||
+                isVisibleEl(document.getElementById("h-captcha")) ||
+                isVisibleEl(document.querySelector(".h-captcha[data-sitekey]")) ||
                 isVisibleEl(document.querySelector(
                     ".geetest_box, .geetest_nine, [class*='geetest_box'], [class*='geetest_nine']"))
             );
+            const hasCaptchaWidget = !!(
+                liveCaptchaWidget ||
+                document.getElementById("geetest_captcha") ||
+                document.getElementById("inner-captcha") ||
+                document.getElementById("h-captcha") ||
+                document.querySelector(".h-captcha[data-sitekey]")
+            );
             const hasIpDialog = !!document.querySelector('[role="dialog"][aria-modal="true"], [aria-modal="true"]')
               && /Доступ\s+ограничен|проблема\s+с\s+IP/i.test(probeText);
-            const hasCaptcha = hasFirewallDom || hasFirewallText || hasCaptchaWidget || hasIpDialog;
 
             const hasLoginDom = !!(
                 document.querySelector("[data-marker='auth-app-root']") ||
@@ -108,6 +114,11 @@ public static class AvitoAutoLoginScripts
                 hasOtherProfileLink ||
                 urlSuggestsLogin ||
                 (hasGuestLoginButton && !hasLoggedInProfile);
+
+            const hasLoginUi = hasLoginDom || hasUsersList || hasSavedUserCard || hasCredentialInputs;
+            const hasCaptcha = hasLoginUi
+                ? (liveCaptchaWidget || hasFirewallDom)
+                : (hasFirewallDom || hasFirewallText || hasCaptchaWidget || hasIpDialog);
 
             const isAuthorized =
                 !needsLogin &&

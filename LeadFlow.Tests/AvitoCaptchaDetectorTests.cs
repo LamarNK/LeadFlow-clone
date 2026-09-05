@@ -229,6 +229,18 @@ public sealed class AvitoCaptchaDetectorTests
     }
 
     [Fact]
+    public void ShowsLoginForm_LoginMarkers_TrueEvenWithGeeTestScripts()
+    {
+        const string html = """
+            <form data-marker="login-form"><input name="password"></form>
+            <script src="https://static.geetest.com/v4/gt4.js"></script>
+            """;
+
+        Assert.True(AvitoCaptchaDetector.ShowsLoginForm(html));
+        Assert.True(AvitoCaptchaDetector.IsCaptchaHtml(html));
+    }
+
+    [Fact]
     public void ExtractGeeTestCaptchaId_FromCaptchaV4PolicyUrl()
     {
         const string html =

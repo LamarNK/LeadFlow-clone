@@ -24,6 +24,17 @@ public sealed record AvitoPageState(
     public bool IsTransientPageError =>
         HasTransientError || PageKind == AvitoPageKind.TransientError;
 
+    /// <summary>
+    /// Кабинет Avito реально открыт: имя/id субпрофиля или модалка выбора.
+    /// URL /profile/pro/items сам по себе не считается — гость после капчи тоже там.
+    /// </summary>
+    public bool LooksLoggedIn =>
+        !HasLoginForm
+        && PageKind is not AvitoPageKind.Login and not AvitoPageKind.Captcha
+        && (ProfileSwitchModalOpen
+            || !string.IsNullOrWhiteSpace(CurrentSubProfileId)
+            || !string.IsNullOrWhiteSpace(CurrentSubProfileName));
+
     public string DescribeKindRu() => PageKind switch
     {
         _ when HasTransientError || PageKind == AvitoPageKind.TransientError => "ошибка загрузки страницы Avito (прокси мог подвиснуть)",

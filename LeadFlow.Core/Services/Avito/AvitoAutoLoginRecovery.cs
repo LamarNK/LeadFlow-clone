@@ -154,6 +154,13 @@ public static class AvitoAutoLoginRecovery
             var state = await ProbeAsync(page, cancellationToken).ConfigureAwait(false);
             if (state is null)
             {
+                steps.Add("probe не прочитался");
+                await LogAsync(
+                        DeskLinkAuditLogLevel.Warning,
+                        "Avito auto-login failed (probe_failed).",
+                        steps,
+                        page.Url)
+                    .ConfigureAwait(false);
                 return new RecoveryResult(false, true, false, "probe_failed", steps);
             }
 
@@ -165,6 +172,12 @@ public static class AvitoAutoLoginRecovery
             if (captchaDecision == LoginCaptchaDecision.Abort)
             {
                 steps.Add("капча или блок IP");
+                await LogAsync(
+                        DeskLinkAuditLogLevel.Warning,
+                        "Avito auto-login failed (captcha).",
+                        steps,
+                        state.Url)
+                    .ConfigureAwait(false);
                 return new RecoveryResult(false, true, true, "captcha", steps);
             }
 
@@ -188,6 +201,12 @@ public static class AvitoAutoLoginRecovery
                     continue;
                 }
 
+                await LogAsync(
+                        DeskLinkAuditLogLevel.Warning,
+                        "Avito auto-login failed (captcha).",
+                        steps,
+                        state.Url)
+                    .ConfigureAwait(false);
                 return new RecoveryResult(false, true, true, "captcha", steps);
             }
 

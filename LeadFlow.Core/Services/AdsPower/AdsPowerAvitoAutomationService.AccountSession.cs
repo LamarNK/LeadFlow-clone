@@ -353,9 +353,13 @@ public sealed partial class AdsPowerAvitoAutomationService
         // вызывался только позже, при переключении субпрофиля: браузер уже
         // показывал users-list/login-form, но до этого шага поток не доходил.
         var warmupState = await ProbePageStateAsync(page, cancellationToken).ConfigureAwait(false);
+        var captchaSeen = CanTryClearCaptcha(warmupState)
+                          || warmupState?.HasCaptcha == true
+                          || warmupState?.PageKind == AvitoPageKind.Captcha;
         if (CanTryClearCaptcha(warmupState)
             && await TryClearGeeTestCaptchaAsync(page, cancellationToken).ConfigureAwait(false))
         {
+            await Task.Delay(MonitoringTiming.AutoLoginDashboardNavSettleMs, cancellationToken).ConfigureAwait(false);
             warmupState = await ProbePageStateAsync(page, cancellationToken).ConfigureAwait(false);
         }
 
@@ -366,14 +370,34 @@ public sealed partial class AdsPowerAvitoAutomationService
             warmupState = await ProbePageStateAsync(page, cancellationToken).ConfigureAwait(false);
         }
 
+        // После GeeTest Avito часто отдаёт гостя на /profile/pro/items без формы входа
+        // в первом probe (Reload ещё не дорисовался). Не пропускаем автовход.
         if (warmupState?.HasLoginForm == true
             || warmupState?.PageKind == AvitoPageKind.Login
-            || AvitoAutomationFailureFormatter.SuggestsLogin(warmupState))
+            || AvitoAutomationFailureFormatter.SuggestsLogin(warmupState)
+            || (captchaSeen && AvitoAutomationFailureFormatter.ShouldAttemptAutoLoginAfterCaptcha(warmupState)))
         {
+            _ = GlobalLogger.Instance.LogAsync(
+                captchaSeen
+                    ? "Avito session warmup: after captcha session is not logged in — starting auto-login."
+                    : "Avito session warmup: login required — starting auto-login.",
+                DeskLinkAuditLogLevel.Info,
+                memberName: nameof(WarmUpSessionPageAsync),
+                properties: new Dictionary<string, object?>
+                {
+                    ["step"] = "warmup_auto_login",
+                    ["runtime.provider"] = runtimeProvider,
+                    ["page.url"] = page.Url,
+                    ["page.kind"] = warmupState?.PageKind.ToString(),
+                    ["auth.hasLoginForm"] = warmupState?.HasLoginForm,
+                    ["captcha.seen"] = captchaSeen
+                });
             var recovered = await TryRecoverAvitoLoginAsync(page, cancellationToken).ConfigureAwait(false);
+            warmupState = await ProbePageStateAsync(page, cancellationToken).ConfigureAwait(false);
             if (recovered && !IsOnActiveProfileItemsPage(page.Url))
             {
                 await page.GoToAsync(ProfileItemsPageUrl, MonitoringNavigation(page, 90_000)).ConfigureAwait(false);
+                warmupState = await ProbePageStateAsync(page, cancellationToken).ConfigureAwait(false);
             }
         }
 

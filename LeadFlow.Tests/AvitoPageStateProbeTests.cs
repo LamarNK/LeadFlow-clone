@@ -26,6 +26,16 @@ public sealed class AvitoPageStateProbeTests
     }
 
     [Fact]
+    public void BuildProbeScript_LoginUiWinsOverLeftoverCaptchaText()
+    {
+        var script = AvitoPageStateScripts.BuildProbeScript();
+
+        Assert.Contains("liveCaptchaWidget", script, StringComparison.Ordinal);
+        Assert.Contains("hasLoginForm && liveCaptchaWidget", script, StringComparison.Ordinal);
+        Assert.Contains("pageKind = \"login\"", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void TryParse_ProfileSwitchModalOpen_DetectsModal()
     {
         const string json = """

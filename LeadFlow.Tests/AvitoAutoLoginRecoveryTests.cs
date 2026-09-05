@@ -265,6 +265,8 @@ public sealed class AvitoAutoLoginRecoveryTests
         Assert.Contains("geetest_box", script, StringComparison.Ordinal);
         Assert.Contains("geetest_nine", script, StringComparison.Ordinal);
         Assert.Contains("hasCaptchaWidget", script, StringComparison.Ordinal);
+        Assert.Contains("hasLoginUi", script, StringComparison.Ordinal);
+        Assert.Contains("liveCaptchaWidget", script, StringComparison.Ordinal);
     }
 
     [Fact]

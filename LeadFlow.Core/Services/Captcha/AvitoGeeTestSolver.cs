@@ -933,7 +933,8 @@ public sealed class AvitoGeeTestSolver(
     private static bool LeftCaptcha(AvitoCaptchaLeaveResult leave) =>
         leave.Recovered
         && !string.IsNullOrWhiteSpace(leave.Html)
-        && !AvitoCaptchaDetector.IsCaptchaHtml(leave.Html);
+        && (!AvitoCaptchaDetector.IsCaptchaHtml(leave.Html)
+            || AvitoCaptchaDetector.ShowsLoginForm(leave.Html));
 
     private static async Task DelayBeforeRetryAsync(
         IPage page,
@@ -983,7 +984,8 @@ public sealed class AvitoGeeTestSolver(
         var latestHtml = afterAcceptedVerify
             ? await SafeGetHtmlAsync(page, cancellationToken).ConfigureAwait(false)
             : await WaitForRedirectOverlayOrLeaveAsync(page, cancellationToken).ConfigureAwait(false);
-        if (!AvitoCaptchaDetector.IsCaptchaHtml(latestHtml))
+        if (!AvitoCaptchaDetector.IsCaptchaHtml(latestHtml)
+            || AvitoCaptchaDetector.ShowsLoginForm(latestHtml))
         {
             return new AvitoCaptchaLeaveResult(true, latestHtml, 0);
         }
@@ -1054,10 +1056,11 @@ public sealed class AvitoGeeTestSolver(
                     });
             }
 
-            await Task.Delay(1200, cancellationToken).ConfigureAwait(false);
+            await Task.Delay(2000, cancellationToken).ConfigureAwait(false);
             latestHtml = await SafeGetHtmlAsync(page, cancellationToken).ConfigureAwait(false);
             if (!string.IsNullOrWhiteSpace(latestHtml)
-                && !AvitoCaptchaDetector.IsCaptchaHtml(latestHtml))
+                && (!AvitoCaptchaDetector.IsCaptchaHtml(latestHtml)
+                    || AvitoCaptchaDetector.ShowsLoginForm(latestHtml)))
             {
                 return new AvitoCaptchaLeaveResult(true, latestHtml, attempts);
             }
