@@ -78,7 +78,10 @@ public sealed class RuCaptchaClient(HttpClient http) : IRuCaptchaClient
             throw new RuCaptchaException($"RuCaptcha GeeTest v4 API v1: {ex.Message}", ex);
         }
 
-        return RuCaptchaResponseParser.ParseGeeTestV4V1Solution(captcha.Code);
+        return RuCaptchaResponseParser.ParseGeeTestV4V1Solution(captcha.Code) with
+        {
+            ProviderTask = new RuCaptchaTask(captcha.Id, RuCaptchaApiVersion.V1)
+        };
     }
 
     public async Task<HCaptchaSolution> SolveHCaptchaAsync(
@@ -106,7 +109,8 @@ public sealed class RuCaptchaClient(HttpClient http) : IRuCaptchaClient
         var taskId = await CreateHCaptchaTaskAsync(
                 apiKey.Trim(), websiteUrl.Trim(), websiteKey.Trim(), taskOptions, cancellationToken)
             .ConfigureAwait(false);
-        return await WaitForHCaptchaResultAsync(apiKey.Trim(), taskId, cancellationToken).ConfigureAwait(false);
+        var solution = await WaitForHCaptchaResultAsync(apiKey.Trim(), taskId, cancellationToken).ConfigureAwait(false);
+        return solution with { ProviderTask = new RuCaptchaTask(taskId.ToString(), RuCaptchaApiVersion.V2) };
     }
 
     public async Task<ImageCaptchaSolution> SolveImageToTextAsync(
@@ -126,7 +130,8 @@ public sealed class RuCaptchaClient(HttpClient http) : IRuCaptchaClient
         }
 
         var taskId = await CreateImageToTextTaskAsync(apiKey.Trim(), body, cancellationToken).ConfigureAwait(false);
-        return await WaitForImageToTextResultAsync(apiKey.Trim(), taskId, cancellationToken).ConfigureAwait(false);
+        var solution = await WaitForImageToTextResultAsync(apiKey.Trim(), taskId, cancellationToken).ConfigureAwait(false);
+        return solution with { ProviderTask = new RuCaptchaTask(taskId.ToString(), RuCaptchaApiVersion.V2) };
     }
 
     public async Task<ClickCaptchaSolution> SolveClickCaptchaAsync(
@@ -173,7 +178,60 @@ public sealed class RuCaptchaClient(HttpClient http) : IRuCaptchaClient
             throw new RuCaptchaException($"RuCaptcha ClickCaptcha API v1: {ex.Message}", ex);
         }
 
-        return new ClickCaptchaSolution(RuCaptchaResponseParser.ParseClickCaptchaCoordinates(captcha.Code));
+        return new ClickCaptchaSolution(
+            RuCaptchaResponseParser.ParseClickCaptchaCoordinates(captcha.Code),
+            new RuCaptchaTask(captcha.Id, RuCaptchaApiVersion.V1));
+    }
+
+    public async Task ReportAsync(
+        string apiKey,
+        RuCaptchaTask task,
+        bool isCorrect,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(apiKey))
+        {
+            throw new RuCaptchaException("Не задан API-ключ RuCaptcha.");
+        }
+
+        if (task is null || string.IsNullOrWhiteSpace(task.Id))
+        {
+            throw new RuCaptchaException("Не задан идентификатор задачи RuCaptcha для report.");
+        }
+
+        if (task.ApiVersion == RuCaptchaApiVersion.V1)
+        {
+            var solver = new TwoCaptchaClient(apiKey.Trim());
+            solver.SetApiClient(new RuCaptchaV1ApiClient(http));
+            try
+            {
+                await solver.Report(task.Id.Trim(), isCorrect).WaitAsync(cancellationToken).ConfigureAwait(false);
+                return;
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                throw new RuCaptchaException($"RuCaptcha report API v1: {ex.Message}", ex);
+            }
+        }
+
+        if (!long.TryParse(task.Id, out var taskId) || taskId <= 0)
+        {
+            throw new RuCaptchaException("Некорректный идентификатор задачи RuCaptcha API v2 для report.");
+        }
+
+        var endpoint = isCorrect ? "reportCorrect" : "reportIncorrect";
+        using var response = await http.PostAsJsonAsync(endpoint, new Dictionary<string, object?>
+        {
+            ["clientKey"] = apiKey.Trim(),
+            ["taskId"] = taskId
+        }, JsonOptions, cancellationToken).ConfigureAwait(false);
+        var json = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new RuCaptchaException($"RuCaptcha {endpoint} HTTP {(int)response.StatusCode}: {Trim(json)}");
+        }
+
+        RuCaptchaResponseParser.EnsureReportAccepted(json);
     }
 
     private async Task<long> CreateHCaptchaTaskAsync(

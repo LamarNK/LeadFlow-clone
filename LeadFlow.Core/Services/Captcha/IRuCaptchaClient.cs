@@ -34,4 +34,10 @@ public interface IRuCaptchaClient
         string? hintText,
         string language,
         CancellationToken cancellationToken = default);
+
+    Task ReportAsync(
+        string apiKey,
+        RuCaptchaTask task,
+        bool isCorrect,
+        CancellationToken cancellationToken = default);
 }

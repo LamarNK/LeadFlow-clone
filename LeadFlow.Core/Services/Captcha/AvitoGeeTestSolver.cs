@@ -244,6 +244,8 @@ public sealed class AvitoGeeTestSolver(
                             ["captcha.proxyMode"] = effectiveTaskOptions.UsesSuppliedProxy ? "profile" : "proxyless",
                             ["captcha.userAgentPresent"] = !string.IsNullOrWhiteSpace(effectiveTaskOptions.UserAgent)
                         });
+                    await ReportSolutionAsync(apiKey, solution.ProviderTask, isCorrect: false, "GeeTest v4", cancellationToken)
+                        .ConfigureAwait(false);
                     await DelayBeforeRetryAsync(page, attempt, "токен отклонён", cancellationToken)
                         .ConfigureAwait(false);
                     continue;
@@ -258,11 +260,13 @@ public sealed class AvitoGeeTestSolver(
                         "Captcha: GeeTest v4 пройдена через RuCaptcha.",
                         DeskLinkAuditLogLevel.Info,
                         properties: new Dictionary<string, object?>
-                        {
-                            ["step"] = "captcha_solved",
+                    {
+                        ["step"] = "captcha_solved",
                             ["page.url"] = page.Url,
-                            ["captcha.attempt"] = attempt
-                        });
+                        ["captcha.attempt"] = attempt
+                    });
+                    await ReportSolutionAsync(apiKey, solution.ProviderTask, isCorrect: true, "GeeTest v4", cancellationToken)
+                        .ConfigureAwait(false);
                     AvitoCaptchaTaskContext.NoteSolved();
                     return true;
                 }
@@ -409,6 +413,8 @@ public sealed class AvitoGeeTestSolver(
                         ["captcha.attempt"] = attempt,
                         ["captcha.points"] = solution.Points.Count
                     });
+                await ReportSolutionAsync(apiKey, solution.ProviderTask, isCorrect: true, "ClickCaptcha логина", cancellationToken)
+                    .ConfigureAwait(false);
                 AvitoCaptchaTaskContext.NoteSolved();
                 return true;
             }
@@ -693,6 +699,8 @@ public sealed class AvitoGeeTestSolver(
                         ["captcha.proxyMode"] = taskOptions.UsesSuppliedProxy ? "profile" : "proxyless",
                         ["captcha.userAgentPresent"] = !string.IsNullOrWhiteSpace(taskOptions.UserAgent)
                     });
+                await ReportSolutionAsync(apiKey, solution.ProviderTask, isCorrect: false, "hCaptcha", cancellationToken)
+                    .ConfigureAwait(false);
                 await DelayBeforeRetryAsync(page, attempt, "токен hCaptcha отклонён", cancellationToken)
                     .ConfigureAwait(false);
                 continue;
@@ -712,6 +720,8 @@ public sealed class AvitoGeeTestSolver(
                         ["page.url"] = page.Url,
                         ["captcha.attempt"] = attempt
                     });
+                await ReportSolutionAsync(apiKey, solution.ProviderTask, isCorrect: true, "hCaptcha", cancellationToken)
+                    .ConfigureAwait(false);
                 AvitoCaptchaTaskContext.NoteSolved();
                 return true;
             }
@@ -808,6 +818,8 @@ public sealed class AvitoGeeTestSolver(
                         ["captcha.verify.verified"] = verify.Verified,
                         ["captcha.verify"] = verify.Summary
                     });
+                await ReportSolutionAsync(apiKey, solution.ProviderTask, isCorrect: false, "внутренней картинки", cancellationToken)
+                    .ConfigureAwait(false);
                 await DelayBeforeRetryAsync(page, attempt, "текст картинки отклонён", cancellationToken)
                     .ConfigureAwait(false);
                 continue;
@@ -827,6 +839,8 @@ public sealed class AvitoGeeTestSolver(
                         ["page.url"] = page.Url,
                         ["captcha.attempt"] = attempt
                     });
+                await ReportSolutionAsync(apiKey, solution.ProviderTask, isCorrect: true, "внутренней картинки", cancellationToken)
+                    .ConfigureAwait(false);
                 AvitoCaptchaTaskContext.NoteSolved();
                 return true;
             }
@@ -846,6 +860,53 @@ public sealed class AvitoGeeTestSolver(
         }
 
         return false;
+    }
+
+    private async Task ReportSolutionAsync(
+        string apiKey,
+        RuCaptchaTask? task,
+        bool isCorrect,
+        string captchaKind,
+        CancellationToken cancellationToken)
+    {
+        if (task is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await ruCaptcha.ReportAsync(apiKey, task, isCorrect, cancellationToken).ConfigureAwait(false);
+            _ = GlobalLogger.Instance.LogAsync(
+                $"Captcha: RuCaptcha получила report {(isCorrect ? "correct" : "incorrect")} для {captchaKind}.",
+                DeskLinkAuditLogLevel.Info,
+                properties: new Dictionary<string, object?>
+                {
+                    ["step"] = "captcha_provider_report_sent",
+                    ["captcha.kind"] = captchaKind,
+                    ["captcha.report"] = isCorrect ? "correct" : "incorrect",
+                    ["captcha.taskId"] = task.Id,
+                    ["captcha.apiVersion"] = task.ApiVersion.ToString()
+                });
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                $"Captcha: не удалось отправить report {(isCorrect ? "correct" : "incorrect")} для {captchaKind} — {ex.Message}",
+                DeskLinkAuditLogLevel.Warning,
+                properties: new Dictionary<string, object?>
+                {
+                    ["step"] = "captcha_provider_report_failed",
+                    ["captcha.kind"] = captchaKind,
+                    ["captcha.report"] = isCorrect ? "correct" : "incorrect",
+                    ["captcha.taskId"] = task.Id,
+                    ["captcha.apiVersion"] = task.ApiVersion.ToString()
+                });
+        }
     }
 
     private static string FormatTokenRejectedMessage(

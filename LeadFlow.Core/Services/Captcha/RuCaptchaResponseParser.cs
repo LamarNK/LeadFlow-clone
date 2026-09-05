@@ -206,6 +206,22 @@ public static class RuCaptchaResponseParser
         return points;
     }
 
+    /// <summary>Проверяет ответ API v2 на reportCorrect/reportIncorrect.</summary>
+    public static void EnsureReportAccepted(string json)
+    {
+        using var doc = ParseObject(json);
+        var root = doc.RootElement;
+        ThrowIfApiError(root);
+
+        var status = ReadString(root, "status");
+        if (!string.IsNullOrWhiteSpace(status)
+            && !string.Equals(status, "success", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(status, "reported", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new RuCaptchaException($"RuCaptcha report: неожиданный статус «{status}».");
+        }
+    }
+
     public static bool IsVerifyAccepted(string? raw)
     {
         if (string.IsNullOrWhiteSpace(raw))

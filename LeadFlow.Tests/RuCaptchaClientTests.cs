@@ -8,6 +8,40 @@ namespace LeadFlow.Tests;
 public sealed class RuCaptchaClientTests
 {
     [Fact]
+    public async Task Report_V1Correct_UsesReportGood()
+    {
+        var handler = new StubHttpMessageHandler((request, _) =>
+        {
+            Assert.Contains("/res.php", request.RequestUri!.AbsolutePath, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("action=reportgood", request.RequestUri.Query, StringComparison.Ordinal);
+            Assert.Contains("id=81", request.RequestUri.Query, StringComparison.Ordinal);
+            return Task.FromResult(StubHttpMessageHandler.Ok("OK_REPORT_RECORDED"));
+        });
+        var client = new RuCaptchaClient(new HttpClient(handler) { BaseAddress = new Uri("https://api.rucaptcha.com/") });
+
+        await client.ReportAsync("key", new RuCaptchaTask("81", RuCaptchaApiVersion.V1), isCorrect: true);
+
+        Assert.Single(handler.Calls);
+    }
+
+    [Fact]
+    public async Task Report_V2Incorrect_UsesReportIncorrect()
+    {
+        var handler = new StubHttpMessageHandler((request, body) =>
+        {
+            Assert.Contains("reportIncorrect", request.RequestUri!.AbsolutePath, StringComparison.Ordinal);
+            Assert.Contains("\"clientKey\":\"key\"", body, StringComparison.Ordinal);
+            Assert.Contains("\"taskId\":81", body, StringComparison.Ordinal);
+            return Task.FromResult(StubHttpMessageHandler.Ok("""{"errorId":0,"status":"success"}"""));
+        });
+        var client = new RuCaptchaClient(new HttpClient(handler) { BaseAddress = new Uri("https://api.rucaptcha.com/") });
+
+        await client.ReportAsync("key", new RuCaptchaTask("81", RuCaptchaApiVersion.V2), isCorrect: false);
+
+        Assert.Single(handler.Calls);
+    }
+
+    [Fact]
     public async Task SolveClickCaptcha_SendsImageAndHintThenPreservesPointOrder()
     {
         var handler = new StubHttpMessageHandler((request, body) =>
@@ -42,6 +76,7 @@ public sealed class RuCaptchaClientTests
             solution.Points,
             point => Assert.Equal(new ClickCaptchaPoint(43, 87), point),
             point => Assert.Equal(new ClickCaptchaPoint(120, 15), point));
+        Assert.Equal(new RuCaptchaTask("81", RuCaptchaApiVersion.V1), solution.ProviderTask);
         Assert.Equal(2, handler.Calls.Count);
     }
 
@@ -99,6 +134,7 @@ public sealed class RuCaptchaClientTests
 
         Assert.Equal("ln", solution.LotNumber);
         Assert.Equal("pt", solution.PassToken);
+        Assert.Equal(new RuCaptchaTask("42", RuCaptchaApiVersion.V1), solution.ProviderTask);
         Assert.Equal(2, handler.Calls.Count);
     }
 
@@ -183,6 +219,7 @@ public sealed class RuCaptchaClientTests
             "key", "https://www.avito.ru/profile/candidates", "070db171-ddb9-4c93-b7f6-d25d3c9d7e28", options);
 
         Assert.Equal("hcaptcha-token", solution.Token);
+        Assert.Equal(new RuCaptchaTask("78", RuCaptchaApiVersion.V2), solution.ProviderTask);
         Assert.Equal(2, handler.Calls.Count);
     }
 
@@ -212,6 +249,7 @@ public sealed class RuCaptchaClientTests
         var solution = await client.SolveImageToTextAsync("key", "data:image/png;base64,aGVsbG8=");
 
         Assert.Equal("aB72", solution.Text);
+        Assert.Equal(new RuCaptchaTask("79", RuCaptchaApiVersion.V2), solution.ProviderTask);
         Assert.Equal(2, handler.Calls.Count);
     }
 
