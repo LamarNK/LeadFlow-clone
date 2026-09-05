@@ -139,15 +139,12 @@ public sealed class WorkerAccountSessionFactory(
             return new WorkerOpenedAccountSession(
                 session,
                 WorkerAccountRuntimeKind.Local,
-                () => CloseLocalChromeAsync(traffic, owned));
+                () => CloseLocalChromeAsync(traffic, owned, account.BrowserProfilePath));
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             await traffic.DisposeAsync().ConfigureAwait(false);
-            if (browser is not null)
-            {
-                await CloseOwnedBrowserAsync(browser).ConfigureAwait(false);
-            }
+            await StopLocalChromeAsync(browser, account.BrowserProfilePath).ConfigureAwait(false);
 
             if (ex.Message.StartsWith("Обычный браузер", StringComparison.Ordinal)
                 || ex.Message.StartsWith("Не найден установленный Chrome", StringComparison.Ordinal)
@@ -164,10 +161,7 @@ public sealed class WorkerAccountSessionFactory(
         catch
         {
             await traffic.DisposeAsync().ConfigureAwait(false);
-            if (browser is not null)
-            {
-                await CloseOwnedBrowserAsync(browser).ConfigureAwait(false);
-            }
+            await StopLocalChromeAsync(browser, account.BrowserProfilePath).ConfigureAwait(false);
 
             throw;
         }
@@ -249,7 +243,10 @@ public sealed class WorkerAccountSessionFactory(
         }
     }
 
-    private static async ValueTask CloseLocalChromeAsync(LocalChromeTrafficPolicy traffic, IBrowser browser)
+    private async ValueTask CloseLocalChromeAsync(
+        LocalChromeTrafficPolicy traffic,
+        IBrowser browser,
+        string userDataDir)
     {
         try
         {
@@ -257,31 +254,26 @@ public sealed class WorkerAccountSessionFactory(
         }
         finally
         {
-            await CloseOwnedBrowserAsync(browser).ConfigureAwait(false);
+            await StopLocalChromeAsync(browser, userDataDir).ConfigureAwait(false);
         }
     }
 
-    private static async ValueTask CloseOwnedBrowserAsync(IBrowser browser)
+    private async ValueTask StopLocalChromeAsync(IBrowser? browser, string userDataDir)
     {
+        if (localChromeLauncher is null)
+        {
+            return;
+        }
+
         try
         {
-            if (browser.IsConnected)
-            {
-                await browser.CloseAsync().ConfigureAwait(false);
-            }
+            await localChromeLauncher
+                .StopAsync(browser, userDataDir, CancellationToken.None)
+                .ConfigureAwait(false);
         }
         catch
         {
             // Close must never hide the original error.
-        }
-
-        try
-        {
-            browser.Dispose();
-        }
-        catch
-        {
-            // Dispose must never throw out of cleanup.
         }
     }
 }

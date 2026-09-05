@@ -1,6 +1,7 @@
 using LeadFlow.Core.Logging.Audit;
 using LeadFlow.Core.Models;
 using LeadFlow.Core.Services.Avito;
+using LeadFlow.Core.Services.LocalChrome;
 
 namespace LeadFlow.Core.Services.Worker;
 
@@ -70,25 +71,39 @@ internal static class WorkerMonitoringLogger
     public static void AccountFailed(AvitoAccount account, string step, string detail) =>
         LogError($"{FormatAccount(account)} — сбой на шаге «{step}»: {detail}");
 
+    public static void AccountTransientFailure(AvitoAccount account, string step, string detail) =>
+        LogWarning($"{FormatAccount(account)} — сбой на шаге «{step}»: {detail}");
+
     public static void AccountPersonalDelay(
         AvitoAccount account,
         double delayMinutes,
         int collectedCount,
         int publishedCount,
-        bool polled) =>
+        bool polled,
+        bool browserClosed = true,
+        bool shortRetry = false)
+    {
+        if (shortRetry)
+        {
+            LogInfo($"{FormatAccount(account)} — повтор ~{delayMinutes:F0} мин (профиль был занят).");
+            return;
+        }
+
+        var suffix = browserClosed ? "; браузер закрыт." : ".";
         LogInfo(
             $"{FormatAccount(account)} — пауза ~{delayMinutes:F0} мин " +
-            $"(проход {(polled ? "ok" : "skip")}, новых {collectedCount}, отправлено {publishedCount}); браузер закрыт.");
+            $"(проход {(polled ? "ok" : "skip")}, новых {collectedCount}, отправлено {publishedCount}){suffix}");
+    }
 
     public static void AccountResumeRestored(AvitoAccount account, DateTime nextMonitoringAtUtc) =>
         LogInfo(
             $"{FormatAccount(account)} — ожидание восстановлено до {nextMonitoringAtUtc:HH:mm:ss} UTC");
 
     public static void BrowserOpened(AvitoAccount account) =>
-        LogInfo($"{FormatAccount(account)} — браузер AdsPower открыт.");
+        LogInfo($"{FormatAccount(account)} — браузер открыт.");
 
     public static void BrowserClosed(AvitoAccount account) =>
-        LogInfo($"{FormatAccount(account)} — браузер AdsPower закрыт.");
+        LogInfo($"{FormatAccount(account)} — браузер закрыт.");
 
     public static void BrowserHousekeepingStarted(string reason, int profileCount) =>
         LogInfo($"Уборка браузеров AdsPower ({reason}): закрываем {profileCount} профиль(ей).");
@@ -98,6 +113,21 @@ internal static class WorkerMonitoringLogger
 
     public static void BrowserHousekeepingSkipped(string reason) =>
         LogInfo($"Уборка браузеров AdsPower пропущена: {reason}.");
+
+    public static void LocalChromeHousekeepingStarted(string reason, int profileCount) =>
+        LogInfo($"Уборка обычного Chrome ({reason}): освобождаем {profileCount} профиль(ей).");
+
+    public static void LocalChromeHousekeepingFinished(int closedOk, int profileCount) =>
+        LogInfo($"Уборка обычного Chrome завершена: reclaim для {closedOk} из {profileCount}.");
+
+    public static void LocalChromeReclaimed(AvitoAccount account, LocalChromeProfileReclaimResult result)
+    {
+        var pids = result.KilledProcessIds.Count == 0
+            ? "—"
+            : string.Join(", ", result.KilledProcessIds);
+        LogWarning(
+            $"{FormatAccount(account)} — сняли зависший Chrome (pid {pids}, процессов {result.KilledProcessCount}).");
+    }
 
     public static void SubProfileTelemetrySaved(AvitoAccount account, AvitoSubProfile sub) =>
         LogInfo(

@@ -95,11 +95,23 @@ public sealed class LocalChromeLaunchDiagnosticsTests
 
     [Theory]
     [InlineData("Failed to launch browser!", "запуск процесса")]
+    [InlineData("The browser is already running for C:\\Orbita\\ChromeProfiles\\acc. Use a different UserDataDir", "профиль занят")]
+    [InlineData("Failed to create a ProcessSingleton for your profile directory", "профиль занят")]
     [InlineData("Timeout exceeded while waiting for the browser. DevToolsActivePort", "ожидание DevTools")]
     [InlineData("WebSocket failed to connect to ws://127.0.0.1:9222", "подключение")]
     public void ClassifyStage_UsesExceptionText(string message, string expected)
     {
         Assert.Equal(expected, LocalChromeLaunchDiagnostics.ClassifyStage(new InvalidOperationException(message)));
+    }
+
+    [Fact]
+    public void IsProfileBusy_DetectsSingletonMessage()
+    {
+        var ex = new InvalidOperationException(
+            "The browser is already running for C:\\Users\\Admin\\AppData\\Local\\Orbita\\ChromeProfiles\\acc");
+        Assert.True(LocalChromeLaunchDiagnostics.IsProfileBusy(ex));
+        Assert.True(LocalChromeLaunchDiagnostics.IsProfileBusy(ex.Message));
+        Assert.False(LocalChromeLaunchDiagnostics.IsProfileBusy("DevToolsActivePort file doesn't exist"));
     }
 
     [Fact]

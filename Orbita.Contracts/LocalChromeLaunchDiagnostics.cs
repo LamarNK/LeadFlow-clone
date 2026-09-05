@@ -8,14 +8,43 @@ public static class LocalChromeLaunchDiagnostics
     public const string ErrorKey = "local.chrome.launch";
     public const string FailurePrefix = "Обычный браузер: запуск Chrome не удался — ";
     public const string ProcessLaunchStage = "запуск процесса";
+    public const string ProfileBusyStage = "профиль занят";
     public const string WaitDevToolsStage = "ожидание DevTools";
     public const string ConnectStage = "подключение";
     public const int MaxErrorLength = 420;
+
+    public static bool IsProfileBusy(Exception exception)
+    {
+        ArgumentNullException.ThrowIfNull(exception);
+        return IsProfileBusy(FlattenMessages(exception))
+            || IsProfileBusy(exception.ToString());
+    }
+
+    public static bool IsProfileBusy(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return false;
+        }
+
+        return ContainsAny(
+            text,
+            "already running",
+            "processsingleton",
+            "failed to create a processsingleton",
+            "use a different userdatadir",
+            "профиль занят");
+    }
 
     public static string ClassifyStage(Exception exception)
     {
         ArgumentNullException.ThrowIfNull(exception);
         var text = FlattenMessages(exception);
+        if (IsProfileBusy(text))
+        {
+            return ProfileBusyStage;
+        }
+
         if (ContainsAny(text, "devtoolsactiveport", "devtools active port", "waiting for chrome", "waiting for the browser", "browser to be ready"))
         {
             return WaitDevToolsStage;

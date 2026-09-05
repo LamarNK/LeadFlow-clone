@@ -499,6 +499,8 @@ public sealed class WorkerAccountRuntimeTests
 
         public FakeBrowserProxy? LastBrowser { get; private set; }
 
+        public int StopCount { get; private set; }
+
         public Task<IBrowser> LaunchAsync(
             LocalChromeLaunchOptions options,
             CancellationToken cancellationToken = default)
@@ -509,6 +511,30 @@ public sealed class WorkerAccountRuntimeTests
             var browser = DispatchProxy.Create<IBrowser, FakeBrowserProxy>();
             LastBrowser = (FakeBrowserProxy)(object)browser;
             return Task.FromResult(browser);
+        }
+
+        public async Task StopAsync(
+            IBrowser? browser,
+            string userDataDir,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            StopCount++;
+            if (browser is null)
+            {
+                return;
+            }
+
+            await browser.CloseAsync().ConfigureAwait(false);
+            browser.Dispose();
+        }
+
+        public Task<LocalChromeProfileReclaimResult> ReclaimAsync(
+            string userDataDir,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(LocalChromeProfileReclaimResult.Empty);
         }
     }
 

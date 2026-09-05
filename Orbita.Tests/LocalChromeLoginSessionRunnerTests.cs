@@ -25,7 +25,8 @@ public sealed class LocalChromeLoginSessionRunnerTests
 
         Assert.Equal(1, launcher.LaunchCount);
         Assert.Equal(account.Id, launcher.LastAccountId);
-        Assert.Equal(0, launcher.LastBrowser!.CloseCount);
+        Assert.Equal(1, launcher.StopCount);
+        Assert.Equal(1, launcher.LastBrowser!.CloseCount);
         Assert.Equal(1, launcher.LastBrowser.DisposeCount);
         Assert.False(accountLock.IsHeld(account.Id));
         Assert.Equal(AvitoAccountStatus.NotConfigured, account.Status);
@@ -60,6 +61,8 @@ public sealed class LocalChromeLoginSessionRunnerTests
 
         public Guid LastAccountId { get; private set; }
 
+        public int StopCount { get; private set; }
+
         public FakeBrowserProxy? LastBrowser { get; private set; }
 
         public Task<IBrowser> LaunchAsync(
@@ -73,6 +76,30 @@ public sealed class LocalChromeLoginSessionRunnerTests
             LastBrowser = (FakeBrowserProxy)(object)browser;
             LastBrowser.Connected = false;
             return Task.FromResult(browser);
+        }
+
+        public async Task StopAsync(
+            IBrowser? browser,
+            string userDataDir,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            StopCount++;
+            if (browser is null)
+            {
+                return;
+            }
+
+            await browser.CloseAsync().ConfigureAwait(false);
+            browser.Dispose();
+        }
+
+        public Task<LocalChromeProfileReclaimResult> ReclaimAsync(
+            string userDataDir,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(LocalChromeProfileReclaimResult.Empty);
         }
     }
 

@@ -45,7 +45,17 @@ public sealed class LocalChromeLoginSessionRunner(
         }
         finally
         {
-            await CloseOwnedBrowserAsync(browser).ConfigureAwait(false);
+            try
+            {
+                await launcher
+                    .StopAsync(browser, account.BrowserProfilePath, CancellationToken.None)
+                    .ConfigureAwait(false);
+            }
+            catch
+            {
+                // Login window must always release the lock.
+            }
+
             accountLock.Release(account.Id, LocalChromeAccountLock.Login);
         }
     }
@@ -113,34 +123,5 @@ public sealed class LocalChromeLoginSessionRunner(
         }
 
         return new InvalidOperationException("Не удалось открыть обычный браузер для входа.", ex);
-    }
-
-    private static async Task CloseOwnedBrowserAsync(IBrowser? browser)
-    {
-        if (browser is null)
-        {
-            return;
-        }
-
-        try
-        {
-            if (browser.IsConnected)
-            {
-                await browser.CloseAsync().ConfigureAwait(false);
-            }
-        }
-        catch
-        {
-            // Login window must always dispose.
-        }
-
-        try
-        {
-            browser.Dispose();
-        }
-        catch
-        {
-            // Ignore.
-        }
     }
 }

@@ -42,7 +42,8 @@ public sealed class WorkerMonitoringService(
     IOutboundChatDispatch? outboundChatDispatch = null,
     IMultiloginCdpConnector? multiloginCdpConnector = null,
     WorkerAccountSessionFactory? accountSessionFactory = null,
-    LocalChromeAccountLock? localChromeAccountLock = null) : IWorkerMonitoringService
+    LocalChromeAccountLock? localChromeAccountLock = null,
+    ILocalChromeBrowserLauncher? localChromeLauncher = null) : IWorkerMonitoringService
 {
     private readonly IResponsePhoneObservationStore _phoneObservationStore =
         phoneObservationStore ?? new NullResponsePhoneObservationStore();
@@ -56,6 +57,7 @@ public sealed class WorkerMonitoringService(
             multiloginCdpConnector);
     private readonly LocalChromeAccountLock _localChromeLock =
         localChromeAccountLock ?? new LocalChromeAccountLock();
+    private readonly ILocalChromeBrowserLauncher? _localChromeLauncher = localChromeLauncher;
 
     private const int LoopRecoveryPauseMinutes = 12;
     private const int MaxLoopRecoveryFailuresBeforeStop = 10;
@@ -511,12 +513,16 @@ public sealed class WorkerMonitoringService(
             // Пауза уже в памяти процесса; файл/рантайм — best effort.
         }
 
+        var profileBusy = retryAfter is not null
+            && WorkerAdsPowerPassRetry.IsLocalChromeProfileBusy(job.Account.LastErrorMessage);
         WorkerMonitoringLogger.AccountPersonalDelay(
             job.Account,
             personalDelay.TotalMinutes,
             collectedCount,
             publishedCount,
-            polled);
+            polled,
+            browserClosed: polled && !profileBusy,
+            shortRetry: profileBusy);
     }
 
     private async Task<bool> TryRecoverLoopAsync(Exception ex, CancellationToken cancellationToken)
@@ -882,18 +888,30 @@ public sealed class WorkerMonitoringService(
         catch (Exception ex)
         {
             var retryAfter = WorkerAdsPowerPassRetry.FromException(ex);
+            var profileBusy = WorkerAdsPowerPassRetry.IsLocalChromeProfileBusy(ex);
             account.LastErrorMessage = ex.Message;
             account.Status = retryAfter is null
                 ? AvitoAccountStatus.Error
                 : AvitoAccountStatus.Authorized;
             await repository.SaveAccountAsync(account, cancellationToken).ConfigureAwait(false);
-            WorkerMonitoringLogger.AccountFailed(account, "мониторинг", ex.Message);
+            if (retryAfter is null)
+            {
+                WorkerMonitoringLogger.AccountFailed(account, "мониторинг", ex.Message);
+            }
+            else
+            {
+                WorkerMonitoringLogger.AccountTransientFailure(account, "мониторинг", ex.Message);
+            }
+
+            var eventMessage = retryAfter is null
+                ? $"Ошибка аккаунта {account.DisplayName}: {ex.Message}"
+                : profileBusy
+                    ? $"Профиль обычного браузера занят на аккаунте {account.DisplayName}, повтор через ~1 мин."
+                    : $"AdsPower timeout на аккаунте {account.DisplayName}, браузер закрыт, повтор через ~1 мин: {ex.Message}";
             await PublishAccountEventAsync(
                 account,
                 WorkerAdsPowerPassRetry.EventType(ex),
-                retryAfter is null
-                    ? $"Ошибка аккаунта {account.DisplayName}: {ex.Message}"
-                    : $"AdsPower timeout на аккаунте {account.DisplayName}, браузер закрыт, повтор через ~1 мин: {ex.Message}",
+                eventMessage,
                 ex.Message,
                 cancellationToken).ConfigureAwait(false);
             _cycleJournal.FailCycle(cycleId, "automation", ex.Message);
@@ -901,9 +919,9 @@ public sealed class WorkerMonitoringService(
             await _cycleJournal.FlushAsync(cancellationToken).ConfigureAwait(false);
             return new AccountCycleOutcome(
                 0,
-                true,
+                PolledSource: !profileBusy,
                 false,
-                RetryAfter: WorkerAdsPowerPassRetry.FromException(ex));
+                RetryAfter: retryAfter);
         }
         finally
         {
@@ -2560,35 +2578,89 @@ public sealed class WorkerMonitoringService(
             .GroupBy(static a => a.AdsPowerProfileId!, StringComparer.Ordinal)
             .Select(static g => g.First())
             .ToList();
+        var localTargets = accounts
+            .Where(WorkerAccountRuntime.IsLocal)
+            .Where(account => !_localChromeLock.IsHeld(account.Id, LocalChromeAccountLock.Login))
+            .GroupBy(static account => account.Id)
+            .Select(static group => group.First())
+            .ToList();
 
-        if (targets.Count == 0)
+        if (targets.Count == 0 && localTargets.Count == 0)
         {
             _completedPassesSinceBrowserHousekeeping = 0;
             _lastBrowserHousekeepingLocalDate = DateOnly.FromDateTime(DateTime.Now);
             return;
         }
 
-        WorkerMonitoringLogger.BrowserHousekeepingStarted(reason, targets.Count);
+        if (targets.Count > 0)
+        {
+            WorkerMonitoringLogger.BrowserHousekeepingStarted(reason, targets.Count);
+            var closedOk = 0;
+            foreach (var account in targets)
+            {
+                if (!ignoreCancellation && cancellationToken.IsCancellationRequested)
+                {
+                    break;
+                }
+
+                var options = new AdsPowerConnectionOptions(
+                    account.AdsPowerApiBaseUrl!,
+                    string.IsNullOrWhiteSpace(account.AdsPowerApiKey) ? null : account.AdsPowerApiKey);
+                if (await TryCloseAdsPowerBrowserForAccountAsync(account, options).ConfigureAwait(false))
+                {
+                    closedOk++;
+                }
+            }
+
+            WorkerMonitoringLogger.BrowserHousekeepingFinished(closedOk, targets.Count);
+        }
+
+        await ReclaimLocalChromeProfilesAsync(localTargets, reason, cancellationToken, ignoreCancellation)
+            .ConfigureAwait(false);
+
+        _completedPassesSinceBrowserHousekeeping = 0;
+        _lastBrowserHousekeepingLocalDate = DateOnly.FromDateTime(DateTime.Now);
+    }
+
+    private async Task ReclaimLocalChromeProfilesAsync(
+        IReadOnlyList<AvitoAccount> accounts,
+        string reason,
+        CancellationToken cancellationToken,
+        bool ignoreCancellation)
+    {
+        if (_localChromeLauncher is null || accounts.Count == 0)
+        {
+            return;
+        }
+
+        WorkerMonitoringLogger.LocalChromeHousekeepingStarted(reason, accounts.Count);
         var closedOk = 0;
-        foreach (var account in targets)
+        foreach (var account in accounts)
         {
             if (!ignoreCancellation && cancellationToken.IsCancellationRequested)
             {
                 break;
             }
 
-            var options = new AdsPowerConnectionOptions(
-                account.AdsPowerApiBaseUrl!,
-                string.IsNullOrWhiteSpace(account.AdsPowerApiKey) ? null : account.AdsPowerApiKey);
-            if (await TryCloseAdsPowerBrowserForAccountAsync(account, options).ConfigureAwait(false))
+            try
             {
+                var dir = LocalChromePaths.NormalizeUserDataDir(account.BrowserProfilePath, account.Id);
+                var result = await _localChromeLauncher
+                    .ReclaimAsync(dir, CancellationToken.None)
+                    .ConfigureAwait(false);
                 closedOk++;
+                if (result.KilledProcessCount > 0)
+                {
+                    WorkerMonitoringLogger.LocalChromeReclaimed(account, result);
+                }
+            }
+            catch
+            {
+                // Housekeeping must continue across accounts.
             }
         }
 
-        WorkerMonitoringLogger.BrowserHousekeepingFinished(closedOk, targets.Count);
-        _completedPassesSinceBrowserHousekeeping = 0;
-        _lastBrowserHousekeepingLocalDate = DateOnly.FromDateTime(DateTime.Now);
+        WorkerMonitoringLogger.LocalChromeHousekeepingFinished(closedOk, accounts.Count);
     }
 
     private async Task HandleLoginRequiredForAccountAsync(

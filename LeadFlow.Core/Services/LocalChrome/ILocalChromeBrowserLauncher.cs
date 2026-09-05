@@ -11,6 +11,15 @@ public interface ILocalChromeBrowserLauncher
     Task<IBrowser> LaunchAsync(
         LocalChromeLaunchOptions options,
         CancellationToken cancellationToken = default);
+
+    Task StopAsync(
+        IBrowser? browser,
+        string userDataDir,
+        CancellationToken cancellationToken = default);
+
+    Task<LocalChromeProfileReclaimResult> ReclaimAsync(
+        string userDataDir,
+        CancellationToken cancellationToken = default);
 }
 
 public sealed class LocalChromeLaunchOptions

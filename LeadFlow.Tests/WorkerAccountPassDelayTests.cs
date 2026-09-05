@@ -1,6 +1,8 @@
+using LeadFlow.Core.Models;
 using LeadFlow.Core.Services;
 using LeadFlow.Core.Services.AdsPower;
 using LeadFlow.Core.Services.Worker;
+using LeadFlow.Tests.Support;
 using Xunit;
 
 namespace LeadFlow.Tests;
@@ -75,5 +77,54 @@ public sealed class WorkerAccountPassDelayTests
         Assert.Null(WorkerAdsPowerPassRetry.FromException(generic));
         Assert.Equal("Warning", WorkerAdsPowerPassRetry.EventType(timeout));
         Assert.Equal("Error", WorkerAdsPowerPassRetry.EventType(generic));
+    }
+
+    [Fact]
+    public void LocalChromeAlreadyRunning_IsShortRetry_NotErrorPause()
+    {
+        var busy = new InvalidOperationException(
+            "Обычный браузер: запуск Chrome не удался — The browser is already running for C:\\Orbita\\ChromeProfiles\\acc. Use a different UserDataDir or stop the running browser first.");
+        var night = new DateTime(2026, 8, 24, 20, 30, 0, DateTimeKind.Utc);
+
+        Assert.Equal(WorkerAdsPowerPassRetry.Delay, WorkerAdsPowerPassRetry.FromException(busy));
+        Assert.Equal("Warning", WorkerAdsPowerPassRetry.EventType(busy));
+        Assert.True(WorkerAdsPowerPassRetry.IsLocalChromeProfileBusy(busy));
+
+        var delay = WorkerAccountPassDelay.Resolve(
+            retryAfter: WorkerAdsPowerPassRetry.FromException(busy),
+            polled: false,
+            newResponses: 0,
+            quietStreak: 5,
+            backlog: false,
+            historicalHeat: 0,
+            utcNow: night);
+
+        Assert.Equal(TimeSpan.FromMinutes(1), delay);
+    }
+
+    [Fact]
+    public void AccountPersonalDelay_ShortRetry_DoesNotClaimBrowserClosed()
+    {
+        using var capture = GlobalLogCapture.Start();
+        var account = new AvitoAccount
+        {
+            DisplayName = "Avito 55",
+            ProfileProvider = AvitoProfileProvider.Local,
+            BrowserProfilePath = @"C:\Orbita\ChromeProfiles\acc"
+        };
+
+        WorkerMonitoringLogger.AccountPersonalDelay(
+            account,
+            delayMinutes: 1,
+            collectedCount: 0,
+            publishedCount: 0,
+            polled: false,
+            browserClosed: false,
+            shortRetry: true);
+
+        var blob = capture.CombinedBlob();
+        Assert.Contains("повтор ~1 мин (профиль был занят)", blob, StringComparison.Ordinal);
+        Assert.DoesNotContain("браузер закрыт", blob, StringComparison.Ordinal);
+        Assert.DoesNotContain("проход ok", blob, StringComparison.Ordinal);
     }
 }
