@@ -2127,9 +2127,14 @@ public sealed partial class AdsPowerAvitoAutomationService(
             (script, ct) => EvaluateWithRetryAsync<string>(page, script, ct, CdpPageReadTimeout),
             cancellationToken);
 
-    private static async Task<bool> TryRecoverAvitoLoginAsync(IPage page, CancellationToken cancellationToken)
+    private async Task<bool> TryRecoverAvitoLoginAsync(IPage page, CancellationToken cancellationToken)
     {
-        var recovery = await AvitoAutoLoginRecovery.TryRecoverAsync(page, cancellationToken).ConfigureAwait(false);
+        var recovery = await AvitoAutoLoginRecovery.TryRecoverAsync(
+                page,
+                credentials: null,
+                TryClearGeeTestCaptchaAsync,
+                cancellationToken)
+            .ConfigureAwait(false);
         return recovery.Recovered;
     }
 
@@ -2138,6 +2143,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
         string adsPowerUserId,
         CancellationToken cancellationToken)
     {
+        using var loginCaptcha = AvitoAutoLoginContext.UseSolver(TryClearGeeTestCaptchaAsync);
         var executeScript = (string script, CancellationToken ct) =>
             EvaluateWithRetryAsync<string>(page, script, ct);
 

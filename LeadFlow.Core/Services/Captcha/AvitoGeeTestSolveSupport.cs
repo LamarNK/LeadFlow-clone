@@ -41,6 +41,7 @@ public static class AvitoGeeTestSolveSupport
             return rect.width > 0 && rect.height > 0;
           };
           const detectKind = () => {
+            if (isVisible(document.querySelector('.geetest_box, .geetest_nine, [class*="geetest_box"]'))) return 'geetest';
             if (isVisible(document.querySelector('#geetest_captcha, .geetest_widget, [data-geetest]'))) return 'geetest';
             if (isVisible(document.querySelector('#h-captcha, .h-captcha, [data-hcaptcha-widget-id]'))) return 'hcaptcha';
             if (isVisible(document.querySelector('#inner-captcha, .js-form-captcha, .form-captcha'))) return 'internal';
@@ -314,6 +315,209 @@ public static class AvitoGeeTestSolveSupport
             html,
             @"name=[""']captcha-response[""'][^>]*value=[""'][^""']{20,}",
             System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+    }
+
+    /// <summary>
+    /// GeeTest v4 nine-grid на форме логина Avito, не firewall-страница.
+    /// </summary>
+    public static bool IsLoginGeeTestOverlay(string? html)
+    {
+        if (string.IsNullOrWhiteSpace(html))
+        {
+            return false;
+        }
+
+        if (html.Contains("firewall-container", StringComparison.OrdinalIgnoreCase)
+            || html.Contains("js-firewall-form", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return html.Contains("geetest_box", StringComparison.OrdinalIgnoreCase)
+               || html.Contains("geetest_nine", StringComparison.OrdinalIgnoreCase);
+    }
+
+    public readonly record struct LoginGeeTestApplyResult(
+        bool Applied,
+        bool OverlayGone,
+        string? Method,
+        string? Error)
+    {
+        public static LoginGeeTestApplyResult Empty { get; } = new(false, false, null, null);
+
+        public bool Succeeded => Applied;
+    }
+
+    public static LoginGeeTestApplyResult ParseLoginApplyResult(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return LoginGeeTestApplyResult.Empty;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(raw);
+            var root = document.RootElement;
+            var applied = root.TryGetProperty("applied", out var appliedProp)
+                          && appliedProp.ValueKind == JsonValueKind.True;
+            var overlayGone = root.TryGetProperty("overlayGone", out var goneProp)
+                              && goneProp.ValueKind == JsonValueKind.True;
+            var method = root.TryGetProperty("method", out var methodProp) ? methodProp.GetString() : null;
+            var error = root.TryGetProperty("error", out var errorProp) ? errorProp.GetString() : null;
+            return new LoginGeeTestApplyResult(applied, overlayGone, method, error);
+        }
+        catch (JsonException)
+        {
+            return new LoginGeeTestApplyResult(false, false, null, "invalid-result");
+        }
+    }
+
+    public static string BuildExtractLoginCaptchaIdScript() =>
+        """
+        (() => {
+            const fromText = (text) => {
+                const match = String(text || "").match(/captcha_v4\/policy\/([0-9a-f]{32})/i);
+                return match ? match[1] : "";
+            };
+            const htmlId = fromText(document.documentElement && document.documentElement.innerHTML);
+            if (htmlId) return htmlId;
+            const nodes = document.querySelectorAll(
+                ".geetest_item_img, [class*='geetest_imgs'], [class*='geetest_item']");
+            for (const el of nodes) {
+                const inline = (el.style && el.style.backgroundImage) || "";
+                let computed = "";
+                try { computed = window.getComputedStyle(el).backgroundImage || ""; } catch {}
+                const id = fromText(inline) || fromText(computed);
+                if (id) return id;
+            }
+            return "";
+        })()
+        """;
+
+    public static string BuildRefreshLoginGeeTestScript() =>
+        """
+        (() => {
+            const btn = document.querySelector(".geetest_refresh, [class*='geetest_refresh']");
+            if (!btn) return false;
+            try { btn.click(); return true; } catch { return false; }
+        })()
+        """;
+
+    public static string BuildApplyLoginGeeTestScript(GeeTestV4Solution solution)
+    {
+        var payload = JsonSerializer.Serialize(new Dictionary<string, string>
+        {
+            ["captcha_id"] = solution.CaptchaId,
+            ["lot_number"] = solution.LotNumber,
+            ["pass_token"] = solution.PassToken,
+            ["gen_time"] = solution.GenTime,
+            ["captcha_output"] = solution.CaptchaOutput
+        });
+
+        return $$"""
+            (async () => {
+              try {
+                const payload = {{payload}};
+                const overlaySelector = ".geetest_box, .geetest_nine, [class*='geetest_box']";
+                const isVisible = (el) => {
+                  if (!el) return false;
+                  const style = window.getComputedStyle(el);
+                  if (style.display === "none" || style.visibility === "hidden") return false;
+                  const rect = el.getBoundingClientRect();
+                  return rect.width > 0 && rect.height > 0;
+                };
+                const overlayVisible = () => isVisible(document.querySelector(overlaySelector));
+                const looksLikeCaptcha = (obj) =>
+                  obj && typeof obj === "object" &&
+                  (typeof obj.getValidate === "function"
+                    || typeof obj.showCaptcha === "function"
+                    || typeof obj.onSuccess === "function");
+                const fireSuccess = (obj) => {
+                  const lists = [];
+                  if (Array.isArray(obj._success)) lists.push(obj._success);
+                  if (Array.isArray(obj.success)) lists.push(obj.success);
+                  if (obj._events && Array.isArray(obj._events.success)) lists.push(obj._events.success);
+                  if (obj.handlers && Array.isArray(obj.handlers.success)) lists.push(obj.handlers.success);
+                  if (obj.__events && Array.isArray(obj.__events.success)) lists.push(obj.__events.success);
+                  for (const list of lists) {
+                    for (const cb of list) {
+                      if (typeof cb === "function") { try { cb(payload); } catch {} }
+                      else if (cb && typeof cb.fn === "function") { try { cb.fn(payload); } catch {} }
+                    }
+                  }
+                  if (typeof obj._emit === "function") { try { obj._emit("success", payload); } catch {} }
+                  if (typeof obj.emit === "function") { try { obj.emit("success", payload); } catch {} }
+                  if (typeof obj.close === "function") { try { obj.close(); } catch {} }
+                };
+                const patch = (obj) => {
+                  if (!looksLikeCaptcha(obj)) return false;
+                  try {
+                    obj.getValidate = () => payload;
+                    try { obj.result = payload; } catch {}
+                    fireSuccess(obj);
+                    return true;
+                  } catch { return false; }
+                };
+
+                let method = null;
+                const names = ["captchaObj", "captcha", "geetestObj", "geeTestObj", "gtCaptcha", "__geetest", "Geetest"];
+                for (const name of names) {
+                  try { if (patch(window[name])) { method = name; break; } } catch {}
+                }
+
+                if (!method) {
+                  const seen = new Set();
+                  const walk = (obj, depth) => {
+                    if (method || !obj || depth > 3) return;
+                    try {
+                      if (seen.has(obj)) return;
+                      seen.add(obj);
+                    } catch { return; }
+                    if (patch(obj)) { method = "walk"; return; }
+                    if (depth >= 3) return;
+                    try {
+                      for (const key of Object.keys(obj).slice(0, 40)) {
+                        let child;
+                        try { child = obj[key]; } catch { continue; }
+                        if (child && typeof child === "object") walk(child, depth + 1);
+                        if (method) return;
+                      }
+                    } catch {}
+                  };
+                  walk(window, 0);
+                }
+
+                document.querySelectorAll("input[name='captcha-response'], textarea[name='captcha-response']")
+                  .forEach((el) => {
+                    try {
+                      el.value = JSON.stringify(payload);
+                      el.dispatchEvent(new Event("input", { bubbles: true }));
+                      el.dispatchEvent(new Event("change", { bubbles: true }));
+                      if (!method) method = "hidden-input";
+                    } catch {}
+                  });
+
+                const box = document.querySelector(overlaySelector);
+                if (box) {
+                  try { box.style.display = "none"; } catch {}
+                }
+
+                return JSON.stringify({
+                  applied: !!method,
+                  overlayGone: !overlayVisible(),
+                  method: method || "none"
+                });
+              } catch (e) {
+                return JSON.stringify({
+                  applied: false,
+                  overlayGone: false,
+                  method: "none",
+                  error: String(e && e.message ? e.message : e)
+                });
+              }
+            })()
+            """;
     }
 
     public static string BuildVerifyScript(GeeTestV4Solution solution)

@@ -215,9 +215,80 @@ public sealed class AvitoGeeTestSolveSupportTests
         Assert.Contains("getComputedStyle", script, StringComparison.Ordinal);
         Assert.Contains("#h-captcha", script, StringComparison.Ordinal);
         Assert.Contains("#geetest_captcha", script, StringComparison.Ordinal);
+        Assert.Contains(".geetest_box", script, StringComparison.Ordinal);
+        Assert.Contains(".geetest_nine", script, StringComparison.Ordinal);
         Assert.Contains("userAgent", script, StringComparison.Ordinal);
         Assert.Contains("/web/5/firewallCaptcha/get", script, StringComparison.Ordinal);
         Assert.Contains("getInternalImage", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void IsLoginGeeTestOverlay_LoginNineGrid_True()
+    {
+        const string html = """
+            <form data-marker="login-form"></form>
+            <div class="geetest_box" style="display: block;"><div class="geetest_nine"></div></div>
+            """;
+
+        Assert.True(AvitoGeeTestSolveSupport.IsLoginGeeTestOverlay(html));
+    }
+
+    [Fact]
+    public void IsLoginGeeTestOverlay_FirewallWidget_False()
+    {
+        const string html = """
+            <div class="firewall-container">
+              <div id="geetest_captcha"></div>
+              <div class="geetest_box"></div>
+            </div>
+            """;
+
+        Assert.False(AvitoGeeTestSolveSupport.IsLoginGeeTestOverlay(html));
+    }
+
+    [Fact]
+    public void IsLoginGeeTestOverlay_PasswordFormWithoutWidget_False()
+    {
+        const string html = """
+            <form data-marker="login-form">
+              <input data-marker="login-form/password/input" type="password">
+            </form>
+            """;
+
+        Assert.False(AvitoGeeTestSolveSupport.IsLoginGeeTestOverlay(html));
+    }
+
+    [Fact]
+    public void BuildApplyLoginGeeTestScript_InjectsTokensWithoutFirewallVerify()
+    {
+        var solution = new GeeTestV4Solution(
+            CaptchaId: "3d0936b11a2c4a65bbb53635e656c780",
+            LotNumber: "lot-login",
+            PassToken: "pass-login",
+            GenTime: "1693924478",
+            CaptchaOutput: "out-login");
+
+        var script = AvitoGeeTestSolveSupport.BuildApplyLoginGeeTestScript(solution);
+
+        Assert.Contains("3d0936b11a2c4a65bbb53635e656c780", script, StringComparison.Ordinal);
+        Assert.Contains("lot-login", script, StringComparison.Ordinal);
+        Assert.Contains("pass-login", script, StringComparison.Ordinal);
+        Assert.Contains("getValidate", script, StringComparison.Ordinal);
+        Assert.Contains("geetest_box", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("firewallCaptcha/verify", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("/web/3/firewallCaptcha/verify", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ParseLoginApplyResult_AppliedOverlayGone()
+    {
+        var result = AvitoGeeTestSolveSupport.ParseLoginApplyResult(
+            """{"applied":true,"overlayGone":true,"method":"getValidate"}""");
+
+        Assert.True(result.Applied);
+        Assert.True(result.OverlayGone);
+        Assert.Equal("getValidate", result.Method);
+        Assert.True(result.Succeeded);
     }
 
     [Fact]

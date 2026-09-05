@@ -37,6 +37,34 @@ public static class AvitoAutoLoginRecovery
         string? FailureReason,
         IReadOnlyList<string> Steps);
 
+    public enum LoginCaptchaDecision
+    {
+        Ignore,
+        Solve,
+        Abort
+    }
+
+    public const int MaxLoginCaptchaAttempts = 3;
+
+    public static LoginCaptchaDecision DecideCaptcha(
+        ProbeState state,
+        bool solverAvailable,
+        int attempts,
+        int maxAttempts)
+    {
+        if (!state.HasCaptcha)
+        {
+            return LoginCaptchaDecision.Ignore;
+        }
+
+        if (solverAvailable && attempts < maxAttempts)
+        {
+            return LoginCaptchaDecision.Solve;
+        }
+
+        return LoginCaptchaDecision.Abort;
+    }
+
     public static ProbeState? TryParseProbe(string? raw)
     {
         if (string.IsNullOrWhiteSpace(raw))
@@ -79,11 +107,20 @@ public static class AvitoAutoLoginRecovery
     public static async Task<RecoveryResult> TryRecoverAsync(
         IPage page,
         AvitoLoginCredentials? credentials,
+        CancellationToken cancellationToken = default) =>
+        await TryRecoverAsync(page, credentials, trySolveCaptcha: null, cancellationToken).ConfigureAwait(false);
+
+    public static async Task<RecoveryResult> TryRecoverAsync(
+        IPage page,
+        AvitoLoginCredentials? credentials,
+        Func<IPage, CancellationToken, Task<bool>>? trySolveCaptcha,
         CancellationToken cancellationToken = default)
     {
         credentials ??= AvitoAutoLoginContext.Credentials;
+        trySolveCaptcha ??= AvitoAutoLoginContext.CaptchaSolver;
         var steps = new List<string>();
         const int maxIterations = 10;
+        var captchaAttempts = 0;
 
         if (credentials is not { IsUsable: true })
         {
@@ -120,9 +157,37 @@ public static class AvitoAutoLoginRecovery
                 return new RecoveryResult(false, true, false, "probe_failed", steps);
             }
 
-            if (state.HasCaptcha)
+            var captchaDecision = DecideCaptcha(
+                state,
+                trySolveCaptcha is not null,
+                captchaAttempts,
+                MaxLoginCaptchaAttempts);
+            if (captchaDecision == LoginCaptchaDecision.Abort)
             {
                 steps.Add("капча или блок IP");
+                return new RecoveryResult(false, true, true, "captcha", steps);
+            }
+
+            if (captchaDecision == LoginCaptchaDecision.Solve)
+            {
+                captchaAttempts++;
+                var solved = false;
+                try
+                {
+                    solved = await trySolveCaptcha!(page, cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    steps.Add($"капча логина ошибка: {ex.Message}");
+                }
+
+                steps.Add(solved ? "капча логина пройдена" : "капча логина не пройдена");
+                if (solved)
+                {
+                    await WaitForAuthSettleAsync(page, cancellationToken).ConfigureAwait(false);
+                    continue;
+                }
+
                 return new RecoveryResult(false, true, true, "captcha", steps);
             }
 

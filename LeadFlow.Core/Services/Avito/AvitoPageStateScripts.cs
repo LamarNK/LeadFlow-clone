@@ -95,11 +95,20 @@ public static class AvitoPageStateScripts
             const hasStaticIpBlock = location.hash === "#block"
               && !!document.querySelector('a[href*="support.avito.ru/request/720"]')
               && /Отключить\s+VPN|самол[её]те/i.test(probeText);
+            const isVisibleEl = (el) => {
+                if (!el) return false;
+                const style = window.getComputedStyle(el);
+                if (style.display === "none" || style.visibility === "hidden") return false;
+                const rect = el.getBoundingClientRect();
+                return rect.width > 0 && rect.height > 0;
+            };
             const hasCaptchaWidget = !!(
                 document.getElementById("geetest_captcha") ||
                 document.getElementById("inner-captcha") ||
                 document.getElementById("h-captcha") ||
-                document.querySelector(".h-captcha[data-sitekey]")
+                document.querySelector(".h-captcha[data-sitekey]") ||
+                isVisibleEl(document.querySelector(
+                    ".geetest_box, .geetest_nine, [class*='geetest_box'], [class*='geetest_nine']"))
             );
             const hasCaptchaContinue = /Продолжить/i.test(probeText)
               && (/капч/i.test(probeText)

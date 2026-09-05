@@ -43,7 +43,8 @@ public sealed class WorkerMonitoringService(
     IMultiloginCdpConnector? multiloginCdpConnector = null,
     WorkerAccountSessionFactory? accountSessionFactory = null,
     LocalChromeAccountLock? localChromeAccountLock = null,
-    ILocalChromeBrowserLauncher? localChromeLauncher = null) : IWorkerMonitoringService
+    ILocalChromeBrowserLauncher? localChromeLauncher = null,
+    IAvitoGeeTestSolver? geeTestSolver = null) : IWorkerMonitoringService
 {
     private readonly IResponsePhoneObservationStore _phoneObservationStore =
         phoneObservationStore ?? new NullResponsePhoneObservationStore();
@@ -58,6 +59,7 @@ public sealed class WorkerMonitoringService(
     private readonly LocalChromeAccountLock _localChromeLock =
         localChromeAccountLock ?? new LocalChromeAccountLock();
     private readonly ILocalChromeBrowserLauncher? _localChromeLauncher = localChromeLauncher;
+    private readonly IAvitoGeeTestSolver? _geeTestSolver = geeTestSolver;
 
     private const int LoopRecoveryPauseMinutes = 12;
     private const int MaxLoopRecoveryFailuresBeforeStop = 10;
@@ -1338,6 +1340,23 @@ public sealed class WorkerMonitoringService(
         var monitorContext = new BrowserMonitorRuntimeContext();
         var loginCredentials = AvitoLoginCredentials.TryCreate(account.AvitoLogin, account.AvitoPassword);
         using var loginScope = AvitoAutoLoginContext.Use(loginCredentials);
+        using var loginCaptchaScope = AvitoAutoLoginContext.UseSolver(
+            _geeTestSolver is null
+                ? null
+                : async (page, ct) =>
+                {
+                    using (LocalChromeTrafficPolicy.AllowImages(page))
+                    {
+                        return await _geeTestSolver
+                            .TrySolveOnPageAsync(
+                                page,
+                                html: null,
+                                page.Url,
+                                AvitoCaptchaTaskContext.Options,
+                                ct)
+                            .ConfigureAwait(false);
+                    }
+                });
         var captchaCounters = new AvitoCaptchaPassCounters();
         using var captchaTaskScope = AvitoCaptchaTaskContext.Use(
             GeeTestV4TaskOptions.FromBrowserProfile(

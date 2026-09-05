@@ -17,6 +17,15 @@ public sealed class AvitoPageStateProbeTests
     }
 
     [Fact]
+    public void BuildProbeScript_DetectsLoginGeeTestOverlay()
+    {
+        var script = AvitoPageStateScripts.BuildProbeScript();
+
+        Assert.Contains("geetest_box", script, StringComparison.Ordinal);
+        Assert.Contains("geetest_nine", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void TryParse_ProfileSwitchModalOpen_DetectsModal()
     {
         const string json = """

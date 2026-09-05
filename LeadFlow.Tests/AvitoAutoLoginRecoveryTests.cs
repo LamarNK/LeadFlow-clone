@@ -258,6 +258,70 @@ public sealed class AvitoAutoLoginRecoveryTests
     }
 
     [Fact]
+    public void BuildProbeScript_DetectsLoginGeeTestOverlay()
+    {
+        var script = AvitoAutoLoginScripts.BuildProbeScript();
+
+        Assert.Contains("geetest_box", script, StringComparison.Ordinal);
+        Assert.Contains("geetest_nine", script, StringComparison.Ordinal);
+        Assert.Contains("hasCaptchaWidget", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void DecideCaptcha_IgnoresWhenNoCaptcha()
+    {
+        var state = new AvitoAutoLoginRecovery.ProbeState(
+            NeedsLogin: true,
+            IsAuthorized: false,
+            HasCaptcha: false,
+            HasLoginForm: true,
+            HasUsersList: false,
+            HasSavedUserCard: false,
+            HasOtherProfileLink: false,
+            HasProfileChooser: false,
+            HasCredentialInputs: true,
+            HasGuestLoginButton: false,
+            HasLoggedInProfile: false,
+            HasPasswordValue: true,
+            HasSubmitButton: true,
+            Url: "https://www.avito.ru/#login");
+
+        Assert.Equal(
+            AvitoAutoLoginRecovery.LoginCaptchaDecision.Ignore,
+            AvitoAutoLoginRecovery.DecideCaptcha(state, solverAvailable: true, attempts: 0, maxAttempts: 3));
+    }
+
+    [Fact]
+    public void DecideCaptcha_SolvesWhenOverlayAndSolverAvailable()
+    {
+        var state = new AvitoAutoLoginRecovery.ProbeState(
+            NeedsLogin: true,
+            IsAuthorized: false,
+            HasCaptcha: true,
+            HasLoginForm: true,
+            HasUsersList: false,
+            HasSavedUserCard: false,
+            HasOtherProfileLink: false,
+            HasProfileChooser: false,
+            HasCredentialInputs: true,
+            HasGuestLoginButton: false,
+            HasLoggedInProfile: false,
+            HasPasswordValue: true,
+            HasSubmitButton: true,
+            Url: "https://www.avito.ru/#login");
+
+        Assert.Equal(
+            AvitoAutoLoginRecovery.LoginCaptchaDecision.Solve,
+            AvitoAutoLoginRecovery.DecideCaptcha(state, solverAvailable: true, attempts: 0, maxAttempts: 3));
+        Assert.Equal(
+            AvitoAutoLoginRecovery.LoginCaptchaDecision.Abort,
+            AvitoAutoLoginRecovery.DecideCaptcha(state, solverAvailable: false, attempts: 0, maxAttempts: 3));
+        Assert.Equal(
+            AvitoAutoLoginRecovery.LoginCaptchaDecision.Abort,
+            AvitoAutoLoginRecovery.DecideCaptcha(state, solverAvailable: true, attempts: 3, maxAttempts: 3));
+    }
+
+    [Fact]
     public void BuildFillCredentialsAndSubmitScript_TreatsHiddenReadonlyLoginAsPasswordOnly()
     {
         var script = AvitoAutoLoginScripts.BuildFillCredentialsAndSubmitScript("+79010785182", "orbit-secret");

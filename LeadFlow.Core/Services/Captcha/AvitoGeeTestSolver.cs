@@ -79,6 +79,22 @@ public sealed class AvitoGeeTestSolver(
                 return false;
             }
 
+            if (AvitoGeeTestSolveSupport.IsLoginGeeTestOverlay(html))
+            {
+                await Gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+                gateAcquired = true;
+                var overlayOptions = (taskOptions ?? AvitoCaptchaTaskContext.Options ?? new GeeTestV4TaskOptions())
+                    .WithUserAgent(await SafeGetUserAgentAsync(page, cancellationToken).ConfigureAwait(false));
+                return await TrySolveLoginOverlayAsync(
+                        page,
+                        html,
+                        pageUrl,
+                        apiKey,
+                        overlayOptions,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
             var activation = await ActivateAndProbeCaptchaAsync(page, cancellationToken).ConfigureAwait(false);
 
             var effectiveTaskOptions = (taskOptions ?? AvitoCaptchaTaskContext.Options ?? new GeeTestV4TaskOptions())
@@ -266,6 +282,235 @@ public sealed class AvitoGeeTestSolver(
             }
 
             pageGate.Release();
+        }
+    }
+
+    private async Task<bool> TrySolveLoginOverlayAsync(
+        IPage page,
+        string? html,
+        string? pageUrl,
+        string apiKey,
+        GeeTestV4TaskOptions taskOptions,
+        CancellationToken cancellationToken)
+    {
+        var websiteUrl = string.IsNullOrWhiteSpace(pageUrl) ? page.Url : pageUrl;
+        if (string.IsNullOrWhiteSpace(websiteUrl))
+        {
+            websiteUrl = "https://www.avito.ru/";
+        }
+
+        for (var attempt = 1; attempt <= MaxAttempts; attempt++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            html ??= await SafeGetHtmlAsync(page, cancellationToken).ConfigureAwait(false);
+            var captchaId = await ResolveLoginOverlayCaptchaIdAsync(page, html, cancellationToken)
+                .ConfigureAwait(false);
+            if (string.IsNullOrWhiteSpace(captchaId)
+                || (string.Equals(captchaId, AvitoCaptchaDetector.AvitoGeeTestCaptchaId, StringComparison.OrdinalIgnoreCase)
+                    && html is not null
+                    && !html.Contains(captchaId, StringComparison.OrdinalIgnoreCase)))
+            {
+                _ = GlobalLogger.Instance.LogAsync(
+                    "Captcha: на логине не найден captcha_id GeeTest v4.",
+                    DeskLinkAuditLogLevel.Warning,
+                    properties: new Dictionary<string, object?>
+                    {
+                        ["step"] = "captcha_login_id_missing",
+                        ["page.url"] = websiteUrl,
+                        ["captcha.attempt"] = attempt
+                    });
+                await DelayLoginOverlayRetryAsync(page, attempt, "нет captcha_id", cancellationToken)
+                    .ConfigureAwait(false);
+                html = null;
+                continue;
+            }
+
+            _ = GlobalLogger.Instance.LogAsync(
+                $"Captcha: RuCaptcha GeeTest v4 на логине, попытка {attempt}/{MaxAttempts}.",
+                DeskLinkAuditLogLevel.Info,
+                properties: new Dictionary<string, object?>
+                {
+                    ["step"] = "captcha_login_solve_start",
+                    ["page.url"] = websiteUrl,
+                    ["captcha.attempt"] = attempt,
+                    ["captcha.proxyMode"] = taskOptions.UsesSuppliedProxy ? "profile" : "proxyless",
+                    ["captcha.userAgentPresent"] = !string.IsNullOrWhiteSpace(taskOptions.UserAgent)
+                });
+
+            GeeTestV4Solution solution;
+            try
+            {
+                solution = await ruCaptcha
+                    .SolveGeeTestV4Async(apiKey, websiteUrl, captchaId, taskOptions, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"Captcha: RuCaptcha не решила GeeTest логина — {ex.Message}",
+                    DeskLinkAuditLogLevel.Warning,
+                    properties: new Dictionary<string, object?>
+                    {
+                        ["step"] = "captcha_login_solve_api_failed",
+                        ["page.url"] = websiteUrl,
+                        ["captcha.attempt"] = attempt
+                    });
+                await DelayLoginOverlayRetryAsync(page, attempt, "RuCaptcha не решила", cancellationToken)
+                    .ConfigureAwait(false);
+                html = null;
+                continue;
+            }
+
+            if (string.IsNullOrWhiteSpace(solution.CaptchaId))
+            {
+                solution = solution with { CaptchaId = captchaId };
+            }
+
+            var applyRaw = await EvaluateLoginApplyAsync(page, solution, cancellationToken).ConfigureAwait(false);
+            var apply = AvitoGeeTestSolveSupport.ParseLoginApplyResult(applyRaw);
+            if (!apply.Succeeded)
+            {
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"Captcha: токен GeeTest логина не применился ({apply.Method ?? "none"}; {apply.Error ?? "нет callback"}).",
+                    DeskLinkAuditLogLevel.Warning,
+                    properties: new Dictionary<string, object?>
+                    {
+                        ["step"] = "captcha_login_apply_failed",
+                        ["page.url"] = websiteUrl,
+                        ["captcha.attempt"] = attempt,
+                        ["captcha.apply.method"] = apply.Method,
+                        ["captcha.apply.error"] = apply.Error
+                    });
+                await DelayLoginOverlayRetryAsync(page, attempt, "токен не применился", cancellationToken)
+                    .ConfigureAwait(false);
+                html = null;
+                continue;
+            }
+
+            await Task.Delay(800, cancellationToken).ConfigureAwait(false);
+            var afterHtml = await SafeGetHtmlAsync(page, cancellationToken).ConfigureAwait(false);
+            var overlayGone = apply.OverlayGone
+                              || !AvitoGeeTestSolveSupport.IsLoginGeeTestOverlay(afterHtml);
+            _ = GlobalLogger.Instance.LogAsync(
+                overlayGone
+                    ? "Captcha: GeeTest логина пройдена через RuCaptcha."
+                    : "Captcha: токен GeeTest логина применён, оверлей ещё на экране.",
+                overlayGone ? DeskLinkAuditLogLevel.Info : DeskLinkAuditLogLevel.Warning,
+                properties: new Dictionary<string, object?>
+                {
+                    ["step"] = overlayGone ? "captcha_login_solved" : "captcha_login_applied_overlay_visible",
+                    ["page.url"] = page.Url,
+                    ["captcha.attempt"] = attempt,
+                    ["captcha.apply.method"] = apply.Method
+                });
+            AvitoCaptchaTaskContext.NoteSolved();
+            return true;
+        }
+
+        return false;
+    }
+
+    private static async Task<string?> ResolveLoginOverlayCaptchaIdAsync(
+        IPage page,
+        string? html,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var live = await page
+                .EvaluateExpressionAsync<string>(AvitoGeeTestSolveSupport.BuildExtractLoginCaptchaIdScript())
+                .ConfigureAwait(false);
+            if (!string.IsNullOrWhiteSpace(live))
+            {
+                return live.Trim();
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                $"Captcha: не удалось прочитать captcha_id логина из DOM — {ex.Message}",
+                DeskLinkAuditLogLevel.Warning,
+                properties: new Dictionary<string, object?> { ["step"] = "captcha_login_id_eval_failed" });
+        }
+
+        return AvitoCaptchaDetector.ExtractGeeTestCaptchaId(html);
+    }
+
+    private static async Task<string?> EvaluateLoginApplyAsync(
+        IPage page,
+        GeeTestV4Solution solution,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await page
+                .EvaluateExpressionAsync<string>(AvitoGeeTestSolveSupport.BuildApplyLoginGeeTestScript(solution))
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                $"Captcha: ошибка apply GeeTest логина — {ex.Message}",
+                DeskLinkAuditLogLevel.Warning,
+                properties: new Dictionary<string, object?> { ["step"] = "captcha_login_apply_eval_failed" });
+            return null;
+        }
+    }
+
+    private static async Task DelayLoginOverlayRetryAsync(
+        IPage page,
+        int attempt,
+        string reason,
+        CancellationToken cancellationToken)
+    {
+        if (attempt >= MaxAttempts)
+        {
+            return;
+        }
+
+        _ = GlobalLogger.Instance.LogAsync(
+            $"Captcha: {reason} — обновляем виджет логина и повторяем ({attempt + 1}/{MaxAttempts}).",
+            DeskLinkAuditLogLevel.Info,
+            properties: new Dictionary<string, object?>
+            {
+                ["step"] = "captcha_login_retry_scheduled",
+                ["captcha.attempt"] = attempt,
+                ["page.url"] = page.Url
+            });
+        try
+        {
+            await page
+                .EvaluateExpressionAsync<bool>(AvitoGeeTestSolveSupport.BuildRefreshLoginGeeTestScript())
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                $"Captcha: refresh виджета логина не удался — {ex.Message}",
+                DeskLinkAuditLogLevel.Warning,
+                properties: new Dictionary<string, object?>
+                {
+                    ["step"] = "captcha_login_refresh_failed",
+                    ["page.url"] = page.Url
+                });
+        }
+
+        await Task.Delay(AvitoGeeTestSolveSupport.RetryDelayMs, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<string?> SafeGetUserAgentAsync(IPage page, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await page.EvaluateExpressionAsync<string>("navigator.userAgent || ''").ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                $"Captcha: не удалось прочитать userAgent — {ex.Message}",
+                DeskLinkAuditLogLevel.Warning,
+                properties: new Dictionary<string, object?> { ["step"] = "captcha_login_useragent_failed" });
+            return null;
         }
     }
 

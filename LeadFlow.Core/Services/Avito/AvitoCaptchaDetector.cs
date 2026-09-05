@@ -140,7 +140,7 @@ public static class AvitoCaptchaDetector
 
         return Regex.IsMatch(
             html,
-            @"id=[""']?geetest_captcha|class=[""']geetest_widget|data-geetest|initGeetest4?|geetest\.com|gt_captcha|gt4\.js|/s/captcha/gt4",
+            @"id=[""']?geetest_captcha|class=[""']geetest_widget|geetest_box|geetest_nine|data-geetest|initGeetest4?|geetest\.com|gt_captcha|gt4\.js|/s/captcha/gt4",
             RegexOptions.IgnoreCase);
     }
 
@@ -236,7 +236,16 @@ public static class AvitoCaptchaDetector
             html,
             @"captcha_id[""']?\s*[:=]\s*[""']([0-9a-f]{32})[""']",
             RegexOptions.IgnoreCase);
-        return initParam.Success ? initParam.Groups[1].Value : AvitoGeeTestCaptchaId;
+        if (initParam.Success)
+        {
+            return initParam.Groups[1].Value;
+        }
+
+        var policy = Regex.Match(
+            html,
+            @"captcha_v4/policy/([0-9a-f]{32})",
+            RegexOptions.IgnoreCase);
+        return policy.Success ? policy.Groups[1].Value : AvitoGeeTestCaptchaId;
     }
 
     /// <summary>Фиксированный captcha_id GeeTest v4 для avito.ru (RuCaptcha / 2captcha).</summary>
