@@ -201,13 +201,27 @@ public sealed class WorkerUpdateCoordinator(
             if (!downloaded)
             {
                 SaveFailure(offer.Version, downloadError ?? "Не удалось скачать обновление.");
+                TryDeleteFile(msiPath);
                 return;
             }
 
-            if (!string.IsNullOrWhiteSpace(offer.Sha256)
-                && !await VerifySha256Async(msiPath, offer.Sha256, ct).ConfigureAwait(false))
+            if (string.IsNullOrWhiteSpace(offer.Sha256))
+            {
+                SaveFailure(offer.Version, "Сервер не передал контрольную сумму MSI, установка отменена.");
+                TryDeleteFile(msiPath);
+                return;
+            }
+
+            if (!await VerifySha256Async(msiPath, offer.Sha256, ct).ConfigureAwait(false))
             {
                 SaveFailure(offer.Version, "Контрольная сумма MSI не совпала.");
+                TryDeleteFile(msiPath);
+                return;
+            }
+
+            if (!WorkerMsiPackage.LooksLikeMsi(msiPath))
+            {
+                SaveFailure(offer.Version, "Скачанный файл не является MSI-пакетом (возможно, не докачался).");
                 TryDeleteFile(msiPath);
                 return;
             }
