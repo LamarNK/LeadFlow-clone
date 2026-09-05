@@ -15,6 +15,8 @@ public sealed class AvitoGeeTestSolver(
     private const int PostVerifyNavigationTimeoutMs = 20_000;
     private const int PostVerifyPaintPolls = 6;
     private const int PostVerifyPaintPollMs = 400;
+    private const int LoginClickCaptchaOutcomePolls = 8;
+    private const int LoginClickCaptchaOutcomePollMs = 500;
     private const string LoginClickCaptchaImageSelector = ".geetest_click .geetest_bg, [class*='geetest_click'] [class*='geetest_bg']";
     private const string LoginNineGridCaptchaImageSelector = ".geetest_nine, [class*='geetest_nine']";
     private static readonly SemaphoreSlim Gate = new(
@@ -400,10 +402,8 @@ public sealed class AvitoGeeTestSolver(
                 continue;
             }
 
-            await Task.Delay(1_000, cancellationToken).ConfigureAwait(false);
-            var afterHtml = await SafeGetHtmlAsync(page, cancellationToken).ConfigureAwait(false);
-            if (!string.IsNullOrWhiteSpace(afterHtml)
-                && !AvitoGeeTestSolveSupport.IsLoginClickCaptchaOverlay(afterHtml))
+            var outcome = await WaitForLoginClickCaptchaOutcomeAsync(page, cancellationToken).ConfigureAwait(false);
+            if (outcome == LoginClickCaptchaOutcome.Accepted)
             {
                 _ = GlobalLogger.Instance.LogAsync(
                     "Captcha: ClickCaptcha логина пройдена через RuCaptcha.",
@@ -421,21 +421,66 @@ public sealed class AvitoGeeTestSolver(
                 return true;
             }
 
+            if (outcome == LoginClickCaptchaOutcome.Rejected)
+            {
+                await ReportSolutionAsync(apiKey, solution.ProviderTask, isCorrect: false, "ClickCaptcha логина", cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
             _ = GlobalLogger.Instance.LogAsync(
-                "Captcha: ClickCaptcha приняла клики, но оверлей остался на экране.",
+                outcome == LoginClickCaptchaOutcome.Rejected
+                    ? "Captcha: ClickCaptcha не приняла ответ после ожидания; RuCaptcha получила report incorrect."
+                    : "Captcha: исход ClickCaptcha после кликов не удалось прочитать; report не отправлен.",
                 DeskLinkAuditLogLevel.Warning,
                 properties: new Dictionary<string, object?>
                 {
                     ["step"] = "captcha_login_click_overlay_visible",
                     ["page.url"] = page.Url,
-                    ["captcha.attempt"] = attempt
+                    ["captcha.attempt"] = attempt,
+                    ["captcha.outcome"] = outcome.ToString()
                 });
-            await DelayLoginOverlayRetryAsync(page, attempt, "ClickCaptcha не приняла ответ", cancellationToken)
+            await DelayLoginOverlayRetryAsync(
+                    page,
+                    attempt,
+                    outcome == LoginClickCaptchaOutcome.Rejected
+                        ? "ClickCaptcha не приняла ответ"
+                        : "исход ClickCaptcha не прочитался",
+                    cancellationToken)
                 .ConfigureAwait(false);
             html = null;
         }
 
         return false;
+    }
+
+    private static async Task<LoginClickCaptchaOutcome> WaitForLoginClickCaptchaOutcomeAsync(
+        IPage page,
+        CancellationToken cancellationToken)
+    {
+        var sawLiveOverlay = false;
+        for (var poll = 0; poll < LoginClickCaptchaOutcomePolls; poll++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var html = await SafeGetHtmlAsync(page, cancellationToken).ConfigureAwait(false);
+            if (!string.IsNullOrWhiteSpace(html))
+            {
+                if (!AvitoGeeTestSolveSupport.IsLoginClickCaptchaOverlay(html))
+                {
+                    return LoginClickCaptchaOutcome.Accepted;
+                }
+
+                sawLiveOverlay = true;
+            }
+
+            if (poll + 1 < LoginClickCaptchaOutcomePolls)
+            {
+                await Task.Delay(LoginClickCaptchaOutcomePollMs, cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        return sawLiveOverlay
+            ? LoginClickCaptchaOutcome.Rejected
+            : LoginClickCaptchaOutcome.Unknown;
     }
 
     private static async Task<LoginClickCaptchaCapture?> CaptureLoginClickCaptchaAsync(
@@ -567,6 +612,13 @@ public sealed class AvitoGeeTestSolver(
         decimal ImageWidth,
         decimal ImageHeight,
         bool IsNineGrid);
+
+    private enum LoginClickCaptchaOutcome
+    {
+        Unknown,
+        Accepted,
+        Rejected
+    }
 
     private static async Task DelayLoginOverlayRetryAsync(
         IPage page,

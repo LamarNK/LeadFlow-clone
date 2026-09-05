@@ -270,6 +270,21 @@ public sealed class AvitoGeeTestSolveSupportTests
     }
 
     [Fact]
+    public void LoginClickCaptcha_ReportsFinalOutcomeBeforeRefreshingWidget()
+    {
+        var source = File.ReadAllText(
+            Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "LeadFlow.Core", "Services", "Captcha", "AvitoGeeTestSolver.cs"));
+
+        var waitForOutcome = source.IndexOf("WaitForLoginClickCaptchaOutcomeAsync", StringComparison.Ordinal);
+        var reportIncorrect = source.IndexOf("isCorrect: false, \"ClickCaptcha логина\"", StringComparison.Ordinal);
+        var refreshWidget = source.IndexOf("DelayLoginOverlayRetryAsync(", reportIncorrect, StringComparison.Ordinal);
+
+        Assert.True(waitForOutcome >= 0, "После кликов нужно дождаться фактического исхода капчи.");
+        Assert.True(reportIncorrect > waitForOutcome, "Отчёт incorrect должен идти после ожидания исхода.");
+        Assert.True(refreshWidget > reportIncorrect, "Виджет можно обновлять только после отчёта incorrect.");
+    }
+
+    [Fact]
     public void IsLoginGeeTestOverlay_FirewallWidget_False()
     {
         const string html = """
