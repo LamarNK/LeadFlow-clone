@@ -40,6 +40,7 @@ public sealed class TopUpSessionServiceTests
         Assert.Equal(300m, session.TargetBalance);
         Assert.Equal(200m, session.RequestedAmount);
         Assert.Equal(0, session.DailyResponseCount);
+        Assert.Equal(Now.UtcDateTime.Add(TopUpSessionRules.PauseLeaseTtl), session.ExpiresAtUtc);
 
         var worker = await db.Workers.AsNoTracking().FirstAsync(x => x.Id == workerId);
         Assert.True(worker.IsMonitoringPaused);
@@ -1047,7 +1048,7 @@ public sealed class TopUpSessionServiceTests
     }
 
     [Fact]
-    public async Task CancelAsync_AfterClaim_ReturnsConflict_AndDoesNotSetCancelled()
+    public async Task CancelAsync_AfterClaim_CancelsAndReleasesPause()
     {
         await using var db = CreateDb();
         var officeId = Guid.NewGuid();
@@ -1064,17 +1065,225 @@ public sealed class TopUpSessionServiceTests
             workerId,
             new UpdateTopUpSessionStatusRequest(session!.Id, TopUpSessionStatuses.Started));
 
-        // Claim выигрывает гонку.
         var claim = await service.ClaimPaymentAsync(workerId, session.Id);
         Assert.True(claim.Claimed, claim.Error);
 
-        // Отмена после claim возвращает конфликт и НЕ помечает сессию отменённой.
         var (cancelled, cancelError) = await service.CancelAsync(session.Id, principal);
-        Assert.False(cancelled);
-        Assert.NotNull(cancelError);
+        Assert.True(cancelled, cancelError);
 
         var stored = await db.TopUpSessions.AsNoTracking().FirstAsync(x => x.Id == session.Id);
-        Assert.Equal(TopUpSessionStatuses.PaymentClaimed, stored.Status);
+        Assert.Equal(TopUpSessionStatuses.Cancelled, stored.Status);
+
+        var worker = await db.Workers.AsNoTracking().FirstAsync(x => x.Id == workerId);
+        Assert.False(worker.IsMonitoringPaused);
+    }
+
+    [Fact]
+    public async Task MarkPaidAsync_FromQrReady_ReleasesPause()
+    {
+        await using var db = CreateDb();
+        var officeId = Guid.NewGuid();
+        var workerId = Guid.NewGuid();
+        var accountId = Guid.NewGuid();
+        SeedWorker(db, officeId, workerId, accountId, balance: 100m);
+
+        var service = CreateService(db);
+        var principal = TestPrincipalFactory.Operator("op1", "Operator 1", officeId);
+        var (session, _) = await service.CreateAsync(workerId, accountId, principal);
+        Assert.NotNull(session);
+
+        await service.UpdateStatusFromWorkerAsync(
+            workerId,
+            new UpdateTopUpSessionStatusRequest(session!.Id, TopUpSessionStatuses.Started));
+        await service.UpdateStatusFromWorkerAsync(
+            workerId,
+            new UpdateTopUpSessionStatusRequest(
+                session.Id,
+                TopUpSessionStatuses.QrReady,
+                QrImageBase64: ValidPngBase64,
+                QrImageUrl: "https://www.avito.ru/qr"));
+
+        var (paid, error) = await service.MarkPaidAsync(session.Id, principal);
+        Assert.True(paid, error);
+
+        var stored = await db.TopUpSessions.AsNoTracking().FirstAsync(x => x.Id == session.Id);
+        Assert.Equal(TopUpSessionStatuses.Paid, stored.Status);
+        Assert.NotNull(stored.CompletedAtUtc);
+        Assert.Null(stored.QrImageBase64);
+        Assert.Null(stored.QrImageUrl);
+
+        var worker = await db.Workers.AsNoTracking().FirstAsync(x => x.Id == workerId);
+        Assert.False(worker.IsMonitoringPaused);
+        Assert.Null(worker.TopUpPauseLeaseId);
+    }
+
+    [Fact]
+    public async Task MarkPaidAsync_BeforeQrReady_IsRejected()
+    {
+        await using var db = CreateDb();
+        var officeId = Guid.NewGuid();
+        var workerId = Guid.NewGuid();
+        var accountId = Guid.NewGuid();
+        SeedWorker(db, officeId, workerId, accountId, balance: 100m);
+
+        var service = CreateService(db);
+        var principal = TestPrincipalFactory.Operator("op1", "Operator 1", officeId);
+        var (session, _) = await service.CreateAsync(workerId, accountId, principal);
+        Assert.NotNull(session);
+
+        var (paid, error) = await service.MarkPaidAsync(session!.Id, principal);
+        Assert.False(paid);
+        Assert.NotNull(error);
+
+        var stored = await db.TopUpSessions.AsNoTracking().FirstAsync(x => x.Id == session.Id);
+        Assert.Equal(TopUpSessionStatuses.Requested, stored.Status);
+
+        var worker = await db.Workers.AsNoTracking().FirstAsync(x => x.Id == workerId);
+        Assert.True(worker.IsMonitoringPaused);
+    }
+
+    [Fact]
+    public async Task MarkPaidAsync_IsIdempotent_WhenAlreadyPaid()
+    {
+        await using var db = CreateDb();
+        var officeId = Guid.NewGuid();
+        var workerId = Guid.NewGuid();
+        var accountId = Guid.NewGuid();
+        SeedWorker(db, officeId, workerId, accountId, balance: 100m);
+
+        var service = CreateService(db);
+        var principal = TestPrincipalFactory.Operator("op1", "Operator 1", officeId);
+        var (session, _) = await service.CreateAsync(workerId, accountId, principal);
+        Assert.NotNull(session);
+
+        await service.UpdateStatusFromWorkerAsync(
+            workerId,
+            new UpdateTopUpSessionStatusRequest(session!.Id, TopUpSessionStatuses.Started));
+        await service.UpdateStatusFromWorkerAsync(
+            workerId,
+            new UpdateTopUpSessionStatusRequest(
+                session.Id,
+                TopUpSessionStatuses.QrReady,
+                QrImageBase64: ValidPngBase64));
+
+        Assert.True((await service.MarkPaidAsync(session.Id, principal)).Success);
+        var (again, error) = await service.MarkPaidAsync(session.Id, principal);
+        Assert.True(again, error);
+
+        var stored = await db.TopUpSessions.AsNoTracking().FirstAsync(x => x.Id == session.Id);
+        Assert.Equal(TopUpSessionStatuses.Paid, stored.Status);
+    }
+
+    [Fact]
+    public async Task UpdateStatusFromWorker_Paid_IsRejected()
+    {
+        await using var db = CreateDb();
+        var officeId = Guid.NewGuid();
+        var workerId = Guid.NewGuid();
+        var accountId = Guid.NewGuid();
+        SeedWorker(db, officeId, workerId, accountId, balance: 100m);
+
+        var service = CreateService(db);
+        var principal = TestPrincipalFactory.Operator("op1", "Operator 1", officeId);
+        var (session, _) = await service.CreateAsync(workerId, accountId, principal);
+        Assert.NotNull(session);
+
+        await service.UpdateStatusFromWorkerAsync(
+            workerId,
+            new UpdateTopUpSessionStatusRequest(session!.Id, TopUpSessionStatuses.Started));
+        await service.UpdateStatusFromWorkerAsync(
+            workerId,
+            new UpdateTopUpSessionStatusRequest(
+                session.Id,
+                TopUpSessionStatuses.QrReady,
+                QrImageBase64: ValidPngBase64));
+
+        var (ok, error) = await service.UpdateStatusFromWorkerAsync(
+            workerId,
+            new UpdateTopUpSessionStatusRequest(session.Id, TopUpSessionStatuses.Paid));
+
+        Assert.False(ok);
+        Assert.NotNull(error);
+
+        var stored = await db.TopUpSessions.AsNoTracking().FirstAsync(x => x.Id == session.Id);
+        Assert.Equal(TopUpSessionStatuses.QrReady, stored.Status);
+        Assert.True((await db.Workers.AsNoTracking().FirstAsync(x => x.Id == workerId)).IsMonitoringPaused);
+    }
+
+    [Fact]
+    public async Task CreateAsync_AfterPaid_AllowsNewSession()
+    {
+        await using var db = CreateDb();
+        var officeId = Guid.NewGuid();
+        var workerId = Guid.NewGuid();
+        var accountId = Guid.NewGuid();
+        SeedWorker(db, officeId, workerId, accountId, balance: 100m);
+
+        var service = CreateService(db);
+        var principal = TestPrincipalFactory.Operator("op1", "Operator 1", officeId);
+        var (first, _) = await service.CreateAsync(workerId, accountId, principal);
+        Assert.NotNull(first);
+
+        await service.UpdateStatusFromWorkerAsync(
+            workerId,
+            new UpdateTopUpSessionStatusRequest(first!.Id, TopUpSessionStatuses.Started));
+        await service.UpdateStatusFromWorkerAsync(
+            workerId,
+            new UpdateTopUpSessionStatusRequest(
+                first.Id,
+                TopUpSessionStatuses.QrReady,
+                QrImageBase64: ValidPngBase64));
+        Assert.True((await service.MarkPaidAsync(first.Id, principal)).Success);
+
+        var (second, conflict) = await service.CreateAsync(workerId, accountId, principal);
+        Assert.Null(conflict);
+        Assert.NotNull(second);
+        Assert.NotEqual(first.Id, second!.Id);
+        Assert.True((await db.Workers.AsNoTracking().FirstAsync(x => x.Id == workerId)).IsMonitoringPaused);
+    }
+
+    [Fact]
+    public async Task SweepExpiredAsync_DoesNotExpireBeforePauseLeaseTtl()
+    {
+        await using var db = CreateDb();
+        var officeId = Guid.NewGuid();
+        var workerId = Guid.NewGuid();
+        var accountId = Guid.NewGuid();
+        SeedWorker(db, officeId, workerId, accountId, balance: 100m);
+
+        var service = CreateService(db);
+        var principal = TestPrincipalFactory.Operator("op1", "Operator 1", officeId);
+        var (session, _) = await service.CreateAsync(workerId, accountId, principal);
+        Assert.NotNull(session);
+
+        var notYet = CreateService(db, Now.Add(TopUpSessionRules.PauseLeaseTtl).AddSeconds(-1));
+        Assert.Equal(0, await notYet.SweepExpiredAsync());
+
+        var stored = await db.TopUpSessions.AsNoTracking().FirstAsync(x => x.Id == session!.Id);
+        Assert.Equal(TopUpSessionStatuses.Requested, stored.Status);
+        Assert.True((await db.Workers.AsNoTracking().FirstAsync(x => x.Id == workerId)).IsMonitoringPaused);
+    }
+
+    [Fact]
+    public async Task SweepExpiredAsync_ExpiresAtPauseLeaseTtl()
+    {
+        await using var db = CreateDb();
+        var officeId = Guid.NewGuid();
+        var workerId = Guid.NewGuid();
+        var accountId = Guid.NewGuid();
+        SeedWorker(db, officeId, workerId, accountId, balance: 100m);
+
+        var service = CreateService(db);
+        var principal = TestPrincipalFactory.Operator("op1", "Operator 1", officeId);
+        var (session, _) = await service.CreateAsync(workerId, accountId, principal);
+        Assert.NotNull(session);
+
+        var expiredService = CreateService(db, Now.Add(TopUpSessionRules.PauseLeaseTtl));
+        Assert.Equal(1, await expiredService.SweepExpiredAsync());
+
+        var stored = await db.TopUpSessions.AsNoTracking().FirstAsync(x => x.Id == session!.Id);
+        Assert.Equal(TopUpSessionStatuses.Expired, stored.Status);
+        Assert.False((await db.Workers.AsNoTracking().FirstAsync(x => x.Id == workerId)).IsMonitoringPaused);
     }
 
     [Fact]

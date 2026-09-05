@@ -12,7 +12,7 @@ namespace Orbita.Api.Services;
 /// Жизненный цикл сессии ручного пополнения баланса аккаунта воркера.
 /// Фаза 1: только контракты и persisted-состояние. Автоматизация воркера (браузер,
 /// QR, оплата) реализуется в отдельной фазе; здесь воркер лишь опрашивает pending-снимок
-/// и сообщает статусы Started/QrReady/Expired/Failed/Cancelled.
+/// и сообщает статусы Started/QrReady/Expired/Failed/Cancelled/Paid.
 /// </summary>
 public sealed class TopUpSessionService(
     OrbitaDbContext db,
@@ -22,7 +22,7 @@ public sealed class TopUpSessionService(
     WorkerConnectionRegistry connectionRegistry,
     TimeProvider timeProvider)
 {
-    private static readonly TimeSpan SessionTtl = TimeSpan.FromHours(2);
+    private static readonly TimeSpan SessionTtl = TopUpSessionRules.PauseLeaseTtl;
     private static readonly TimeSpan BalanceSpendLookback = TimeSpan.FromHours(1);
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     // Keep this as data rather than calling IsActive inside EF expressions: EF Core cannot
@@ -247,10 +247,47 @@ public sealed class TopUpSessionService(
         return ToDto(session, session.Worker.DisplayName);
     }
 
-    public async Task<(bool Success, string? Error)> CancelAsync(
+    public Task<(bool Success, string? Error)> CancelAsync(
         Guid sessionId,
         ClaimsPrincipal principal,
-        CancellationToken ct = default)
+        CancellationToken ct = default) =>
+        CompleteByOperatorAsync(
+            sessionId,
+            principal,
+            TopUpSessionStatuses.Cancelled,
+            session => TopUpSessionStatuses.IsActive(session.Status)
+                ? null
+                : "Сессия уже завершена.",
+            ownerError: "Отменить может только оператор, начавший сессию.",
+            ct);
+
+    /// <summary>
+    /// Оператор подтвердил оплату QR. Допустимо только из <see cref="TopUpSessionStatuses.QrReady"/>.
+    /// Снимает аренду паузы мониторинга.
+    /// </summary>
+    public Task<(bool Success, string? Error)> MarkPaidAsync(
+        Guid sessionId,
+        ClaimsPrincipal principal,
+        CancellationToken ct = default) =>
+        CompleteByOperatorAsync(
+            sessionId,
+            principal,
+            TopUpSessionStatuses.Paid,
+            session => session.Status == TopUpSessionStatuses.QrReady
+                ? null
+                : TopUpSessionStatuses.IsActive(session.Status)
+                    ? "Отметить оплату можно, когда QR-код готов."
+                    : "Сессия уже завершена.",
+            ownerError: "Подтвердить оплату может только оператор, начавший сессию.",
+            ct);
+
+    private async Task<(bool Success, string? Error)> CompleteByOperatorAsync(
+        Guid sessionId,
+        ClaimsPrincipal principal,
+        string terminalStatus,
+        Func<TopUpSessionEntity, string?> validate,
+        string ownerError,
+        CancellationToken ct)
     {
         var scope = await officeScope.ResolveAsync(principal, ct).ConfigureAwait(false);
         if (!scope.HasAccess)
@@ -262,7 +299,6 @@ public sealed class TopUpSessionService(
 
         await using var transaction = await db.Database.BeginTransactionAsync(ct).ConfigureAwait(false);
 
-        // Блокируем строку сессии, чтобы отмена и заявление оплаты сериализовались атомарно.
         var session = await LockSessionByIdAsync(sessionId, ct).ConfigureAwait(false);
         if (session is null || !await officeScope.CanAccessWorkerAsync(scope, session.WorkerId, ct).ConfigureAwait(false))
         {
@@ -272,22 +308,24 @@ public sealed class TopUpSessionService(
         if (!principal.IsInRole(PanelRoles.Admin)
             && !string.Equals(session.OperatorUserId, userId, StringComparison.Ordinal))
         {
-            return (false, "Отменить может только оператор, начавший сессию.");
+            return (false, ownerError);
         }
 
-        if (!TopUpSessionStatuses.IsActive(session.Status))
+        if (string.Equals(session.Status, terminalStatus, StringComparison.OrdinalIgnoreCase)
+            && !TopUpSessionStatuses.IsActive(session.Status))
         {
-            return (false, "Сессия уже завершена.");
+            await transaction.RollbackAsync(ct).ConfigureAwait(false);
+            return (true, null);
         }
 
-        // Если воркер уже заявил право на оплату (payment_claimed) — отмена проигрывает гонку:
-        // возвращаем конфликт, не помечая сессию отменённой.
-        if (session.Status == TopUpSessionStatuses.PaymentClaimed)
+        var validationError = validate(session);
+        if (validationError is not null)
         {
-            return (false, "Оплата уже инициирована — отмена невозможна.");
+            await transaction.RollbackAsync(ct).ConfigureAwait(false);
+            return (false, validationError);
         }
 
-        session.Status = TopUpSessionStatuses.Cancelled;
+        session.Status = terminalStatus;
         session.CompletedAtUtc = timeProvider.GetUtcNow().UtcDateTime;
         ClearQrData(session);
         await ReleasePauseAsync(session, ct).ConfigureAwait(false);
@@ -381,6 +419,11 @@ public sealed class TopUpSessionService(
                 session.OfficeId,
                 session.WorkerId);
             return (false, "Сессия истекла.");
+        }
+
+        if (request.Status is TopUpSessionStatuses.Paid or TopUpSessionStatuses.Cancelled)
+        {
+            return (false, "Этот статус выставляет только оператор.");
         }
 
         // Только вперёд: запрещаем обратные переходы и недопустимые статусы.

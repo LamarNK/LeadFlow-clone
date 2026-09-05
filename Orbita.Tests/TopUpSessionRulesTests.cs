@@ -98,14 +98,23 @@ public sealed class TopUpSessionRulesTests
     [InlineData(TopUpSessionStatuses.PaymentClaimed, TopUpSessionStatuses.Started, false)]
     [InlineData(TopUpSessionStatuses.QrReady, TopUpSessionStatuses.Failed, true)]
     [InlineData(TopUpSessionStatuses.QrReady, TopUpSessionStatuses.Expired, true)]
+    [InlineData(TopUpSessionStatuses.QrReady, TopUpSessionStatuses.Paid, true)]
     [InlineData(TopUpSessionStatuses.QrReady, TopUpSessionStatuses.Started, false)]
     [InlineData(TopUpSessionStatuses.QrReady, TopUpSessionStatuses.Requested, false)]
+    [InlineData(TopUpSessionStatuses.Started, TopUpSessionStatuses.Paid, false)]
     [InlineData(TopUpSessionStatuses.Failed, TopUpSessionStatuses.Started, false)]
     [InlineData(TopUpSessionStatuses.Expired, TopUpSessionStatuses.Started, false)]
     [InlineData(TopUpSessionStatuses.Cancelled, TopUpSessionStatuses.Started, false)]
+    [InlineData(TopUpSessionStatuses.Paid, TopUpSessionStatuses.Started, false)]
     public void CanTransition_EnforcesForwardOnly(string from, string to, bool expected)
     {
         Assert.Equal(expected, TopUpSessionStatuses.CanTransition(from, to));
+    }
+
+    [Fact]
+    public void PauseLeaseTtl_IsTenMinutes()
+    {
+        Assert.Equal(TimeSpan.FromMinutes(10), TopUpSessionRules.PauseLeaseTtl);
     }
 
     [Fact]
