@@ -112,12 +112,23 @@ public sealed class LocalChromeOsProcessHost : ILocalChromeProcessHost
             // Lock file may still be held.
         }
     }
+
+    public int? FindPidListeningOnLocalPort(int port)
+    {
+        if (port <= 0 || port > 65535 || !OperatingSystem.IsWindows())
+        {
+            return null;
+        }
+
+        return LocalChromeTcpTable.FindPidListeningOnLocalPort(port);
+    }
 }
 
 internal static class LocalChromeProcessCommandLine
 {
     private const int ProcessCommandLineInformation = 60;
     private const int StatusInfoLengthMismatch = unchecked((int)0xC0000004);
+    private const int StatusBufferTooSmall = unchecked((int)0xC0000023);
 
     public static string? TryGet(Process process)
     {
@@ -165,14 +176,14 @@ internal static class LocalChromeProcessCommandLine
                 IntPtr.Zero,
                 0,
                 out var length);
-            if (length <= 0 && status != StatusInfoLengthMismatch)
+            if (status != StatusInfoLengthMismatch && status != StatusBufferTooSmall)
             {
                 return null;
             }
 
             if (length <= 0)
             {
-                length = 512;
+                return null;
             }
 
             buffer = Marshal.AllocHGlobal(length);
@@ -222,5 +233,84 @@ internal static class LocalChromeProcessCommandLine
         public ushort Length;
         public ushort MaximumLength;
         public IntPtr Buffer;
+    }
+}
+
+internal static class LocalChromeTcpTable
+{
+    private const int AfInet = 2;
+    private const int TcpTableOwnerPidListener = 3;
+    private const int ErrorInsufficientBuffer = 122;
+
+    public static int? FindPidListeningOnLocalPort(int port)
+    {
+        var size = 0;
+        var result = GetExtendedTcpTable(IntPtr.Zero, ref size, false, AfInet, TcpTableOwnerPidListener, 0);
+        if (result != 0 && result != ErrorInsufficientBuffer)
+        {
+            return null;
+        }
+
+        if (size <= 0)
+        {
+            return null;
+        }
+
+        var buffer = Marshal.AllocHGlobal(size);
+        try
+        {
+            result = GetExtendedTcpTable(buffer, ref size, false, AfInet, TcpTableOwnerPidListener, 0);
+            if (result != 0)
+            {
+                return null;
+            }
+
+            var count = Marshal.ReadInt32(buffer);
+            var rowPtr = IntPtr.Add(buffer, 4);
+            var rowSize = Marshal.SizeOf<TcpRowOwnerPid>();
+            for (var i = 0; i < count; i++)
+            {
+                var row = Marshal.PtrToStructure<TcpRowOwnerPid>(rowPtr);
+                if (Ntosts(row.LocalPort) == port && row.OwningPid > 0)
+                {
+                    return (int)row.OwningPid;
+                }
+
+                rowPtr = IntPtr.Add(rowPtr, rowSize);
+            }
+        }
+        catch
+        {
+            return null;
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(buffer);
+        }
+
+        return null;
+    }
+
+    private static int Ntosts(uint networkPort) =>
+        (int)(((networkPort & 0xFF) << 8) | ((networkPort >> 8) & 0xFF));
+
+    [DllImport("iphlpapi.dll", SetLastError = true)]
+    private static extern uint GetExtendedTcpTable(
+        IntPtr tcpTable,
+        ref int tcpTableLength,
+        bool order,
+        int ipVersion,
+        int tableClass,
+        int reserved);
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct TcpRowOwnerPid
+    {
+        public uint State;
+        public uint LocalAddr;
+        public uint LocalPort;
+        public uint RemoteAddr;
+        public uint RemotePort;
+        public uint OwningPid;
     }
 }

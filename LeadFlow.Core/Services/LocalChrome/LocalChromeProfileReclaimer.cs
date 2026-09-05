@@ -17,7 +17,9 @@ public sealed class LocalChromeProfileReclaimer
         "lockfile"
     ];
 
-    public static readonly TimeSpan DefaultWait = TimeSpan.FromSeconds(3);
+    public const string DevToolsActivePortFileName = "DevToolsActivePort";
+
+    public static readonly TimeSpan DefaultWait = TimeSpan.FromSeconds(8);
 
     private static readonly Regex PidRegex = new(@"\b(\d{2,10})\b", RegexOptions.CultureInvariant);
 
@@ -62,7 +64,8 @@ public sealed class LocalChromeProfileReclaimer
         {
             KilledProcessCount = killed.Count,
             StaleLockFilesRemoved = staleLocks,
-            KilledProcessIds = killed
+            KilledProcessIds = killed,
+            StillOccupied = IsOccupied(dir)
         };
     }
 
@@ -117,6 +120,30 @@ public sealed class LocalChromeProfileReclaimer
         }
 
         return ids;
+    }
+
+    public static int? ParseDevToolsActivePort(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return null;
+        }
+
+        var lines = text.Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries);
+        if (lines.Length == 0)
+        {
+            return null;
+        }
+
+        var firstLine = lines[0].Trim();
+        if (!int.TryParse(firstLine, NumberStyles.None, CultureInfo.InvariantCulture, out var port)
+            || port <= 0
+            || port > 65535)
+        {
+            return null;
+        }
+
+        return port;
     }
 
     private void KillMatching(string userDataDir, List<int> killed)
@@ -182,6 +209,17 @@ public sealed class LocalChromeProfileReclaimer
             }
         }
 
+        var port = ParseDevToolsActivePort(
+            _host.TryReadText(Path.Combine(userDataDir, DevToolsActivePortFileName)));
+        if (port is { } listening)
+        {
+            var pid = _host.FindPidListeningOnLocalPort(listening);
+            if (pid is { } owner && _host.IsProcessAlive(owner))
+            {
+                targets.Add(owner);
+            }
+        }
+
         return targets;
     }
 
@@ -207,7 +245,35 @@ public sealed class LocalChromeProfileReclaimer
             }
         }
 
+        var devTools = Path.Combine(userDataDir, DevToolsActivePortFileName);
+        if (_host.FileExists(devTools))
+        {
+            _host.TryDeleteFile(devTools);
+            if (!_host.FileExists(devTools))
+            {
+                removed++;
+            }
+        }
+
         return removed;
+    }
+
+    private bool IsOccupied(string userDataDir)
+    {
+        if (CollectTargetPids(userDataDir).Count > 0)
+        {
+            return true;
+        }
+
+        foreach (var path in _host.ListLockFilePaths(userDataDir))
+        {
+            if (_host.FileExists(path))
+            {
+                return true;
+            }
+        }
+
+        return _host.FileExists(Path.Combine(userDataDir, DevToolsActivePortFileName));
     }
 
     private async Task WaitUntilFreeAsync(string userDataDir, CancellationToken cancellationToken)

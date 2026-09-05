@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using LeadFlow.Core.Services.AdsPower;
 using LeadFlow.Core.Services.LocalChrome;
 using LeadFlow.Core.Services.Multilogin;
@@ -102,9 +103,13 @@ public sealed class BrowserProviderConnectionProbe(
         try
         {
             var resolved = LocalChromePaths.ResolveExecutable(configuredPath);
-            var message = string.IsNullOrWhiteSpace(configuredPath)
+            var version = TryReadFileVersion(resolved);
+            var found = string.IsNullOrWhiteSpace(configuredPath)
                 ? $"Chrome будет найден автоматически · {resolved}"
                 : $"Найден браузер · {resolved}";
+            var message = string.IsNullOrWhiteSpace(version)
+                ? found
+                : $"{found} · Chrome {version}";
             return new BrowserProviderProbeResult(
                 true,
                 BrowserProviderProbeSanitizer.Sanitize(message),
@@ -113,6 +118,19 @@ public sealed class BrowserProviderConnectionProbe(
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
             return new BrowserProviderProbeResult(false, BrowserProviderProbeSanitizer.FromException(ex));
+        }
+    }
+
+    private static string? TryReadFileVersion(string path)
+    {
+        try
+        {
+            var version = FileVersionInfo.GetVersionInfo(path).FileVersion;
+            return string.IsNullOrWhiteSpace(version) ? null : version.Trim();
+        }
+        catch
+        {
+            return null;
         }
     }
 }

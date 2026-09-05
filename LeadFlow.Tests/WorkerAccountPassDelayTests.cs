@@ -127,4 +127,13 @@ public sealed class WorkerAccountPassDelayTests
         Assert.DoesNotContain("браузер закрыт", blob, StringComparison.Ordinal);
         Assert.DoesNotContain("проход ok", blob, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void LocalChromeProtocolMismatch_IsNotShortRetry()
+    {
+        var mismatch = new InvalidOperationException(
+            "Protocol error (Runtime.callFunctionOn): method not found");
+        Assert.Null(WorkerAdsPowerPassRetry.FromException(mismatch));
+        Assert.Equal("Error", WorkerAdsPowerPassRetry.EventType(mismatch));
+    }
 }

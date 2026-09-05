@@ -16,6 +16,7 @@ public sealed class LocalChromeBrowserLauncher : ILocalChromeBrowserLauncher
 
     private readonly LocalChromeProfileReclaimer _reclaimer;
     private readonly Func<LaunchOptions, Task<IBrowser>> _launch;
+    private static int _chromeVersionLogged;
 
     public LocalChromeBrowserLauncher()
         : this(new LocalChromeProfileReclaimer(), static options => Puppeteer.LaunchAsync(options))
@@ -73,6 +74,7 @@ public sealed class LocalChromeBrowserLauncher : ILocalChromeBrowserLauncher
                 await LocalChromeProxyAuth
                     .ApplyAsync(browser, options, cancellationToken)
                     .ConfigureAwait(false);
+                await LogChromeVersionOnceAsync(browser).ConfigureAwait(false);
                 return browser;
             }
             catch (OperationCanceledException)
@@ -183,6 +185,29 @@ public sealed class LocalChromeBrowserLauncher : ILocalChromeBrowserLauncher
             options.ProxyPassword);
     }
 
+    private static async Task LogChromeVersionOnceAsync(IBrowser browser)
+    {
+        if (Interlocked.Exchange(ref _chromeVersionLogged, 1) != 0)
+        {
+            return;
+        }
+
+        try
+        {
+            var version = await browser.GetVersionAsync().ConfigureAwait(false);
+            if (!string.IsNullOrWhiteSpace(version))
+            {
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"Обычный браузер: {version.Trim()}",
+                    DeskLinkAuditLogLevel.Info);
+            }
+        }
+        catch
+        {
+            // Version is diagnostics only.
+        }
+    }
+
     private async Task<LocalChromeProfileReclaimResult> ReclaimAndLogAsync(
         string userDataDir,
         CancellationToken cancellationToken)
@@ -193,6 +218,13 @@ public sealed class LocalChromeBrowserLauncher : ILocalChromeBrowserLauncher
             var pids = string.Join(", ", result.KilledProcessIds);
             _ = GlobalLogger.Instance.LogAsync(
                 $"Обычный браузер: сняли зависший Chrome (pid {pids}) для профиля {userDataDir}.",
+                DeskLinkAuditLogLevel.Warning);
+        }
+
+        if (result.StillOccupied)
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                $"Обычный браузер: профиль всё ещё занят после reclaim ({userDataDir}).",
                 DeskLinkAuditLogLevel.Warning);
         }
 

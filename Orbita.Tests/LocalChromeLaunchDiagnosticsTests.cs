@@ -99,6 +99,7 @@ public sealed class LocalChromeLaunchDiagnosticsTests
     [InlineData("Failed to create a ProcessSingleton for your profile directory", "профиль занят")]
     [InlineData("Timeout exceeded while waiting for the browser. DevToolsActivePort", "ожидание DevTools")]
     [InlineData("WebSocket failed to connect to ws://127.0.0.1:9222", "подключение")]
+    [InlineData("Protocol error (Runtime.callFunctionOn): method not found", "протокол CDP")]
     public void ClassifyStage_UsesExceptionText(string message, string expected)
     {
         Assert.Equal(expected, LocalChromeLaunchDiagnostics.ClassifyStage(new InvalidOperationException(message)));
@@ -112,6 +113,33 @@ public sealed class LocalChromeLaunchDiagnosticsTests
         Assert.True(LocalChromeLaunchDiagnostics.IsProfileBusy(ex));
         Assert.True(LocalChromeLaunchDiagnostics.IsProfileBusy(ex.Message));
         Assert.False(LocalChromeLaunchDiagnostics.IsProfileBusy("DevToolsActivePort file doesn't exist"));
+    }
+
+    [Fact]
+    public void IsProtocolMismatch_DoesNotSwallowDevToolsWait()
+    {
+        Assert.True(LocalChromeLaunchDiagnostics.IsProtocolMismatch(
+            "Protocol error (Runtime.callFunctionOn): Object doesn't exist"));
+        Assert.False(LocalChromeLaunchDiagnostics.IsProtocolMismatch(
+            "Timed out after waiting for Chrome. DevToolsActivePort file doesn't exist."));
+        Assert.Equal(
+            LocalChromeLaunchDiagnostics.ProtocolStage,
+            LocalChromeLaunchDiagnostics.ClassifyStage(
+                new InvalidOperationException("Protocol error (Target.setDiscoverTargets)")));
+    }
+
+    [Fact]
+    public void ToSafeError_ProtocolMismatch_UsesOperatorMessage()
+    {
+        var message = LocalChromeLaunchDiagnostics.ToSafeError(
+            new InvalidOperationException("Protocol error (Runtime.callFunctionOn): method not found"),
+            @"C:\Chrome\chrome.exe",
+            @"D:\Orbita\ChromeProfiles\acc-1",
+            proxyEnabled: false);
+
+        Assert.Contains(LocalChromeLaunchDiagnostics.ProtocolMismatchReason, message, StringComparison.Ordinal);
+        Assert.Contains(LocalChromeLaunchDiagnostics.ProtocolStage, message, StringComparison.Ordinal);
+        Assert.DoesNotContain("callFunctionOn", message, StringComparison.Ordinal);
     }
 
     [Fact]

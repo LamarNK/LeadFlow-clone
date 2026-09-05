@@ -18,6 +18,8 @@ public interface ILocalChromeProcessHost
     string? TryReadText(string path);
 
     void TryDeleteFile(string path);
+
+    int? FindPidListeningOnLocalPort(int port);
 }
 
 public sealed record LocalChromeOsProcess(int ProcessId, string Name, string? CommandLine);
@@ -31,4 +33,6 @@ public sealed class LocalChromeProfileReclaimResult
     public int StaleLockFilesRemoved { get; init; }
 
     public IReadOnlyList<int> KilledProcessIds { get; init; } = [];
+
+    public bool StillOccupied { get; init; }
 }

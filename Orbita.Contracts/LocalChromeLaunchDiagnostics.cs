@@ -11,6 +11,9 @@ public static class LocalChromeLaunchDiagnostics
     public const string ProfileBusyStage = "профиль занят";
     public const string WaitDevToolsStage = "ожидание DevTools";
     public const string ConnectStage = "подключение";
+    public const string ProtocolStage = "протокол CDP";
+    public const string ProtocolMismatchReason =
+        "установленный Chrome несовместим с этим воркером — обновите воркер";
     public const int MaxErrorLength = 420;
 
     public static bool IsProfileBusy(Exception exception)
@@ -36,6 +39,32 @@ public static class LocalChromeLaunchDiagnostics
             "профиль занят");
     }
 
+    public static bool IsProtocolMismatch(Exception exception)
+    {
+        ArgumentNullException.ThrowIfNull(exception);
+        return IsProtocolMismatch(FlattenMessages(exception));
+    }
+
+    public static bool IsProtocolMismatch(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text) || IsProfileBusy(text))
+        {
+            return false;
+        }
+
+        if (ContainsAny(text, "devtoolsactiveport", "devtools active port"))
+        {
+            return false;
+        }
+
+        return ContainsAny(
+            text,
+            "protocol error",
+            "runtime.callfunctionon",
+            "target.setdiscovertargets",
+            "method not found");
+    }
+
     public static string ClassifyStage(Exception exception)
     {
         ArgumentNullException.ThrowIfNull(exception);
@@ -48,6 +77,11 @@ public static class LocalChromeLaunchDiagnostics
         if (ContainsAny(text, "devtoolsactiveport", "devtools active port", "waiting for chrome", "waiting for the browser", "browser to be ready"))
         {
             return WaitDevToolsStage;
+        }
+
+        if (IsProtocolMismatch(text))
+        {
+            return ProtocolStage;
         }
 
         if (ContainsAny(text, "websocket", "ws://", "failed to connect", "unable to connect", "connection refused", "target closed", "browser has been closed", "browser closed", "cdp"))
@@ -83,11 +117,13 @@ public static class LocalChromeLaunchDiagnostics
             return Finalize(exception.Message, secrets);
         }
 
-        var reason = BrowserProviderProbeSanitizer.Sanitize(
-            FlattenMessages(exception),
-            maxLength: 240,
-            fallback: "неизвестная ошибка",
-            secrets);
+        var reason = IsProtocolMismatch(exception)
+            ? ProtocolMismatchReason
+            : BrowserProviderProbeSanitizer.Sanitize(
+                FlattenMessages(exception),
+                maxLength: 240,
+                fallback: "неизвестная ошибка",
+                secrets);
         var chrome = DisplayPath(chromePath, secrets);
         var profile = DisplayPath(profilePath, secrets);
         var stage = ClassifyStage(exception);
