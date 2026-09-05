@@ -50,6 +50,7 @@ public sealed class WorkerOrchestrator(
     private string? _enabledAccountsFingerprint;
     private DateTime _enabledAccountsChangedAtUtc = DateTime.MinValue;
     private string? _pushedCommand;
+    private int _runMonitoringPassCommandPending;
     private WorkerPendingCaptchaSessionDto? _pushedCaptchaSession;
     private WorkerPendingBrowserMonitorSessionDto? _pushedBrowserMonitorSession;
     private WorkerPendingLocalChromeLoginDto? _pushedLocalChromeLogin;
@@ -86,6 +87,9 @@ public sealed class WorkerOrchestrator(
                 _pauseCommandThisIteration = false;
                 try
                 {
+                    var runMonitoringPassRequested = Interlocked.Exchange(
+                        ref _runMonitoringPassCommandPending,
+                        0) == 1;
                     if (TryConsumePushedCommand(out var pushedCommand))
                     {
                         await TryHandlePauseCommandAsync(pushedCommand, stoppingToken).ConfigureAwait(false);
@@ -93,6 +97,11 @@ public sealed class WorkerOrchestrator(
                         {
                             return;
                         }
+
+                        runMonitoringPassRequested |= string.Equals(
+                            pushedCommand,
+                            WorkerCommands.RunMonitoringPass,
+                            StringComparison.OrdinalIgnoreCase);
                     }
 
                     var config = await apiClient.GetConfigAsync(stoppingToken).ConfigureAwait(false);
@@ -124,6 +133,10 @@ public sealed class WorkerOrchestrator(
                     updateOfferSource.SetOffer(config.UpdateOffer);
 
                     var command = TryConsumePushedCommand(out var pushed) ? pushed : config.PendingCommand;
+                    runMonitoringPassRequested |= string.Equals(
+                        command,
+                        WorkerCommands.RunMonitoringPass,
+                        StringComparison.OrdinalIgnoreCase);
                     await TryHandlePauseCommandAsync(command, stoppingToken).ConfigureAwait(false);
 
                     if (await TryHandleRestartCommandAsync(command, config.WorkerId, stoppingToken).ConfigureAwait(false))
@@ -136,7 +149,7 @@ public sealed class WorkerOrchestrator(
                     runtimeState.Status = "Онлайн";
 
                     await TryHandleRunMonitoringPassCommandAsync(
-                            command,
+                            runMonitoringPassRequested,
                             config.WorkerId,
                             monitoringPaused,
                             stoppingToken)
@@ -241,7 +254,16 @@ public sealed class WorkerOrchestrator(
         }
     }
 
-    private void OnCommandReceived(string command) => _pushedCommand = command;
+    private void OnCommandReceived(string command)
+    {
+        _pushedCommand = command;
+        if (string.Equals(command, WorkerCommands.RunMonitoringPass, StringComparison.OrdinalIgnoreCase))
+        {
+            Interlocked.Exchange(ref _runMonitoringPassCommandPending, 1);
+        }
+
+        realtime.RequestWake();
+    }
 
     private void OnConfigChanged() => configProvider.InvalidateCache();
 
@@ -462,12 +484,12 @@ public sealed class WorkerOrchestrator(
     }
 
     private async Task TryHandleRunMonitoringPassCommandAsync(
-        string? command,
+        bool requested,
         Guid workerId,
         bool monitoringPaused,
         CancellationToken stoppingToken)
     {
-        if (!string.Equals(command, WorkerCommands.RunMonitoringPass, StringComparison.OrdinalIgnoreCase))
+        if (!requested)
         {
             return;
         }
