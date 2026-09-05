@@ -915,7 +915,7 @@ public static class AvitoAutoLoginRecovery
     {
         try
         {
-            return await page.EvaluateExpressionAsync<string>($"JSON.stringify({script})").ConfigureAwait(false);
+            return await page.EvaluateExpressionAsync<string>(BuildJsonEvaluationExpression(script)).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -932,6 +932,17 @@ public static class AvitoAutoLoginRecovery
                 });
             return null;
         }
+    }
+
+    internal static string BuildJsonEvaluationExpression(string script)
+    {
+        var expression = script.Trim();
+        if (expression.EndsWith(';'))
+        {
+            expression = expression[..^1];
+        }
+
+        return $"JSON.stringify({expression})";
     }
 
     private static bool TryReadBoolProperty(string? raw, string propertyName)

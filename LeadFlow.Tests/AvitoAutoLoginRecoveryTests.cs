@@ -289,6 +289,17 @@ public sealed class AvitoAutoLoginRecoveryTests
     }
 
     [Fact]
+    public void BuildJsonEvaluationExpression_RemovesTerminalStatementDelimiter()
+    {
+        var expression = AvitoAutoLoginRecovery.BuildJsonEvaluationExpression(
+            AvitoAutoLoginScripts.BuildProbeScript());
+
+        Assert.StartsWith("JSON.stringify((() =>", expression, StringComparison.Ordinal);
+        Assert.DoesNotContain("();)", expression, StringComparison.Ordinal);
+        Assert.EndsWith("})())", expression, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void HasVisibleLoginUi_SavedUserListPreventsSessionRefresh()
     {
         var state = new AvitoAutoLoginRecovery.ProbeState(
