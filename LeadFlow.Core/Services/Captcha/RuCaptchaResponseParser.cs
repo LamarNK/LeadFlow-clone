@@ -161,8 +161,15 @@ public static class RuCaptchaResponseParser
             throw new RuCaptchaException("RuCaptcha API v1 не вернул координаты ClickCaptcha.");
         }
 
+        var coordinates = value.Trim();
+        const string coordinatesPrefix = "coordinates:";
+        if (coordinates.StartsWith(coordinatesPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            coordinates = coordinates[coordinatesPrefix.Length..].Trim();
+        }
+
         var matches = Regex.Matches(
-            value.Trim(),
+            coordinates,
             @"(?:^|;)\s*(?:x\s*=\s*)?(?<x>\d+(?:\.\d+)?)\s*,\s*(?:y\s*=\s*)?(?<y>\d+(?:\.\d+)?)\s*(?=;|$)",
             RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
         if (matches.Count == 0)
@@ -174,7 +181,7 @@ public static class RuCaptchaResponseParser
         var lastEnd = 0;
         foreach (Match match in matches)
         {
-            if (!string.IsNullOrWhiteSpace(value[lastEnd..match.Index]))
+            if (!string.IsNullOrWhiteSpace(coordinates[lastEnd..match.Index]))
             {
                 throw new RuCaptchaException("RuCaptcha ClickCaptcha вернула координаты в неизвестном формате.");
             }
@@ -198,7 +205,7 @@ public static class RuCaptchaResponseParser
             lastEnd = match.Index + match.Length;
         }
 
-        if (!string.IsNullOrWhiteSpace(value[lastEnd..]))
+        if (!string.IsNullOrWhiteSpace(coordinates[lastEnd..]))
         {
             throw new RuCaptchaException("RuCaptcha ClickCaptcha вернула координаты в неизвестном формате.");
         }

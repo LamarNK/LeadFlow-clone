@@ -83,6 +83,7 @@ public sealed class RuCaptchaClientTests
     [Theory]
     [InlineData("x=43,y=87;x=120,y=15")]
     [InlineData("43,87;120,15")]
+    [InlineData("coordinates:x=43,y=87;x=120,y=15")]
     public void ParseClickCaptchaCoordinates_PreservesOrder(string raw)
     {
         var points = RuCaptchaResponseParser.ParseClickCaptchaCoordinates(raw);
