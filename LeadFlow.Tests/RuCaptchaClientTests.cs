@@ -8,6 +8,63 @@ namespace LeadFlow.Tests;
 public sealed class RuCaptchaClientTests
 {
     [Fact]
+    public async Task SolveClickCaptcha_SendsImageAndHintThenPreservesPointOrder()
+    {
+        var handler = new StubHttpMessageHandler((request, body) =>
+        {
+            if (request.RequestUri!.AbsolutePath.Contains("/in.php", StringComparison.OrdinalIgnoreCase))
+            {
+                Assert.Contains("method=base64", body, StringComparison.Ordinal);
+                Assert.Contains("coordinatescaptcha=1", body, StringComparison.Ordinal);
+                Assert.Contains("body=aW1hZ2U%3D", body, StringComparison.Ordinal);
+                Assert.Contains("imginstructions=aGludA%3D%3D", body, StringComparison.Ordinal);
+                Assert.Contains("textinstructions=Click+the+symbols+in+order", body, StringComparison.Ordinal);
+                Assert.Contains("lang=ru", body, StringComparison.Ordinal);
+                return Task.FromResult(StubHttpMessageHandler.Ok("OK|81"));
+            }
+
+            return Task.FromResult(StubHttpMessageHandler.Ok("OK|x=43,y=87;x=120,y=15"));
+        });
+        var client = new RuCaptchaClient(new HttpClient(handler) { BaseAddress = new Uri("https://api.rucaptcha.com/") })
+        {
+            PollInterval = TimeSpan.FromMilliseconds(1),
+            SolveTimeout = TimeSpan.FromSeconds(5)
+        };
+
+        var solution = await client.SolveClickCaptchaAsync(
+            "key",
+            "data:image/png;base64,aW1hZ2U=",
+            "data:image/png;base64,aGludA==",
+            "Click the symbols in order",
+            "ru");
+
+        Assert.Collection(
+            solution.Points,
+            point => Assert.Equal(new ClickCaptchaPoint(43, 87), point),
+            point => Assert.Equal(new ClickCaptchaPoint(120, 15), point));
+        Assert.Equal(2, handler.Calls.Count);
+    }
+
+    [Theory]
+    [InlineData("x=43,y=87;x=120,y=15")]
+    [InlineData("43,87;120,15")]
+    public void ParseClickCaptchaCoordinates_PreservesOrder(string raw)
+    {
+        var points = RuCaptchaResponseParser.ParseClickCaptchaCoordinates(raw);
+
+        Assert.Collection(
+            points,
+            point => Assert.Equal(new ClickCaptchaPoint(43, 87), point),
+            point => Assert.Equal(new ClickCaptchaPoint(120, 15), point));
+    }
+
+    [Fact]
+    public void ParseClickCaptchaCoordinates_RejectsMalformedAnswer()
+    {
+        Assert.Throws<RuCaptchaException>(() => RuCaptchaResponseParser.ParseClickCaptchaCoordinates("not-a-point"));
+    }
+
+    [Fact]
     public async Task SolveGeeTestV4_CreateThenReady()
     {
         var handler = new StubHttpMessageHandler((request, body) =>

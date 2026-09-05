@@ -234,6 +234,23 @@ public sealed class AvitoGeeTestSolveSupportTests
     }
 
     [Fact]
+    public void IsLoginClickCaptchaOverlay_VisibleClickWidget_True()
+    {
+        const string html = """
+            <form data-marker="login-form"></form>
+            <div class="geetest_captcha geetest_boxShow" style="display: block;">
+              <div class="geetest_box" style="display: block;">
+                <div class="geetest_bg geetest_click"></div>
+                <div class="geetest_ques_tips"><img src="hint.png"></div>
+                <div class="geetest_submit">Подтвердить</div>
+              </div>
+            </div>
+            """;
+
+        Assert.True(AvitoGeeTestSolveSupport.IsLoginClickCaptchaOverlay(html));
+    }
+
+    [Fact]
     public void IsLoginGeeTestOverlay_FirewallWidget_False()
     {
         const string html = """

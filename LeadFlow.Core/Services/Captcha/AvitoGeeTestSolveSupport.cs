@@ -337,6 +337,19 @@ public static class AvitoGeeTestSolveSupport
                || html.Contains("geetest_nine", StringComparison.OrdinalIgnoreCase);
     }
 
+    /// <summary>Проверка GeeTest на форме логина, где ответом служит упорядоченная серия кликов.</summary>
+    public static bool IsLoginClickCaptchaOverlay(string? html)
+    {
+        if (!IsLoginGeeTestOverlay(html))
+        {
+            return false;
+        }
+
+        return html!.Contains("geetest_click", StringComparison.OrdinalIgnoreCase)
+               && html.Contains("geetest_bg", StringComparison.OrdinalIgnoreCase)
+               && html.Contains("geetest_ques_tips", StringComparison.OrdinalIgnoreCase);
+    }
+
     public readonly record struct LoginGeeTestApplyResult(
         bool Applied,
         bool OverlayGone,

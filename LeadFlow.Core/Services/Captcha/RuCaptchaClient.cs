@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using TwoCaptchaClient = TwoCaptcha.TwoCaptcha;
 using TwoCaptchaApiClient = TwoCaptcha.ApiClient;
+using TwoCaptchaCoordinates = TwoCaptcha.Captcha.Coordinates;
 using TwoCaptchaGeeTestV4 = TwoCaptcha.Captcha.GeeTestV4;
 
 namespace LeadFlow.Core.Services.Captcha;
@@ -126,6 +127,53 @@ public sealed class RuCaptchaClient(HttpClient http) : IRuCaptchaClient
 
         var taskId = await CreateImageToTextTaskAsync(apiKey.Trim(), body, cancellationToken).ConfigureAwait(false);
         return await WaitForImageToTextResultAsync(apiKey.Trim(), taskId, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task<ClickCaptchaSolution> SolveClickCaptchaAsync(
+        string apiKey,
+        string imageBody,
+        string hintImageBody,
+        string? hintText,
+        string language,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(apiKey))
+        {
+            throw new RuCaptchaException("Не задан API-ключ RuCaptcha.");
+        }
+
+        var body = NormalizeImageBody(imageBody);
+        var hint = NormalizeImageBody(hintImageBody);
+        if (string.IsNullOrWhiteSpace(body) || string.IsNullOrWhiteSpace(hint))
+        {
+            throw new RuCaptchaException("Не получено изображение или подсказка ClickCaptcha Avito.");
+        }
+
+        var captcha = new TwoCaptchaCoordinates();
+        captcha.SetBase64(body);
+        captcha.SetHintImg(hint);
+        captcha.SetHintText(string.IsNullOrWhiteSpace(hintText)
+            ? "Нажмите на элементы на изображении в указанном порядке."
+            : hintText.Trim());
+        captcha.SetLang(string.IsNullOrWhiteSpace(language) ? "ru" : language.Trim());
+
+        var solver = new TwoCaptchaClient(apiKey.Trim())
+        {
+            DefaultTimeout = Math.Max(1, (int)Math.Ceiling(SolveTimeout.TotalSeconds)),
+            PollingInterval = Math.Max(1, (int)Math.Ceiling(PollInterval.TotalSeconds))
+        };
+        solver.SetApiClient(new RuCaptchaV1ApiClient(http));
+
+        try
+        {
+            await solver.Solve(captcha).WaitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            throw new RuCaptchaException($"RuCaptcha ClickCaptcha API v1: {ex.Message}", ex);
+        }
+
+        return new ClickCaptchaSolution(RuCaptchaResponseParser.ParseClickCaptchaCoordinates(captcha.Code));
     }
 
     private async Task<long> CreateHCaptchaTaskAsync(
