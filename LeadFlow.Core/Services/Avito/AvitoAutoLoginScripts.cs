@@ -39,8 +39,13 @@ public static class AvitoAutoLoginScripts
                 isVisibleEl(document.querySelector(
                     ".geetest_box, .geetest_nine, [class*='geetest_box'], [class*='geetest_nine']"))
             );
+            // GeeTest v4 на логине может быть уже нарисован, но во время SPA-перехода
+            // getComputedStyle/rect кратко недоступны. boxShow — активный overlay, не заглушка.
+            const hasGeeTestOverlayDom = !!document.querySelector(
+                ".geetest_boxShow, .geetest_popup_wrap, [class*='geetest_boxShow'], [class*='geetest_popup_wrap']");
             const hasCaptchaWidget = !!(
                 liveCaptchaWidget ||
+                hasGeeTestOverlayDom ||
                 document.getElementById("geetest_captcha") ||
                 document.getElementById("inner-captcha") ||
                 document.getElementById("h-captcha") ||
@@ -122,7 +127,7 @@ public static class AvitoAutoLoginScripts
 
             const hasLoginUi = hasLoginDom || hasUsersList || hasSavedUserCard || hasCredentialInputs;
             const hasCaptcha = hasLoginUi
-                ? (liveCaptchaWidget || hasFirewallDom)
+                ? (liveCaptchaWidget || hasGeeTestOverlayDom || hasFirewallDom)
                 : (hasFirewallDom || hasFirewallText || hasCaptchaWidget || hasIpDialog);
 
             const isAuthorized =

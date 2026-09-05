@@ -36,6 +36,27 @@ public sealed class AvitoPageStateProbeTests
     }
 
     [Fact]
+    public void BuildProbeScript_LoginGeeTestOverlayFallsBackToActiveDomMarker()
+    {
+        var script = AvitoPageStateScripts.BuildProbeScript();
+
+        Assert.Contains("hasGeeTestOverlayDom", script, StringComparison.Ordinal);
+        Assert.Contains("geetest_boxShow", script, StringComparison.Ordinal);
+        Assert.Contains("liveCaptchaWidget || hasGeeTestOverlayDom || hasFirewallDom", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildProbeScript_TreatsVisibilityErrorsAsHidden()
+    {
+        var script = AvitoPageStateScripts.BuildProbeScript();
+        var visibilityStart = script.IndexOf("const isVisibleEl = (el) => {", StringComparison.Ordinal);
+        var captchaStart = script.IndexOf("const liveCaptchaWidget", StringComparison.Ordinal);
+
+        Assert.InRange(script.IndexOf("try {", visibilityStart, StringComparison.Ordinal), visibilityStart + 1, captchaStart - 1);
+        Assert.InRange(script.IndexOf("catch {", visibilityStart, StringComparison.Ordinal), visibilityStart + 1, captchaStart - 1);
+    }
+
+    [Fact]
     public void TryParse_ProfileSwitchModalOpen_DetectsModal()
     {
         const string json = """

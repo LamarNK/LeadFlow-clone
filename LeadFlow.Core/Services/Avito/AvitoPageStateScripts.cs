@@ -96,11 +96,15 @@ public static class AvitoPageStateScripts
               && !!document.querySelector('a[href*="support.avito.ru/request/720"]')
               && /Отключить\s+VPN|самол[её]те/i.test(probeText);
             const isVisibleEl = (el) => {
-                if (!el) return false;
-                const style = window.getComputedStyle(el);
-                if (style.display === "none" || style.visibility === "hidden") return false;
-                const rect = el.getBoundingClientRect();
-                return rect.width > 0 && rect.height > 0;
+                try {
+                    if (!el) return false;
+                    const style = window.getComputedStyle(el);
+                    if (style.display === "none" || style.visibility === "hidden") return false;
+                    const rect = el.getBoundingClientRect();
+                    return rect.width > 0 && rect.height > 0;
+                } catch {
+                    return false;
+                }
             };
             const liveCaptchaWidget = !!(
                 isVisibleEl(document.getElementById("geetest_captcha")) ||
@@ -110,8 +114,13 @@ public static class AvitoPageStateScripts
                 isVisibleEl(document.querySelector(
                     ".geetest_box, .geetest_nine, [class*='geetest_box'], [class*='geetest_nine']"))
             );
+            // GeeTest v4 на логине может быть уже нарисован, но во время SPA-перехода
+            // getComputedStyle/rect кратко недоступны. boxShow — активный overlay, не заглушка.
+            const hasGeeTestOverlayDom = !!document.querySelector(
+                ".geetest_boxShow, .geetest_popup_wrap, [class*='geetest_boxShow'], [class*='geetest_popup_wrap']");
             const hasCaptchaWidget = !!(
                 liveCaptchaWidget ||
+                hasGeeTestOverlayDom ||
                 document.getElementById("geetest_captcha") ||
                 document.getElementById("inner-captcha") ||
                 document.getElementById("h-captcha") ||
@@ -126,7 +135,7 @@ public static class AvitoPageStateScripts
             const hasIpBlock = !hasCaptchaChallenge && (hasIpText || hasStaticIpBlock);
             const hasFirewallIp = hasIpBlock;
             const hasCaptcha = hasLoginForm
-                ? (liveCaptchaWidget || hasFirewallDom)
+                ? (liveCaptchaWidget || hasGeeTestOverlayDom || hasFirewallDom)
                 : (hasFirewallDom || hasFirewallText || hasCaptchaWidget || hasIpBlock || hasCaptchaChallenge);
             // Баннер Avito Pro: скрытые объявления из-за нулевого/недостаточного аванса.
             // Оба текста обязательны, чтобы не принять обычный блок баланса за ошибку.

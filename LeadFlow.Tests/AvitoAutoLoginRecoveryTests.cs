@@ -282,6 +282,16 @@ public sealed class AvitoAutoLoginRecoveryTests
     }
 
     [Fact]
+    public void BuildProbeScript_LoginGeeTestOverlayFallsBackToActiveDomMarker()
+    {
+        var script = AvitoAutoLoginScripts.BuildProbeScript();
+
+        Assert.Contains("hasGeeTestOverlayDom", script, StringComparison.Ordinal);
+        Assert.Contains("geetest_boxShow", script, StringComparison.Ordinal);
+        Assert.Contains("liveCaptchaWidget || hasGeeTestOverlayDom || hasFirewallDom", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ProbeRetryPolicy_UsesFourAttemptsAndPostCaptchaDelay()
     {
         Assert.Equal(4, AvitoAutoLoginRecovery.MaxProbeAttempts);
