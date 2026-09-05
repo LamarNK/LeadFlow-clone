@@ -818,11 +818,17 @@
         document.querySelectorAll('[data-worker-pause-badge]').forEach(function (el) {
             el.hidden = !paused;
         });
-        document.querySelectorAll('[data-worker-pause-form]').forEach(function (el) {
-            el.hidden = paused;
+        document.querySelectorAll('[data-worker-monitoring-toggle-form]').forEach(function (form) {
+            form.action = paused ? '/Workers/Enable' : '/Workers/Disable';
+            var button = form.querySelector('[data-worker-monitoring-toggle]');
+            if (button) {
+                button.innerHTML = paused
+                    ? '<i class="fa-solid fa-circle-play" aria-hidden="true"></i><span>Возобновить</span>'
+                    : '<i class="fa-solid fa-circle-pause" aria-hidden="true"></i><span>Пауза мониторинга</span>';
+            }
         });
-        document.querySelectorAll('[data-worker-resume-form]').forEach(function (el) {
-            el.hidden = !paused;
+        document.querySelectorAll('[data-worker-run-pass]').forEach(function (el) {
+            el.hidden = paused || !snapshot.isEnabled;
         });
     }
 
@@ -1674,6 +1680,9 @@
                 if (window.Orbita && typeof window.Orbita.initWorkerRestartButtons === 'function') {
                     window.Orbita.initWorkerRestartButtons();
                 }
+                if (window.Orbita && typeof window.Orbita.initWorkerRunPassButtons === 'function') {
+                    window.Orbita.initWorkerRunPassButtons();
+                }
                 if (window.Orbita && typeof window.Orbita.initWorkerAccountEnableToggles === 'function') {
                     window.Orbita.initWorkerAccountEnableToggles();
                 }
@@ -1696,6 +1705,9 @@
         initKpiCounters();
         if (window.Orbita && typeof window.Orbita.initWorkerRestartButtons === 'function') {
             window.Orbita.initWorkerRestartButtons();
+        }
+        if (window.Orbita && typeof window.Orbita.initWorkerRunPassButtons === 'function') {
+            window.Orbita.initWorkerRunPassButtons();
         }
         if (window.Orbita && typeof window.Orbita.initWorkerAccountEnableToggles === 'function') {
             window.Orbita.initWorkerAccountEnableToggles();

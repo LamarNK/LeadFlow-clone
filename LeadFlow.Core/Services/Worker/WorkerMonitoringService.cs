@@ -81,9 +81,24 @@ public sealed class WorkerMonitoringService(
     private readonly ConcurrentDictionary<Guid, int> _accountQuietStreak = new();
     /// <summary>Один раз за процесс логируем восстановленную паузу аккаунта.</summary>
     private readonly ConcurrentDictionary<Guid, byte> _loggedResumeRestored = new();
+    private readonly SemaphoreSlim _scheduleWake = new(0, 1);
+    private int _immediatePassRequested;
 
     public bool IsActive { get; private set; }
     public bool IsCaptchaHold => _captchaHold;
+
+    public void RequestImmediatePass()
+    {
+        Interlocked.Exchange(ref _immediatePassRequested, 1);
+        try
+        {
+            _scheduleWake.Release();
+        }
+        catch (SemaphoreFullException)
+        {
+            // A wake-up is already queued; one is sufficient.
+        }
+    }
 
     public async Task EnterCaptchaHoldAsync()
     {
@@ -306,6 +321,16 @@ public sealed class WorkerMonitoringService(
 
                     var now = DateTime.UtcNow;
                     var runningIds = running.Select(static j => j.Account.Id).ToHashSet();
+                    if (Interlocked.Exchange(ref _immediatePassRequested, 0) == 1)
+                    {
+                        foreach (var account in accounts.Where(a => !runningIds.Contains(a.Id)))
+                        {
+                            // База хранит обычное расписание. В памяти сдвигаем только
+                            // ближайший запуск, чтобы после прохода вернулась стандартная пауза.
+                            _accountNextEligibleUtc[account.Id] = now;
+                        }
+                    }
+
                     var due = accounts
                         .Where(a => !runningIds.Contains(a.Id))
                         .Where(a => GetNextEligibleUtc(a) <= now)
@@ -343,7 +368,7 @@ public sealed class WorkerMonitoringService(
                             : wait;
 
                         activityReporter.ReportWaiting(nextDue, "Ожидание следующего цикла");
-                        await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
+                        await _scheduleWake.WaitAsync(delay, cancellationToken).ConfigureAwait(false);
                         continue;
                     }
 

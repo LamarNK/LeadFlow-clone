@@ -517,6 +517,22 @@ public sealed class WorkersController(IWorkersService workers) : Controller
 
     [HttpPost]
     [ValidateAntiForgeryToken]
+    public async Task<IActionResult> RunMonitoringPass(Guid workerId, CancellationToken ct)
+    {
+        var (success, error) = await workers.SendWorkerCommandAsync(
+            workerId,
+            WorkerCommands.RunMonitoringPass,
+            ct);
+        if (!success)
+        {
+            return BadRequest(new { error = error ?? "Не удалось отправить команду." });
+        }
+
+        return Ok(new { message = "Команда на немедленный проход отправлена воркеру." });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> Toggle(Guid workerId, Guid accountId, bool enabled, CancellationToken ct)
     {
         var (success, error) = await workers.UpdateWorkerAccountAsync(workerId, accountId, enabled, ct);

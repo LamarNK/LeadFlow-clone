@@ -60,6 +60,7 @@ public static class WorkerCommands
 {
     public const string Restart = "restart";
     public const string Pause = "pause";
+    public const string RunMonitoringPass = "run-monitoring-pass";
 }
 
 public sealed record WorkerCommandRequest(string Command);

@@ -133,22 +133,33 @@
                         <i class="fa-regular fa-pen-to-square" aria-hidden="true"></i>
                         Переименовать
                     </button>
-                    <form asp-action="Disable" method="post" class="settings-inline-form" data-worker-pause-form hidden="@Model.IsMonitoringPaused">
+                    <form action="@Url.Action(Model.IsMonitoringPaused ? "Enable" : "Disable", "Workers")"
+                          method="post"
+                          class="settings-inline-form"
+                          data-worker-monitoring-toggle-form>
                         @Html.AntiForgeryToken()
                         <input type="hidden" name="workerId" value="@Model.WorkerId" />
-                        <button type="submit" class="row-menu-item">
-                            <i class="fa-solid fa-circle-pause" aria-hidden="true"></i>
-                            Пауза мониторинга
+                        <button type="submit" class="row-menu-item" data-worker-monitoring-toggle>
+                            @if (Model.IsMonitoringPaused)
+                            {
+                                <i class="fa-solid fa-circle-play" aria-hidden="true"></i>
+                                <span>Возобновить</span>
+                            }
+                            else
+                            {
+                                <i class="fa-solid fa-circle-pause" aria-hidden="true"></i>
+                                <span>Пауза мониторинга</span>
+                            }
                         </button>
                     </form>
-                    <form asp-action="Enable" method="post" class="settings-inline-form" data-worker-resume-form hidden="@(!Model.IsMonitoringPaused)">
-                        @Html.AntiForgeryToken()
-                        <input type="hidden" name="workerId" value="@Model.WorkerId" />
-                        <button type="submit" class="row-menu-item">
-                            <i class="fa-solid fa-circle-play" aria-hidden="true"></i>
-                            Возобновить
-                        </button>
-                    </form>
+                    <button type="button"
+                            class="row-menu-item"
+                            data-worker-run-pass
+                            data-worker-id="@Model.WorkerId"
+                            hidden="@(!Model.IsEnabled || Model.IsMonitoringPaused)">
+                        <i class="fa-solid fa-play" aria-hidden="true"></i>
+                        Запустить проход сейчас
+                    </button>
                     <form asp-action="RotateKey" method="post" class="settings-inline-form" onsubmit="return confirm('Перевыпустить API-ключ? Старый ключ перестанет работать.');">
                         @Html.AntiForgeryToken()
                         <input type="hidden" name="workerId" value="@Model.WorkerId" />

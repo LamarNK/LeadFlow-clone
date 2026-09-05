@@ -135,6 +135,13 @@ public sealed class WorkerOrchestrator(
                     var enabledCount = config.Accounts.Count(a => a.IsEnabled && config.IsBrowserProviderEnabled(a));
                     runtimeState.Status = "Онлайн";
 
+                    await TryHandleRunMonitoringPassCommandAsync(
+                            command,
+                            config.WorkerId,
+                            monitoringPaused,
+                            stoppingToken)
+                        .ConfigureAwait(false);
+
                     var forcedCatalogSync = await RunPendingProviderJobsAsync(config, stoppingToken)
                         .ConfigureAwait(false);
 
@@ -452,6 +459,43 @@ public sealed class WorkerOrchestrator(
         }
 
         return true;
+    }
+
+    private async Task TryHandleRunMonitoringPassCommandAsync(
+        string? command,
+        Guid workerId,
+        bool monitoringPaused,
+        CancellationToken stoppingToken)
+    {
+        if (!string.Equals(command, WorkerCommands.RunMonitoringPass, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        if (monitoringPaused)
+        {
+            runtimeState.Detail = "Проход не запущен: мониторинг на паузе";
+            await WorkerLifecycleLog.WarningAsync(
+                "Worker lifecycle: команда немедленного прохода отклонена — мониторинг на паузе",
+                nameof(TryHandleRunMonitoringPassCommandAsync),
+                new Dictionary<string, object?> { ["worker.id"] = workerId })
+                .ConfigureAwait(false);
+        }
+        else
+        {
+            monitoringService.RequestImmediatePass();
+            runtimeState.Detail = "Запуск прохода по команде из панели";
+            await WorkerLifecycleLog.InfoAsync(
+                "Worker lifecycle: получена команда немедленного прохода из панели",
+                nameof(TryHandleRunMonitoringPassCommandAsync),
+                new Dictionary<string, object?> { ["worker.id"] = workerId })
+                .ConfigureAwait(false);
+        }
+
+        if (realtime.IsConnected)
+        {
+            _ = realtime.TryAckCommandAsync(WorkerCommands.RunMonitoringPass, stoppingToken);
+        }
     }
 
     private async Task WaitNextIterationAsync(CancellationToken stoppingToken)

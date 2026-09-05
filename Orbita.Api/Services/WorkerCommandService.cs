@@ -10,7 +10,11 @@ public sealed class WorkerCommandService(
     IWorkerPushNotifier pushNotifier)
 {
     private static readonly HashSet<string> AllowedCommands =
-        new(StringComparer.OrdinalIgnoreCase) { WorkerCommands.Restart };
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            WorkerCommands.Restart,
+            WorkerCommands.RunMonitoringPass
+        };
 
     public async Task<(bool Success, string? Error)> EnqueueAsync(
         Guid workerId,
@@ -35,6 +39,18 @@ public sealed class WorkerCommandService(
         }
 
         var normalized = command.Trim().ToLowerInvariant();
+        if (string.Equals(normalized, WorkerCommands.RunMonitoringPass, StringComparison.Ordinal)
+            && worker.IsMonitoringPaused)
+        {
+            return (false, "Сначала возобновите мониторинг.");
+        }
+
+        if (string.Equals(normalized, WorkerCommands.RunMonitoringPass, StringComparison.Ordinal)
+            && !worker.IsEnabled)
+        {
+            return (false, "Мониторинг этого воркера отключён.");
+        }
+
         worker.PendingCommand = normalized;
         worker.PendingCommandAtUtc = DateTime.UtcNow;
         await db.SaveChangesAsync(ct);
