@@ -210,7 +210,8 @@ internal static class Program
             orchestrator,
             runtimeState,
             store,
-            credentials));
+            credentials,
+            builtHost.Services.GetRequiredService<IHostApplicationLifetime>()));
 
         WorkerLifecycleLog.InfoAsync(
             "Worker lifecycle: трей закрыт, остановка хоста",
