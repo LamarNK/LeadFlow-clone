@@ -332,6 +332,28 @@ public sealed class AvitoAutoLoginRecoveryTests
     }
 
     [Fact]
+    public void ShouldRefreshSession_InvisibleLoginWithClickCaptcha_False()
+    {
+        var state = new AvitoAutoLoginRecovery.ProbeState(
+            NeedsLogin: true,
+            IsAuthorized: false,
+            HasCaptcha: true,
+            HasLoginForm: false,
+            HasUsersList: false,
+            HasSavedUserCard: false,
+            HasOtherProfileLink: false,
+            HasProfileChooser: false,
+            HasCredentialInputs: false,
+            HasGuestLoginButton: false,
+            HasLoggedInProfile: false,
+            HasPasswordValue: false,
+            HasSubmitButton: false,
+            Url: "https://www.avito.ru/profile/pro/items");
+
+        Assert.False(AvitoAutoLoginRecovery.ShouldRefreshSession(state, hasSavedUserCard: false));
+    }
+
+    [Fact]
     public void Recovery_ProbesForSavedUserBeforeRefreshingAnInvisibleLoginUi()
     {
         var source = File.ReadAllText(

@@ -143,9 +143,7 @@ public static class AvitoAutoLoginRecovery
         var hasSavedUserCard = (initialState is { HasUsersList: true }
             or { HasSavedUserCard: true })
             || await HasSavedUserCardInDomAsync(page, cancellationToken).ConfigureAwait(false);
-        if (initialState is { NeedsLogin: true } &&
-            !HasVisibleLoginUi(initialState) &&
-            !hasSavedUserCard)
+        if (initialState is not null && ShouldRefreshSession(initialState, hasSavedUserCard))
         {
             if (await TryRefreshSessionAsync(page, steps, cancellationToken).ConfigureAwait(false))
             {
@@ -848,6 +846,17 @@ public static class AvitoAutoLoginRecovery
         state.HasSavedUserCard ||
         state.HasOtherProfileLink ||
         state.HasCredentialInputs;
+
+    /// <summary>
+    /// Полный reload допустим только для действительно пустого гостевого состояния.
+    /// Показанная капча уже является UI входа: reload в этот момент сбрасывает
+    /// первый ввод пароля и запускает второй вход.
+    /// </summary>
+    internal static bool ShouldRefreshSession(ProbeState state, bool hasSavedUserCard) =>
+        state.NeedsLogin &&
+        !state.HasCaptcha &&
+        !HasVisibleLoginUi(state) &&
+        !hasSavedUserCard;
 
     private static async Task<bool> HasSavedUserCardInDomAsync(IPage page, CancellationToken cancellationToken)
     {
