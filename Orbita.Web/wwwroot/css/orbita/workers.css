@@ -508,6 +508,12 @@
     color: #fff;
 }
 
+.workers-modal-btn--danger {
+    background: #fff;
+    border-color: #fda29b;
+    color: #b42318;
+}
+
 .worker-detail-settings-row {
     display: grid;
     grid-template-columns: minmax(280px, 1fr) minmax(0, 1.15fr);

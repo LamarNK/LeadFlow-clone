@@ -769,6 +769,11 @@ public sealed class WorkersService(
             ? Task.FromResult<(bool, string?)>((true, null))
             : api.CancelTopUpSessionAsync(sessionId, ct);
 
+    public Task<(bool Success, string? Error)> MarkTopUpSessionPaidAsync(Guid sessionId, CancellationToken ct = default) =>
+        previewOptions.Value.Enabled
+            ? Task.FromResult<(bool, string?)>((true, null))
+            : api.MarkTopUpSessionPaidAsync(sessionId, ct);
+
     private static TopUpSessionViewModel MapTopUpSession(TopUpSessionDto dto) => new()
     {
         SessionId = dto.Id,

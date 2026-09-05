@@ -40,6 +40,7 @@ public sealed class TopUpSessionViewModel
         "expired" => "Истекло",
         "failed" => "Ошибка",
         "cancelled" => "Отменено",
+        "paid" => "Оплачено",
         _ => "Неизвестно"
     };
 

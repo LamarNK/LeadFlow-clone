@@ -762,6 +762,14 @@ public sealed class WorkersController(IWorkersService workers) : Controller
         return success ? Ok(new { message = "Сессия пополнения отменена." }) : BadRequest(new { error });
     }
 
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> MarkTopUpSessionPaid(Guid sessionId, CancellationToken ct)
+    {
+        var (success, error) = await workers.MarkTopUpSessionPaidAsync(sessionId, ct);
+        return success ? Ok(new { message = "Оплата отмечена." }) : BadRequest(new { error });
+    }
+
     private IActionResult RedirectAfterWorkerAction(Guid workerId, string? returnTo) =>
         string.Equals(returnTo, "index", StringComparison.OrdinalIgnoreCase)
             ? RedirectToAction(nameof(Index))

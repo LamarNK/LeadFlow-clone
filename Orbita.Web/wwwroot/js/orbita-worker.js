@@ -1733,13 +1733,17 @@
         }
 
         var currentSessionId = null;
+        var currentActive = false;
         var pollTimer = null;
         var pollStartedAt = null;
+        var countdownTimer = null;
+        var expiresAtMs = null;
         var consecutiveFailures = 0;
         var cancelInFlight = false;
+        var paidInFlight = false;
 
         var POLL_INTERVAL_MS = 1500;
-        var MAX_POLL_DURATION_MS = 2.5 * 60 * 60 * 1000; // 2.5 часа
+        var MAX_POLL_DURATION_MS = 15 * 60 * 1000;
         var MAX_CONSECUTIVE_FAILURES = 3;
 
         document.addEventListener('click', function (event) {
@@ -1749,6 +1753,15 @@
                 event.preventDefault();
                 if (currentSessionId && confirm('Отменить сессию пополнения?')) {
                     cancelSession(currentSessionId);
+                }
+                return;
+            }
+
+            var paidBtn = event.target.closest('[data-topup-paid]');
+            if (paidBtn && modal && modal.contains(paidBtn)) {
+                event.preventDefault();
+                if (currentSessionId) {
+                    markPaid(currentSessionId);
                 }
                 return;
             }
@@ -1783,14 +1796,32 @@
         }
 
         function closeModal() {
+            var sessionId = currentSessionId;
+            var shouldDismiss = currentActive && sessionId;
+            hideModal();
+            if (shouldDismiss) {
+                dismissSession(sessionId);
+            }
+        }
+
+        function hideModal() {
             var modal = root();
             if (modal) modal.setAttribute('hidden', '');
             document.body.style.overflow = '';
             stopPolling();
+            stopCountdown();
             currentSessionId = null;
+            currentActive = false;
             consecutiveFailures = 0;
             cancelInFlight = false;
+            paidInFlight = false;
         }
+
+        window.addEventListener('pagehide', function () {
+            if (currentActive && currentSessionId) {
+                dismissSession(currentSessionId);
+            }
+        });
 
         function announce(message) {
             var liveRegionEl = el('[data-topup-live-region]');
@@ -1835,6 +1866,7 @@
             var dailyResponsesEl = el('[data-topup-daily-responses]');
             var tierLabelEl = el('[data-topup-tier-label]');
             var cancelBtn = el('[data-topup-cancel]');
+            var paidBtn = el('[data-topup-paid]');
 
             if (loadingEl) loadingEl.setAttribute('hidden', '');
             if (errorEl) errorEl.setAttribute('hidden', '');
@@ -1860,9 +1892,14 @@
             updateStatus(session);
             updateQr(session);
             updateTerminalState(session);
+            updateCountdown(session);
 
+            currentActive = isActive(session.status);
             if (cancelBtn) {
-                cancelBtn.hidden = !isActive(session.status);
+                cancelBtn.hidden = !currentActive || session.status === 'qr_ready';
+            }
+            if (paidBtn) {
+                paidBtn.hidden = session.status !== 'qr_ready';
             }
         }
 
@@ -1968,13 +2005,16 @@
             if (!isActive(session.status)) {
                 var message = '';
                 if (session.status === 'expired') {
-                    message = 'Сессия истекла. Время ожидания истекло.';
+                    message = 'Сессия истекла, пауза мониторинга снята.';
                 } else if (session.status === 'failed') {
                     message = session.failureMessage || 'Сессия завершилась с ошибкой.';
                 } else if (session.status === 'cancelled') {
-                    message = 'Сессия была отменена.';
+                    message = 'Сессия закрыта, пауза мониторинга снята.';
+                } else if (session.status === 'paid') {
+                    message = 'Оплата отмечена. Пауза мониторинга снята. Обновите страницу, чтобы увидеть актуальный баланс.';
                 }
 
+                terminalMessageEl.classList.toggle('is-success', session.status === 'paid');
                 if (message) {
                     terminalMessageEl.textContent = message;
                     terminalMessageEl.removeAttribute('hidden');
@@ -2024,6 +2064,13 @@
                     throw new Error('Сервер вернул пустой ответ. Обновите страницу и попробуйте снова.');
                 }
                 currentSessionId = data.sessionId;
+                var modal = root();
+                if (!modal || modal.hasAttribute('hidden')) {
+                    dismissSession(data.sessionId);
+                    currentSessionId = null;
+                    currentActive = false;
+                    return;
+                }
                 showContent(data);
                 if (isActive(data.status)) {
                     startPolling(data.sessionId);
@@ -2094,23 +2141,32 @@
             pollStartedAt = null;
         }
 
-        function cancelSession(sessionId) {
-            if (cancelInFlight) return;
-            cancelInFlight = true;
-            setCancelBusy(true);
-
+        function postTopUpAction(url, sessionId, keepalive) {
             var token = getAntiForgeryToken();
             var body = new URLSearchParams();
             if (token) body.set('__RequestVerificationToken', token);
-            fetch('/Workers/CancelTopUpSession?sessionId=' + sessionId, {
+            return fetch(url + '?sessionId=' + sessionId, {
                 method: 'POST',
                 credentials: 'same-origin',
+                keepalive: !!keepalive,
                 headers: {
                     'Accept': 'application/json',
                     'RequestVerificationToken': token
                 },
                 body: body
-            })
+            });
+        }
+
+        function dismissSession(sessionId) {
+            postTopUpAction('/Workers/CancelTopUpSession', sessionId, true).catch(function () { /* TTL снимет паузу */ });
+        }
+
+        function cancelSession(sessionId) {
+            if (cancelInFlight) return;
+            cancelInFlight = true;
+            setCancelBusy(true);
+
+            postTopUpAction('/Workers/CancelTopUpSession', sessionId, false)
             .then(function (response) {
                 return readJson(response).then(function (data) {
                     if (!response.ok) {
@@ -2132,6 +2188,33 @@
             });
         }
 
+        function markPaid(sessionId) {
+            if (paidInFlight) return;
+            paidInFlight = true;
+            setPaidBusy(true);
+
+            postTopUpAction('/Workers/MarkTopUpSessionPaid', sessionId, false)
+            .then(function (response) {
+                return readJson(response).then(function (data) {
+                    if (!response.ok) {
+                        throw new Error(errorFromResponse(response, data, 'Не удалось отметить оплату.'));
+                    }
+                });
+            })
+            .then(function () {
+                stopPolling();
+                pollSession(sessionId);
+            })
+            .catch(function (err) {
+                announce('Не удалось отметить оплату.');
+                alert(err.message);
+            })
+            .finally(function () {
+                paidInFlight = false;
+                setPaidBusy(false);
+            });
+        }
+
         function setCancelBusy(busy) {
             var cancelBtn = el('[data-topup-cancel]');
             if (!cancelBtn) return;
@@ -2143,6 +2226,73 @@
                 cancelBtn.disabled = false;
                 cancelBtn.removeAttribute('data-cancel-busy');
                 cancelBtn.textContent = 'Отменить сессию';
+            }
+        }
+
+        function setPaidBusy(busy) {
+            var paidBtn = el('[data-topup-paid]');
+            if (!paidBtn) return;
+            if (busy) {
+                paidBtn.disabled = true;
+                paidBtn.setAttribute('data-paid-busy', '1');
+                paidBtn.textContent = 'Сохраняем…';
+            } else {
+                paidBtn.disabled = false;
+                paidBtn.removeAttribute('data-paid-busy');
+                paidBtn.textContent = 'Оплачено';
+            }
+        }
+
+        function updateCountdown(session) {
+            if (!isActive(session.status) || !session.expiresAtUtc) {
+                stopCountdown();
+                return;
+            }
+            var parsed = Date.parse(session.expiresAtUtc);
+            if (!parsed) {
+                stopCountdown();
+                return;
+            }
+            expiresAtMs = parsed;
+            tickCountdown();
+            if (!countdownTimer) {
+                countdownTimer = setInterval(tickCountdown, 1000);
+            }
+        }
+
+        function tickCountdown() {
+            var timerEl = el('[data-topup-timer]');
+            if (!timerEl || !expiresAtMs) return;
+            var remainingMs = expiresAtMs - Date.now();
+            if (remainingMs <= 0) {
+                timerEl.textContent = 'Пауза мониторинга снимается…';
+                timerEl.hidden = false;
+                if (countdownTimer) {
+                    clearInterval(countdownTimer);
+                    countdownTimer = null;
+                }
+                if (currentSessionId) {
+                    pollSession(currentSessionId);
+                }
+                return;
+            }
+            var totalSec = Math.ceil(remainingMs / 1000);
+            var min = Math.floor(totalSec / 60);
+            var sec = totalSec % 60;
+            timerEl.textContent = 'Пауза мониторинга снимется через ' + min + ':' + (sec < 10 ? '0' : '') + sec;
+            timerEl.hidden = false;
+        }
+
+        function stopCountdown() {
+            if (countdownTimer) {
+                clearInterval(countdownTimer);
+                countdownTimer = null;
+            }
+            expiresAtMs = null;
+            var timerEl = el('[data-topup-timer]');
+            if (timerEl) {
+                timerEl.hidden = true;
+                timerEl.textContent = '';
             }
         }
 
@@ -2158,7 +2308,8 @@
                 'qr_ready': 'QR-код готов к оплате',
                 'expired': 'Сессия истекла',
                 'failed': 'Не удалось пополнить',
-                'cancelled': 'Сессия отменена'
+                'cancelled': 'Сессия закрыта',
+                'paid': 'Оплачено'
             };
             return labels[status] || 'Неизвестно';
         }
@@ -2169,7 +2320,7 @@
             if (status === 'requested') return 'Ставим мониторинг на паузу и передаём задачу воркеру…';
             if (status === 'started') return 'Открываем браузер, переключаем субпрофиль и вводим сумму…';
             if (status === 'payment_claimed') return 'Переходим к оплате через СБП и ждём QR-код…';
-            if (status === 'qr_ready') return 'Отсканируйте код в приложении банка.';
+            if (status === 'qr_ready') return 'Отсканируйте код в приложении банка и нажмите «Оплачено».';
             return '';
         }
 

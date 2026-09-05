@@ -1547,13 +1547,15 @@
                     <span>Не удаётся обновить статус сессии. Данные могут быть устаревшими.</span>
                 </div>
 
+                <div class="topup-timer" data-topup-timer hidden></div>
+
                 <div class="topup-qr-section" data-topup-qr-section hidden>
                     <div class="topup-qr-container">
                         <img data-topup-qr-image alt="QR-код для оплаты" class="topup-qr-image" />
                     </div>
                     <div class="topup-payment-notice">
                         <i class="fa-solid fa-info-circle" aria-hidden="true"></i>
-                        <p>Отсканируйте QR-код в приложении банка для оплаты через СБП. Оплата производится вручную и не подтверждается автоматически в Орбите. После пополнения обновите страницу для актуального баланса.</p>
+                        <p>Отсканируйте QR-код в приложении банка для оплаты через СБП. После оплаты нажмите «Оплачено». «Закрыть» сразу снимает паузу мониторинга. Если закрыть вкладку, пауза снимется сама через 10 минут. Затем обновите страницу — баланс подтянется со следующего снимка Avito.</p>
                     </div>
                 </div>
 
@@ -1564,6 +1566,7 @@
                 <footer class="workers-modal-footer topup-modal-footer">
                     <button type="button" class="workers-modal-btn workers-modal-btn--ghost" data-topup-close>Закрыть</button>
                     <button type="button" class="workers-modal-btn workers-modal-btn--danger" data-topup-cancel hidden>Отменить сессию</button>
+                    <button type="button" class="workers-modal-btn workers-modal-btn--primary" data-topup-paid hidden>Оплачено</button>
                 </footer>
             </div>
         </div>
