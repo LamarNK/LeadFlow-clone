@@ -345,9 +345,15 @@ public static class AvitoGeeTestSolveSupport
             return false;
         }
 
-        return html!.Contains("geetest_click", StringComparison.OrdinalIgnoreCase)
-               && html.Contains("geetest_bg", StringComparison.OrdinalIgnoreCase)
-               && html.Contains("geetest_ques_tips", StringComparison.OrdinalIgnoreCase);
+        var hasInstructions = html!.Contains("geetest_ques_tips", StringComparison.OrdinalIgnoreCase);
+        var hasSingleImage = html.Contains("geetest_click", StringComparison.OrdinalIgnoreCase)
+                             && html.Contains("geetest_bg", StringComparison.OrdinalIgnoreCase);
+        // GeeTest nine-grid тоже возвращает координаты: worker выбирает плитки на
+        // едином 3x3 изображении. В этой разметке нет geetest_click/geetest_bg.
+        var hasNineGrid = html.Contains("geetest_nine", StringComparison.OrdinalIgnoreCase)
+                          && html.Contains("geetest_item", StringComparison.OrdinalIgnoreCase)
+                          && html.Contains("geetest_item_img", StringComparison.OrdinalIgnoreCase);
+        return hasInstructions && (hasSingleImage || hasNineGrid);
     }
 
     public readonly record struct LoginGeeTestApplyResult(

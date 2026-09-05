@@ -15,6 +15,8 @@ public sealed class AvitoGeeTestSolver(
     private const int PostVerifyNavigationTimeoutMs = 20_000;
     private const int PostVerifyPaintPolls = 6;
     private const int PostVerifyPaintPollMs = 400;
+    private const string LoginClickCaptchaImageSelector = ".geetest_click .geetest_bg, [class*='geetest_click'] [class*='geetest_bg']";
+    private const string LoginNineGridCaptchaImageSelector = ".geetest_nine, [class*='geetest_nine']";
     private static readonly SemaphoreSlim Gate = new(
         AvitoGeeTestSolveSupport.MaxConcurrentGeeTestSolves,
         AvitoGeeTestSolveSupport.MaxConcurrentGeeTestSolves);
@@ -443,8 +445,9 @@ public sealed class AvitoGeeTestSolver(
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var image = await page.QuerySelectorAsync(".geetest_click .geetest_bg, [class*='geetest_click'] [class*='geetest_bg']")
-                .ConfigureAwait(false);
+            var image = await page.QuerySelectorAsync(LoginClickCaptchaImageSelector).ConfigureAwait(false);
+            var isNineGrid = image is null;
+            image ??= await page.QuerySelectorAsync(LoginNineGridCaptchaImageSelector).ConfigureAwait(false);
             var hint = await page.QuerySelectorAsync(".geetest_ques_tips, [class*='geetest_ques_tips']")
                 .ConfigureAwait(false);
             if (image is null || hint is null)
@@ -459,7 +462,7 @@ public sealed class AvitoGeeTestSolver(
                     "(() => document.querySelector('.geetest_text_tips, [class*=\"geetest_text_tips\"]')?.textContent || '')()")
                 .ConfigureAwait(false);
             return width > 0 && height > 0 && !string.IsNullOrWhiteSpace(imageBody) && !string.IsNullOrWhiteSpace(hintImageBody)
-                ? new LoginClickCaptchaCapture(imageBody, hintImageBody, hintText, width, height)
+                ? new LoginClickCaptchaCapture(imageBody, hintImageBody, hintText, width, height, isNineGrid)
                 : null;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -485,8 +488,10 @@ public sealed class AvitoGeeTestSolver(
                 return false;
             }
 
-            var image = await page.QuerySelectorAsync(".geetest_click .geetest_bg, [class*='geetest_click'] [class*='geetest_bg']")
-                .ConfigureAwait(false);
+            var imageSelector = capture.IsNineGrid
+                ? LoginNineGridCaptchaImageSelector
+                : LoginClickCaptchaImageSelector;
+            var image = await page.QuerySelectorAsync(imageSelector).ConfigureAwait(false);
             var box = image is null ? null : await image.BoundingBoxAsync().ConfigureAwait(false);
             if (box is null || box.Width <= 0 || box.Height <= 0)
             {
@@ -508,6 +513,15 @@ public sealed class AvitoGeeTestSolver(
                 cancellationToken.ThrowIfCancellationRequested();
                 await page.Mouse.ClickAsync(x, y, new ClickOptions { Delay = Random.Shared.Next(35, 85) }).ConfigureAwait(false);
                 await Task.Delay(Random.Shared.Next(110, 230), cancellationToken).ConfigureAwait(false);
+            }
+
+            var submit = await page.QuerySelectorAsync(".geetest_submit, [class*='geetest_submit']")
+                .ConfigureAwait(false);
+            if (submit is null)
+            {
+                // У nine-grid отдельной кнопки нет: GeeTest отправляет ответ после
+                // последнего выбранного изображения.
+                return capture.IsNineGrid;
             }
 
             return await AvitoHumanPointer
@@ -551,7 +565,8 @@ public sealed class AvitoGeeTestSolver(
         string HintImageBody,
         string? HintText,
         decimal ImageWidth,
-        decimal ImageHeight);
+        decimal ImageHeight,
+        bool IsNineGrid);
 
     private static async Task DelayLoginOverlayRetryAsync(
         IPage page,

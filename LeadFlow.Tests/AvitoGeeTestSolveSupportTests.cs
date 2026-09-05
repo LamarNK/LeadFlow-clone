@@ -251,6 +251,25 @@ public sealed class AvitoGeeTestSolveSupportTests
     }
 
     [Fact]
+    public void IsLoginClickCaptchaOverlay_NineGridImageSelection_True()
+    {
+        const string html = """
+            <form data-marker="login-form"></form>
+            <div class="geetest_box" style="display: block;">
+              <div class="geetest_text_tips">Выберите 3 изображения с</div>
+              <div class="geetest_ques_tips"><img src="hint.png"></div>
+              <div class="geetest_nine">
+                <div class="geetest_item"><div class="geetest_item_img"></div></div>
+                <div class="geetest_item"><div class="geetest_item_img"></div></div>
+                <div class="geetest_item"><div class="geetest_item_img"></div></div>
+              </div>
+            </div>
+            """;
+
+        Assert.True(AvitoGeeTestSolveSupport.IsLoginClickCaptchaOverlay(html));
+    }
+
+    [Fact]
     public void IsLoginGeeTestOverlay_FirewallWidget_False()
     {
         const string html = """
