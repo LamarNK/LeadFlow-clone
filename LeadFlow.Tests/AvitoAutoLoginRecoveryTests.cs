@@ -270,6 +270,60 @@ public sealed class AvitoAutoLoginRecoveryTests
     }
 
     [Fact]
+    public void BuildProbeScript_TreatsVisibilityErrorsAsHidden()
+    {
+        var script = AvitoAutoLoginScripts.BuildProbeScript().Replace("\r\n", "\n", StringComparison.Ordinal);
+
+        var visibilityStart = script.IndexOf("const isVisibleEl = (el) => {", StringComparison.Ordinal);
+        var captchaStart = script.IndexOf("const liveCaptchaWidget", StringComparison.Ordinal);
+
+        Assert.InRange(script.IndexOf("try {", visibilityStart, StringComparison.Ordinal), visibilityStart + 1, captchaStart - 1);
+        Assert.InRange(script.IndexOf("catch {", visibilityStart, StringComparison.Ordinal), visibilityStart + 1, captchaStart - 1);
+    }
+
+    [Fact]
+    public void ProbeRetryPolicy_UsesFourAttemptsAndPostCaptchaDelay()
+    {
+        Assert.Equal(4, AvitoAutoLoginRecovery.MaxProbeAttempts);
+        Assert.InRange(AvitoAutoLoginRecovery.ProbeRetryDelayMs, 400, 800);
+    }
+
+    [Fact]
+    public void HasVisibleLoginUi_SavedUserListPreventsSessionRefresh()
+    {
+        var state = new AvitoAutoLoginRecovery.ProbeState(
+            NeedsLogin: true,
+            IsAuthorized: false,
+            HasCaptcha: false,
+            HasLoginForm: false,
+            HasUsersList: true,
+            HasSavedUserCard: true,
+            HasOtherProfileLink: true,
+            HasProfileChooser: true,
+            HasCredentialInputs: false,
+            HasGuestLoginButton: false,
+            HasLoggedInProfile: false,
+            HasPasswordValue: false,
+            HasSubmitButton: false,
+            Url: "https://www.avito.ru/profile/pro/items");
+
+        Assert.True(AvitoAutoLoginRecovery.HasVisibleLoginUi(state));
+    }
+
+    [Fact]
+    public void Recovery_ProbesForSavedUserBeforeRefreshingAnInvisibleLoginUi()
+    {
+        var source = File.ReadAllText(
+            Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "LeadFlow.Core", "Services", "Avito", "AvitoAutoLoginRecovery.cs"));
+
+        var refresh = source.IndexOf("TryRefreshSessionAsync(page, steps, cancellationToken)", StringComparison.Ordinal);
+        var savedUserProbe = source.IndexOf("HasSavedUserCardInDomAsync", StringComparison.Ordinal);
+
+        Assert.True(savedUserProbe >= 0, "Recovery must query users-list/user/link before a refresh.");
+        Assert.True(savedUserProbe < refresh, "Recovery must preserve a visible saved-profile list instead of reloading it.");
+    }
+
+    [Fact]
     public void DecideCaptcha_IgnoresWhenNoCaptcha()
     {
         var state = new AvitoAutoLoginRecovery.ProbeState(

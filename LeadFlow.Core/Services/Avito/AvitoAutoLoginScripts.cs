@@ -20,11 +20,16 @@ public static class AvitoAutoLoginScripts
               || !!document.querySelector('a[href*="support.avito.ru/request/720"]');
             const hasFirewallText = /Доступ\s+ограничен|проблема\s+с\s+IP|firewallCaptcha|Отключить\s+VPN|самол[её]те/i.test(probeText);
             const isVisibleEl = (el) => {
-                if (!el) return false;
-                const style = window.getComputedStyle(el);
-                if (style.display === "none" || style.visibility === "hidden") return false;
-                const rect = el.getBoundingClientRect();
-                return rect.width > 0 && rect.height > 0;
+                try {
+                    if (!el) return false;
+                    const style = window.getComputedStyle(el);
+                    if (style.display === "none" || style.visibility === "hidden") return false;
+                    const rect = el.getBoundingClientRect();
+                    return rect.width > 0 && rect.height > 0;
+                } catch {
+                    // Reload после капчи может уничтожить контекст прямо во время probe.
+                    return false;
+                }
             };
             const liveCaptchaWidget = !!(
                 isVisibleEl(document.getElementById("geetest_captcha")) ||
