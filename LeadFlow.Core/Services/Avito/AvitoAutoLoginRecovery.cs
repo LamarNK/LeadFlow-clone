@@ -28,14 +28,17 @@ public static class AvitoAutoLoginRecovery
         bool HasLoggedInProfile,
         bool HasPasswordValue,
         bool HasSubmitButton,
-        string? Url);
+        string? Url,
+        bool RequiresPasswordResetSms = false,
+        string? PasswordResetSmsPhone = null);
 
     public sealed record RecoveryResult(
         bool Recovered,
         bool StillNeedsLogin,
         bool HasCaptcha,
         string? FailureReason,
-        IReadOnlyList<string> Steps);
+        IReadOnlyList<string> Steps,
+        string? PasswordResetSmsPhone = null);
 
     public enum LoginCaptchaDecision
     {
@@ -94,7 +97,12 @@ public static class AvitoAutoLoginRecovery
                 HasLoggedInProfile: root.TryGetProperty("hasLoggedInProfile", out var lp) && lp.ValueKind == JsonValueKind.True,
                 HasPasswordValue: root.TryGetProperty("hasPasswordValue", out var pv) && pv.ValueKind == JsonValueKind.True,
                 HasSubmitButton: root.TryGetProperty("hasSubmitButton", out var sb) && sb.ValueKind == JsonValueKind.True,
-                Url: root.TryGetProperty("url", out var url) ? url.GetString() : null);
+                Url: root.TryGetProperty("url", out var url) ? url.GetString() : null,
+                RequiresPasswordResetSms: root.TryGetProperty("requiresPasswordResetSms", out var passwordResetSms)
+                    && passwordResetSms.ValueKind == JsonValueKind.True,
+                PasswordResetSmsPhone: root.TryGetProperty("passwordResetSmsPhone", out var passwordResetPhone)
+                    ? passwordResetPhone.GetString()
+                    : null);
         }
         catch
         {
@@ -140,6 +148,11 @@ public static class AvitoAutoLoginRecovery
         steps.Add("credentials Орбиты: есть");
 
         var initialState = await ProbeAsync(page, cancellationToken).ConfigureAwait(false);
+        if (initialState?.RequiresPasswordResetSms == true)
+        {
+            return await StopForPasswordResetSmsAsync(initialState, steps).ConfigureAwait(false);
+        }
+
         var hasSavedUserCard = (initialState is { HasUsersList: true }
             or { HasSavedUserCard: true })
             || await HasSavedUserCardInDomAsync(page, cancellationToken).ConfigureAwait(false);
@@ -185,6 +198,11 @@ public static class AvitoAutoLoginRecovery
                         page.Url)
                     .ConfigureAwait(false);
                 return new RecoveryResult(false, true, false, "probe_failed", steps);
+            }
+
+            if (state.RequiresPasswordResetSms)
+            {
+                return await StopForPasswordResetSmsAsync(state, steps).ConfigureAwait(false);
             }
 
             var captchaDecision = DecideCaptcha(
@@ -330,6 +348,11 @@ public static class AvitoAutoLoginRecovery
         }
 
         var finalState = await ProbeAsync(page, cancellationToken).ConfigureAwait(false);
+        if (finalState?.RequiresPasswordResetSms == true)
+        {
+            return await StopForPasswordResetSmsAsync(finalState, steps).ConfigureAwait(false);
+        }
+
         if (finalState is { IsAuthorized: true } or { NeedsLogin: false, HasCaptcha: false })
         {
             steps.Add("сессия восстановлена");
@@ -359,6 +382,23 @@ public static class AvitoAutoLoginRecovery
             finalState?.HasCaptcha ?? false,
             reason,
             steps);
+    }
+
+    private static async Task<RecoveryResult> StopForPasswordResetSmsAsync(
+        ProbeState state,
+        List<string> steps)
+    {
+        var phone = string.IsNullOrWhiteSpace(state.PasswordResetSmsPhone)
+            ? string.Empty
+            : $" ({state.PasswordResetSmsPhone})";
+        steps.Add($"Avito сбросил пароль: требуется SMS-код{phone}");
+        await LogAsync(
+                DeskLinkAuditLogLevel.Warning,
+                "Avito auto-login stopped (password_reset_sms_required).",
+                steps,
+                state.Url)
+            .ConfigureAwait(false);
+        return new RecoveryResult(false, true, false, "password_reset_sms_required", steps, state.PasswordResetSmsPhone);
     }
 
     private static async Task<ProbeState?> ProbeAsync(IPage page, CancellationToken cancellationToken)

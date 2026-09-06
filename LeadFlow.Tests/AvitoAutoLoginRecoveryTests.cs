@@ -65,6 +65,40 @@ public sealed class AvitoAutoLoginRecoveryTests
         Assert.True(state.HasCredentialInputs);
     }
 
+    [Fact]
+    public void TryParseProbe_PasswordResetSms_StopsAutoLoginWithoutClickingSmsButton()
+    {
+        const string json = """
+            {
+              "needsLogin": true,
+              "isAuthorized": false,
+              "hasCaptcha": false,
+              "hasLoginForm": true,
+              "hasUsersList": false,
+              "hasSavedUserCard": false,
+              "hasOtherProfileLink": false,
+              "hasProfileChooser": false,
+              "hasCredentialInputs": false,
+              "hasGuestLoginButton": false,
+              "hasLoggedInProfile": false,
+              "hasPasswordValue": false,
+              "hasSubmitButton": false,
+              "requiresPasswordResetSms": true,
+              "passwordResetSmsPhone": "+7 *** ***-**-35",
+              "url": "https://www.avito.ru/profile/pro/items"
+            }
+            """;
+
+        var state = AvitoAutoLoginRecovery.TryParseProbe(json);
+
+        Assert.NotNull(state);
+        Assert.True(state!.RequiresPasswordResetSms);
+        Assert.Equal("+7 *** ***-**-35", state.PasswordResetSmsPhone);
+        var script = AvitoAutoLoginScripts.BuildProbeScript();
+        Assert.Contains("password-was-reset", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("passwordResetForm.click", script, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData(true, false, false, true)]
     [InlineData(false, false, false, true)]

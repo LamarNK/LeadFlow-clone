@@ -53,8 +53,22 @@ public static class AvitoAutoLoginScripts
             );
             const hasIpDialog = !!document.querySelector('[role="dialog"][aria-modal="true"], [aria-modal="true"]')
               && /Доступ\s+ограничен|проблема\s+с\s+IP/i.test(probeText);
+            // Avito ждёт ручной код после принудительного сброса пароля.
+            const passwordResetForm = document.querySelector(
+                "[data-marker='password-was-reset'], [data-marker='password-was-reset-form']");
+            const passwordResetText = (passwordResetForm?.textContent || "").trim();
+            const requiresPasswordResetSms = !!passwordResetForm
+                && /Сработала\s+защита\s+профиля/i.test(passwordResetText)
+                && /Получить\s+код\s+по\s+смс/i.test(passwordResetText);
+            const passwordResetPhoneSource = passwordResetForm?.querySelector(
+                "[class*='PhoneNumber-module-phone'] strong, [class*='PhoneNumber-module-phone']")?.textContent || "";
+            const passwordResetDigits = String(passwordResetPhoneSource).replace(/\D/g, "");
+            const passwordResetSmsPhone = requiresPasswordResetSms && passwordResetDigits.length >= 2
+                ? `+${passwordResetDigits.slice(0, 1)} *** ***-**-${passwordResetDigits.slice(-2)}`
+                : null;
 
             const hasLoginDom = !!(
+                passwordResetForm ||
                 document.querySelector("[data-marker='auth-app-root']") ||
                 document.querySelector("[data-marker='login-form']") ||
                 document.querySelector("[data-marker='login-form-with-avatar']") ||
@@ -149,6 +163,8 @@ public static class AvitoAutoLoginScripts
                 hasLoggedInProfile,
                 hasPasswordValue,
                 hasSubmitButton: !!document.querySelector("[data-marker='login-form/submit']"),
+                requiresPasswordResetSms,
+                passwordResetSmsPhone,
                 url
             };
         })();
