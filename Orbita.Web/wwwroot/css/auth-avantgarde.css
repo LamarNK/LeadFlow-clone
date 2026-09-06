@@ -79,3 +79,16 @@
     .auth-card { margin: 0; aspect-ratio: auto; }
 }
 
+
+/* Ambient sky: independent of the form and the planet silhouette. */
+.auth-sky { position: absolute; inset: 0; pointer-events: none; overflow: hidden; mask-image: linear-gradient(115deg, #000 0%, #000 35%, transparent 72%); }
+.auth-sky-star { position: absolute; width: var(--star-size); height: var(--star-size); border-radius: 50%; background: #d8edff; box-shadow: 0 0 5px 1px rgba(130, 198, 255, .55); opacity: .16; animation: auth-star-twinkle 8s ease-in-out infinite; }
+@keyframes auth-star-twinkle { 0%, 100% { opacity: .12; transform: scale(.9); } 50% { opacity: .75; transform: scale(1.15); } }
+.auth-sky-meteor { position: absolute; width: 110px; height: 1px; background: linear-gradient(90deg, transparent, #c9e8ff); opacity: 0; transform: rotate(32deg); animation: auth-meteor-pass 24s linear infinite; }
+@keyframes auth-meteor-pass { 0% { opacity: 0; transform: translate(0, 0) rotate(32deg); } 2% { opacity: .65; } 7% { opacity: 0; transform: translate(260px, 162px) rotate(32deg); } 100% { opacity: 0; transform: translate(260px, 162px) rotate(32deg); } }
+.auth-sky.is-paused > span { animation-play-state: paused; }
+.auth-motion-toggle { position: fixed; right: 20px; bottom: 10px; z-index: 5; padding: 7px 10px; border: 1px solid rgba(122, 160, 222, .3); border-radius: 6px; color: #bfd4f6; background: rgba(4, 15, 37, .8); font: inherit; font-size: 11px; cursor: pointer; }
+.auth-motion-toggle:hover { color: #fff; border-color: #75a9f0; }
+.auth-motion-toggle:focus-visible { outline: 2px solid #a7d0ff; outline-offset: 3px; }
+@media (max-width: 1000px) { .auth-sky-star:nth-child(n+23) { display: none; } .auth-motion-toggle { position: absolute; } }
+@media (prefers-reduced-motion: reduce) { .auth-sky, .auth-motion-toggle { display: none; } .auth-sky > span { animation: none; } }
