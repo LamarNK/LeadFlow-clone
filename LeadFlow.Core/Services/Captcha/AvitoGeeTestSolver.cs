@@ -15,7 +15,7 @@ public sealed class AvitoGeeTestSolver(
     private const int PostVerifyNavigationTimeoutMs = 20_000;
     private const int PostVerifyPaintPolls = 6;
     private const int PostVerifyPaintPollMs = 400;
-    private const int LoginClickCaptchaOutcomePolls = 8;
+    private const int LoginClickCaptchaOutcomePolls = 20;
     private const int LoginClickCaptchaOutcomePollMs = 500;
     private const string LoginClickCaptchaImageSelector = ".geetest_click .geetest_bg, [class*='geetest_click'] [class*='geetest_bg']";
     private const string LoginNineGridCaptchaImageSelector = ".geetest_nine, [class*='geetest_nine']";
@@ -384,8 +384,23 @@ public sealed class AvitoGeeTestSolver(
                 continue;
             }
 
-            var applied = await ApplyLoginClickCaptchaAsync(page, capture, solution, cancellationToken).ConfigureAwait(false);
-            if (!applied)
+            var applyResult = await ApplyLoginClickCaptchaAsync(page, capture, solution, cancellationToken).ConfigureAwait(false);
+            if (applyResult == LoginClickCaptchaApplyResult.ChallengeChanged)
+            {
+                _ = GlobalLogger.Instance.LogAsync(
+                    "Captcha: изображение ClickCaptcha сменилось до применения ответа — решаем актуальный раунд без report incorrect.",
+                    DeskLinkAuditLogLevel.Info,
+                    properties: new Dictionary<string, object?>
+                    {
+                        ["step"] = "captcha_login_challenge_changed_before_apply",
+                        ["page.url"] = websiteUrl,
+                        ["captcha.attempt"] = attempt
+                    });
+                html = null;
+                continue;
+            }
+
+            if (applyResult != LoginClickCaptchaApplyResult.Applied)
             {
                 _ = GlobalLogger.Instance.LogAsync(
                     "Captcha: координаты ClickCaptcha логина не применились.",
@@ -402,7 +417,7 @@ public sealed class AvitoGeeTestSolver(
                 continue;
             }
 
-            var outcome = await WaitForLoginClickCaptchaOutcomeAsync(page, cancellationToken).ConfigureAwait(false);
+            var outcome = await WaitForLoginClickCaptchaOutcomeAsync(page, capture.Fingerprint, cancellationToken).ConfigureAwait(false);
             if (outcome == LoginClickCaptchaOutcome.Accepted)
             {
                 _ = GlobalLogger.Instance.LogAsync(
@@ -421,6 +436,24 @@ public sealed class AvitoGeeTestSolver(
                 return true;
             }
 
+            if (outcome == LoginClickCaptchaOutcome.NextRound)
+            {
+                await ReportSolutionAsync(apiKey, solution.ProviderTask, isCorrect: true, "ClickCaptcha логина", cancellationToken)
+                    .ConfigureAwait(false);
+                _ = GlobalLogger.Instance.LogAsync(
+                    "Captcha: текущий раунд ClickCaptcha принят, GeeTest показала следующий — продолжаем без обновления виджета.",
+                    DeskLinkAuditLogLevel.Info,
+                    properties: new Dictionary<string, object?>
+                    {
+                        ["step"] = "captcha_login_next_round",
+                        ["page.url"] = page.Url,
+                        ["captcha.attempt"] = attempt
+                    });
+                await Task.Delay(LoginClickCaptchaOutcomePollMs, cancellationToken).ConfigureAwait(false);
+                html = null;
+                continue;
+            }
+
             if (outcome == LoginClickCaptchaOutcome.Rejected)
             {
                 await ReportSolutionAsync(apiKey, solution.ProviderTask, isCorrect: false, "ClickCaptcha логина", cancellationToken)
@@ -429,8 +462,8 @@ public sealed class AvitoGeeTestSolver(
 
             _ = GlobalLogger.Instance.LogAsync(
                 outcome == LoginClickCaptchaOutcome.Rejected
-                    ? "Captcha: ClickCaptcha не приняла ответ после ожидания; RuCaptcha получила report incorrect."
-                    : "Captcha: исход ClickCaptcha после кликов не удалось прочитать; report не отправлен.",
+                    ? "Captcha: GeeTest явно отклонила ClickCaptcha; RuCaptcha получила report incorrect."
+                    : "Captcha: GeeTest не сообщила окончательный исход ClickCaptcha; report не отправлен.",
                 DeskLinkAuditLogLevel.Warning,
                 properties: new Dictionary<string, object?>
                 {
@@ -443,7 +476,7 @@ public sealed class AvitoGeeTestSolver(
                     page,
                     attempt,
                     outcome == LoginClickCaptchaOutcome.Rejected
-                        ? "ClickCaptcha не приняла ответ"
+                        ? "GeeTest явно отклонила ClickCaptcha"
                         : "исход ClickCaptcha не прочитался",
                     cancellationToken)
                 .ConfigureAwait(false);
@@ -455,21 +488,45 @@ public sealed class AvitoGeeTestSolver(
 
     private static async Task<LoginClickCaptchaOutcome> WaitForLoginClickCaptchaOutcomeAsync(
         IPage page,
+        string? expectedFingerprint,
         CancellationToken cancellationToken)
     {
-        var sawLiveOverlay = false;
+        var lastOutcome = LoginClickCaptchaOutcome.Unknown;
+        var consecutiveOverlayGonePolls = 0;
         for (var poll = 0; poll < LoginClickCaptchaOutcomePolls; poll++)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var html = await SafeGetHtmlAsync(page, cancellationToken).ConfigureAwait(false);
-            if (!string.IsNullOrWhiteSpace(html))
+            var state = await ReadLoginClickCaptchaStateAsync(page, cancellationToken).ConfigureAwait(false);
+            if (state.Readable)
             {
-                if (!AvitoGeeTestSolveSupport.IsLoginClickCaptchaOverlay(html))
+                lastOutcome = AvitoGeeTestSolveSupport.ClassifyLoginClickCaptchaOutcome(
+                    state.OverlayVisible,
+                    state.ExplicitAccepted,
+                    state.ExplicitRejected,
+                    expectedFingerprint,
+                    state.Fingerprint);
+                if (lastOutcome == LoginClickCaptchaOutcome.Accepted)
                 {
-                    return LoginClickCaptchaOutcome.Accepted;
+                    if (state.ExplicitAccepted || ++consecutiveOverlayGonePolls >= 2)
+                    {
+                        return LoginClickCaptchaOutcome.Accepted;
+                    }
+                }
+                else
+                {
+                    consecutiveOverlayGonePolls = 0;
                 }
 
-                sawLiveOverlay = true;
+                if (lastOutcome is LoginClickCaptchaOutcome.Rejected
+                    or LoginClickCaptchaOutcome.NextRound)
+                {
+                    return lastOutcome;
+                }
+            }
+            else
+            {
+                consecutiveOverlayGonePolls = 0;
+                lastOutcome = LoginClickCaptchaOutcome.Unknown;
             }
 
             if (poll + 1 < LoginClickCaptchaOutcomePolls)
@@ -478,9 +535,9 @@ public sealed class AvitoGeeTestSolver(
             }
         }
 
-        return sawLiveOverlay
-            ? LoginClickCaptchaOutcome.Rejected
-            : LoginClickCaptchaOutcome.Unknown;
+        return lastOutcome == LoginClickCaptchaOutcome.Accepted
+            ? LoginClickCaptchaOutcome.Pending
+            : lastOutcome;
     }
 
     private static async Task<LoginClickCaptchaCapture?> CaptureLoginClickCaptchaAsync(
@@ -490,10 +547,14 @@ public sealed class AvitoGeeTestSolver(
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var image = await page.QuerySelectorAsync(LoginClickCaptchaImageSelector).ConfigureAwait(false);
+            var stateBeforeCapture = await ReadLoginClickCaptchaStateAsync(page, cancellationToken).ConfigureAwait(false);
+            var image = await FindVisibleElementAsync(page, LoginClickCaptchaImageSelector, cancellationToken).ConfigureAwait(false);
             var isNineGrid = image is null;
-            image ??= await page.QuerySelectorAsync(LoginNineGridCaptchaImageSelector).ConfigureAwait(false);
-            var hint = await page.QuerySelectorAsync(".geetest_ques_tips, [class*='geetest_ques_tips']")
+            image ??= await FindVisibleElementAsync(page, LoginNineGridCaptchaImageSelector, cancellationToken).ConfigureAwait(false);
+            var hint = await FindVisibleElementAsync(
+                    page,
+                    ".geetest_ques_tips, [class*='geetest_ques_tips']",
+                    cancellationToken)
                 .ConfigureAwait(false);
             if (image is null || hint is null)
             {
@@ -506,8 +567,18 @@ public sealed class AvitoGeeTestSolver(
             var hintText = await page.EvaluateExpressionAsync<string>(
                     "(() => document.querySelector('.geetest_text_tips, [class*=\"geetest_text_tips\"]')?.textContent || '')()")
                 .ConfigureAwait(false);
+            var state = await ReadLoginClickCaptchaStateAsync(page, cancellationToken).ConfigureAwait(false);
+            if (stateBeforeCapture.Readable
+                && state.Readable
+                && !string.IsNullOrWhiteSpace(stateBeforeCapture.Fingerprint)
+                && !string.IsNullOrWhiteSpace(state.Fingerprint)
+                && !string.Equals(stateBeforeCapture.Fingerprint, state.Fingerprint, StringComparison.Ordinal))
+            {
+                return null;
+            }
+
             return width > 0 && height > 0 && !string.IsNullOrWhiteSpace(imageBody) && !string.IsNullOrWhiteSpace(hintImageBody)
-                ? new LoginClickCaptchaCapture(imageBody, hintImageBody, hintText, width, height, isNineGrid)
+                ? new LoginClickCaptchaCapture(imageBody, hintImageBody, hintText, width, height, isNineGrid, state.Fingerprint)
                 : null;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -520,7 +591,7 @@ public sealed class AvitoGeeTestSolver(
         }
     }
 
-    private static async Task<bool> ApplyLoginClickCaptchaAsync(
+    private static async Task<LoginClickCaptchaApplyResult> ApplyLoginClickCaptchaAsync(
         IPage page,
         LoginClickCaptchaCapture capture,
         ClickCaptchaSolution solution,
@@ -530,24 +601,36 @@ public sealed class AvitoGeeTestSolver(
         {
             if (solution.Points.Count is < 1 or > 8)
             {
-                return false;
+                return LoginClickCaptchaApplyResult.Failed;
             }
 
             var imageSelector = capture.IsNineGrid
                 ? LoginNineGridCaptchaImageSelector
                 : LoginClickCaptchaImageSelector;
-            var image = await page.QuerySelectorAsync(imageSelector).ConfigureAwait(false);
+            var image = await FindVisibleElementAsync(page, imageSelector, cancellationToken).ConfigureAwait(false);
             var box = image is null ? null : await image.BoundingBoxAsync().ConfigureAwait(false);
             if (box is null || box.Width <= 0 || box.Height <= 0)
             {
-                return false;
+                return LoginClickCaptchaApplyResult.Failed;
+            }
+
+            var currentState = await ReadLoginClickCaptchaStateAsync(page, cancellationToken).ConfigureAwait(false);
+            if (currentState.Readable
+                && AvitoGeeTestSolveSupport.ClassifyLoginClickCaptchaOutcome(
+                    currentState.OverlayVisible,
+                    currentState.ExplicitAccepted,
+                    currentState.ExplicitRejected,
+                    capture.Fingerprint,
+                    currentState.Fingerprint) == LoginClickCaptchaOutcome.NextRound)
+            {
+                return LoginClickCaptchaApplyResult.ChallengeChanged;
             }
 
             foreach (var point in solution.Points)
             {
                 if (point.X < 0 || point.Y < 0 || point.X > capture.ImageWidth || point.Y > capture.ImageHeight)
                 {
-                    return false;
+                    return LoginClickCaptchaApplyResult.Failed;
                 }
 
                 var x = box.X + box.Width * point.X / capture.ImageWidth;
@@ -560,18 +643,31 @@ public sealed class AvitoGeeTestSolver(
                 await Task.Delay(Random.Shared.Next(110, 230), cancellationToken).ConfigureAwait(false);
             }
 
-            var submit = await page.QuerySelectorAsync(".geetest_submit, [class*='geetest_submit']")
+            var submit = await FindVisibleElementAsync(
+                    page,
+                    ".geetest_submit, [class*='geetest_submit']",
+                    cancellationToken)
                 .ConfigureAwait(false);
             if (submit is null)
             {
                 // У nine-grid отдельной кнопки нет: GeeTest отправляет ответ после
                 // последнего выбранного изображения.
-                return capture.IsNineGrid;
+                return capture.IsNineGrid
+                    ? LoginClickCaptchaApplyResult.Applied
+                    : LoginClickCaptchaApplyResult.Failed;
             }
 
-            return await AvitoHumanPointer
-                .TryClickSelectorAsync(page, ".geetest_submit, [class*='geetest_submit']", cancellationToken)
-                .ConfigureAwait(false);
+            var submitBox = await submit.BoundingBoxAsync().ConfigureAwait(false);
+            if (submitBox is null || submitBox.Width <= 0 || submitBox.Height <= 0)
+            {
+                return LoginClickCaptchaApplyResult.Failed;
+            }
+
+            var submitX = submitBox.X + submitBox.Width / 2;
+            var submitY = submitBox.Y + submitBox.Height / 2;
+            await page.Mouse.MoveAsync(submitX, submitY, new MoveOptions { Steps = Random.Shared.Next(4, 9) }).ConfigureAwait(false);
+            await page.Mouse.ClickAsync(submitX, submitY, new ClickOptions { Delay = Random.Shared.Next(35, 85) }).ConfigureAwait(false);
+            return LoginClickCaptchaApplyResult.Applied;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
@@ -579,8 +675,56 @@ public sealed class AvitoGeeTestSolver(
                 $"Captcha: ошибка применения ClickCaptcha логина — {ex.Message}",
                 DeskLinkAuditLogLevel.Warning,
                 properties: new Dictionary<string, object?> { ["step"] = "captcha_login_click_apply_failed" });
-            return false;
+            return LoginClickCaptchaApplyResult.Failed;
         }
+    }
+
+    private static async Task<LoginClickCaptchaState> ReadLoginClickCaptchaStateAsync(
+        IPage page,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var raw = await page
+                .EvaluateExpressionAsync<string>(AvitoGeeTestSolveSupport.BuildReadLoginClickCaptchaStateScript())
+                .ConfigureAwait(false);
+            return AvitoGeeTestSolveSupport.ParseLoginClickCaptchaState(raw);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                $"Captcha: не удалось прочитать состояние ClickCaptcha логина — {ex.Message}",
+                DeskLinkAuditLogLevel.Warning,
+                properties: new Dictionary<string, object?> { ["step"] = "captcha_login_click_state_failed" });
+            return LoginClickCaptchaState.Unknown;
+        }
+    }
+
+    private static async Task<IElementHandle?> FindVisibleElementAsync(
+        IPage page,
+        string selector,
+        CancellationToken cancellationToken)
+    {
+        var handles = await page.QuerySelectorAllAsync(selector).ConfigureAwait(false);
+        foreach (var handle in handles)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                var box = await handle.BoundingBoxAsync().ConfigureAwait(false);
+                if (box is { Width: > 0, Height: > 0 })
+                {
+                    return handle;
+                }
+            }
+            catch (PuppeteerException)
+            {
+                // GeeTest заменяет DOM во время анимации; пробуем следующий совпавший узел.
+            }
+        }
+
+        return null;
     }
 
     private static (decimal Width, decimal Height) ReadPngDimensions(string base64)
@@ -611,13 +755,14 @@ public sealed class AvitoGeeTestSolver(
         string? HintText,
         decimal ImageWidth,
         decimal ImageHeight,
-        bool IsNineGrid);
+        bool IsNineGrid,
+        string? Fingerprint);
 
-    private enum LoginClickCaptchaOutcome
+    private enum LoginClickCaptchaApplyResult
     {
-        Unknown,
-        Accepted,
-        Rejected
+        Failed,
+        Applied,
+        ChallengeChanged
     }
 
     private static async Task DelayLoginOverlayRetryAsync(

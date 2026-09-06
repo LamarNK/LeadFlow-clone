@@ -269,6 +269,55 @@ public sealed class AvitoGeeTestSolveSupportTests
         Assert.True(AvitoGeeTestSolveSupport.IsLoginClickCaptchaOverlay(html));
     }
 
+    [Theory]
+    [InlineData(false, false, false, "challenge-a", "challenge-a", LoginClickCaptchaOutcome.Accepted)]
+    [InlineData(true, true, false, "challenge-a", "challenge-a", LoginClickCaptchaOutcome.Accepted)]
+    [InlineData(true, false, true, "challenge-a", "challenge-a", LoginClickCaptchaOutcome.Rejected)]
+    [InlineData(true, false, false, "challenge-a", "challenge-b", LoginClickCaptchaOutcome.NextRound)]
+    [InlineData(true, false, false, "challenge-a", "challenge-a", LoginClickCaptchaOutcome.Pending)]
+    public void ClassifyLoginClickCaptchaOutcome_DoesNotTreatVisibleOverlayAsRejection(
+        bool overlayVisible,
+        bool explicitAccepted,
+        bool explicitRejected,
+        string expectedFingerprint,
+        string currentFingerprint,
+        LoginClickCaptchaOutcome expected)
+    {
+        var actual = AvitoGeeTestSolveSupport.ClassifyLoginClickCaptchaOutcome(
+            overlayVisible,
+            explicitAccepted,
+            explicitRejected,
+            expectedFingerprint,
+            currentFingerprint);
+
+        Assert.Equal(expected, actual);
+    }
+
+    [Fact]
+    public void ParseLoginClickCaptchaState_PreservesExplicitResultAndFingerprint()
+    {
+        const string raw =
+            """{"overlayVisible":true,"explicitAccepted":false,"explicitRejected":true,"fingerprint":"grid-a::hint-a"}""";
+
+        var state = AvitoGeeTestSolveSupport.ParseLoginClickCaptchaState(raw);
+
+        Assert.True(state.Readable);
+        Assert.True(state.OverlayVisible);
+        Assert.False(state.ExplicitAccepted);
+        Assert.True(state.ExplicitRejected);
+        Assert.Equal("grid-a::hint-a", state.Fingerprint);
+    }
+
+    [Fact]
+    public void BuildRefreshLoginGeeTestScript_SelectsVisibleRefreshButton()
+    {
+        var script = AvitoGeeTestSolveSupport.BuildRefreshLoginGeeTestScript();
+
+        Assert.Contains("querySelectorAll", script, StringComparison.Ordinal);
+        Assert.Contains("find(isVisible)", script, StringComparison.Ordinal);
+        Assert.Contains("getBoundingClientRect", script, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void LoginClickCaptcha_ReportsFinalOutcomeBeforeRefreshingWidget()
     {

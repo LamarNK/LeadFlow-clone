@@ -356,6 +356,106 @@ public static class AvitoGeeTestSolveSupport
         return hasInstructions && (hasSingleImage || hasNineGrid);
     }
 
+    public static LoginClickCaptchaOutcome ClassifyLoginClickCaptchaOutcome(
+        bool overlayVisible,
+        bool explicitAccepted,
+        bool explicitRejected,
+        string? expectedFingerprint,
+        string? currentFingerprint)
+    {
+        if (!overlayVisible || explicitAccepted)
+        {
+            return LoginClickCaptchaOutcome.Accepted;
+        }
+
+        if (explicitRejected)
+        {
+            return LoginClickCaptchaOutcome.Rejected;
+        }
+
+        if (!string.IsNullOrWhiteSpace(expectedFingerprint)
+            && !string.IsNullOrWhiteSpace(currentFingerprint)
+            && !string.Equals(expectedFingerprint, currentFingerprint, StringComparison.Ordinal))
+        {
+            return LoginClickCaptchaOutcome.NextRound;
+        }
+
+        return LoginClickCaptchaOutcome.Pending;
+    }
+
+    public static LoginClickCaptchaState ParseLoginClickCaptchaState(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return LoginClickCaptchaState.Unknown;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(raw);
+            var root = document.RootElement;
+            return new LoginClickCaptchaState(
+                root.TryGetProperty("overlayVisible", out var visible) && visible.ValueKind == JsonValueKind.True,
+                root.TryGetProperty("explicitAccepted", out var accepted) && accepted.ValueKind == JsonValueKind.True,
+                root.TryGetProperty("explicitRejected", out var rejected) && rejected.ValueKind == JsonValueKind.True,
+                root.TryGetProperty("fingerprint", out var fingerprint) ? fingerprint.GetString() : null,
+                Readable: true);
+        }
+        catch (JsonException)
+        {
+            return LoginClickCaptchaState.Unknown;
+        }
+    }
+
+    public static string BuildReadLoginClickCaptchaStateScript() =>
+        """
+        (() => {
+          const isVisible = (el) => {
+            if (!el) return false;
+            for (let node = el; node && node.nodeType === Node.ELEMENT_NODE; node = node.parentElement) {
+              const style = window.getComputedStyle(node);
+              if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) return false;
+            }
+            const rect = el.getBoundingClientRect();
+            return rect.width > 0 && rect.height > 0;
+          };
+          const roots = Array.from(document.querySelectorAll('.geetest_box, [class*="geetest_box"]'));
+          const root = roots.find((el) => isVisible(el)
+            && el.querySelector('.geetest_ques_tips, [class*="geetest_ques_tips"]'));
+          if (!root) {
+            return JSON.stringify({ overlayVisible: false, explicitAccepted: false, explicitRejected: false, fingerprint: '' });
+          }
+
+          const statusNodes = root.querySelectorAll(
+            '.geetest_result_tips, [class*="geetest_result_tips"], .geetest_status_bar, [class*="geetest_status_bar"]');
+          const statusText = Array.from(statusNodes)
+            .filter(isVisible)
+            .map((el) => String(el.textContent || '').trim().toLowerCase())
+            .filter(Boolean)
+            .join(' ');
+          const statusClasses = [root, ...Array.from(statusNodes)]
+            .filter(isVisible)
+            .map((el) => String(el.className || '').toLowerCase())
+            .join(' ');
+          const explicitAccepted = /geetest_(success|pass)/.test(statusClasses)
+            || /(проверка пройдена|успешно|success|verified)/.test(statusText);
+          const explicitRejected = /geetest_(fail|error)/.test(statusClasses)
+            || /(невер|ошиб|повторите|попробуйте ещё|incorrect|try again|failed)/.test(statusText);
+
+          const imageNodes = Array.from(root.querySelectorAll(
+            '.geetest_bg, [class*="geetest_bg"], .geetest_item_img, [class*="geetest_item_img"]'))
+            .filter(isVisible);
+          const imageParts = imageNodes.map((el) => {
+            let background = '';
+            try { background = window.getComputedStyle(el).backgroundImage || ''; } catch {}
+            return `${el.style && el.style.backgroundImage || ''}|${background}`;
+          });
+          const hint = root.querySelector('.geetest_ques_tips img, [class*="geetest_ques_tips"] img');
+          const fingerprint = `${imageParts.join('||')}::${hint && hint.src || ''}`;
+          return JSON.stringify({ overlayVisible: true, explicitAccepted, explicitRejected, fingerprint });
+        })()
+        """;
+
     public readonly record struct LoginGeeTestApplyResult(
         bool Applied,
         bool OverlayGone,
@@ -417,7 +517,17 @@ public static class AvitoGeeTestSolveSupport
     public static string BuildRefreshLoginGeeTestScript() =>
         """
         (() => {
-            const btn = document.querySelector(".geetest_refresh, [class*='geetest_refresh']");
+            const isVisible = (el) => {
+              if (!el) return false;
+              for (let node = el; node && node.nodeType === Node.ELEMENT_NODE; node = node.parentElement) {
+                const style = window.getComputedStyle(node);
+                if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) return false;
+              }
+              const rect = el.getBoundingClientRect();
+              return rect.width > 0 && rect.height > 0;
+            };
+            const btn = Array.from(document.querySelectorAll(".geetest_refresh, [class*='geetest_refresh']"))
+              .find(isVisible);
             if (!btn) return false;
             try { btn.click(); return true; } catch { return false; }
         })()
@@ -701,4 +811,23 @@ public static class AvitoGeeTestSolveSupport
             })()
             """;
     }
+}
+
+public enum LoginClickCaptchaOutcome
+{
+    Unknown,
+    Pending,
+    Accepted,
+    Rejected,
+    NextRound
+}
+
+public readonly record struct LoginClickCaptchaState(
+    bool OverlayVisible,
+    bool ExplicitAccepted,
+    bool ExplicitRejected,
+    string? Fingerprint,
+    bool Readable)
+{
+    public static LoginClickCaptchaState Unknown { get; } = new(false, false, false, null, false);
 }
