@@ -1,11 +1,15 @@
 /* Read-only CRM analytics dashboard. */
 .crm-analytics {
     display: grid;
+    width: 100%;
+    min-width: 0;
     gap: 18px;
     max-width: 1760px;
     margin: 0 auto;
     padding: 0 24px 40px;
 }
+
+.crm-analytics > * { min-width: 0; }
 
 .crm-analytics .card {
     border-color: var(--border);

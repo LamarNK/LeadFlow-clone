@@ -6,6 +6,13 @@
         var mobileQuery = window.matchMedia('(max-width: 768px)');
         var previousFocus = null;
 
+        function syncFocusScope(isOpen) {
+            var sidebar = document.querySelector('.orbita-sidebar');
+            var content = document.querySelector('.orbita-content');
+            if (sidebar) sidebar.inert = mobileQuery.matches && !isOpen;
+            if (content) content.inert = mobileQuery.matches && isOpen;
+        }
+
         function getMenuButton() {
             return document.querySelector('[data-orbita-mobile-menu]');
         }
@@ -43,6 +50,7 @@
             if (backdrop) backdrop.setAttribute('hidden', '');
             syncMenuButton(false);
             syncSidebarToggle(false);
+            syncFocusScope(false);
 
             if (restoreFocus && previousFocus && typeof previousFocus.focus === 'function') {
                 previousFocus.focus();
@@ -61,6 +69,7 @@
             if (backdrop) backdrop.removeAttribute('hidden');
             syncMenuButton(true);
             syncSidebarToggle(true);
+            syncFocusScope(true);
 
             var firstNavigationItem = document.querySelector('.orbita-nav .nav-item');
             if (firstNavigationItem) firstNavigationItem.focus();
@@ -87,13 +96,26 @@
         });
 
         document.addEventListener('keydown', function (e) {
+            if (e.key === 'Tab' && mobileQuery.matches && document.documentElement.classList.contains('sidebar-mobile-open')) {
+                var items = Array.from(document.querySelectorAll('.orbita-sidebar a[href], .orbita-sidebar button:not(:disabled)'))
+                    .filter(function (item) { return item.getClientRects().length > 0; });
+                var first = items[0];
+                var last = items[items.length - 1];
+                if (first && e.shiftKey && (document.activeElement === first || !document.activeElement.closest('.orbita-sidebar'))) {
+                    e.preventDefault();
+                    last.focus();
+                } else if (last && !e.shiftKey && (document.activeElement === last || !document.activeElement.closest('.orbita-sidebar'))) {
+                    e.preventDefault();
+                    first.focus();
+                }
+            }
             if (e.key === 'Escape' && document.documentElement.classList.contains('sidebar-mobile-open')) {
                 closeMobileSidebar(true);
             }
         });
 
         function closeWhenDesktop() {
-            if (!mobileQuery.matches) closeMobileSidebar(false);
+            closeMobileSidebar(false);
         }
 
         if (typeof mobileQuery.addEventListener === 'function') {
@@ -103,6 +125,7 @@
         }
 
         syncMenuButton(false);
+        syncFocusScope(false);
 
         window.Orbita = window.Orbita || {};
         window.Orbita.closeMobileSidebar = function () { closeMobileSidebar(true); };

@@ -63,6 +63,7 @@
     var confirmMessage = null;
     var confirmOkBtn = null;
     var confirmPending = null;
+    var confirmPreviousFocus = null;
 
     runtime.initConfirmDialog = function initConfirmDialog() {
         confirmDialog = document.getElementById('orbitaConfirmDialog');
@@ -85,6 +86,18 @@
         }
 
         document.addEventListener('keydown', function (e) {
+            if (e.key === 'Tab' && confirmDialog && !confirmDialog.hasAttribute('hidden')) {
+                var buttons = confirmDialog.querySelectorAll('button:not(:disabled)');
+                var first = buttons[0];
+                var last = buttons[buttons.length - 1];
+                if (e.shiftKey && document.activeElement === first) {
+                    e.preventDefault();
+                    last.focus();
+                } else if (!e.shiftKey && document.activeElement === last) {
+                    e.preventDefault();
+                    first.focus();
+                }
+            }
             if (e.key === 'Escape' && confirmDialog && !confirmDialog.hasAttribute('hidden')) {
                 runtime.closeConfirm(false);
             }
@@ -96,6 +109,8 @@
     runtime.closeConfirm = function closeConfirm(confirmed) {
         if (!confirmDialog) return;
         confirmDialog.setAttribute('hidden', '');
+        if (confirmPreviousFocus && confirmPreviousFocus.isConnected) confirmPreviousFocus.focus();
+        confirmPreviousFocus = null;
         var resolver = confirmPending;
         confirmPending = null;
         if (resolver) {
@@ -115,7 +130,9 @@
         confirmOkBtn.textContent = options.confirmLabel || 'Подтвердить';
         confirmOkBtn.classList.toggle('orbita-confirm__btn--danger', options.variant === 'danger');
 
+        confirmPreviousFocus = document.activeElement;
         confirmDialog.removeAttribute('hidden');
+        confirmDialog.querySelector('button[data-orbita-confirm-cancel]').focus();
 
         return new Promise(function (resolve) {
             confirmPending = { resolve: resolve };

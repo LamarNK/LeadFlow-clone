@@ -1,5 +1,6 @@
 (function (runtime) {
     var activeResponseDetailOptions = null;
+    var previousDetailFocus = null;
 
     function responseInitials(name) {
         return String(name || '').trim().split(/\s+/).filter(Boolean).slice(0, 2)
@@ -826,6 +827,19 @@
         }
 
         document.addEventListener('keydown', function (e) {
+            if (e.key === 'Tab' && detailModal && !detailModal.hasAttribute('hidden')) {
+                var items = Array.from(detailModal.querySelectorAll('button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled)'))
+                    .filter(function (item) { return item.getClientRects().length > 0; });
+                var first = items[0];
+                var last = items[items.length - 1];
+                if (first && e.shiftKey && document.activeElement === first) {
+                    e.preventDefault();
+                    last.focus();
+                } else if (last && !e.shiftKey && document.activeElement === last) {
+                    e.preventDefault();
+                    first.focus();
+                }
+            }
             if (e.key === 'Escape' && detailModal && !detailModal.hasAttribute('hidden')) {
                 runtime.closeDetailModal();
             }
@@ -837,6 +851,7 @@
     runtime.openDetailModal = function openDetailModal(options) {
         runtime.initDetailModal();
         if (!detailModal || !detailTitle || !detailBody) return;
+        if (detailModal.hasAttribute('hidden')) previousDetailFocus = document.activeElement;
 
         var isResponseDetail = !!options.responseProfile;
         var isLogDetail = options.variant === 'log';
@@ -959,6 +974,7 @@
         });
         detailModal.classList.toggle('orbita-detail-modal--media', !!options.attachmentUrl);
         detailModal.removeAttribute('hidden');
+        detailModal.querySelector('button[data-orbita-detail-close]').focus();
         detailBody.scrollTop = 0;
         runtime.closeAllPopovers();
 
@@ -976,6 +992,8 @@
         }
         activeResponseDetailOptions = null;
         detailModal.setAttribute('hidden', '');
+        if (previousDetailFocus && previousDetailFocus.isConnected) previousDetailFocus.focus();
+        previousDetailFocus = null;
         detailModal.classList.remove('orbita-detail-modal--media', 'orbita-detail-modal--chat', 'orbita-detail-modal--response', 'orbita-detail-modal--log');
         runtime.setDetailFooter(null);
     }
