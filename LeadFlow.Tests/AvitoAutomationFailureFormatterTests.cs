@@ -183,6 +183,31 @@ public sealed class AvitoAutomationFailureFormatterTests
     }
 
     [Fact]
+    public void Format_WhenPasswordWasReset_RequiresSmsInsteadOfAnotherPasswordRetry()
+    {
+        var state = new AvitoPageState(
+            AvitoPageKind.Login,
+            "https://www.avito.ru/profile/pro/items",
+            "Avito",
+            false,
+            0,
+            null,
+            null,
+            0,
+            true,
+            false,
+            RequiresPasswordResetSms: true,
+            PasswordResetSmsPhone: "+7 *** ***-**-35");
+
+        var message = AvitoAutomationFailureFormatter.Format("сбор откликов", state);
+
+        Assert.Contains("SMS", message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("сбросил пароль", message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("+7 *** ***-**-35", message, StringComparison.Ordinal);
+        Assert.DoesNotContain("546", message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void Format_WhenFirewallIpOnLoginUrl_PrefersIpBlockOverLogin()
     {
         var state = new AvitoPageState(

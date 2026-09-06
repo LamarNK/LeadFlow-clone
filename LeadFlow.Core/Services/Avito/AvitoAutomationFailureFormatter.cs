@@ -26,6 +26,14 @@ public static class AvitoAutomationFailureFormatter
             return "подтвердите почту по ссылке из письма Avito, чтобы завершить настройку профиля.";
         }
 
+        if (pageState?.RequiresPasswordResetSms == true)
+        {
+            var phone = string.IsNullOrWhiteSpace(pageState.PasswordResetSmsPhone)
+                ? string.Empty
+                : $" на номер {pageState.PasswordResetSmsPhone}";
+            return $"Avito сбросил пароль из-за защиты профиля. Автовход остановлен: получите SMS-код{phone}, установите новый пароль и затем войдите в браузере.";
+        }
+
         if (pageState?.HasFirewallIp == true
             || (pageState?.HasCaptcha == true && pageState.PageKind == AvitoPageKind.Captcha))
         {
