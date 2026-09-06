@@ -1934,6 +1934,7 @@ public sealed class WorkerMonitoringService(
                 }
                 catch (Exception ex) when (ShouldHandleAsSubProfileAutomationFailure(ex))
                 {
+                    var deferTransientCdpTimeout = ShouldDeferSubProfileRetry(ex, deferredRetry);
                     var blocking = await HandleSubProfileAutomationFailureAsync(
                         account,
                         session,
@@ -1960,6 +1961,11 @@ public sealed class WorkerMonitoringService(
                         aborted = true;
                         remainingSkipReason = FormatRemainingSkipReason("automation", sub.Name, ex.Message);
                         break;
+                    }
+
+                    if (deferTransientCdpTimeout)
+                    {
+                        switchQueue.Add((sub, true));
                     }
                 }
 
@@ -3103,12 +3109,16 @@ public sealed class WorkerMonitoringService(
         && ex is not SessionDiagnosticException
         && !ShouldHandleAsSubProfileAutomationFailure(ex);
 
-    private static bool ShouldHandleAsSubProfileAutomationFailure(Exception ex) =>
+    internal static bool ShouldHandleAsSubProfileAutomationFailure(Exception ex) =>
         ex is not AdsPowerProxyFailureException
-        && (ex is AvitoPageMismatchException
+        && (AdsPowerCdpGuard.IsCdpTimeout(ex)
+            || ex is AvitoPageMismatchException
             or JsonException
             or PuppeteerException
             or InvalidOperationException);
+
+    internal static bool ShouldDeferSubProfileRetry(Exception ex, bool deferredRetry) =>
+        !deferredRetry && AdsPowerCdpGuard.IsCdpTimeout(ex);
 
     private async Task<bool> HandleSubProfileSwitchFailureAsync(
         AvitoAccount account,
@@ -3143,19 +3153,23 @@ public sealed class WorkerMonitoringService(
         CancellationToken ct)
     {
         AvitoPageState? pageState = null;
+        var transientCdpTimeout = AdsPowerCdpGuard.IsCdpTimeout(ex);
         if (ex is AvitoPageMismatchException mismatch && mismatch.ActualState is not null)
         {
             pageState = mismatch.ActualState;
         }
 
-        try
+        if (!transientCdpTimeout)
         {
-            var liveState = await session.GetPageStateAsync(ct).ConfigureAwait(false);
-            pageState = PreferPageState(pageState, liveState);
-        }
-        catch
-        {
-            // best effort
+            try
+            {
+                var liveState = await session.GetPageStateAsync(ct).ConfigureAwait(false);
+                pageState = PreferPageState(pageState, liveState);
+            }
+            catch
+            {
+                // best effort
+            }
         }
 
         var recoveryAttempts = ex is AvitoPageMismatchException mismatchEx
@@ -3166,17 +3180,59 @@ public sealed class WorkerMonitoringService(
         var blocking = AvitoAutomationFailureFormatter.IsAccountBlockingIssue(kind);
         WorkerMonitoringLogger.PageStateHint(account, sub, pageState);
         WorkerMonitoringLogger.SubProfileIssue(account, sub, kind, detail, blocking);
-        await PublishSubProfileIssueWithDiagnosticAsync(
-            account,
-            session,
-            sub,
-            kind,
-            detail,
-            ct,
-            pageState: pageState,
-            expectedStep: expectedStep).ConfigureAwait(false);
+        if (transientCdpTimeout)
+        {
+            await PublishSubProfileIssueWithoutSessionProbeAsync(
+                    account,
+                    session,
+                    sub,
+                    kind,
+                    detail,
+                    ct,
+                    expectedStep)
+                .ConfigureAwait(false);
+        }
+        else
+        {
+            await PublishSubProfileIssueWithDiagnosticAsync(
+                    account,
+                    session,
+                    sub,
+                    kind,
+                    detail,
+                    ct,
+                    pageState: pageState,
+                    expectedStep: expectedStep)
+                .ConfigureAwait(false);
+        }
 
         return blocking;
+    }
+
+    private async Task PublishSubProfileIssueWithoutSessionProbeAsync(
+        AvitoAccount account,
+        IAdsPowerAccountSession session,
+        AvitoSubProfile sub,
+        string kind,
+        string detail,
+        CancellationToken ct,
+        string expectedStep)
+    {
+        AccountIssueTracker.ApplySubProfileIssue(account, sub, kind, detail);
+        var message = AccountIssueFormatting.FormatIssue(account, sub, kind, detail);
+        var diagnostic = await WorkerDiagnosticEventDetailsBuilder.BuildAsync(
+                diagnosticsUploader,
+                account.Id,
+                $"subprofile-{kind}",
+                message,
+                session.CurrentPageUrl,
+                screenshotPng: null,
+                sub.Id,
+                sub.Name,
+                ct,
+                expectedStep: expectedStep)
+            .ConfigureAwait(false);
+        await PublishAccountEventAsync(account, "Warning", message, diagnostic.Details, ct).ConfigureAwait(false);
     }
 
     private static AvitoPageState? PreferPageState(AvitoPageState? primary, AvitoPageState? secondary)
