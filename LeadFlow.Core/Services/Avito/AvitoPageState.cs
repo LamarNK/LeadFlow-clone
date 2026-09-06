@@ -15,7 +15,9 @@ public sealed record AvitoPageState(
     bool HasFirewallIp = false,
     bool HasInsufficientAdvance = false,
     bool HasEmailConfirmationRequired = false,
-    bool HasTransientError = false)
+    bool HasTransientError = false,
+    bool RequiresPasswordResetSms = false,
+    string? PasswordResetSmsPhone = null)
 {
     public bool IsOnCandidates =>
         PageKind == AvitoPageKind.Candidates
@@ -40,6 +42,7 @@ public sealed record AvitoPageState(
         _ when HasTransientError || PageKind == AvitoPageKind.TransientError => "ошибка загрузки страницы Avito (прокси мог подвиснуть)",
         _ when HasInsufficientAdvance && HasEmailConfirmationRequired => "объявления скрыты: недостаточно денег на авансе; требуется подтверждение почты",
         _ when HasInsufficientAdvance => "объявления скрыты: недостаточно денег на авансе",
+        _ when RequiresPasswordResetSms => "сработала защита профиля: нужен код из SMS",
         _ when HasEmailConfirmationRequired => "требуется подтверждение почты",
         AvitoPageKind.Candidates => "страница откликов",
         AvitoPageKind.Dashboard => "главная панель Avito Pro",

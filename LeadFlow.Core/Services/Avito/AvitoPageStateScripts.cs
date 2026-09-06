@@ -52,8 +52,23 @@ public static class AvitoPageStateScripts
                 document.querySelector("[data-marker='users-list/button']") ||
                 document.querySelector("[data-marker='login-form-with-avatar']")
             );
+            // Avito сбросил пароль при подозрении на взлом. Это терминальное состояние:
+            // нажимать «Получить код» не нужно — код должен ввести владелец аккаунта.
+            const passwordResetForm = document.querySelector(
+                "[data-marker='password-was-reset'], [data-marker='password-was-reset-form']");
+            const passwordResetText = (passwordResetForm?.textContent ?? "").trim();
+            const requiresPasswordResetSms = !!passwordResetForm
+                && /Сработала\s+защита\s+профиля/i.test(passwordResetText)
+                && /Получить\s+код\s+по\s+смс/i.test(passwordResetText);
+            const passwordResetPhoneSource = passwordResetForm?.querySelector(
+                "[class*='PhoneNumber-module-phone'] strong, [class*='PhoneNumber-module-phone']")?.textContent ?? "";
+            const passwordResetDigits = String(passwordResetPhoneSource).replace(/\D/g, "");
+            const passwordResetSmsPhone = requiresPasswordResetSms && passwordResetDigits.length >= 2
+                ? `+${passwordResetDigits.slice(0, 1)} *** ***-**-${passwordResetDigits.slice(-2)}`
+                : null;
             const hasLoginDom = !!(
                 hasSavedUsersList ||
+                passwordResetForm ||
                 document.querySelector("[data-marker='auth-app-root']") ||
                 document.querySelector("form[data-marker='login-form']") ||
                 document.querySelector("[data-marker='login-form/login']") ||
@@ -192,7 +207,9 @@ public static class AvitoPageStateScripts
                 hasFirewallIp,
                 hasInsufficientAdvance,
                 hasEmailConfirmationRequired,
-                hasTransientError
+                hasTransientError,
+                requiresPasswordResetSms,
+                passwordResetSmsPhone
             });
         })();
         """;
