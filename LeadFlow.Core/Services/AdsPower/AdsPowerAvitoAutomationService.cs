@@ -2138,6 +2138,13 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 TryClearGeeTestCaptchaAsync,
                 cancellationToken)
             .ConfigureAwait(false);
+        if (string.Equals(recovery.FailureReason, "password_reset_sms_required", StringComparison.Ordinal))
+        {
+            throw new AvitoLoginRequiredException(
+                page.Url,
+                passwordResetSmsPhone: recovery.PasswordResetSmsPhone ?? "указанный в Avito номер");
+        }
+
         return recovery.Recovered;
     }
 

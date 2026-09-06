@@ -1908,7 +1908,8 @@ public sealed class WorkerMonitoringService(
                                 loginEx.Title,
                                 loginEx.ScreenshotPng,
                                 sub.Id,
-                                sub.Name),
+                                sub.Name,
+                                loginEx.PasswordResetSmsPhone),
                             cancellationToken)
                         .ConfigureAwait(false);
                     break;
@@ -2720,7 +2721,9 @@ public sealed class WorkerMonitoringService(
     {
         account.Status = AvitoAccountStatus.RequiresLogin;
         var sub = FindSubProfile(account, loginEx.SubProfileId);
-        var detail = "требуется повторная авторизация в Avito — автовход не удался, откройте браузер AdsPower и войдите (телефон/почта и пароль).";
+        var detail = loginEx.RequiresPasswordResetSms
+            ? $"Avito сбросил пароль из-за защиты профиля. Автовход остановлен: получите SMS-код на {loginEx.PasswordResetSmsPhone}, установите новый пароль и войдите в браузере."
+            : "требуется повторная авторизация в Avito — автовход не удался, откройте браузер AdsPower и войдите (телефон/почта и пароль).";
         account.LastErrorMessage = sub is not null
             ? AccountIssueFormatting.FormatIssue(account, sub, AvitoSubProfileIssueKind.AuthRequired, detail)
             : detail;
