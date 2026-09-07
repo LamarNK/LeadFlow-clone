@@ -17,7 +17,8 @@ public sealed class DashboardService(
         string? sort = null,
         string? sortDir = null,
         CancellationToken ct = default,
-        string? workerFilter = null)
+        string? workerFilter = null,
+        string? workerSearch = null)
     {
         pageSize = ListPageSizeDefaults.Normalize(pageSize, ListPageSizeDefaults.Dashboard);
         var tableSort = TableSort.Parse(sort, sortDir, TableSort.DashboardWorkers.Default, TableSort.DashboardWorkers.Columns);
@@ -32,11 +33,12 @@ public sealed class DashboardService(
                 pageSize.Value,
                 tableSort.Column,
                 tableSort.Dir,
-                workerFilter);
+                workerFilter,
+                workerSearch);
         }
 
         var summaryTask = api.GetSummaryAsync(period.TimeZoneOffsetMinutes, period.From, period.To, ct);
-        var workersTask = api.GetDashboardWorkersAsync(page, pageSize, tableSort.Column, tableSort.Dir, ct, workerFilter);
+        var workersTask = api.GetDashboardWorkersAsync(page, pageSize, tableSort.Column, tableSort.Dir, ct, workerFilter, workerSearch);
         var eventsTask = api.GetEventsAsync(
             limit: DashboardRecentEvents.Limit,
             sinceUtc: DashboardRecentEvents.SinceUtc,
@@ -86,6 +88,7 @@ public sealed class DashboardService(
             DisabledWorkersCount = workersPage.PausedCount,
             ShowWorkersMonitoringControls = workersPage.TabCounts.All > 0,
             WorkerFilter = workerFilter,
+            WorkerSearchQuery = SearchQueryNormalizer.Normalize(workerSearch),
             WorkerTabCounts = workersPage.TabCounts,
             Pagination = new PaginationViewModel
             {

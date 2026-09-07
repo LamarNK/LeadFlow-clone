@@ -11,5 +11,6 @@ public interface IDashboardService
         string? sort = null,
         string? sortDir = null,
         CancellationToken ct = default,
-        string? workerFilter = null);
+        string? workerFilter = null,
+        string? workerSearch = null);
 }

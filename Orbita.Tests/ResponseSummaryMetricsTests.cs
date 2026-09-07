@@ -127,6 +127,39 @@ public sealed class ResponseSummaryMetricsTests
     }
 
     [Fact]
+    public async Task GetPageAsync_NumericVacancyIdMatchesExactly()
+    {
+        await using var db = CreateDb();
+        SeedOffice(db);
+        var now = DateTime.UtcNow;
+        var exact = CreateResponse("123456", PersonOne, "79930099416", now);
+        var partial = CreateResponse("1234567", PersonTwo, "79910001122", now);
+        db.CandidateResponses.AddRange(exact, partial);
+        await db.SaveChangesAsync();
+
+        var sut = new ResponsesQueryService(db, new ResponseBitrixDeliveryService(db));
+        var page = await sut.GetPageAsync(
+            OfficeScope.ForOffice(OfficeId),
+            OfficeId,
+            status: null,
+            search: null,
+            vacancy: "123456",
+            workerId: null,
+            accountId: null,
+            bitrixDestination: null,
+            gender: null,
+            ageFrom: null,
+            ageTo: null,
+            fromUtc: now.AddDays(-1),
+            toUtc: now.AddDays(1),
+            page: 1,
+            pageSize: 25);
+
+        Assert.Equal(1, page.TotalCount);
+        Assert.Equal(exact.Id, Assert.Single(page.Items).Id);
+    }
+
+    [Fact]
     public async Task GetSummaryAsync_SentCountsDeliveriesBySendDate_NotCollectionDate()
     {
         await using var db = CreateDb();

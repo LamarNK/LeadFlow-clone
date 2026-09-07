@@ -78,6 +78,29 @@ public sealed class DashboardQueryServiceWorkersPageTests
     }
 
     [Fact]
+    public async Task GetWorkersPageAsync_SearchesAllWorkersBeforePaginating()
+    {
+        DashboardQueryService.ClearCacheForTests();
+        await using var db = CreateDb();
+        var now = DateTime.UtcNow;
+        SeedOffice(db, now);
+        SeedWorker(db, Guid.NewGuid(), "first", now, machineName: "first-pc");
+        var target = Guid.NewGuid();
+        SeedWorker(db, target, "target", now.AddHours(-1), machineName: "target-pc");
+        await db.SaveChangesAsync();
+
+        var page = await CreateService(db).GetWorkersPageAsync(
+            OfficeScope.ForOffice(OfficeId),
+            OfficeId,
+            page: 1,
+            pageSize: 1,
+            workerSearch: "target-pc");
+
+        Assert.Equal(1, page.TotalCount);
+        Assert.Equal(target, Assert.Single(page.Items).Id);
+    }
+
+    [Fact]
     public async Task GetWorkersPageAsync_ClampsPageWhenLastItemDisappears()
     {
         DashboardQueryService.ClearCacheForTests();

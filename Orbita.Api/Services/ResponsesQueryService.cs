@@ -909,6 +909,12 @@ public sealed class ResponsesQueryService(
         IQueryable<CandidateResponseEntity> query,
         string? vacancy)
     {
+        var exactId = SearchQueryNormalizer.Normalize(vacancy);
+        if (exactId is not null && exactId.All(char.IsDigit))
+        {
+            return query.Where(x => x.SourceResponseId == exactId);
+        }
+
         foreach (var token in SearchQueryNormalizer.Tokenize(vacancy))
         {
             var pattern = SearchQueryNormalizer.ToILikePattern(token);

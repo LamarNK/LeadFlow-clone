@@ -1844,7 +1844,8 @@ internal static class DesignPreviewData
         int? pageSize = null,
         string? sort = null,
         string? sortDir = null,
-        string? workerFilter = null)
+        string? workerFilter = null,
+        string? workerSearch = null)
     {
         var tableSort = TableSort.Parse(sort, sortDir, TableSort.DashboardWorkers.Default, TableSort.DashboardWorkers.Columns);
         var allWorkers = GetWorkers(officeId);
@@ -1864,6 +1865,11 @@ internal static class DesignPreviewData
         var normalizedPageSize = ListPageSizeDefaults.Normalize(pageSize, ListPageSizeDefaults.Dashboard);
         var tabCounts = DashboardWorkerFilter.Count(sorted);
         sorted = sorted.Where(worker => DashboardWorkerFilter.Matches(worker, DashboardWorkerFilter.Normalize(workerFilter))).ToList();
+        sorted = sorted.Where(worker => SearchQueryNormalizer.MatchesTokens(
+            workerSearch,
+            worker.DisplayName,
+            worker.MachineName,
+            worker.IpAddress)).ToList();
         var total = sorted.Count;
         var normalizedPage = WorkerListPaging.NormalizePage(page, normalizedPageSize, total);
         var items = sorted
@@ -2379,7 +2385,8 @@ internal static class DesignPreviewData
         int pageSize = ListPageSizeDefaults.Dashboard,
         string? sort = null,
         string? sortDir = null,
-        string? workerFilter = null)
+        string? workerFilter = null,
+        string? workerSearch = null)
     {
         period ??= DashboardPeriod.Today;
         officeContext ??= new OfficeContext();
@@ -2514,6 +2521,7 @@ internal static class DesignPreviewData
             })
             .ToList();
         var normalizedWorkerFilter = DashboardWorkerFilter.Normalize(workerFilter);
+        var normalizedWorkerSearch = SearchQueryNormalizer.Normalize(workerSearch);
         var workerTabCounts = new DashboardWorkerTabCounts(
             workerRows.Count,
             workerRows.Count(w => w.IsEnabled && w.IsOnline),
@@ -2529,6 +2537,11 @@ internal static class DesignPreviewData
                 DashboardWorkerFilter.Paused => w.IsMonitoringPaused,
                 _ => true
             })
+            .Where(w => SearchQueryNormalizer.MatchesTokens(
+                normalizedWorkerSearch,
+                w.DisplayName,
+                w.MachineName,
+                w.IpAddress))
             .ToList();
         var totalWorkers = sortedWorkers.Count;
         pageSize = ListPageSizeDefaults.Normalize(pageSize, ListPageSizeDefaults.Dashboard);
@@ -2568,6 +2581,7 @@ internal static class DesignPreviewData
             DisabledWorkersCount = workerRows.Count(w => w.IsMonitoringPaused),
             ShowWorkersMonitoringControls = totalWorkers > 0,
             WorkerFilter = normalizedWorkerFilter,
+            WorkerSearchQuery = normalizedWorkerSearch,
             WorkerTabCounts = workerTabCounts,
             Pagination = new PaginationViewModel
             {

@@ -384,17 +384,18 @@ public sealed class DashboardQueryService(
         string? sort = null,
         string? dir = null,
         CancellationToken ct = default,
-        string? workerFilter = null)
+        string? workerFilter = null,
+        string? workerSearch = null)
     {
         Task<WorkersPageDto> Load(CancellationToken token) => GetWorkersPageUncachedAsync(
-            scope, officeFilter, page, pageSize, sort, dir, token, workerFilter);
+            scope, officeFilter, page, pageSize, sort, dir, token, workerFilter, workerSearch);
         return queryCache is null
             ? Load(ct)
             : queryCache.GetOrCreateAsync(
                 OrbitaCacheDomain.Dashboard,
                 scope.ResolveFilter(officeFilter),
                 ScopeAudience(scope),
-                new { Kind = "workers-page", page, pageSize, sort, dir, workerFilter },
+                new { Kind = "workers-page", page, pageSize, sort, dir, workerFilter, workerSearch },
                 OrbitaCachePolicy.Realtime,
                 Load,
                 ct);
@@ -408,7 +409,8 @@ public sealed class DashboardQueryService(
         string? sort = null,
         string? dir = null,
         CancellationToken ct = default,
-        string? workerFilter = null)
+        string? workerFilter = null,
+        string? workerSearch = null)
     {
         var nowUtc = DateTime.UtcNow;
         var todayStart = nowUtc.Date;
@@ -418,6 +420,15 @@ public sealed class DashboardQueryService(
         var filtered = officeScope
             .ApplyWorkerFilter(db.Workers.AsNoTracking(), scope, officeFilter)
             .Where(x => x.MachineName != LeadFlowImportWorker.MachineName);
+
+        foreach (var token in SearchQueryNormalizer.Tokenize(workerSearch))
+        {
+            var normalizedToken = token.ToLowerInvariant();
+            filtered = filtered.Where(x =>
+                x.DisplayName.ToLower().Contains(normalizedToken)
+                || x.MachineName.ToLower().Contains(normalizedToken)
+                || (x.IpAddress != null && x.IpAddress.ToLower().Contains(normalizedToken)));
+        }
 
         var pauseGroups = await filtered
             .GroupBy(x => x.IsMonitoringPaused)

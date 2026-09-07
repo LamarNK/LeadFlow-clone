@@ -59,7 +59,7 @@
 
     var liveState = null;
     var activeWorkerFilter = 'all';
-    var workerSearchQuery = '';
+    var workerSearchTimer = null;
     function dashboardPreference(key, fallback) {
         try {
             return window.sessionStorage.getItem(key) || fallback;
@@ -801,15 +801,6 @@
         });
     }
 
-    function applyWorkerFilter() {
-        document.querySelectorAll('[data-dashboard-workers-body] tr[data-href]').forEach(function (row) {
-            var workerSearchText = (row.textContent + ' ' + (row.getAttribute('data-dashboard-worker-ip') || ''))
-                .toLocaleLowerCase();
-            var matchesSearch = !workerSearchQuery || workerSearchText.indexOf(workerSearchQuery) !== -1;
-            row.hidden = !matchesSearch;
-        });
-    }
-
     function submitDashboardSortForm(form) {
         if (!form) return;
         if (typeof form.requestSubmit === 'function') {
@@ -839,8 +830,20 @@
             if (input.hasAttribute('data-dashboard-worker-search-bound')) return;
             input.setAttribute('data-dashboard-worker-search-bound', '1');
             input.addEventListener('input', function () {
-                workerSearchQuery = String(input.value || '').trim().toLocaleLowerCase();
-                applyWorkerFilter();
+                if (workerSearchTimer) {
+                    window.clearTimeout(workerSearchTimer);
+                }
+                workerSearchTimer = window.setTimeout(function () {
+                    var url = new URL(window.location.href);
+                    var query = String(input.value || '').trim();
+                    if (query) {
+                        url.searchParams.set('workerSearch', query);
+                    } else {
+                        url.searchParams.delete('workerSearch');
+                    }
+                    url.searchParams.set('page', '1');
+                    window.location.assign(url.toString());
+                }, 300);
             });
         });
         document.querySelectorAll('[data-dashboard-worker-sort-form]').forEach(function (form) {
@@ -883,7 +886,6 @@
                 });
             });
         });
-        applyWorkerFilter();
     }
 
     function renderWorkers(workers) {
