@@ -3,12 +3,14 @@
 @{
     Layout = null;
     ViewData["Title"] = "Вход";
+    // The approved planet cutout, aligned to the illustration inside the card.
+    const string sculptedEdge = "M1156 0V300Q1156 314 1149 329C1118 389 1104 448 1104 520C1104 587 1121 650 1155 711Q1164 728 1164 747V1024";
 }
 <!DOCTYPE html>
 <html lang="ru" class="auth-html">
 <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
     <title>Орбита — Вход</title>
     <link rel="icon" type="image/png" sizes="48x48" href="~/images/favicon-48x48.png" asp-append-version="true" />
     <link rel="icon" type="image/png" sizes="96x96" href="~/images/favicon-96x96.png" asp-append-version="true" />
@@ -16,24 +18,44 @@
     <link rel="apple-touch-icon" href="~/images/apple-touch-icon.png" asp-append-version="true" />
     <link rel="stylesheet" href="~/lib/fontawesome/css/all.min.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/auth.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/auth-avantgarde.css" asp-append-version="true" />
 </head>
 <body class="auth-body">
 <div class="auth-bg" aria-hidden="true">
-    <img class="auth-bg-img" src="~/images/auth-bg.jpg" alt="" asp-append-version="true" />
-    <canvas class="auth-dots" id="authDots"></canvas>
+    <img class="auth-bg-img" src="~/images/auth-earth-empty.png" alt="" asp-append-version="true" />
 </div>
 <div class="auth-page">
-    <div class="auth-card">
+<div class="auth-scene-copy" aria-hidden="true">
+    <div class="auth-scene-brand"><img src="/images/logo.png" alt="" /><div><strong>Орбита</strong><span>Панель управления</span></div></div>
+    <p class="auth-scene-motto">Управляй<br />сегодня.<br />Создавай<br />завтра.</p>
+    <p class="auth-scene-earth">Земля<br />связывает<br />миры</p>
+    <p class="auth-scene-word">ОРБИТА</p>
+    <p class="auth-scene-technology">Технологии,<br />которые<br />движут<br />дальше</p>
+    <div class="auth-scene-coordinates"><p>55.7558° N<br />37.6173° E</p><span></span><p>Земля<br />Орбита<br />Бесконечные<br />возможности</p></div>
+    <p class="auth-scene-caption">// &nbsp; Панель управления Орбита</p>
+    <p class="auth-scene-values">Связь · Данные · Развитие · Будущее</p>
+    <div class="auth-scene-index"><span>01</span><span>02</span><span>03</span><span>04</span></div>
+</div>
+    <main class="auth-card" aria-labelledby="auth-heading">
+        <svg class="auth-sculpted-edge" viewBox="0 0 1000 1000" preserveAspectRatio="none" aria-hidden="true">
+            <defs>
+                <clipPath id="auth-main-sculpted-clip" clipPathUnits="objectBoundingBox">
+                    <path d="@(sculptedEdge + "H-4096V0Z")" transform="matrix(.000834 0 0 .0009765625 -.281 0)" />
+                </clipPath>
+            </defs>
+            <path class="auth-sculpted-edge__glow" d="@sculptedEdge" transform="matrix(.834 0 0 .9765625 -281 0)" fill="none" />
+        </svg>
+        <section class="auth-main">
         <header class="auth-brand">
-            <img class="auth-logo auth-logo--compact" src="~/images/logo.png" alt="" asp-append-version="true" />
+            <img class="auth-logo" src="~/images/logo.png" alt="" asp-append-version="true" />
             <div class="auth-brand-text">
-                <h1 class="auth-title">Орбита</h1>
+                <p class="auth-title">Орбита</p>
                 <p class="auth-subtitle">Панель управления</p>
             </div>
         </header>
 
         <div class="auth-intro">
-            <h2>С возвращением</h2>
+            <h1 id="auth-heading">С возвращением</h1>
             <p>Войдите, чтобы продолжить работу.</p>
         </div>
 
@@ -42,35 +64,40 @@
 
             @if (!string.IsNullOrWhiteSpace(Model.ErrorMessage))
             {
-                <div class="auth-error-block">@Model.ErrorMessage</div>
+                <div class="auth-error-block" role="alert">@Model.ErrorMessage</div>
             }
             else if (!ViewData.ModelState.IsValid && ViewData.ModelState.ErrorCount > 0)
             {
-                <div class="auth-error-block" asp-validation-summary="All"></div>
+                <div class="auth-error-block" role="alert" asp-validation-summary="All"></div>
             }
 
             <div class="auth-field">
-                <label for="Email">Email</label>
-                <div class="auth-input-wrap">
-                    <i class="fa-solid fa-envelope" aria-hidden="true"></i>
+                <label class="auth-field-label" for="Email">Email</label>
+                <div class="auth-input-wrap auth-input-wrap--email">
+                    <i class="fa-regular fa-envelope" aria-hidden="true"></i>
                     <input asp-for="Email"
                            id="Email"
                            class="auth-input"
                            type="email"
+                           inputmode="email"
+                           autocapitalize="none"
+                           spellcheck="false"
+                           aria-describedby="emailError"
                            autocomplete="username"
                            placeholder="Введите email" />
                 </div>
-                <span asp-validation-for="Email" class="auth-field-error"></span>
+                <span id="emailError" asp-validation-for="Email" class="auth-field-error"></span>
             </div>
 
             <div class="auth-field">
-                <label for="passwordInput">Пароль</label>
+                <label class="auth-field-label" for="passwordInput">Пароль</label>
                 <div class="auth-input-wrap auth-input-wrap--password">
                     <i class="fa-solid fa-lock" aria-hidden="true"></i>
                     <input asp-for="Password"
                            id="passwordInput"
                            class="auth-input"
                            type="password"
+                           aria-describedby="passwordError"
                            autocomplete="current-password"
                            placeholder="Введите пароль" />
                     <button type="button"
@@ -80,7 +107,7 @@
                         <i class="fa-regular fa-eye" aria-hidden="true"></i>
                     </button>
                 </div>
-                <span asp-validation-for="Password" class="auth-field-error"></span>
+                <span id="passwordError" asp-validation-for="Password" class="auth-field-error"></span>
             </div>
 
             <button class="auth-submit" type="submit">
@@ -89,21 +116,11 @@
             </button>
         </form>
 
-        @if (Model.DesignPreviewEnabled)
-        {
-            <p class="auth-preview-hint">Режим просмотра дизайна — PostgreSQL и API не нужны. Пароль: <strong>OrbitaAdmin1!</strong></p>
-        }
-
-    </div>
+        <p class="auth-footer">В вашей вселенной.</p>
+        </section>
+        <aside class="auth-visual" aria-hidden="true"></aside>
+    </main>
 </div>
-<script src="~/js/orbita/layout.js" asp-append-version="true"></script>
-<script src="~/js/orbita/sidebar.js" asp-append-version="true"></script>
-<script src="~/js/orbita/feedback.js" asp-append-version="true"></script>
-<script src="~/js/orbita/workers.js" asp-append-version="true"></script>
-<script src="~/js/orbita/filters.js" asp-append-version="true"></script>
-<script src="~/js/orbita/detail-modal.js" asp-append-version="true"></script>
-<script src="~/js/orbita/navigation.js" asp-append-version="true"></script>
-<script src="~/js/orbita/entry.js" asp-append-version="true"></script>
-<script src="~/js/auth-dots.js" asp-append-version="true"></script>
+<script src="~/js/auth.js" asp-append-version="true"></script>
 </body>
 </html>

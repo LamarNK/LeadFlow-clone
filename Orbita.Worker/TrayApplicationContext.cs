@@ -1,4 +1,5 @@
 using LeadFlow.Core.Logging.Audit;
+using Microsoft.Extensions.Hosting;
 using Orbita.Worker.Services;
 
 namespace Orbita.Worker;
@@ -13,12 +14,14 @@ public sealed class TrayApplicationContext : ApplicationContext
     private readonly ToolStripMenuItem _statusItem;
     private readonly ToolStripMenuItem _toggleMonitoringItem;
     private readonly System.Windows.Forms.Timer _statusTimer;
+    private readonly CancellationTokenRegistration _stoppingRegistration;
 
     public TrayApplicationContext(
         WorkerOrchestrator orchestrator,
         WorkerRuntimeState runtimeState,
         WorkerConfigStore configStore,
-        WorkerCredentials credentials)
+        WorkerCredentials credentials,
+        IHostApplicationLifetime? lifetime = null)
     {
         _orchestrator = orchestrator;
         _runtimeState = runtimeState;
@@ -55,6 +58,11 @@ public sealed class TrayApplicationContext : ApplicationContext
 
         _runtimeState.Changed += (_, _) => UpdateUi();
         Application.ApplicationExit += OnApplicationExit;
+        if (lifetime is not null)
+        {
+            _stoppingRegistration = lifetime.ApplicationStopping.Register(OnHostStopping);
+        }
+
         UpdateUi();
         ShowFailedUpdateBalloon();
 
@@ -66,6 +74,14 @@ public sealed class TrayApplicationContext : ApplicationContext
                 ["worker.displayName"] = _credentials.DisplayName ?? Environment.MachineName,
                 ["worker.id"] = _credentials.WorkerId
             });
+    }
+
+    private void OnHostStopping()
+    {
+        _ = WorkerLifecycleLog.InfoAsync(
+            "Worker lifecycle: хост останавливается, закрытие трея",
+            nameof(OnHostStopping));
+        Application.Exit();
     }
 
     private void OnApplicationExit(object? sender, EventArgs e)
@@ -181,6 +197,7 @@ public sealed class TrayApplicationContext : ApplicationContext
     {
         if (disposing)
         {
+            _stoppingRegistration.Dispose();
             _statusTimer.Stop();
             _statusTimer.Dispose();
             _trayIcon.Dispose();

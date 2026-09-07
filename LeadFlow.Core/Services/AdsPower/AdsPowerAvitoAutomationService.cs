@@ -33,7 +33,10 @@ public sealed partial class AdsPowerAvitoAutomationService(
     // Эти операции нужны только для выбора/проверки вкладки, поэтому не должны удерживать слот
     // мониторинга минутами.
     private static readonly TimeSpan CdpPageDiscoveryTimeout = TimeSpan.FromSeconds(8);
-    private static readonly TimeSpan CdpPageReadTimeout = TimeSpan.FromSeconds(5);
+    // На слабых worker-машинах короткая DOM-проверка иногда отвечает дольше 5 секунд,
+    // хотя вкладка и CDP-сессия остаются рабочими. Даём probe тот же практический
+    // запас, что и остальным действиям переключения, прежде чем отложить субпрофиль.
+    private static readonly TimeSpan CdpPageReadTimeout = TimeSpan.FromSeconds(15);
     private static readonly TimeSpan CdpSwitchActionTimeout = TimeSpan.FromSeconds(8);
     private static readonly TimeSpan CdpSwitchEffectTimeout = TimeSpan.FromSeconds(20);
     private static readonly TimeSpan CdpNavigationGuardTimeout = TimeSpan.FromSeconds(50);
@@ -2127,9 +2130,21 @@ public sealed partial class AdsPowerAvitoAutomationService(
             (script, ct) => EvaluateWithRetryAsync<string>(page, script, ct, CdpPageReadTimeout),
             cancellationToken);
 
-    private static async Task<bool> TryRecoverAvitoLoginAsync(IPage page, CancellationToken cancellationToken)
+    private async Task<bool> TryRecoverAvitoLoginAsync(IPage page, CancellationToken cancellationToken)
     {
-        var recovery = await AvitoAutoLoginRecovery.TryRecoverAsync(page, cancellationToken).ConfigureAwait(false);
+        var recovery = await AvitoAutoLoginRecovery.TryRecoverAsync(
+                page,
+                credentials: null,
+                TryClearGeeTestCaptchaAsync,
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (string.Equals(recovery.FailureReason, "password_reset_sms_required", StringComparison.Ordinal))
+        {
+            throw new AvitoLoginRequiredException(
+                page.Url,
+                passwordResetSmsPhone: recovery.PasswordResetSmsPhone ?? "указанный в Avito номер");
+        }
+
         return recovery.Recovered;
     }
 
@@ -2138,6 +2153,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
         string adsPowerUserId,
         CancellationToken cancellationToken)
     {
+        using var loginCaptcha = AvitoAutoLoginContext.UseSolver(TryClearGeeTestCaptchaAsync);
         var executeScript = (string script, CancellationToken ct) =>
             EvaluateWithRetryAsync<string>(page, script, ct);
 
@@ -3801,7 +3817,10 @@ public sealed partial class AdsPowerAvitoAutomationService(
             {
                 autoRepliesSent++;
             }
-            if (!string.IsNullOrWhiteSpace(enrichment.ChannelUrl) || enrichment.ChatMessages.Count > 0)
+            var messengerAvatarUrl = enrichment.Collection?.AvatarUrl;
+            if (!string.IsNullOrWhiteSpace(enrichment.ChannelUrl)
+                || enrichment.ChatMessages.Count > 0
+                || !string.IsNullOrWhiteSpace(messengerAvatarUrl))
             {
                 await HumanDelay.AfterMessengerCardAsync(cancellationToken).ConfigureAwait(false);
             }
@@ -3848,9 +3867,17 @@ public sealed partial class AdsPowerAvitoAutomationService(
                     });
             }
 
-            if (string.IsNullOrWhiteSpace(enrichment.ChannelUrl) && enrichment.ChatMessages.Count == 0)
+            if (string.IsNullOrWhiteSpace(enrichment.ChannelUrl)
+                && enrichment.ChatMessages.Count == 0
+                && string.IsNullOrWhiteSpace(messengerAvatarUrl))
             {
                 continue;
+            }
+
+            if (string.IsNullOrWhiteSpace(item["avatarUrl"]?.GetValue<string>())
+                && !string.IsNullOrWhiteSpace(messengerAvatarUrl))
+            {
+                item["avatarUrl"] = messengerAvatarUrl;
             }
 
             if (!string.IsNullOrWhiteSpace(enrichment.ChannelUrl))
@@ -3937,6 +3964,8 @@ public sealed partial class AdsPowerAvitoAutomationService(
         int RootMessageNodeCount,
         bool HasMessagesList)
     {
+        public string AvatarUrl { get; init; } = string.Empty;
+
         public static MiniMessengerCollectionResult NotCollected { get; } = new(
             new JsonArray(),
             "not_collected",
@@ -4401,10 +4430,21 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 WaitConfirmed = waitConfirmed,
                 Attempts = round + 1
             };
+            if (string.IsNullOrWhiteSpace(parsed.AvatarUrl))
+            {
+                parsed = parsed with { AvatarUrl = latest.AvatarUrl };
+            }
             latest = parsed;
             if (parsed.Messages.Count == 0)
             {
                 continue;
+            }
+
+            if (richest is not null
+                && string.IsNullOrWhiteSpace(richest.AvatarUrl)
+                && !string.IsNullOrWhiteSpace(parsed.AvatarUrl))
+            {
+                richest = richest with { AvatarUrl = parsed.AvatarUrl };
             }
 
             if (richest is null || parsed.Messages.Count > richest.Messages.Count)
@@ -4870,7 +4910,10 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 HistoryCount: ReadJsonInt(diagnostics, "historyCount"),
                 VisibleHistoryCount: ReadJsonInt(diagnostics, "visibleHistoryCount"),
                 RootMessageNodeCount: ReadJsonInt(diagnostics, "rootMessageNodeCount"),
-                HasMessagesList: ReadJsonBool(diagnostics, "hasMessagesList"));
+                HasMessagesList: ReadJsonBool(diagnostics, "hasMessagesList"))
+            {
+                AvatarUrl = ReadJsonString(root, "avatarUrl")?.Trim() ?? string.Empty
+            };
         }
         catch
         {

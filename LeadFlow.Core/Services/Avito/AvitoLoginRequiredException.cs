@@ -10,13 +10,15 @@ public sealed class AvitoLoginRequiredException : Exception
         string? title = null,
         byte[]? screenshotPng = null,
         string? subProfileId = null,
-        string? subProfileName = null)
-        : base(BuildMessage(url, title))
+        string? subProfileName = null,
+        string? passwordResetSmsPhone = null)
+        : base(BuildMessage(url, title, passwordResetSmsPhone))
     {
         Url = url;
         Title = title;
         SubProfileId = subProfileId;
         SubProfileName = subProfileName;
+        PasswordResetSmsPhone = passwordResetSmsPhone;
         ScreenshotPng = screenshotPng is { Length: > 0 } ? screenshotPng : null;
     }
 
@@ -30,8 +32,18 @@ public sealed class AvitoLoginRequiredException : Exception
 
     public string? SubProfileName { get; }
 
-    private static string BuildMessage(string? url, string? title)
+    /// <summary>Маскированный номер, на который Avito отправит код после сброса пароля.</summary>
+    public string? PasswordResetSmsPhone { get; }
+
+    public bool RequiresPasswordResetSms => !string.IsNullOrWhiteSpace(PasswordResetSmsPhone);
+
+    private static string BuildMessage(string? url, string? title, string? passwordResetSmsPhone)
     {
+        if (!string.IsNullOrWhiteSpace(passwordResetSmsPhone))
+        {
+            return $"Avito сбросил пароль из-за защиты профиля; нужен SMS-код на {passwordResetSmsPhone}.";
+        }
+
         if (!string.IsNullOrWhiteSpace(title) && title.Contains("Вход", StringComparison.OrdinalIgnoreCase))
         {
             return "Avito требует повторный вход (форма авторизации).";

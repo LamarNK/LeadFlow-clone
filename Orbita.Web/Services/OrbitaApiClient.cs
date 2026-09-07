@@ -3994,6 +3994,17 @@ public sealed class OrbitaApiClient(
                 : (false, await ReadApiErrorAsync(response, ct));
     }
 
+    public async Task<(bool Success, string? Error)> MarkTopUpSessionPaidAsync(Guid sessionId, CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, $"api/v1/panel/top-up-sessions/{sessionId:D}/paid");
+        using var response = await SendAuthenticatedAsync(request, ct);
+        return response is null
+            ? (false, InvalidApiSessionError)
+            : response.IsSuccessStatusCode
+                ? (true, null)
+                : (false, await ReadApiErrorAsync(response, ct));
+    }
+
     private static string AppendQuery(string url, string key, string? value)
     {
         if (string.IsNullOrWhiteSpace(value))

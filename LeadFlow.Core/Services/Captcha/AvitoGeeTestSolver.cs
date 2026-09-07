@@ -3,6 +3,7 @@ using LeadFlow.Core.Logging.Audit;
 using LeadFlow.Core.Services.Avito;
 using LeadFlow.Core.Services.Worker;
 using PuppeteerSharp;
+using PuppeteerSharp.Input;
 
 namespace LeadFlow.Core.Services.Captcha;
 
@@ -14,6 +15,10 @@ public sealed class AvitoGeeTestSolver(
     private const int PostVerifyNavigationTimeoutMs = 20_000;
     private const int PostVerifyPaintPolls = 6;
     private const int PostVerifyPaintPollMs = 400;
+    private const int LoginClickCaptchaOutcomePolls = 20;
+    private const int LoginClickCaptchaOutcomePollMs = 500;
+    private const string LoginClickCaptchaImageSelector = ".geetest_click .geetest_bg, [class*='geetest_click'] [class*='geetest_bg']";
+    private const string LoginNineGridCaptchaImageSelector = ".geetest_nine, [class*='geetest_nine']";
     private static readonly SemaphoreSlim Gate = new(
         AvitoGeeTestSolveSupport.MaxConcurrentGeeTestSolves,
         AvitoGeeTestSolveSupport.MaxConcurrentGeeTestSolves);
@@ -77,6 +82,32 @@ public sealed class AvitoGeeTestSolver(
             if (!AvitoGeeTestSolveSupport.ShouldCreateProviderTask(html))
             {
                 return false;
+            }
+
+            if (AvitoGeeTestSolveSupport.IsLoginGeeTestOverlay(html))
+            {
+                if (!AvitoGeeTestSolveSupport.IsLoginClickCaptchaOverlay(html))
+                {
+                    _ = GlobalLogger.Instance.LogAsync(
+                        "Captcha: GeeTest на логине не является ClickCaptcha — координатную задачу не создаём.",
+                        DeskLinkAuditLogLevel.Warning,
+                        properties: new Dictionary<string, object?>
+                        {
+                            ["step"] = "captcha_login_unsupported_geetest_kind",
+                            ["page.url"] = pageUrl ?? page.Url
+                        });
+                    return false;
+                }
+
+                await Gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+                gateAcquired = true;
+                return await TrySolveLoginOverlayAsync(
+                        page,
+                        html,
+                        pageUrl,
+                        apiKey,
+                        cancellationToken)
+                    .ConfigureAwait(false);
             }
 
             var activation = await ActivateAndProbeCaptchaAsync(page, cancellationToken).ConfigureAwait(false);
@@ -217,6 +248,8 @@ public sealed class AvitoGeeTestSolver(
                             ["captcha.proxyMode"] = effectiveTaskOptions.UsesSuppliedProxy ? "profile" : "proxyless",
                             ["captcha.userAgentPresent"] = !string.IsNullOrWhiteSpace(effectiveTaskOptions.UserAgent)
                         });
+                    await ReportSolutionAsync(apiKey, solution.ProviderTask, isCorrect: false, "GeeTest v4", cancellationToken)
+                        .ConfigureAwait(false);
                     await DelayBeforeRetryAsync(page, attempt, "токен отклонён", cancellationToken)
                         .ConfigureAwait(false);
                     continue;
@@ -231,11 +264,13 @@ public sealed class AvitoGeeTestSolver(
                         "Captcha: GeeTest v4 пройдена через RuCaptcha.",
                         DeskLinkAuditLogLevel.Info,
                         properties: new Dictionary<string, object?>
-                        {
-                            ["step"] = "captcha_solved",
+                    {
+                        ["step"] = "captcha_solved",
                             ["page.url"] = page.Url,
-                            ["captcha.attempt"] = attempt
-                        });
+                        ["captcha.attempt"] = attempt
+                    });
+                    await ReportSolutionAsync(apiKey, solution.ProviderTask, isCorrect: true, "GeeTest v4", cancellationToken)
+                        .ConfigureAwait(false);
                     AvitoCaptchaTaskContext.NoteSolved();
                     return true;
                 }
@@ -266,6 +301,524 @@ public sealed class AvitoGeeTestSolver(
             }
 
             pageGate.Release();
+        }
+    }
+
+    private async Task<bool> TrySolveLoginOverlayAsync(
+        IPage page,
+        string? html,
+        string? pageUrl,
+        string apiKey,
+        CancellationToken cancellationToken)
+    {
+        var websiteUrl = string.IsNullOrWhiteSpace(pageUrl) ? page.Url : pageUrl;
+        if (string.IsNullOrWhiteSpace(websiteUrl))
+        {
+            websiteUrl = "https://www.avito.ru/";
+        }
+
+        for (var attempt = 1; attempt <= MaxAttempts; attempt++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            html ??= await SafeGetHtmlAsync(page, cancellationToken).ConfigureAwait(false);
+            if (!AvitoGeeTestSolveSupport.IsLoginClickCaptchaOverlay(html))
+            {
+                _ = GlobalLogger.Instance.LogAsync(
+                    "Captcha: ClickCaptcha логина исчезла до создания задачи.",
+                    DeskLinkAuditLogLevel.Warning,
+                    properties: new Dictionary<string, object?>
+                    {
+                        ["step"] = "captcha_login_click_widget_missing",
+                        ["page.url"] = websiteUrl,
+                        ["captcha.attempt"] = attempt
+                    });
+                return false;
+            }
+
+            var capture = await CaptureLoginClickCaptchaAsync(page, cancellationToken).ConfigureAwait(false);
+            if (capture is null)
+            {
+                await DelayLoginOverlayRetryAsync(page, attempt, "не удалось снять изображение ClickCaptcha", cancellationToken)
+                    .ConfigureAwait(false);
+                html = null;
+                continue;
+            }
+
+            _ = GlobalLogger.Instance.LogAsync(
+                $"Captcha: RuCaptcha ClickCaptcha на логине, попытка {attempt}/{MaxAttempts}.",
+                DeskLinkAuditLogLevel.Info,
+                properties: new Dictionary<string, object?>
+                {
+                    ["step"] = "captcha_login_solve_start",
+                    ["page.url"] = websiteUrl,
+                    ["captcha.attempt"] = attempt
+                });
+
+            ClickCaptchaSolution solution;
+            try
+            {
+                solution = await ruCaptcha
+                    .SolveClickCaptchaAsync(
+                        apiKey,
+                        capture.ImageBody,
+                        capture.HintImageBody,
+                        capture.HintText,
+                        "ru",
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"Captcha: RuCaptcha не решила ClickCaptcha логина — {ex.Message}",
+                    DeskLinkAuditLogLevel.Warning,
+                    properties: new Dictionary<string, object?>
+                    {
+                        ["step"] = "captcha_login_solve_api_failed",
+                        ["page.url"] = websiteUrl,
+                        ["captcha.attempt"] = attempt
+                    });
+                await DelayLoginOverlayRetryAsync(page, attempt, "RuCaptcha не решила", cancellationToken)
+                    .ConfigureAwait(false);
+                html = null;
+                continue;
+            }
+
+            var applyResult = await ApplyLoginClickCaptchaAsync(page, capture, solution, cancellationToken).ConfigureAwait(false);
+            if (applyResult == LoginClickCaptchaApplyResult.ChallengeChanged)
+            {
+                _ = GlobalLogger.Instance.LogAsync(
+                    "Captcha: изображение ClickCaptcha сменилось до применения ответа — решаем актуальный раунд без report incorrect.",
+                    DeskLinkAuditLogLevel.Info,
+                    properties: new Dictionary<string, object?>
+                    {
+                        ["step"] = "captcha_login_challenge_changed_before_apply",
+                        ["page.url"] = websiteUrl,
+                        ["captcha.attempt"] = attempt
+                    });
+                html = null;
+                continue;
+            }
+
+            if (applyResult != LoginClickCaptchaApplyResult.Applied)
+            {
+                _ = GlobalLogger.Instance.LogAsync(
+                    "Captcha: координаты ClickCaptcha логина не применились.",
+                    DeskLinkAuditLogLevel.Warning,
+                    properties: new Dictionary<string, object?>
+                    {
+                        ["step"] = "captcha_login_apply_failed",
+                        ["page.url"] = websiteUrl,
+                        ["captcha.attempt"] = attempt
+                    });
+                await DelayLoginOverlayRetryAsync(page, attempt, "координаты не применились", cancellationToken)
+                    .ConfigureAwait(false);
+                html = null;
+                continue;
+            }
+
+            var outcome = await WaitForLoginClickCaptchaOutcomeAsync(page, capture.Fingerprint, cancellationToken).ConfigureAwait(false);
+            if (outcome == LoginClickCaptchaOutcome.Accepted)
+            {
+                _ = GlobalLogger.Instance.LogAsync(
+                    "Captcha: ClickCaptcha логина пройдена через RuCaptcha.",
+                    DeskLinkAuditLogLevel.Info,
+                    properties: new Dictionary<string, object?>
+                    {
+                        ["step"] = "captcha_login_solved",
+                        ["page.url"] = page.Url,
+                        ["captcha.attempt"] = attempt,
+                        ["captcha.points"] = solution.Points.Count
+                    });
+                await ReportSolutionAsync(apiKey, solution.ProviderTask, isCorrect: true, "ClickCaptcha логина", cancellationToken)
+                    .ConfigureAwait(false);
+                AvitoCaptchaTaskContext.NoteSolved();
+                return true;
+            }
+
+            if (outcome == LoginClickCaptchaOutcome.NextRound)
+            {
+                await ReportSolutionAsync(apiKey, solution.ProviderTask, isCorrect: true, "ClickCaptcha логина", cancellationToken)
+                    .ConfigureAwait(false);
+                _ = GlobalLogger.Instance.LogAsync(
+                    "Captcha: текущий раунд ClickCaptcha принят, GeeTest показала следующий — продолжаем без обновления виджета.",
+                    DeskLinkAuditLogLevel.Info,
+                    properties: new Dictionary<string, object?>
+                    {
+                        ["step"] = "captcha_login_next_round",
+                        ["page.url"] = page.Url,
+                        ["captcha.attempt"] = attempt
+                    });
+                await Task.Delay(LoginClickCaptchaOutcomePollMs, cancellationToken).ConfigureAwait(false);
+                html = null;
+                continue;
+            }
+
+            if (outcome == LoginClickCaptchaOutcome.Rejected)
+            {
+                await ReportSolutionAsync(apiKey, solution.ProviderTask, isCorrect: false, "ClickCaptcha логина", cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            _ = GlobalLogger.Instance.LogAsync(
+                outcome == LoginClickCaptchaOutcome.Rejected
+                    ? "Captcha: GeeTest явно отклонила ClickCaptcha; RuCaptcha получила report incorrect."
+                    : "Captcha: GeeTest не сообщила окончательный исход ClickCaptcha; report не отправлен.",
+                DeskLinkAuditLogLevel.Warning,
+                properties: new Dictionary<string, object?>
+                {
+                    ["step"] = "captcha_login_click_overlay_visible",
+                    ["page.url"] = page.Url,
+                    ["captcha.attempt"] = attempt,
+                    ["captcha.outcome"] = outcome.ToString()
+                });
+            await DelayLoginOverlayRetryAsync(
+                    page,
+                    attempt,
+                    outcome == LoginClickCaptchaOutcome.Rejected
+                        ? "GeeTest явно отклонила ClickCaptcha"
+                        : "исход ClickCaptcha не прочитался",
+                    cancellationToken)
+                .ConfigureAwait(false);
+            html = null;
+        }
+
+        return false;
+    }
+
+    private static async Task<LoginClickCaptchaOutcome> WaitForLoginClickCaptchaOutcomeAsync(
+        IPage page,
+        string? expectedFingerprint,
+        CancellationToken cancellationToken)
+    {
+        var lastOutcome = LoginClickCaptchaOutcome.Unknown;
+        var consecutiveOverlayGonePolls = 0;
+        for (var poll = 0; poll < LoginClickCaptchaOutcomePolls; poll++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var state = await ReadLoginClickCaptchaStateAsync(page, cancellationToken).ConfigureAwait(false);
+            if (state.Readable)
+            {
+                lastOutcome = AvitoGeeTestSolveSupport.ClassifyLoginClickCaptchaOutcome(
+                    state.OverlayVisible,
+                    state.ExplicitAccepted,
+                    state.ExplicitRejected,
+                    expectedFingerprint,
+                    state.Fingerprint);
+                if (lastOutcome == LoginClickCaptchaOutcome.Accepted)
+                {
+                    if (state.ExplicitAccepted || ++consecutiveOverlayGonePolls >= 2)
+                    {
+                        return LoginClickCaptchaOutcome.Accepted;
+                    }
+                }
+                else
+                {
+                    consecutiveOverlayGonePolls = 0;
+                }
+
+                if (lastOutcome is LoginClickCaptchaOutcome.Rejected
+                    or LoginClickCaptchaOutcome.NextRound)
+                {
+                    return lastOutcome;
+                }
+            }
+            else
+            {
+                consecutiveOverlayGonePolls = 0;
+                lastOutcome = LoginClickCaptchaOutcome.Unknown;
+            }
+
+            if (poll + 1 < LoginClickCaptchaOutcomePolls)
+            {
+                await Task.Delay(LoginClickCaptchaOutcomePollMs, cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        return lastOutcome == LoginClickCaptchaOutcome.Accepted
+            ? LoginClickCaptchaOutcome.Pending
+            : lastOutcome;
+    }
+
+    private static async Task<LoginClickCaptchaCapture?> CaptureLoginClickCaptchaAsync(
+        IPage page,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var stateBeforeCapture = await ReadLoginClickCaptchaStateAsync(page, cancellationToken).ConfigureAwait(false);
+            var image = await FindVisibleElementAsync(page, LoginClickCaptchaImageSelector, cancellationToken).ConfigureAwait(false);
+            var isNineGrid = image is null;
+            image ??= await FindVisibleElementAsync(page, LoginNineGridCaptchaImageSelector, cancellationToken).ConfigureAwait(false);
+            var hint = await FindVisibleElementAsync(
+                    page,
+                    ".geetest_ques_tips, [class*='geetest_ques_tips']",
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (image is null || hint is null)
+            {
+                return null;
+            }
+
+            var imageBody = await image.ScreenshotBase64Async().ConfigureAwait(false);
+            var hintImageBody = await hint.ScreenshotBase64Async().ConfigureAwait(false);
+            var (width, height) = ReadPngDimensions(imageBody);
+            var hintText = await page.EvaluateExpressionAsync<string>(
+                    "(() => document.querySelector('.geetest_text_tips, [class*=\"geetest_text_tips\"]')?.textContent || '')()")
+                .ConfigureAwait(false);
+            var state = await ReadLoginClickCaptchaStateAsync(page, cancellationToken).ConfigureAwait(false);
+            if (stateBeforeCapture.Readable
+                && state.Readable
+                && !string.IsNullOrWhiteSpace(stateBeforeCapture.Fingerprint)
+                && !string.IsNullOrWhiteSpace(state.Fingerprint)
+                && !string.Equals(stateBeforeCapture.Fingerprint, state.Fingerprint, StringComparison.Ordinal))
+            {
+                return null;
+            }
+
+            return width > 0 && height > 0 && !string.IsNullOrWhiteSpace(imageBody) && !string.IsNullOrWhiteSpace(hintImageBody)
+                ? new LoginClickCaptchaCapture(imageBody, hintImageBody, hintText, width, height, isNineGrid, state.Fingerprint)
+                : null;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                $"Captcha: не удалось снять ClickCaptcha логина — {ex.Message}",
+                DeskLinkAuditLogLevel.Warning,
+                properties: new Dictionary<string, object?> { ["step"] = "captcha_login_click_capture_failed" });
+            return null;
+        }
+    }
+
+    private static async Task<LoginClickCaptchaApplyResult> ApplyLoginClickCaptchaAsync(
+        IPage page,
+        LoginClickCaptchaCapture capture,
+        ClickCaptchaSolution solution,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (solution.Points.Count is < 1 or > 8)
+            {
+                return LoginClickCaptchaApplyResult.Failed;
+            }
+
+            var imageSelector = capture.IsNineGrid
+                ? LoginNineGridCaptchaImageSelector
+                : LoginClickCaptchaImageSelector;
+            var image = await FindVisibleElementAsync(page, imageSelector, cancellationToken).ConfigureAwait(false);
+            var box = image is null ? null : await image.BoundingBoxAsync().ConfigureAwait(false);
+            if (box is null || box.Width <= 0 || box.Height <= 0)
+            {
+                return LoginClickCaptchaApplyResult.Failed;
+            }
+
+            var currentState = await ReadLoginClickCaptchaStateAsync(page, cancellationToken).ConfigureAwait(false);
+            if (currentState.Readable
+                && AvitoGeeTestSolveSupport.ClassifyLoginClickCaptchaOutcome(
+                    currentState.OverlayVisible,
+                    currentState.ExplicitAccepted,
+                    currentState.ExplicitRejected,
+                    capture.Fingerprint,
+                    currentState.Fingerprint) == LoginClickCaptchaOutcome.NextRound)
+            {
+                return LoginClickCaptchaApplyResult.ChallengeChanged;
+            }
+
+            foreach (var point in solution.Points)
+            {
+                if (point.X < 0 || point.Y < 0 || point.X > capture.ImageWidth || point.Y > capture.ImageHeight)
+                {
+                    return LoginClickCaptchaApplyResult.Failed;
+                }
+
+                var x = box.X + box.Width * point.X / capture.ImageWidth;
+                var y = box.Y + box.Height * point.Y / capture.ImageHeight;
+                cancellationToken.ThrowIfCancellationRequested();
+                await page.Mouse.MoveAsync(x, y, new MoveOptions { Steps = Random.Shared.Next(4, 9) }).ConfigureAwait(false);
+                await Task.Delay(Random.Shared.Next(90, 190), cancellationToken).ConfigureAwait(false);
+                cancellationToken.ThrowIfCancellationRequested();
+                await page.Mouse.ClickAsync(x, y, new ClickOptions { Delay = Random.Shared.Next(35, 85) }).ConfigureAwait(false);
+                await Task.Delay(Random.Shared.Next(110, 230), cancellationToken).ConfigureAwait(false);
+            }
+
+            var submit = await FindVisibleElementAsync(
+                    page,
+                    ".geetest_submit, [class*='geetest_submit']",
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (submit is null)
+            {
+                // У nine-grid отдельной кнопки нет: GeeTest отправляет ответ после
+                // последнего выбранного изображения.
+                return capture.IsNineGrid
+                    ? LoginClickCaptchaApplyResult.Applied
+                    : LoginClickCaptchaApplyResult.Failed;
+            }
+
+            var submitBox = await submit.BoundingBoxAsync().ConfigureAwait(false);
+            if (submitBox is null || submitBox.Width <= 0 || submitBox.Height <= 0)
+            {
+                return LoginClickCaptchaApplyResult.Failed;
+            }
+
+            var submitX = submitBox.X + submitBox.Width / 2;
+            var submitY = submitBox.Y + submitBox.Height / 2;
+            await page.Mouse.MoveAsync(submitX, submitY, new MoveOptions { Steps = Random.Shared.Next(4, 9) }).ConfigureAwait(false);
+            await page.Mouse.ClickAsync(submitX, submitY, new ClickOptions { Delay = Random.Shared.Next(35, 85) }).ConfigureAwait(false);
+            return LoginClickCaptchaApplyResult.Applied;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                $"Captcha: ошибка применения ClickCaptcha логина — {ex.Message}",
+                DeskLinkAuditLogLevel.Warning,
+                properties: new Dictionary<string, object?> { ["step"] = "captcha_login_click_apply_failed" });
+            return LoginClickCaptchaApplyResult.Failed;
+        }
+    }
+
+    private static async Task<LoginClickCaptchaState> ReadLoginClickCaptchaStateAsync(
+        IPage page,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var raw = await page
+                .EvaluateExpressionAsync<string>(AvitoGeeTestSolveSupport.BuildReadLoginClickCaptchaStateScript())
+                .ConfigureAwait(false);
+            return AvitoGeeTestSolveSupport.ParseLoginClickCaptchaState(raw);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                $"Captcha: не удалось прочитать состояние ClickCaptcha логина — {ex.Message}",
+                DeskLinkAuditLogLevel.Warning,
+                properties: new Dictionary<string, object?> { ["step"] = "captcha_login_click_state_failed" });
+            return LoginClickCaptchaState.Unknown;
+        }
+    }
+
+    private static async Task<IElementHandle?> FindVisibleElementAsync(
+        IPage page,
+        string selector,
+        CancellationToken cancellationToken)
+    {
+        var handles = await page.QuerySelectorAllAsync(selector).ConfigureAwait(false);
+        foreach (var handle in handles)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            try
+            {
+                var box = await handle.BoundingBoxAsync().ConfigureAwait(false);
+                if (box is { Width: > 0, Height: > 0 })
+                {
+                    return handle;
+                }
+            }
+            catch (PuppeteerException)
+            {
+                // GeeTest заменяет DOM во время анимации; пробуем следующий совпавший узел.
+            }
+        }
+
+        return null;
+    }
+
+    private static (decimal Width, decimal Height) ReadPngDimensions(string base64)
+    {
+        try
+        {
+            var bytes = Convert.FromBase64String(base64);
+            if (bytes.Length < 24
+                || bytes[0] != 137 || bytes[1] != 80 || bytes[2] != 78 || bytes[3] != 71
+                || bytes[12] != 73 || bytes[13] != 72 || bytes[14] != 68 || bytes[15] != 82)
+            {
+                return (0, 0);
+            }
+
+            var width = (bytes[16] << 24) | (bytes[17] << 16) | (bytes[18] << 8) | bytes[19];
+            var height = (bytes[20] << 24) | (bytes[21] << 16) | (bytes[22] << 8) | bytes[23];
+            return width > 0 && height > 0 ? (width, height) : (0, 0);
+        }
+        catch (FormatException)
+        {
+            return (0, 0);
+        }
+    }
+
+    private sealed record LoginClickCaptchaCapture(
+        string ImageBody,
+        string HintImageBody,
+        string? HintText,
+        decimal ImageWidth,
+        decimal ImageHeight,
+        bool IsNineGrid,
+        string? Fingerprint);
+
+    private enum LoginClickCaptchaApplyResult
+    {
+        Failed,
+        Applied,
+        ChallengeChanged
+    }
+
+    private static async Task DelayLoginOverlayRetryAsync(
+        IPage page,
+        int attempt,
+        string reason,
+        CancellationToken cancellationToken)
+    {
+        if (attempt >= MaxAttempts)
+        {
+            return;
+        }
+
+        _ = GlobalLogger.Instance.LogAsync(
+            $"Captcha: {reason} — обновляем виджет логина и повторяем ({attempt + 1}/{MaxAttempts}).",
+            DeskLinkAuditLogLevel.Info,
+            properties: new Dictionary<string, object?>
+            {
+                ["step"] = "captcha_login_retry_scheduled",
+                ["captcha.attempt"] = attempt,
+                ["page.url"] = page.Url
+            });
+        try
+        {
+            await page
+                .EvaluateExpressionAsync<bool>(AvitoGeeTestSolveSupport.BuildRefreshLoginGeeTestScript())
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                $"Captcha: refresh виджета логина не удался — {ex.Message}",
+                DeskLinkAuditLogLevel.Warning,
+                properties: new Dictionary<string, object?>
+                {
+                    ["step"] = "captcha_login_refresh_failed",
+                    ["page.url"] = page.Url
+                });
+        }
+
+        await Task.Delay(AvitoGeeTestSolveSupport.RetryDelayMs, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<string?> SafeGetUserAgentAsync(IPage page, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await page.EvaluateExpressionAsync<string>("navigator.userAgent || ''").ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                $"Captcha: не удалось прочитать userAgent — {ex.Message}",
+                DeskLinkAuditLogLevel.Warning,
+                properties: new Dictionary<string, object?> { ["step"] = "captcha_login_useragent_failed" });
+            return null;
         }
     }
 
@@ -358,6 +911,8 @@ public sealed class AvitoGeeTestSolver(
                         ["captcha.proxyMode"] = taskOptions.UsesSuppliedProxy ? "profile" : "proxyless",
                         ["captcha.userAgentPresent"] = !string.IsNullOrWhiteSpace(taskOptions.UserAgent)
                     });
+                await ReportSolutionAsync(apiKey, solution.ProviderTask, isCorrect: false, "hCaptcha", cancellationToken)
+                    .ConfigureAwait(false);
                 await DelayBeforeRetryAsync(page, attempt, "токен hCaptcha отклонён", cancellationToken)
                     .ConfigureAwait(false);
                 continue;
@@ -377,6 +932,8 @@ public sealed class AvitoGeeTestSolver(
                         ["page.url"] = page.Url,
                         ["captcha.attempt"] = attempt
                     });
+                await ReportSolutionAsync(apiKey, solution.ProviderTask, isCorrect: true, "hCaptcha", cancellationToken)
+                    .ConfigureAwait(false);
                 AvitoCaptchaTaskContext.NoteSolved();
                 return true;
             }
@@ -473,6 +1030,8 @@ public sealed class AvitoGeeTestSolver(
                         ["captcha.verify.verified"] = verify.Verified,
                         ["captcha.verify"] = verify.Summary
                     });
+                await ReportSolutionAsync(apiKey, solution.ProviderTask, isCorrect: false, "внутренней картинки", cancellationToken)
+                    .ConfigureAwait(false);
                 await DelayBeforeRetryAsync(page, attempt, "текст картинки отклонён", cancellationToken)
                     .ConfigureAwait(false);
                 continue;
@@ -492,6 +1051,8 @@ public sealed class AvitoGeeTestSolver(
                         ["page.url"] = page.Url,
                         ["captcha.attempt"] = attempt
                     });
+                await ReportSolutionAsync(apiKey, solution.ProviderTask, isCorrect: true, "внутренней картинки", cancellationToken)
+                    .ConfigureAwait(false);
                 AvitoCaptchaTaskContext.NoteSolved();
                 return true;
             }
@@ -511,6 +1072,53 @@ public sealed class AvitoGeeTestSolver(
         }
 
         return false;
+    }
+
+    private async Task ReportSolutionAsync(
+        string apiKey,
+        RuCaptchaTask? task,
+        bool isCorrect,
+        string captchaKind,
+        CancellationToken cancellationToken)
+    {
+        if (task is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await ruCaptcha.ReportAsync(apiKey, task, isCorrect, cancellationToken).ConfigureAwait(false);
+            _ = GlobalLogger.Instance.LogAsync(
+                $"Captcha: RuCaptcha получила report {(isCorrect ? "correct" : "incorrect")} для {captchaKind}.",
+                DeskLinkAuditLogLevel.Info,
+                properties: new Dictionary<string, object?>
+                {
+                    ["step"] = "captcha_provider_report_sent",
+                    ["captcha.kind"] = captchaKind,
+                    ["captcha.report"] = isCorrect ? "correct" : "incorrect",
+                    ["captcha.taskId"] = task.Id,
+                    ["captcha.apiVersion"] = task.ApiVersion.ToString()
+                });
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                $"Captcha: не удалось отправить report {(isCorrect ? "correct" : "incorrect")} для {captchaKind} — {ex.Message}",
+                DeskLinkAuditLogLevel.Warning,
+                properties: new Dictionary<string, object?>
+                {
+                    ["step"] = "captcha_provider_report_failed",
+                    ["captcha.kind"] = captchaKind,
+                    ["captcha.report"] = isCorrect ? "correct" : "incorrect",
+                    ["captcha.taskId"] = task.Id,
+                    ["captcha.apiVersion"] = task.ApiVersion.ToString()
+                });
+        }
     }
 
     private static string FormatTokenRejectedMessage(
@@ -688,7 +1296,8 @@ public sealed class AvitoGeeTestSolver(
     private static bool LeftCaptcha(AvitoCaptchaLeaveResult leave) =>
         leave.Recovered
         && !string.IsNullOrWhiteSpace(leave.Html)
-        && !AvitoCaptchaDetector.IsCaptchaHtml(leave.Html);
+        && (!AvitoCaptchaDetector.IsCaptchaHtml(leave.Html)
+            || AvitoCaptchaDetector.ShowsLoginForm(leave.Html));
 
     private static async Task DelayBeforeRetryAsync(
         IPage page,
@@ -738,7 +1347,8 @@ public sealed class AvitoGeeTestSolver(
         var latestHtml = afterAcceptedVerify
             ? await SafeGetHtmlAsync(page, cancellationToken).ConfigureAwait(false)
             : await WaitForRedirectOverlayOrLeaveAsync(page, cancellationToken).ConfigureAwait(false);
-        if (!AvitoCaptchaDetector.IsCaptchaHtml(latestHtml))
+        if (!AvitoCaptchaDetector.IsCaptchaHtml(latestHtml)
+            || AvitoCaptchaDetector.ShowsLoginForm(latestHtml))
         {
             return new AvitoCaptchaLeaveResult(true, latestHtml, 0);
         }
@@ -809,10 +1419,11 @@ public sealed class AvitoGeeTestSolver(
                     });
             }
 
-            await Task.Delay(1200, cancellationToken).ConfigureAwait(false);
+            await Task.Delay(2000, cancellationToken).ConfigureAwait(false);
             latestHtml = await SafeGetHtmlAsync(page, cancellationToken).ConfigureAwait(false);
             if (!string.IsNullOrWhiteSpace(latestHtml)
-                && !AvitoCaptchaDetector.IsCaptchaHtml(latestHtml))
+                && (!AvitoCaptchaDetector.IsCaptchaHtml(latestHtml)
+                    || AvitoCaptchaDetector.ShowsLoginForm(latestHtml)))
             {
                 return new AvitoCaptchaLeaveResult(true, latestHtml, attempts);
             }

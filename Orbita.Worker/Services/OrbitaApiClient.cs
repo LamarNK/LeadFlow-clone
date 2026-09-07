@@ -278,14 +278,27 @@ public sealed class OrbitaApiClient
         ApplyAuth(request);
         request.Content = JsonContent.Create(new ClaimTopUpPaymentRequest(sessionId));
         var response = await _http.SendAsync(request, ct).ConfigureAwait(false);
-        if (response.IsSuccessStatusCode)
+        var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+        if (!string.IsNullOrWhiteSpace(body))
         {
-            return await response.Content.ReadFromJsonAsync<ClaimTopUpPaymentResult>(cancellationToken: ct).ConfigureAwait(false)
-                   ?? new ClaimTopUpPaymentResult(false, "Пустой ответ.");
+            try
+            {
+                var parsed = JsonSerializer.Deserialize<ClaimTopUpPaymentResult>(body, JsonReadOptions);
+                if (parsed is not null)
+                {
+                    return parsed;
+                }
+            }
+            catch (JsonException)
+            {
+            }
         }
 
-        var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
-        return new ClaimTopUpPaymentResult(false, string.IsNullOrWhiteSpace(body) ? $"HTTP {(int)response.StatusCode}" : body);
+        return new ClaimTopUpPaymentResult(
+            false,
+            string.IsNullOrWhiteSpace(body)
+                ? $"Сервер отклонил оплату (HTTP {(int)response.StatusCode})."
+                : body);
     }
 
     public async Task SendHeartbeatAsync(WorkerHeartbeatRequest heartbeat, CancellationToken ct)

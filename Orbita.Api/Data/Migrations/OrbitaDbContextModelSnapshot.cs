@@ -2848,6 +2848,10 @@ namespace Orbita.Api.Data.Migrations
                     b.Property<DateTime?>("PaymentClaimedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<string>("ProgressMessage")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
                     b.Property<string>("QrImageBase64")
                         .HasColumnType("text");
 

@@ -3,9 +3,8 @@ namespace Orbita.Contracts;
 /// <summary>
 /// Статусы сессии ручного пополнения баланса аккаунта воркера.
 /// Активные: запрошена оператором, воркер начал, QR готов.
-/// Терминальные: истекла, ошибка, отменена. Факт оплаты по QR/банковскому
-/// переводу не является подтверждением пополнения, поэтому состояние
-/// «оплачено/завершено» не фиксируется автоматически.
+/// Терминальные: истекла, ошибка, отменена, оплачена оператором.
+/// Банковский перевод Орбита не видит — «оплачено» ставит только оператор.
 /// </summary>
 public static class TopUpSessionStatuses
 {
@@ -20,13 +19,15 @@ public static class TopUpSessionStatuses
     public const string Expired = "expired";
     public const string Failed = "failed";
     public const string Cancelled = "cancelled";
+    /// <summary>Оператор подтвердил, что оплатил QR. Снимает паузу мониторинга.</summary>
+    public const string Paid = "paid";
 
     public static bool IsActive(string? status) =>
         status is Requested or Started or PaymentClaimed or QrReady;
 
     /// <summary>
-    /// Разрешённые переходы статусов (только вперёд). Отмена панелью допустима только из
-    /// активных состояний; worker может завершить сессию статусами failed/expired.
+    /// Разрешённые переходы статусов (только вперёд). Отмена и «оплачено» выставляет
+    /// панель из активных состояний; worker может завершить сессию статусами failed/expired.
     /// </summary>
     private static readonly IReadOnlyDictionary<string, IReadOnlySet<string>> AllowedTransitions =
         new Dictionary<string, IReadOnlySet<string>>(StringComparer.OrdinalIgnoreCase)
@@ -34,12 +35,12 @@ public static class TopUpSessionStatuses
             [Requested] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { Started, Failed, Expired },
             [Started] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { PaymentClaimed, QrReady, Failed, Expired },
             [PaymentClaimed] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { QrReady, Failed, Expired },
-            [QrReady] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { Failed, Expired },
+            [QrReady] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { Paid, Failed, Expired },
         };
 
     /// <summary>
     /// Проверяет, допустим ли переход <paramref name="from"/> → <paramref name="to"/>.
-    /// Терминальные статусы (expired/failed/cancelled) не имеют исходящих переходов.
+    /// Терминальные статусы (expired/failed/cancelled/paid) не имеют исходящих переходов.
     /// </summary>
     public static bool CanTransition(string? from, string? to)
     {
@@ -82,6 +83,12 @@ public static class TopUpSessionRules
 
     /// <summary>Расход 900 ₽ за последний час поднимает цель до 2 000 ₽.</summary>
     public const decimal RapidSpendHighThresholdRub = 900m;
+
+    /// <summary>
+    /// Срок паузы мониторинга с момента создания сессии. Если оператор оплатил QR
+    /// и закрыл вкладку, sweeper снимет паузу по истечении этого интервала.
+    /// </summary>
+    public static readonly TimeSpan PauseLeaseTtl = TimeSpan.FromMinutes(10);
 
     public static TimeZoneInfo MoscowTimeZone { get; } = ResolveMoscow();
 
@@ -138,6 +145,25 @@ public static class TopUpSessionRules
         DateTimeKind.Local => value.ToUniversalTime(),
         _ => DateTime.SpecifyKind(value, DateTimeKind.Utc)
     };
+
+    /// <summary>Санитизация текста прогресса для UI. Пустая строка становится null.</summary>
+    public static string? SanitizeProgressMessage(string? message)
+    {
+        if (string.IsNullOrWhiteSpace(message))
+        {
+            return null;
+        }
+
+        var cleaned = message
+            .Replace('\r', ' ')
+            .Replace('\n', ' ')
+            .Trim();
+
+        const int maxLength = 200;
+        return cleaned.Length > maxLength
+            ? cleaned[..maxLength] + "…"
+            : cleaned;
+    }
 
     private static TimeZoneInfo ResolveMoscow()
     {
@@ -311,7 +337,8 @@ public sealed record TopUpSessionDto(
     string? QrImageUrl,
     string? FailureMessage,
     string SubProfileId = "",
-    string SubProfileName = "");
+    string SubProfileName = "",
+    string? ProgressMessage = null);
 
 /// <summary>
 /// Pending-снимок сессии для воркера (через worker config / push). Воркер уже знает
@@ -334,7 +361,8 @@ public sealed record UpdateTopUpSessionStatusRequest(
     string Status,
     string? QrImageBase64 = null,
     string? QrImageUrl = null,
-    string? FailureMessage = null);
+    string? FailureMessage = null,
+    string? ProgressMessage = null);
 
 /// <summary>
 /// Запрос воркера на атомарное заявление права на клик по оплате (линеаризационный барьер).
@@ -355,7 +383,7 @@ public enum TopUpSessionPollStatus
     /// <summary>Сессия существует и активна.</summary>
     Active,
 
-    /// <summary>Сессия существует, но в терминальном состоянии (cancelled/expired/failed).</summary>
+    /// <summary>Сессия существует, но в терминальном состоянии (cancelled/expired/failed/paid).</summary>
     Terminal,
 
     /// <summary>Сессия не найдена (404) — окончательное отсутствие.</summary>

@@ -80,6 +80,44 @@ internal static class BalanceSnapshotHelper
             SubProfilesJson = subProfilesJson ?? "[]"
         }) is not null;
 
+    public static int CountLowBalanceSubProfiles(WorkerBalanceDto? balance)
+    {
+        if (balance is null || !HasMeaningfulBalanceData(balance))
+        {
+            return 0;
+        }
+
+        var subProfilesWithKnownAdvance = balance.SubProfiles
+            .Where(static subProfile => subProfile.Balance.HasValue)
+            .ToList();
+
+        if (subProfilesWithKnownAdvance.Count > 0)
+        {
+            return subProfilesWithKnownAdvance.Count(
+                static subProfile => subProfile.Balance < BalanceDisplayRules.WorkerDetailsLowBalanceThresholdRub);
+        }
+
+        // Older accounts may have no subprofile telemetry at all. Retain the
+        // account-level signal for those records, but never infer an advance
+        // balance from wallet-only subprofile data.
+        return balance.SubProfiles.Count == 0
+               && balance.TotalBalance < BalanceDisplayRules.WorkerDetailsLowBalanceThresholdRub
+            ? 1
+            : 0;
+    }
+
+    public static bool HasKnownSubProfileAdvance(WorkerBalanceDto? balance) =>
+        balance?.SubProfiles.Any(static subProfile => subProfile.Balance.HasValue) == true;
+
+    public static int CountLowBalancePersistedSubProfiles(
+        decimal totalBalance,
+        string? subProfilesJson) =>
+        CountLowBalanceSubProfiles(FromWorkerAccount(new WorkerAccountEntity
+        {
+            TotalBalance = totalBalance,
+            SubProfilesJson = subProfilesJson ?? "[]"
+        }));
+
     public static IReadOnlyList<WorkerBalanceDto> MergeWithPersisted(
         IReadOnlyList<WorkerBalanceDto> incoming,
         IReadOnlyList<WorkerBalanceDto>? previousSnapshot,

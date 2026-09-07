@@ -1,4 +1,28 @@
 services:
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD must be set}
+    command:
+      - redis-server
+      - --appendonly
+      - "no"
+      - --save
+      - ""
+      - --maxmemory
+      - 512mb
+      - --maxmemory-policy
+      - allkeys-lfu
+      - --requirepass
+      - ${REDIS_PASSWORD:?REDIS_PASSWORD must be set}
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=$${REDIS_PASSWORD} redis-cli ping | grep -q PONG"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+
   postgres:
     image: postgres:16
     restart: unless-stopped
@@ -25,6 +49,15 @@ services:
     environment:
       ASPNETCORE_URLS: http://+:8080
       ConnectionStrings__Default: Host=postgres;Port=5432;Database=orbita;Username=orbita;Password=orbita
+      Cache__Enabled: ${CACHE_ENABLED:-false}
+      Cache__RedisConfiguration: redis:6379,password=${REDIS_PASSWORD:?REDIS_PASSWORD must be set},abortConnect=false,connectTimeout=1000,syncTimeout=1000
+      Cache__Domains__Dashboard: ${CACHE_DASHBOARD_ENABLED:-false}
+      Cache__Domains__WorkerDetails: ${CACHE_WORKER_DETAILS_ENABLED:-false}
+      Cache__Domains__Responses: ${CACHE_RESPONSES_ENABLED:-false}
+      Cache__Domains__Crm: ${CACHE_CRM_ENABLED:-false}
+      Cache__Domains__Analytics: ${CACHE_ANALYTICS_ENABLED:-false}
+      Cache__Domains__Reference: ${CACHE_REFERENCE_ENABLED:-false}
+      Cache__Domains__Logs: ${CACHE_LOGS_ENABLED:-false}
       RegistrationSecret: ${REGISTRATION_SECRET}
       Jwt__Key: ${JWT_KEY}
       Admin__Email: ${ADMIN_EMAIL}
@@ -63,6 +96,8 @@ services:
       TelephonyWebRtc__IceCredentialTtlSeconds: ${TELEPHONY_WEBRTC_ICE_CREDENTIAL_TTL_SECONDS:-3600}
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     ports:
       - "127.0.0.1:8082:8080"

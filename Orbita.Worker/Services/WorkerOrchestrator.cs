@@ -50,6 +50,7 @@ public sealed class WorkerOrchestrator(
     private string? _enabledAccountsFingerprint;
     private DateTime _enabledAccountsChangedAtUtc = DateTime.MinValue;
     private string? _pushedCommand;
+    private int _runMonitoringPassCommandPending;
     private WorkerPendingCaptchaSessionDto? _pushedCaptchaSession;
     private WorkerPendingBrowserMonitorSessionDto? _pushedBrowserMonitorSession;
     private WorkerPendingLocalChromeLoginDto? _pushedLocalChromeLogin;
@@ -86,6 +87,9 @@ public sealed class WorkerOrchestrator(
                 _pauseCommandThisIteration = false;
                 try
                 {
+                    var runMonitoringPassRequested = Interlocked.Exchange(
+                        ref _runMonitoringPassCommandPending,
+                        0) == 1;
                     if (TryConsumePushedCommand(out var pushedCommand))
                     {
                         await TryHandlePauseCommandAsync(pushedCommand, stoppingToken).ConfigureAwait(false);
@@ -93,6 +97,11 @@ public sealed class WorkerOrchestrator(
                         {
                             return;
                         }
+
+                        runMonitoringPassRequested |= string.Equals(
+                            pushedCommand,
+                            WorkerCommands.RunMonitoringPass,
+                            StringComparison.OrdinalIgnoreCase);
                     }
 
                     var config = await apiClient.GetConfigAsync(stoppingToken).ConfigureAwait(false);
@@ -124,6 +133,10 @@ public sealed class WorkerOrchestrator(
                     updateOfferSource.SetOffer(config.UpdateOffer);
 
                     var command = TryConsumePushedCommand(out var pushed) ? pushed : config.PendingCommand;
+                    runMonitoringPassRequested |= string.Equals(
+                        command,
+                        WorkerCommands.RunMonitoringPass,
+                        StringComparison.OrdinalIgnoreCase);
                     await TryHandlePauseCommandAsync(command, stoppingToken).ConfigureAwait(false);
 
                     if (await TryHandleRestartCommandAsync(command, config.WorkerId, stoppingToken).ConfigureAwait(false))
@@ -134,6 +147,13 @@ public sealed class WorkerOrchestrator(
                     var monitoringPaused = config.IsMonitoringPaused || _pauseCommandThisIteration;
                     var enabledCount = config.Accounts.Count(a => a.IsEnabled && config.IsBrowserProviderEnabled(a));
                     runtimeState.Status = "Онлайн";
+
+                    await TryHandleRunMonitoringPassCommandAsync(
+                            runMonitoringPassRequested,
+                            config.WorkerId,
+                            monitoringPaused,
+                            stoppingToken)
+                        .ConfigureAwait(false);
 
                     var forcedCatalogSync = await RunPendingProviderJobsAsync(config, stoppingToken)
                         .ConfigureAwait(false);
@@ -234,7 +254,16 @@ public sealed class WorkerOrchestrator(
         }
     }
 
-    private void OnCommandReceived(string command) => _pushedCommand = command;
+    private void OnCommandReceived(string command)
+    {
+        _pushedCommand = command;
+        if (string.Equals(command, WorkerCommands.RunMonitoringPass, StringComparison.OrdinalIgnoreCase))
+        {
+            Interlocked.Exchange(ref _runMonitoringPassCommandPending, 1);
+        }
+
+        realtime.RequestWake();
+    }
 
     private void OnConfigChanged() => configProvider.InvalidateCache();
 
@@ -452,6 +481,43 @@ public sealed class WorkerOrchestrator(
         }
 
         return true;
+    }
+
+    private async Task TryHandleRunMonitoringPassCommandAsync(
+        bool requested,
+        Guid workerId,
+        bool monitoringPaused,
+        CancellationToken stoppingToken)
+    {
+        if (!requested)
+        {
+            return;
+        }
+
+        if (monitoringPaused)
+        {
+            runtimeState.Detail = "Проход не запущен: мониторинг на паузе";
+            await WorkerLifecycleLog.WarningAsync(
+                "Worker lifecycle: команда немедленного прохода отклонена — мониторинг на паузе",
+                nameof(TryHandleRunMonitoringPassCommandAsync),
+                new Dictionary<string, object?> { ["worker.id"] = workerId })
+                .ConfigureAwait(false);
+        }
+        else
+        {
+            monitoringService.RequestImmediatePass();
+            runtimeState.Detail = "Запуск прохода по команде из панели";
+            await WorkerLifecycleLog.InfoAsync(
+                "Worker lifecycle: получена команда немедленного прохода из панели",
+                nameof(TryHandleRunMonitoringPassCommandAsync),
+                new Dictionary<string, object?> { ["worker.id"] = workerId })
+                .ConfigureAwait(false);
+        }
+
+        if (realtime.IsConnected)
+        {
+            _ = realtime.TryAckCommandAsync(WorkerCommands.RunMonitoringPass, stoppingToken);
+        }
     }
 
     private async Task WaitNextIterationAsync(CancellationToken stoppingToken)

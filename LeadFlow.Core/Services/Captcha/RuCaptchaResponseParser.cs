@@ -1,4 +1,5 @@
 using System.Text.Json;
+using System.Text.RegularExpressions;
 
 namespace LeadFlow.Core.Services.Captcha;
 
@@ -150,6 +151,82 @@ public static class RuCaptchaResponseParser
         }
 
         return new ImageCaptchaSolution(text.Trim());
+    }
+
+    /// <summary>Разбирает ответ API v1 Coordinates: <c>x=12,y=34;x=56,y=78</c>.</summary>
+    public static IReadOnlyList<ClickCaptchaPoint> ParseClickCaptchaCoordinates(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            throw new RuCaptchaException("RuCaptcha API v1 не вернул координаты ClickCaptcha.");
+        }
+
+        var coordinates = value.Trim();
+        const string coordinatesPrefix = "coordinates:";
+        if (coordinates.StartsWith(coordinatesPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            coordinates = coordinates[coordinatesPrefix.Length..].Trim();
+        }
+
+        var matches = Regex.Matches(
+            coordinates,
+            @"(?:^|;)\s*(?:x\s*=\s*)?(?<x>\d+(?:\.\d+)?)\s*,\s*(?:y\s*=\s*)?(?<y>\d+(?:\.\d+)?)\s*(?=;|$)",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        if (matches.Count == 0)
+        {
+            throw new RuCaptchaException("RuCaptcha ClickCaptcha вернула координаты в неизвестном формате.");
+        }
+
+        var points = new List<ClickCaptchaPoint>(matches.Count);
+        var lastEnd = 0;
+        foreach (Match match in matches)
+        {
+            if (!string.IsNullOrWhiteSpace(coordinates[lastEnd..match.Index]))
+            {
+                throw new RuCaptchaException("RuCaptcha ClickCaptcha вернула координаты в неизвестном формате.");
+            }
+
+            if (!decimal.TryParse(
+                    match.Groups["x"].Value,
+                    System.Globalization.NumberStyles.AllowDecimalPoint,
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    out var x)
+                || !decimal.TryParse(
+                    match.Groups["y"].Value,
+                    System.Globalization.NumberStyles.AllowDecimalPoint,
+                    System.Globalization.CultureInfo.InvariantCulture,
+                    out var y)
+                || x < 0 || y < 0)
+            {
+                throw new RuCaptchaException("RuCaptcha ClickCaptcha вернула некорректные координаты.");
+            }
+
+            points.Add(new ClickCaptchaPoint(x, y));
+            lastEnd = match.Index + match.Length;
+        }
+
+        if (!string.IsNullOrWhiteSpace(coordinates[lastEnd..]))
+        {
+            throw new RuCaptchaException("RuCaptcha ClickCaptcha вернула координаты в неизвестном формате.");
+        }
+
+        return points;
+    }
+
+    /// <summary>Проверяет ответ API v2 на reportCorrect/reportIncorrect.</summary>
+    public static void EnsureReportAccepted(string json)
+    {
+        using var doc = ParseObject(json);
+        var root = doc.RootElement;
+        ThrowIfApiError(root);
+
+        var status = ReadString(root, "status");
+        if (!string.IsNullOrWhiteSpace(status)
+            && !string.Equals(status, "success", StringComparison.OrdinalIgnoreCase)
+            && !string.Equals(status, "reported", StringComparison.OrdinalIgnoreCase))
+        {
+            throw new RuCaptchaException($"RuCaptcha report: неожиданный статус «{status}».");
+        }
     }
 
     public static bool IsVerifyAccepted(string? raw)

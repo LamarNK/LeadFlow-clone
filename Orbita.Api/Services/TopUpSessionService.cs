@@ -12,7 +12,7 @@ namespace Orbita.Api.Services;
 /// Жизненный цикл сессии ручного пополнения баланса аккаунта воркера.
 /// Фаза 1: только контракты и persisted-состояние. Автоматизация воркера (браузер,
 /// QR, оплата) реализуется в отдельной фазе; здесь воркер лишь опрашивает pending-снимок
-/// и сообщает статусы Started/QrReady/Expired/Failed/Cancelled.
+/// и сообщает статусы Started/QrReady/Expired/Failed/Cancelled/Paid.
 /// </summary>
 public sealed class TopUpSessionService(
     OrbitaDbContext db,
@@ -22,7 +22,7 @@ public sealed class TopUpSessionService(
     WorkerConnectionRegistry connectionRegistry,
     TimeProvider timeProvider)
 {
-    private static readonly TimeSpan SessionTtl = TimeSpan.FromHours(2);
+    private static readonly TimeSpan SessionTtl = TopUpSessionRules.PauseLeaseTtl;
     private static readonly TimeSpan BalanceSpendLookback = TimeSpan.FromHours(1);
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     // Keep this as data rather than calling IsActive inside EF expressions: EF Core cannot
@@ -171,7 +171,8 @@ public sealed class TopUpSessionService(
             RequestedAmount = requestedAmount,
             DailyResponseCount = dailyResponses,
             CreatedAtUtc = now,
-            ExpiresAtUtc = now.Add(SessionTtl)
+            ExpiresAtUtc = now.Add(SessionTtl),
+            ProgressMessage = "Ставим мониторинг на паузу и передаём задачу воркеру…"
         };
 
         if (!worker.IsMonitoringPaused)
@@ -246,10 +247,47 @@ public sealed class TopUpSessionService(
         return ToDto(session, session.Worker.DisplayName);
     }
 
-    public async Task<(bool Success, string? Error)> CancelAsync(
+    public Task<(bool Success, string? Error)> CancelAsync(
         Guid sessionId,
         ClaimsPrincipal principal,
-        CancellationToken ct = default)
+        CancellationToken ct = default) =>
+        CompleteByOperatorAsync(
+            sessionId,
+            principal,
+            TopUpSessionStatuses.Cancelled,
+            session => TopUpSessionStatuses.IsActive(session.Status)
+                ? null
+                : "Сессия уже завершена.",
+            ownerError: "Отменить может только оператор, начавший сессию.",
+            ct);
+
+    /// <summary>
+    /// Оператор подтвердил оплату QR. Допустимо только из <see cref="TopUpSessionStatuses.QrReady"/>.
+    /// Снимает аренду паузы мониторинга.
+    /// </summary>
+    public Task<(bool Success, string? Error)> MarkPaidAsync(
+        Guid sessionId,
+        ClaimsPrincipal principal,
+        CancellationToken ct = default) =>
+        CompleteByOperatorAsync(
+            sessionId,
+            principal,
+            TopUpSessionStatuses.Paid,
+            session => session.Status == TopUpSessionStatuses.QrReady
+                ? null
+                : TopUpSessionStatuses.IsActive(session.Status)
+                    ? "Отметить оплату можно, когда QR-код готов."
+                    : "Сессия уже завершена.",
+            ownerError: "Подтвердить оплату может только оператор, начавший сессию.",
+            ct);
+
+    private async Task<(bool Success, string? Error)> CompleteByOperatorAsync(
+        Guid sessionId,
+        ClaimsPrincipal principal,
+        string terminalStatus,
+        Func<TopUpSessionEntity, string?> validate,
+        string ownerError,
+        CancellationToken ct)
     {
         var scope = await officeScope.ResolveAsync(principal, ct).ConfigureAwait(false);
         if (!scope.HasAccess)
@@ -261,7 +299,6 @@ public sealed class TopUpSessionService(
 
         await using var transaction = await db.Database.BeginTransactionAsync(ct).ConfigureAwait(false);
 
-        // Блокируем строку сессии, чтобы отмена и заявление оплаты сериализовались атомарно.
         var session = await LockSessionByIdAsync(sessionId, ct).ConfigureAwait(false);
         if (session is null || !await officeScope.CanAccessWorkerAsync(scope, session.WorkerId, ct).ConfigureAwait(false))
         {
@@ -271,22 +308,24 @@ public sealed class TopUpSessionService(
         if (!principal.IsInRole(PanelRoles.Admin)
             && !string.Equals(session.OperatorUserId, userId, StringComparison.Ordinal))
         {
-            return (false, "Отменить может только оператор, начавший сессию.");
+            return (false, ownerError);
         }
 
-        if (!TopUpSessionStatuses.IsActive(session.Status))
+        if (string.Equals(session.Status, terminalStatus, StringComparison.OrdinalIgnoreCase)
+            && !TopUpSessionStatuses.IsActive(session.Status))
         {
-            return (false, "Сессия уже завершена.");
+            await transaction.RollbackAsync(ct).ConfigureAwait(false);
+            return (true, null);
         }
 
-        // Если воркер уже заявил право на оплату (payment_claimed) — отмена проигрывает гонку:
-        // возвращаем конфликт, не помечая сессию отменённой.
-        if (session.Status == TopUpSessionStatuses.PaymentClaimed)
+        var validationError = validate(session);
+        if (validationError is not null)
         {
-            return (false, "Оплата уже инициирована — отмена невозможна.");
+            await transaction.RollbackAsync(ct).ConfigureAwait(false);
+            return (false, validationError);
         }
 
-        session.Status = TopUpSessionStatuses.Cancelled;
+        session.Status = terminalStatus;
         session.CompletedAtUtc = timeProvider.GetUtcNow().UtcDateTime;
         ClearQrData(session);
         await ReleasePauseAsync(session, ct).ConfigureAwait(false);
@@ -300,17 +339,44 @@ public sealed class TopUpSessionService(
         return (true, null);
     }
 
-    private async Task<TopUpSessionEntity?> LockSessionByIdAsync(Guid sessionId, CancellationToken ct)
+    private async Task<TopUpSessionEntity?> LockSessionByIdAsync(Guid sessionId, CancellationToken ct) =>
+        await LockTopUpSessionRowAsync(sessionId, workerId: null, ct).ConfigureAwait(false);
+
+    /// <summary>
+    /// Берёт Postgres-блокировку отдельным <c>SELECT 1 … FOR UPDATE</c>, затем читает строку
+    /// обычным LINQ. Нельзя материализовать сущность через <c>FromSql SELECT *</c>: системный
+    /// <c>xmin</c> (RowVersion) в звёздочку не входит, EF делает UPDATE WHERE xmin = 0 → HTTP 500.
+    /// </summary>
+    private async Task<TopUpSessionEntity?> LockTopUpSessionRowAsync(
+        Guid sessionId,
+        Guid? workerId,
+        CancellationToken ct)
     {
         if (db.Database.IsNpgsql())
         {
-            return await db.TopUpSessions
-                .FromSqlInterpolated($"SELECT * FROM \"TopUpSessions\" WHERE \"Id\" = {sessionId} FOR UPDATE")
-                .FirstOrDefaultAsync(ct)
-                .ConfigureAwait(false);
+            if (workerId is Guid lockedWorkerId)
+            {
+                await db.Database.ExecuteSqlInterpolatedAsync(
+                        $"SELECT 1 FROM \"TopUpSessions\" WHERE \"Id\" = {sessionId} AND \"WorkerId\" = {lockedWorkerId} FOR UPDATE",
+                        ct)
+                    .ConfigureAwait(false);
+            }
+            else
+            {
+                await db.Database.ExecuteSqlInterpolatedAsync(
+                        $"SELECT 1 FROM \"TopUpSessions\" WHERE \"Id\" = {sessionId} FOR UPDATE",
+                        ct)
+                    .ConfigureAwait(false);
+            }
         }
 
-        return await db.TopUpSessions.FirstOrDefaultAsync(x => x.Id == sessionId, ct).ConfigureAwait(false);
+        return workerId is Guid filterWorkerId
+            ? await db.TopUpSessions
+                .FirstOrDefaultAsync(x => x.Id == sessionId && x.WorkerId == filterWorkerId, ct)
+                .ConfigureAwait(false)
+            : await db.TopUpSessions
+                .FirstOrDefaultAsync(x => x.Id == sessionId, ct)
+                .ConfigureAwait(false);
     }
 
     public async Task<(bool Success, string? Error)> UpdateStatusFromWorkerAsync(
@@ -355,33 +421,56 @@ public sealed class TopUpSessionService(
             return (false, "Сессия истекла.");
         }
 
+        if (request.Status is TopUpSessionStatuses.Paid or TopUpSessionStatuses.Cancelled)
+        {
+            return (false, "Этот статус выставляет только оператор.");
+        }
+
         // Только вперёд: запрещаем обратные переходы и недопустимые статусы.
         if (!TopUpSessionStatuses.CanTransition(session.Status, request.Status))
         {
             return (false, $"Недопустимый переход статуса '{session.Status}' → '{request.Status}'.");
         }
 
-        session.Status = request.Status;
-        if (request.Status == TopUpSessionStatuses.Started)
+        var statusChanged = !string.Equals(session.Status, request.Status, StringComparison.OrdinalIgnoreCase);
+        var applyingQr = request.Status == TopUpSessionStatuses.QrReady
+                         && (statusChanged || request.QrImageBase64 is not null || request.QrImageUrl is not null);
+        if (applyingQr)
         {
-            session.StartedAtUtc = now;
-        }
-        else if (request.Status == TopUpSessionStatuses.PaymentClaimed)
-        {
-            session.PaymentClaimedAtUtc = now;
-        }
-        else if (request.Status == TopUpSessionStatuses.QrReady)
-        {
-            // Валидируем QR-данные до сохранения: только корректный base64 PNG или HTTPS Avito URL.
             var (qrValid, qrError) = TopUpSessionQrValidator.Validate(request.QrImageBase64, request.QrImageUrl);
             if (!qrValid)
             {
                 return (false, qrError ?? "Некорректные QR-данные.");
             }
+        }
 
-            session.QrReadyAtUtc = now;
+        if (statusChanged)
+        {
+            session.Status = request.Status;
+            if (request.Status == TopUpSessionStatuses.Started)
+            {
+                session.StartedAtUtc ??= now;
+            }
+            else if (request.Status == TopUpSessionStatuses.PaymentClaimed)
+            {
+                session.PaymentClaimedAtUtc ??= now;
+            }
+            else if (request.Status == TopUpSessionStatuses.QrReady)
+            {
+                session.QrReadyAtUtc ??= now;
+                session.QrImageBase64 = request.QrImageBase64;
+                session.QrImageUrl = request.QrImageUrl;
+            }
+        }
+        else if (applyingQr)
+        {
             session.QrImageBase64 = request.QrImageBase64;
             session.QrImageUrl = request.QrImageUrl;
+        }
+
+        if (request.ProgressMessage is not null)
+        {
+            session.ProgressMessage = TopUpSessionRules.SanitizeProgressMessage(request.ProgressMessage);
         }
 
         if (!TopUpSessionStatuses.IsActive(request.Status))
@@ -415,96 +504,102 @@ public sealed class TopUpSessionService(
         Guid sessionId,
         CancellationToken ct = default)
     {
-        await using var transaction = await db.Database.BeginTransactionAsync(ct).ConfigureAwait(false);
-
-        var session = await LockSessionAsync(sessionId, workerId, ct).ConfigureAwait(false);
-        if (session is null)
+        try
         {
-            return new ClaimTopUpPaymentResult(false, "Сессия не найдена.");
-        }
+            await using var transaction = await db.Database.BeginTransactionAsync(ct).ConfigureAwait(false);
 
-        var now = timeProvider.GetUtcNow().UtcDateTime;
+            var session = await LockSessionAsync(sessionId, workerId, ct).ConfigureAwait(false);
+            if (session is null)
+            {
+                return new ClaimTopUpPaymentResult(false, "Сессия не найдена.");
+            }
 
-        if (!TopUpSessionStatuses.IsActive(session.Status))
-        {
-            return new ClaimTopUpPaymentResult(
-                false,
-                $"Сессия уже завершена статусом '{session.Status}'.");
-        }
+            var now = timeProvider.GetUtcNow().UtcDateTime;
 
-        if (session.ExpiresAtUtc <= now)
-        {
-            await ExpireSessionAsync(session, now, ct).ConfigureAwait(false);
+            if (!TopUpSessionStatuses.IsActive(session.Status))
+            {
+                return new ClaimTopUpPaymentResult(
+                    false,
+                    $"Сессия уже завершена статусом '{session.Status}'.");
+            }
+
+            if (session.ExpiresAtUtc <= now)
+            {
+                await ExpireSessionAsync(session, now, ct).ConfigureAwait(false);
+                await db.SaveChangesAsync(ct).ConfigureAwait(false);
+                await transaction.CommitAsync(ct).ConfigureAwait(false);
+                return new ClaimTopUpPaymentResult(false, "Сессия истекла.");
+            }
+
+            // Заявлять право на оплату можно только из started (после выбора СБП, до клика).
+            // Повторный claim уже заявленной сессии идемпотентен.
+            if (session.Status == TopUpSessionStatuses.PaymentClaimed)
+            {
+                await transaction.CommitAsync(ct).ConfigureAwait(false);
+                return new ClaimTopUpPaymentResult(true);
+            }
+
+            if (session.Status != TopUpSessionStatuses.Started)
+            {
+                return new ClaimTopUpPaymentResult(
+                    false,
+                    $"Недопустимое состояние для оплаты: '{session.Status}'.");
+            }
+
+            // Линеаризационный барьер: блокируем и читаем воркера, чтобы проверить, что пауза
+            // не была изменена вручную после создания сессии. Если версия аренды изменилась —
+            // оплата отклоняется (оператор вмешался в паузу после старта сессии).
+            var worker = await LockWorkerAsync(session.WorkerId, ct).ConfigureAwait(false);
+            if (worker is null)
+            {
+                return new ClaimTopUpPaymentResult(false, "Воркер не найден.");
+            }
+
+            if (worker.TopUpPauseLeaseVersion != session.ExpectedPauseLeaseVersion)
+            {
+                return new ClaimTopUpPaymentResult(
+                    false,
+                    "Пауза воркера была изменена вручную — оплата недоступна.");
+            }
+
+            if (session.OwnsPauseLease && worker.TopUpPauseLeaseId != session.Id)
+            {
+                return new ClaimTopUpPaymentResult(
+                    false,
+                    "Аренда паузы утрачена — оплата недоступна.");
+            }
+
+            session.Status = TopUpSessionStatuses.PaymentClaimed;
+            session.PaymentClaimedAtUtc = now;
+
             await db.SaveChangesAsync(ct).ConfigureAwait(false);
             await transaction.CommitAsync(ct).ConfigureAwait(false);
-            return new ClaimTopUpPaymentResult(false, "Сессия истекла.");
-        }
 
-        // Заявлять право на оплату можно только из started (после выбора СБП, до клика).
-        // Повторный claim уже заявленной сессии идемпотентен.
-        if (session.Status == TopUpSessionStatuses.PaymentClaimed)
-        {
-            await transaction.CommitAsync(ct).ConfigureAwait(false);
             return new ClaimTopUpPaymentResult(true);
         }
-
-        if (session.Status != TopUpSessionStatuses.Started)
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (DbUpdateConcurrencyException)
         {
             return new ClaimTopUpPaymentResult(
                 false,
-                $"Недопустимое состояние для оплаты: '{session.Status}'.");
+                "Сессия была изменена параллельно. Попробуйте ещё раз.");
         }
-
-        // Линеаризационный барьер: блокируем и читаем воркера, чтобы проверить, что пауза
-        // не была изменена вручную после создания сессии. Если версия аренды изменилась —
-        // оплата отклоняется (оператор вмешался в паузу после старта сессии).
-        var worker = await LockWorkerAsync(session.WorkerId, ct).ConfigureAwait(false);
-        if (worker is null)
-        {
-            return new ClaimTopUpPaymentResult(false, "Воркер не найден.");
-        }
-
-        if (worker.TopUpPauseLeaseVersion != session.ExpectedPauseLeaseVersion)
+        catch (Exception)
         {
             return new ClaimTopUpPaymentResult(
                 false,
-                "Пауза воркера была изменена вручную — оплата недоступна.");
+                "Не удалось подтвердить оплату. Попробуйте ещё раз.");
         }
-
-        if (session.OwnsPauseLease && worker.TopUpPauseLeaseId != session.Id)
-        {
-            return new ClaimTopUpPaymentResult(
-                false,
-                "Аренда паузы утрачена — оплата недоступна.");
-        }
-
-        session.Status = TopUpSessionStatuses.PaymentClaimed;
-        session.PaymentClaimedAtUtc = now;
-
-        await db.SaveChangesAsync(ct).ConfigureAwait(false);
-        await transaction.CommitAsync(ct).ConfigureAwait(false);
-
-        return new ClaimTopUpPaymentResult(true);
     }
 
     private async Task<TopUpSessionEntity?> LockSessionAsync(
         Guid sessionId,
         Guid workerId,
-        CancellationToken ct)
-    {
-        if (db.Database.IsNpgsql())
-        {
-            return await db.TopUpSessions
-                .FromSqlInterpolated(
-                    $"SELECT * FROM \"TopUpSessions\" WHERE \"Id\" = {sessionId} AND \"WorkerId\" = {workerId} FOR UPDATE")
-                .FirstOrDefaultAsync(ct)
-                .ConfigureAwait(false);
-        }
-
-        return await db.TopUpSessions
-            .FirstOrDefaultAsync(x => x.Id == sessionId && x.WorkerId == workerId, ct)
-            .ConfigureAwait(false);
-    }
+        CancellationToken ct) =>
+        await LockTopUpSessionRowAsync(sessionId, workerId, ct).ConfigureAwait(false);
 
     public async Task<WorkerPendingTopUpSessionDto?> GetPendingForWorkerAsync(
         Guid workerId,
@@ -825,5 +920,6 @@ public sealed class TopUpSessionService(
             session.QrImageUrl,
             session.FailureMessage,
             session.SubProfileId,
-            session.SubProfileName);
+            session.SubProfileName,
+            session.ProgressMessage);
 }

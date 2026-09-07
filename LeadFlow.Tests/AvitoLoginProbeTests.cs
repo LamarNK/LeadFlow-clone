@@ -103,6 +103,7 @@ public sealed class AvitoLoginProbeTests
     {
         var pageState = AvitoPageStateScripts.BuildProbeScript();
         var autoLoginProbe = AvitoAutoLoginScripts.BuildProbeScript();
+        var loginDetection = AvitoLoginDetectionScripts.BuildDetectionScript();
         var selectUser = AvitoAutoLoginScripts.BuildSelectSavedUserScript();
         var switchOther = AvitoAutoLoginScripts.BuildSwitchToOtherProfileScript();
 
@@ -115,10 +116,24 @@ public sealed class AvitoLoginProbeTests
         Assert.Contains("users-list", autoLoginProbe, StringComparison.Ordinal);
         Assert.Contains("user/link", autoLoginProbe, StringComparison.Ordinal);
         Assert.Contains("login-form-with-avatar", autoLoginProbe, StringComparison.Ordinal);
+        Assert.Contains("password-was-reset", loginDetection, StringComparison.Ordinal);
+        Assert.Contains("hasPasswordResetSms", loginDetection, StringComparison.Ordinal);
 
         Assert.Contains("user/link", selectUser, StringComparison.Ordinal);
         Assert.Contains("users-list/button", switchOther, StringComparison.Ordinal);
         Assert.Contains("войти\\s+в\\s+другой\\s+профиль", selectUser, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void LoginRequiredException_PreservesPasswordResetSmsSignal()
+    {
+        var exception = new AvitoLoginRequiredException(
+            "https://www.avito.ru/profile/pro/items",
+            passwordResetSmsPhone: "+7 *** ***-**-35");
+
+        Assert.True(exception.RequiresPasswordResetSms);
+        Assert.Equal("+7 *** ***-**-35", exception.PasswordResetSmsPhone);
+        Assert.Contains("SMS", exception.Message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]

@@ -3,12 +3,22 @@ namespace Orbita.Tests;
 public sealed class WorkerDetailsLiveMarkupTests
 {
     [Fact]
+    public void WorkerMonitoringReport_UsesAbsolutePathForNestedPassChip()
+    {
+        var view = ReadRepoFile("Orbita.Web/Views/Statistics/_MonitoringCycleAccounts.cshtml");
+
+        Assert.Contains("<partial name=\"~/Views/Statistics/_MonitoringCyclePassChip.cshtml\" model=\"pass\" />", view);
+    }
+
+    [Fact]
     public void WorkerLiveRenderer_PlacesTopUpTriggerOnTheSelectedSubProfile()
     {
         var workerJs = ReadRepoFile("Orbita.Web/wwwroot/js/orbita-worker.js");
         var sharedJs = ReadRepoFile("Orbita.Web/wwwroot/js/orbita-live-shared.js");
 
         Assert.Contains("data-topup-trigger", workerJs);
+        Assert.Contains("data-topup-paid", workerJs);
+        Assert.Contains("dismissSession", workerJs);
         Assert.Contains("data-subprofile-id", workerJs);
         Assert.Contains("startSession(workerId, accountId, subProfileId, accountName);", workerJs);
         Assert.DoesNotContain("account.canTopUp", workerJs);

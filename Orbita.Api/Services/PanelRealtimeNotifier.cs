@@ -4,7 +4,9 @@ using Orbita.Contracts;
 
 namespace Orbita.Api.Services;
 
-public sealed class PanelRealtimeNotifier(IHubContext<PanelHub> hub) : IPanelRealtimeNotifier, IDisposable
+public sealed class PanelRealtimeNotifier(
+    IHubContext<PanelHub> hub,
+    IOrbitaQueryCache queryCache) : IPanelRealtimeNotifier, IDisposable
 {
     private static readonly TimeSpan FlushDelay = TimeSpan.FromMilliseconds(500);
 
@@ -23,9 +25,6 @@ public sealed class PanelRealtimeNotifier(IHubContext<PanelHub> hub) : IPanelRea
         {
             return;
         }
-
-        // Drop aggregates before the SignalR flush so the client refresh reads fresh data.
-        PanelAggregateCache.Invalidate(kinds);
 
         lock (_sync)
         {
@@ -96,6 +95,11 @@ public sealed class PanelRealtimeNotifier(IHubContext<PanelHub> hub) : IPanelRea
             {
                 continue;
             }
+
+            // Coalesce the cache invalidation with the notification. Worker telemetry
+            // arrives in bursts; versioning once per burst avoids invalidating a value
+            // while its database factory is still running.
+            await queryCache.InvalidateAsync(entry.Kinds.ToArray(), entry.OfficeId);
 
             var notification = new PanelChangeNotification(
                 entry.Kinds.OrderBy(static x => x).ToArray(),

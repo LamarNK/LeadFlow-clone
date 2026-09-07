@@ -215,9 +215,180 @@ public sealed class AvitoGeeTestSolveSupportTests
         Assert.Contains("getComputedStyle", script, StringComparison.Ordinal);
         Assert.Contains("#h-captcha", script, StringComparison.Ordinal);
         Assert.Contains("#geetest_captcha", script, StringComparison.Ordinal);
+        Assert.Contains(".geetest_box", script, StringComparison.Ordinal);
+        Assert.Contains(".geetest_nine", script, StringComparison.Ordinal);
         Assert.Contains("userAgent", script, StringComparison.Ordinal);
         Assert.Contains("/web/5/firewallCaptcha/get", script, StringComparison.Ordinal);
         Assert.Contains("getInternalImage", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void IsLoginGeeTestOverlay_LoginNineGrid_True()
+    {
+        const string html = """
+            <form data-marker="login-form"></form>
+            <div class="geetest_box" style="display: block;"><div class="geetest_nine"></div></div>
+            """;
+
+        Assert.True(AvitoGeeTestSolveSupport.IsLoginGeeTestOverlay(html));
+    }
+
+    [Fact]
+    public void IsLoginClickCaptchaOverlay_VisibleClickWidget_True()
+    {
+        const string html = """
+            <form data-marker="login-form"></form>
+            <div class="geetest_captcha geetest_boxShow" style="display: block;">
+              <div class="geetest_box" style="display: block;">
+                <div class="geetest_bg geetest_click"></div>
+                <div class="geetest_ques_tips"><img src="hint.png"></div>
+                <div class="geetest_submit">Подтвердить</div>
+              </div>
+            </div>
+            """;
+
+        Assert.True(AvitoGeeTestSolveSupport.IsLoginClickCaptchaOverlay(html));
+    }
+
+    [Fact]
+    public void IsLoginClickCaptchaOverlay_NineGridImageSelection_True()
+    {
+        const string html = """
+            <form data-marker="login-form"></form>
+            <div class="geetest_box" style="display: block;">
+              <div class="geetest_text_tips">Выберите 3 изображения с</div>
+              <div class="geetest_ques_tips"><img src="hint.png"></div>
+              <div class="geetest_nine">
+                <div class="geetest_item"><div class="geetest_item_img"></div></div>
+                <div class="geetest_item"><div class="geetest_item_img"></div></div>
+                <div class="geetest_item"><div class="geetest_item_img"></div></div>
+              </div>
+            </div>
+            """;
+
+        Assert.True(AvitoGeeTestSolveSupport.IsLoginClickCaptchaOverlay(html));
+    }
+
+    [Theory]
+    [InlineData(false, false, false, "challenge-a", "challenge-a", LoginClickCaptchaOutcome.Accepted)]
+    [InlineData(true, true, false, "challenge-a", "challenge-a", LoginClickCaptchaOutcome.Accepted)]
+    [InlineData(true, false, true, "challenge-a", "challenge-a", LoginClickCaptchaOutcome.Rejected)]
+    [InlineData(true, false, false, "challenge-a", "challenge-b", LoginClickCaptchaOutcome.NextRound)]
+    [InlineData(true, false, false, "challenge-a", "challenge-a", LoginClickCaptchaOutcome.Pending)]
+    public void ClassifyLoginClickCaptchaOutcome_DoesNotTreatVisibleOverlayAsRejection(
+        bool overlayVisible,
+        bool explicitAccepted,
+        bool explicitRejected,
+        string expectedFingerprint,
+        string currentFingerprint,
+        LoginClickCaptchaOutcome expected)
+    {
+        var actual = AvitoGeeTestSolveSupport.ClassifyLoginClickCaptchaOutcome(
+            overlayVisible,
+            explicitAccepted,
+            explicitRejected,
+            expectedFingerprint,
+            currentFingerprint);
+
+        Assert.Equal(expected, actual);
+    }
+
+    [Fact]
+    public void ParseLoginClickCaptchaState_PreservesExplicitResultAndFingerprint()
+    {
+        const string raw =
+            """{"overlayVisible":true,"explicitAccepted":false,"explicitRejected":true,"fingerprint":"grid-a::hint-a"}""";
+
+        var state = AvitoGeeTestSolveSupport.ParseLoginClickCaptchaState(raw);
+
+        Assert.True(state.Readable);
+        Assert.True(state.OverlayVisible);
+        Assert.False(state.ExplicitAccepted);
+        Assert.True(state.ExplicitRejected);
+        Assert.Equal("grid-a::hint-a", state.Fingerprint);
+    }
+
+    [Fact]
+    public void BuildRefreshLoginGeeTestScript_SelectsVisibleRefreshButton()
+    {
+        var script = AvitoGeeTestSolveSupport.BuildRefreshLoginGeeTestScript();
+
+        Assert.Contains("querySelectorAll", script, StringComparison.Ordinal);
+        Assert.Contains("find(isVisible)", script, StringComparison.Ordinal);
+        Assert.Contains("getBoundingClientRect", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void LoginClickCaptcha_ReportsFinalOutcomeBeforeRefreshingWidget()
+    {
+        var source = File.ReadAllText(
+            Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "LeadFlow.Core", "Services", "Captcha", "AvitoGeeTestSolver.cs"));
+
+        var waitForOutcome = source.IndexOf("WaitForLoginClickCaptchaOutcomeAsync", StringComparison.Ordinal);
+        var reportIncorrect = source.IndexOf("isCorrect: false, \"ClickCaptcha логина\"", StringComparison.Ordinal);
+        var refreshWidget = source.IndexOf("DelayLoginOverlayRetryAsync(", reportIncorrect, StringComparison.Ordinal);
+
+        Assert.True(waitForOutcome >= 0, "После кликов нужно дождаться фактического исхода капчи.");
+        Assert.True(reportIncorrect > waitForOutcome, "Отчёт incorrect должен идти после ожидания исхода.");
+        Assert.True(refreshWidget > reportIncorrect, "Виджет можно обновлять только после отчёта incorrect.");
+    }
+
+    [Fact]
+    public void IsLoginGeeTestOverlay_FirewallWidget_False()
+    {
+        const string html = """
+            <div class="firewall-container">
+              <div id="geetest_captcha"></div>
+              <div class="geetest_box"></div>
+            </div>
+            """;
+
+        Assert.False(AvitoGeeTestSolveSupport.IsLoginGeeTestOverlay(html));
+    }
+
+    [Fact]
+    public void IsLoginGeeTestOverlay_PasswordFormWithoutWidget_False()
+    {
+        const string html = """
+            <form data-marker="login-form">
+              <input data-marker="login-form/password/input" type="password">
+            </form>
+            """;
+
+        Assert.False(AvitoGeeTestSolveSupport.IsLoginGeeTestOverlay(html));
+    }
+
+    [Fact]
+    public void BuildApplyLoginGeeTestScript_InjectsTokensWithoutFirewallVerify()
+    {
+        var solution = new GeeTestV4Solution(
+            CaptchaId: "3d0936b11a2c4a65bbb53635e656c780",
+            LotNumber: "lot-login",
+            PassToken: "pass-login",
+            GenTime: "1693924478",
+            CaptchaOutput: "out-login");
+
+        var script = AvitoGeeTestSolveSupport.BuildApplyLoginGeeTestScript(solution);
+
+        Assert.Contains("3d0936b11a2c4a65bbb53635e656c780", script, StringComparison.Ordinal);
+        Assert.Contains("lot-login", script, StringComparison.Ordinal);
+        Assert.Contains("pass-login", script, StringComparison.Ordinal);
+        Assert.Contains("getValidate", script, StringComparison.Ordinal);
+        Assert.Contains("geetest_box", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("firewallCaptcha/verify", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("/web/3/firewallCaptcha/verify", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ParseLoginApplyResult_AppliedOverlayGone()
+    {
+        var result = AvitoGeeTestSolveSupport.ParseLoginApplyResult(
+            """{"applied":true,"overlayGone":true,"method":"getValidate"}""");
+
+        Assert.True(result.Applied);
+        Assert.True(result.OverlayGone);
+        Assert.Equal("getValidate", result.Method);
+        Assert.True(result.Succeeded);
     }
 
     [Fact]

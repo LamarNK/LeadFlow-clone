@@ -818,11 +818,17 @@
         document.querySelectorAll('[data-worker-pause-badge]').forEach(function (el) {
             el.hidden = !paused;
         });
-        document.querySelectorAll('[data-worker-pause-form]').forEach(function (el) {
-            el.hidden = paused;
+        document.querySelectorAll('[data-worker-monitoring-toggle-form]').forEach(function (form) {
+            form.action = paused ? '/Workers/Enable' : '/Workers/Disable';
+            var button = form.querySelector('[data-worker-monitoring-toggle]');
+            if (button) {
+                button.innerHTML = paused
+                    ? '<i class="fa-solid fa-circle-play" aria-hidden="true"></i><span>Возобновить</span>'
+                    : '<i class="fa-solid fa-circle-pause" aria-hidden="true"></i><span>Пауза мониторинга</span>';
+            }
         });
-        document.querySelectorAll('[data-worker-resume-form]').forEach(function (el) {
-            el.hidden = !paused;
+        document.querySelectorAll('[data-worker-run-pass]').forEach(function (el) {
+            el.hidden = paused || !snapshot.isEnabled;
         });
     }
 
@@ -1223,9 +1229,14 @@
     function syncWorkerAccountsEmptyState(accounts) {
         var empty = document.querySelector('[data-worker-accounts-empty]');
         var table = document.querySelector('.card--worker-accounts table.data-table--accounts');
+        var toolbar = document.querySelector('.worker-accounts-toolbar');
+        var localPanel = document.querySelector('.worker-local-account-panel');
         var isEmpty = !accounts || !accounts.length;
-        if (empty) empty.hidden = !isEmpty;
+        var skipLocalCreate = !!(empty && empty.getAttribute('data-worker-accounts-empty-local-create') === 'true');
+        if (empty) empty.hidden = !isEmpty || skipLocalCreate;
         if (table) table.hidden = isEmpty;
+        if (toolbar && skipLocalCreate) toolbar.hidden = isEmpty;
+        if (localPanel && skipLocalCreate) localPanel.classList.toggle('worker-local-account-panel--empty', isEmpty);
     }
 
     function updateAccountGroupFilterOptions(options) {
@@ -1664,9 +1675,13 @@
     function initWorkerPage() {
         if (shared && shared.registerLivePage) {
             shared.registerLivePage('worker', snapshotFetcher, function () {
+                initTopUpModal();
                 initKpiCounters();
                 if (window.Orbita && typeof window.Orbita.initWorkerRestartButtons === 'function') {
                     window.Orbita.initWorkerRestartButtons();
+                }
+                if (window.Orbita && typeof window.Orbita.initWorkerRunPassButtons === 'function') {
+                    window.Orbita.initWorkerRunPassButtons();
                 }
                 if (window.Orbita && typeof window.Orbita.initWorkerAccountEnableToggles === 'function') {
                     window.Orbita.initWorkerAccountEnableToggles();
@@ -1691,6 +1706,9 @@
         if (window.Orbita && typeof window.Orbita.initWorkerRestartButtons === 'function') {
             window.Orbita.initWorkerRestartButtons();
         }
+        if (window.Orbita && typeof window.Orbita.initWorkerRunPassButtons === 'function') {
+            window.Orbita.initWorkerRunPassButtons();
+        }
         if (window.Orbita && typeof window.Orbita.initWorkerAccountEnableToggles === 'function') {
             window.Orbita.initWorkerAccountEnableToggles();
         }
@@ -1710,46 +1728,67 @@
         }
     }
 
+    var topUpDocBound = false;
+
     function initTopUpModal() {
-        var modal = document.getElementById('topUpModal');
-        if (!modal) return;
-        if (modal.dataset.topupInitialized === 'true') return;
-        modal.dataset.topupInitialized = 'true';
+        if (topUpDocBound) return;
+        if (!document.getElementById('topUpModal')) return;
+        topUpDocBound = true;
 
-        var closeBtns = modal.querySelectorAll('[data-topup-close]');
-        var cancelBtn = modal.querySelector('[data-topup-cancel]');
+        function root() {
+            return document.getElementById('topUpModal');
+        }
 
-        var loadingEl = modal.querySelector('[data-topup-loading]');
-        var errorEl = modal.querySelector('[data-topup-error]');
-        var contentEl = modal.querySelector('[data-topup-content]');
-        var errorMessageEl = modal.querySelector('[data-topup-error-message]');
-
-        var accountNameEl = modal.querySelector('[data-topup-account-name]');
-        var currentBalanceEl = modal.querySelector('[data-topup-current-balance]');
-        var targetBalanceEl = modal.querySelector('[data-topup-target-balance]');
-        var requestedAmountEl = modal.querySelector('[data-topup-requested-amount]');
-        var dailyResponsesEl = modal.querySelector('[data-topup-daily-responses]');
-        var tierLabelEl = modal.querySelector('[data-topup-tier-label]');
-        var statusEl = modal.querySelector('[data-topup-status]');
-        var qrSectionEl = modal.querySelector('[data-topup-qr-section]');
-        var qrImageEl = modal.querySelector('[data-topup-qr-image]');
-        var terminalMessageEl = modal.querySelector('[data-topup-terminal-message]');
-        var staleWarningEl = modal.querySelector('[data-topup-stale-warning]');
-        var liveRegionEl = modal.querySelector('[data-topup-live-region]');
+        function el(sel) {
+            var modal = root();
+            return modal ? modal.querySelector(sel) : null;
+        }
 
         var currentSessionId = null;
+        var currentActive = false;
         var pollTimer = null;
         var pollStartedAt = null;
+        var countdownTimer = null;
+        var expiresAtMs = null;
         var consecutiveFailures = 0;
         var cancelInFlight = false;
+        var paidInFlight = false;
 
-        var POLL_INTERVAL_MS = 3000;
-        var MAX_POLL_DURATION_MS = 2.5 * 60 * 60 * 1000; // 2.5 часа
+        var POLL_INTERVAL_MS = 1500;
+        var MAX_POLL_DURATION_MS = 15 * 60 * 1000;
         var MAX_CONSECUTIVE_FAILURES = 3;
 
         document.addEventListener('click', function (event) {
+            var modal = root();
+            var cancelBtn = event.target.closest('[data-topup-cancel]');
+            if (cancelBtn && modal && modal.contains(cancelBtn)) {
+                event.preventDefault();
+                if (currentSessionId && confirm('Отменить сессию пополнения?')) {
+                    cancelSession(currentSessionId);
+                }
+                return;
+            }
+
+            var paidBtn = event.target.closest('[data-topup-paid]');
+            if (paidBtn && modal && modal.contains(paidBtn)) {
+                event.preventDefault();
+                if (currentSessionId) {
+                    markPaid(currentSessionId);
+                }
+                return;
+            }
+
+            var closeBtn = event.target.closest('[data-topup-close]');
+            if (closeBtn && modal && modal.contains(closeBtn)) {
+                event.preventDefault();
+                closeModal();
+                return;
+            }
+
             var btn = event.target.closest('[data-topup-trigger]');
             if (!btn) return;
+            event.preventDefault();
+            event.stopPropagation();
 
             var workerId = btn.getAttribute('data-worker-id');
             var accountId = btn.getAttribute('data-account-id');
@@ -1760,61 +1799,102 @@
             startSession(workerId, accountId, subProfileId, accountName);
         });
 
-        closeBtns.forEach(function (btn) {
-            btn.addEventListener('click', closeModal);
-        });
-
-        if (cancelBtn) {
-            cancelBtn.addEventListener('click', function () {
-                if (currentSessionId && confirm('Отменить сессию пополнения?')) {
-                    cancelSession(currentSessionId);
-                }
-            });
-        }
-
         function openModal() {
+            var modal = root();
+            if (!modal) return;
             modal.removeAttribute('hidden');
             document.body.style.overflow = 'hidden';
             showLoading();
         }
 
         function closeModal() {
-            modal.setAttribute('hidden', '');
-            document.body.style.overflow = '';
-            stopPolling();
-            currentSessionId = null;
-            consecutiveFailures = 0;
-            cancelInFlight = false;
+            var sessionId = currentSessionId;
+            var shouldDismiss = currentActive && sessionId;
+            hideModal();
+            if (shouldDismiss) {
+                dismissSession(sessionId);
+            }
         }
 
+        function hideModal() {
+            var modal = root();
+            if (modal) modal.setAttribute('hidden', '');
+            document.body.style.overflow = '';
+            stopPolling();
+            stopCountdown();
+            currentSessionId = null;
+            currentActive = false;
+            consecutiveFailures = 0;
+            cancelInFlight = false;
+            paidInFlight = false;
+        }
+
+        window.addEventListener('pagehide', function () {
+            if (currentActive && currentSessionId) {
+                dismissSession(currentSessionId);
+            }
+        });
+
         function announce(message) {
+            var liveRegionEl = el('[data-topup-live-region]');
             if (!liveRegionEl) return;
             liveRegionEl.textContent = '';
-            // Принудительно очищаем и перезаписываем, чтобы скринридеры озвучили повторно.
             window.setTimeout(function () {
-                liveRegionEl.textContent = message;
+                var current = el('[data-topup-live-region]');
+                if (current) current.textContent = message;
             }, 0);
         }
 
         function showLoading() {
-            loadingEl.removeAttribute('hidden');
-            errorEl.setAttribute('hidden', '');
-            contentEl.setAttribute('hidden', '');
+            var loadingEl = el('[data-topup-loading]');
+            var errorEl = el('[data-topup-error]');
+            var contentEl = el('[data-topup-content]');
+            if (loadingEl) loadingEl.removeAttribute('hidden');
+            if (errorEl) errorEl.setAttribute('hidden', '');
+            if (contentEl) contentEl.setAttribute('hidden', '');
         }
 
         function showError(message) {
-            loadingEl.setAttribute('hidden', '');
-            contentEl.setAttribute('hidden', '');
-            errorEl.removeAttribute('hidden');
+            var loadingEl = el('[data-topup-loading]');
+            var errorEl = el('[data-topup-error]');
+            var contentEl = el('[data-topup-content]');
+            var errorMessageEl = el('[data-topup-error-message]');
+            if (loadingEl) loadingEl.setAttribute('hidden', '');
+            if (contentEl) contentEl.setAttribute('hidden', '');
+            if (errorEl) errorEl.removeAttribute('hidden');
             if (errorMessageEl) errorMessageEl.textContent = message || 'Ошибка при создании сессии.';
         }
 
         function showContent(session) {
-            loadingEl.setAttribute('hidden', '');
-            errorEl.setAttribute('hidden', '');
-            contentEl.removeAttribute('hidden');
+            var loadingEl = el('[data-topup-loading]');
+            var errorEl = el('[data-topup-error]');
+            var contentEl = el('[data-topup-content]');
+            var accountNameEl = el('[data-topup-account-name]');
+            var subProfileRowEl = el('[data-topup-subprofile-row]');
+            var subProfileNameEl = el('[data-topup-subprofile-name]');
+            var currentBalanceEl = el('[data-topup-current-balance]');
+            var targetBalanceEl = el('[data-topup-target-balance]');
+            var requestedAmountEl = el('[data-topup-requested-amount]');
+            var dailyResponsesEl = el('[data-topup-daily-responses]');
+            var tierLabelEl = el('[data-topup-tier-label]');
+            var cancelBtn = el('[data-topup-cancel]');
+            var paidBtn = el('[data-topup-paid]');
+
+            if (loadingEl) loadingEl.setAttribute('hidden', '');
+            if (errorEl) errorEl.setAttribute('hidden', '');
+            if (contentEl) contentEl.removeAttribute('hidden');
 
             if (accountNameEl) accountNameEl.textContent = session.accountName || '';
+            if (subProfileRowEl && subProfileNameEl) {
+                var subName = session.subProfileName || '';
+                if (subName) {
+                    subProfileNameEl.textContent = subName;
+                    subProfileRowEl.removeAttribute('hidden');
+                } else {
+                    subProfileNameEl.textContent = '';
+                    subProfileRowEl.setAttribute('hidden', '');
+                }
+            }
             if (currentBalanceEl) currentBalanceEl.textContent = formatBalance(session.currentBalance);
             if (targetBalanceEl) targetBalanceEl.textContent = formatBalance(session.targetBalance);
             if (requestedAmountEl) requestedAmountEl.textContent = formatBalance(session.requestedAmount);
@@ -1824,30 +1904,56 @@
             updateStatus(session);
             updateQr(session);
             updateTerminalState(session);
+            updateCountdown(session);
 
+            currentActive = isActive(session.status);
             if (cancelBtn) {
-                cancelBtn.hidden = !isActive(session.status);
+                cancelBtn.hidden = !currentActive || session.status === 'qr_ready';
+            }
+            if (paidBtn) {
+                paidBtn.hidden = session.status !== 'qr_ready';
             }
         }
 
         function updateStatus(session) {
+            var statusEl = el('[data-topup-status]');
+            var statusLabelEl = el('[data-topup-status-label]');
+            var statusDetailEl = el('[data-topup-status-detail]');
+            var statusSpinnerEl = el('[data-topup-status-spinner]');
             if (!statusEl) return;
             var label = getStatusLabel(session.status);
-            var previous = statusEl.textContent;
-            statusEl.textContent = label;
-            statusEl.className = 'topup-status topup-status--' + session.status;
-            if (previous !== label) {
-                announce('Статус: ' + label);
+            var detail = getStatusDetail(session);
+            var previous = statusLabelEl ? statusLabelEl.textContent : '';
+            var previousDetail = statusDetailEl ? statusDetailEl.textContent : '';
+            var terminal = !isActive(session.status);
+            var ready = session.status === 'qr_ready';
+
+            statusEl.removeAttribute('hidden');
+            statusEl.className = 'topup-status topup-status--' + session.status
+                + (ready ? ' is-ready' : '')
+                + (terminal ? ' is-terminal' : '');
+            if (statusLabelEl) statusLabelEl.textContent = label;
+            if (statusDetailEl) {
+                statusDetailEl.textContent = detail;
+                statusDetailEl.hidden = !detail;
+            }
+            if (statusSpinnerEl) {
+                statusSpinnerEl.hidden = terminal || ready;
+            }
+
+            if (previous !== label || previousDetail !== detail) {
+                announce(detail ? (label + '. ' + detail) : ('Статус: ' + label));
             }
         }
 
         function updateQr(session) {
+            var qrSectionEl = el('[data-topup-qr-section]');
+            var qrImageEl = el('[data-topup-qr-image]');
             if (!qrSectionEl || !qrImageEl) return;
 
             if (session.status === 'qr_ready' && (session.qrImageBase64 || session.qrImageUrl)) {
                 var src = resolveQrSrc(session.qrImageBase64, session.qrImageUrl);
                 if (!src) {
-                    // Некорректные QR-данные: не подставляем в src.
                     qrImageEl.removeAttribute('src');
                     qrSectionEl.setAttribute('hidden', '');
                     announce('QR-код недоступен: некорректные данные.');
@@ -1905,18 +2011,22 @@
         }
 
         function updateTerminalState(session) {
+            var terminalMessageEl = el('[data-topup-terminal-message]');
             if (!terminalMessageEl) return;
 
             if (!isActive(session.status)) {
                 var message = '';
                 if (session.status === 'expired') {
-                    message = 'Сессия истекла. Время ожидания истекло.';
+                    message = 'Сессия истекла, пауза мониторинга снята.';
                 } else if (session.status === 'failed') {
                     message = session.failureMessage || 'Сессия завершилась с ошибкой.';
                 } else if (session.status === 'cancelled') {
-                    message = 'Сессия была отменена.';
+                    message = 'Сессия закрыта, пауза мониторинга снята.';
+                } else if (session.status === 'paid') {
+                    message = 'Оплата отмечена. Пауза мониторинга снята. Обновите страницу, чтобы увидеть актуальный баланс.';
                 }
 
+                terminalMessageEl.classList.toggle('is-success', session.status === 'paid');
                 if (message) {
                     terminalMessageEl.textContent = message;
                     terminalMessageEl.removeAttribute('hidden');
@@ -1930,36 +2040,56 @@
         }
 
         function startSession(workerId, accountId, subProfileId, accountName) {
+            if (!workerId || !accountId || !subProfileId) {
+                showError('Не выбран субпрофиль для пополнения.');
+                return;
+            }
+
             var token = getAntiForgeryToken();
-            fetch('/Workers/CreateTopUpSession?workerId=' + workerId + '&accountId=' + accountId + '&subProfileId=' + encodeURIComponent(subProfileId || ''), {
+            var body = new URLSearchParams();
+            if (token) body.set('__RequestVerificationToken', token);
+
+            fetch('/Workers/CreateTopUpSession?workerId=' + encodeURIComponent(workerId) + '&accountId=' + encodeURIComponent(accountId) + '&subProfileId=' + encodeURIComponent(subProfileId), {
                 method: 'POST',
+                credentials: 'same-origin',
                 headers: {
-                    'Content-Type': 'application/json',
+                    'Accept': 'application/json',
                     'RequestVerificationToken': token
-                }
+                },
+                body: body
             })
             .then(function (response) {
+                return readJson(response).then(function (data) {
+                    return { response: response, data: data };
+                });
+            })
+            .then(function (result) {
+                var response = result.response;
+                var data = result.data;
                 if (response.status === 409) {
-                    return response.json().then(function (data) {
-                        throw new Error(data.error || 'Конфликт: уже есть активная сессия.');
-                    });
+                    throw new Error((data && data.error) || 'Для этого аккаунта уже есть активная сессия.');
                 }
                 if (!response.ok) {
-                    return response.json().then(function (data) {
-                        throw new Error(data.error || 'Не удалось создать сессию.');
-                    });
+                    throw new Error(errorFromResponse(response, data, 'Не удалось создать сессию пополнения.'));
                 }
-                return response.json();
-            })
-            .then(function (session) {
-                currentSessionId = session.sessionId;
-                showContent(session);
-                if (isActive(session.status)) {
-                    startPolling(session.sessionId);
+                if (!data || !data.sessionId) {
+                    throw new Error('Сервер вернул пустой ответ. Обновите страницу и попробуйте снова.');
+                }
+                currentSessionId = data.sessionId;
+                var modal = root();
+                if (!modal || modal.hasAttribute('hidden')) {
+                    dismissSession(data.sessionId);
+                    currentSessionId = null;
+                    currentActive = false;
+                    return;
+                }
+                showContent(data);
+                if (isActive(data.status)) {
+                    startPolling(data.sessionId);
                 }
             })
             .catch(function (err) {
-                showError(err.message);
+                showError(err && err.message ? err.message : 'Не удалось создать сессию пополнения.');
             });
         }
 
@@ -1972,14 +2102,18 @@
 
             fetch('/Workers/GetTopUpSession?sessionId=' + sessionId, {
                 method: 'GET',
-                headers: { 'Content-Type': 'application/json' }
+                credentials: 'same-origin',
+                headers: { 'Accept': 'application/json' }
             })
             .then(function (response) {
                 if (!response.ok) return null;
-                return response.json();
+                return readJson(response).then(function (data) {
+                    return data && data.sessionId ? data : null;
+                });
             })
             .then(function (session) {
-                if (!session || modal.hasAttribute('hidden')) return;
+                var modal = root();
+                if (!session || !modal || modal.hasAttribute('hidden')) return;
                 consecutiveFailures = 0;
                 showStaleWarning(false);
                 showContent(session);
@@ -1996,6 +2130,7 @@
         }
 
         function showStaleWarning(show) {
+            var staleWarningEl = el('[data-topup-stale-warning]');
             if (!staleWarningEl) return;
             staleWarningEl.hidden = !show;
         }
@@ -2018,22 +2153,38 @@
             pollStartedAt = null;
         }
 
+        function postTopUpAction(url, sessionId, keepalive) {
+            var token = getAntiForgeryToken();
+            var body = new URLSearchParams();
+            if (token) body.set('__RequestVerificationToken', token);
+            return fetch(url + '?sessionId=' + sessionId, {
+                method: 'POST',
+                credentials: 'same-origin',
+                keepalive: !!keepalive,
+                headers: {
+                    'Accept': 'application/json',
+                    'RequestVerificationToken': token
+                },
+                body: body
+            });
+        }
+
+        function dismissSession(sessionId) {
+            postTopUpAction('/Workers/CancelTopUpSession', sessionId, true).catch(function () { /* TTL снимет паузу */ });
+        }
+
         function cancelSession(sessionId) {
             if (cancelInFlight) return;
             cancelInFlight = true;
             setCancelBusy(true);
 
-            var token = getAntiForgeryToken();
-            fetch('/Workers/CancelTopUpSession?sessionId=' + sessionId, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'RequestVerificationToken': token
-                }
-            })
+            postTopUpAction('/Workers/CancelTopUpSession', sessionId, false)
             .then(function (response) {
-                if (!response.ok) throw new Error('Не удалось отменить сессию.');
-                return response.json();
+                return readJson(response).then(function (data) {
+                    if (!response.ok) {
+                        throw new Error(errorFromResponse(response, data, 'Не удалось отменить сессию.'));
+                    }
+                });
             })
             .then(function () {
                 stopPolling();
@@ -2049,7 +2200,35 @@
             });
         }
 
+        function markPaid(sessionId) {
+            if (paidInFlight) return;
+            paidInFlight = true;
+            setPaidBusy(true);
+
+            postTopUpAction('/Workers/MarkTopUpSessionPaid', sessionId, false)
+            .then(function (response) {
+                return readJson(response).then(function (data) {
+                    if (!response.ok) {
+                        throw new Error(errorFromResponse(response, data, 'Не удалось отметить оплату.'));
+                    }
+                });
+            })
+            .then(function () {
+                stopPolling();
+                pollSession(sessionId);
+            })
+            .catch(function (err) {
+                announce('Не удалось отметить оплату.');
+                alert(err.message);
+            })
+            .finally(function () {
+                paidInFlight = false;
+                setPaidBusy(false);
+            });
+        }
+
         function setCancelBusy(busy) {
+            var cancelBtn = el('[data-topup-cancel]');
             if (!cancelBtn) return;
             if (busy) {
                 cancelBtn.disabled = true;
@@ -2062,21 +2241,99 @@
             }
         }
 
+        function setPaidBusy(busy) {
+            var paidBtn = el('[data-topup-paid]');
+            if (!paidBtn) return;
+            if (busy) {
+                paidBtn.disabled = true;
+                paidBtn.setAttribute('data-paid-busy', '1');
+                paidBtn.textContent = 'Сохраняем…';
+            } else {
+                paidBtn.disabled = false;
+                paidBtn.removeAttribute('data-paid-busy');
+                paidBtn.textContent = 'Оплачено';
+            }
+        }
+
+        function updateCountdown(session) {
+            if (!isActive(session.status) || !session.expiresAtUtc) {
+                stopCountdown();
+                return;
+            }
+            var parsed = Date.parse(session.expiresAtUtc);
+            if (!parsed) {
+                stopCountdown();
+                return;
+            }
+            expiresAtMs = parsed;
+            tickCountdown();
+            if (!countdownTimer) {
+                countdownTimer = setInterval(tickCountdown, 1000);
+            }
+        }
+
+        function tickCountdown() {
+            var timerEl = el('[data-topup-timer]');
+            if (!timerEl || !expiresAtMs) return;
+            var remainingMs = expiresAtMs - Date.now();
+            if (remainingMs <= 0) {
+                timerEl.textContent = 'Пауза мониторинга снимается…';
+                timerEl.hidden = false;
+                if (countdownTimer) {
+                    clearInterval(countdownTimer);
+                    countdownTimer = null;
+                }
+                if (currentSessionId) {
+                    pollSession(currentSessionId);
+                }
+                return;
+            }
+            var totalSec = Math.ceil(remainingMs / 1000);
+            var min = Math.floor(totalSec / 60);
+            var sec = totalSec % 60;
+            timerEl.textContent = 'Пауза мониторинга снимется через ' + min + ':' + (sec < 10 ? '0' : '') + sec;
+            timerEl.hidden = false;
+        }
+
+        function stopCountdown() {
+            if (countdownTimer) {
+                clearInterval(countdownTimer);
+                countdownTimer = null;
+            }
+            expiresAtMs = null;
+            var timerEl = el('[data-topup-timer]');
+            if (timerEl) {
+                timerEl.hidden = true;
+                timerEl.textContent = '';
+            }
+        }
+
         function isActive(status) {
             return status === 'requested' || status === 'started' || status === 'payment_claimed' || status === 'qr_ready';
         }
 
         function getStatusLabel(status) {
             var labels = {
-                'requested': 'Запрошено',
-                'started': 'Обработка воркером',
-                'payment_claimed': 'Оплата инициируется',
+                'requested': 'Задача передана воркеру',
+                'started': 'Воркер выполняет пополнение',
+                'payment_claimed': 'Формируем QR-код',
                 'qr_ready': 'QR-код готов к оплате',
-                'expired': 'Истекло',
-                'failed': 'Ошибка',
-                'cancelled': 'Отменено'
+                'expired': 'Сессия истекла',
+                'failed': 'Не удалось пополнить',
+                'cancelled': 'Сессия закрыта',
+                'paid': 'Оплачено'
             };
             return labels[status] || 'Неизвестно';
+        }
+
+        function getStatusDetail(session) {
+            if (session.progressMessage) return session.progressMessage;
+            var status = session.status;
+            if (status === 'requested') return 'Ставим мониторинг на паузу и передаём задачу воркеру…';
+            if (status === 'started') return 'Открываем браузер, переключаем субпрофиль и вводим сумму…';
+            if (status === 'payment_claimed') return 'Переходим к оплате через СБП и ждём QR-код…';
+            if (status === 'qr_ready') return 'Отсканируйте код в приложении банка и нажмите «Оплачено».';
+            return '';
         }
 
         function getTierLabel(count, targetBalance) {
@@ -2097,8 +2354,30 @@
         }
 
         function getAntiForgeryToken() {
+            var local = el('input[name="__RequestVerificationToken"]');
+            if (local && local.value) return local.value;
             var tokenInput = document.querySelector('input[name="__RequestVerificationToken"]');
             return tokenInput ? tokenInput.value : '';
+        }
+
+        function readJson(response) {
+            return response.text().then(function (text) {
+                var trimmed = (text || '').trim();
+                if (!trimmed) return {};
+                try {
+                    return JSON.parse(trimmed);
+                } catch (e) {
+                    return {};
+                }
+            });
+        }
+
+        function errorFromResponse(response, data, fallback) {
+            if (data && data.error) return data.error;
+            if (response.status === 401 || response.status === 403) return 'Нет доступа к пополнению.';
+            if (response.status === 409) return 'Для этого аккаунта уже есть активная сессия.';
+            if (response.status >= 500) return 'Сервер не смог выполнить запрос. Попробуйте ещё раз.';
+            return fallback || 'Не удалось выполнить запрос. Обновите страницу и попробуйте снова.';
         }
     }
 

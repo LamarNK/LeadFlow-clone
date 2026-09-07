@@ -1,5 +1,99 @@
 /* Mobile finishing layer. Loaded after orbita.css to keep desktop rules isolated. */
 
+/* The expanded sidebar leaves only 744px of content at a 1024px viewport. */
+@media (max-width: 1200px) {
+    .crm-stage-rail { grid-template-columns: minmax(0, 1fr); }
+    .crm-stage-rail__stages { grid-template-columns: repeat(auto-fit, minmax(100px, 1fr)); }
+    .crm-stage-rail form button { min-height: var(--touch-min); white-space: normal; overflow-wrap: anywhere; }
+}
+
+@media (min-width: 769px) and (max-width: 1200px) {
+    .orbita-topbar { flex-wrap: wrap; }
+    .orbita-topbar-actions { flex-wrap: wrap; max-width: 100%; }
+    .crm-analytics-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .crm-analytics-filter-actions { grid-column: 1 / -1; }
+    .crm-analytics-grid { grid-template-columns: minmax(0, 1fr); }
+    .crm-analytics-decomposition-scroll { min-width: 0; max-width: 100%; overflow-x: auto; }
+}
+
+@media (max-width: 768px) {
+    .orbita-main, .orbita-main > *, .settings-field,
+    .telephony-settings-page > *, .telephony-settings-grid > *,
+    .crm-filters__primary, .crm-filters__secondary,
+    .crm-analytics > * { min-width: 0; }
+
+    .card--worker-events, .card--worker-events .card-body,
+    .card--worker-events .card-body > div { min-width: 0; }
+    .worker-accounts-tabs { flex-wrap: wrap; max-width: 100%; height: auto; }
+    .worker-accounts-tab { min-height: var(--touch-min); }
+    .crm-task-detail-actions { min-width: 0; flex-wrap: wrap; gap: 8px; }
+    .crm-task-detail-actions form { min-width: 0; }
+    .crm-task-detail-complete { white-space: normal; padding: 10px 12px; }
+
+    .worker-settings-templates-more-panel {
+        left: auto;
+        right: 0;
+        max-width: calc(100vw - 48px);
+    }
+
+    .orbita-topbar, .orbita-main {
+        padding-left: max(12px, env(safe-area-inset-left));
+        padding-right: max(12px, env(safe-area-inset-right));
+    }
+
+    .settings-field :is(input, select, textarea),
+    .crm-responsible-filter select { min-width: 0; max-width: 100%; }
+
+    .settings-field :is(input, select), .orbita-filters-search,
+    .orbita-filters-search input { min-height: var(--touch-min); }
+    .orbita-app input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+    .orbita-app select, .orbita-app textarea { font-size: 16px; }
+    .crm-task-create-form--modal .settings-secondary-btn,
+    .crm-task-create-form--modal .settings-primary-btn { min-height: var(--touch-min); }
+
+    .orbita-filters-fields label > span,
+    .orbita-filters-fields .orbita-filters-label {
+        color: var(--text-secondary);
+        font-size: 12px;
+        line-height: 1.5;
+    }
+
+    .orbita-search__close, .orbita-detail-modal__close,
+    .orbita-detail-modal__action, .orbita-detail-modal__nav-link,
+    .orbita-confirm__btn, .settings-tab, .crm-scope-tabs a,
+    .crm-view-switch a, .dashboard-worker-filter {
+        min-height: var(--touch-min);
+        min-width: var(--touch-min);
+    }
+
+    .orbita-confirm__dialog { padding: 20px; padding-bottom: max(20px, env(safe-area-inset-bottom)); }
+    .orbita-confirm__actions, .orbita-detail-modal__foot-actions { flex-wrap: wrap; }
+    .orbita-confirm__actions > button { flex: 1 1 110px; padding: 10px 12px; }
+    .orbita-detail-modal .orbita-detail-modal__dialog,
+    .crm-task-modal__dialog, .crm-success-wizard__dialog,
+    .telephony-modal__dialog { max-height: calc(100dvh - 24px); }
+    .orbita-search__dialog { max-height: calc(100dvh - 32px); display: flex; flex-direction: column; }
+    .orbita-search__results { min-height: 0; overflow-y: auto; }
+    .orbita-search__head, .orbita-search__footer { flex-shrink: 0; }
+    .orbita-search__footer { flex-wrap: wrap; }
+
+    .telephony-page-meta { flex-wrap: wrap; overflow-wrap: anywhere; }
+    .statistics-filters__context { flex-wrap: wrap; min-width: 0; }
+    .statistics-filters .orbita-filters-fields { grid-template-columns: minmax(0, 1fr); }
+    .telephony-settings-nav .settings-control-bar { min-width: 0; max-width: 100%; }
+    .telephony-settings-nav .settings-tabs { flex-wrap: wrap; }
+}
+
+@media (max-width: 700px) {
+    .data-table--workers.data-table--cards,
+    .data-table--workers.data-table--cards tbody { display: block; width: 100%; }
+    .data-table--workers .worker-activity-pill { max-width: 100%; }
+    .data-table--workers .worker-activity-pill-text { white-space: normal; overflow-wrap: anywhere; }
+    .kpi-card-head { flex-wrap: wrap; }
+    .kpi-card-label { min-width: 0; overflow-wrap: anywhere; }
+    .crm-scope-tabs { flex-wrap: wrap; }
+}
+
 @media (max-width: 768px) {
     html {
         -webkit-text-size-adjust: 100%;
@@ -22,7 +116,7 @@
         padding-bottom: calc(16px + env(safe-area-inset-bottom, 0px));
         border: 0;
         border-radius: 0;
-        box-shadow: 12px 0 32px rgba(15, 23, 42, 0.28);
+        box-shadow: none;
         overflow-y: auto;
         overscroll-behavior: contain;
     }
@@ -47,8 +141,8 @@
     }
 
     .orbita-sidebar-toggle {
-        width: 40px;
-        height: 40px;
+        width: var(--touch-min);
+        height: var(--touch-min);
     }
 
     .orbita-nav {
@@ -111,10 +205,7 @@
     }
 
     .orbita-topbar-sub {
-        display: -webkit-box;
-        overflow: hidden;
-        -webkit-box-orient: vertical;
-        -webkit-line-clamp: 2;
+        overflow-wrap: anywhere;
     }
 
     .orbita-topbar-actions {
@@ -197,7 +288,7 @@
 
     .dashboard-worker-filter {
         padding: 0 9px;
-        font-size: 11px;
+        font-size: 13px;
     }
 
     .dashboard-worker-search {
@@ -238,7 +329,8 @@
     .dashboard-workers-toolbar-actions { flex-wrap: wrap; }
 
     .dashboard-workers-toolbar-actions .dashboard-monitoring-btn {
-        height: 34px;
+        min-height: var(--touch-min);
+        height: auto;
         padding: 0 12px;
     }
 
@@ -368,10 +460,6 @@
         padding-left: 12px;
     }
 
-    .orbita-topbar-sub {
-        -webkit-line-clamp: 1;
-    }
-
     .orbita-main {
         padding-right: 12px;
         padding-left: 12px;
@@ -405,7 +493,7 @@
     }
 
     .statistics-trend-legend-pill {
-        font-size: 10px;
+        font-size: 12px;
     }
 
     .settings-distribution-palette,
@@ -1107,4 +1195,61 @@
         min-width: 0;
         overflow-wrap: anywhere;
     }
+
+    html.sidebar-mobile-open .orbita-sidebar {
+        box-shadow: 12px 0 32px rgba(15, 23, 42, 0.28);
+    }
+}
+
+/* Keep the card metadata readable after the compact response rules above. */
+.kpi-card .kpi-card-label,
+.kpi-card .kpi-card-caption { color: var(--text-secondary); }
+
+@media (max-width: 480px) {
+    .kpi-card--dashboard { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto 36px; row-gap: 6px; }
+    .kpi-card--dashboard .kpi-sparkline-wrap { grid-column: 1; grid-row: 3; height: 36px; }
+    .kpi-card--dashboard .kpi-card-label,
+    .kpi-card--dashboard .kpi-delta-pill { font-size: 12px; line-height: 1.4; }
+    .kpi-card--dashboard .kpi-delta-pill { color: var(--text-secondary); }
+}
+
+@media (max-width: 768px) {
+    .orbita-topbar, .orbita-main {
+        padding-left: max(12px, env(safe-area-inset-left));
+        padding-right: max(12px, env(safe-area-inset-right));
+    }
+}
+
+@media (max-width: 700px) {
+    .kpi-card--stat .kpi-card-label,
+    .responses-kpi-row .kpi-card-caption { font-size: 12px; line-height: 1.45; }
+    .data-table--responses.data-table--cards tbody td.responses-phone::before,
+    .data-table--responses.data-table--cards tbody td.responses-city::before,
+    .data-table--responses.data-table--cards tbody td.responses-account::before,
+    .data-table--responses.data-table--cards tbody td.responses-status::before {
+        color: var(--text-secondary);
+        font-size: 12px;
+        letter-spacing: 0;
+    }
+    .data-table--responses.data-table--cards tbody td.responses-phone,
+    .data-table--responses.data-table--cards tbody td.responses-city { flex-basis: 100%; }
+    .data-table--responses.data-table--cards .responses-phone__number {
+        font-size: 14px;
+        white-space: normal;
+        overflow-wrap: anywhere;
+    }
+    .data-table--responses.data-table--cards .responses-ad-link,
+    .data-table--responses.data-table--cards .responses-city > strong {
+        display: block;
+        overflow: visible;
+        -webkit-line-clamp: unset;
+        overflow-wrap: anywhere;
+    }
+    .data-table--responses.data-table--cards .responses-status__destination,
+    .data-table--responses.data-table--cards .responses-status__destination .responses-bitrix-label {
+        font-size: 12px;
+    }
+    .orbita-pagination__controls { flex-wrap: wrap; gap: 8px; }
+    .orbita-pagination__controls .orbita-pagination__btn--page { display: inline-flex; }
+    .orbita-pagination__ellipsis { display: inline; }
 }

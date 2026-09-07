@@ -769,6 +769,11 @@ public sealed class WorkersService(
             ? Task.FromResult<(bool, string?)>((true, null))
             : api.CancelTopUpSessionAsync(sessionId, ct);
 
+    public Task<(bool Success, string? Error)> MarkTopUpSessionPaidAsync(Guid sessionId, CancellationToken ct = default) =>
+        previewOptions.Value.Enabled
+            ? Task.FromResult<(bool, string?)>((true, null))
+            : api.MarkTopUpSessionPaidAsync(sessionId, ct);
+
     private static TopUpSessionViewModel MapTopUpSession(TopUpSessionDto dto) => new()
     {
         SessionId = dto.Id,
@@ -788,6 +793,9 @@ public sealed class WorkersService(
         QrImageBase64 = dto.QrImageBase64,
         QrImageUrl = dto.QrImageUrl,
         FailureMessage = dto.FailureMessage,
-        OperatorDisplayName = dto.OperatorDisplayName
+        OperatorDisplayName = dto.OperatorDisplayName,
+        SubProfileId = dto.SubProfileId,
+        SubProfileName = dto.SubProfileName,
+        ProgressMessage = dto.ProgressMessage
     };
 }

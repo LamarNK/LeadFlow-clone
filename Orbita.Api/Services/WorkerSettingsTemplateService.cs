@@ -4,7 +4,11 @@ using Orbita.Contracts;
 
 namespace Orbita.Api.Services;
 
-public sealed class WorkerSettingsTemplateService(OrbitaDbContext db, OfficeScopeService officeScope)
+public sealed class WorkerSettingsTemplateService(
+    OrbitaDbContext db,
+    OfficeScopeService officeScope,
+    IOrbitaQueryCache? queryCache = null,
+    IPanelRealtimeNotifier? panelRealtime = null)
 {
     public async Task<(IReadOnlyList<WorkerSettingsTemplateDto>? Templates, string? Error)> ListAsync(
         Guid workerId,
@@ -17,7 +21,19 @@ public sealed class WorkerSettingsTemplateService(OrbitaDbContext db, OfficeScop
             return (null, error);
         }
 
-        return (await ListForOfficeAsync(worker.OfficeId, ct), null);
+        Task<IReadOnlyList<WorkerSettingsTemplateDto>> Load(CancellationToken token) =>
+            ListForOfficeAsync(worker.OfficeId, token);
+        var templates = queryCache is null
+            ? await Load(ct)
+            : await queryCache.GetOrCreateAsync(
+                OrbitaCacheDomain.Reference,
+                worker.OfficeId,
+                $"office:{worker.OfficeId:D}",
+                new { Kind = "worker-settings-templates" },
+                OrbitaCachePolicy.Reference,
+                Load,
+                ct);
+        return (templates, null);
     }
 
     public async Task<(WorkerSettingsTemplateMutationResultDto? Result, string? Error)> CreateAsync(
@@ -57,6 +73,7 @@ public sealed class WorkerSettingsTemplateService(OrbitaDbContext db, OfficeScop
         ApplyPayload(entity, WorkerSettingsTemplatePayload.Normalize(request.Settings));
         db.WorkerSettingsTemplates.Add(entity);
         await db.SaveChangesAsync(ct);
+        panelRealtime?.Notify([PanelChangeKind.Reference], worker.OfficeId, workerId);
 
         var dto = ToDto(entity);
         return (new WorkerSettingsTemplateMutationResultDto(
@@ -102,6 +119,7 @@ public sealed class WorkerSettingsTemplateService(OrbitaDbContext db, OfficeScop
         entity.UpdatedAtUtc = DateTime.UtcNow;
         ApplyPayload(entity, WorkerSettingsTemplatePayload.Normalize(request.Settings));
         await db.SaveChangesAsync(ct);
+        panelRealtime?.Notify([PanelChangeKind.Reference], worker.OfficeId, workerId);
 
         var dto = ToDto(entity);
         return (new WorkerSettingsTemplateMutationResultDto(
@@ -131,6 +149,7 @@ public sealed class WorkerSettingsTemplateService(OrbitaDbContext db, OfficeScop
 
         db.WorkerSettingsTemplates.Remove(entity);
         await db.SaveChangesAsync(ct);
+        panelRealtime?.Notify([PanelChangeKind.Reference], worker.OfficeId, workerId);
         return (new WorkerSettingsTemplateMutationResultDto(
             null,
             await ListForOfficeAsync(worker.OfficeId, ct),

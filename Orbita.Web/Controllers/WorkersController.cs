@@ -517,6 +517,22 @@ public sealed class WorkersController(IWorkersService workers) : Controller
 
     [HttpPost]
     [ValidateAntiForgeryToken]
+    public async Task<IActionResult> RunMonitoringPass(Guid workerId, CancellationToken ct)
+    {
+        var (success, error) = await workers.SendWorkerCommandAsync(
+            workerId,
+            WorkerCommands.RunMonitoringPass,
+            ct);
+        if (!success)
+        {
+            return BadRequest(new { error = error ?? "Не удалось отправить команду." });
+        }
+
+        return Ok(new { message = "Команда на немедленный проход отправлена воркеру." });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
     public async Task<IActionResult> Toggle(Guid workerId, Guid accountId, bool enabled, CancellationToken ct)
     {
         var (success, error) = await workers.UpdateWorkerAccountAsync(workerId, accountId, enabled, ct);
@@ -739,6 +755,11 @@ public sealed class WorkersController(IWorkersService workers) : Controller
                 : BadRequest(new { error = result.Error });
         }
 
+        if (result.Session is null)
+        {
+            return BadRequest(new { error = "Не удалось создать сессию пополнения." });
+        }
+
         return Ok(result.Session);
     }
 
@@ -755,6 +776,14 @@ public sealed class WorkersController(IWorkersService workers) : Controller
     {
         var (success, error) = await workers.CancelTopUpSessionAsync(sessionId, ct);
         return success ? Ok(new { message = "Сессия пополнения отменена." }) : BadRequest(new { error });
+    }
+
+    [HttpPost]
+    [ValidateAntiForgeryToken]
+    public async Task<IActionResult> MarkTopUpSessionPaid(Guid sessionId, CancellationToken ct)
+    {
+        var (success, error) = await workers.MarkTopUpSessionPaidAsync(sessionId, ct);
+        return success ? Ok(new { message = "Оплата отмечена." }) : BadRequest(new { error });
     }
 
     private IActionResult RedirectAfterWorkerAction(Guid workerId, string? returnTo) =>

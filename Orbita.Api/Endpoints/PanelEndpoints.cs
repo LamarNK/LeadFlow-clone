@@ -130,6 +130,16 @@ public static class PanelEndpoints
             return success ? Results.Ok() : Results.BadRequest(new { error });
         });
 
+        workers.MapPost("/top-up-sessions/{id:guid}/paid", async (
+            Guid id,
+            TopUpSessionService topUpSessions,
+            ClaimsPrincipal principal,
+            CancellationToken ct) =>
+        {
+            var (success, error) = await topUpSessions.MarkPaidAsync(id, principal, ct);
+            return success ? Results.Ok() : Results.BadRequest(new { error });
+        });
+
         workers.MapPost("/browser-monitor-sessions", async (
             Guid workerId,
             BrowserMonitorService browserMonitorSessions,

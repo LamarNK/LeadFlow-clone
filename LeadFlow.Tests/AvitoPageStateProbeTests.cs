@@ -17,6 +17,46 @@ public sealed class AvitoPageStateProbeTests
     }
 
     [Fact]
+    public void BuildProbeScript_DetectsLoginGeeTestOverlay()
+    {
+        var script = AvitoPageStateScripts.BuildProbeScript();
+
+        Assert.Contains("geetest_box", script, StringComparison.Ordinal);
+        Assert.Contains("geetest_nine", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildProbeScript_LoginUiWinsOverLeftoverCaptchaText()
+    {
+        var script = AvitoPageStateScripts.BuildProbeScript();
+
+        Assert.Contains("liveCaptchaWidget", script, StringComparison.Ordinal);
+        Assert.Contains("hasLoginForm && liveCaptchaWidget", script, StringComparison.Ordinal);
+        Assert.Contains("pageKind = \"login\"", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildProbeScript_LoginGeeTestOverlayFallsBackToActiveDomMarker()
+    {
+        var script = AvitoPageStateScripts.BuildProbeScript();
+
+        Assert.Contains("hasGeeTestOverlayDom", script, StringComparison.Ordinal);
+        Assert.Contains("geetest_boxShow", script, StringComparison.Ordinal);
+        Assert.Contains("liveCaptchaWidget || hasGeeTestOverlayDom || hasFirewallDom", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildProbeScript_TreatsVisibilityErrorsAsHidden()
+    {
+        var script = AvitoPageStateScripts.BuildProbeScript();
+        var visibilityStart = script.IndexOf("const isVisibleEl = (el) => {", StringComparison.Ordinal);
+        var captchaStart = script.IndexOf("const liveCaptchaWidget", StringComparison.Ordinal);
+
+        Assert.InRange(script.IndexOf("try {", visibilityStart, StringComparison.Ordinal), visibilityStart + 1, captchaStart - 1);
+        Assert.InRange(script.IndexOf("catch {", visibilityStart, StringComparison.Ordinal), visibilityStart + 1, captchaStart - 1);
+    }
+
+    [Fact]
     public void TryParse_ProfileSwitchModalOpen_DetectsModal()
     {
         const string json = """
@@ -203,6 +243,49 @@ public sealed class AvitoPageStateProbeTests
         Assert.NotNull(state);
         Assert.True(state!.HasEmailConfirmationRequired);
         Assert.Contains("почт", state.DescribeKindRu(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void TryParse_PasswordWasReset_RequiresSmsAndKeepsOnlyMaskedPhone()
+    {
+        const string json = """
+            {
+              "pageKind":"login",
+              "url":"https://www.avito.ru/profile/pro/items",
+              "title":"Avito",
+              "profileSwitchModalOpen":false,
+              "profileCardsCount":0,
+              "candidatesItemCount":0,
+              "hasLoginForm":true,
+              "hasCaptcha":false,
+              "requiresPasswordResetSms":true,
+              "passwordResetSmsPhone":"+7 *** ***-**-35"
+            }
+            """;
+
+        var state = AvitoPageStateProbe.TryParse(json);
+
+        Assert.NotNull(state);
+        Assert.True(state!.RequiresPasswordResetSms);
+        Assert.Equal("+7 *** ***-**-35", state.PasswordResetSmsPhone);
+        var message = AvitoAutomationFailureFormatter.Format("авторизация", state);
+        Assert.Contains("SMS", message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("+7 *** ***-**-35", message, StringComparison.Ordinal);
+        Assert.DoesNotContain("546", message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildProbeScript_DetectsPasswordResetSmsFormAndMasksPhone()
+    {
+        var script = AvitoPageStateScripts.BuildProbeScript();
+
+        Assert.Contains("password-was-reset", script, StringComparison.Ordinal);
+        Assert.Contains("Сработала\\s+защита\\s+профиля", script, StringComparison.Ordinal);
+        Assert.Contains("Получить\\s+код\\s+по\\s+смс", script, StringComparison.Ordinal);
+        Assert.Contains("passwordResetSmsPhone", script, StringComparison.Ordinal);
+        var resetForm = script.IndexOf("const passwordResetForm", StringComparison.Ordinal);
+        var loginDom = script.IndexOf("const hasLoginDom", StringComparison.Ordinal);
+        Assert.True(resetForm >= 0 && resetForm < loginDom, "SMS-reset form must participate in login detection.");
     }
 
     [Fact]

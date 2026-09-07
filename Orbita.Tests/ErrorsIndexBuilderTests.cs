@@ -137,4 +137,16 @@ public sealed class WorkerEventDetailsParserTests
         Assert.Contains("avito.ru/profile/candidates", formatted);
         Assert.DoesNotContain("attachmentId", formatted);
     }
+
+    [Fact]
+    public void FormatForDisplay_ReplacesLegacyAdsPowerName_WithGenericProviderText()
+    {
+        var formatted = WorkerEventDetailsParser.FormatForDisplay(
+            "AdsPower «Avito 13» · аккаунт «Avito 13» — лимит частоты AdsPower: профиль AdsPower занят.",
+            null);
+
+        Assert.DoesNotContain("AdsPower", formatted, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("браузерного провайдера", formatted, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("браузерный профиль", formatted, StringComparison.OrdinalIgnoreCase);
+    }
 }

@@ -107,9 +107,9 @@ public sealed class WorkerUpdateStore
             return null;
         }
 
-        if (!File.Exists(state.MsiPath))
+        if (!File.Exists(state.MsiPath) || !WorkerMsiPackage.LooksLikeMsi(state.MsiPath))
         {
-            ClearPendingMsi();
+            DiscardPendingMsi(state);
             return null;
         }
 
@@ -296,7 +296,12 @@ public sealed class WorkerUpdateStore
 
             if (!status.Success)
             {
-                if (File.Exists(status.MsiPath))
+                if (WorkerUpdateBatchScript.IsCorruptPackageExitCode(exitCode)
+                    || !WorkerMsiPackage.LooksLikeMsi(status.MsiPath))
+                {
+                    TryDeleteFile(status.MsiPath);
+                }
+                else if (File.Exists(status.MsiPath))
                 {
                     SaveDownloadedMsi(status.Version, status.MsiPath);
                 }

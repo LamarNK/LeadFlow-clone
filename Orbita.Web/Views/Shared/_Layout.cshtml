@@ -10,6 +10,9 @@
     // A fragment is requested only by the in-app navigation script. Query parameters must
     // still render a complete document when they are opened directly in a browser.
     var contentOnly = Context.Request.Headers.ContainsKey("X-Orbita-Content-Only");
+    var polishOperationsUi = ViewContext.RouteData.Values["controller"]?.ToString()
+        is "Dashboard" or "Workers" or "Accounts" or "Statistics" or "Responses"
+        or "Events" or "Errors" or "Settings" or "MySettings" or "TelephonySettings";
     // Fast navigation keeps the outer shell (including the sidebar) alive between pages.
     // The assembly MVID changes on every build and lets the client detect that the shell
     // was rendered by an older deployment and must be refreshed as a complete document.
@@ -20,6 +23,10 @@
 {
     IgnoreSection("Scripts");
     IgnoreSection("Styles");
+    @if (polishOperationsUi)
+    {
+        <span data-orbita-ui-polish hidden></span>
+    }
     <div class="orbita-page-meta"
          data-orbita-page-title="@((ViewData["Title"] as string ?? "") + " — Орбита")"
          data-orbita-controller="@(ViewContext.RouteData.Values["controller"]?.ToString() ?? "")"
@@ -37,7 +44,7 @@ else
 <html lang="ru" data-theme="@Theme.Theme">
 <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
     @if (!PreviewOptions.Value.Enabled && User.Identity?.IsAuthenticated == true)
     {
         <meta name="orbita-antiforgery-token" content="@Antiforgery.GetAndStoreTokens(Context).RequestToken" />
@@ -74,6 +81,7 @@ else
     <link rel="stylesheet" href="~/css/orbita/crm-analytics.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/orbita/scrollbar.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/orbita-mobile.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/orbita/operations-polish.css" asp-append-version="true" />
     @await RenderSectionAsync("Styles", required: false)
 </head>
 <body data-orbita-selected-office="@(OfficeContext.EffectiveOfficeId?.ToString("D") ?? "")"
@@ -209,6 +217,10 @@ else
         </div>
     </aside>
     <div class="orbita-content">
+        @if (polishOperationsUi)
+        {
+            <span data-orbita-ui-polish hidden></span>
+        }
         @if (PreviewOptions.Value.Enabled)
         {
             <div class="orbita-preview-banner">Режим просмотра дизайна — демо-данные, без БД и API</div>
@@ -287,6 +299,7 @@ else
             <input type="search"
                    class="orbita-search__input"
                    data-orbita-search-input
+                   aria-label="Поиск по сайту"
                    placeholder="Воркеры, аккаунты, отклики, события..."
                    autocomplete="off"
                    spellcheck="false"

@@ -1,0 +1,125 @@
+/* Only the explicitly marked operational pages participate, including SPA fragments.
+   CRM and the authentication page intentionally retain their existing appearance. */
+.orbita-content:has(> [data-orbita-ui-polish]) {
+    --operations-soft: color-mix(in srgb, var(--bg-card) 65%, var(--bg-page));
+}
+
+.orbita-content:has(> [data-orbita-ui-polish]) .orbita-topbar { flex-wrap: wrap; }
+.orbita-content:has(> [data-orbita-ui-polish]) .orbita-topbar-left { flex: 1 1 240px; }
+.orbita-content:has(> [data-orbita-ui-polish]) .orbita-topbar-actions { flex-wrap: wrap; max-width: 100%; }
+
+.orbita-content:has(> [data-orbita-ui-polish]) :is(.card, .kpi-card, .orbita-filters-bar) {
+    border-color: var(--border);
+    box-shadow: var(--shadow);
+}
+
+.orbita-content:has(> [data-orbita-ui-polish]) a.kpi-card:is(:hover, :focus-visible) {
+    border-color: var(--accent);
+}
+
+.orbita-content:has(> [data-orbita-ui-polish]) :is(.orbita-filters-label, .orbita-page-size-label, .settings-filter-label,
+    .kpi-card-label, .kpi-card-caption, .orbita-breadcrumbs-link, .settings-card-subtitle,
+    .settings-user-email, .settings-user-group__subtitle) {
+    color: var(--text-secondary);
+    line-height: 1.5;
+}
+
+.orbita-content:has(> [data-orbita-ui-polish]) :is(.orbita-filters-label, .orbita-page-size-label, .settings-filter-label) {
+    font-size: 12px;
+    text-transform: none;
+    letter-spacing: normal;
+}
+
+.orbita-content:has(> [data-orbita-ui-polish]) :is(.kpi-value, .cell-num) {
+    font-variant-numeric: tabular-nums;
+}
+
+.orbita-content:has(> [data-orbita-ui-polish]) :is(.settings-primary-btn, .settings-secondary-btn,
+    .workers-add-btn, .workers-download-btn, .accounts-add-btn, .orbita-filters-apply, .orbita-filters-reset) {
+    min-height: 40px;
+    height: auto;
+    padding-top: 9px;
+    padding-bottom: 9px;
+    line-height: 1.4;
+    font-weight: 600;
+}
+
+.orbita-content:has(> [data-orbita-ui-polish]) :is(button, input, select, textarea, a):focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+}
+
+.orbita-content:has(> [data-orbita-ui-polish]) :is(button, input, select, textarea):disabled {
+    cursor: not-allowed;
+}
+
+.orbita-content:has(> [data-orbita-ui-polish]) :is(.settings-primary-btn, .settings-secondary-btn, .orbita-filters-apply):disabled {
+    opacity: .6;
+    box-shadow: none;
+    transform: none;
+}
+
+.orbita-content:has(> [data-orbita-ui-polish]) :is(.orbita-filters-search input, .settings-field input,
+    .settings-search-input, .workers-search input, .accounts-search input)::placeholder {
+    color: var(--text-secondary);
+    opacity: 1;
+}
+
+.orbita-content:has(> [data-orbita-ui-polish]) :is(.settings-input, .orbita-account-combobox__input,
+    .monitoring-report-search-input)::placeholder { color: var(--text-secondary); opacity: 1; }
+
+@media (min-width: 769px) {
+    .orbita-content:has(> [data-orbita-ui-polish]) :is(.kpi-card-label, .kpi-card--dashboard .kpi-card-label,
+        .kpi-card--dashboard .kpi-delta-pill, .statistics-trend-legend-pill) { font-size: 12px; }
+    .orbita-content:has(> [data-orbita-ui-polish]) .kpi-card--dashboard .kpi-card-head { grid-column: 1 / -1; padding-right: 16px; }
+    .orbita-content:has(> [data-orbita-ui-polish]) .kpi-card--dashboard .kpi-sparkline-wrap { grid-row: 2; }
+    .orbita-content:has(> [data-orbita-ui-polish]) .orbita-filters-bar { margin-bottom: 20px; }
+    .orbita-content:has(> [data-orbita-ui-polish]) .data-table th { font-size: 12px; letter-spacing: normal; }
+}
+
+@media (max-width: 768px) {
+    .orbita-content:has(> [data-orbita-ui-polish]) :is(.settings-primary-btn, .settings-secondary-btn,
+        .workers-add-btn, .workers-download-btn, .accounts-add-btn, .orbita-filters-apply, .orbita-filters-reset) {
+        min-height: var(--touch-min);
+    }
+}
+
+[data-theme="dark"] .orbita-content:has(> [data-orbita-ui-polish]) :is(.orbita-filters-bar, .orbita-filters-search input,
+    .orbita-filters-toggle, .orbita-search-trigger, .orbita-period-picker, .settings-control-bar, .settings-tabs,
+    .settings-input, .orbita-account-combobox__input, .workers-download-btn, .monitoring-report-search,
+    .settings-user-dialog__section, .settings-user-dialog__footer, .settings-user-dialog__header) {
+    background: var(--bg-card);
+    border-color: var(--border);
+    color: var(--text-primary);
+}
+
+[data-theme="dark"] .orbita-content:has(> [data-orbita-ui-polish]) :is(.orbita-filters-fields,
+    .settings-user-dialog__section .settings-field input, .settings-user-dialog__section .settings-select,
+    .settings-log-meta, .settings-log-message, .settings-profile-permissions) {
+    background: var(--operations-soft);
+    border-color: var(--border);
+    color: var(--text-primary);
+}
+
+[data-theme="dark"] .orbita-content:has(> [data-orbita-ui-polish]) :is(.settings-card-title, .settings-profile-name,
+    .orbita-period-icon, .responses-phone__number, .responses-city > strong) { color: var(--text-primary); }
+
+[data-theme="dark"] .orbita-content:has(> [data-orbita-ui-polish]) :is(.settings-tab, .data-table th) {
+    color: var(--text-secondary);
+}
+
+[data-theme="dark"] .orbita-content:has(> [data-orbita-ui-polish]) .settings-tab--active {
+    background: color-mix(in srgb, var(--accent) 20%, var(--bg-card));
+    color: #bfdbfe;
+    box-shadow: inset 0 0 0 1px var(--border);
+}
+
+[data-theme="dark"] .orbita-content:has(> [data-orbita-ui-polish]) :is(.responses-ad-link,
+    .responses-account > a, .cell-name a, .orbita-breadcrumbs-link) { color: #93c5fd; }
+
+[data-theme="dark"] .orbita-content:has(> [data-orbita-ui-polish]) :is(.settings-tab:hover,
+    .orbita-search-trigger:hover, .orbita-filters-toggle:hover) { background: var(--operations-soft); }
+
+[data-theme="dark"] .orbita-content:has(> [data-orbita-ui-polish]) :is(button, input, select, textarea, a):focus-visible {
+    outline-color: #93c5fd;
+}

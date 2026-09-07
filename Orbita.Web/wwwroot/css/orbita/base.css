@@ -50,6 +50,24 @@ html, body {
 a { color: var(--accent); text-decoration: none; }
 a:hover { color: var(--accent-hover); }
 
+:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 3px;
+}
+
+.orbita-topbar-heading,
+.card-header > *,
+.orbita-detail-modal__head > div {
+    min-width: 0;
+    overflow-wrap: anywhere;
+}
+
+.orbita-confirm__dialog {
+    max-height: calc(100dvh - 40px);
+    overflow-y: auto;
+    overflow-wrap: anywhere;
+}
+
 .orbita-app {
     min-height: 100vh;
     position: relative;

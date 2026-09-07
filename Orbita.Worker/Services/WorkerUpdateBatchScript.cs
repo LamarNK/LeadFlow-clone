@@ -1,11 +1,13 @@
 using System.Globalization;
 using System.Text;
+using Orbita.Contracts;
 
 namespace Orbita.Worker.Services;
 
 internal static class WorkerUpdateBatchScript
 {
     public const int RestartDelaySeconds = 8;
+    public const int RecoverDelaySeconds = 2;
     public const int MaxWaitWorkerExitSeconds = 120;
 
     public static readonly int[] SuccessExitCodes = [0, 1641, 3010];
@@ -62,20 +64,18 @@ internal static class WorkerUpdateBatchScript
             .AppendLine("if \"%INSTALL_EXIT%\"==\"3010\" set \"SUCCESS=1\"")
             .AppendLine("if \"%SUCCESS%\"==\"1\" goto install_ok")
             .AppendLine("call :write_status")
-            .AppendLine("exit /b %INSTALL_EXIT%")
+            .AppendLine("goto recover_worker")
             .AppendLine()
             .AppendLine(":install_ok")
             .AppendLine("if exist \"%EXE_PATH%\" goto restart_worker")
             .AppendLine("set \"SUCCESS=0\"")
             .AppendLine("set \"INSTALL_EXIT=3\"")
             .AppendLine("call :write_status")
-            .AppendLine("exit /b 3")
+            .AppendLine("goto recover_worker")
             .AppendLine()
             .AppendLine(":restart_worker")
             .AppendLine($"timeout /t {RestartDelaySeconds} /nobreak >nul")
-            .AppendLine("tasklist /FI \"IMAGENAME eq Orbita.Worker.exe\" 2>nul | find /I \"Orbita.Worker.exe\" >nul")
-            .AppendLine("if not errorlevel 1 goto cleanup")
-            .AppendLine("start \"\" /D \"%WORK_DIR%\" \"%EXE_PATH%\"%RESTART_ARG%")
+            .AppendLine("call :start_worker_if_needed")
             .AppendLine()
             .AppendLine(":cleanup")
             .AppendLine("call :write_status")
@@ -95,6 +95,18 @@ internal static class WorkerUpdateBatchScript
             .AppendLine("  echo ScriptPath=%SCRIPT_PATH%")
             .AppendLine("  echo StartedAtUtc=%STARTED_AT%")
             .AppendLine(")")
+            .AppendLine("goto :eof")
+            .AppendLine()
+            .AppendLine(":recover_worker")
+            .AppendLine("if not exist \"%EXE_PATH%\" exit /b %INSTALL_EXIT%")
+            .AppendLine($"timeout /t {RecoverDelaySeconds} /nobreak >nul")
+            .AppendLine("call :start_worker_if_needed")
+            .AppendLine("exit /b %INSTALL_EXIT%")
+            .AppendLine()
+            .AppendLine(":start_worker_if_needed")
+            .AppendLine("tasklist /FI \"IMAGENAME eq Orbita.Worker.exe\" 2>nul | find /I \"Orbita.Worker.exe\" >nul")
+            .AppendLine("if not errorlevel 1 goto :eof")
+            .AppendLine("start \"\" /D \"%WORK_DIR%\" \"%EXE_PATH%\"%RESTART_ARG%")
             .AppendLine("goto :eof")
             .AppendLine();
         return script.ToString();
@@ -193,7 +205,9 @@ internal static class WorkerUpdateBatchScript
             1618 =>
                 $"Установка MSI не удалась: уже выполняется другая установка Windows Installer (код 1618).",
             1619 =>
-                $"MSI-пакет не удалось открыть (код 1619).",
+                $"MSI-пакет не удалось открыть (код 1619). Файл отсутствует или недоступен — обновление скачается повторно.",
+            1620 =>
+                $"Пакет MSI повреждён или не докачался (код 1620). Воркер будет запущен снова, обновление скачается повторно.",
             1638 =>
                 $"Другая версия продукта уже установлена (код 1638).",
             1612 =>
@@ -211,6 +225,12 @@ internal static class WorkerUpdateBatchScript
 
     public static bool IsSuccessExitCode(int exitCode) =>
         Array.IndexOf(SuccessExitCodes, exitCode) >= 0;
+
+    public static bool IsCorruptPackageExitCode(int exitCode) =>
+        WorkerMsiPackage.IsCorruptPackageExitCode(exitCode);
+
+    public static bool ShouldRequeueDownloadedMsi(int exitCode) =>
+        !IsSuccessExitCode(exitCode) && !IsCorruptPackageExitCode(exitCode);
 
     public static bool ShouldBlockSilentRetry(int exitCode) =>
         exitCode is 3 or 5 or 1603 or 1612 or 1625 or 1638 or 1730;

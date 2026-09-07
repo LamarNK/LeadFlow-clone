@@ -26,6 +26,14 @@ public static class AvitoAutomationFailureFormatter
             return "подтвердите почту по ссылке из письма Avito, чтобы завершить настройку профиля.";
         }
 
+        if (pageState?.RequiresPasswordResetSms == true)
+        {
+            var phone = string.IsNullOrWhiteSpace(pageState.PasswordResetSmsPhone)
+                ? string.Empty
+                : $" на номер {pageState.PasswordResetSmsPhone}";
+            return $"Avito сбросил пароль из-за защиты профиля. Автовход остановлен: получите SMS-код{phone}, установите новый пароль и затем войдите в браузере.";
+        }
+
         if (pageState?.HasFirewallIp == true
             || (pageState?.HasCaptcha == true && pageState.PageKind == AvitoPageKind.Captcha))
         {
@@ -135,4 +143,15 @@ public static class AvitoAutomationFailureFormatter
                    || url.Contains("avito.ru/login", StringComparison.OrdinalIgnoreCase)
                    || url.Contains("#login", StringComparison.OrdinalIgnoreCase));
     }
+
+    /// <summary>
+    /// После firewall/GeeTest сессия часто становится гостевой на /profile/pro/items
+    /// без формы входа в первом probe. Автовход всё равно нужно запустить.
+    /// </summary>
+    public static bool ShouldAttemptAutoLoginAfterCaptcha(AvitoPageState? pageState) =>
+        pageState is null
+        || !pageState.LooksLoggedIn
+        || SuggestsLogin(pageState)
+        || pageState.HasLoginForm
+        || pageState.PageKind is AvitoPageKind.Login or AvitoPageKind.Captcha;
 }

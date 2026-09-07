@@ -14,7 +14,8 @@ public sealed class DashboardQueryService(
     WorkerReleaseService releases,
     OfficeScopeService officeScope,
     WorkerConnectionRegistry connectionRegistry,
-    LocalChromeLoginSessionService? localChromeLoginSessions = null)
+    LocalChromeLoginSessionService? localChromeLoginSessions = null,
+    IOrbitaQueryCache? queryCache = null)
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
@@ -35,16 +36,19 @@ public sealed class DashboardQueryService(
             toLocal,
             timeZoneOffsetMinutes,
             nowUtc);
-        var summary = await PanelAggregateCache.GetOrCreateAsync(
-            PanelAggregateCache.SummaryKey(scope, officeFilter, timeZoneOffsetMinutes, startLocal, endLocal),
-            PanelAggregateCache.DashboardTtl,
-            () => ComputeGlobalSummaryCoreAsync(
-                scope,
-                officeFilter,
-                timeZoneOffsetMinutes,
-                startLocal,
-                endLocal,
-                ct));
+        var summary = queryCache is null
+            ? await PanelAggregateCache.GetOrCreateAsync(
+                PanelAggregateCache.SummaryKey(scope, officeFilter, timeZoneOffsetMinutes, startLocal, endLocal),
+                PanelAggregateCache.DashboardTtl,
+                () => ComputeGlobalSummaryCoreAsync(scope, officeFilter, timeZoneOffsetMinutes, startLocal, endLocal, ct))
+            : await queryCache.GetOrCreateAsync(
+                OrbitaCacheDomain.Dashboard,
+                scope.ResolveFilter(officeFilter),
+                ScopeAudience(scope),
+                new { Kind = "summary", timeZoneOffsetMinutes, startLocal, endLocal },
+                OrbitaCachePolicy.Realtime,
+                token => ComputeGlobalSummaryCoreAsync(scope, officeFilter, timeZoneOffsetMinutes, startLocal, endLocal, token),
+                ct);
         return await RefreshOnlineWorkersAsync(summary, scope, officeFilter, ct);
     }
 
@@ -54,11 +58,23 @@ public sealed class DashboardQueryService(
         int? timeZoneOffsetMinutes = null,
         CancellationToken ct = default)
     {
-        return await PanelAggregateCache.GetOrCreateAsync(
-            PanelAggregateCache.NavBadgesKey(scope, officeFilter, timeZoneOffsetMinutes),
-            PanelAggregateCache.NavBadgesTtl,
-            () => ComputeNavBadgesCoreAsync(scope, officeFilter, timeZoneOffsetMinutes, ct));
+        return queryCache is null
+            ? await PanelAggregateCache.GetOrCreateAsync(
+                PanelAggregateCache.NavBadgesKey(scope, officeFilter, timeZoneOffsetMinutes),
+                PanelAggregateCache.NavBadgesTtl,
+                () => ComputeNavBadgesCoreAsync(scope, officeFilter, timeZoneOffsetMinutes, ct))
+            : await queryCache.GetOrCreateAsync(
+                OrbitaCacheDomain.Dashboard,
+                scope.ResolveFilter(officeFilter),
+                ScopeAudience(scope),
+                new { Kind = "nav-badges", timeZoneOffsetMinutes },
+                OrbitaCachePolicy.Realtime,
+                token => ComputeNavBadgesCoreAsync(scope, officeFilter, timeZoneOffsetMinutes, token),
+                ct);
     }
+
+    private static string ScopeAudience(OfficeScope scope) =>
+        scope.IsGlobalAdmin ? "global-admin" : $"office:{scope.OfficeId?.ToString("D") ?? "-"}";
 
     private async Task<GlobalDashboardSummary> ComputeGlobalSummaryCoreAsync(
         OfficeScope scope,
@@ -187,15 +203,6 @@ public sealed class DashboardQueryService(
                 workerEventErrors.Daily),
             AggregatedAtUtc: nowUtc);
 
-        PanelAggregateCache.Set(
-            PanelAggregateCache.NavBadgesKey(scope, officeFilter, timeZoneOffsetMinutes),
-            new NavBadgesDto(
-                result.Errors,
-                result.UniqueResponsesToday,
-                result.ActionRequired,
-                result.AggregatedAtUtc),
-            PanelAggregateCache.NavBadgesTtl);
-
         return result;
     }
 
@@ -251,7 +258,26 @@ public sealed class DashboardQueryService(
         };
     }
 
-    public async Task<IReadOnlyList<WorkerListItem>> GetWorkersAsync(
+    public Task<IReadOnlyList<WorkerListItem>> GetWorkersAsync(
+        OfficeScope scope,
+        Guid? officeFilter = null,
+        CancellationToken ct = default)
+    {
+        Task<IReadOnlyList<WorkerListItem>> Load(CancellationToken token) =>
+            GetWorkersUncachedAsync(scope, officeFilter, token);
+        return queryCache is null
+            ? Load(ct)
+            : queryCache.GetOrCreateAsync(
+                OrbitaCacheDomain.Dashboard,
+                scope.ResolveFilter(officeFilter),
+                ScopeAudience(scope),
+                new { Kind = "workers" },
+                OrbitaCachePolicy.Realtime,
+                Load,
+                ct);
+    }
+
+    private async Task<IReadOnlyList<WorkerListItem>> GetWorkersUncachedAsync(
         OfficeScope scope,
         Guid? officeFilter = null,
         CancellationToken ct = default)
@@ -350,7 +376,31 @@ public sealed class DashboardQueryService(
         }).ToList();
     }
 
-    public async Task<WorkersPageDto> GetWorkersPageAsync(
+    public Task<WorkersPageDto> GetWorkersPageAsync(
+        OfficeScope scope,
+        Guid? officeFilter = null,
+        int page = 1,
+        int? pageSize = null,
+        string? sort = null,
+        string? dir = null,
+        CancellationToken ct = default,
+        string? workerFilter = null)
+    {
+        Task<WorkersPageDto> Load(CancellationToken token) => GetWorkersPageUncachedAsync(
+            scope, officeFilter, page, pageSize, sort, dir, token, workerFilter);
+        return queryCache is null
+            ? Load(ct)
+            : queryCache.GetOrCreateAsync(
+                OrbitaCacheDomain.Dashboard,
+                scope.ResolveFilter(officeFilter),
+                ScopeAudience(scope),
+                new { Kind = "workers-page", page, pageSize, sort, dir, workerFilter },
+                OrbitaCachePolicy.Realtime,
+                Load,
+                ct);
+    }
+
+    private async Task<WorkersPageDto> GetWorkersPageUncachedAsync(
         OfficeScope scope,
         Guid? officeFilter = null,
         int page = 1,
@@ -553,6 +603,46 @@ public sealed class DashboardQueryService(
             return null;
         }
 
+        Task<WorkerDetail?> Load(CancellationToken token) => GetWorkerDetailUncachedAsync(workerId, token);
+        var detail = queryCache is null
+            ? await Load(ct)
+            : await queryCache.GetOrCreateAsync(
+                OrbitaCacheDomain.WorkerDetails,
+                scope.ResolveFilter(null),
+                ScopeAudience(scope),
+                new { Kind = "worker-detail", workerId },
+                OrbitaCachePolicy.Realtime,
+                Load,
+                ct);
+        if (detail is null)
+        {
+            return null;
+        }
+
+        // Secrets and process-local login state must never enter either cache tier.
+        // This indexed lookup is deliberately small compared with the aggregate
+        // snapshot/account queries cached above.
+        var requestOnly = await db.Workers.AsNoTracking()
+            .Where(x => x.Id == workerId)
+            .Select(x => new { x.AdsPowerApiKey, x.RuCaptchaApiKey })
+            .FirstOrDefaultAsync(ct);
+        if (requestOnly is null)
+        {
+            return null;
+        }
+
+        return detail with
+        {
+            AdsPowerApiKey = requestOnly.AdsPowerApiKey,
+            RuCaptchaApiKey = requestOnly.RuCaptchaApiKey,
+            PendingLocalChromeLoginAccountId = localChromeLoginSessions?.GetPendingForWorker(workerId)?.AccountId
+        };
+    }
+
+    private async Task<WorkerDetail?> GetWorkerDetailUncachedAsync(
+        Guid workerId,
+        CancellationToken ct)
+    {
         var nowUtc = DateTime.UtcNow;
         var worker = await db.Workers.AsNoTracking()
             .Include(x => x.Office)
@@ -627,7 +717,7 @@ public sealed class DashboardQueryService(
             worker.StartedAtUtc,
             worker.AgentVersion,
             worker.AdsPowerApiBaseUrl,
-            worker.AdsPowerApiKey,
+            AdsPowerApiKey: null,
             worker.IsEnabled,
             op.TodayResponses,
             op.TodayDuplicates,
@@ -660,7 +750,7 @@ public sealed class DashboardQueryService(
             worker.AdsPowerGroupId,
             worker.AdsPowerGroupName,
             AdsPowerGroupsJson.Parse(worker.AdsPowerGroupsJson),
-            worker.RuCaptchaApiKey,
+            RuCaptchaApiKey: null,
             worker.MultiloginLauncherUrl,
             worker.MultiloginCloudApiUrl,
             HasMultiloginAutomationToken: !string.IsNullOrWhiteSpace(worker.MultiloginAutomationToken),
@@ -671,7 +761,7 @@ public sealed class DashboardQueryService(
             AdsPowerCheck: WorkerConfigService.MapProviderCheck(worker, WorkerBrowserProviderKinds.AdsPower),
             MultiloginCheck: WorkerConfigService.MapProviderCheck(worker, WorkerBrowserProviderKinds.Multilogin),
             LocalChromeCheck: WorkerConfigService.MapProviderCheck(worker, WorkerBrowserProviderKinds.Local),
-            PendingLocalChromeLoginAccountId: localChromeLoginSessions?.GetPendingForWorker(worker.Id)?.AccountId,
+            PendingLocalChromeLoginAccountId: null,
             IsMonitoringPaused: worker.IsMonitoringPaused);
     }
 
@@ -685,6 +775,27 @@ public sealed class DashboardQueryService(
             return [];
         }
 
+        // Keep the public return type broad while storing a concrete array.
+        // The account graph is large and nested, so it uses the query cache's
+        // direct Redis payload path rather than HybridCache collection hydration.
+        async Task<WorkerAccountDto[]> Load(CancellationToken token) =>
+            [.. await LoadWorkerAccountsAsync(workerId, token).ConfigureAwait(false)];
+        return queryCache is null
+            ? await Load(ct)
+            : await queryCache.GetOrCreateDistributedAsync(
+                OrbitaCacheDomain.WorkerDetails,
+                scope.ResolveFilter(null),
+                ScopeAudience(scope),
+                new { Kind = "worker-accounts", CacheFormat = 2, workerId },
+                OrbitaCachePolicy.LargeRealtime,
+                Load,
+                ct);
+    }
+
+    private async Task<IReadOnlyList<WorkerAccountDto>> LoadWorkerAccountsAsync(
+        Guid workerId,
+        CancellationToken ct)
+    {
         var byWorker = await LoadAccountsByWorkerAsync([workerId], ct);
         return byWorker.TryGetValue(workerId, out var accounts) ? accounts : [];
     }
@@ -701,10 +812,19 @@ public sealed class DashboardQueryService(
             return [];
         }
 
-        return await PanelAggregateCache.GetOrCreateAsync(
-            PanelAggregateCache.AccountsKey(scope, officeFilter, workerId),
-            PanelAggregateCache.AccountsTtl,
-            () => ComputeOfficeAccountsCoreAsync(scope, officeFilter, workerId, ct));
+        return queryCache is null
+            ? await PanelAggregateCache.GetOrCreateAsync(
+                PanelAggregateCache.AccountsKey(scope, officeFilter, workerId),
+                PanelAggregateCache.AccountsTtl,
+                () => ComputeOfficeAccountsCoreAsync(scope, officeFilter, workerId, ct))
+            : await queryCache.GetOrCreateAsync(
+                OrbitaCacheDomain.Dashboard,
+                scope.ResolveFilter(officeFilter),
+                ScopeAudience(scope),
+                new { Kind = "office-accounts", workerId },
+                OrbitaCachePolicy.Realtime,
+                token => ComputeOfficeAccountsCoreAsync(scope, officeFilter, workerId, token),
+                ct);
     }
 
     private async Task<IReadOnlyList<OfficeAccountListItem>> ComputeOfficeAccountsCoreAsync(
@@ -1602,22 +1722,23 @@ public sealed class DashboardQueryService(
             accountRows.Select(x => (x.WorkerId, x.Status, x.IsEnabledInPanel)));
         var latestSnapshotBalances = await LoadLatestSnapshotBalancesAsync(workerIds, ct).ConfigureAwait(false);
         var lowBalanceAccountCounts = accountRows
-            .Where(x =>
+            .Select(x =>
             {
-                if (latestSnapshotBalances.TryGetValue(x.WorkerId, out var balances)
-                    && balances.TryGetValue(x.AccountId, out var snapshotBalance))
+                var snapshotBalance = latestSnapshotBalances.TryGetValue(x.WorkerId, out var balances)
+                        && balances.TryGetValue(x.AccountId, out var liveSnapshotBalance)
+                    ? liveSnapshotBalance
+                    : null;
+                return new
                 {
-                    return snapshotBalance.TotalBalance < BalanceDisplayRules.WorkerDetailsLowBalanceThresholdRub
-                        && BalanceSnapshotHelper.HasMeaningfulBalanceData(snapshotBalance);
-                }
-
-                return x.TotalBalance < BalanceDisplayRules.WorkerDetailsLowBalanceThresholdRub
-                    && BalanceSnapshotHelper.HasMeaningfulPersistedBalanceData(
+                    x.WorkerId,
+                    Count = ResolveLowBalanceSubProfileCount(
+                        snapshotBalance,
                         x.TotalBalance,
-                        x.SubProfilesJson);
+                        x.SubProfilesJson)
+                };
             })
             .GroupBy(x => x.WorkerId)
-            .ToDictionary(g => g.Key, g => g.Count());
+            .ToDictionary(g => g.Key, g => g.Sum(static x => x.Count));
         var responseStats = await ComputeWorkerTodayStatsAsync(workerIds, todayStartUtc, ct);
         var workerEventErrors = await ComputeWorkerEventErrorStatsAsync(
             workerIds.ToHashSet(),
@@ -1633,6 +1754,31 @@ public sealed class DashboardQueryService(
             workerEventErrors.PerWorkerToday,
             accountCounts,
             lowBalanceAccountCounts);
+    }
+
+    private static int ResolveLowBalanceSubProfileCount(
+        WorkerBalanceDto? snapshotBalance,
+        decimal persistedTotalBalance,
+        string? persistedSubProfilesJson)
+    {
+        if (snapshotBalance is null)
+        {
+            return BalanceSnapshotHelper.CountLowBalancePersistedSubProfiles(
+                persistedTotalBalance,
+                persistedSubProfilesJson);
+        }
+
+        if (BalanceSnapshotHelper.HasKnownSubProfileAdvance(snapshotBalance))
+        {
+            return BalanceSnapshotHelper.CountLowBalanceSubProfiles(snapshotBalance);
+        }
+
+        var persistedCount = BalanceSnapshotHelper.CountLowBalancePersistedSubProfiles(
+            persistedTotalBalance,
+            persistedSubProfilesJson);
+        return persistedCount > 0
+            ? persistedCount
+            : BalanceSnapshotHelper.CountLowBalanceSubProfiles(snapshotBalance);
     }
 
     private async Task<Dictionary<Guid, Dictionary<Guid, WorkerBalanceDto>>> LoadLatestSnapshotBalancesAsync(

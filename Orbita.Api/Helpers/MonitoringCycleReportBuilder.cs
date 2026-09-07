@@ -1103,7 +1103,7 @@ internal static partial class MonitoringCycleReportBuilder
             || raw.Contains("Profile is in use", StringComparison.OrdinalIgnoreCase)
             || raw.Contains("уже запущен", StringComparison.OrdinalIgnoreCase))
         {
-            return "профиль AdsPower уже занят";
+            return "браузерный профиль уже занят";
         }
 
         return TrimDetail(raw);

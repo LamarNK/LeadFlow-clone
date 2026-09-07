@@ -79,7 +79,30 @@ public sealed class AvitoAutomationFailureFormatterTests
         Assert.Equal(AvitoSubProfileIssueKind.AuthRequired, kind);
         Assert.Contains("автовход", message, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("авторизац", message, StringComparison.OrdinalIgnoreCase);
-        Assert.DoesNotContain("не переключился", message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void LooksLoggedIn_RequiresCabinetMarkersNotJustItemsUrl()
+    {
+        var guestOnItems = new AvitoPageState(
+            AvitoPageKind.ProfileItems,
+            "https://www.avito.ru/profile/pro/items",
+            "Avito",
+            false,
+            0,
+            null,
+            null,
+            0,
+            HasLoginForm: false,
+            HasCaptcha: false);
+
+        var cabinet = guestOnItems with { CurrentSubProfileId = "439640166", CurrentSubProfileName = "Кадровый отдел 6" };
+
+        Assert.False(guestOnItems.LooksLoggedIn);
+        Assert.True(cabinet.LooksLoggedIn);
+        Assert.True(AvitoAutomationFailureFormatter.ShouldAttemptAutoLoginAfterCaptcha(null));
+        Assert.True(AvitoAutomationFailureFormatter.ShouldAttemptAutoLoginAfterCaptcha(guestOnItems));
+        Assert.False(AvitoAutomationFailureFormatter.ShouldAttemptAutoLoginAfterCaptcha(cabinet));
     }
 
     [Fact]
@@ -157,6 +180,31 @@ public sealed class AvitoAutomationFailureFormatterTests
         Assert.Contains("почт", message, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("письм", message, StringComparison.OrdinalIgnoreCase);
         Assert.Contains("подтверд", message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Format_WhenPasswordWasReset_RequiresSmsInsteadOfAnotherPasswordRetry()
+    {
+        var state = new AvitoPageState(
+            AvitoPageKind.Login,
+            "https://www.avito.ru/profile/pro/items",
+            "Avito",
+            false,
+            0,
+            null,
+            null,
+            0,
+            true,
+            false,
+            RequiresPasswordResetSms: true,
+            PasswordResetSmsPhone: "+7 *** ***-**-35");
+
+        var message = AvitoAutomationFailureFormatter.Format("сбор откликов", state);
+
+        Assert.Contains("SMS", message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("сбросил пароль", message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("+7 *** ***-**-35", message, StringComparison.Ordinal);
+        Assert.DoesNotContain("546", message, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -1,4 +1,6 @@
 /* Unified list filters bar (events, errors, responses) */
+[data-orbita-collapsible-filters][hidden] { display: none !important; }
+
 .orbita-filters-bar {
     margin-bottom: 20px;
     padding: 14px 16px;

@@ -1,3 +1,5 @@
+using PuppeteerSharp;
+
 namespace LeadFlow.Core.Services.Avito;
 
 /// <summary>
@@ -7,14 +9,24 @@ namespace LeadFlow.Core.Services.Avito;
 public static class AvitoAutoLoginContext
 {
     private static readonly AsyncLocal<AvitoLoginCredentials?> Current = new();
+    private static readonly AsyncLocal<Func<IPage, CancellationToken, Task<bool>>?> CurrentSolver = new();
 
     public static AvitoLoginCredentials? Credentials => Current.Value;
+
+    public static Func<IPage, CancellationToken, Task<bool>>? CaptchaSolver => CurrentSolver.Value;
 
     public static IDisposable Use(AvitoLoginCredentials? credentials)
     {
         var previous = Current.Value;
         Current.Value = credentials;
         return new Scope(() => Current.Value = previous);
+    }
+
+    public static IDisposable UseSolver(Func<IPage, CancellationToken, Task<bool>>? captchaSolver)
+    {
+        var previous = CurrentSolver.Value;
+        CurrentSolver.Value = captchaSolver;
+        return new Scope(() => CurrentSolver.Value = previous);
     }
 
     private sealed class Scope(Action restore) : IDisposable

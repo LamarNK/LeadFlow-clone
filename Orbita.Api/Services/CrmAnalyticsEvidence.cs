@@ -37,7 +37,9 @@ public sealed partial class CrmAnalyticsQueryService
             return (CrmAnalyticsQueryOutcome.BadRequest, null);
         if (metric == "manager.primary") query = query with { CohortBasis = CrmAnalyticsCohortBases.FirstAssigned };
         if (metric is "period.received" or "period.unassigned") query = query with { CohortBasis = CrmAnalyticsCohortBases.Received };
-        var result = await GetAsync(scope, requesterUserId, isAdmin, query, ct);
+        // A cached dashboard contains totals, not this request's scoped evidence sets.
+        // Rebuild them from source even when the dashboard itself was served from cache.
+        var result = await GetUncachedAsync(scope, requesterUserId, isAdmin, query, ct);
         if (result.Outcome != CrmAnalyticsQueryOutcome.Success) return (result.Outcome, null);
         var metricKey = metric switch { "manager.primary" or "period.received" => "cohort.received",
             "period.unassigned" => "cohort.unassigned", _ => metric };

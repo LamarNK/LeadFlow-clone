@@ -16,8 +16,7 @@ public sealed class LocalChromeBrowserLauncherTests
 
         Assert.Null(options.ChromiumArgs);
         var args = LocalChromeBrowserLauncher.ResolveLaunchArgs(options);
-        Assert.NotNull(args);
-        Assert.Empty(args);
+        Assert.Equal(LocalChromeBrowserLauncher.AutomationArgs, args);
     }
 
     [Fact]
@@ -34,9 +33,22 @@ public sealed class LocalChromeBrowserLauncherTests
         };
 
         var args = LocalChromeBrowserLauncher.ResolveLaunchArgs(options);
-        Assert.Equal(["--proxy-server=http://203.0.113.10:8080"], args);
-        Assert.DoesNotContain("px-user", args[0], StringComparison.Ordinal);
-        Assert.DoesNotContain("proxy-secret", args[0], StringComparison.Ordinal);
-        Assert.DoesNotContain("@", args[0], StringComparison.Ordinal);
+        Assert.Equal(
+            [
+                ..LocalChromeBrowserLauncher.AutomationArgs,
+                "--proxy-server=http://203.0.113.10:8080"
+            ],
+            args);
+        Assert.DoesNotContain("px-user", string.Join(' ', args), StringComparison.Ordinal);
+        Assert.DoesNotContain("proxy-secret", string.Join(' ', args), StringComparison.Ordinal);
+        Assert.DoesNotContain("@", args[^1], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void AutomationArgs_DoNotIncludeRestoreSessionUi()
+    {
+        Assert.Contains("--disable-session-crashed-bubble", LocalChromeBrowserLauncher.AutomationArgs);
+        Assert.Contains("--hide-crash-restore-bubble", LocalChromeBrowserLauncher.AutomationArgs);
+        Assert.Contains("--no-first-run", LocalChromeBrowserLauncher.AutomationArgs);
     }
 }

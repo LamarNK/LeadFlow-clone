@@ -98,20 +98,42 @@ public sealed class TopUpSessionRulesTests
     [InlineData(TopUpSessionStatuses.PaymentClaimed, TopUpSessionStatuses.Started, false)]
     [InlineData(TopUpSessionStatuses.QrReady, TopUpSessionStatuses.Failed, true)]
     [InlineData(TopUpSessionStatuses.QrReady, TopUpSessionStatuses.Expired, true)]
+    [InlineData(TopUpSessionStatuses.QrReady, TopUpSessionStatuses.Paid, true)]
     [InlineData(TopUpSessionStatuses.QrReady, TopUpSessionStatuses.Started, false)]
     [InlineData(TopUpSessionStatuses.QrReady, TopUpSessionStatuses.Requested, false)]
+    [InlineData(TopUpSessionStatuses.Started, TopUpSessionStatuses.Paid, false)]
     [InlineData(TopUpSessionStatuses.Failed, TopUpSessionStatuses.Started, false)]
     [InlineData(TopUpSessionStatuses.Expired, TopUpSessionStatuses.Started, false)]
     [InlineData(TopUpSessionStatuses.Cancelled, TopUpSessionStatuses.Started, false)]
+    [InlineData(TopUpSessionStatuses.Paid, TopUpSessionStatuses.Started, false)]
     public void CanTransition_EnforcesForwardOnly(string from, string to, bool expected)
     {
         Assert.Equal(expected, TopUpSessionStatuses.CanTransition(from, to));
     }
 
     [Fact]
+    public void PauseLeaseTtl_IsTenMinutes()
+    {
+        Assert.Equal(TimeSpan.FromMinutes(10), TopUpSessionRules.PauseLeaseTtl);
+    }
+
+    [Fact]
     public void CanTransition_SameStatus_IsIdempotent()
     {
         Assert.True(TopUpSessionStatuses.CanTransition(TopUpSessionStatuses.Started, TopUpSessionStatuses.Started));
+    }
+
+    [Fact]
+    public void SanitizeProgressMessage_TrimsAndLimits()
+    {
+        Assert.Null(TopUpSessionRules.SanitizeProgressMessage(null));
+        Assert.Null(TopUpSessionRules.SanitizeProgressMessage("   "));
+        Assert.Equal("Открываем браузер", TopUpSessionRules.SanitizeProgressMessage("  Открываем браузер \n"));
+        var longMessage = new string('x', 250);
+        var sanitized = TopUpSessionRules.SanitizeProgressMessage(longMessage);
+        Assert.NotNull(sanitized);
+        Assert.True(sanitized!.Length <= 201);
+        Assert.EndsWith("…", sanitized);
     }
 
     [Fact]

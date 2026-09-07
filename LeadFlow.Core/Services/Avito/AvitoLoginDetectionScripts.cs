@@ -26,9 +26,12 @@ internal static class AvitoLoginDetectionScripts
                 document.querySelector("[data-marker='users-list/button']") ||
                 document.querySelector("[data-marker='login-form-with-avatar']")
             );
+            const hasPasswordResetSms = !!document.querySelector(
+                "[data-marker='password-was-reset'], [data-marker='password-was-reset-form']");
 
             const hasLoginDom = !!(
                 hasSavedUsersList ||
+                hasPasswordResetSms ||
                 document.querySelector("[data-marker='auth-app-root']") ||
                 document.querySelector("form[data-marker='login-form']") ||
                 document.querySelector("[data-marker='login-form/login']") ||
@@ -74,6 +77,7 @@ internal static class AvitoLoginDetectionScripts
                 hasLoginDom,
                 hasLoginHtml,
                 hasLoginText,
+                hasPasswordResetSms,
                 hasLoggedInProfile
             });
         })();

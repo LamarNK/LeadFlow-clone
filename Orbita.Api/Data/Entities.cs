@@ -878,8 +878,8 @@ public sealed class PanelAuditLogEntity
 
 /// <summary>
 /// Сессия ручного пополнения баланса одного аккаунта воркера. Запрошена оператором,
-/// исполняется воркером в отдельной фазе автоматизации; оплата по QR/переводу не является
-/// подтверждением пополнения, поэтому завершение фиксируется статусами expired/failed/cancelled.
+/// исполняется воркером в отдельной фазе автоматизации; банковскую оплату Орбита не видит,
+/// поэтому оператор отмечает paid либо закрывает/отменяет сессию. Иначе истекает по TTL.
 /// </summary>
 public sealed class TopUpSessionEntity
 {
@@ -920,6 +920,9 @@ public sealed class TopUpSessionEntity
     public string? QrImageBase64 { get; set; }
     public string? QrImageUrl { get; set; }
     public string? FailureMessage { get; set; }
+
+    /// <summary>Текущий шаг сценария для UI оператора (не влияет на автомат статусов).</summary>
+    public string? ProgressMessage { get; set; }
 
     /// <summary>
     /// Версия строки (PostgreSQL xmin) для оптимистичной блокировки при обновлении статуса.

@@ -26,4 +26,18 @@ public interface IRuCaptchaClient
         string apiKey,
         string imageBody,
         CancellationToken cancellationToken = default);
+
+    Task<ClickCaptchaSolution> SolveClickCaptchaAsync(
+        string apiKey,
+        string imageBody,
+        string hintImageBody,
+        string? hintText,
+        string language,
+        CancellationToken cancellationToken = default);
+
+    Task ReportAsync(
+        string apiKey,
+        RuCaptchaTask task,
+        bool isCorrect,
+        CancellationToken cancellationToken = default);
 }

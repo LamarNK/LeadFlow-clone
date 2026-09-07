@@ -1311,8 +1311,45 @@
         });
     }
 
+    runtime.initWorkerRunPassButtons = function initWorkerRunPassButtons() {
+        document.querySelectorAll('[data-worker-run-pass]').forEach(function (btn) {
+            if (btn.hasAttribute('data-worker-run-pass-bound')) return;
+            btn.setAttribute('data-worker-run-pass-bound', '1');
+
+            btn.addEventListener('click', async function (e) {
+                e.stopPropagation();
+                var workerId = btn.getAttribute('data-worker-id');
+                if (!workerId) return;
+
+                if (window.Orbita && window.Orbita.confirm) {
+                    var confirmed = await window.Orbita.confirm({
+                        title: 'Запустить проход сейчас?',
+                        message: 'Воркер начнёт следующий проход без ожидания плановой паузы.',
+                        confirmLabel: 'Запустить',
+                        variant: 'primary'
+                    });
+                    if (!confirmed) return;
+                }
+
+                btn.disabled = true;
+                var result = await runtime.postForm('/Workers/RunMonitoringPass', { workerId: workerId });
+                if (result.ok) {
+                    runtime.showToast(
+                        (result.payload && result.payload.message) || 'Команда отправлена',
+                        { variant: 'success' });
+                } else {
+                    runtime.showToast(
+                        (result.payload && result.payload.error) || 'Не удалось отправить команду',
+                        { variant: 'error' });
+                    btn.disabled = false;
+                }
+            });
+        });
+    }
+
     runtime.initOfficeSwitcher();
     runtime.initWorkerRestartButtons();
+    runtime.initWorkerRunPassButtons();
 
     runtime.updateNavBadges = function updateNavBadges(payload) {
         if (!payload) return;

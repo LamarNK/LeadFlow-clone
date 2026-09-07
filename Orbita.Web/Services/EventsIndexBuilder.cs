@@ -330,8 +330,8 @@ internal static class EventsIndexBuilder
                 {
                     "ошибка парсинга" => ("Ошибка парсинга", "fa-regular fa-circle-xmark", "error"),
                     "таймаут" => ("Таймаут", "fa-regular fa-circle-xmark", "error"),
-                    "лимит частоты adspower" or "дневной лимит adspower" => ("Лимит AdsPower", "fa-regular fa-circle-xmark", "error"),
-                    "профиль занят" => ("Профиль AdsPower занят", "fa-regular fa-circle-xmark", "error"),
+                    "лимит частоты adspower" or "дневной лимит adspower" => ("Лимит браузерного провайдера", "fa-regular fa-circle-xmark", "error"),
+                    "профиль занят" => ("Браузерный профиль занят", "fa-regular fa-circle-xmark", "error"),
                     "проблема" => ("Сбой автоматизации", "fa-regular fa-circle-xmark", "error"),
                     _ => ("Сбой автоматизации", "fa-regular fa-circle-xmark", "error")
                 };
@@ -339,10 +339,10 @@ internal static class EventsIndexBuilder
 
             var lower = message.ToLowerInvariant();
             if (lower.Contains("лимит adspower") || lower.Contains("rate limit adspower"))
-                return ("Лимит AdsPower", "fa-regular fa-circle-xmark", "error");
+                return ("Лимит браузерного провайдера", "fa-regular fa-circle-xmark", "error");
             if (AdsPowerErrorMessageNormalizer.LooksLikeProfileInUse(message)
                 || lower.Contains("профиль занят"))
-                return ("Профиль AdsPower занят", "fa-regular fa-circle-xmark", "error");
+                return ("Браузерный профиль занят", "fa-regular fa-circle-xmark", "error");
             if (lower.Contains("субпрофили ") || lower.Contains("не удалось") || lower.Contains("неизвестная страница"))
                 return ("Сбой автоматизации", "fa-regular fa-circle-xmark", "error");
         }

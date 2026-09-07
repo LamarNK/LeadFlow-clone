@@ -52,8 +52,23 @@ public static class AvitoPageStateScripts
                 document.querySelector("[data-marker='users-list/button']") ||
                 document.querySelector("[data-marker='login-form-with-avatar']")
             );
+            // Avito сбросил пароль при подозрении на взлом. Это терминальное состояние:
+            // нажимать «Получить код» не нужно — код должен ввести владелец аккаунта.
+            const passwordResetForm = document.querySelector(
+                "[data-marker='password-was-reset'], [data-marker='password-was-reset-form']");
+            const passwordResetText = (passwordResetForm?.textContent ?? "").trim();
+            const requiresPasswordResetSms = !!passwordResetForm
+                && /Сработала\s+защита\s+профиля/i.test(passwordResetText)
+                && /Получить\s+код\s+по\s+смс/i.test(passwordResetText);
+            const passwordResetPhoneSource = passwordResetForm?.querySelector(
+                "[class*='PhoneNumber-module-phone'] strong, [class*='PhoneNumber-module-phone']")?.textContent ?? "";
+            const passwordResetDigits = String(passwordResetPhoneSource).replace(/\D/g, "");
+            const passwordResetSmsPhone = requiresPasswordResetSms && passwordResetDigits.length >= 2
+                ? `+${passwordResetDigits.slice(0, 1)} *** ***-**-${passwordResetDigits.slice(-2)}`
+                : null;
             const hasLoginDom = !!(
                 hasSavedUsersList ||
+                passwordResetForm ||
                 document.querySelector("[data-marker='auth-app-root']") ||
                 document.querySelector("form[data-marker='login-form']") ||
                 document.querySelector("[data-marker='login-form/login']") ||
@@ -95,7 +110,32 @@ public static class AvitoPageStateScripts
             const hasStaticIpBlock = location.hash === "#block"
               && !!document.querySelector('a[href*="support.avito.ru/request/720"]')
               && /Отключить\s+VPN|самол[её]те/i.test(probeText);
+            const isVisibleEl = (el) => {
+                try {
+                    if (!el) return false;
+                    const style = window.getComputedStyle(el);
+                    if (style.display === "none" || style.visibility === "hidden") return false;
+                    const rect = el.getBoundingClientRect();
+                    return rect.width > 0 && rect.height > 0;
+                } catch {
+                    return false;
+                }
+            };
+            const liveCaptchaWidget = !!(
+                isVisibleEl(document.getElementById("geetest_captcha")) ||
+                isVisibleEl(document.getElementById("inner-captcha")) ||
+                isVisibleEl(document.getElementById("h-captcha")) ||
+                isVisibleEl(document.querySelector(".h-captcha[data-sitekey]")) ||
+                isVisibleEl(document.querySelector(
+                    ".geetest_box, .geetest_nine, [class*='geetest_box'], [class*='geetest_nine']"))
+            );
+            // GeeTest v4 на логине может быть уже нарисован, но во время SPA-перехода
+            // getComputedStyle/rect кратко недоступны. boxShow — активный overlay, не заглушка.
+            const hasGeeTestOverlayDom = !!document.querySelector(
+                ".geetest_boxShow, .geetest_popup_wrap, [class*='geetest_boxShow'], [class*='geetest_popup_wrap']");
             const hasCaptchaWidget = !!(
+                liveCaptchaWidget ||
+                hasGeeTestOverlayDom ||
                 document.getElementById("geetest_captcha") ||
                 document.getElementById("inner-captcha") ||
                 document.getElementById("h-captcha") ||
@@ -104,12 +144,14 @@ public static class AvitoPageStateScripts
             const hasCaptchaContinue = /Продолжить/i.test(probeText)
               && (/капч/i.test(probeText)
                   || !!document.querySelector('.firewall-container, .js-firewall-form, .firewall-title, form.js-firewall-form, [role="dialog"][aria-modal="true"]'));
-            const hasCaptchaChallenge = hasCaptchaWidget
+            const hasCaptchaChallenge = liveCaptchaWidget
               || /решени[еюя]\s+капч/i.test(probeText)
               || hasCaptchaContinue;
             const hasIpBlock = !hasCaptchaChallenge && (hasIpText || hasStaticIpBlock);
             const hasFirewallIp = hasIpBlock;
-            const hasCaptcha = hasFirewallDom || hasFirewallText || hasCaptchaWidget || hasIpBlock || hasCaptchaChallenge;
+            const hasCaptcha = hasLoginForm
+                ? (liveCaptchaWidget || hasGeeTestOverlayDom || hasFirewallDom)
+                : (hasFirewallDom || hasFirewallText || hasCaptchaWidget || hasIpBlock || hasCaptchaChallenge);
             // Баннер Avito Pro: скрытые объявления из-за нулевого/недостаточного аванса.
             // Оба текста обязательны, чтобы не принять обычный блок баланса за ошибку.
             const hasInsufficientAdvance =
@@ -123,10 +165,12 @@ public static class AvitoPageStateScripts
                 || /обязательно\s+всё\s+починим/i.test(probeText);
 
             let pageKind = "unknown";
-            if (hasCaptcha) {
+            if (hasLoginForm && liveCaptchaWidget) {
                 pageKind = "captcha";
             } else if (hasLoginForm) {
                 pageKind = "login";
+            } else if (hasCaptcha) {
+                pageKind = "captcha";
             } else if (hasTransientError) {
                 pageKind = "transientError";
             } else if (profileSwitchModalOpen) {
@@ -163,7 +207,9 @@ public static class AvitoPageStateScripts
                 hasFirewallIp,
                 hasInsufficientAdvance,
                 hasEmailConfirmationRequired,
-                hasTransientError
+                hasTransientError,
+                requiresPasswordResetSms,
+                passwordResetSmsPhone
             });
         })();
         """;

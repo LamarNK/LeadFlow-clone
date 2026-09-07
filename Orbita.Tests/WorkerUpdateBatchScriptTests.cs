@@ -58,26 +58,30 @@ public sealed class WorkerUpdateBatchScriptTests
     }
 
     [Fact]
-    public void BuildInstall_FailedMsi_KeepsPackageAndScriptAndDoesNotRestart()
+    public void BuildInstall_FailedMsi_RestartsExistingExeAndKeepsPackage()
     {
         var script = WorkerUpdateBatchScript.BuildInstall(CreateRequest());
 
-        var failureExit = script.IndexOf("exit /b %INSTALL_EXIT%", StringComparison.Ordinal);
-        var restartLabel = script.IndexOf(":restart_worker", StringComparison.Ordinal);
-        var delMsi = script.IndexOf("del /q \"%MSI_PATH%\"", StringComparison.Ordinal);
-        var startExe = script.IndexOf("start \"\" /D \"%WORK_DIR%\"", StringComparison.Ordinal);
+        var installOk = script.IndexOf(":install_ok", StringComparison.Ordinal);
+        var recover = script.IndexOf(":recover_worker", StringComparison.Ordinal);
+        var cleanup = script.IndexOf(":cleanup", StringComparison.Ordinal);
+        Assert.True(installOk >= 0 && recover > installOk && cleanup >= 0);
 
-        Assert.True(failureExit >= 0);
-        Assert.True(failureExit < restartLabel);
-        Assert.True(failureExit < delMsi);
-        Assert.True(failureExit < startExe);
-
-        var failureBranch = script[..restartLabel];
-        Assert.DoesNotContain("start \"\" /D", failureBranch, StringComparison.Ordinal);
+        var failureBranch = script[..installOk];
+        Assert.Contains("goto recover_worker", failureBranch, StringComparison.Ordinal);
+        Assert.Contains("call :write_status", failureBranch, StringComparison.Ordinal);
         Assert.DoesNotContain("del /q \"%MSI_PATH%\"", failureBranch, StringComparison.Ordinal);
         Assert.DoesNotContain("del /q \"%~f0\"", failureBranch, StringComparison.Ordinal);
-        Assert.Contains("call :write_status", failureBranch, StringComparison.Ordinal);
-        Assert.Contains("if \"%SUCCESS%\"==\"1\" goto install_ok", failureBranch, StringComparison.Ordinal);
+
+        var recoverBlock = script[recover..];
+        Assert.Contains("if not exist \"%EXE_PATH%\"", recoverBlock, StringComparison.Ordinal);
+        Assert.Contains("call :start_worker_if_needed", recoverBlock, StringComparison.Ordinal);
+        Assert.Contains("exit /b %INSTALL_EXIT%", recoverBlock, StringComparison.Ordinal);
+        Assert.DoesNotContain("del /q \"%MSI_PATH%\"", recoverBlock, StringComparison.Ordinal);
+        Assert.DoesNotContain("del /q \"%~f0\"", recoverBlock, StringComparison.Ordinal);
+
+        var delMsi = script.IndexOf("del /q \"%MSI_PATH%\"", StringComparison.Ordinal);
+        Assert.True(delMsi > cleanup);
     }
 
     [Fact]
@@ -142,9 +146,29 @@ public sealed class WorkerUpdateBatchScriptTests
     [InlineData(1638, true)]
     [InlineData(1612, true)]
     [InlineData(1618, false)]
+    [InlineData(1619, false)]
+    [InlineData(1620, false)]
     [InlineData(0, false)]
     public void ShouldBlockSilentRetry_OnlyForElevationOrFatalCodes(int exitCode, bool expected) =>
         Assert.Equal(expected, WorkerUpdateBatchScript.ShouldBlockSilentRetry(exitCode));
+
+    [Theory]
+    [InlineData(1619, true)]
+    [InlineData(1620, true)]
+    [InlineData(1603, false)]
+    [InlineData(1618, false)]
+    [InlineData(0, false)]
+    public void IsCorruptPackageExitCode_DetectsUnreadableMsi(int exitCode, bool expected) =>
+        Assert.Equal(expected, WorkerUpdateBatchScript.IsCorruptPackageExitCode(exitCode));
+
+    [Theory]
+    [InlineData(1603, true)]
+    [InlineData(1618, true)]
+    [InlineData(1619, false)]
+    [InlineData(1620, false)]
+    [InlineData(0, false)]
+    public void ShouldRequeueDownloadedMsi_SkipsCorruptPackages(int exitCode, bool expected) =>
+        Assert.Equal(expected, WorkerUpdateBatchScript.ShouldRequeueDownloadedMsi(exitCode));
 
     [Fact]
     public void FormatResultMessage_DoesNotHide1618Or1603()
@@ -156,5 +180,15 @@ public sealed class WorkerUpdateBatchScriptTests
         Assert.Contains(@"C:\log.txt", failed, StringComparison.Ordinal);
         Assert.Contains(@"C:\setup.msi", failed, StringComparison.Ordinal);
         Assert.Contains("1730", WorkerUpdateBatchScript.FormatResultMessage(1730, false, @"C:\log.txt", null), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void FormatResultMessage_NamesCorruptOrIncompletePackage()
+    {
+        var message = WorkerUpdateBatchScript.FormatResultMessage(1620, false, @"C:\log.txt", null, @"C:\setup.msi");
+        Assert.Contains("1620", message, StringComparison.Ordinal);
+        Assert.Contains("поврежд", message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("докачал", message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains(@"C:\setup.msi", message, StringComparison.Ordinal);
     }
 }

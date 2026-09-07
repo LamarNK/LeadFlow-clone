@@ -1654,6 +1654,49 @@ public static class AvitoCandidatesPageScripts
                 return "";
             };
 
+            // The responses list has two layouts and only one of them exposes the
+            // candidate photo. The active chat header is available in both layouts.
+            // Accept only a real Avito image; generated stub avatars are initials,
+            // for which Orbita already has its own fallback.
+            const normalizeAvatarUrl = (value) => {
+                const raw = String(value ?? "").trim();
+                if (!raw) {
+                    return "";
+                }
+
+                try {
+                    const parsed = new URL(raw, window.location.href);
+                    const host = parsed.hostname.toLowerCase();
+                    return parsed.protocol === "https:"
+                        && (host === "img.avito.st" || host.endsWith(".img.avito.st"))
+                        && parsed.pathname.startsWith("/image/")
+                        ? parsed.href
+                        : "";
+                } catch (_) {
+                    return "";
+                }
+            };
+
+            const readAvatarUrl = (channelRoot) => {
+                const image = channelRoot?.querySelector("img[data-marker='avatar/image']");
+                if (!image) {
+                    return "";
+                }
+
+                const direct = [image.currentSrc, image.getAttribute("src")]
+                    .map(normalizeAvatarUrl)
+                    .find(Boolean);
+                if (direct) {
+                    return direct;
+                }
+
+                const candidates = String(image.getAttribute("srcset") ?? "")
+                    .split(",")
+                    .map((entry) => normalizeAvatarUrl(entry.trim().split(/\s+/)[0]))
+                    .filter(Boolean);
+                return candidates.length > 0 ? candidates[candidates.length - 1] : "";
+            };
+
             const collectFrom = (root) => {
                 const messages = [];
                 if (!root) {
@@ -1698,11 +1741,15 @@ public static class AvitoCandidatesPageScripts
                         && history.getAttribute("data-leadflow-messenger-before") !== marker)
                 : null;
             const isChannelPage = /\/profile\/messenger\/channel\//i.test(window.location.href);
+            const channelRoot = miniRoot
+                || openedHistory?.closest("[class*='channel-module-root']")
+                || (isChannelPage ? document : null);
             const root = miniRoot
                 || openedHistory
                 || (isChannelPage
                     ? document.querySelector("[data-marker='messagesHistory']") || document
                     : null);
+            const avatarUrl = readAvatarUrl(channelRoot);
             const diagnostics = {
                 hasMiniLink: !!miniLink,
                 hasMiniRoot: !!miniRoot,
@@ -1714,13 +1761,13 @@ public static class AvitoCandidatesPageScripts
                 hasMessagesList: !!root?.querySelector("[data-marker='messagesHistory/list']")
             };
             if (!root) {
-                return JSON.stringify({ ok: false, reason: "no_active_candidate_messenger", diagnostics, messages: [] });
+                return JSON.stringify({ ok: false, reason: "no_active_candidate_messenger", diagnostics, avatarUrl, messages: [] });
             }
 
             const messages = collectFrom(root);
             const list = root.querySelector("[data-marker='messagesHistory/list']");
             if (!list && messages.length === 0) {
-                return JSON.stringify({ ok: false, reason: "no_messages_list", diagnostics, messages: [] });
+                return JSON.stringify({ ok: false, reason: "no_messages_list", diagnostics, avatarUrl, messages: [] });
             }
 
             if (list) {
@@ -1736,6 +1783,7 @@ public static class AvitoCandidatesPageScripts
                 ok: true,
                 reason: messages.length === 0 ? "no_message_text" : null,
                 diagnostics,
+                avatarUrl,
                 messages,
                 count: messages.length
             });

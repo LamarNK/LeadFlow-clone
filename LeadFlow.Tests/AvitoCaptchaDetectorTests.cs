@@ -204,6 +204,54 @@ public sealed class AvitoCaptchaDetectorTests
     }
 
     [Fact]
+    public void LoginGeeTestNineGrid_IsSolvableOverlayNotFirewall()
+    {
+        const string html = """
+            <form data-marker="login-form">
+              <input type="password" data-marker="login-form/password/input">
+            </form>
+            <div class="geetest_box_8f8163f1 geetest_box" style="display: block;">
+              <div class="geetest_title">Выберите 3 изображения с</div>
+              <div class="geetest_nine">
+                <div class="geetest_item_img" style="background-image: url(&quot;https://static.geetest.com/captcha_v4/policy/3d0936b11a2c4a65bbb53635e656c780/nine/300174/2026-09-05T22/e3731f3daf5b4fcb9f6015afd17b1363.jpg&quot;);"></div>
+              </div>
+            </div>
+            """;
+
+        Assert.True(AvitoCaptchaDetector.HasGeeTestWidget(html));
+        Assert.True(AvitoCaptchaDetector.CanAttemptGeeTestSolve(html));
+        Assert.True(AvitoGeeTestSolveSupport.IsLoginGeeTestOverlay(html));
+        Assert.Equal("geetest", AvitoCaptchaDetector.Classify(html));
+        Assert.Equal(
+            "3d0936b11a2c4a65bbb53635e656c780",
+            AvitoCaptchaDetector.ExtractGeeTestCaptchaId(html));
+        Assert.False(AvitoCaptchaDetector.HasIpBlockChallenge(html));
+    }
+
+    [Fact]
+    public void ShowsLoginForm_LoginMarkers_TrueEvenWithGeeTestScripts()
+    {
+        const string html = """
+            <form data-marker="login-form"><input name="password"></form>
+            <script src="https://static.geetest.com/v4/gt4.js"></script>
+            """;
+
+        Assert.True(AvitoCaptchaDetector.ShowsLoginForm(html));
+        Assert.True(AvitoCaptchaDetector.IsCaptchaHtml(html));
+    }
+
+    [Fact]
+    public void ExtractGeeTestCaptchaId_FromCaptchaV4PolicyUrl()
+    {
+        const string html =
+            """<div style="background-image: url('https://static.geetest.com/captcha_v4/policy/3d0936b11a2c4a65bbb53635e656c780/nine/x.jpg')"></div>""";
+
+        Assert.Equal(
+            "3d0936b11a2c4a65bbb53635e656c780",
+            AvitoCaptchaDetector.ExtractGeeTestCaptchaId(html));
+    }
+
+    [Fact]
     public void SpaModalOverCabinet_WithContinueForCaptcha_IsCaptchaNotIpBlock()
     {
         const string html = """

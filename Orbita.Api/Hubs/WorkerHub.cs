@@ -34,10 +34,10 @@ public sealed class WorkerHub(
             }
 
             await db.SaveChangesAsync(Context.ConnectionAborted).ConfigureAwait(false);
-            panelRealtime.Notify(
-                [PanelChangeKind.Workers, PanelChangeKind.Dashboard, PanelChangeKind.Accounts],
-                worker.OfficeId,
-                worker.Id);
+            // A SignalR reconnect changes only presence. Dashboard summary refreshes
+            // online workers independently, so do not evict its expensive aggregate
+            // for every reconnect in a flapping worker fleet.
+            panelRealtime.Notify([PanelChangeKind.Workers], worker.OfficeId, worker.Id);
         }
 
         if (registration.DisplacedConnectionId is not null)
@@ -102,10 +102,7 @@ public sealed class WorkerHub(
                 .ConfigureAwait(false);
             if (worker is not null)
             {
-                panelRealtime.Notify(
-                    [PanelChangeKind.Workers, PanelChangeKind.Dashboard, PanelChangeKind.Accounts],
-                    worker.OfficeId,
-                    worker.Id);
+                panelRealtime.Notify([PanelChangeKind.Workers], worker.OfficeId, worker.Id);
             }
         }
 

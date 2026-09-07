@@ -28,14 +28,48 @@ public static class AvitoAutoLoginRecovery
         bool HasLoggedInProfile,
         bool HasPasswordValue,
         bool HasSubmitButton,
-        string? Url);
+        string? Url,
+        bool RequiresPasswordResetSms = false,
+        string? PasswordResetSmsPhone = null);
 
     public sealed record RecoveryResult(
         bool Recovered,
         bool StillNeedsLogin,
         bool HasCaptcha,
         string? FailureReason,
-        IReadOnlyList<string> Steps);
+        IReadOnlyList<string> Steps,
+        string? PasswordResetSmsPhone = null);
+
+    public enum LoginCaptchaDecision
+    {
+        Ignore,
+        Solve,
+        Abort
+    }
+
+    public const int MaxLoginCaptchaAttempts = 3;
+
+    internal const int MaxProbeAttempts = 4;
+    internal const int ProbeRetryDelayMs = 600;
+
+    public static LoginCaptchaDecision DecideCaptcha(
+        ProbeState state,
+        bool solverAvailable,
+        int attempts,
+        int maxAttempts)
+    {
+        if (!state.HasCaptcha)
+        {
+            return LoginCaptchaDecision.Ignore;
+        }
+
+        if (solverAvailable && attempts < maxAttempts)
+        {
+            return LoginCaptchaDecision.Solve;
+        }
+
+        return LoginCaptchaDecision.Abort;
+    }
 
     public static ProbeState? TryParseProbe(string? raw)
     {
@@ -63,7 +97,12 @@ public static class AvitoAutoLoginRecovery
                 HasLoggedInProfile: root.TryGetProperty("hasLoggedInProfile", out var lp) && lp.ValueKind == JsonValueKind.True,
                 HasPasswordValue: root.TryGetProperty("hasPasswordValue", out var pv) && pv.ValueKind == JsonValueKind.True,
                 HasSubmitButton: root.TryGetProperty("hasSubmitButton", out var sb) && sb.ValueKind == JsonValueKind.True,
-                Url: root.TryGetProperty("url", out var url) ? url.GetString() : null);
+                Url: root.TryGetProperty("url", out var url) ? url.GetString() : null,
+                RequiresPasswordResetSms: root.TryGetProperty("requiresPasswordResetSms", out var passwordResetSms)
+                    && passwordResetSms.ValueKind == JsonValueKind.True,
+                PasswordResetSmsPhone: root.TryGetProperty("passwordResetSmsPhone", out var passwordResetPhone)
+                    ? passwordResetPhone.GetString()
+                    : null);
         }
         catch
         {
@@ -79,11 +118,20 @@ public static class AvitoAutoLoginRecovery
     public static async Task<RecoveryResult> TryRecoverAsync(
         IPage page,
         AvitoLoginCredentials? credentials,
+        CancellationToken cancellationToken = default) =>
+        await TryRecoverAsync(page, credentials, trySolveCaptcha: null, cancellationToken).ConfigureAwait(false);
+
+    public static async Task<RecoveryResult> TryRecoverAsync(
+        IPage page,
+        AvitoLoginCredentials? credentials,
+        Func<IPage, CancellationToken, Task<bool>>? trySolveCaptcha,
         CancellationToken cancellationToken = default)
     {
         credentials ??= AvitoAutoLoginContext.Credentials;
+        trySolveCaptcha ??= AvitoAutoLoginContext.CaptchaSolver;
         var steps = new List<string>();
         const int maxIterations = 10;
+        var captchaAttempts = 0;
 
         if (credentials is not { IsUsable: true })
         {
@@ -100,7 +148,15 @@ public static class AvitoAutoLoginRecovery
         steps.Add("credentials Орбиты: есть");
 
         var initialState = await ProbeAsync(page, cancellationToken).ConfigureAwait(false);
-        if (initialState is { NeedsLogin: true } && !HasVisibleLoginUi(initialState))
+        if (initialState?.RequiresPasswordResetSms == true)
+        {
+            return await StopForPasswordResetSmsAsync(initialState, steps).ConfigureAwait(false);
+        }
+
+        var hasSavedUserCard = (initialState is { HasUsersList: true }
+            or { HasSavedUserCard: true })
+            || await HasSavedUserCardInDomAsync(page, cancellationToken).ConfigureAwait(false);
+        if (initialState is not null && ShouldRefreshSession(initialState, hasSavedUserCard))
         {
             if (await TryRefreshSessionAsync(page, steps, cancellationToken).ConfigureAwait(false))
             {
@@ -117,12 +173,81 @@ public static class AvitoAutoLoginRecovery
             var state = await ProbeAsync(page, cancellationToken).ConfigureAwait(false);
             if (state is null)
             {
+                // После Reload GeeTest CDP-проба может не успеть в живой execution context.
+                // Селекторы Puppeteer независимы от результата JSON-probe: не сносим users-list refresh-ом.
+                if (await HasSavedUserCardInDomAsync(page, cancellationToken).ConfigureAwait(false))
+                {
+                    var selected = await TrySelectSavedUserAsync(page, credentials.Login, cancellationToken)
+                        .ConfigureAwait(false);
+                    steps.Add(selected
+                        ? "выбран сохранённый профиль (fallback без probe)"
+                        : "найден сохранённый профиль, но клик не сработал");
+                    if (selected)
+                    {
+                        await Task.Delay(MonitoringTiming.AutoLoginAfterUserSelectMs, cancellationToken)
+                            .ConfigureAwait(false);
+                        continue;
+                    }
+                }
+
+                steps.Add("probe не прочитался");
+                await LogAsync(
+                        DeskLinkAuditLogLevel.Warning,
+                        "Avito auto-login failed (probe_failed).",
+                        steps,
+                        page.Url)
+                    .ConfigureAwait(false);
                 return new RecoveryResult(false, true, false, "probe_failed", steps);
             }
 
-            if (state.HasCaptcha)
+            if (state.RequiresPasswordResetSms)
+            {
+                return await StopForPasswordResetSmsAsync(state, steps).ConfigureAwait(false);
+            }
+
+            var captchaDecision = DecideCaptcha(
+                state,
+                trySolveCaptcha is not null,
+                captchaAttempts,
+                MaxLoginCaptchaAttempts);
+            if (captchaDecision == LoginCaptchaDecision.Abort)
             {
                 steps.Add("капча или блок IP");
+                await LogAsync(
+                        DeskLinkAuditLogLevel.Warning,
+                        "Avito auto-login failed (captcha).",
+                        steps,
+                        state.Url)
+                    .ConfigureAwait(false);
+                return new RecoveryResult(false, true, true, "captcha", steps);
+            }
+
+            if (captchaDecision == LoginCaptchaDecision.Solve)
+            {
+                captchaAttempts++;
+                var solved = false;
+                try
+                {
+                    solved = await trySolveCaptcha!(page, cancellationToken).ConfigureAwait(false);
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    steps.Add($"капча логина ошибка: {ex.Message}");
+                }
+
+                steps.Add(solved ? "капча логина пройдена" : "капча логина не пройдена");
+                if (solved)
+                {
+                    await WaitForAuthSettleAsync(page, cancellationToken).ConfigureAwait(false);
+                    continue;
+                }
+
+                await LogAsync(
+                        DeskLinkAuditLogLevel.Warning,
+                        "Avito auto-login failed (captcha).",
+                        steps,
+                        state.Url)
+                    .ConfigureAwait(false);
                 return new RecoveryResult(false, true, true, "captcha", steps);
             }
 
@@ -140,7 +265,8 @@ public static class AvitoAutoLoginRecovery
             if (!state.HasCredentialInputs &&
                 (state.HasUsersList || state.HasSavedUserCard || state.HasProfileChooser))
             {
-                var selected = await TrySelectSavedUserAsync(page, cancellationToken).ConfigureAwait(false);
+                var selected = await TrySelectSavedUserAsync(page, credentials.Login, cancellationToken)
+                    .ConfigureAwait(false);
                 steps.Add(selected ? "выбран сохранённый профиль" : "не удалось выбрать профиль");
                 if (selected)
                 {
@@ -222,6 +348,11 @@ public static class AvitoAutoLoginRecovery
         }
 
         var finalState = await ProbeAsync(page, cancellationToken).ConfigureAwait(false);
+        if (finalState?.RequiresPasswordResetSms == true)
+        {
+            return await StopForPasswordResetSmsAsync(finalState, steps).ConfigureAwait(false);
+        }
+
         if (finalState is { IsAuthorized: true } or { NeedsLogin: false, HasCaptcha: false })
         {
             steps.Add("сессия восстановлена");
@@ -253,11 +384,55 @@ public static class AvitoAutoLoginRecovery
             steps);
     }
 
+    private static async Task<RecoveryResult> StopForPasswordResetSmsAsync(
+        ProbeState state,
+        List<string> steps)
+    {
+        var phone = string.IsNullOrWhiteSpace(state.PasswordResetSmsPhone)
+            ? string.Empty
+            : $" ({state.PasswordResetSmsPhone})";
+        steps.Add($"Avito сбросил пароль: требуется SMS-код{phone}");
+        await LogAsync(
+                DeskLinkAuditLogLevel.Warning,
+                "Avito auto-login stopped (password_reset_sms_required).",
+                steps,
+                state.Url)
+            .ConfigureAwait(false);
+        return new RecoveryResult(false, true, false, "password_reset_sms_required", steps, state.PasswordResetSmsPhone);
+    }
+
     private static async Task<ProbeState?> ProbeAsync(IPage page, CancellationToken cancellationToken)
     {
-        var raw = await EvaluateJsonStringAsync(page, AvitoAutoLoginScripts.BuildProbeScript(), cancellationToken)
-            .ConfigureAwait(false);
-        return TryParseProbe(raw);
+        for (var attempt = 1; attempt <= MaxProbeAttempts; attempt++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var raw = await EvaluateJsonStringAsync(page, AvitoAutoLoginScripts.BuildProbeScript(), cancellationToken)
+                .ConfigureAwait(false);
+            var state = TryParseProbe(raw);
+            if (state is not null)
+            {
+                return state;
+            }
+
+            _ = GlobalLogger.Instance.LogAsync(
+                $"Avito auto-login probe returned no state (attempt {attempt}/{MaxProbeAttempts}).",
+                DeskLinkAuditLogLevel.Warning,
+                memberName: nameof(AvitoAutoLoginRecovery),
+                properties: new Dictionary<string, object?>
+                {
+                    ["step"] = "auto_login_probe_retry",
+                    ["autoLogin.probeAttempt"] = attempt,
+                    ["autoLogin.probeMaxAttempts"] = MaxProbeAttempts,
+                    ["autoLogin.url"] = page.Url
+                });
+
+            if (attempt < MaxProbeAttempts)
+            {
+                await Task.Delay(ProbeRetryDelayMs, cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        return null;
     }
 
     /// <summary>
@@ -340,21 +515,11 @@ public static class AvitoAutoLoginRecovery
         return TryReadBoolProperty(raw, "clicked");
     }
 
-    private static readonly string[] SavedUserClickSelectors =
-    [
-        "[data-marker='users-list'] button[data-marker='user/link']",
-        "[data-marker='users-list'] [data-marker='user/link']",
-        "[data-marker='user'] button[data-marker='user/link']",
-        "button[data-marker='user/link']",
-        "[data-marker='user/link']"
-    ];
-
     private static readonly string[] OtherProfileClickSelectors =
     [
         "[data-marker='users-list/button']",
         "[data-marker='login-form/other']",
-        "[data-marker='login-form/other-profile']",
-        "[data-marker='another-profile-link'] a"
+        "[data-marker='login-form/other-profile']"
     ];
 
     private static readonly string[] PasswordInputSelectors =
@@ -374,11 +539,14 @@ public static class AvitoAutoLoginRecovery
         "input[autocomplete='username']"
     ];
 
-    private static async Task<bool> TrySelectSavedUserAsync(IPage page, CancellationToken cancellationToken)
+    private static async Task<bool> TrySelectSavedUserAsync(
+        IPage page,
+        string? preferredLogin,
+        CancellationToken cancellationToken)
     {
         if (await TryClickAndWaitForCredentialsAsync(
                 page,
-                () => TryMouseClickFirstAsync(page, SavedUserClickSelectors, cancellationToken),
+                () => TryClickMatchingSavedUserAsync(page, preferredLogin, useHumanPointer: true, cancellationToken),
                 cancellationToken).ConfigureAwait(false))
         {
             return true;
@@ -386,17 +554,123 @@ public static class AvitoAutoLoginRecovery
 
         if (await TryClickAndWaitForCredentialsAsync(
                 page,
-                () => TryClickFirstAsync(page, SavedUserClickSelectors, cancellationToken),
+                () => TryClickMatchingSavedUserAsync(page, preferredLogin, useHumanPointer: false, cancellationToken),
                 cancellationToken).ConfigureAwait(false))
         {
             return true;
         }
 
-        var raw = await EvaluateJsonStringAsync(page, AvitoAutoLoginScripts.BuildSelectSavedUserScript(), cancellationToken)
+        var raw = await EvaluateJsonStringAsync(
+                page,
+                AvitoAutoLoginScripts.BuildSelectSavedUserScript(preferredLogin),
+                cancellationToken)
             .ConfigureAwait(false);
         return TryReadBoolProperty(raw, "clicked")
                && await WaitForCredentialInputsAsync(page, cancellationToken).ConfigureAwait(false);
     }
+
+    private static async Task<bool> TryClickMatchingSavedUserAsync(
+        IPage page,
+        string? preferredLogin,
+        bool useHumanPointer,
+        CancellationToken cancellationToken)
+    {
+        IElementHandle[] handles;
+        try
+        {
+            handles = await page.QuerySelectorAllAsync(
+                    "[data-marker='users-list'] [data-marker='user/link'], [data-marker^='users-list('] [data-marker='user/link'], button[data-marker='user/link']")
+                .ConfigureAwait(false);
+        }
+        catch
+        {
+            return false;
+        }
+
+        if (handles.Length == 0)
+        {
+            return false;
+        }
+
+        var want = NormalizePhoneDigits(preferredLogin);
+        IElementHandle? first = null;
+        foreach (var handle in handles)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            string? label;
+            try
+            {
+                label = await handle.EvaluateFunctionAsync<string>(
+                        "el => ((el.getAttribute('aria-label') || '') + ' ' + (el.textContent || '')).trim()")
+                    .ConfigureAwait(false);
+            }
+            catch
+            {
+                continue;
+            }
+
+            first ??= handle;
+            var got = NormalizePhoneDigits(label);
+            if (string.IsNullOrEmpty(want) || PhonesMatch(want, got))
+            {
+                if (await TryClickHandleAsync(page, handle, useHumanPointer, cancellationToken).ConfigureAwait(false))
+                {
+                    return true;
+                }
+            }
+        }
+
+        // Телефон из Орбиты не совпал ни с одной карточкой — не жмём чужой профиль.
+        if (!string.IsNullOrEmpty(want))
+        {
+            return false;
+        }
+
+        return first is not null
+               && await TryClickHandleAsync(page, first, useHumanPointer, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async Task<bool> TryClickHandleAsync(
+        IPage page,
+        IElementHandle handle,
+        bool useHumanPointer,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (useHumanPointer)
+            {
+                return await AvitoHumanPointer.TryClickHandleAsync(page, handle, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
+            await handle.EvaluateFunctionAsync("el => el.scrollIntoView({ block: 'center', inline: 'center' })")
+                .ConfigureAwait(false);
+            await handle.ClickAsync(new ClickOptions { Delay = 35 }).ConfigureAwait(false);
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static string NormalizePhoneDigits(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        return new PhoneNormalizer().Normalize(value);
+    }
+
+    private static bool PhonesMatch(string want, string got) =>
+        !string.IsNullOrEmpty(want) &&
+        !string.IsNullOrEmpty(got) &&
+        (want == got ||
+         want.EndsWith(got, StringComparison.Ordinal) ||
+         got.EndsWith(want, StringComparison.Ordinal));
 
     private static async Task<bool> TrySwitchToOtherProfileAsync(IPage page, CancellationToken cancellationToken)
     {
@@ -606,12 +880,46 @@ public static class AvitoAutoLoginRecovery
         return null;
     }
 
-    private static bool HasVisibleLoginUi(ProbeState state) =>
+    internal static bool HasVisibleLoginUi(ProbeState state) =>
         state.HasLoginForm ||
         state.HasUsersList ||
         state.HasSavedUserCard ||
         state.HasOtherProfileLink ||
         state.HasCredentialInputs;
+
+    /// <summary>
+    /// Полный reload допустим только для действительно пустого гостевого состояния.
+    /// Показанная капча уже является UI входа: reload в этот момент сбрасывает
+    /// первый ввод пароля и запускает второй вход.
+    /// </summary>
+    internal static bool ShouldRefreshSession(ProbeState state, bool hasSavedUserCard) =>
+        state.NeedsLogin &&
+        !state.HasCaptcha &&
+        !HasVisibleLoginUi(state) &&
+        !hasSavedUserCard;
+
+    private static async Task<bool> HasSavedUserCardInDomAsync(IPage page, CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        try
+        {
+            return await page.QuerySelectorAsync("[data-marker='users-list']") is not null
+                || await page.QuerySelectorAsync("[data-marker='users-list'] [data-marker='user/link'], [data-marker^='users-list('] [data-marker='user/link'], button[data-marker='user/link']") is not null;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                $"Avito auto-login saved-profile selector failed: {ex.Message}",
+                DeskLinkAuditLogLevel.Warning,
+                memberName: nameof(AvitoAutoLoginRecovery),
+                properties: new Dictionary<string, object?>
+                {
+                    ["step"] = "auto_login_saved_profile_probe_failed",
+                    ["autoLogin.url"] = page.Url
+                });
+            return false;
+        }
+    }
 
     private static async Task WaitForAuthSettleAsync(IPage page, CancellationToken cancellationToken)
     {
@@ -656,17 +964,34 @@ public static class AvitoAutoLoginRecovery
     {
         try
         {
-            return await page.EvaluateExpressionAsync<string>($"JSON.stringify({script})").ConfigureAwait(false);
+            return await page.EvaluateExpressionAsync<string>(BuildJsonEvaluationExpression(script)).ConfigureAwait(false);
         }
-        catch (Exception ex) when (IsRecoverableNavigationError(ex))
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            await Task.Delay(1400, cancellationToken).ConfigureAwait(false);
-            return await page.EvaluateExpressionAsync<string>($"JSON.stringify({script})").ConfigureAwait(false);
-        }
-        catch
-        {
+            _ = GlobalLogger.Instance.LogAsync(
+                $"Avito auto-login probe evaluation failed: {ex.Message}",
+                DeskLinkAuditLogLevel.Warning,
+                memberName: nameof(AvitoAutoLoginRecovery),
+                properties: new Dictionary<string, object?>
+                {
+                    ["step"] = "auto_login_probe_evaluate_failed",
+                    ["autoLogin.evaluateError"] = ex.Message,
+                    ["autoLogin.url"] = page.Url,
+                    ["autoLogin.recoverableNavigationError"] = IsRecoverableNavigationError(ex)
+                });
             return null;
         }
+    }
+
+    internal static string BuildJsonEvaluationExpression(string script)
+    {
+        var expression = script.Trim();
+        if (expression.EndsWith(';'))
+        {
+            expression = expression[..^1];
+        }
+
+        return $"JSON.stringify({expression})";
     }
 
     private static bool TryReadBoolProperty(string? raw, string propertyName)

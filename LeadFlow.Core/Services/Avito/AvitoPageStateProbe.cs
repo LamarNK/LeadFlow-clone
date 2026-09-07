@@ -45,7 +45,12 @@ public static class AvitoPageStateProbe
                 root.TryGetProperty("hasEmailConfirmationRequired", out var emailConfirmation)
                     && emailConfirmation.ValueKind == JsonValueKind.True,
                 root.TryGetProperty("hasTransientError", out var transientError)
-                    && transientError.ValueKind == JsonValueKind.True);
+                    && transientError.ValueKind == JsonValueKind.True,
+                root.TryGetProperty("requiresPasswordResetSms", out var passwordResetSms)
+                    && passwordResetSms.ValueKind == JsonValueKind.True,
+                root.TryGetProperty("passwordResetSmsPhone", out var passwordResetPhone)
+                    ? passwordResetPhone.GetString()
+                    : null);
         }
         catch
         {

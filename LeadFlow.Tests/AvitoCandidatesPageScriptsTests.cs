@@ -74,6 +74,12 @@ public sealed class AvitoCandidatesPageScriptsTests
         Assert.Contains("textContent", script, StringComparison.Ordinal);
         Assert.Contains("collectFrom", script, StringComparison.Ordinal);
         Assert.DoesNotContain("collectFrom(document)", script, StringComparison.Ordinal);
+        Assert.Contains("img[data-marker='avatar/image']", script, StringComparison.Ordinal);
+        Assert.Contains("image.currentSrc", script, StringComparison.Ordinal);
+        Assert.Contains("image.getAttribute(\"srcset\")", script, StringComparison.Ordinal);
+        Assert.Contains("host.endsWith(\".img.avito.st\")", script, StringComparison.Ordinal);
+        Assert.Contains("avatarUrl", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("itemPreview", script, StringComparison.Ordinal);
         Assert.Contains("behavior: \"auto\"", script, StringComparison.Ordinal);
         Assert.DoesNotContain("behavior: \"smooth\"", script, StringComparison.Ordinal);
     }

@@ -42,7 +42,9 @@ public sealed class WorkerMonitoringService(
     IOutboundChatDispatch? outboundChatDispatch = null,
     IMultiloginCdpConnector? multiloginCdpConnector = null,
     WorkerAccountSessionFactory? accountSessionFactory = null,
-    LocalChromeAccountLock? localChromeAccountLock = null) : IWorkerMonitoringService
+    LocalChromeAccountLock? localChromeAccountLock = null,
+    ILocalChromeBrowserLauncher? localChromeLauncher = null,
+    IAvitoGeeTestSolver? geeTestSolver = null) : IWorkerMonitoringService
 {
     private readonly IResponsePhoneObservationStore _phoneObservationStore =
         phoneObservationStore ?? new NullResponsePhoneObservationStore();
@@ -56,6 +58,8 @@ public sealed class WorkerMonitoringService(
             multiloginCdpConnector);
     private readonly LocalChromeAccountLock _localChromeLock =
         localChromeAccountLock ?? new LocalChromeAccountLock();
+    private readonly ILocalChromeBrowserLauncher? _localChromeLauncher = localChromeLauncher;
+    private readonly IAvitoGeeTestSolver? _geeTestSolver = geeTestSolver;
 
     private const int LoopRecoveryPauseMinutes = 12;
     private const int MaxLoopRecoveryFailuresBeforeStop = 10;
@@ -77,9 +81,24 @@ public sealed class WorkerMonitoringService(
     private readonly ConcurrentDictionary<Guid, int> _accountQuietStreak = new();
     /// <summary>Один раз за процесс логируем восстановленную паузу аккаунта.</summary>
     private readonly ConcurrentDictionary<Guid, byte> _loggedResumeRestored = new();
+    private readonly SemaphoreSlim _scheduleWake = new(0, 1);
+    private int _immediatePassRequested;
 
     public bool IsActive { get; private set; }
     public bool IsCaptchaHold => _captchaHold;
+
+    public void RequestImmediatePass()
+    {
+        Interlocked.Exchange(ref _immediatePassRequested, 1);
+        try
+        {
+            _scheduleWake.Release();
+        }
+        catch (SemaphoreFullException)
+        {
+            // A wake-up is already queued; one is sufficient.
+        }
+    }
 
     public async Task EnterCaptchaHoldAsync()
     {
@@ -302,6 +321,16 @@ public sealed class WorkerMonitoringService(
 
                     var now = DateTime.UtcNow;
                     var runningIds = running.Select(static j => j.Account.Id).ToHashSet();
+                    if (Interlocked.Exchange(ref _immediatePassRequested, 0) == 1)
+                    {
+                        foreach (var account in accounts.Where(a => !runningIds.Contains(a.Id)))
+                        {
+                            // База хранит обычное расписание. В памяти сдвигаем только
+                            // ближайший запуск, чтобы после прохода вернулась стандартная пауза.
+                            _accountNextEligibleUtc[account.Id] = now;
+                        }
+                    }
+
                     var due = accounts
                         .Where(a => !runningIds.Contains(a.Id))
                         .Where(a => GetNextEligibleUtc(a) <= now)
@@ -339,7 +368,7 @@ public sealed class WorkerMonitoringService(
                             : wait;
 
                         activityReporter.ReportWaiting(nextDue, "Ожидание следующего цикла");
-                        await Task.Delay(delay, cancellationToken).ConfigureAwait(false);
+                        await _scheduleWake.WaitAsync(delay, cancellationToken).ConfigureAwait(false);
                         continue;
                     }
 
@@ -511,12 +540,16 @@ public sealed class WorkerMonitoringService(
             // Пауза уже в памяти процесса; файл/рантайм — best effort.
         }
 
+        var profileBusy = retryAfter is not null
+            && WorkerAdsPowerPassRetry.IsLocalChromeProfileBusy(job.Account.LastErrorMessage);
         WorkerMonitoringLogger.AccountPersonalDelay(
             job.Account,
             personalDelay.TotalMinutes,
             collectedCount,
             publishedCount,
-            polled);
+            polled,
+            browserClosed: polled && !profileBusy,
+            shortRetry: profileBusy);
     }
 
     private async Task<bool> TryRecoverLoopAsync(Exception ex, CancellationToken cancellationToken)
@@ -882,18 +915,30 @@ public sealed class WorkerMonitoringService(
         catch (Exception ex)
         {
             var retryAfter = WorkerAdsPowerPassRetry.FromException(ex);
+            var profileBusy = WorkerAdsPowerPassRetry.IsLocalChromeProfileBusy(ex);
             account.LastErrorMessage = ex.Message;
             account.Status = retryAfter is null
                 ? AvitoAccountStatus.Error
                 : AvitoAccountStatus.Authorized;
             await repository.SaveAccountAsync(account, cancellationToken).ConfigureAwait(false);
-            WorkerMonitoringLogger.AccountFailed(account, "мониторинг", ex.Message);
+            if (retryAfter is null)
+            {
+                WorkerMonitoringLogger.AccountFailed(account, "мониторинг", ex.Message);
+            }
+            else
+            {
+                WorkerMonitoringLogger.AccountTransientFailure(account, "мониторинг", ex.Message);
+            }
+
+            var eventMessage = retryAfter is null
+                ? $"Ошибка аккаунта {account.DisplayName}: {ex.Message}"
+                : profileBusy
+                    ? $"Профиль обычного браузера занят на аккаунте {account.DisplayName}, повтор через ~1 мин."
+                    : $"AdsPower timeout на аккаунте {account.DisplayName}, браузер закрыт, повтор через ~1 мин: {ex.Message}";
             await PublishAccountEventAsync(
                 account,
                 WorkerAdsPowerPassRetry.EventType(ex),
-                retryAfter is null
-                    ? $"Ошибка аккаунта {account.DisplayName}: {ex.Message}"
-                    : $"AdsPower timeout на аккаунте {account.DisplayName}, браузер закрыт, повтор через ~1 мин: {ex.Message}",
+                eventMessage,
                 ex.Message,
                 cancellationToken).ConfigureAwait(false);
             _cycleJournal.FailCycle(cycleId, "automation", ex.Message);
@@ -901,9 +946,9 @@ public sealed class WorkerMonitoringService(
             await _cycleJournal.FlushAsync(cancellationToken).ConfigureAwait(false);
             return new AccountCycleOutcome(
                 0,
-                true,
+                PolledSource: !profileBusy,
                 false,
-                RetryAfter: WorkerAdsPowerPassRetry.FromException(ex));
+                RetryAfter: retryAfter);
         }
         finally
         {
@@ -1320,6 +1365,23 @@ public sealed class WorkerMonitoringService(
         var monitorContext = new BrowserMonitorRuntimeContext();
         var loginCredentials = AvitoLoginCredentials.TryCreate(account.AvitoLogin, account.AvitoPassword);
         using var loginScope = AvitoAutoLoginContext.Use(loginCredentials);
+        using var loginCaptchaScope = AvitoAutoLoginContext.UseSolver(
+            _geeTestSolver is null
+                ? null
+                : async (page, ct) =>
+                {
+                    using (LocalChromeTrafficPolicy.AllowImages(page))
+                    {
+                        return await _geeTestSolver
+                            .TrySolveOnPageAsync(
+                                page,
+                                html: null,
+                                page.Url,
+                                AvitoCaptchaTaskContext.Options,
+                                ct)
+                            .ConfigureAwait(false);
+                    }
+                });
         var captchaCounters = new AvitoCaptchaPassCounters();
         using var captchaTaskScope = AvitoCaptchaTaskContext.Use(
             GeeTestV4TaskOptions.FromBrowserProfile(
@@ -1846,7 +1908,8 @@ public sealed class WorkerMonitoringService(
                                 loginEx.Title,
                                 loginEx.ScreenshotPng,
                                 sub.Id,
-                                sub.Name),
+                                sub.Name,
+                                loginEx.PasswordResetSmsPhone),
                             cancellationToken)
                         .ConfigureAwait(false);
                     break;
@@ -1872,6 +1935,7 @@ public sealed class WorkerMonitoringService(
                 }
                 catch (Exception ex) when (ShouldHandleAsSubProfileAutomationFailure(ex))
                 {
+                    var deferTransientCdpTimeout = ShouldDeferSubProfileRetry(ex, deferredRetry);
                     var blocking = await HandleSubProfileAutomationFailureAsync(
                         account,
                         session,
@@ -1898,6 +1962,11 @@ public sealed class WorkerMonitoringService(
                         aborted = true;
                         remainingSkipReason = FormatRemainingSkipReason("automation", sub.Name, ex.Message);
                         break;
+                    }
+
+                    if (deferTransientCdpTimeout)
+                    {
+                        switchQueue.Add((sub, true));
                     }
                 }
 
@@ -2560,35 +2629,89 @@ public sealed class WorkerMonitoringService(
             .GroupBy(static a => a.AdsPowerProfileId!, StringComparer.Ordinal)
             .Select(static g => g.First())
             .ToList();
+        var localTargets = accounts
+            .Where(WorkerAccountRuntime.IsLocal)
+            .Where(account => !_localChromeLock.IsHeld(account.Id, LocalChromeAccountLock.Login))
+            .GroupBy(static account => account.Id)
+            .Select(static group => group.First())
+            .ToList();
 
-        if (targets.Count == 0)
+        if (targets.Count == 0 && localTargets.Count == 0)
         {
             _completedPassesSinceBrowserHousekeeping = 0;
             _lastBrowserHousekeepingLocalDate = DateOnly.FromDateTime(DateTime.Now);
             return;
         }
 
-        WorkerMonitoringLogger.BrowserHousekeepingStarted(reason, targets.Count);
+        if (targets.Count > 0)
+        {
+            WorkerMonitoringLogger.BrowserHousekeepingStarted(reason, targets.Count);
+            var closedOk = 0;
+            foreach (var account in targets)
+            {
+                if (!ignoreCancellation && cancellationToken.IsCancellationRequested)
+                {
+                    break;
+                }
+
+                var options = new AdsPowerConnectionOptions(
+                    account.AdsPowerApiBaseUrl!,
+                    string.IsNullOrWhiteSpace(account.AdsPowerApiKey) ? null : account.AdsPowerApiKey);
+                if (await TryCloseAdsPowerBrowserForAccountAsync(account, options).ConfigureAwait(false))
+                {
+                    closedOk++;
+                }
+            }
+
+            WorkerMonitoringLogger.BrowserHousekeepingFinished(closedOk, targets.Count);
+        }
+
+        await ReclaimLocalChromeProfilesAsync(localTargets, reason, cancellationToken, ignoreCancellation)
+            .ConfigureAwait(false);
+
+        _completedPassesSinceBrowserHousekeeping = 0;
+        _lastBrowserHousekeepingLocalDate = DateOnly.FromDateTime(DateTime.Now);
+    }
+
+    private async Task ReclaimLocalChromeProfilesAsync(
+        IReadOnlyList<AvitoAccount> accounts,
+        string reason,
+        CancellationToken cancellationToken,
+        bool ignoreCancellation)
+    {
+        if (_localChromeLauncher is null || accounts.Count == 0)
+        {
+            return;
+        }
+
+        WorkerMonitoringLogger.LocalChromeHousekeepingStarted(reason, accounts.Count);
         var closedOk = 0;
-        foreach (var account in targets)
+        foreach (var account in accounts)
         {
             if (!ignoreCancellation && cancellationToken.IsCancellationRequested)
             {
                 break;
             }
 
-            var options = new AdsPowerConnectionOptions(
-                account.AdsPowerApiBaseUrl!,
-                string.IsNullOrWhiteSpace(account.AdsPowerApiKey) ? null : account.AdsPowerApiKey);
-            if (await TryCloseAdsPowerBrowserForAccountAsync(account, options).ConfigureAwait(false))
+            try
             {
+                var dir = LocalChromePaths.NormalizeUserDataDir(account.BrowserProfilePath, account.Id);
+                var result = await _localChromeLauncher
+                    .ReclaimAsync(dir, CancellationToken.None)
+                    .ConfigureAwait(false);
                 closedOk++;
+                if (result.KilledProcessCount > 0)
+                {
+                    WorkerMonitoringLogger.LocalChromeReclaimed(account, result);
+                }
+            }
+            catch
+            {
+                // Housekeeping must continue across accounts.
             }
         }
 
-        WorkerMonitoringLogger.BrowserHousekeepingFinished(closedOk, targets.Count);
-        _completedPassesSinceBrowserHousekeeping = 0;
-        _lastBrowserHousekeepingLocalDate = DateOnly.FromDateTime(DateTime.Now);
+        WorkerMonitoringLogger.LocalChromeHousekeepingFinished(closedOk, accounts.Count);
     }
 
     private async Task HandleLoginRequiredForAccountAsync(
@@ -2598,7 +2721,9 @@ public sealed class WorkerMonitoringService(
     {
         account.Status = AvitoAccountStatus.RequiresLogin;
         var sub = FindSubProfile(account, loginEx.SubProfileId);
-        var detail = "требуется повторная авторизация в Avito — автовход не удался, откройте браузер AdsPower и войдите (телефон/почта и пароль).";
+        var detail = loginEx.RequiresPasswordResetSms
+            ? $"Avito сбросил пароль из-за защиты профиля. Автовход остановлен: получите SMS-код на {loginEx.PasswordResetSmsPhone}, установите новый пароль и войдите в браузере."
+            : "требуется повторная авторизация в Avito — автовход не удался, откройте браузер AdsPower и войдите (телефон/почта и пароль).";
         account.LastErrorMessage = sub is not null
             ? AccountIssueFormatting.FormatIssue(account, sub, AvitoSubProfileIssueKind.AuthRequired, detail)
             : detail;
@@ -2987,12 +3112,16 @@ public sealed class WorkerMonitoringService(
         && ex is not SessionDiagnosticException
         && !ShouldHandleAsSubProfileAutomationFailure(ex);
 
-    private static bool ShouldHandleAsSubProfileAutomationFailure(Exception ex) =>
+    internal static bool ShouldHandleAsSubProfileAutomationFailure(Exception ex) =>
         ex is not AdsPowerProxyFailureException
-        && (ex is AvitoPageMismatchException
+        && (AdsPowerCdpGuard.IsCdpTimeout(ex)
+            || ex is AvitoPageMismatchException
             or JsonException
             or PuppeteerException
             or InvalidOperationException);
+
+    internal static bool ShouldDeferSubProfileRetry(Exception ex, bool deferredRetry) =>
+        !deferredRetry && AdsPowerCdpGuard.IsCdpTimeout(ex);
 
     private async Task<bool> HandleSubProfileSwitchFailureAsync(
         AvitoAccount account,
@@ -3027,19 +3156,23 @@ public sealed class WorkerMonitoringService(
         CancellationToken ct)
     {
         AvitoPageState? pageState = null;
+        var transientCdpTimeout = AdsPowerCdpGuard.IsCdpTimeout(ex);
         if (ex is AvitoPageMismatchException mismatch && mismatch.ActualState is not null)
         {
             pageState = mismatch.ActualState;
         }
 
-        try
+        if (!transientCdpTimeout)
         {
-            var liveState = await session.GetPageStateAsync(ct).ConfigureAwait(false);
-            pageState = PreferPageState(pageState, liveState);
-        }
-        catch
-        {
-            // best effort
+            try
+            {
+                var liveState = await session.GetPageStateAsync(ct).ConfigureAwait(false);
+                pageState = PreferPageState(pageState, liveState);
+            }
+            catch
+            {
+                // best effort
+            }
         }
 
         var recoveryAttempts = ex is AvitoPageMismatchException mismatchEx
@@ -3050,17 +3183,59 @@ public sealed class WorkerMonitoringService(
         var blocking = AvitoAutomationFailureFormatter.IsAccountBlockingIssue(kind);
         WorkerMonitoringLogger.PageStateHint(account, sub, pageState);
         WorkerMonitoringLogger.SubProfileIssue(account, sub, kind, detail, blocking);
-        await PublishSubProfileIssueWithDiagnosticAsync(
-            account,
-            session,
-            sub,
-            kind,
-            detail,
-            ct,
-            pageState: pageState,
-            expectedStep: expectedStep).ConfigureAwait(false);
+        if (transientCdpTimeout)
+        {
+            await PublishSubProfileIssueWithoutSessionProbeAsync(
+                    account,
+                    session,
+                    sub,
+                    kind,
+                    detail,
+                    ct,
+                    expectedStep)
+                .ConfigureAwait(false);
+        }
+        else
+        {
+            await PublishSubProfileIssueWithDiagnosticAsync(
+                    account,
+                    session,
+                    sub,
+                    kind,
+                    detail,
+                    ct,
+                    pageState: pageState,
+                    expectedStep: expectedStep)
+                .ConfigureAwait(false);
+        }
 
         return blocking;
+    }
+
+    private async Task PublishSubProfileIssueWithoutSessionProbeAsync(
+        AvitoAccount account,
+        IAdsPowerAccountSession session,
+        AvitoSubProfile sub,
+        string kind,
+        string detail,
+        CancellationToken ct,
+        string expectedStep)
+    {
+        AccountIssueTracker.ApplySubProfileIssue(account, sub, kind, detail);
+        var message = AccountIssueFormatting.FormatIssue(account, sub, kind, detail);
+        var diagnostic = await WorkerDiagnosticEventDetailsBuilder.BuildAsync(
+                diagnosticsUploader,
+                account.Id,
+                $"subprofile-{kind}",
+                message,
+                session.CurrentPageUrl,
+                screenshotPng: null,
+                sub.Id,
+                sub.Name,
+                ct,
+                expectedStep: expectedStep)
+            .ConfigureAwait(false);
+        await PublishAccountEventAsync(account, "Warning", message, diagnostic.Details, ct).ConfigureAwait(false);
     }
 
     private static AvitoPageState? PreferPageState(AvitoPageState? primary, AvitoPageState? secondary)

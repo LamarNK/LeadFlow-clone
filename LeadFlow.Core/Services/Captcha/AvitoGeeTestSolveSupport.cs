@@ -41,6 +41,7 @@ public static class AvitoGeeTestSolveSupport
             return rect.width > 0 && rect.height > 0;
           };
           const detectKind = () => {
+            if (isVisible(document.querySelector('.geetest_box, .geetest_nine, [class*="geetest_box"]'))) return 'geetest';
             if (isVisible(document.querySelector('#geetest_captcha, .geetest_widget, [data-geetest]'))) return 'geetest';
             if (isVisible(document.querySelector('#h-captcha, .h-captcha, [data-hcaptcha-widget-id]'))) return 'hcaptcha';
             if (isVisible(document.querySelector('#inner-captcha, .js-form-captcha, .form-captcha'))) return 'internal';
@@ -316,6 +317,338 @@ public static class AvitoGeeTestSolveSupport
             System.Text.RegularExpressions.RegexOptions.IgnoreCase);
     }
 
+    /// <summary>
+    /// GeeTest v4 nine-grid на форме логина Avito, не firewall-страница.
+    /// </summary>
+    public static bool IsLoginGeeTestOverlay(string? html)
+    {
+        if (string.IsNullOrWhiteSpace(html))
+        {
+            return false;
+        }
+
+        if (html.Contains("firewall-container", StringComparison.OrdinalIgnoreCase)
+            || html.Contains("js-firewall-form", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return html.Contains("geetest_box", StringComparison.OrdinalIgnoreCase)
+               || html.Contains("geetest_nine", StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>Проверка GeeTest на форме логина, где ответом служит упорядоченная серия кликов.</summary>
+    public static bool IsLoginClickCaptchaOverlay(string? html)
+    {
+        if (!IsLoginGeeTestOverlay(html))
+        {
+            return false;
+        }
+
+        var hasInstructions = html!.Contains("geetest_ques_tips", StringComparison.OrdinalIgnoreCase);
+        var hasSingleImage = html.Contains("geetest_click", StringComparison.OrdinalIgnoreCase)
+                             && html.Contains("geetest_bg", StringComparison.OrdinalIgnoreCase);
+        // GeeTest nine-grid тоже возвращает координаты: worker выбирает плитки на
+        // едином 3x3 изображении. В этой разметке нет geetest_click/geetest_bg.
+        var hasNineGrid = html.Contains("geetest_nine", StringComparison.OrdinalIgnoreCase)
+                          && html.Contains("geetest_item", StringComparison.OrdinalIgnoreCase)
+                          && html.Contains("geetest_item_img", StringComparison.OrdinalIgnoreCase);
+        return hasInstructions && (hasSingleImage || hasNineGrid);
+    }
+
+    public static LoginClickCaptchaOutcome ClassifyLoginClickCaptchaOutcome(
+        bool overlayVisible,
+        bool explicitAccepted,
+        bool explicitRejected,
+        string? expectedFingerprint,
+        string? currentFingerprint)
+    {
+        if (!overlayVisible || explicitAccepted)
+        {
+            return LoginClickCaptchaOutcome.Accepted;
+        }
+
+        if (explicitRejected)
+        {
+            return LoginClickCaptchaOutcome.Rejected;
+        }
+
+        if (!string.IsNullOrWhiteSpace(expectedFingerprint)
+            && !string.IsNullOrWhiteSpace(currentFingerprint)
+            && !string.Equals(expectedFingerprint, currentFingerprint, StringComparison.Ordinal))
+        {
+            return LoginClickCaptchaOutcome.NextRound;
+        }
+
+        return LoginClickCaptchaOutcome.Pending;
+    }
+
+    public static LoginClickCaptchaState ParseLoginClickCaptchaState(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return LoginClickCaptchaState.Unknown;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(raw);
+            var root = document.RootElement;
+            return new LoginClickCaptchaState(
+                root.TryGetProperty("overlayVisible", out var visible) && visible.ValueKind == JsonValueKind.True,
+                root.TryGetProperty("explicitAccepted", out var accepted) && accepted.ValueKind == JsonValueKind.True,
+                root.TryGetProperty("explicitRejected", out var rejected) && rejected.ValueKind == JsonValueKind.True,
+                root.TryGetProperty("fingerprint", out var fingerprint) ? fingerprint.GetString() : null,
+                Readable: true);
+        }
+        catch (JsonException)
+        {
+            return LoginClickCaptchaState.Unknown;
+        }
+    }
+
+    public static string BuildReadLoginClickCaptchaStateScript() =>
+        """
+        (() => {
+          const isVisible = (el) => {
+            if (!el) return false;
+            for (let node = el; node && node.nodeType === Node.ELEMENT_NODE; node = node.parentElement) {
+              const style = window.getComputedStyle(node);
+              if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) return false;
+            }
+            const rect = el.getBoundingClientRect();
+            return rect.width > 0 && rect.height > 0;
+          };
+          const roots = Array.from(document.querySelectorAll('.geetest_box, [class*="geetest_box"]'));
+          const root = roots.find((el) => isVisible(el)
+            && el.querySelector('.geetest_ques_tips, [class*="geetest_ques_tips"]'));
+          if (!root) {
+            return JSON.stringify({ overlayVisible: false, explicitAccepted: false, explicitRejected: false, fingerprint: '' });
+          }
+
+          const statusNodes = root.querySelectorAll(
+            '.geetest_result_tips, [class*="geetest_result_tips"], .geetest_status_bar, [class*="geetest_status_bar"]');
+          const statusText = Array.from(statusNodes)
+            .filter(isVisible)
+            .map((el) => String(el.textContent || '').trim().toLowerCase())
+            .filter(Boolean)
+            .join(' ');
+          const statusClasses = [root, ...Array.from(statusNodes)]
+            .filter(isVisible)
+            .map((el) => String(el.className || '').toLowerCase())
+            .join(' ');
+          const explicitAccepted = /geetest_(success|pass)/.test(statusClasses)
+            || /(проверка пройдена|успешно|success|verified)/.test(statusText);
+          const explicitRejected = /geetest_(fail|error)/.test(statusClasses)
+            || /(невер|ошиб|повторите|попробуйте ещё|incorrect|try again|failed)/.test(statusText);
+
+          const imageNodes = Array.from(root.querySelectorAll(
+            '.geetest_bg, [class*="geetest_bg"], .geetest_item_img, [class*="geetest_item_img"]'))
+            .filter(isVisible);
+          const imageParts = imageNodes.map((el) => {
+            let background = '';
+            try { background = window.getComputedStyle(el).backgroundImage || ''; } catch {}
+            return `${el.style && el.style.backgroundImage || ''}|${background}`;
+          });
+          const hint = root.querySelector('.geetest_ques_tips img, [class*="geetest_ques_tips"] img');
+          const fingerprint = `${imageParts.join('||')}::${hint && hint.src || ''}`;
+          return JSON.stringify({ overlayVisible: true, explicitAccepted, explicitRejected, fingerprint });
+        })()
+        """;
+
+    public readonly record struct LoginGeeTestApplyResult(
+        bool Applied,
+        bool OverlayGone,
+        string? Method,
+        string? Error)
+    {
+        public static LoginGeeTestApplyResult Empty { get; } = new(false, false, null, null);
+
+        public bool Succeeded => Applied;
+    }
+
+    public static LoginGeeTestApplyResult ParseLoginApplyResult(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return LoginGeeTestApplyResult.Empty;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(raw);
+            var root = document.RootElement;
+            var applied = root.TryGetProperty("applied", out var appliedProp)
+                          && appliedProp.ValueKind == JsonValueKind.True;
+            var overlayGone = root.TryGetProperty("overlayGone", out var goneProp)
+                              && goneProp.ValueKind == JsonValueKind.True;
+            var method = root.TryGetProperty("method", out var methodProp) ? methodProp.GetString() : null;
+            var error = root.TryGetProperty("error", out var errorProp) ? errorProp.GetString() : null;
+            return new LoginGeeTestApplyResult(applied, overlayGone, method, error);
+        }
+        catch (JsonException)
+        {
+            return new LoginGeeTestApplyResult(false, false, null, "invalid-result");
+        }
+    }
+
+    public static string BuildExtractLoginCaptchaIdScript() =>
+        """
+        (() => {
+            const fromText = (text) => {
+                const match = String(text || "").match(/captcha_v4\/policy\/([0-9a-f]{32})/i);
+                return match ? match[1] : "";
+            };
+            const htmlId = fromText(document.documentElement && document.documentElement.innerHTML);
+            if (htmlId) return htmlId;
+            const nodes = document.querySelectorAll(
+                ".geetest_item_img, [class*='geetest_imgs'], [class*='geetest_item']");
+            for (const el of nodes) {
+                const inline = (el.style && el.style.backgroundImage) || "";
+                let computed = "";
+                try { computed = window.getComputedStyle(el).backgroundImage || ""; } catch {}
+                const id = fromText(inline) || fromText(computed);
+                if (id) return id;
+            }
+            return "";
+        })()
+        """;
+
+    public static string BuildRefreshLoginGeeTestScript() =>
+        """
+        (() => {
+            const isVisible = (el) => {
+              if (!el) return false;
+              for (let node = el; node && node.nodeType === Node.ELEMENT_NODE; node = node.parentElement) {
+                const style = window.getComputedStyle(node);
+                if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) return false;
+              }
+              const rect = el.getBoundingClientRect();
+              return rect.width > 0 && rect.height > 0;
+            };
+            const btn = Array.from(document.querySelectorAll(".geetest_refresh, [class*='geetest_refresh']"))
+              .find(isVisible);
+            if (!btn) return false;
+            try { btn.click(); return true; } catch { return false; }
+        })()
+        """;
+
+    public static string BuildApplyLoginGeeTestScript(GeeTestV4Solution solution)
+    {
+        var payload = JsonSerializer.Serialize(new Dictionary<string, string>
+        {
+            ["captcha_id"] = solution.CaptchaId,
+            ["lot_number"] = solution.LotNumber,
+            ["pass_token"] = solution.PassToken,
+            ["gen_time"] = solution.GenTime,
+            ["captcha_output"] = solution.CaptchaOutput
+        });
+
+        return $$"""
+            (async () => {
+              try {
+                const payload = {{payload}};
+                const overlaySelector = ".geetest_box, .geetest_nine, [class*='geetest_box']";
+                const isVisible = (el) => {
+                  if (!el) return false;
+                  const style = window.getComputedStyle(el);
+                  if (style.display === "none" || style.visibility === "hidden") return false;
+                  const rect = el.getBoundingClientRect();
+                  return rect.width > 0 && rect.height > 0;
+                };
+                const overlayVisible = () => isVisible(document.querySelector(overlaySelector));
+                const looksLikeCaptcha = (obj) =>
+                  obj && typeof obj === "object" &&
+                  (typeof obj.getValidate === "function"
+                    || typeof obj.showCaptcha === "function"
+                    || typeof obj.onSuccess === "function");
+                const fireSuccess = (obj) => {
+                  const lists = [];
+                  if (Array.isArray(obj._success)) lists.push(obj._success);
+                  if (Array.isArray(obj.success)) lists.push(obj.success);
+                  if (obj._events && Array.isArray(obj._events.success)) lists.push(obj._events.success);
+                  if (obj.handlers && Array.isArray(obj.handlers.success)) lists.push(obj.handlers.success);
+                  if (obj.__events && Array.isArray(obj.__events.success)) lists.push(obj.__events.success);
+                  for (const list of lists) {
+                    for (const cb of list) {
+                      if (typeof cb === "function") { try { cb(payload); } catch {} }
+                      else if (cb && typeof cb.fn === "function") { try { cb.fn(payload); } catch {} }
+                    }
+                  }
+                  if (typeof obj._emit === "function") { try { obj._emit("success", payload); } catch {} }
+                  if (typeof obj.emit === "function") { try { obj.emit("success", payload); } catch {} }
+                  if (typeof obj.close === "function") { try { obj.close(); } catch {} }
+                };
+                const patch = (obj) => {
+                  if (!looksLikeCaptcha(obj)) return false;
+                  try {
+                    obj.getValidate = () => payload;
+                    try { obj.result = payload; } catch {}
+                    fireSuccess(obj);
+                    return true;
+                  } catch { return false; }
+                };
+
+                let method = null;
+                const names = ["captchaObj", "captcha", "geetestObj", "geeTestObj", "gtCaptcha", "__geetest", "Geetest"];
+                for (const name of names) {
+                  try { if (patch(window[name])) { method = name; break; } } catch {}
+                }
+
+                if (!method) {
+                  const seen = new Set();
+                  const walk = (obj, depth) => {
+                    if (method || !obj || depth > 3) return;
+                    try {
+                      if (seen.has(obj)) return;
+                      seen.add(obj);
+                    } catch { return; }
+                    if (patch(obj)) { method = "walk"; return; }
+                    if (depth >= 3) return;
+                    try {
+                      for (const key of Object.keys(obj).slice(0, 40)) {
+                        let child;
+                        try { child = obj[key]; } catch { continue; }
+                        if (child && typeof child === "object") walk(child, depth + 1);
+                        if (method) return;
+                      }
+                    } catch {}
+                  };
+                  walk(window, 0);
+                }
+
+                document.querySelectorAll("input[name='captcha-response'], textarea[name='captcha-response']")
+                  .forEach((el) => {
+                    try {
+                      el.value = JSON.stringify(payload);
+                      el.dispatchEvent(new Event("input", { bubbles: true }));
+                      el.dispatchEvent(new Event("change", { bubbles: true }));
+                      if (!method) method = "hidden-input";
+                    } catch {}
+                  });
+
+                const box = document.querySelector(overlaySelector);
+                if (box) {
+                  try { box.style.display = "none"; } catch {}
+                }
+
+                return JSON.stringify({
+                  applied: !!method,
+                  overlayGone: !overlayVisible(),
+                  method: method || "none"
+                });
+              } catch (e) {
+                return JSON.stringify({
+                  applied: false,
+                  overlayGone: false,
+                  method: "none",
+                  error: String(e && e.message ? e.message : e)
+                });
+              }
+            })()
+            """;
+    }
+
     public static string BuildVerifyScript(GeeTestV4Solution solution)
     {
         var payload = JsonSerializer.Serialize(new Dictionary<string, string>
@@ -478,4 +811,23 @@ public static class AvitoGeeTestSolveSupport
             })()
             """;
     }
+}
+
+public enum LoginClickCaptchaOutcome
+{
+    Unknown,
+    Pending,
+    Accepted,
+    Rejected,
+    NextRound
+}
+
+public readonly record struct LoginClickCaptchaState(
+    bool OverlayVisible,
+    bool ExplicitAccepted,
+    bool ExplicitRejected,
+    string? Fingerprint,
+    bool Readable)
+{
+    public static LoginClickCaptchaState Unknown { get; } = new(false, false, false, null, false);
 }

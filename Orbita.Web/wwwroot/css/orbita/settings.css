@@ -1860,7 +1860,11 @@ body.telephony-modal-open { overflow: hidden; }
 }
 
 .card-footer-btn--inline {
+    width: auto;
+    min-width: 0;
+    flex: 0 0 auto;
     margin: 0;
+    padding: 0 16px;
     white-space: nowrap;
 }
 

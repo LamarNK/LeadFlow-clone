@@ -230,14 +230,15 @@ public sealed class WorkerShutdownService(
 
         lifetime.StopApplication();
 
-        if (Application.MessageLoop)
-        {
-            await WorkerLifecycleLog.InfoAsync(
-                "Worker lifecycle: Application.Exit()",
-                nameof(BeginShutdownAsync))
-                .ConfigureAwait(false);
-            Application.Exit();
-        }
+        // Application.MessageLoop is per-thread. After await this continues on the
+        // thread pool, where MessageLoop is false even though Main is blocked in
+        // Application.Run. Gating Exit on MessageLoop left the tray pump running;
+        // the restart .cmd then waited 120s and taskkill'd the still-alive process.
+        await WorkerLifecycleLog.InfoAsync(
+            "Worker lifecycle: Application.Exit()",
+            nameof(BeginShutdownAsync))
+            .ConfigureAwait(false);
+        Application.Exit();
 
         // Do not Environment.Exit after launching the installer or restart script:
         // ExitProcess can tear down a non-detached child cmd/msiexec and leave

@@ -145,6 +145,7 @@
     runtime.initCrmClientTimes();
     runtime.initBitrixValidateButtons();
     window.Orbita.initWorkerRestartButtons = runtime.initWorkerRestartButtons;
+    window.Orbita.initWorkerRunPassButtons = runtime.initWorkerRunPassButtons;
     window.Orbita.initCrmTaskEditButtons = runtime.initCrmTaskEditButtons;
     window.Orbita.initCrmClientTimes = runtime.initCrmClientTimes;
     window.Orbita.initWorkerAccountEnableToggles = runtime.initWorkerAccountEnableToggles;
