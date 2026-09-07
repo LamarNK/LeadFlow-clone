@@ -77,6 +77,7 @@ public sealed class CrmWorkspaceService(
             ResponseId = response.Id,
             OfficeId = officeId,
             Stage = initialStage,
+            EnteredCrmAtUtc = now,
             CreatedAtUtc = now,
             UpdatedAtUtc = now,
             StageChangedAtUtc = now,
@@ -1158,6 +1159,10 @@ public sealed class CrmWorkspaceService(
         var now = DateTime.UtcNow;
         var actorName = await ResolveDisplayNameAsync(actorUserId, ct);
         var previous = card.Stage;
+        if (string.Equals(previous, stage, StringComparison.Ordinal))
+        {
+            return (true, null);
+        }
         card.Stage = stage;
         card.StageChangedAtUtc = now;
         card.UpdatedAtUtc = now;
@@ -1504,6 +1509,7 @@ public sealed class CrmWorkspaceService(
 
         var now = DateTime.UtcNow;
         var actorName = await ResolveDisplayNameAsync(actorUserId, ct);
+        if (card.IsClosed) return (false, "Карточка уже закрыта.");
         var commentText = comment.Trim();
         card.IsClosed = true;
         card.CloseReason = reason;
@@ -1909,6 +1915,8 @@ public sealed class CrmWorkspaceService(
         {
             return false;
         }
+
+        if (!card.IsClosed) return true;
 
         var now = DateTime.UtcNow;
         var actorName = await ResolveDisplayNameAsync(actorUserId, ct);
@@ -2680,6 +2688,7 @@ public sealed class CrmWorkspaceService(
             ResponseId = response.Id,
             OfficeId = officeId,
             Stage = stage,
+            EnteredCrmAtUtc = now,
             CreatedAtUtc = now,
             UpdatedAtUtc = now,
             StageChangedAtUtc = now,
@@ -2698,7 +2707,7 @@ public sealed class CrmWorkspaceService(
         AddHistory(card.Id, "Created", "Карточка создана вручную", actorUserId, actorName, now);
         if (assignToActor)
         {
-            AddHistory(card.Id, "Assigned", actorName, actorUserId, actorName, now);
+            AddHistory(card.Id, "Assigned", actorName, actorUserId, actorName, now, actorUserId);
         }
 
         try
@@ -2887,6 +2896,7 @@ public sealed class CrmWorkspaceService(
                 ResponseId = response.Id,
                 OfficeId = officeId,
                 Stage = initialStage,
+                EnteredCrmAtUtc = now,
                 CreatedAtUtc = now,
                 UpdatedAtUtc = now,
                 StageChangedAtUtc = now,
@@ -3872,13 +3882,21 @@ public sealed class CrmWorkspaceService(
                  && (isAdmin || x.AssigneeUserId == userId),
             ct);
 
-    private void AddHistory(Guid cardId, string action, string? details, string actorUserId, string actorName, DateTime? at = null) =>
-        db.CrmCandidateHistory.Add(new CrmCandidateHistoryEntity
+    private void AddHistory(
+        Guid cardId,
+        string action,
+        string? details,
+        string actorUserId,
+        string actorName,
+        DateTime? at = null,
+        string? targetUserId = null) =>
+        db.AddCrmHistory(new CrmCandidateHistoryEntity
         {
             Id = Guid.NewGuid(),
             CardId = cardId,
             Action = action,
             Details = details,
+            TargetUserId = targetUserId,
             ActorUserId = actorUserId,
             ActorName = actorName,
             CreatedAtUtc = at ?? DateTime.UtcNow

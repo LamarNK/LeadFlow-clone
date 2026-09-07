@@ -2577,12 +2577,26 @@ public sealed class OrbitaApiClient(
         return board;
     }
 
+    public Task<CrmAnalyticsEvidenceDto?> GetCrmAnalyticsEvidenceAsync(
+        DateTime fromUtc, DateTime toUtc, Guid? officeId, string? managerUserId, string metric, int page,
+        CancellationToken ct = default, string? cohortBasis = null)
+    {
+        var url = WithOfficeQuery("api/v1/crm/analytics/evidence", officeId);
+        url = AppendQuery(url, "fromUtc", fromUtc.ToUniversalTime().ToString("O"));
+        url = AppendQuery(url, "toUtc", toUtc.ToUniversalTime().ToString("O"));
+        url = AppendQuery(url, "managerUserId", managerUserId);
+        url = AppendQuery(url, "metric", metric);
+        url = AppendQuery(url, "cohortBasis", cohortBasis);
+        url = AppendQuery(url, "page", page.ToString());
+        return GetAsync<CrmAnalyticsEvidenceDto>(url, ct);
+    }
+
     public Task<CrmAnalyticsDto?> GetCrmAnalyticsAsync(
         DateTime fromUtc,
         DateTime toUtc,
         Guid? officeId = null,
         string? managerUserId = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default, string? cohortBasis = null)
     {
         if (_preview.Enabled)
         {
@@ -2591,6 +2605,7 @@ public sealed class OrbitaApiClient(
         }
 
         var url = WithOfficeQuery("api/v1/crm/analytics", officeId);
+        url = AppendQuery(url, "cohortBasis", cohortBasis);
         url = AppendQuery(url, "fromUtc", fromUtc.ToUniversalTime().ToString("O"));
         url = AppendQuery(url, "toUtc", toUtc.ToUniversalTime().ToString("O"));
         url = AppendQuery(url, "managerUserId", managerUserId);

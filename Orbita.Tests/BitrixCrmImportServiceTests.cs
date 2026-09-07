@@ -157,6 +157,13 @@ public sealed class BitrixCrmImportServiceTests
         var card = await db.CrmCandidateCards.Include(x => x.Response).SingleAsync();
         Assert.Equal(BitrixCrmImportStages.MissedCall, card.Stage);
         Assert.Equal(managerId, card.ManagerUserId);
+        Assert.NotNull(card.EnteredCrmAtUtc);
+        Assert.True(card.EnteredCrmAtUtc > card.CreatedAtUtc);
+        Assert.Equal(card.EnteredCrmAtUtc, card.InitialAssignedAtUtc);
+        Assert.Equal(officeId, card.EntryOfficeId);
+        Assert.Equal(officeId, card.InitialAssignedOfficeId);
+        Assert.Equal(BitrixCrmImportStages.MissedCall, card.EntryStage);
+        Assert.Equal(managerId, (await db.CrmCandidateHistory.SingleAsync(x => x.Action == "Assigned")).TargetUserId);
         Assert.Equal("Подольск", card.Response.City);
         Assert.Equal("Сварщик", card.Response.Vacancy);
         Assert.Equal("41769", card.Response.BitrixEntityId);
@@ -175,6 +182,8 @@ public sealed class BitrixCrmImportServiceTests
             CancellationToken.None);
 
         Assert.Null(secondError);
+        Assert.Single(await db.CrmCandidateHistory.Where(x => x.Action == "Created").ToListAsync());
+        Assert.Single(await db.CrmCandidateHistory.Where(x => x.Action == "Assigned").ToListAsync());
         Assert.Equal(1, second!.AlreadyImported);
         Assert.Equal(1, await db.CrmCandidateCards.CountAsync());
         Assert.Equal(1, await db.CrmCandidateNotes.CountAsync());

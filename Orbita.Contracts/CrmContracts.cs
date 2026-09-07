@@ -414,7 +414,14 @@ public sealed record CrmAnalyticsQuery(
     DateTime FromUtc,
     DateTime ToUtc,
     Guid? OfficeId = null,
-    string? ManagerUserId = null);
+    string? ManagerUserId = null,
+    string? CohortBasis = null);
+
+public static class CrmAnalyticsCohortBases
+{
+    public const string Received = "received";
+    public const string FirstAssigned = "first-assigned";
+}
 
 public sealed record CrmAnalyticsDto(
     DateTime FromUtc,
@@ -428,7 +435,52 @@ public sealed record CrmAnalyticsDto(
     IReadOnlyList<CrmAnalyticsManagerDto> Managers,
     CrmAnalyticsDecompositionDto? Decomposition,
     DateTime GeneratedAtUtc,
-    CrmCallQualityAnalyticsDto? CallQuality = null);
+    CrmCallQualityAnalyticsDto? CallQuality = null,
+    CrmAnalyticsPeriodActivityDto? PeriodActivity = null,
+    string CohortBasis = CrmAnalyticsCohortBases.Received,
+    int InferredReceiptCards = 0,
+    CrmAnalyticsReceiptSummaryDto? ReceiptSummary = null);
+
+public sealed record CrmAnalyticsReceiptSummaryDto(int Received, int WithoutResponsible);
+
+/// <summary>
+/// Actual CRM events during the selected
+/// period. Unlike the receipt cohort, this includes work on cards received earlier.
+/// StageChanges counts transition events rather than unique cards.
+/// </summary>
+public sealed record CrmAnalyticsPeriodActivityDto(
+    int StageChanges,
+    int ClosedCards,
+    int SuccessfulClosedCards,
+    int StageChangesOutsideShift,
+    int ClosedCardsOutsideShift,
+    IReadOnlyList<CrmAnalyticsStageTransitionDto> StageTransitions,
+    int ReopenedCards = 0,
+    int ReturnedFromSuccess = 0,
+    int Assignments = 0,
+    int TransfersReceived = 0,
+    int TransfersSent = 0,
+    int UnattributedAssignments = 0,
+    int InferredContextEvents = 0,
+    int RepeatedClosuresWithoutReopen = 0);
+
+public sealed record CrmAnalyticsEvidenceRowDto(
+    Guid CardId, string CandidateName, DateTime AtUtc, string Action,
+    string? Details, string ActorName, string? ResponsibleName, bool OutsideShift, bool InferredContext,
+    IReadOnlyList<CrmAnalyticsEvidenceEventDto>? BasisEvents = null);
+
+public sealed record CrmAnalyticsEvidenceEventDto(
+    DateTime AtUtc, string Action, string? Details, string ActorName, string? ResponsibleName,
+    bool OutsideShift, bool InferredContext);
+
+public sealed record CrmAnalyticsEvidenceDto(
+    string Metric, int Total, int RestrictedCount, int Page, int PageSize,
+    IReadOnlyList<CrmAnalyticsEvidenceRowDto> Rows);
+
+public sealed record CrmAnalyticsStageTransitionDto(
+    string FromStage,
+    string ToStage,
+    int Count);
 
 public sealed record CrmCallQualityAnalyticsDto(
     int RecordedCalls,
@@ -491,7 +543,13 @@ public sealed record CrmAnalyticsOfficeFunnelDto(
     Guid OfficeId,
     string OfficeName,
     int Received,
-    IReadOnlyList<CrmAnalyticsFunnelStageDto> Stages);
+    IReadOnlyList<CrmAnalyticsFunnelStageDto> Stages,
+    IReadOnlyList<CrmAnalyticsEntrySourceDto>? EntrySources = null);
+
+public sealed record CrmAnalyticsEntrySourceDto(
+    string Stage,
+    int Count,
+    double PercentOfReceived);
 
 public sealed record CrmAnalyticsFunnelStageDto(
     string Stage,
@@ -500,7 +558,8 @@ public sealed record CrmAnalyticsFunnelStageDto(
     int ReachedCount,
     double ConversionFromPreviousPercent,
     double ConversionFromReceivedPercent,
-    bool IsArchive = false);
+    bool IsArchive = false,
+    int CreatedCount = 0);
 
 public sealed record CrmAnalyticsManagerOptionDto(
     string UserId,
@@ -525,7 +584,10 @@ public sealed record CrmAnalyticsManagerDto(
     int SuccessfulClosedCardsInPeriod,
     int TasksTotal,
     int OpenTasks,
-    int OverdueTasks);
+    int OverdueTasks,
+    int TransfersReceived = 0,
+    int TransfersSent = 0,
+    int ReopenedCardsInPeriod = 0);
 
 public sealed record CrmBoardDto(
     bool IsEnabled,

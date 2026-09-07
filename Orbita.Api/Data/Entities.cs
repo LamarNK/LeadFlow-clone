@@ -938,7 +938,12 @@ public sealed class CrmCandidateCardEntity
     public string? ManagerUserId { get; set; }
     public string? InitialManagerUserId { get; set; }
     public DateTime? InitialAssignedAtUtc { get; set; }
+    public Guid? InitialAssignedOfficeId { get; set; }
     public bool IsInActiveLoad { get; set; } = true;
+    /// <summary>When the card actually entered Orbita CRM; source creation time may be older.</summary>
+    public DateTime? EnteredCrmAtUtc { get; set; }
+    public Guid? EntryOfficeId { get; set; }
+    public string? EntryStage { get; set; }
     public DateTime CreatedAtUtc { get; set; }
     public DateTime UpdatedAtUtc { get; set; }
     public DateTime StageChangedAtUtc { get; set; }
@@ -1042,6 +1047,15 @@ public sealed class CrmCandidateHistoryEntity
     public Guid CardId { get; set; }
     public string Action { get; set; } = string.Empty;
     public string? Details { get; set; }
+    /// <summary>Structured target of assignment events; null for other history actions.</summary>
+    public string? TargetUserId { get; set; }
+    /// <summary>Immutable event context. Null on legacy history: do not infer from today's owner.</summary>
+    public Guid? OfficeId { get; set; }
+    public string? ResponsibleUserId { get; set; }
+    public string? PreviousUserId { get; set; }
+    public string? StageAtEvent { get; set; }
+    public string? PreviousCloseReason { get; set; }
+    public bool ContextInferred { get; set; }
     public string ActorUserId { get; set; } = string.Empty;
     public string ActorName { get; set; } = string.Empty;
     public DateTime CreatedAtUtc { get; set; }

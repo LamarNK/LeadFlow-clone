@@ -794,6 +794,15 @@ public sealed class CrmWorkspaceServiceTests
         var closeActivity = Assert.Single(detail!.Activity, item => item.Title == "Карточка закрыта");
         Assert.Equal(CrmCloseReasons.NotRelevant, closeActivity.Body);
         Assert.Equal("не интересно", closeActivity.ActionComment);
+        // Repeated commands must not manufacture a second analytical event.
+        Assert.False((await harness.Sut.CloseAsync(card.Id, CrmCloseReasons.NotRelevant, "повтор", manager.Id, false)).Ok);
+        Assert.Single(harness.Db.CrmCandidateHistory.Where(x => x.CardId == card.Id && x.Action == "Closed"));
+        Assert.True(await harness.Sut.ReopenAsync(card.Id, manager.Id, false));
+        Assert.True(await harness.Sut.ReopenAsync(card.Id, manager.Id, false));
+        var reopening = Assert.Single(harness.Db.CrmCandidateHistory.Where(x => x.CardId == card.Id && x.Action == "Reopened"));
+        Assert.Equal(CrmCloseReasons.NotRelevant, reopening.PreviousCloseReason);
+        Assert.Equal(OfficeId, reopening.OfficeId);
+        Assert.Equal(manager.Id, reopening.ResponsibleUserId);
     }
 
     [Fact]
@@ -1101,6 +1110,7 @@ public sealed class CrmWorkspaceServiceTests
         Assert.Equal(seniorManager.Id, card.ManagerUserId);
         Assert.Equal(seniorManager.Id, card.InitialManagerUserId);
         Assert.NotNull(card.InitialAssignedAtUtc);
+        Assert.NotNull(card.EnteredCrmAtUtc);
         Assert.Equal("Сидоров Сидор", card.Response.FullName);
         Assert.Equal("79001234567", card.Response.PhoneNormalized);
         Assert.Equal("Manual", card.Response.Source);
@@ -1132,10 +1142,14 @@ public sealed class CrmWorkspaceServiceTests
         Assert.Equal(manager.Id, card.ManagerUserId);
         Assert.Equal(manager.Id, card.InitialManagerUserId);
         Assert.NotNull(card.InitialAssignedAtUtc);
+        Assert.NotNull(card.EnteredCrmAtUtc);
         Assert.Equal("Сидоров Сидор", card.Response.FullName);
         Assert.Contains(
             harness.Db.CrmCandidateHistory,
-            x => x.CardId == cardId && x.Action == "Assigned" && x.ActorUserId == manager.Id);
+            x => x.CardId == cardId
+                 && x.Action == "Assigned"
+                 && x.ActorUserId == manager.Id
+                 && x.TargetUserId == manager.Id);
     }
 
     [Fact]
@@ -1472,6 +1486,8 @@ public sealed class CrmWorkspaceServiceTests
         var stageActivity = Assert.Single(detail!.Activity, item => item.Title == "Смена этапа");
         Assert.Equal("А → Б", stageActivity.Body);
         Assert.Equal("Кандидат готов продолжить", stageActivity.ActionComment);
+        Assert.True((await harness.Sut.MoveAsync(card.Id, "Б", "Повтор", manager.Id, false)).Ok);
+        Assert.Single(harness.Db.CrmCandidateHistory.Where(x => x.CardId == card.Id && x.Action == "StageChanged"));
     }
 
     [Fact]

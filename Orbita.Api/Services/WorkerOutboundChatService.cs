@@ -172,7 +172,7 @@ public sealed class WorkerOutboundChatService(OrbitaDbContext db, IPanelRealtime
             message.SentAtUtc = now;
             message.DeliveryClaimedByWorkerId = null;
             message.DeliveryClaimedAtUtc = null;
-            db.CrmCandidateHistory.Add(new CrmCandidateHistoryEntity
+            db.AddCrmHistory(new CrmCandidateHistoryEntity
             {
                 Id = Guid.NewGuid(),
                 CardId = message.CardId,

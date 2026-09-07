@@ -63,6 +63,32 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
     public DbSet<CaptchaSessionEntity> CaptchaSessions => Set<CaptchaSessionEntity>();
     public DbSet<TopUpSessionEntity> TopUpSessions => Set<TopUpSessionEntity>();
 
+    /// <summary>Capture context when a production action is recorded, not when it is reported.</summary>
+    public void AddCrmHistory(CrmCandidateHistoryEntity history)
+    {
+        var entry = ChangeTracker.Entries<CrmCandidateCardEntity>()
+            .FirstOrDefault(x => x.Entity.Id == history.CardId);
+        if (entry is not null)
+        {
+            var card = entry.Entity;
+            history.OfficeId = card.OfficeId;
+            history.ResponsibleUserId = card.ManagerUserId;
+            history.StageAtEvent = card.Stage;
+            if (entry.State == EntityState.Added)
+            {
+                card.EntryOfficeId ??= card.OfficeId;
+                card.EntryStage ??= card.Stage;
+                if (!string.IsNullOrWhiteSpace(card.InitialManagerUserId)) card.InitialAssignedOfficeId ??= card.OfficeId;
+            }
+            else
+            {
+                history.PreviousUserId ??= entry.OriginalValues.GetValue<string?>(nameof(card.ManagerUserId));
+                history.PreviousCloseReason ??= entry.OriginalValues.GetValue<string?>(nameof(card.CloseReason));
+            }
+        }
+        CrmCandidateHistory.Add(history);
+    }
+
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -322,12 +348,15 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
         {
             entity.HasKey(x => x.Id);
             entity.HasIndex(x => x.ResponseId).IsUnique();
+            entity.HasIndex(x => new { x.OfficeId, x.EnteredCrmAtUtc });
             entity.HasIndex(x => new { x.OfficeId, x.ManagerUserId, x.IsInActiveLoad });
             entity.HasIndex(x => new { x.OfficeId, x.InitialManagerUserId, x.InitialAssignedAtUtc })
                 .HasDatabaseName("IX_CrmCards_Office_InitialManager_AssignedAt");
             entity.HasIndex(x => new { x.OfficeId, x.Stage });
             entity.HasIndex(x => new { x.OfficeId, x.IsClosed, x.NextActionAtUtc });
             entity.Property(x => x.Stage).HasMaxLength(64);
+            entity.Property(x => x.EntryStage).HasMaxLength(64);
+            entity.HasIndex(x => new { x.EntryOfficeId, x.EnteredCrmAtUtc });
             entity.Property(x => x.ManagerUserId).HasMaxLength(128);
             entity.Property(x => x.InitialManagerUserId).HasMaxLength(128);
             entity.Property(x => x.CloseReason).HasMaxLength(64);
@@ -430,6 +459,12 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
                 .HasDatabaseName("IX_CrmHistory_Action_CreatedAt_Card");
             entity.Property(x => x.Action).HasMaxLength(64);
             entity.Property(x => x.Details).HasMaxLength(2000);
+            entity.Property(x => x.TargetUserId).HasMaxLength(128);
+            entity.Property(x => x.ResponsibleUserId).HasMaxLength(128);
+            entity.Property(x => x.PreviousUserId).HasMaxLength(128);
+            entity.Property(x => x.StageAtEvent).HasMaxLength(64);
+            entity.Property(x => x.PreviousCloseReason).HasMaxLength(64);
+            entity.HasIndex(x => new { x.OfficeId, x.CreatedAtUtc, x.Action });
             entity.Property(x => x.ActorUserId).HasMaxLength(128);
             entity.Property(x => x.ActorName).HasMaxLength(256);
         });

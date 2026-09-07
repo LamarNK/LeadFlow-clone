@@ -287,6 +287,7 @@ public static class OrbitaApiStartupExtensions
         builder.Services.Configure<CrmTelephonyWebRtcOptions>(builder.Configuration.GetSection(CrmTelephonyWebRtcOptions.SectionName));
         builder.Services.Configure<CrmSipRuntimeOptions>(builder.Configuration.GetSection(CrmSipRuntimeOptions.SectionName));
         builder.Services.Configure<CrmDeadlineNotificationOptions>(builder.Configuration.GetSection(CrmDeadlineNotificationOptions.SectionName));
+        builder.Services.Configure<CrmAnalyticsOptions>(builder.Configuration.GetSection(CrmAnalyticsOptions.SectionName));
         builder.Services.Configure<ServiceLogsOptions>(builder.Configuration.GetSection(ServiceLogsOptions.SectionName));
         builder.Services.AddSingleton<WorkerReleaseService>();
         builder.Services.AddScoped<WorkerDiagnosticsService>();

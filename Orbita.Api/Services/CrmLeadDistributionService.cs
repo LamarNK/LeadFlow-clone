@@ -112,6 +112,7 @@ public sealed class CrmLeadDistributionService(
             AddAssignedHistory(
                 card.Id,
                 ReasonDailyLead,
+                selected,
                 actorUserId ?? "system",
                 actorName ?? "Система",
                 now);
@@ -175,6 +176,7 @@ public sealed class CrmLeadDistributionService(
                 AddAssignedHistory(
                     card.Id,
                     ReasonFileImport,
+                    assignment.ManagerUserId,
                     actorUserId,
                     actorName,
                     now);
@@ -323,12 +325,19 @@ public sealed class CrmLeadDistributionService(
         ApplyAssignment(card, managerUserId, now);
         if (card.IsClosed)
         {
+            db.AddCrmHistory(new CrmCandidateHistoryEntity
+            {
+                Id = Guid.NewGuid(), CardId = card.Id, Action = "Reopened",
+                Details = "Возврат в работу при назначении", ActorUserId = actorUserId,
+                ActorName = actorName, CreatedAtUtc = now,
+                PreviousCloseReason = card.CloseReason
+            });
             card.IsClosed = false;
             card.CloseReason = null;
             card.ClosedAtUtc = null;
         }
 
-        AddAssignedHistory(card.Id, managerDisplayName, actorUserId, actorName, now);
+        AddAssignedHistory(card.Id, managerDisplayName, managerUserId, actorUserId, actorName, now);
     }
 
     public async Task<int> GetActiveLoadAsync(Guid officeId, string managerUserId, CancellationToken ct = default)
@@ -597,12 +606,12 @@ public sealed class CrmLeadDistributionService(
                 var previous = card.Stage;
                 card.Stage = normalizeNdzTo;
                 card.StageChangedAtUtc = now;
-                db.CrmCandidateHistory.Add(new CrmCandidateHistoryEntity
+                db.AddCrmHistory(new CrmCandidateHistoryEntity
                 {
                     Id = Guid.NewGuid(),
                     CardId = card.Id,
                     Action = "StageChanged",
-                    Details = $"{previous} → {normalizeNdzTo} · {reason}",
+                    Details = CrmActivityDetails.WithComment($"{previous} → {normalizeNdzTo}", reason),
                     ActorUserId = "system",
                     ActorName = "Система",
                     CreatedAtUtc = now
@@ -613,7 +622,7 @@ public sealed class CrmLeadDistributionService(
             IncrementCounter(counters, officeId, localDate, pool, assignment.ManagerUserId, now);
             if (ownerChanged)
             {
-                AddAssignedHistory(card.Id, reason, "system", "Система", now);
+                AddAssignedHistory(card.Id, reason, assignment.ManagerUserId, "system", "Система", now);
             }
         }
     }
@@ -748,6 +757,7 @@ public sealed class CrmLeadDistributionService(
         {
             card.InitialManagerUserId = managerUserId;
             card.InitialAssignedAtUtc = now;
+            card.InitialAssignedOfficeId = card.OfficeId;
         }
 
         card.ManagerUserId = managerUserId;
@@ -758,15 +768,17 @@ public sealed class CrmLeadDistributionService(
     private void AddAssignedHistory(
         Guid cardId,
         string details,
+        string targetUserId,
         string actorUserId,
         string actorName,
         DateTime at) =>
-        db.CrmCandidateHistory.Add(new CrmCandidateHistoryEntity
+        db.AddCrmHistory(new CrmCandidateHistoryEntity
         {
             Id = Guid.NewGuid(),
             CardId = cardId,
             Action = "Assigned",
             Details = details,
+            TargetUserId = targetUserId,
             ActorUserId = actorUserId,
             ActorName = actorName,
             CreatedAtUtc = at

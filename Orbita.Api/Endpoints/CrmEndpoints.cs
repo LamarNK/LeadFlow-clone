@@ -195,6 +195,7 @@ public static class CrmEndpoints
             DateTime? toUtc,
             Guid? officeId,
             string? managerUserId,
+            string? cohortBasis,
             CancellationToken ct) =>
         {
             var isAdmin = PanelRoles.HasElevatedOfficeAccess(principal);
@@ -222,7 +223,7 @@ public static class CrmEndpoints
                     DateTimeUtcHelper.EnsureUtc(from),
                     DateTimeUtcHelper.EnsureUtc(to),
                     officeId,
-                    managerUserId),
+                    managerUserId, cohortBasis),
                 ct);
 
             return result.Outcome switch
@@ -233,6 +234,25 @@ public static class CrmEndpoints
                 _ => Results.Forbid()
             };
         });
+
+        crmAnalytics.MapGet("/analytics/evidence", async (
+            CrmAnalyticsQueryService analytics, OfficeScopeService officeScope, ClaimsPrincipal principal,
+            DateTime fromUtc, DateTime toUtc, string metric, Guid? officeId, string? managerUserId,
+            int? page, string? cohortBasis, CancellationToken ct) =>
+        {
+            var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier) ?? principal.FindFirstValue("sub");
+            if (string.IsNullOrWhiteSpace(userId)) return Results.Forbid();
+            var result = await analytics.GetEvidenceAsync(await officeScope.ResolveAsync(principal, ct),
+                userId, PanelRoles.HasElevatedOfficeAccess(principal),
+                new CrmAnalyticsQuery(fromUtc, toUtc, officeId, managerUserId, cohortBasis), metric, page ?? 1, ct);
+            return result.Outcome switch
+            {
+                CrmAnalyticsQueryOutcome.Success => Results.Ok(result.Data),
+                CrmAnalyticsQueryOutcome.BadRequest => Results.BadRequest(),
+                CrmAnalyticsQueryOutcome.NotFound => Results.NotFound(),
+                _ => Results.Forbid()
+            };
+        }).RequireAuthorization(PanelPermissions.CrmBoard);
 
         crmTasks.MapGet("/tasks", async (
             Guid? officeId,

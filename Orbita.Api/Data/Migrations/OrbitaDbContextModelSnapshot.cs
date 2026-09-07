@@ -1362,6 +1362,9 @@ namespace Orbita.Api.Data.Migrations
                     b.Property<DateTime>("CreatedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<DateTime?>("EnteredCrmAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<DateTime?>("InitialAssignedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
@@ -1406,12 +1409,20 @@ namespace Orbita.Api.Data.Migrations
                     b.Property<DateTime>("UpdatedAtUtc")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<Guid?>("EntryOfficeId").HasColumnType("uuid");
+                    b.Property<Guid?>("InitialAssignedOfficeId").HasColumnType("uuid");
+                    b.Property<string>("EntryStage").HasMaxLength(64).HasColumnType("character varying(64)");
+
                     b.HasKey("Id");
+                    b.HasIndex("EntryOfficeId", "EnteredCrmAtUtc");
+
 
                     b.HasIndex("ResponseId")
                         .IsUnique();
 
                     b.HasIndex("OfficeId", "Stage");
+
+                    b.HasIndex("OfficeId", "EnteredCrmAtUtc");
 
                     b.HasIndex("OfficeId", "InitialManagerUserId", "InitialAssignedAtUtc")
                         .HasDatabaseName("IX_CrmCards_Office_InitialManager_AssignedAt");
@@ -1454,7 +1465,20 @@ namespace Orbita.Api.Data.Migrations
                         .HasMaxLength(2000)
                         .HasColumnType("character varying(2000)");
 
+                    b.Property<string>("TargetUserId")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<Guid?>("OfficeId").HasColumnType("uuid");
+                    b.Property<string>("ResponsibleUserId").HasMaxLength(128).HasColumnType("character varying(128)");
+                    b.Property<string>("PreviousUserId").HasMaxLength(128).HasColumnType("character varying(128)");
+                    b.Property<string>("StageAtEvent").HasMaxLength(64).HasColumnType("character varying(64)");
+                    b.Property<string>("PreviousCloseReason").HasMaxLength(64).HasColumnType("character varying(64)");
+                    b.Property<bool>("ContextInferred").HasColumnType("boolean");
+
                     b.HasKey("Id");
+                    b.HasIndex("OfficeId", "CreatedAtUtc", "Action");
+
 
                     b.HasIndex("CardId", "CreatedAtUtc");
 

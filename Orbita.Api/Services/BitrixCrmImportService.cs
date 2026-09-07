@@ -377,8 +377,12 @@ public sealed class BitrixCrmImportService(
                 Stage = deal.StageName,
                 ManagerUserId = managerUserId,
                 InitialManagerUserId = managerUserId,
-                InitialAssignedAtUtc = managerUserId is null ? null : deal.CreatedAtUtc,
+                InitialAssignedAtUtc = managerUserId is null ? null : now,
+                EntryOfficeId = context.OfficeId,
+                EntryStage = deal.StageName,
+                InitialAssignedOfficeId = managerUserId is null ? null : context.OfficeId,
                 IsInActiveLoad = true,
+                EnteredCrmAtUtc = now,
                 CreatedAtUtc = deal.CreatedAtUtc,
                 UpdatedAtUtc = now,
                 StageChangedAtUtc = deal.UpdatedAtUtc
@@ -386,6 +390,21 @@ public sealed class BitrixCrmImportService(
             db.CandidatePersons.Add(person);
             db.CandidateResponses.Add(response);
             db.CrmCandidateCards.Add(card);
+            db.AddCrmHistory(new CrmCandidateHistoryEntity
+            {
+                Id = Guid.NewGuid(), CardId = card.Id, Action = "Created",
+                Details = "Поступление карточки из Bitrix24", ActorUserId = actorUserId,
+                ActorName = "Импорт Bitrix24", CreatedAtUtc = now
+            });
+            if (managerUserId is not null)
+            {
+                db.AddCrmHistory(new CrmCandidateHistoryEntity
+                {
+                    Id = Guid.NewGuid(), CardId = card.Id, Action = "Assigned", TargetUserId = managerUserId,
+                    Details = "Первичное назначение при импорте из Bitrix24", ActorUserId = actorUserId,
+                    ActorName = "Импорт Bitrix24", CreatedAtUtc = now
+                });
+            }
             db.CandidateContactPhones.Add(new CandidateContactPhoneEntity
             {
                 Id = Guid.NewGuid(),
@@ -407,13 +426,15 @@ public sealed class BitrixCrmImportService(
             });
         }
 
+        card.EnteredCrmAtUtc ??= now;
         card.Stage = deal.StageName;
         var effectiveManagerUserId = managerUserId ?? card.ManagerUserId;
         if (string.IsNullOrWhiteSpace(card.InitialManagerUserId)
             && !string.IsNullOrWhiteSpace(effectiveManagerUserId))
         {
             card.InitialManagerUserId = effectiveManagerUserId;
-            card.InitialAssignedAtUtc = card.CreatedAtUtc;
+            card.InitialAssignedAtUtc = now;
+            card.InitialAssignedOfficeId = card.OfficeId;
         }
 
         card.ManagerUserId = effectiveManagerUserId;
@@ -833,7 +854,7 @@ public sealed class BitrixCrmImportService(
         long externalId,
         string actorUserId,
         DateTime now) =>
-        db.CrmCandidateHistory.Add(new CrmCandidateHistoryEntity
+        db.AddCrmHistory(new CrmCandidateHistoryEntity
         {
             Id = Guid.NewGuid(),
             CardId = cardId,

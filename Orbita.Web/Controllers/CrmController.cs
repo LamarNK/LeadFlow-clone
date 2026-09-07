@@ -21,10 +21,37 @@ public sealed class CrmController(
 {
     [HttpGet]
     [Authorize(Policy = PanelPermissions.CrmAnalytics)]
+    [Authorize(Policy = PanelPermissions.CrmBoard)]
+    public async Task<IActionResult> AnalyticsEvidence(string? from, string? to, string metric,
+        string? managerUserId, string? report, string? leadView, string? cohortBasis = null, string? returnManagerUserId = null,
+        int page = 1, Guid? evidenceOfficeId = null, CancellationToken ct = default)
+    {
+        var tz = BrowserTimeZone.Resolve(HttpContext);
+        var period = DashboardPeriod.Parse(from, to, tz);
+        var (fromUtc, toUtc) = LocalCalendarDateRange.ToUtcRange(period);
+        var manager = PanelRoles.HasElevatedOfficeAccess(User) ? managerUserId : null;
+        var resolvedOffice = officeContext.EffectiveOfficeId ?? evidenceOfficeId;
+        var basis = cohortBasis == CrmAnalyticsCohortBases.FirstAssigned ? cohortBasis : CrmAnalyticsCohortBases.Received;
+        var data = await api.GetCrmAnalyticsEvidenceAsync(fromUtc, toUtc, resolvedOffice, manager, metric, page, ct, basis);
+        return View(new CrmAnalyticsEvidenceViewModel
+        {
+            Data = data, Metric = metric, From = period.From.ToString("yyyy-MM-dd"), To = period.To.ToString("yyyy-MM-dd"),
+            ManagerUserId = manager, EvidenceOfficeId = resolvedOffice, Report = report == "leads" ? "leads" : "activity",
+            LeadView = leadView == "progress" ? "progress" : "snapshot", TimeZoneOffset = tz,
+            CohortBasis = basis,
+            ReturnManagerUserId = returnManagerUserId == "all" ? null
+                : Request.Query.ContainsKey("returnManagerUserId") ? returnManagerUserId : manager,
+            Header = new() { Title = "Из чего сложился показатель", Subtitle = period.Label }
+        });
+    }
+
+    [HttpGet]
+    [Authorize(Policy = PanelPermissions.CrmAnalytics)]
     public async Task<IActionResult> Analytics(
         string? from,
         string? to,
         string? managerUserId,
+        string? cohortBasis = null,
         CancellationToken ct = default)
     {
         var tz = BrowserTimeZone.Resolve(HttpContext);
@@ -41,7 +68,7 @@ public sealed class CrmController(
             toUtc,
             officeContext.EffectiveOfficeId,
             selectedManagerUserId,
-            ct);
+            ct, cohortBasis == CrmAnalyticsCohortBases.FirstAssigned ? cohortBasis : CrmAnalyticsCohortBases.Received);
 
         return View(new CrmAnalyticsViewModel
         {

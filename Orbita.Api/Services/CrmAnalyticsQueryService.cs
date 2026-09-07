@@ -1,7 +1,9 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 using System.Text.Json;
 using Orbita.Api.Data;
 using Orbita.Api.Helpers;
+using Orbita.Api.Options;
 using Orbita.Contracts;
 
 namespace Orbita.Api.Services;
@@ -33,23 +35,23 @@ public sealed record CrmAnalyticsQueryResult(
 }
 
 /// <summary>
-/// Read-only server-side CRM analytics. General period metrics use a card-created cohort,
-/// while the close-reason breakdown uses close events recorded inside the selected period.
-/// Decomposition receipt attribution requires the first assignment to fall inside the manager's
-/// recorded shift. Its activity metrics use the actual actor and action time, but only for cards
-/// from the same selected cohort; aggregate mode counts every card once. Manager load and task
-/// metrics are a current snapshot.
+/// Read-only server-side CRM analytics. Receipt KPIs and the funnel use a period cohort,
+/// period activity uses actual stage/close events from every card, and manager load/task
+/// metrics are a current snapshot. Work events belong to their actual actor; shift records
+/// annotate, but never suppress, them. Receipt belongs to the first assignment, transfers
+/// to the recorded recipient. Cohort progress includes work by subsequent owners.
 /// </summary>
-public sealed class CrmAnalyticsQueryService(
+public sealed partial class CrmAnalyticsQueryService(
     OrbitaDbContext db,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    IOptions<CrmAnalyticsOptions> analyticsOptions)
 {
     private const string NoCloseReason = "Без причины";
-    private const string RemovedStagesBucket = "Удалённые этапы";
     private const int MaxPeriodDays = LocalCalendarDateRange.MaxCalendarDays;
     private const string FunnelUpdatedSuffix = " (воронка обновлена)";
     private const string ReachedNegotiationsBreakdown = "Переговоры и дальше";
-    private const string SuccessfulCloseBreakdown = "Успешно закрыто";
+    private const string SuccessfulCloseBreakdown = "Было закрытие «Успех»";
+    private readonly CrmAnalyticsOptions analyticsOptions = analyticsOptions.Value;
     private static readonly IReadOnlyList<string> ContactCloseReasons =
     [
         CrmCloseReasons.Woman,
@@ -69,6 +71,8 @@ public sealed class CrmAnalyticsQueryService(
         CrmAnalyticsQuery query,
         CancellationToken ct = default)
     {
+        evidence.Clear();
+        evidenceProofs.Clear();
         if (string.IsNullOrWhiteSpace(requesterUserId) || !scope.HasAccess)
         {
             return CrmAnalyticsQueryResult.Forbidden("Нет доступа к CRM-аналитике.");
@@ -132,7 +136,8 @@ public sealed class CrmAnalyticsQueryService(
         {
             // Keep active CRM offices and offices with historical CRM cards.
             officesQuery = officesQuery.Where(x =>
-                x.CrmEnabled || db.CrmCandidateCards.Any(card => card.OfficeId == x.Id));
+                x.CrmEnabled || db.CrmCandidateCards.Any(card => card.OfficeId == x.Id || card.EntryOfficeId == x.Id)
+                || db.CrmCandidateHistory.Any(history => history.OfficeId == x.Id));
         }
         else
         {
@@ -170,45 +175,49 @@ public sealed class CrmAnalyticsQueryService(
         }
 
         var generatedAtUtc = DateTimeUtcHelper.EnsureUtc(timeProvider.GetUtcNow().UtcDateTime);
-        var activityManagerIds = selectedManagerProfiles
-            .Select(x => x.UserId)
-            .Distinct(StringComparer.Ordinal)
-            .ToArray();
-        var activityShifts = await LoadShiftWindowsAsync(
-            officeIds,
-            activityManagerIds,
-            fromUtc,
-            toUtc,
-            generatedAtUtc,
-            ct);
+
+        // Older API clients retain their receipt convention. The UI always sends an explicit
+        // basis, so selecting a manager cannot silently change the period's meaning.
+        var cohortBasis = query.CohortBasis ?? (effectiveManagerUserId is null
+            ? CrmAnalyticsCohortBases.Received : CrmAnalyticsCohortBases.FirstAssigned);
+        if (cohortBasis is not (CrmAnalyticsCohortBases.Received or CrmAnalyticsCohortBases.FirstAssigned))
+            return CrmAnalyticsQueryResult.BadRequest("Неизвестное основание отбора лидов.");
+        var firstAssignedCohort = cohortBasis == CrmAnalyticsCohortBases.FirstAssigned;
 
         var cohortQuery = db.CrmCandidateCards
             .AsNoTracking()
-            .Where(x => officeIds.Contains(x.OfficeId));
+            .Where(x => officeIds.Contains(firstAssignedCohort
+                ? x.InitialAssignedOfficeId ?? x.OfficeId : x.EntryOfficeId ?? x.OfficeId));
         if (effectiveManagerUserId is not null)
         {
             cohortQuery = cohortQuery.Where(x =>
                 (x.InitialManagerUserId == effectiveManagerUserId
                  || ((x.InitialManagerUserId == null || x.InitialManagerUserId == "")
-                     && x.ManagerUserId == effectiveManagerUserId))
+                     && x.ManagerUserId == effectiveManagerUserId)));
+        }
+        if (firstAssignedCohort)
+        {
+            cohortQuery = cohortQuery.Where(x =>
+                ((x.InitialManagerUserId != null && x.InitialManagerUserId != "")
+                 || (x.ManagerUserId != null && x.ManagerUserId != ""))
                 && ((x.InitialAssignedAtUtc.HasValue
                      && x.InitialAssignedAtUtc.Value >= fromUtc
                      && x.InitialAssignedAtUtc.Value < toUtc)
                     || (!x.InitialAssignedAtUtc.HasValue
-                        && x.CreatedAtUtc >= fromUtc
-                        && x.CreatedAtUtc < toUtc)));
+                        && (x.EnteredCrmAtUtc ?? x.CreatedAtUtc) >= fromUtc
+                        && (x.EnteredCrmAtUtc ?? x.CreatedAtUtc) < toUtc)));
         }
         else
         {
             cohortQuery = cohortQuery.Where(x =>
-                x.CreatedAtUtc >= fromUtc
-                && x.CreatedAtUtc < toUtc);
+                (x.EnteredCrmAtUtc ?? x.CreatedAtUtc) >= fromUtc
+                && (x.EnteredCrmAtUtc ?? x.CreatedAtUtc) < toUtc);
         }
 
         var cohort = await cohortQuery
             .Select(x => new CardRow(
                 x.Id,
-                x.OfficeId,
+                firstAssignedCohort ? x.InitialAssignedOfficeId ?? x.OfficeId : x.EntryOfficeId ?? x.OfficeId,
                 x.Stage,
                 x.ManagerUserId,
                 x.IsClosed,
@@ -216,28 +225,38 @@ public sealed class CrmAnalyticsQueryService(
                 x.InitialManagerUserId == null || x.InitialManagerUserId == ""
                     ? x.ManagerUserId
                     : x.InitialManagerUserId,
-                x.InitialAssignedAtUtc ?? x.CreatedAtUtc))
+                x.InitialAssignedAtUtc ?? x.EnteredCrmAtUtc ?? x.CreatedAtUtc,
+                x.EntryStage,
+                x.EnteredCrmAtUtc ?? x.CreatedAtUtc))
             .ToListAsync(ct);
 
+        var cards = BuildCardMetrics(cohort, effectiveManagerUserId);
+        // The activity report must still surface fresh, not-yet-assigned cards even when
+        // there are no actions. This uses a fixed entry-date basis, independent of the tabs.
+        var periodReceiptsQuery = db.CrmCandidateCards.AsNoTracking()
+            .Where(x => officeIds.Contains(x.EntryOfficeId ?? x.OfficeId)
+                && (x.EnteredCrmAtUtc ?? x.CreatedAtUtc) >= fromUtc && (x.EnteredCrmAtUtc ?? x.CreatedAtUtc) < toUtc);
         if (effectiveManagerUserId is not null)
-        {
-            cohort = cohort
-                .Where(card => card.AttributedManagerUserId is not null
-                               && activityShifts.Contains(
-                                   card.OfficeId,
-                                   card.AttributedManagerUserId,
-                                   card.AttributedAtUtc))
-                .ToList();
-        }
-
-        var cards = BuildCardMetrics(cohort);
-        var closeReasons = BuildCloseReasons(await LoadCloseEventsAsync(
+            periodReceiptsQuery = periodReceiptsQuery.Where(x => x.InitialManagerUserId == effectiveManagerUserId
+                || ((x.InitialManagerUserId == null || x.InitialManagerUserId == "") && x.ManagerUserId == effectiveManagerUserId));
+        var receiptSummary = new CrmAnalyticsReceiptSummaryDto(await periodReceiptsQuery.CountAsync(ct),
+            await periodReceiptsQuery.CountAsync(x => x.ManagerUserId == null || x.ManagerUserId == "", ct));
+        AddCardEvidence("cohort.received", cohort.Select(x => x.Id));
+        AddCardEvidence("cohort.unassigned", cohort.Where(x => string.IsNullOrWhiteSpace(x.CurrentManagerUserId)).Select(x => x.Id));
+        AddCardEvidence("cohort.assigned", cohort.Where(x => effectiveManagerUserId is null
+            ? !string.IsNullOrWhiteSpace(x.CurrentManagerUserId) : x.CurrentManagerUserId == effectiveManagerUserId).Select(x => x.Id));
+        AddCardEvidence("cohort.active", cohort.Where(x => !x.IsClosed).Select(x => x.Id));
+        AddCardEvidence("cohort.closed", cohort.Where(x => x.IsClosed).Select(x => x.Id));
+        AddCardEvidence("cohort.success", cohort.Where(x => x.IsClosed && x.CloseReason == CrmCloseReasons.Success).Select(x => x.Id));
+        var periodActivityResult = await LoadPeriodActivityAsync(
             officeIds,
             effectiveManagerUserId,
             fromUtc,
             toUtc,
-            ct));
-        var stageHistories = await LoadStageHistoriesAsync(cohort, ct);
+            generatedAtUtc,
+            ct);
+        var closeReasons = BuildCloseReasons(periodActivityResult.CloseEvents);
+        var stageHistories = await LoadStageHistoriesAsync(cohort, fromUtc, toUtc, ct);
         var funnels = BuildFunnels(offices, cohort, stageHistories, fromUtc, toUtc);
         var managerOptions = allManagerProfiles
             .Select(x => new CrmAnalyticsManagerOptionDto(
@@ -254,16 +273,14 @@ public sealed class CrmAnalyticsQueryService(
             fromUtc,
             toUtc,
             generatedAtUtc,
+            periodActivityResult.Events,
             ct);
         var decomposition = BuildManagerDecomposition(
             cohort.Count,
             await LoadManagerActivitiesAsync(
-                officeIds,
-                activityManagerIds,
                 cohort.Select(x => x.Id).ToArray(),
                 fromUtc,
                 toUtc,
-                activityShifts,
                 ct));
         var callQuality = await BuildCallQualityAsync(
             officeIds,
@@ -285,7 +302,13 @@ public sealed class CrmAnalyticsQueryService(
             managers,
             decomposition,
             generatedAtUtc,
-            callQuality));
+            callQuality,
+            periodActivityResult.Activity,
+            cohortBasis,
+            await cohortQuery.CountAsync(x => x.EnteredCrmAtUtc == null || x.EntryOfficeId == null
+                || ((firstAssignedCohort || effectiveManagerUserId != null)
+                    && (x.InitialManagerUserId == null || x.InitialManagerUserId == "" || x.InitialAssignedAtUtc == null)), ct),
+            receiptSummary));
     }
 
     private async Task<CrmCallQualityAnalyticsDto> BuildCallQualityAsync(
@@ -464,7 +487,7 @@ public sealed class CrmAnalyticsQueryService(
                         && x.ManagerUserId != "");
         var initialCardManagersQuery = db.CrmCandidateCards
             .AsNoTracking()
-            .Where(x => officeIds.Contains(x.OfficeId)
+            .Where(x => officeIds.Contains(x.InitialAssignedOfficeId ?? x.OfficeId)
                         && x.InitialManagerUserId != null
                         && x.InitialManagerUserId != "");
         var factualTaskManagersQuery = db.CrmTasks
@@ -482,7 +505,7 @@ public sealed class CrmAnalyticsQueryService(
             .Distinct()
             .ToListAsync(ct);
         var initialCardManagers = await initialCardManagersQuery
-            .Select(x => new { x.OfficeId, UserId = x.InitialManagerUserId! })
+            .Select(x => new { OfficeId = x.InitialAssignedOfficeId ?? x.OfficeId, UserId = x.InitialManagerUserId! })
             .Distinct()
             .ToListAsync(ct);
         var factualTaskManagers = await factualTaskManagersQuery
@@ -490,7 +513,23 @@ public sealed class CrmAnalyticsQueryService(
             .Distinct()
             .ToListAsync(ct);
 
+        var historicalPeople = await (
+            from history in db.CrmCandidateHistory.AsNoTracking()
+            join card in db.CrmCandidateCards.AsNoTracking() on history.CardId equals card.Id
+            where officeIds.Contains(history.OfficeId ?? card.OfficeId)
+                && (history.Action == "StageChanged" || history.Action == "Closed"
+                    || history.Action == "Reopened" || history.Action == "Assigned")
+            select new { OfficeId = history.OfficeId ?? card.OfficeId, history.ActorUserId, history.ActorName, history.TargetUserId, history.PreviousUserId })
+            .Distinct().ToListAsync(ct);
         var dimensionKeys = new HashSet<ManagerKey>();
+        foreach (var person in historicalPeople)
+        {
+            if (!string.IsNullOrWhiteSpace(person.ActorUserId)) dimensionKeys.Add(new(person.OfficeId, person.ActorUserId));
+            if (!string.IsNullOrWhiteSpace(person.TargetUserId)) dimensionKeys.Add(new(person.OfficeId, person.TargetUserId));
+            if (!string.IsNullOrWhiteSpace(person.PreviousUserId)) dimensionKeys.Add(new(person.OfficeId, person.PreviousUserId));
+        }
+        var historicalNames = historicalPeople.Where(x => !string.IsNullOrWhiteSpace(x.ActorName))
+            .GroupBy(x => x.ActorUserId).ToDictionary(g => g.Key, g => g.First().ActorName);
         foreach (var profile in scopedProfiles)
         {
             if (currentManagerUserIds.Contains(profile.UserId)
@@ -558,7 +597,7 @@ public sealed class CrmAnalyticsQueryService(
                     key.OfficeId,
                     officeNames.GetValueOrDefault(key.OfficeId, key.OfficeId.ToString()),
                     string.IsNullOrWhiteSpace(fullName)
-                        ? userNames.GetValueOrDefault(key.UserId, key.UserId)
+                        ? userNames.GetValueOrDefault(key.UserId, historicalNames.GetValueOrDefault(key.UserId, key.UserId))
                         : fullName,
                     profile is not null
                         && CrmShiftRules.IsEffectivelyOnShift(
@@ -577,6 +616,7 @@ public sealed class CrmAnalyticsQueryService(
 
     private async Task<IReadOnlyList<StageHistoryRow>> LoadStageHistoriesAsync(
         IReadOnlyList<CardRow> cohort,
+        DateTime fromUtc, DateTime toUtc,
         CancellationToken ct)
     {
         if (cohort.Count == 0)
@@ -587,97 +627,102 @@ public sealed class CrmAnalyticsQueryService(
         var cardIds = cohort.Select(x => x.Id).ToArray();
         return await db.CrmCandidateHistory
             .AsNoTracking()
-            .Where(x => cardIds.Contains(x.CardId) && x.Action == "StageChanged")
-            .Select(x => new StageHistoryRow(x.CardId, x.Details, x.CreatedAtUtc))
+            .Where(x => cardIds.Contains(x.CardId) && x.Action == "StageChanged"
+                && x.CreatedAtUtc >= fromUtc && x.CreatedAtUtc < toUtc)
+            .Select(x => new StageHistoryRow(x.Id, x.CardId, x.Details, x.CreatedAtUtc))
             .ToListAsync(ct);
     }
 
-    private async Task<IReadOnlyList<CloseEventRow>> LoadCloseEventsAsync(
-        IReadOnlyCollection<Guid> officeIds,
-        string? managerUserId,
-        DateTime fromUtc,
-        DateTime toUtc,
-        CancellationToken ct)
+    private async Task<PeriodActivityResult> LoadPeriodActivityAsync(
+        IReadOnlyCollection<Guid> officeIds, string? managerUserId,
+        DateTime fromUtc, DateTime toUtc, DateTime generatedAtUtc, CancellationToken ct)
     {
-        if (officeIds.Count == 0)
-        {
-            return [];
-        }
-
-        var query =
+        if (officeIds.Count == 0) return PeriodActivityResult.Empty;
+        var events = await (
             from history in db.CrmCandidateHistory.AsNoTracking()
             join card in db.CrmCandidateCards.AsNoTracking() on history.CardId equals card.Id
-            where officeIds.Contains(card.OfficeId)
-                  && history.Action == "Closed"
-                  && history.CreatedAtUtc >= fromUtc
-                  && history.CreatedAtUtc < toUtc
-            select history;
-
-        if (managerUserId is not null)
-        {
-            query = query.Where(history => history.ActorUserId == managerUserId);
-        }
-
-        var events = await query
-            .Select(history => new CloseEventRow(
-                history.Id,
-                history.CardId,
-                history.Details,
-                history.CreatedAtUtc))
+            where officeIds.Contains(history.OfficeId ?? card.OfficeId)
+                && history.CreatedAtUtc >= fromUtc && history.CreatedAtUtc < toUtc
+                && (history.Action == "StageChanged" || history.Action == "Closed"
+                    || history.Action == "Reopened" || history.Action == "Assigned")
+            select new PeriodHistoryRow(history.Id, history.OfficeId ?? card.OfficeId,
+                history.ActorUserId, history.CardId, history.Action, history.Details, history.CreatedAtUtc,
+                history.TargetUserId, history.PreviousUserId, history.PreviousCloseReason,
+                history.ContextInferred || history.OfficeId == null))
             .ToListAsync(ct);
-
-        // Repeated close/reopen cycles must not multiply a card inside one period.
-        // The last close event in the period determines its resulting reason.
-        return events
-            .GroupBy(x => x.CardId)
-            .Select(group => group
-                .OrderByDescending(x => x.CreatedAtUtc)
-                .ThenByDescending(x => x.Id)
-                .First())
-            .ToList();
+        var actorIds = events.Select(x => x.UserId).Distinct().ToArray();
+        var shifts = await LoadShiftWindowsAsync(officeIds, actorIds, fromUtc, toUtc, generatedAtUtc, ct);
+        var actions = events.Where(x => managerUserId is null || x.UserId == managerUserId).ToList();
+        var stages = actions.Where(IsRealStageEvent).ToList();
+        var closures = actions.Where(x => x.Action == "Closed").ToList();
+        var reopens = actions.Where(x => x.Action == "Reopened").ToList();
+        // Preserve the event ledger but surface suspicious historical repeat closures.
+        // Look before the selected period too; a missing reopening must not disappear at midnight.
+        var closureIds = closures.Select(x => x.Id).ToArray();
+        var repeatedClosureIds = closureIds.Length == 0 ? [] : await db.CrmCandidateHistory.AsNoTracking()
+            .Where(x => closureIds.Contains(x.Id))
+            .Where(x => db.CrmCandidateHistory.Where(previous => previous.CardId == x.CardId
+                    && previous.CreatedAtUtc < x.CreatedAtUtc
+                    && (previous.Action == "Closed" || previous.Action == "Reopened"))
+                .OrderByDescending(previous => previous.CreatedAtUtc).ThenByDescending(previous => previous.Id)
+                .Select(previous => previous.Action).FirstOrDefault() == "Closed")
+            .Select(x => x.Id).ToArrayAsync(ct);
+        var assignments = events.Where(x => x.Action == "Assigned" && !string.IsNullOrWhiteSpace(x.TargetUserId)
+            && x.TargetUserId != x.PreviousUserId
+            && (managerUserId is null || x.TargetUserId == managerUserId)).ToList();
+        var received = assignments.Where(x => !string.IsNullOrWhiteSpace(x.PreviousUserId)).ToList();
+        var sent = events.Where(x => x.Action == "Assigned" && !string.IsNullOrWhiteSpace(x.PreviousUserId)
+            && !string.IsNullOrWhiteSpace(x.TargetUserId) && x.TargetUserId != x.PreviousUserId
+            && (managerUserId is null || x.PreviousUserId == managerUserId)).ToList();
+        AddEventEvidence("activity.transitions", stages);
+        AddEventEvidence("activity.closed", closures);
+        AddEventEvidence("activity.repeated-closures", closures.Where(x => repeatedClosureIds.Contains(x.Id)));
+        AddEventEvidence("activity.success", closures.Where(x => IsSuccessfulClose(x.Details)));
+        AddEventEvidence("activity.reopened", reopens);
+        AddEventEvidence("activity.assignments", assignments);
+        AddEventEvidence("activity.received", received);
+        AddEventEvidence("activity.sent", sent);
+        foreach (var group in closures.GroupBy(x => string.IsNullOrWhiteSpace(CrmActivityDetails.Split(x.Details).Details)
+                     ? NoCloseReason : CrmActivityDetails.Split(x.Details).Details!.Trim()))
+            AddEventEvidence("reason:" + group.Key, group);
+        var transitions = stages.GroupBy(x => new StageTransitionKey(
+                ParseSourceStage(x.Details)!, ParseDestinationStage(x.Details)!))
+            .Select(group => {
+                AddEventEvidence("transition:" + group.Key.FromStage + "→" + group.Key.ToStage, group);
+                return new CrmAnalyticsStageTransitionDto(group.Key.FromStage, group.Key.ToStage, group.Count());
+            }).OrderByDescending(x => x.Count).ThenBy(x => x.FromStage).ThenBy(x => x.ToStage).ToList();
+        return new PeriodActivityResult(
+            new CrmAnalyticsPeriodActivityDto(stages.Count, closures.Count,
+                closures.Count(x => IsSuccessfulClose(x.Details)),
+                stages.Count(x => !shifts.Contains(x.OfficeId, x.UserId, x.CreatedAtUtc)),
+                closures.Count(x => !shifts.Contains(x.OfficeId, x.UserId, x.CreatedAtUtc)), transitions,
+                reopens.Count, reopens.Count(x => x.PreviousCloseReason == CrmCloseReasons.Success),
+                assignments.Count, received.Count, sent.Count,
+                events.Count(x => x.Action == "Assigned" && string.IsNullOrWhiteSpace(x.TargetUserId)
+                    && (managerUserId is null || x.UserId == managerUserId)),
+                actions.Count(x => x.ContextInferred), repeatedClosureIds.Length),
+            closures.Select(x => new CloseEventRow(x.Id, x.CardId, x.Details, x.CreatedAtUtc)).ToList(), events);
     }
 
+    private static bool IsRealStageEvent(PeriodHistoryRow x) =>
+        x.Action == "StageChanged"
+        && x.Details?.EndsWith(FunnelUpdatedSuffix, StringComparison.Ordinal) != true
+        && ParseSourceStage(x.Details) is { Length: > 0 } from
+        && ParseDestinationStage(x.Details) is { Length: > 0 } to
+        && !string.Equals(from, to, StringComparison.Ordinal);
+
     private async Task<IReadOnlyList<ManagerActivityRow>> LoadManagerActivitiesAsync(
-        IReadOnlyCollection<Guid> officeIds,
-        IReadOnlyCollection<string> managerUserIds,
-        IReadOnlyCollection<Guid> cardIds,
-        DateTime fromUtc,
-        DateTime toUtc,
-        ShiftWindowIndex shifts,
+        IReadOnlyCollection<Guid> cardIds, DateTime fromUtc, DateTime toUtc,
         CancellationToken ct)
     {
-        if (officeIds.Count == 0 || managerUserIds.Count == 0 || cardIds.Count == 0)
-        {
-            return [];
-        }
-
-        var activities = await (
-                from history in db.CrmCandidateHistory.AsNoTracking()
-                join card in db.CrmCandidateCards.AsNoTracking() on history.CardId equals card.Id
-                where officeIds.Contains(card.OfficeId)
-                      && cardIds.Contains(history.CardId)
-                      && managerUserIds.Contains(history.ActorUserId)
-                      && history.CreatedAtUtc >= fromUtc
-                      && history.CreatedAtUtc < toUtc
-                      && (history.Action == "StageChanged" || history.Action == "Closed")
-                      && (history.Action != "StageChanged"
-                          || history.Details == null
-                          || !history.Details.EndsWith(FunnelUpdatedSuffix))
-                select new ManagerActivityRow(
-                    card.OfficeId,
-                    history.ActorUserId,
-                    history.CardId,
-                    history.Action,
-                    history.Details,
-                    history.CreatedAtUtc))
-            .ToListAsync(ct);
-
-        return activities
-            .Where(activity => shifts.Contains(
-                activity.OfficeId,
-                activity.UserId,
-                activity.CreatedAtUtc))
-            .ToList();
+        // This is the progress of the received group, not the actions of only its first owner.
+        if (cardIds.Count == 0) return [];
+        return await db.CrmCandidateHistory.AsNoTracking()
+            .Where(x => cardIds.Contains(x.CardId) && x.CreatedAtUtc >= fromUtc && x.CreatedAtUtc < toUtc
+                && (x.Action == "StageChanged" || x.Action == "Closed" || x.Action == "Reopened")
+                && (x.Action != "StageChanged" || x.Details == null || !x.Details.EndsWith(FunnelUpdatedSuffix)))
+            .Select(x => new ManagerActivityRow(x.Id, x.OfficeId ?? Guid.Empty, x.ActorUserId,
+                x.CardId, x.Action, x.Details, x.CreatedAtUtc)).ToListAsync(ct);
     }
 
     private async Task<ShiftWindowIndex> LoadShiftWindowsAsync(
@@ -709,7 +754,7 @@ public sealed class CrmAnalyticsQueryService(
         return ShiftWindowIndex.Create(rows, generatedAtUtc);
     }
 
-    private static IReadOnlyList<CrmAnalyticsOfficeFunnelDto> BuildFunnels(
+    private IReadOnlyList<CrmAnalyticsOfficeFunnelDto> BuildFunnels(
         IReadOnlyList<OfficeRow> offices,
         IReadOnlyList<CardRow> cohort,
         IReadOnlyList<StageHistoryRow> histories,
@@ -724,7 +769,7 @@ public sealed class CrmAnalyticsQueryService(
                 toUtc))
             .ToList();
 
-    private static CrmAnalyticsDecompositionDto BuildManagerDecomposition(
+    private CrmAnalyticsDecompositionDto BuildManagerDecomposition(
         int leads,
         IReadOnlyList<ManagerActivityRow> activities)
     {
@@ -740,38 +785,57 @@ public sealed class CrmAnalyticsQueryService(
         foreach (var cardActivities in activities.GroupBy(activity => activity.CardId))
         {
             var reachedStages = cardActivities
-                .Where(activity => string.Equals(activity.Action, "StageChanged", StringComparison.Ordinal))
-                .Select(activity => ParseDestinationStage(activity.Details))
+                .Where(activity => string.Equals(activity.Action, "StageChanged", StringComparison.Ordinal)
+                    && ParseSourceStage(activity.Details) is { Length: > 0 } source
+                    && ParseDestinationStage(activity.Details) is { Length: > 0 } destination
+                    && source != destination)
+                .Select(activity => ParseDestinationStage(activity.Details) is {} stage
+                    ? analyticsOptions.ResolveMilestone(activity.OfficeId, stage) : null)
                 .Where(stage => !string.IsNullOrWhiteSpace(stage))
                 .Select(stage => stage!)
-                .ToHashSet(StringComparer.Ordinal);
-            var closeReasons = cardActivities
-                .Where(activity => string.Equals(activity.Action, "Closed", StringComparison.Ordinal))
-                .Select(activity => CrmActivityDetails.Split(activity.Details).Details)
-                .Where(reason => !string.IsNullOrWhiteSpace(reason))
-                .Select(reason => reason!.Trim())
-                .ToHashSet(StringComparer.Ordinal);
+                .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var resultingClose = cardActivities
+                .Where(activity => string.Equals(activity.Action, "Closed", StringComparison.Ordinal)
+                                   || string.Equals(activity.Action, "Reopened", StringComparison.Ordinal))
+                .OrderByDescending(activity => activity.CreatedAtUtc)
+                .ThenByDescending(activity => activity.Id)
+                .FirstOrDefault();
+            var closeReasons = new HashSet<string>(StringComparer.Ordinal);
+            if (resultingClose is not null
+                && string.Equals(resultingClose.Action, "Closed", StringComparison.Ordinal))
+            {
+                var closeReason = CrmActivityDetails.Split(resultingClose.Details).Details;
+                if (!string.IsNullOrWhiteSpace(closeReason))
+                {
+                    closeReasons.Add(closeReason.Trim());
+                }
+            }
 
-            var isContract = closeReasons.Contains(CrmCloseReasons.Success)
-                             || reachedStages.Contains(CrmStages.DealSuccessful);
-            var isTicket = isContract
-                           || reachedStages.Contains(CrmStages.Ticket)
-                           || reachedStages.Contains(CrmStages.PreparingToSend)
-                           || reachedStages.Contains(CrmStages.InTransit)
-                           || reachedStages.Contains(CrmStages.Signing);
-            var isQuestionnaire = isTicket
-                                  || reachedStages.Contains(CrmStages.Questionnaire);
-            var hasStageContact = isQuestionnaire
+            var isContract = closeReasons.Contains(CrmCloseReasons.Success);
+            // Contact is a historical fact inferred from a qualifying action. Reopening
+            // changes the closure result, but must not erase an earlier contact basis.
+            var historicalCloseReasons = cardActivities.Where(x => x.Action == "Closed")
+                .Select(x => CrmActivityDetails.Split(x.Details).Details?.Trim())
+                .Where(x => !string.IsNullOrWhiteSpace(x)).ToHashSet(StringComparer.Ordinal);
+            var hadSuccessfulClose = historicalCloseReasons.Contains(CrmCloseReasons.Success);
+            var isTicket = reachedStages.Contains(CrmStages.Ticket);
+            var isQuestionnaire = reachedStages.Contains(CrmStages.Questionnaire);
+            var hasStageContact = isQuestionnaire || isTicket
+                                  || reachedStages.Contains(CrmStages.PreparingToSend)
+                                  || reachedStages.Contains(CrmStages.InTransit)
+                                  || reachedStages.Contains(CrmStages.Signing)
                                   || reachedStages.Any(stage =>
                                       stage.StartsWith(CrmStages.Negotiations, StringComparison.OrdinalIgnoreCase));
             var contactCloseReason = ContactCloseReasons
-                .FirstOrDefault(reason => closeReasons.Contains(reason));
-            var hasContact = hasStageContact || isContract || contactCloseReason is not null;
+                .FirstOrDefault(reason => historicalCloseReasons.Contains(reason));
+            var hasContact = hasStageContact || hadSuccessfulClose || contactCloseReason is not null;
 
             if (hasContact)
             {
                 contacts++;
-                var breakdownLabel = isContract
+                AddCardEvidence("cohort.contacts", [cardActivities.Key]);
+                AddProofEvidence("cohort.contacts", cardActivities.Where(IsContactEvidence).Select(x => x.Id));
+                var breakdownLabel = hadSuccessfulClose
                     ? SuccessfulCloseBreakdown
                     : hasStageContact
                         ? ReachedNegotiationsBreakdown
@@ -782,16 +846,22 @@ public sealed class CrmAnalyticsQueryService(
             if (isQuestionnaire)
             {
                 questionnaires++;
+                AddCardEvidence("cohort.questionnaires", [cardActivities.Key]);
+                AddProofEvidence("cohort.questionnaires", cardActivities.Where(x => IsMilestoneEvidence(x, CrmStages.Questionnaire)).Select(x => x.Id));
             }
 
             if (isTicket)
             {
                 tickets++;
+                AddCardEvidence("cohort.tickets", [cardActivities.Key]);
+                AddProofEvidence("cohort.tickets", cardActivities.Where(x => IsMilestoneEvidence(x, CrmStages.Ticket)).Select(x => x.Id));
             }
 
             if (isContract)
             {
                 contracts++;
+                AddCardEvidence("cohort.contracts", [cardActivities.Key]);
+                AddProofEvidence("cohort.contracts", [resultingClose!.Id]);
             }
         }
 
@@ -810,97 +880,64 @@ public sealed class CrmAnalyticsQueryService(
             tickets,
             contracts,
             Percent(contacts, leads),
-            Percent(questionnaires, contacts),
-            Percent(tickets, questionnaires),
-            Percent(contracts, tickets),
+            Percent(questionnaires, leads),
+            Percent(tickets, leads),
+            Percent(contracts, leads),
             orderedBreakdown);
     }
 
-    private static CrmAnalyticsOfficeFunnelDto BuildFunnel(
-        OfficeRow office,
-        IReadOnlyList<CardRow> officeCards,
-        IReadOnlyList<StageHistoryRow> histories,
-        DateTime fromUtc,
-        DateTime toUtc)
+    private bool IsMilestoneEvidence(ManagerActivityRow row, string stage) =>
+        row.Action == "StageChanged" && ParseSourceStage(row.Details) is { Length: > 0 } source
+        && ParseDestinationStage(row.Details) is { Length: > 0 } destination && source != destination
+        && string.Equals(analyticsOptions.ResolveMilestone(row.OfficeId, destination), stage, StringComparison.OrdinalIgnoreCase);
+
+    private bool IsContactEvidence(ManagerActivityRow row)
     {
-        var stages = CrmStages.Resolve(office.StagesJson);
-        var stageIndex = stages
-            .Select((stage, index) => new { stage, index })
-            .ToDictionary(x => x.stage, x => x.index, StringComparer.Ordinal);
-        var maxReachedByCard = officeCards.ToDictionary(x => x.Id, _ => stages.Count == 0 ? -1 : 0);
-        var historyCardIds = histories
-            .Select(x => x.CardId)
-            .ToHashSet();
-
-        // A card without stage history was created directly on its current stage.
-        // Once history exists, only transitions made inside the selected period affect
-        // "Reached"; the current stage may have been reached on a later date.
-        foreach (var card in officeCards)
+        if (row.Action == "Closed")
         {
-            if (!historyCardIds.Contains(card.Id)
-                && stageIndex.TryGetValue(card.Stage, out var currentIndex))
-            {
-                maxReachedByCard[card.Id] = Math.Max(maxReachedByCard[card.Id], currentIndex);
-            }
+            var reason = CrmActivityDetails.Split(row.Details).Details?.Trim();
+            return reason == CrmCloseReasons.Success || ContactCloseReasons.Contains(reason!);
         }
+        if (row.Action != "StageChanged" || ParseSourceStage(row.Details) is not { Length: > 0 } source
+            || ParseDestinationStage(row.Details) is not { Length: > 0 } destination || source == destination) return false;
+        var stage = analyticsOptions.ResolveMilestone(row.OfficeId, destination);
+        return new[] { CrmStages.Questionnaire, CrmStages.Ticket, CrmStages.PreparingToSend,
+                CrmStages.InTransit, CrmStages.Signing }.Contains(stage, StringComparer.OrdinalIgnoreCase)
+            || stage.StartsWith(CrmStages.Negotiations, StringComparison.OrdinalIgnoreCase);
+    }
 
-        foreach (var history in histories)
-        {
-            if (!maxReachedByCard.ContainsKey(history.CardId))
-            {
-                continue;
-            }
-
-            if (history.CreatedAtUtc < fromUtc
-                || history.CreatedAtUtc >= toUtc
-                || history.Details?.EndsWith(FunnelUpdatedSuffix, StringComparison.Ordinal) == true)
-            {
-                continue;
-            }
-
-            var destination = ParseDestinationStage(history.Details);
-            if (destination is not null && stageIndex.TryGetValue(destination, out var reachedIndex))
-            {
-                maxReachedByCard[history.CardId] = Math.Max(maxReachedByCard[history.CardId], reachedIndex);
-            }
-        }
-
-        var currentCounts = officeCards
-            .GroupBy(x => x.Stage, StringComparer.Ordinal)
-            .ToDictionary(x => x.Key, x => x.Count(), StringComparer.Ordinal);
-        var result = new List<CrmAnalyticsFunnelStageDto>(stages.Count + 1);
-        var previousReached = officeCards.Count;
-        for (var position = 0; position < stages.Count; position++)
-        {
-            var stage = stages[position];
-            var reached = maxReachedByCard.Values.Count(max => max >= position);
-            result.Add(new CrmAnalyticsFunnelStageDto(
-                stage,
-                position,
-                currentCounts.GetValueOrDefault(stage),
-                reached,
-                position == 0 ? Percent(reached, officeCards.Count) : Percent(reached, previousReached),
-                Percent(reached, officeCards.Count)));
-            previousReached = reached;
-        }
-
-        // A configured stage can be removed after cards have already been closed on it.
-        // Keep those cards visible instead of silently dropping their current/last stage
-        // from the funnel snapshot. This is an archive bucket, not another conversion step.
-        var removedStageCount = officeCards.Count(x => !stageIndex.ContainsKey(x.Stage));
-        if (removedStageCount > 0)
-        {
-            result.Add(new CrmAnalyticsFunnelStageDto(
-                RemovedStagesBucket,
-                result.Count,
-                removedStageCount,
-                removedStageCount,
-                0,
-                Percent(removedStageCount, officeCards.Count),
-                IsArchive: true));
-        }
-
-        return new CrmAnalyticsOfficeFunnelDto(office.Id, office.Name, officeCards.Count, result);
+    private CrmAnalyticsOfficeFunnelDto BuildFunnel(
+        OfficeRow office, IReadOnlyList<CardRow> officeCards,
+        IReadOnlyList<StageHistoryRow> histories, DateTime fromUtc, DateTime toUtc)
+    {
+        var configured = CrmStages.Resolve(office.StagesJson);
+        var officeCardIds = officeCards.Select(x => x.Id).ToHashSet();
+        var transitions = histories.Where(x => officeCardIds.Contains(x.CardId)
+                && x.CreatedAtUtc >= fromUtc && x.CreatedAtUtc < toUtc
+                && x.Details?.EndsWith(FunnelUpdatedSuffix, StringComparison.Ordinal) != true)
+            .Select(x => new { x.CardId, From = ParseSourceStage(x.Details), To = ParseDestinationStage(x.Details) })
+            .Where(x => !string.IsNullOrWhiteSpace(x.From) && !string.IsNullOrWhiteSpace(x.To) && x.From != x.To)
+            .ToList();
+        var historicalStages = transitions.Select(x => x.To!).Concat(officeCards.Select(x => x.Stage))
+            .Where(x => !configured.Contains(x)).Distinct().Order().ToList();
+        var stages = configured.Concat(historicalStages).ToList();
+        var result = stages.Select((stage, position) => {
+            var ids = transitions.Where(x => x.To == stage).Select(x => x.CardId).Distinct().ToArray();
+            AddCardEvidence("stage:" + office.Id + ":" + stage, ids);
+            AddProofEvidence("stage:" + office.Id + ":" + stage,
+                histories.Where(x => officeCardIds.Contains(x.CardId) && x.CreatedAtUtc >= fromUtc && x.CreatedAtUtc < toUtc
+                    && x.Details?.EndsWith(FunnelUpdatedSuffix, StringComparison.Ordinal) != true
+                    && ParseSourceStage(x.Details) is { Length: > 0 } source && source != stage
+                    && ParseDestinationStage(x.Details) == stage).Select(x => x.Id));
+            return new CrmAnalyticsFunnelStageDto(stage, position,
+                officeCards.Count(x => x.Stage == stage), ids.Length, 0, Percent(ids.Length, officeCards.Count),
+                IsArchive: !configured.Contains(stage),
+                CreatedCount: officeCards.Count(x => x.EntryStage == stage && x.EnteredAtUtc >= fromUtc && x.EnteredAtUtc < toUtc));
+        }).ToList();
+        var sources = officeCards.GroupBy(x => x.EntryStage ?? "Начальный этап не сохранён")
+            .Select(g => new CrmAnalyticsEntrySourceDto(g.Key, g.Count(), Percent(g.Count(), officeCards.Count)))
+            .OrderBy(x => x.Stage).ToList();
+        return new CrmAnalyticsOfficeFunnelDto(office.Id, office.Name, officeCards.Count, result, sources);
     }
 
     private async Task<IReadOnlyList<CrmAnalyticsManagerDto>> BuildManagerMetricsAsync(
@@ -909,6 +946,7 @@ public sealed class CrmAnalyticsQueryService(
         DateTime fromUtc,
         DateTime toUtc,
         DateTime generatedAtUtc,
+        IReadOnlyList<PeriodHistoryRow> periodEvents,
         CancellationToken ct)
     {
         if (managers.Count == 0)
@@ -917,13 +955,6 @@ public sealed class CrmAnalyticsQueryService(
         }
 
         var managerIds = managers.Select(x => x.UserId).Distinct(StringComparer.Ordinal).ToArray();
-        var shiftWindows = await LoadShiftWindowsAsync(
-            officeIds,
-            managerIds,
-            fromUtc,
-            toUtc,
-            generatedAtUtc,
-            ct);
         var currentCardStageAggregates = await db.CrmCandidateCards
             .AsNoTracking()
             .Where(x => officeIds.Contains(x.OfficeId)
@@ -962,13 +993,13 @@ public sealed class CrmAnalyticsQueryService(
             .ToList();
         var receivedCardRows = await db.CrmCandidateCards
             .AsNoTracking()
-            .Where(x => officeIds.Contains(x.OfficeId)
+            .Where(x => officeIds.Contains(x.InitialAssignedOfficeId ?? x.OfficeId)
                         && ((x.InitialAssignedAtUtc.HasValue
                              && x.InitialAssignedAtUtc.Value >= fromUtc
                              && x.InitialAssignedAtUtc.Value < toUtc)
-                            || (!x.InitialAssignedAtUtc.HasValue
-                                && x.CreatedAtUtc >= fromUtc
-                                && x.CreatedAtUtc < toUtc))
+                             || (!x.InitialAssignedAtUtc.HasValue
+                                 && (x.EnteredCrmAtUtc ?? x.CreatedAtUtc) >= fromUtc
+                                 && (x.EnteredCrmAtUtc ?? x.CreatedAtUtc) < toUtc))
                         && ((x.InitialManagerUserId != null
                              && x.InitialManagerUserId != ""
                              && managerIds.Contains(x.InitialManagerUserId))
@@ -976,14 +1007,13 @@ public sealed class CrmAnalyticsQueryService(
                                 && x.ManagerUserId != null
                                 && managerIds.Contains(x.ManagerUserId))))
             .Select(x => new ReceivedCardRow(
-                x.OfficeId,
+                x.InitialAssignedOfficeId ?? x.OfficeId,
                 x.InitialManagerUserId == null || x.InitialManagerUserId == ""
                     ? x.ManagerUserId!
                     : x.InitialManagerUserId,
-                x.InitialAssignedAtUtc ?? x.CreatedAtUtc))
+                x.InitialAssignedAtUtc ?? x.EnteredCrmAtUtc ?? x.CreatedAtUtc))
             .ToListAsync(ct);
         var receivedCardAggregates = receivedCardRows
-            .Where(row => shiftWindows.Contains(row.OfficeId, row.UserId, row.AssignedAtUtc))
             .GroupBy(row => new ManagerKey(row.OfficeId, row.UserId))
             .Select(group => new ReceivedCardAggregateRow(
                 group.Key.OfficeId,
@@ -1003,49 +1033,11 @@ public sealed class CrmAnalyticsQueryService(
                                  && x.DueAtUtc.HasValue
                                  && x.DueAtUtc.Value < generatedAtUtc)))
             .ToListAsync(ct);
-        var stageActions = await (
-                from history in db.CrmCandidateHistory.AsNoTracking()
-                join card in db.CrmCandidateCards.AsNoTracking() on history.CardId equals card.Id
-                where officeIds.Contains(card.OfficeId)
-                      && history.Action == "StageChanged"
-                      && history.CreatedAtUtc >= fromUtc
-                      && history.CreatedAtUtc < toUtc
-                      && managerIds.Contains(history.ActorUserId)
-                      && (history.Details == null || !history.Details.EndsWith(FunnelUpdatedSuffix))
-                select new StageActionRow(
-                    card.OfficeId,
-                    history.ActorUserId,
-                    history.CardId,
-                    history.CreatedAtUtc))
-            .ToListAsync(ct);
-        var closeActions = await (
-                from history in db.CrmCandidateHistory.AsNoTracking()
-                join card in db.CrmCandidateCards.AsNoTracking() on history.CardId equals card.Id
-                where officeIds.Contains(card.OfficeId)
-                      && history.Action == "Closed"
-                      && history.CreatedAtUtc >= fromUtc
-                      && history.CreatedAtUtc < toUtc
-                      && managerIds.Contains(history.ActorUserId)
-                select new CloseActionRow(
-                    card.OfficeId,
-                    history.ActorUserId,
-                    history.CardId,
-                    history.Details,
-                    history.CreatedAtUtc))
-            .ToListAsync(ct);
-
-        stageActions = stageActions
-            .Where(action => shiftWindows.Contains(
-                action.OfficeId,
-                action.UserId,
-                action.CreatedAtUtc))
-            .ToList();
-        closeActions = closeActions
-            .Where(action => shiftWindows.Contains(
-                action.OfficeId,
-                action.UserId,
-                action.CreatedAtUtc))
-            .ToList();
+        var stageActions = periodEvents.Where(IsRealStageEvent)
+            .Where(x => managerIds.Contains(x.UserId))
+            .Select(x => new StageActionRow(x.OfficeId, x.UserId, x.CardId, x.CreatedAtUtc)).ToList();
+        var closeActions = periodEvents.Where(x => x.Action == "Closed" && managerIds.Contains(x.UserId))
+            .Select(x => new CloseActionRow(x.Id, x.OfficeId, x.UserId, x.CardId, x.Action, x.Details, x.CreatedAtUtc)).ToList();
 
         var currentCardsByManager = currentCardAggregates.ToDictionary(
             x => new ManagerKey(x.OfficeId, x.UserId));
@@ -1065,11 +1057,8 @@ public sealed class CrmAnalyticsQueryService(
             .ToDictionary(
                 x => x.Key,
                 x => new CloseActionAggregateRow(
-                    x.Select(item => item.CardId).Distinct().Count(),
-                    x.Where(item => IsSuccessfulClose(item.Details))
-                        .Select(item => item.CardId)
-                        .Distinct()
-                        .Count()));
+                    x.Count(),
+                    x.Count(item => IsSuccessfulClose(item.Details))));
 
         return managers
             .Select(manager =>
@@ -1104,17 +1093,31 @@ public sealed class CrmAnalyticsQueryService(
                     closeAction?.SuccessfulCards ?? 0,
                     tasksTotal,
                     openTasks,
-                    overdueTasks);
+                    overdueTasks,
+                    periodEvents.Count(x => x.OfficeId == manager.OfficeId && x.Action == "Assigned"
+                        && x.TargetUserId == manager.UserId && !string.IsNullOrWhiteSpace(x.PreviousUserId)
+                        && x.PreviousUserId != x.TargetUserId),
+                    periodEvents.Count(x => x.OfficeId == manager.OfficeId && x.Action == "Assigned"
+                        && x.PreviousUserId == manager.UserId && !string.IsNullOrWhiteSpace(x.TargetUserId)
+                        && x.PreviousUserId != x.TargetUserId),
+                    periodEvents.Count(x => x.OfficeId == manager.OfficeId && x.Action == "Reopened" && x.UserId == manager.UserId));
             })
             .OrderBy(x => x.OfficeName, StringComparer.OrdinalIgnoreCase)
             .ThenBy(x => x.DisplayName, StringComparer.OrdinalIgnoreCase)
             .ToList();
     }
 
-    private static CrmAnalyticsCardMetricsDto BuildCardMetrics(IReadOnlyCollection<CardRow> cohort)
+    private static CrmAnalyticsCardMetricsDto BuildCardMetrics(
+        IReadOnlyCollection<CardRow> cohort,
+        string? managerUserId)
     {
         var received = cohort.Count;
-        var assigned = cohort.Count(x => !string.IsNullOrWhiteSpace(x.CurrentManagerUserId));
+        var assigned = managerUserId is null
+            ? cohort.Count(x => !string.IsNullOrWhiteSpace(x.CurrentManagerUserId))
+            : cohort.Count(x => string.Equals(
+                x.CurrentManagerUserId,
+                managerUserId,
+                StringComparison.Ordinal));
         var active = cohort.Count(x => !x.IsClosed);
         var closed = cohort.Count(x => x.IsClosed);
         var successfulClosed = cohort.Count(x =>
@@ -1195,6 +1198,31 @@ public sealed class CrmAnalyticsQueryService(
         return null;
     }
 
+    private static string? ParseSourceStage(string? details)
+    {
+        var activityDetails = CrmActivityDetails.Split(details).Details;
+        if (string.IsNullOrWhiteSpace(activityDetails))
+        {
+            return null;
+        }
+
+        var arrowIndex = activityDetails.IndexOf('→');
+        if (arrowIndex >= 0)
+        {
+            var source = activityDetails[..arrowIndex].Trim();
+            return source.Length == 0 ? null : source;
+        }
+
+        var asciiArrowIndex = activityDetails.IndexOf("->", StringComparison.Ordinal);
+        if (asciiArrowIndex >= 0)
+        {
+            var source = activityDetails[..asciiArrowIndex].Trim();
+            return source.Length == 0 ? null : source;
+        }
+
+        return null;
+    }
+
     private static bool IsSuccessfulClose(string? details) =>
         string.Equals(
             CrmActivityDetails.Split(details).Details,
@@ -1217,9 +1245,11 @@ public sealed class CrmAnalyticsQueryService(
         bool IsClosed,
         string? CloseReason,
         string? AttributedManagerUserId,
-        DateTime AttributedAtUtc);
+        DateTime AttributedAtUtc,
+        string? EntryStage,
+        DateTime EnteredAtUtc);
 
-    private sealed record StageHistoryRow(Guid CardId, string? Details, DateTime CreatedAtUtc);
+    private sealed record StageHistoryRow(Guid Id, Guid CardId, string? Details, DateTime CreatedAtUtc);
 
     private sealed record CloseEventRow(
         Guid Id,
@@ -1228,6 +1258,7 @@ public sealed class CrmAnalyticsQueryService(
         DateTime CreatedAtUtc);
 
     private sealed record ManagerActivityRow(
+        Guid Id,
         Guid OfficeId,
         string UserId,
         Guid CardId,
@@ -1287,13 +1318,37 @@ public sealed class CrmAnalyticsQueryService(
     private sealed record StageActionAggregateRow(int Cards, int Changes);
 
     private sealed record CloseActionRow(
+        Guid Id,
         Guid OfficeId,
         string UserId,
         Guid CardId,
+        string Action,
         string? Details,
         DateTime CreatedAtUtc);
 
     private sealed record CloseActionAggregateRow(int Cards, int SuccessfulCards);
+
+    private sealed record PeriodHistoryRow(
+        Guid Id,
+        Guid OfficeId,
+        string UserId,
+        Guid CardId,
+        string Action,
+        string? Details,
+        DateTime CreatedAtUtc,
+        string? TargetUserId, string? PreviousUserId, string? PreviousCloseReason, bool ContextInferred);
+
+    private sealed record StageTransitionKey(string FromStage, string ToStage);
+
+    private sealed record PeriodActivityResult(
+        CrmAnalyticsPeriodActivityDto Activity,
+        IReadOnlyList<CloseEventRow> CloseEvents,
+        IReadOnlyList<PeriodHistoryRow> Events)
+    {
+        public static PeriodActivityResult Empty { get; } = new(
+            new CrmAnalyticsPeriodActivityDto(0, 0, 0, 0, 0, []),
+            [], []);
+    }
 
     private sealed record ManagerProfileRow(
         string UserId,

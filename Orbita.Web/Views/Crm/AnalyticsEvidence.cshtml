@@ -1,0 +1,105 @@
+@model CrmAnalyticsEvidenceViewModel
+@using Orbita.Contracts
+@{
+    ViewData["Title"] = "CRM — Расшифровка показателя";
+    string Link(int page) => Url.Action("AnalyticsEvidence", "Crm", new { from = Model.From, to = Model.To,
+        managerUserId = Model.ManagerUserId, metric = Model.Metric, report = Model.Report,
+        leadView = Model.LeadView, tz = Model.TimeZoneOffset, evidenceOfficeId = Model.EvidenceOfficeId,
+        cohortBasis = Model.CohortBasis, returnManagerUserId = Model.ReturnManagerUserId ?? "all", page })!;
+    var firstAssigned = Model.Metric == "manager.primary" || (!Model.Metric.StartsWith("period.") && Model.CohortBasis == CrmAnalyticsCohortBases.FirstAssigned);
+    var eventMetric = Model.Metric.StartsWith("activity.") || Model.Metric.StartsWith("reason:") || Model.Metric.StartsWith("transition:");
+    var proofMetric = Model.Metric.StartsWith("stage:") || Model.Metric is "cohort.contacts" or "cohort.questionnaires" or "cohort.tickets" or "cohort.contracts";
+    var title = Model.Metric switch {
+        "activity.transitions" => "Переходы между этапами", "activity.closed" => "События закрытия",
+        "activity.success" => "Успешные закрытия", "activity.reopened" => "Повторные открытия",
+        "activity.repeated-closures" => "Повторные закрытия без записанного открытия",
+        "activity.assignments" => "Выдачи в работу", "activity.received" => "Получено от коллег",
+        "activity.sent" => "Передано коллегам", "cohort.received" => "Полученные лиды",
+        "manager.primary" => "Первичная выдача менеджеру",
+        "period.received" => "Поступления в CRM за выбранные даты", "period.unassigned" => "Новые лиды без ответственного сейчас",
+        "cohort.assigned" => "Назначенные из полученных", "cohort.active" => "Незакрытые из полученных",
+        "cohort.closed" => "Закрытые из полученных", "cohort.success" => "Успешные из полученных на сегодня",
+        "cohort.contacts" => "Карточки с подтверждённым контактом", "cohort.questionnaires" => "Переведены в анкету",
+        "cohort.tickets" => "Переведены в билет", "cohort.contracts" => "Успешно закрытые в выбранном периоде",
+        _ when Model.Metric.StartsWith("stage:") && Model.Metric.Length > 43 => "Переводы в этап: " + Model.Metric[43..],
+        _ when Model.Metric.StartsWith("reason:") => "Причина закрытия: " + (Model.Metric[7..] == CrmCloseReasons.Contract ? "Отказ: контракт" : Model.Metric[7..]),
+        _ when Model.Metric.StartsWith("transition:") => Model.Metric[11..],
+        _ => "Расшифровка показателя"
+    };
+    string ActionName(string action) => action switch {
+        "StageChanged" => "Смена этапа", "Closed" => "Закрытие", "Reopened" => "Возврат в работу",
+        "Assigned" => "Назначение", "Card" => firstAssigned ? "Первичная выдача" : "Поступление в CRM", _ => action
+    };
+    string? ReadableDetails(CrmAnalyticsEvidenceRowDto row) {
+        if (row.Action != "Closed") return row.Details;
+        var parts = CrmActivityDetails.Split(row.Details);
+        var reason = parts.Details == CrmCloseReasons.Contract ? "Отказ: контракт" : parts.Details;
+        return string.IsNullOrWhiteSpace(parts.Comment) ? reason : reason + "\n" + parts.Comment;
+    }
+}
+<partial name="_PageHeader" model="Model.Header" />
+<main class="orbita-main crm-analytics crm-analytics-evidence">
+    <a href="@Url.Action("Analytics", "Crm", new { from = Model.From, to = Model.To, managerUserId = Model.ReturnManagerUserId, report = Model.Report, leadView = Model.LeadView, tz = Model.TimeZoneOffset, cohortBasis = Model.CohortBasis })">← Вернуться в тот же отчёт</a>
+    <section class="card crm-analytics-panel">
+        <header class="crm-analytics-panel__header"><div><h2>@title</h2><p>@Model.From — @Model.To · тот же офис и фильтр сотрудника</p></div></header>
+        @if (Model.Data is not {} data)
+        {
+            <p class="crm-analytics-reading-note" role="alert">Не удалось открыть расшифровку. Проверьте доступ и повторите запрос. Это не означает нулевой результат.</p>
+        }
+        else
+        {
+            <p class="crm-analytics-reading-note">В показателе: <strong>@data.Total</strong>. @(eventMetric ? "Каждая строка — отдельное событие. Карточка может встречаться несколько раз." : proofMetric ? "Одна строка — одна карточка. Показаны время и исполнитель действия, из-за которого она вошла в показатель; повторные подтверждения можно раскрыть. Текущий ответственный указан отдельно." : firstAssigned ? "Каждая карточка показана один раз. Дата — первая выдача ответственному; статус и ответственный — на сегодня." : "Каждая карточка показана один раз. Дата — поступление в CRM; статус и ответственный — на сегодня.")</p>
+            @if (data.RestrictedCount > 0)
+            {
+                <p class="crm-analytics-reading-note" role="status">Ещё @data.RestrictedCount записей входят в показатель, но карточки сейчас недоступны вам. Их данные не раскрываются.</p>
+            }
+            <div class="crm-analytics-table-wrap">
+                <table class="crm-analytics-table">
+                    <thead><tr><th>@(proofMetric ? "Дата основания" : "Дата")</th><th>Карточка</th><th>Событие / состояние</th><th>Исполнитель</th><th>@(eventMetric ? "Ответственный на событие" : "Ответственный сейчас")</th></tr></thead>
+                    <tbody>
+                    @foreach (var row in data.Rows)
+                    {
+                        var proof = row.BasisEvents?.FirstOrDefault();
+                        <tr>
+                            <td data-label="@(proofMetric ? "Дата основания" : "Дата")">@((proof?.AtUtc ?? row.AtUtc).AddMinutes(-Model.TimeZoneOffset).ToString("dd.MM.yyyy HH:mm"))</td>
+                            <td data-label="Карточка"><a href="@Url.Action("Card", "Crm", new { id = row.CardId })">@row.CandidateName</a></td>
+                            <td data-label="Событие / состояние">
+                                @if (proof is not null)
+                                {
+                                    <strong>@ActionName(proof.Action)</strong><div>@proof.Details</div>
+                                    <small>Ответственный на событие: @(proof.ResponsibleName ?? "не сохранён")</small>
+                                    @if (proof.InferredContext) { <small>Исторический контекст неполный</small> }
+                                    @if (row.BasisEvents!.Count > 1)
+                                    {
+                                        <details class="crm-analytics-proof-events"><summary>Ещё подтверждений: @(row.BasisEvents.Count - 1)</summary>
+                                            @foreach (var other in row.BasisEvents.Skip(1))
+                                            {
+                                                <p>@other.AtUtc.AddMinutes(-Model.TimeZoneOffset).ToString("dd.MM.yyyy HH:mm") · @other.ActorName<br />@ActionName(other.Action): @other.Details
+                                                    <small>Ответственный: @(other.ResponsibleName ?? "не сохранён")</small>
+                                                    @if (other.OutsideShift) { <small>Вне записанной смены</small> }
+                                                    @if (other.InferredContext) { <small>Исторический контекст неполный</small> }
+                                                </p>
+                                            }
+                                        </details>
+                                    }
+                                }
+                                else { <strong>@ActionName(row.Action)</strong> }
+                                <div style="white-space:pre-line">@ReadableDetails(row)</div>
+                                @if (row.InferredContext) { <small>Исторический контекст неполный</small> }
+                            </td>
+                            <td data-label="Исполнитель">@(proof?.ActorName ?? row.ActorName) @if (proof?.OutsideShift ?? row.OutsideShift) { <small>Вне записанной смены</small> }</td>
+                            <td data-label="@(eventMetric ? "Ответственный на событие" : "Ответственный сейчас")">@(row.ResponsibleName ?? "Не записан")</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+            @if (data.Rows.Count == 0) { <p class="crm-analytics-panel-empty">Нет доступных строк.</p> }
+            <nav class="crm-analytics-filter-actions" aria-label="Страницы расшифровки">
+                @if (data.Page > 1) { <a class="settings-secondary-btn" href="@Link(data.Page - 1)">Назад</a> }
+                <span>Страница @data.Page</span>
+                @if (data.Page * data.PageSize < data.Total - data.RestrictedCount) { <a class="settings-secondary-btn" href="@Link(data.Page + 1)">Далее</a> }
+            </nav>
+        }
+    </section>
+</main>
