@@ -1717,7 +1717,7 @@ internal static class DesignPreviewData
             candidate.PhoneRaw,
             candidate.City,
             candidate.Vacancy,
-            $"https://www.avito.ru/profile/messenger/{candidate.Id:N}",
+            null,
             candidate.Stage,
             candidate.ManagerUserId,
             candidate.ManagerUserId == PreviewManagerElena ? "Елена Воронцова" : candidate.ManagerUserId == PreviewManagerIgor ? "Игорь Белов" : null,
@@ -1731,12 +1731,13 @@ internal static class DesignPreviewData
             openTasks,
             overdue,
             hours,
-            $"https://www.avito.ru/item/{candidate.Id:N}",
-            $"https://www.avito.ru/item/{candidate.Id:N}",
-            "Avito · Северный парк",
-            candidate.Id.ToString("N")[..8],
+            null,
+            null,
+            null,
+            null,
             Citizenship: candidate.Citizenship,
-            ContactPhones: [candidate.PhoneRaw]);
+            ContactPhones: [candidate.PhoneRaw],
+            CanSendChat: true);
     }
 
     private static void AddPreviewCrmHistory(Guid? cardId, string action, string details)

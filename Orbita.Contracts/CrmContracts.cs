@@ -681,7 +681,9 @@ public sealed record CrmCandidateCardDto(
     int ChatUnreadCount = 0,
     string Citizenship = "",
     /// <summary>All active contact phones known for the candidate.</summary>
-    IReadOnlyList<string>? ContactPhones = null);
+    IReadOnlyList<string>? ContactPhones = null,
+    /// <summary>Whether this card is linked to a response and can receive chat messages.</summary>
+    bool CanSendChat = false);
 
 public sealed record CrmCandidateDetailDto(
     CrmCandidateCardDto Card,

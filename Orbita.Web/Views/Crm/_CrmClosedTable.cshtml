@@ -82,7 +82,7 @@
                                 </a>
                             </td>
                             <td class="crm-table-contact" data-label="Контакты"><a href="tel:@card.PhoneRaw">@card.PhoneRaw</a><span>@card.City</span></td>
-                            <td class="crm-table-vacancy" data-label="Вакансия"><strong title="@card.Vacancy">@card.Vacancy</strong>@if (!string.IsNullOrWhiteSpace(card.AccountName)) { <span>@card.AccountName</span> }</td>
+                            <td class="crm-table-vacancy" data-label="Вакансия"><strong title="@card.Vacancy">@card.Vacancy</strong></td>
                             <td class="crm-table-manager" data-label="Ответственный">@(card.ManagerName ?? "Не назначен")</td>
                             <td data-label="Результат"><span class="crm-table-result" title="@(card.CloseReason ?? "Причина не указана")">@(card.CloseReason ?? "Не указана")</span></td>
                             <td class="crm-table-time" data-label="Закрыто"><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(card.StageChangedAtUtc, "datetime"))" /></td>
