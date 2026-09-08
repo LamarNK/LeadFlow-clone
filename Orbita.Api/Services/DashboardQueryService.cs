@@ -111,12 +111,7 @@ public sealed class DashboardQueryService(
         var sendTimestamps = await LoadSendTimestampsAsync(workerIds, periodUtcStart, periodUtcEnd, ct);
 
         // Keep snapshot data only for account-level details (ads counts, balances) and activity charts
-        var latestSnapshots = await db.WorkerSnapshots
-            .AsNoTracking()
-            .Where(x => workerIds.Contains(x.WorkerId))
-            .GroupBy(x => x.WorkerId)
-            .Select(g => g.OrderByDescending(x => x.CapturedAtUtc).First())
-            .ToListAsync(ct);
+        var latestSnapshots = await WorkerSnapshotQuery.LoadLatestAsync(db, workerIds, ct);
 
         var statsList = latestSnapshots
             .Select(s => JsonSerializer.Deserialize<DashboardStatsDto>(s.StatsJson, JsonOptions))
@@ -318,12 +313,8 @@ public sealed class DashboardQueryService(
         var workerIds = workers.Select(w => w.Id).ToList();
         var operationalStats = await ComputeWorkerOperationalStatsAsync(workerIds, todayStart, ct);
 
-        var latestStats = await db.WorkerSnapshots
-            .AsNoTracking()
-            .Where(x => workerIds.Contains(x.WorkerId))
-            .GroupBy(x => x.WorkerId)
-            .Select(g => g.OrderByDescending(x => x.CapturedAtUtc).First())
-            .ToDictionaryAsync(x => x.WorkerId, x => x.StatsJson, ct);
+        var latestStats = (await WorkerSnapshotQuery.LoadLatestAsync(db, workerIds, ct))
+            .ToDictionary(x => x.WorkerId, x => x.StatsJson);
 
         var latestRelease = await releases.GetLatestAsync(ct);
         var latestReleaseVersion = latestRelease?.Version;
@@ -1796,18 +1787,7 @@ public sealed class DashboardQueryService(
         IReadOnlyList<Guid> workerIds,
         CancellationToken ct)
     {
-        var snapshots = await db.WorkerSnapshots
-            .AsNoTracking()
-            .Where(x => workerIds.Contains(x.WorkerId))
-            .GroupBy(x => x.WorkerId)
-            .Select(g => new
-            {
-                WorkerId = g.Key,
-                BalancesJson = g.OrderByDescending(x => x.CapturedAtUtc)
-                    .Select(x => x.BalancesJson)
-                    .First()
-            })
-            .ToListAsync(ct)
+        var snapshots = await WorkerSnapshotQuery.LoadLatestAsync(db, workerIds, ct)
             .ConfigureAwait(false);
 
         return snapshots.ToDictionary(
@@ -1890,16 +1870,7 @@ public sealed class DashboardQueryService(
         }
 
         var workerIdList = workerIds as List<Guid> ?? workerIds.ToList();
-        var snapshots = await db.WorkerSnapshots
-            .AsNoTracking()
-            .Where(x => workerIdList.Contains(x.WorkerId))
-            .GroupBy(x => x.WorkerId)
-            .Select(g => new
-            {
-                WorkerId = g.Key,
-                g.OrderByDescending(x => x.CapturedAtUtc).First().BalancesJson
-            })
-            .ToListAsync(ct);
+        var snapshots = await WorkerSnapshotQuery.LoadLatestAsync(db, workerIdList, ct);
 
         var existingAccounts = await db.WorkerAccounts
             .AsNoTracking()

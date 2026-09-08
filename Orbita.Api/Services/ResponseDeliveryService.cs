@@ -15,7 +15,8 @@ public sealed class ResponseDeliveryService(
     CandidateAutoDistributionService autoDistribution,
     ManualBitrixSendService manualBitrixSend,
     CandidateDuplicateService duplicateService,
-    IPanelRealtimeNotifier panelRealtime)
+    IPanelRealtimeNotifier panelRealtime,
+    ResponseCacheInvalidator cacheInvalidator)
 {
     public async Task<DeliverResponseResultDto> DeliverAsync(
         Guid responseId,
@@ -24,6 +25,8 @@ public sealed class ResponseDeliveryService(
         string source = DistributionModes.Manual,
         CancellationToken ct = default)
     {
+        await using var invalidationBatch = cacheInvalidator.BeginBatch();
+
         if (!request.ToCrm && !request.ToBitrix)
         {
             return Fail(ResponseStatuses.ActionRequired, "Выберите канал: CRM и/или Bitrix.");
@@ -167,6 +170,11 @@ public sealed class ResponseDeliveryService(
         entity.Status = ResolveStatus(channels, request);
         entity.ErrorMessage = BuildSummary(channels) ?? string.Empty;
         await db.SaveChangesAsync(ct);
+        await cacheInvalidator.InvalidateAsync(entity.OfficeId ?? primaryOfficeId);
+        foreach (var officeId in officeIds)
+        {
+            await cacheInvalidator.InvalidateAsync(officeId);
+        }
 
         panelRealtime.Notify(
             [PanelChangeKind.Responses, PanelChangeKind.Dashboard, PanelChangeKind.NavBadges],
@@ -182,6 +190,8 @@ public sealed class ResponseDeliveryService(
                 panelRealtime.Notify([PanelChangeKind.Crm], officeId, entity.WorkerId);
             }
         }
+
+        await invalidationBatch.FlushAsync();
 
         return new DeliverResponseResultDto(
             anySuccess,
@@ -244,6 +254,7 @@ public sealed class ResponseDeliveryService(
         var items = new List<BulkDeliverItemResultDto>();
         var succeeded = 0;
         var failed = 0;
+        await using var invalidationBatch = cacheInvalidator.BeginBatch();
         foreach (var id in request.ResponseIds.Distinct())
         {
             var result = await DeliverAsync(
@@ -270,6 +281,8 @@ public sealed class ResponseDeliveryService(
 
             items.Add(new BulkDeliverItemResultDto(id, result.Success, result.Status, result.ErrorMessage));
         }
+
+        await invalidationBatch.FlushAsync();
 
         return (new BulkDeliverResponsesResultDto(items.Count, succeeded, failed, items), null);
     }

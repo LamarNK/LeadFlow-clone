@@ -14,6 +14,51 @@ namespace Orbita.Tests;
 public sealed class ResponseDeliveryServiceTests
 {
     [Fact]
+    public async Task Deliver_CrmOnly_InvalidatesResponseCacheBeforeReturning()
+    {
+        await using var provider = await CreateProviderAsync();
+        var db = provider.GetRequiredService<OrbitaDbContext>();
+        var officeId = Guid.NewGuid();
+        var workerId = Guid.NewGuid();
+        var responseId = Guid.NewGuid();
+        var personId = Guid.NewGuid();
+        db.Offices.Add(new OfficeEntity
+        {
+            Id = officeId, Name = "Cache Office", RegistrationSecretHash = "h",
+            CreatedAtUtc = DateTime.UtcNow, IsEnabled = true, CrmEnabled = true
+        });
+        db.Workers.Add(new WorkerEntity
+        {
+            Id = workerId, OfficeId = officeId, DisplayName = "W", ApiKeyHash = "h",
+            CreatedAtUtc = DateTime.UtcNow
+        });
+        db.CandidatePersons.Add(new CandidatePersonEntity
+        {
+            Id = personId, FullName = "Иван", FirstName = "Иван", LastName = "Иванов",
+            MiddleName = "", PhoneNormalized = "79000000001",
+            CreatedAtUtc = DateTime.UtcNow, UpdatedAtUtc = DateTime.UtcNow
+        });
+        db.CandidateResponses.Add(new CandidateResponseEntity
+        {
+            Id = responseId, PersonId = personId, WorkerId = workerId,
+            AccountId = Guid.NewGuid(), AccountName = "acc", Source = "Avito",
+            SourceResponseId = "cache-response", FullName = "Иван",
+            PhoneNormalized = "79000000001", Status = ResponseStatuses.ActionRequired,
+            CreatedAt = DateTime.UtcNow, CollectedAt = DateTime.UtcNow
+        });
+        await db.SaveChangesAsync();
+
+        var result = await provider.GetRequiredService<ResponseDeliveryService>().DeliverAsync(
+            responseId,
+            new DeliverResponseRequest(officeId, ToCrm: true, ToBitrix: false),
+            OfficeScope.ForOffice(officeId));
+
+        Assert.True(result.Success, result.ErrorMessage);
+        var cache = provider.GetRequiredService<IOrbitaQueryCache>();
+        Assert.Contains(officeId, ((NoopQueryCache)cache).InvalidatedOfficeIds);
+    }
+
+    [Fact]
     public async Task Deliver_CrmOnly_CreatesCardAndBindsOffice()
     {
         await using var provider = await CreateProviderAsync();
@@ -347,6 +392,8 @@ public sealed class ResponseDeliveryServiceTests
         services.AddScoped<BitrixDuplicateCheckAllService>();
         services.AddScoped<CandidateBitrixSendService>();
         services.AddScoped<CandidateAutoDistributionService>();
+        services.AddScoped<ResponseCacheInvalidator>();
+        services.AddSingleton<IOrbitaQueryCache, NoopQueryCache>();
         services.AddScoped<ManualBitrixSendService>();
         services.AddSingleton<IPanelRealtimeNotifier, NoopPanelRealtimeNotifier>();
         services.AddScoped<ResponseDeliveryService>();
@@ -364,5 +411,25 @@ public sealed class ResponseDeliveryServiceTests
     private sealed class HttpClientFactoryStub : IHttpClientFactory
     {
         public HttpClient CreateClient(string name) => new();
+    }
+
+    private sealed class NoopQueryCache : IOrbitaQueryCache
+    {
+        public List<Guid?> InvalidatedOfficeIds { get; } = [];
+
+        public Task<T> GetOrCreateAsync<T>(OrbitaCacheDomain domain, Guid? officeId, string? audience,
+            object? parameters, OrbitaCachePolicy policy, Func<CancellationToken, Task<T>> factory,
+            CancellationToken cancellationToken = default) => factory(cancellationToken);
+
+        public Task<T> GetOrCreateDistributedAsync<T>(OrbitaCacheDomain domain, Guid? officeId, string? audience,
+            object? parameters, OrbitaCachePolicy policy, Func<CancellationToken, Task<T>> factory,
+            CancellationToken cancellationToken = default) => factory(cancellationToken);
+
+        public Task InvalidateAsync(IReadOnlyList<PanelChangeKind> changes, Guid? officeId)
+        {
+            InvalidatedOfficeIds.Add(officeId);
+            return Task.CompletedTask;
+        }
+        public void ClearLocalVersion(OrbitaCacheDomain domain, Guid? officeId) { }
     }
 }

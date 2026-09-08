@@ -74,12 +74,7 @@ public sealed class OfficeStatisticsQueryService(
             return Empty(nowUtc);
         }
 
-        var latestSnapshots = await db.WorkerSnapshots
-            .AsNoTracking()
-            .Where(x => workerIds.Contains(x.WorkerId))
-            .GroupBy(x => x.WorkerId)
-            .Select(g => g.OrderByDescending(x => x.CapturedAtUtc).First())
-            .ToListAsync(ct);
+        var latestSnapshots = await WorkerSnapshotQuery.LoadLatestAsync(db, workerIds, ct);
 
         var statsList = latestSnapshots
             .Select(s => JsonSerializer.Deserialize<DashboardStatsDto>(s.StatsJson, JsonOptions))

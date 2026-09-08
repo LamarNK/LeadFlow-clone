@@ -30,6 +30,16 @@ services:
   postgres:
     image: postgres:16
     restart: unless-stopped
+    command:
+      - postgres
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+      - -c
+      - track_io_timing=on
+      - -c
+      - log_min_duration_statement=500ms
+      - -c
+      - log_temp_files=65536
     environment:
       POSTGRES_DB: orbita
       POSTGRES_USER: orbita

@@ -299,6 +299,8 @@ public static class OrbitaApiStartupExtensions
         });
 
         builder.Services.AddScoped<TelemetryService>();
+        builder.Services.AddScoped<WorkerSnapshotRetentionPruner>();
+        builder.Services.AddHostedService<WorkerSnapshotRetentionService>();
         builder.Services.AddScoped<DashboardQueryService>();
         builder.Services.AddScoped<OfficeStatisticsQueryService>();
         builder.Services.AddScoped<PanelAuditService>();
@@ -373,6 +375,7 @@ public static class OrbitaApiStartupExtensions
         builder.Services.AddScoped<BitrixDuplicateCheckAllService>();
         builder.Services.AddScoped<CandidateBitrixSendService>();
         builder.Services.AddScoped<ResponseBitrixDeliveryService>();
+        builder.Services.AddScoped<ResponseCacheInvalidator>();
         builder.Services.AddScoped<ManualBitrixSendService>();
         builder.Services.AddScoped<BulkResponsesBitrixSendService>();
         builder.Services.AddScoped<ResponseDeliveryService>();

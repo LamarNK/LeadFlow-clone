@@ -764,7 +764,10 @@ public sealed class CandidateIngestionServiceTests
         var deliveries = new ResponseBitrixDeliveryService(db);
         var leadExportQuota = new LeadExportQuotaService(db);
         var autoDistribution = new CandidateAutoDistributionService(bitrixDuplicateCheck, bitrixSend, deliveries, leadExportQuota);
-        var manualSend = new ManualBitrixSendService(db, duplicateService, bitrixDuplicateCheck, bitrixSend, deliveries, new NoopPanelRealtimeNotifier());
+        var cacheInvalidator = new ResponseCacheInvalidator(
+            new NoopQueryCache(),
+            Microsoft.Extensions.Logging.Abstractions.NullLogger<ResponseCacheInvalidator>.Instance);
+        var manualSend = new ManualBitrixSendService(db, duplicateService, bitrixDuplicateCheck, bitrixSend, deliveries, new NoopPanelRealtimeNotifier(), cacheInvalidator);
         var crmWorkspace = new CrmWorkspaceService(
             db,
             /* users */ null!,
@@ -778,7 +781,8 @@ public sealed class CandidateIngestionServiceTests
             autoDistribution,
             manualSend,
             duplicateService,
-            new NoopPanelRealtimeNotifier());
+            new NoopPanelRealtimeNotifier(),
+            cacheInvalidator);
 
         return new CandidateIngestionService(
             db,
@@ -792,6 +796,18 @@ public sealed class CandidateIngestionServiceTests
             delivery,
             bitrixOptions,
             new NoopPanelRealtimeNotifier());
+    }
+
+    private sealed class NoopQueryCache : IOrbitaQueryCache
+    {
+        public Task<T> GetOrCreateAsync<T>(OrbitaCacheDomain domain, Guid? officeId, string? audience,
+            object? parameters, OrbitaCachePolicy policy, Func<CancellationToken, Task<T>> factory,
+            CancellationToken cancellationToken = default) => factory(cancellationToken);
+        public Task<T> GetOrCreateDistributedAsync<T>(OrbitaCacheDomain domain, Guid? officeId, string? audience,
+            object? parameters, OrbitaCachePolicy policy, Func<CancellationToken, Task<T>> factory,
+            CancellationToken cancellationToken = default) => factory(cancellationToken);
+        public Task InvalidateAsync(IReadOnlyList<PanelChangeKind> changes, Guid? officeId) => Task.CompletedTask;
+        public void ClearLocalVersion(OrbitaCacheDomain domain, Guid? officeId) { }
     }
 
     private static OrbitaDbContext CreateDb()

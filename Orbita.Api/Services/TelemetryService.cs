@@ -227,28 +227,6 @@ public sealed class TelemetryService(
                 worker.Id);
         }
 
-        // Probabilistic retention to keep snapshot table from growing unbounded.
-        // Keep latest + anything in last ~48h. Called rarely to avoid overhead.
-        if (Random.Shared.Next(0, 25) == 0)
-        {
-            try
-            {
-                var cutoff = DateTime.UtcNow.AddHours(-48);
-                var stale = await db.WorkerSnapshots
-                    .Where(s => s.WorkerId == request.WorkerId && s.CapturedAtUtc < cutoff)
-                    .ToListAsync(ct);
-                if (stale.Count > 0)
-                {
-                    db.WorkerSnapshots.RemoveRange(stale);
-                    await db.SaveChangesAsync(ct);
-                }
-            }
-            catch
-            {
-                // ignore prune errors
-            }
-        }
-
         return true;
     }
 

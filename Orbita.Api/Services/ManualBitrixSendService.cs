@@ -10,7 +10,8 @@ public sealed class ManualBitrixSendService(
     BitrixDuplicateCheckAllService bitrixDuplicateCheck,
     CandidateBitrixSendService bitrixSend,
     ResponseBitrixDeliveryService deliveries,
-    IPanelRealtimeNotifier panelRealtime)
+    IPanelRealtimeNotifier panelRealtime,
+    ResponseCacheInvalidator cacheInvalidator)
 {
     public async Task<SendBitrixResultDto> SendAsync(
         Guid responseId,
@@ -65,6 +66,7 @@ public sealed class ManualBitrixSendService(
             entity.DuplicateSummary = "Локальный дубль в Орбите";
             entity.ProcessedAt = DateTime.UtcNow;
             await db.SaveChangesAsync(ct);
+            await InvalidateCacheAsync(entity.OfficeId);
             return new SendBitrixResultDto(false, entity.Status, null, instance.Id, instance.Name, entity.DuplicateSummary);
         }
 
@@ -84,6 +86,7 @@ public sealed class ManualBitrixSendService(
             entity.ErrorMessage = unavailableReason;
             entity.ProcessedAt = DateTime.UtcNow;
             await db.SaveChangesAsync(ct);
+            await InvalidateCacheAsync(entity.OfficeId);
             Notify(entity, unavailableReason);
             return new SendBitrixResultDto(false, entity.Status, null, instance.Id, instance.Name, unavailableReason);
         }
@@ -103,6 +106,7 @@ public sealed class ManualBitrixSendService(
             entity.DuplicateSummary = duplicateSummary;
             entity.ProcessedAt = DateTime.UtcNow;
             await db.SaveChangesAsync(ct);
+            await InvalidateCacheAsync(entity.OfficeId);
             return new SendBitrixResultDto(false, entity.Status, null, instance.Id, instance.Name, entity.DuplicateSummary);
         }
 
@@ -128,6 +132,7 @@ public sealed class ManualBitrixSendService(
             entity.DuplicateBitrixInstanceId = null;
             entity.DuplicateSummary = string.Empty;
             await db.SaveChangesAsync(ct);
+            await InvalidateCacheAsync(entity.OfficeId);
             Notify(entity);
             return new SendBitrixResultDto(true, entity.Status, entity.BitrixEntityId, instance.Id, instance.Name, null);
         }
@@ -146,9 +151,13 @@ public sealed class ManualBitrixSendService(
         entity.ErrorMessage = errorMessage;
         entity.BitrixContactId = contactId ?? string.Empty;
         await db.SaveChangesAsync(ct);
+        await InvalidateCacheAsync(entity.OfficeId);
         Notify(entity, entity.ErrorMessage);
         return new SendBitrixResultDto(false, entity.Status, null, instance.Id, instance.Name, entity.ErrorMessage);
     }
+
+    private Task InvalidateCacheAsync(Guid? officeId) =>
+        cacheInvalidator.InvalidateAsync(officeId);
 
     private void Notify(CandidateResponseEntity entity, string? operatorMessage = null)
     {

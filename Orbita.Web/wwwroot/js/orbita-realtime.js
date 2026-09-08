@@ -16,6 +16,7 @@
     };
 
     var POLL_INTERVAL_MS = 60000;
+    var RESPONSES_FALLBACK_POLL_INTERVAL_MS = 5000;
 
     var handlers = {};
     var connection = null;
@@ -186,13 +187,20 @@
 
     function startPollingFallback() {
         if (pollTimer) return;
+        var lastDefaultRefreshAt = 0;
         pollTimer = window.setInterval(function () {
             if (isConnected()) {
                 stopPollingFallback();
                 return;
             }
-            refreshActivePage();
-        }, POLL_INTERVAL_MS);
+
+            var page = getActivePage();
+            var now = Date.now();
+            if (page === 'responses' || now - lastDefaultRefreshAt >= POLL_INTERVAL_MS) {
+                lastDefaultRefreshAt = now;
+                refreshActivePage();
+            }
+        }, RESPONSES_FALLBACK_POLL_INTERVAL_MS);
     }
 
     function stopPollingFallback() {
