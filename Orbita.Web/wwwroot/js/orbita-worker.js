@@ -985,7 +985,7 @@
                 '<i class="' + shared.escapeHtml(evt.iconClass || eventIcon(evt.level)) + '" aria-hidden="true"></i></div>' +
                 '<div class="dash-event-body"><div class="dash-event-title" title="' + shared.escapeHtml(evt.message || '') + '">' + shared.escapeHtml(evt.message || '') + '</div>' + subtitle + '</div>' +
                 '<div class="dash-event-side"><div class="dash-event-time">' +
-                '<time data-orbita-utc="' + shared.escapeHtml(iso) + '" data-orbita-format="time-short"></time></div></div></div>';
+                '<time data-orbita-utc="' + shared.escapeHtml(iso) + '" data-orbita-format="activity"></time></div></div></div>';
         }).join('') + '</div>';
 
         if (window.OrbitaTime) {
