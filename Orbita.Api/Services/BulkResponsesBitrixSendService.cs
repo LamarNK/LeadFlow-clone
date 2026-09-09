@@ -3,7 +3,9 @@ using Orbita.Contracts;
 
 namespace Orbita.Api.Services;
 
-public sealed class BulkResponsesBitrixSendService(ManualBitrixSendService manualSend)
+public sealed class BulkResponsesBitrixSendService(
+    ManualBitrixSendService manualSend,
+    ResponseCacheInvalidator cacheInvalidator)
 {
     public const int MaxBatchSize = 200;
 
@@ -33,6 +35,8 @@ public sealed class BulkResponsesBitrixSendService(ManualBitrixSendService manua
         var succeeded = 0;
         var failed = 0;
 
+        await using var invalidationBatch = cacheInvalidator.BeginBatch();
+
         foreach (var responseId in distinctIds)
         {
             var sendResult = await manualSend.SendAsync(responseId, bitrixInstanceId, scope, ct);
@@ -51,6 +55,8 @@ public sealed class BulkResponsesBitrixSendService(ManualBitrixSendService manua
                 sendResult.Status,
                 sendResult.ErrorMessage));
         }
+
+        await invalidationBatch.FlushAsync();
 
         return (new BulkSendBitrixResultDto(distinctIds.Count, succeeded, failed, items), null);
     }

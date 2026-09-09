@@ -966,7 +966,7 @@ public sealed class CrmController(
         }
         else
         {
-            // Values maintained by CRM integrations (including source IDs) are preserved server-side.
+            // Values maintained by CRM integrations are preserved server-side.
             (_, error) = await api.UpdateCrmCardAsync(
                 id,
                 new CrmCardUpdateRequest(
@@ -975,11 +975,11 @@ public sealed class CrmController(
                     city,
                     current.Card.Vacancy,
                     age,
-                    current.Card.SourceResponseId,
-                    current.Card.AccountName,
-                    current.Card.SourceUrl,
-                    current.Card.VacancyUrl,
-                    current.Card.MessengerUrl,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
                     citizenship),
                 ct);
         }
@@ -1201,8 +1201,8 @@ public sealed class CrmController(
                 city,
                 vacancy,
                 age,
-                source,
-                sourceResponseId,
+                null,
+                null,
                 stage,
                 assignToMe,
                 citizenship),

@@ -44,6 +44,11 @@ public sealed class CrmStageArchiveBuilderTests
         Assert.DoesNotContain(cardId.ToString(), cards);
         Assert.DoesNotContain("ID карточки", cards);
         Assert.DoesNotContain("Создана UTC", cards);
+        Assert.DoesNotContain("Ссылка источника", cards);
+        Assert.DoesNotContain("Ссылка вакансии", cards);
+        Assert.DoesNotContain("Мессенджер", cards);
+        Assert.DoesNotContain("Аккаунт/источник", cards);
+        Assert.DoesNotContain("https://example.test/source/1", cards);
         Assert.Equal(2, cards.Split("\r\n", StringSplitOptions.RemoveEmptyEntries).Length);
     }
 

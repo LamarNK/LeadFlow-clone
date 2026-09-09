@@ -239,7 +239,12 @@ public sealed record WorkerCandidateLookupRequest(
     /// Вернуть метаданные совпавших SourceResponseId. Нужны для восстановления phone-watch
     /// из Orbita после переустановки или очистки локального состояния воркера.
     /// </summary>
-    bool IncludeSourceResponseMetadata = false);
+    bool IncludeSourceResponseMetadata = false,
+    /// <summary>
+    /// Положительное значение запрашивает все активные phone-watch этого аккаунта/субпрофиля,
+    /// чтобы воркер мог доскроллить список до наблюдаемых кандидатов.
+    /// </summary>
+    int OpenPhoneWatchHours = 0);
 
 /// <summary>
 /// Сохранённый в Orbita отклик, совпавший по SourceResponseId. Список возвращается свежими
@@ -251,12 +256,20 @@ public sealed record WorkerKnownSourceResponseDto(
     string PhoneRaw,
     string PhoneNormalized);
 
+public sealed record WorkerOpenPhoneWatchDto(
+    string SourceResponseId,
+    string FullName,
+    DateTime CollectedAt,
+    string PhoneRaw,
+    string PhoneNormalized);
+
 public sealed record WorkerCandidateLookupResponse(
     IReadOnlyList<string> ExistingSourceResponseIds,
     IReadOnlyList<string> ExistingPhones,
     IReadOnlyList<string> ExistingCardFingerprints,
     IReadOnlyList<int> MatchedProfileIndexes,
-    IReadOnlyList<WorkerKnownSourceResponseDto>? ExistingSourceResponses = null);
+    IReadOnlyList<WorkerKnownSourceResponseDto>? ExistingSourceResponses = null,
+    IReadOnlyList<WorkerOpenPhoneWatchDto>? OpenPhoneWatches = null);
 
 public sealed record WorkerPendingChatMessageDto(
     Guid Id,

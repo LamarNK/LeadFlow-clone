@@ -111,12 +111,7 @@ public sealed class DashboardQueryService(
         var sendTimestamps = await LoadSendTimestampsAsync(workerIds, periodUtcStart, periodUtcEnd, ct);
 
         // Keep snapshot data only for account-level details (ads counts, balances) and activity charts
-        var latestSnapshots = await db.WorkerSnapshots
-            .AsNoTracking()
-            .Where(x => workerIds.Contains(x.WorkerId))
-            .GroupBy(x => x.WorkerId)
-            .Select(g => g.OrderByDescending(x => x.CapturedAtUtc).First())
-            .ToListAsync(ct);
+        var latestSnapshots = await WorkerSnapshotQuery.LoadLatestAsync(db, workerIds, ct);
 
         var statsList = latestSnapshots
             .Select(s => JsonSerializer.Deserialize<DashboardStatsDto>(s.StatsJson, JsonOptions))
@@ -318,12 +313,8 @@ public sealed class DashboardQueryService(
         var workerIds = workers.Select(w => w.Id).ToList();
         var operationalStats = await ComputeWorkerOperationalStatsAsync(workerIds, todayStart, ct);
 
-        var latestStats = await db.WorkerSnapshots
-            .AsNoTracking()
-            .Where(x => workerIds.Contains(x.WorkerId))
-            .GroupBy(x => x.WorkerId)
-            .Select(g => g.OrderByDescending(x => x.CapturedAtUtc).First())
-            .ToDictionaryAsync(x => x.WorkerId, x => x.StatsJson, ct);
+        var latestStats = (await WorkerSnapshotQuery.LoadLatestAsync(db, workerIds, ct))
+            .ToDictionary(x => x.WorkerId, x => x.StatsJson);
 
         var latestRelease = await releases.GetLatestAsync(ct);
         var latestReleaseVersion = latestRelease?.Version;
@@ -384,17 +375,18 @@ public sealed class DashboardQueryService(
         string? sort = null,
         string? dir = null,
         CancellationToken ct = default,
-        string? workerFilter = null)
+        string? workerFilter = null,
+        string? workerSearch = null)
     {
         Task<WorkersPageDto> Load(CancellationToken token) => GetWorkersPageUncachedAsync(
-            scope, officeFilter, page, pageSize, sort, dir, token, workerFilter);
+            scope, officeFilter, page, pageSize, sort, dir, token, workerFilter, workerSearch);
         return queryCache is null
             ? Load(ct)
             : queryCache.GetOrCreateAsync(
                 OrbitaCacheDomain.Dashboard,
                 scope.ResolveFilter(officeFilter),
                 ScopeAudience(scope),
-                new { Kind = "workers-page", page, pageSize, sort, dir, workerFilter },
+                new { Kind = "workers-page", page, pageSize, sort, dir, workerFilter, workerSearch },
                 OrbitaCachePolicy.Realtime,
                 Load,
                 ct);
@@ -408,7 +400,8 @@ public sealed class DashboardQueryService(
         string? sort = null,
         string? dir = null,
         CancellationToken ct = default,
-        string? workerFilter = null)
+        string? workerFilter = null,
+        string? workerSearch = null)
     {
         var nowUtc = DateTime.UtcNow;
         var todayStart = nowUtc.Date;
@@ -418,6 +411,15 @@ public sealed class DashboardQueryService(
         var filtered = officeScope
             .ApplyWorkerFilter(db.Workers.AsNoTracking(), scope, officeFilter)
             .Where(x => x.MachineName != LeadFlowImportWorker.MachineName);
+
+        foreach (var token in SearchQueryNormalizer.Tokenize(workerSearch))
+        {
+            var normalizedToken = token.ToLowerInvariant();
+            filtered = filtered.Where(x =>
+                x.DisplayName.ToLower().Contains(normalizedToken)
+                || x.MachineName.ToLower().Contains(normalizedToken)
+                || (x.IpAddress != null && x.IpAddress.ToLower().Contains(normalizedToken)));
+        }
 
         var pauseGroups = await filtered
             .GroupBy(x => x.IsMonitoringPaused)
@@ -1785,18 +1787,7 @@ public sealed class DashboardQueryService(
         IReadOnlyList<Guid> workerIds,
         CancellationToken ct)
     {
-        var snapshots = await db.WorkerSnapshots
-            .AsNoTracking()
-            .Where(x => workerIds.Contains(x.WorkerId))
-            .GroupBy(x => x.WorkerId)
-            .Select(g => new
-            {
-                WorkerId = g.Key,
-                BalancesJson = g.OrderByDescending(x => x.CapturedAtUtc)
-                    .Select(x => x.BalancesJson)
-                    .First()
-            })
-            .ToListAsync(ct)
+        var snapshots = await WorkerSnapshotQuery.LoadLatestAsync(db, workerIds, ct)
             .ConfigureAwait(false);
 
         return snapshots.ToDictionary(
@@ -1879,16 +1870,7 @@ public sealed class DashboardQueryService(
         }
 
         var workerIdList = workerIds as List<Guid> ?? workerIds.ToList();
-        var snapshots = await db.WorkerSnapshots
-            .AsNoTracking()
-            .Where(x => workerIdList.Contains(x.WorkerId))
-            .GroupBy(x => x.WorkerId)
-            .Select(g => new
-            {
-                WorkerId = g.Key,
-                g.OrderByDescending(x => x.CapturedAtUtc).First().BalancesJson
-            })
-            .ToListAsync(ct);
+        var snapshots = await WorkerSnapshotQuery.LoadLatestAsync(db, workerIdList, ct);
 
         var existingAccounts = await db.WorkerAccounts
             .AsNoTracking()

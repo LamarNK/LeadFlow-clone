@@ -15,7 +15,8 @@ public sealed class ResponseDeliveryService(
     CandidateAutoDistributionService autoDistribution,
     ManualBitrixSendService manualBitrixSend,
     CandidateDuplicateService duplicateService,
-    IPanelRealtimeNotifier panelRealtime)
+    IPanelRealtimeNotifier panelRealtime,
+    ResponseCacheInvalidator cacheInvalidator)
 {
     public async Task<DeliverResponseResultDto> DeliverAsync(
         Guid responseId,
@@ -24,6 +25,8 @@ public sealed class ResponseDeliveryService(
         string source = DistributionModes.Manual,
         CancellationToken ct = default)
     {
+        await using var invalidationBatch = cacheInvalidator.BeginBatch();
+
         if (!request.ToCrm && !request.ToBitrix)
         {
             return Fail(ResponseStatuses.ActionRequired, "Выберите канал: CRM и/или Bitrix.");
@@ -167,21 +170,42 @@ public sealed class ResponseDeliveryService(
         entity.Status = ResolveStatus(channels, request);
         entity.ErrorMessage = BuildSummary(channels) ?? string.Empty;
         await db.SaveChangesAsync(ct);
-
-        panelRealtime.Notify(
-            [PanelChangeKind.Responses, PanelChangeKind.Dashboard, PanelChangeKind.NavBadges],
-            primaryOfficeId,
-            entity.WorkerId);
+        await cacheInvalidator.InvalidateAsync(entity.OfficeId ?? primaryOfficeId);
+        foreach (var officeId in officeIds)
+        {
+            await cacheInvalidator.InvalidateAsync(officeId);
+        }
 
         // The response can be delivered to several CRM offices. Each board needs its own scoped event.
         var crmResults = channels.Where(x => x.Channel == "CRM").ToList();
+        var responseVisibilityOfficeIds = new HashSet<Guid>();
+        if (entity.OfficeId is Guid responseOfficeId)
+        {
+            responseVisibilityOfficeIds.Add(responseOfficeId);
+        }
+        else if (primaryOfficeId is Guid fallbackOfficeId)
+        {
+            responseVisibilityOfficeIds.Add(fallbackOfficeId);
+        }
+
         foreach (var (officeId, result) in officeIds.Zip(crmResults))
         {
             if (result.Success)
             {
+                responseVisibilityOfficeIds.Add(officeId);
                 panelRealtime.Notify([PanelChangeKind.Crm], officeId, entity.WorkerId);
             }
         }
+
+        foreach (var officeId in responseVisibilityOfficeIds)
+        {
+            panelRealtime.Notify(
+                [PanelChangeKind.Responses, PanelChangeKind.Dashboard, PanelChangeKind.NavBadges],
+                officeId,
+                entity.WorkerId);
+        }
+
+        await invalidationBatch.FlushAsync();
 
         return new DeliverResponseResultDto(
             anySuccess,
@@ -244,6 +268,7 @@ public sealed class ResponseDeliveryService(
         var items = new List<BulkDeliverItemResultDto>();
         var succeeded = 0;
         var failed = 0;
+        await using var invalidationBatch = cacheInvalidator.BeginBatch();
         foreach (var id in request.ResponseIds.Distinct())
         {
             var result = await DeliverAsync(
@@ -270,6 +295,8 @@ public sealed class ResponseDeliveryService(
 
             items.Add(new BulkDeliverItemResultDto(id, result.Success, result.Status, result.ErrorMessage));
         }
+
+        await invalidationBatch.FlushAsync();
 
         return (new BulkDeliverResponsesResultDto(items.Count, succeeded, failed, items), null);
     }

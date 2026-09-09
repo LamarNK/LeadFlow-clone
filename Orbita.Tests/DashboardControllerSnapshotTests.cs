@@ -70,6 +70,7 @@ public sealed class DashboardControllerSnapshotTests
             string? sort = null,
             string? sortDir = null,
             CancellationToken ct = default,
-            string? workerFilter = null) => Task.FromResult(model);
+            string? workerFilter = null,
+            string? workerSearch = null) => Task.FromResult(model);
     }
 }

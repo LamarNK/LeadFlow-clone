@@ -39,7 +39,6 @@
         && card.IsClosed
         && string.Equals(card.CloseReason, CrmCloseReasons.Success, StringComparison.Ordinal)
         && successDocuments.Count > 0;
-    var vacancyUrl = !string.IsNullOrWhiteSpace(card.VacancyUrl) ? card.VacancyUrl : card.SourceUrl;
     var phoneDigits = string.Concat(card.PhoneRaw.Where(char.IsDigit));
     var messengerPhone = phoneDigits.Length == 11 && phoneDigits.StartsWith("8", StringComparison.Ordinal) ? "7" + phoneDigits[1..] : phoneDigits;
     var phoneE164 = $"+{messengerPhone}";
@@ -73,7 +72,7 @@
         "ChatCancelled" => "Сообщение в чат отменено",
         _ => action
     };
-    var canSendChat = canEdit && !card.IsClosed && !string.IsNullOrWhiteSpace(card.SourceResponseId);
+    var canSendChat = canEdit && !card.IsClosed && card.CanSendChat;
     const string successImageAccept = ".jpg,.jpeg,.png,.webp,.gif,.bmp,.heic,.heif,.tif,.tiff";
 }
 <partial name="_PageHeader" model="header" />
@@ -117,14 +116,7 @@
                     <span class="crm-card-inline-edit__age-unit">лет</span> ·
                     <span class="crm-card-inline-edit__city-value">@card.City</span>
                     <input class="crm-card-inline-edit__city-input" name="city" value="@card.City" maxlength="256" aria-label="Город кандидата" /> ·
-                    @if (!string.IsNullOrWhiteSpace(vacancyUrl))
-                    {
-                        <a class="crm-vacancy-link" href="@vacancyUrl" target="_blank" rel="noopener" title="Открыть объявление">@card.Vacancy <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a>
-                    }
-                    else
-                    {
-                        @card.Vacancy
-                    }
+                    @card.Vacancy
                     <span class="crm-card-inline-edit__citizenship-edit">
                         · Гражданство
                         <input class="crm-card-inline-edit__citizenship-input" name="citizenship" value="@card.Citizenship" maxlength="128" aria-label="Гражданство кандидата" placeholder="Не указано" />
@@ -148,10 +140,6 @@
                         </div>
                     </details>
                     <input class="crm-card-inline-edit__phone-input" name="phoneRaw" value="@card.PhoneRaw" required maxlength="64" aria-label="Основной телефон" />
-                    @if (!string.IsNullOrWhiteSpace(vacancyUrl))
-                    {
-                        <a href="@vacancyUrl" target="_blank" rel="noopener" class="settings-secondary-btn"><i class="fa-solid fa-tag" aria-hidden="true"></i>Объявление</a>
-                    }
                     @if (canEdit)
                     {
                         <button type="button" class="settings-secondary-btn crm-card-inline-edit__toggle" data-crm-card-inline-edit-toggle aria-expanded="false"><i class="fa-solid fa-pen" aria-hidden="true"></i>Редактировать</button>
@@ -280,24 +268,9 @@
                     <div>
                         <dt>Вакансия</dt>
                         <dd>
-                            @if (!string.IsNullOrWhiteSpace(vacancyUrl))
-                            {
-                                <a class="crm-field-link" href="@vacancyUrl" target="_blank" rel="noopener" title="Открыть объявление">@card.Vacancy <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></a>
-                            }
-                            else
-                            {
-                                @card.Vacancy
-                            }
+                            @card.Vacancy
                         </dd>
                     </div>
-                    @if (!string.IsNullOrWhiteSpace(card.AccountName))
-                    {
-                        <div><dt>Источник</dt><dd>@card.AccountName</dd></div>
-                    }
-                    @if (!string.IsNullOrWhiteSpace(card.SourceResponseId))
-                    {
-                        <div><dt>ID отклика</dt><dd>@card.SourceResponseId</dd></div>
-                    }
                     <div><dt>Этап</dt><dd>@card.Stage</dd></div>
                     <div><dt>Ответственный</dt><dd>@(card.ManagerName ?? "Не назначен")</dd></div>
                     <div><dt>Нагрузка</dt><dd>@(card.IsInActiveLoad ? "В активной работе" : CrmManagerLoadRules.IsExcludedStage(card.Stage) ? "Не входит в нагрузку (служебный этап)" : "Вне нагрузки")</dd></div>
@@ -438,7 +411,7 @@
                 {
                     <p class="crm-empty">Карточка закрыта — писать в чат нельзя.</p>
                 }
-                else if (canEdit && string.IsNullOrWhiteSpace(card.SourceResponseId))
+                else if (canEdit && !card.CanSendChat)
                 {
                     <p class="crm-empty">Нет привязки к отклику Avito — сообщение нельзя поставить в очередь.</p>
                 }

@@ -15,7 +15,8 @@
         pageSize = pagination.PageSize,
         sort = Model.Sort.Column,
         dir = Model.Sort.Dir,
-        workerFilter = Model.WorkerFilter
+        workerFilter = Model.WorkerFilter,
+        workerSearch = Model.WorkerSearchQuery
     };
     var liveBootstrapJson = JsonSerializer.Serialize(new DashboardLiveSnapshotViewModel
     {
@@ -41,7 +42,8 @@
         pageSize = pagination.PageSize,
         sort = Model.Sort.Column,
         dir = Model.Sort.Dir,
-        workerFilter = Model.WorkerFilter
+        workerFilter = Model.WorkerFilter,
+        workerSearch = Model.WorkerSearchQuery
     })!;
 }
 <partial name="_PageHeader" model="Model.Header" />
@@ -110,7 +112,7 @@
                     </div>
                     <label class="dashboard-worker-search">
                         <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
-                        <input type="search" data-dashboard-worker-search placeholder="Поиск по имени, ПК или IP" aria-label="Поиск по имени, ПК или IP" autocomplete="off" />
+                        <input type="search" data-dashboard-worker-search value="@Model.WorkerSearchQuery" placeholder="Поиск по имени, ПК или IP" aria-label="Поиск по имени, ПК или IP" autocomplete="off" />
                     </label>
                     <div class="dashboard-workers-toolbar-actions">
                         <form method="get"
@@ -123,6 +125,7 @@
                             <input type="hidden" name="pageSize" value="@pagination.PageSize" />
                             <input type="hidden" name="dir" value="@Model.Sort.Dir" />
                             <input type="hidden" name="workerFilter" value="@Model.WorkerFilter" />
+                            <input type="hidden" name="workerSearch" value="@Model.WorkerSearchQuery" />
                             <span>Сортировка:</span>
                             <select name="sort" data-dashboard-worker-sort-key aria-label="Поле сортировки воркеров">
                                 <option value="activity" selected="@(string.Equals(Model.Sort.Column, "activity", StringComparison.OrdinalIgnoreCase))">По активности</option>
@@ -329,6 +332,7 @@
                             <input type="hidden" name="sort" value="@Model.Sort.Column" />
                             <input type="hidden" name="dir" value="@Model.Sort.Dir" />
                             <input type="hidden" name="workerFilter" value="@Model.WorkerFilter" />
+                            <input type="hidden" name="workerSearch" value="@Model.WorkerSearchQuery" />
                             <partial name="_PageSizeFilterField" model="pagination.PageSize" />
                         </form>
                         <partial name="_Pagination" model="@(new PaginationPartialViewModel

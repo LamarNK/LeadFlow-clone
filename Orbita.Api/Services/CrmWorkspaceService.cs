@@ -2047,16 +2047,18 @@ public sealed class CrmWorkspaceService(
         string Clamp(string? value, int max) =>
             string.IsNullOrWhiteSpace(value) ? string.Empty : value.Trim().Length <= max ? value.Trim() : value.Trim()[..max];
 
-        var sourceResponseId = Clamp(request.SourceResponseId, 128);
-        var accountName = Clamp(request.AccountName, 256);
-        var sourceUrl = Clamp(request.SourceUrl, 1024);
-        var vacancyUrl = Clamp(request.VacancyUrl, 1024);
-        var messengerUrl = Clamp(request.MessengerUrl, 1024);
+        var response = card.Response;
+        var sourceResponseId = request.SourceResponseId is null ? response.SourceResponseId : Clamp(request.SourceResponseId, 128);
+        var accountName = request.AccountName is null ? response.AccountName : Clamp(request.AccountName, 256);
+        // The CRM deliberately does not disclose source or advertisement URLs.
+        // Preserve those integration-managed values when the CRM updates other card fields.
+        var sourceUrl = request.SourceUrl is null ? response.SourceUrl : Clamp(request.SourceUrl, 1024);
+        var vacancyUrl = request.VacancyUrl is null ? response.VacancyUrl : Clamp(request.VacancyUrl, 1024);
+        var messengerUrl = request.MessengerUrl is null ? response.MessengerUrl : Clamp(request.MessengerUrl, 1024);
         var citizenship = request.Citizenship is null
             ? card.Response.Citizenship
             : CandidateCitizenshipResolver.Normalize(request.Citizenship);
 
-        var response = card.Response;
         var (firstName, lastName, middleName) = _candidateParser.ParseName(fullName);
         var changes = new List<string>();
         void Track(string label, string? before, string? after)
@@ -4249,7 +4251,7 @@ public sealed class CrmWorkspaceService(
             card.Response.PhoneRaw,
             card.Response.City,
             card.Response.Vacancy,
-            card.Response.MessengerUrl,
+            null,
             card.Stage,
             card.ManagerUserId,
             card.ManagerUserId is null ? null : names.GetValueOrDefault(card.ManagerUserId, card.ManagerUserId),
@@ -4263,16 +4265,17 @@ public sealed class CrmWorkspaceService(
             openTaskCount,
             hasOverdue,
             Math.Round(hours, 1),
-            string.IsNullOrWhiteSpace(card.Response.SourceUrl) ? null : card.Response.SourceUrl,
-            string.IsNullOrWhiteSpace(card.Response.VacancyUrl) ? null : card.Response.VacancyUrl,
-            string.IsNullOrWhiteSpace(card.Response.AccountName) ? null : card.Response.AccountName,
-            string.IsNullOrWhiteSpace(card.Response.SourceResponseId) ? null : card.Response.SourceResponseId,
+            null,
+            null,
+            null,
+            null,
             chatUnreadCount,
             CandidateCitizenshipResolver.Resolve(
                 card.Response.Citizenship,
                 card.Response.RawText,
                 card.Response.ChatMessagesJson),
-            contactPhones);
+            contactPhones,
+            !string.IsNullOrWhiteSpace(card.Response.SourceResponseId));
     }
 
     private static CrmTaskDto ToTaskDto(

@@ -1366,6 +1366,43 @@ public sealed class CrmWorkspaceServiceTests
     }
 
     [Fact]
+    public async Task CrmCard_DoesNotExposeAdvertisementUrls_AndPreservesThemDuringEdit()
+    {
+        await using var harness = await Harness.CreateAsync();
+        SeedOffice(harness.Db, crmEnabled: true);
+        var manager = await harness.CreateManagerAsync("private-ad-url@test.local", capacity: 5, onShift: true);
+        var response = await SeedResponseAsync(harness.Db);
+        response.SourceUrl = "https://example.test/source";
+        response.VacancyUrl = "https://example.test/vacancy";
+        response.MessengerUrl = "https://example.test/messenger";
+        var card = NewCard(response.Id, manager.Id);
+        harness.Db.CrmCandidateCards.Add(card);
+        await harness.Db.SaveChangesAsync();
+
+        var detail = await harness.Sut.GetCardAsync(card.Id, manager.Id, isAdmin: false);
+
+        Assert.NotNull(detail);
+        Assert.Null(detail!.Card.SourceUrl);
+        Assert.Null(detail.Card.VacancyUrl);
+        Assert.Null(detail.Card.MessengerUrl);
+        Assert.Null(detail.Card.AccountName);
+        Assert.Null(detail.Card.SourceResponseId);
+        Assert.True(detail.Card.CanSendChat);
+
+        var (ok, error) = await harness.Sut.UpdateCardAsync(
+            card.Id,
+            new CrmCardUpdateRequest("Петров Пётр", "79991112233", "Казань", "Токарь", 30),
+            manager.Id,
+            isAdmin: false);
+
+        Assert.True(ok, error);
+        await harness.Db.Entry(response).ReloadAsync();
+        Assert.Equal("https://example.test/source", response.SourceUrl);
+        Assert.Equal("https://example.test/vacancy", response.VacancyUrl);
+        Assert.Equal("https://example.test/messenger", response.MessengerUrl);
+    }
+
+    [Fact]
     public async Task SetOfficeFunnel_SavesCustomStagesAndMovesOrphans()
     {
         await using var harness = await Harness.CreateAsync();

@@ -54,8 +54,7 @@ public static class CrmStageArchiveBuilder
         for (var index = 1; index <= phoneColumnCount; index++) header.Add($"Телефон {index}");
         header.AddRange(
         [
-            "Ответственный", "В активной нагрузке", "Аккаунт/источник", "Ссылка источника",
-            "Ссылка вакансии", "Мессенджер", "Открытых задач", "Есть просроченная задача"
+            "Ответственный", "В активной нагрузке", "Открытых задач", "Есть просроченная задача"
         ]);
         WriteCsvRow(writer, header);
 
@@ -76,10 +75,6 @@ public static class CrmStageArchiveBuilder
             [
                 card.ManagerName,
                 YesNo(card.IsInActiveLoad),
-                card.AccountName,
-                card.SourceUrl,
-                card.VacancyUrl,
-                card.MessengerUrl,
                 card.OpenTaskCount,
                 YesNo(card.HasOverdueTask)
             ]);

@@ -9,6 +9,11 @@ internal static class CandidatesScrollStop
 {
     public const int KnownOnlyLoadRoundsToStop = 2;
 
-    public static bool ShouldStopAfterKnownHistory(bool seenUnknownCard, int consecutiveKnownOnlyLoadRounds) =>
-        seenUnknownCard && consecutiveKnownOnlyLoadRounds >= KnownOnlyLoadRoundsToStop;
+    public static bool ShouldStopAfterKnownHistory(
+        bool seenUnknownCard,
+        int consecutiveKnownOnlyLoadRounds,
+        bool hasOpenPhoneWatches = false) =>
+        !hasOpenPhoneWatches
+        && seenUnknownCard
+        && consecutiveKnownOnlyLoadRounds >= KnownOnlyLoadRoundsToStop;
 }

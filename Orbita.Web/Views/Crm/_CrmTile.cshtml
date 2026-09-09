@@ -5,7 +5,6 @@
     var defaultAssigneeUserId = card.ManagerUserId
         ?? Model.Managers.FirstOrDefault(x => x.UserId == Model.CurrentUserId)?.UserId
         ?? Model.Managers.FirstOrDefault()?.UserId;
-    var adUrl = !string.IsNullOrWhiteSpace(card.VacancyUrl) ? card.VacancyUrl : card.SourceUrl;
     var hasOverdueTask = !card.IsClosed && card.HasOverdueTask;
     var hasActiveTask = !card.IsClosed && card.OpenTaskCount > 0 && !hasOverdueTask;
     var excludedFromLoadByStage = CrmManagerLoadRules.IsExcludedStage(card.Stage);
@@ -46,10 +45,6 @@
     {
         <div class="crm-tile__actions" aria-label="Быстрые действия для @card.FullName">
             <a href="tel:@card.PhoneRaw" title="Позвонить"><i class="fa-solid fa-phone" aria-hidden="true"></i><span>Позвонить</span></a>
-            @if (!string.IsNullOrWhiteSpace(adUrl))
-            {
-                <a href="@adUrl" target="_blank" rel="noopener" title="Открыть объявление"><i class="fa-solid fa-tag" aria-hidden="true"></i><span>Объявление</span></a>
-            }
             @if (Model.CanEdit)
             {
                 @if (!card.IsInActiveLoad && !excludedFromLoadByStage)

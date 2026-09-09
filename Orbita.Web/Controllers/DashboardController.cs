@@ -23,10 +23,11 @@ public sealed class DashboardController(
         string? sort = null,
         string? dir = null,
         string? workerFilter = null,
+        string? workerSearch = null,
         CancellationToken ct = default)
     {
         var period = DashboardPeriod.Parse(from, to, BrowserTimeZone.Resolve(HttpContext));
-        var model = await dashboard.GetDashboardAsync(period, page, pageSize, sort, dir, ct, workerFilter);
+        var model = await dashboard.GetDashboardAsync(period, page, pageSize, sort, dir, ct, workerFilter, workerSearch);
         if (!string.IsNullOrWhiteSpace(model.ErrorMessage) && IsApiSessionMissing())
         {
             await auth.SignOutAsync(ct);
@@ -49,10 +50,11 @@ public sealed class DashboardController(
         string? sort = null,
         string? dir = null,
         string? workerFilter = null,
+        string? workerSearch = null,
         CancellationToken ct = default)
     {
         var period = DashboardPeriod.Parse(from, to, BrowserTimeZone.Resolve(HttpContext));
-        var model = await dashboard.GetDashboardAsync(period, page, pageSize, sort, dir, ct, workerFilter);
+        var model = await dashboard.GetDashboardAsync(period, page, pageSize, sort, dir, ct, workerFilter, workerSearch);
         if (!string.IsNullOrWhiteSpace(model.ErrorMessage))
         {
             return StatusCode(StatusCodes.Status503ServiceUnavailable, new { error = model.ErrorMessage });

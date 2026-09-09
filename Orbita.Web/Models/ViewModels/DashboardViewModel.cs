@@ -24,6 +24,7 @@ public sealed class DashboardViewModel
     public int DisabledWorkersCount { get; init; }
     public bool ShowWorkersMonitoringControls { get; init; }
     public string WorkerFilter { get; init; } = DashboardWorkerFilter.All;
+    public string? WorkerSearchQuery { get; init; }
     public DashboardWorkerTabCounts WorkerTabCounts { get; init; } = DashboardWorkerTabCounts.None;
     public PaginationViewModel Pagination { get; init; } = new() { PageSize = ListPageSizeDefaults.Dashboard };
     public TableSortState Sort { get; init; } = TableSortState.Create("activity", descending: true);

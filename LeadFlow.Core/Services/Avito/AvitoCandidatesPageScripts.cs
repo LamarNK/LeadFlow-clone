@@ -103,6 +103,12 @@ public static class AvitoCandidatesPageScripts
             return !!(skips[String(index)] || skips[index]);
         };
 
+        const isPhoneWatchPriority = (index) => {
+            const priorities = window.__leadflowPhoneWatchPriority;
+            return !!(priorities && typeof priorities === "object"
+                && (priorities[String(index)] || priorities[index]));
+        };
+
         // Skip «уже известен» не действует, если номер под маской — иначе phone-watch не увидит смену.
         const needsPhoneReveal = (item, index) => {
             const inline = readInlinePhone(item);
@@ -623,7 +629,9 @@ public static class AvitoCandidatesPageScripts
             const ratio = 0.32 + Math.random() * 0.28;
             const delta = Math.max(Math.floor(scroller.clientHeight * ratio), 180);
             try {
-                scroller.scrollBy({ top: delta, left: 0, behavior: "smooth" });
+                // The result is sampled immediately below, so animation would report moved=false
+                // before the first frame and make the C# loop stop after three false stable rounds.
+                scroller.scrollBy({ top: delta, left: 0, behavior: "auto" });
             } catch {
                 scroller.scrollBy(0, delta);
             }
@@ -722,10 +730,14 @@ public static class AvitoCandidatesPageScripts
 
             let withPhone = 0;
             let masked = 0;
+            let priorityPending = 0;
             for (let index = 0; index < items.length; index++) {
                 const item = items[index];
                 if (needsPhoneReveal(item, index)) {
                     masked++;
+                    if (isPhoneWatchPriority(index)) {
+                        priorityPending++;
+                    }
                     continue;
                 }
 
@@ -734,13 +746,38 @@ public static class AvitoCandidatesPageScripts
 
             const ratio = withPhone / items.length;
             return JSON.stringify({
-                ready: ratio >= 0.92 || (items.length <= 3 && withPhone === items.length),
+                // General readiness must never leave an active phone-watch unopened.
+                ready: priorityPending === 0
+                    && (ratio >= 0.92 || (items.length <= 3 && withPhone === items.length)),
                 items: items.length,
                 withPhone,
-                masked
+                masked,
+                priorityPending
             });
         })();
         """;
+
+    /// <summary>Очищает привязанный к DOM-индексам кэш перед новым проходом/субпрофилем.</summary>
+    public static string BuildResetCandidateCollectionStateScript() =>
+        """
+        (() => {
+            window.__leadflowRevealedPhones = {};
+            window.__leadflowSkipPhoneReveal = {};
+            window.__leadflowPhoneWatchPriority = {};
+            return JSON.stringify({ ok: true });
+        })();
+        """;
+
+    /// <summary>Phone-watch раскрываются раньше остальных карточек в ограниченном бюджете кликов.</summary>
+    public static string BuildApplyPhoneWatchPriorityScript(IReadOnlyCollection<int> priorityIndices)
+    {
+        var priorityJson = System.Text.Json.JsonSerializer.Serialize(
+            priorityIndices
+                .Where(static x => x >= 0)
+                .Distinct()
+                .ToDictionary(static x => x.ToString(), static _ => true));
+        return $"window.__leadflowPhoneWatchPriority = {priorityJson}; JSON.stringify({{ ok: true, prioritized: Object.keys(window.__leadflowPhoneWatchPriority).length }});";
+    }
 
     /// <summary>Блокирует копирование в буфер на странице (клик «телефон» на Avito часто вызывает copy).</summary>
     public static string BuildEnableClipboardGuardScript() =>
@@ -1909,9 +1946,11 @@ public static class AvitoCandidatesPageScripts
             };
 
             const items = Array.from(document.querySelectorAll("[data-marker='job-application/item']"));
+            const orderedIndexes = Array.from(items.keys()).sort((a, b) =>
+                Number(isPhoneWatchPriority(b)) - Number(isPhoneWatchPriority(a)) || a - b);
             let masked = 0;
             let clicked = 0;
-            for (let index = 0; index < items.length; index++) {
+            for (const index of orderedIndexes) {
                 const item = items[index];
                 const btn = item.querySelector("[data-marker='job-application/phone']");
                 if (!btn || btn.closest?.("[data-marker^='download-report-button']")) {
@@ -1978,7 +2017,9 @@ public static class AvitoCandidatesPageScripts
 
             let targetIndex = -1;
             let targetItem = null;
-            for (let index = 0; index < items.length; index++) {
+            const orderedIndexes = Array.from(items.keys()).sort((a, b) =>
+                Number(isPhoneWatchPriority(b)) - Number(isPhoneWatchPriority(a)) || a - b);
+            for (const index of orderedIndexes) {
                 const item = items[index];
                 if (!needsPhoneReveal(item, index)) {
                     continue;

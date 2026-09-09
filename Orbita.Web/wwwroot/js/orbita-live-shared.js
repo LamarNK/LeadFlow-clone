@@ -165,6 +165,7 @@
             return fetch(url, {
                 method: 'GET',
                 credentials: 'same-origin',
+                cache: 'no-store',
                 headers: options.headers || { Accept: 'application/json' },
                 signal: controller.signal
             }).then(function (res) {

@@ -451,6 +451,35 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyList<WorkerOpenPhoneWatchDto>> GetOpenPhoneWatchesAsync(
+        Guid accountId,
+        string avitoSubProfileId,
+        int phoneWatchHours,
+        CancellationToken cancellationToken)
+    {
+        if (phoneWatchHours <= 0)
+        {
+            return [];
+        }
+
+        var cutoffUtc = DateTime.UtcNow.AddHours(-phoneWatchHours);
+        await using var db = await dbContextFactory.CreateDbContextAsync(cancellationToken);
+        return await db.CandidateResponses
+            .AsNoTracking()
+            .Where(x => x.AccountId == accountId
+                        && x.AvitoSubProfileId == (avitoSubProfileId ?? string.Empty).Trim()
+                        && x.SourceResponseId.StartsWith("phone-watch:")
+                        && x.CollectedAt >= cutoffUtc)
+            .OrderByDescending(x => x.CollectedAt)
+            .Select(x => new WorkerOpenPhoneWatchDto(
+                x.SourceResponseId,
+                x.FullName,
+                x.CollectedAt,
+                x.PhoneRaw,
+                x.PhoneNormalized))
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<HashSet<string>> GetExistingCardFingerprintsAsync(
         IEnumerable<string> cardFingerprintCandidates,
         DuplicateScope scope,

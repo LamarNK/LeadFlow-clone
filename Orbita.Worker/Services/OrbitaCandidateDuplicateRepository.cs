@@ -124,6 +124,37 @@ public sealed class OrbitaCandidateDuplicateRepository(
         }
     }
 
+    public async Task<IReadOnlyList<WorkerOpenPhoneWatchDto>> GetOpenPhoneWatchesAsync(
+        Guid accountId,
+        string avitoSubProfileId,
+        int phoneWatchHours,
+        CancellationToken cancellationToken)
+    {
+        if (phoneWatchHours <= 0)
+        {
+            return [];
+        }
+
+        try
+        {
+            var result = await apiClient.LookupCandidatesAsync(
+                    new WorkerCandidateLookupRequest(
+                        accountId,
+                        DuplicateScope.PerAvitoAccount.ToString(),
+                        [],
+                        [],
+                        AvitoSubProfileId: (avitoSubProfileId ?? string.Empty).Trim(),
+                        OpenPhoneWatchHours: phoneWatchHours),
+                    cancellationToken)
+                .ConfigureAwait(false);
+            return result?.OpenPhoneWatches ?? [];
+        }
+        catch
+        {
+            return [];
+        }
+    }
+
     public async Task<HashSet<string>> GetExistingCardFingerprintsAsync(
         IEnumerable<string> cardFingerprintCandidates,
         DuplicateScope scope,

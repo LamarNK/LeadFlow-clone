@@ -20,4 +20,11 @@ public sealed class CandidatesScrollStopTests
     [Fact]
     public void DoesNotStop_WhenNothingLoaded() =>
         Assert.False(CandidatesScrollStop.ShouldStopAfterKnownHistory(seenUnknownCard: false, consecutiveKnownOnlyLoadRounds: 0));
+
+    [Fact]
+    public void DoesNotStop_WhileSubProfileHasOpenPhoneWatches() =>
+        Assert.False(CandidatesScrollStop.ShouldStopAfterKnownHistory(
+            seenUnknownCard: true,
+            consecutiveKnownOnlyLoadRounds: 2,
+            hasOpenPhoneWatches: true));
 }

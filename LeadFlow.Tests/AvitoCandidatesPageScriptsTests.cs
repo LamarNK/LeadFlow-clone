@@ -219,12 +219,12 @@ public sealed class AvitoCandidatesPageScriptsTests
     }
 
     [Fact]
-    public void BuildScrollStepScript_UsesPartialViewportAndSmoothBehavior()
+    public void BuildScrollStepScript_UsesPartialViewportAndImmediateBehavior()
     {
         var script = AvitoCandidatesPageScripts.BuildScrollStepScript();
 
         Assert.Contains("scrollBy", script, StringComparison.Ordinal);
-        Assert.Contains("behavior: \"smooth\"", script, StringComparison.Ordinal);
+        Assert.Contains("behavior: \"auto\"", script, StringComparison.Ordinal);
         Assert.Contains("Math.random()", script, StringComparison.Ordinal);
         Assert.DoesNotContain("clientHeight * 0.9", script, StringComparison.Ordinal);
     }
@@ -267,6 +267,23 @@ public sealed class AvitoCandidatesPageScriptsTests
 
         Assert.Contains("readItemPhone(root, rootIndex)", script, StringComparison.Ordinal);
         Assert.Contains("__leadflowRevealedPhones", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void PhoneWatchPriority_IsAppliedBeforePhoneRevealAndCycleCacheCanBeReset()
+    {
+        var priority = AvitoCandidatesPageScripts.BuildApplyPhoneWatchPriorityScript([26]);
+        var maskedReveal = AvitoCandidatesPageScripts.BuildRevealMaskedPhonesStepScript();
+        var popupReveal = AvitoCandidatesPageScripts.BuildRevealNextContactsPopupPhoneScript();
+        var readyProbe = AvitoCandidatesPageScripts.BuildPhonesReadyProbeScript();
+        var reset = AvitoCandidatesPageScripts.BuildResetCandidateCollectionStateScript();
+
+        Assert.Contains("26", priority, StringComparison.Ordinal);
+        Assert.Contains("__leadflowPhoneWatchPriority", priority, StringComparison.Ordinal);
+        Assert.Contains("isPhoneWatchPriority", maskedReveal, StringComparison.Ordinal);
+        Assert.Contains("isPhoneWatchPriority", popupReveal, StringComparison.Ordinal);
+        Assert.Contains("priorityPending", readyProbe, StringComparison.Ordinal);
+        Assert.Contains("__leadflowRevealedPhones = {}", reset, StringComparison.Ordinal);
     }
 
     [Fact]

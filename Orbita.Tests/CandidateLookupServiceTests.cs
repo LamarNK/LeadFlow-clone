@@ -140,6 +140,49 @@ public sealed class CandidateLookupServiceTests
     }
 
     [Fact]
+    public async Task LookupAsync_OpenPhoneWatches_ReturnsActiveWatchesForRequestedSubProfile()
+    {
+        await using var db = CreateDb();
+        SeedWorker(db);
+        var activeAt = DateTime.UtcNow.AddHours(-90);
+        db.CandidateResponses.AddRange(
+            NewResponse(
+                "79947809504",
+                "sub-a",
+                sourceResponseId: "phone-watch:active",
+                createdAt: activeAt,
+                fullName: "Гафуров сахобилддин Асхобиддинович"),
+            NewResponse(
+                "79001111112",
+                "sub-a",
+                sourceResponseId: "phone-watch:expired",
+                createdAt: DateTime.UtcNow.AddHours(-121),
+                fullName: "Старое наблюдение"),
+            NewResponse(
+                "79001111113",
+                "sub-b",
+                sourceResponseId: "phone-watch:other-sub",
+                createdAt: DateTime.UtcNow.AddHours(-1),
+                fullName: "Другой субпрофиль"));
+        await db.SaveChangesAsync();
+
+        var result = await CreateSut(db).LookupAsync(
+            WorkerId,
+            new WorkerCandidateLookupRequest(
+                AccountId,
+                "PerAvitoAccount",
+                [],
+                [],
+                AvitoSubProfileId: "sub-a",
+                OpenPhoneWatchHours: 120));
+
+        var watch = Assert.Single(result!.OpenPhoneWatches!);
+        Assert.Equal("phone-watch:active", watch.SourceResponseId);
+        Assert.Equal("Гафуров сахобилддин Асхобиддинович", watch.FullName);
+        Assert.Equal(activeAt, watch.CollectedAt);
+    }
+
+    [Fact]
     public async Task LookupAsync_CardFingerprints_MatchesStoredFingerprint()
     {
         await using var db = CreateDb();

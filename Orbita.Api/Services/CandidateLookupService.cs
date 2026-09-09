@@ -170,6 +170,28 @@ public sealed class CandidateLookupService(
             }
         }
 
+        IReadOnlyList<WorkerOpenPhoneWatchDto> openPhoneWatches = [];
+        var subProfileIdForWatches = request.AvitoSubProfileId?.Trim() ?? string.Empty;
+        if (request.OpenPhoneWatchHours > 0)
+        {
+            var watchCutoffUtc = DateTime.UtcNow.AddHours(-request.OpenPhoneWatchHours);
+            openPhoneWatches = await db.CandidateResponses
+                .AsNoTracking()
+                .Where(x => x.OfficeId == worker.OfficeId
+                            && x.AccountId == request.AccountId
+                            && x.AvitoSubProfileId == subProfileIdForWatches
+                            && x.SourceResponseId.StartsWith("phone-watch:")
+                            && x.CollectedAt >= watchCutoffUtc)
+                .OrderByDescending(x => x.CollectedAt)
+                .Select(x => new WorkerOpenPhoneWatchDto(
+                    x.SourceResponseId,
+                    x.FullName,
+                    x.CollectedAt,
+                    x.PhoneRaw,
+                    x.PhoneNormalized))
+                .ToListAsync(ct);
+        }
+
         var matchedProfileIndexes = new List<int>();
         var profiles = request.Profiles ?? [];
         for (var i = 0; i < profiles.Count; i++)
@@ -193,6 +215,7 @@ public sealed class CandidateLookupService(
             existingPhones.ToList(),
             existingCardFingerprints.ToList(),
             matchedProfileIndexes,
-            existingSourceResponses);
+            existingSourceResponses,
+            openPhoneWatches);
     }
 }

@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using LeadFlow.Core.Logging.Audit;
 using LeadFlow.Core.Services;
+using LeadFlow.Core.Services.Worker;
 using Orbita.Contracts;
 
 namespace LeadFlow.Core.Services.Avito;
@@ -12,7 +13,6 @@ namespace LeadFlow.Core.Services.Avito;
 /// </summary>
 public static class AvitoCandidatesListPreparer
 {
-    private const int MaxScrollRounds = 48;
     private const int StableRoundsRequired = 3;
     private const int MaxPhoneRevealRounds = 40;
     private const int MaxPhoneRevealRoundsWhenNoItems = 2;
@@ -31,7 +31,8 @@ public static class AvitoCandidatesListPreparer
         ResponseCollectionFilters? responseCollectionFilters = null,
         Func<string, CancellationToken, Task<bool>>? isOpenPhoneWatchAsync = null,
         bool skipDetailEnrich = false,
-        Func<AvitoFirewallProbe.Detection, string?, CancellationToken, Task<bool>>? trySolveCaptchaAsync = null)
+        Func<AvitoFirewallProbe.Detection, string?, CancellationToken, Task<bool>>? trySolveCaptchaAsync = null,
+        IReadOnlyCollection<WorkerOpenPhoneWatchDto>? openPhoneWatches = null)
     {
         await AvitoFirewallProbe.ThrowIfBlockedAsync(
                 executeScript,
@@ -41,6 +42,11 @@ public static class AvitoCandidatesListPreparer
                 trySolveCaptchaAsync)
             .ConfigureAwait(false);
 
+        _ = await executeScript(
+                AvitoCandidatesPageScripts.BuildResetCandidateCollectionStateScript(),
+                cancellationToken)
+            .ConfigureAwait(false);
+
         var lastCount = -1;
         var stableRounds = 0;
         var scrollRounds = 0;
@@ -48,8 +54,13 @@ public static class AvitoCandidatesListPreparer
         var consecutiveKnownOnlyLoadRounds = 0;
         var stoppedOnKnownHistory = false;
         var phoneRevealBudget = AvitoHumanVariation.NextPhoneRevealBudget();
+        var remainingPhoneWatchNames = (openPhoneWatches ?? [])
+            .Select(static x => ResponsePhoneWatchEvaluator.BuildFullNameKey(x.FullName))
+            .Where(static x => !string.IsNullOrWhiteSpace(x))
+            .ToHashSet(StringComparer.Ordinal);
+        var maxScrollRounds = CandidatesScrollBudget.Resolve(remainingPhoneWatchNames.Count > 0);
 
-        for (var round = 0; round < MaxScrollRounds; round++)
+        for (var round = 0; round < maxScrollRounds; round++)
         {
             cancellationToken.ThrowIfCancellationRequested();
             scrollRounds++;
@@ -68,6 +79,17 @@ public static class AvitoCandidatesListPreparer
             var previousCount = lastCount < 0 ? 0 : lastCount;
             var step = await TryParseScrollStepAsync(executeScript, cancellationToken).ConfigureAwait(false);
             var count = step?.ItemCount ?? 0;
+
+            if (remainingPhoneWatchNames.Count > 0)
+            {
+                var loadedProfiles = await TryParseListItemProfilesAsync(executeScript, cancellationToken)
+                    .ConfigureAwait(false);
+                foreach (var loaded in loadedProfiles)
+                {
+                    remainingPhoneWatchNames.Remove(
+                        ResponsePhoneWatchEvaluator.BuildFullNameKey(loaded.FullName));
+                }
+            }
 
             if (count > previousCount
                 && resolveExistingCardFingerprintsAsync is not null)
@@ -89,7 +111,10 @@ public static class AvitoCandidatesListPreparer
                     consecutiveKnownOnlyLoadRounds = 0;
                 }
 
-                if (CandidatesScrollStop.ShouldStopAfterKnownHistory(seenUnknownCard, consecutiveKnownOnlyLoadRounds))
+                if (CandidatesScrollStop.ShouldStopAfterKnownHistory(
+                        seenUnknownCard,
+                        consecutiveKnownOnlyLoadRounds,
+                        remainingPhoneWatchNames.Count > 0))
                 {
                     stoppedOnKnownHistory = true;
                     lastCount = count;
@@ -128,12 +153,23 @@ public static class AvitoCandidatesListPreparer
         await HumanDelay.AfterListReadyAsync(cancellationToken).ConfigureAwait(false);
 
         var domItems = lastCount < 0 ? 0 : lastCount;
-        var phoneRevealLimit = domItems == 0 ? MaxPhoneRevealRoundsWhenNoItems : MaxPhoneRevealRounds;
         var phoneRevealRounds = 0;
         var phoneClicksTotal = 0;
         var openWatchProtected = await ResolveOpenPhoneWatchProtectedIndicesAsync(
                 executeScript,
                 isOpenPhoneWatchAsync,
+                (openPhoneWatches ?? [])
+                    .Select(static x => ResponsePhoneWatchEvaluator.BuildFullNameKey(x.FullName))
+                    .Where(static x => !string.IsNullOrWhiteSpace(x))
+                    .ToHashSet(StringComparer.Ordinal),
+                cancellationToken)
+            .ConfigureAwait(false);
+        phoneRevealBudget = CandidatePhoneRevealBudget.Resolve(phoneRevealBudget, openWatchProtected.Count);
+        var phoneRevealLimit = domItems == 0
+            ? MaxPhoneRevealRoundsWhenNoItems
+            : Math.Max(MaxPhoneRevealRounds, openWatchProtected.Count);
+        _ = await executeScript(
+                AvitoCandidatesPageScripts.BuildApplyPhoneWatchPriorityScript(openWatchProtected),
                 cancellationToken)
             .ConfigureAwait(false);
 
@@ -753,9 +789,10 @@ public static class AvitoCandidatesListPreparer
     private static async Task<HashSet<int>> ResolveOpenPhoneWatchProtectedIndicesAsync(
         Func<string, CancellationToken, Task<string>> executeScript,
         Func<string, CancellationToken, Task<bool>>? isOpenPhoneWatchAsync,
+        IReadOnlySet<string> openPhoneWatchNameKeys,
         CancellationToken cancellationToken)
     {
-        if (isOpenPhoneWatchAsync is null)
+        if (isOpenPhoneWatchAsync is null && openPhoneWatchNameKeys.Count == 0)
         {
             return [];
         }
@@ -770,6 +807,18 @@ public static class AvitoCandidatesListPreparer
         foreach (var item in listItems)
         {
             if (string.IsNullOrWhiteSpace(item.FullName))
+            {
+                continue;
+            }
+
+            var nameKey = ResponsePhoneWatchEvaluator.BuildFullNameKey(item.FullName);
+            if (openPhoneWatchNameKeys.Contains(nameKey))
+            {
+                protectedIndices.Add(item.Index);
+                continue;
+            }
+
+            if (isOpenPhoneWatchAsync is null)
             {
                 continue;
             }

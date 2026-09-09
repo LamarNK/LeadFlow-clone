@@ -16,12 +16,14 @@
     };
 
     var POLL_INTERVAL_MS = 60000;
+    var RESPONSES_FALLBACK_POLL_INTERVAL_MS = 5000;
 
     var handlers = {};
     var connection = null;
     var connectPromise = null;
     var debounceTimer = null;
     var fetchInFlight = false;
+    var refreshQueuedWhileInFlight = false;
     var pendingKinds = [];
     var accessToken = null;
     var pollTimer = null;
@@ -88,15 +90,19 @@
 
     function flushPending() {
         debounceTimer = null;
-        pendingKinds = [];
-        fetchNavBadges();
 
         var page = getActivePage();
         if (!page || !handlers[page]) return;
 
         var handler = handlers[page];
         if (typeof handler.fetchSnapshot !== 'function') return;
-        if (fetchInFlight) return;
+        if (fetchInFlight) {
+            refreshQueuedWhileInFlight = true;
+            return;
+        }
+
+        pendingKinds = [];
+        fetchNavBadges();
 
         fetchInFlight = true;
         if (window.OrbitaLiveShared) {
@@ -112,6 +118,11 @@
                 fetchInFlight = false;
                 if (window.OrbitaLiveShared) {
                     window.OrbitaLiveShared.setRefreshBusy(false);
+                }
+                if (refreshQueuedWhileInFlight) {
+                    refreshQueuedWhileInFlight = false;
+                    if (debounceTimer) window.clearTimeout(debounceTimer);
+                    debounceTimer = window.setTimeout(flushPending, 0);
                 }
             });
     }
@@ -186,13 +197,20 @@
 
     function startPollingFallback() {
         if (pollTimer) return;
+        var lastDefaultRefreshAt = 0;
         pollTimer = window.setInterval(function () {
             if (isConnected()) {
                 stopPollingFallback();
                 return;
             }
-            refreshActivePage();
-        }, POLL_INTERVAL_MS);
+
+            var page = getActivePage();
+            var now = Date.now();
+            if (page === 'responses' || now - lastDefaultRefreshAt >= POLL_INTERVAL_MS) {
+                lastDefaultRefreshAt = now;
+                refreshActivePage();
+            }
+        }, RESPONSES_FALLBACK_POLL_INTERVAL_MS);
     }
 
     function stopPollingFallback() {
