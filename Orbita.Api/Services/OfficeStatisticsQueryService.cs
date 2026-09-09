@@ -365,7 +365,9 @@ public sealed class OfficeStatisticsQueryService(
                 x.FoundCount,
                 x.CollectedCount,
                 x.CaptchaCount,
-                x.CaptchaSolvedCount
+                x.CaptchaSolvedCount,
+                x.LoginAttempted,
+                x.LoginSucceeded
             })
             .ToListAsync(ct);
 
@@ -389,7 +391,9 @@ public sealed class OfficeStatisticsQueryService(
                         s.FoundCount,
                         s.CollectedCount,
                         s.CaptchaCount,
-                        s.CaptchaSolvedCount))
+                        s.CaptchaSolvedCount,
+                        s.LoginAttempted,
+                        s.LoginSucceeded))
                     .OrderBy(s => s.Position)
                     .ThenBy(s => s.StartedAtUtc)
                     .ToList());

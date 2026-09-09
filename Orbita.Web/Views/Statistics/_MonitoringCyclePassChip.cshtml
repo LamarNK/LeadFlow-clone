@@ -47,13 +47,13 @@
         {
             <span class="monitoring-pass-flag @(pass.CaptchaUnsolved ? "monitoring-pass-flag--bad" : null)">@captchaLabel</span>
         }
-        @if (pass.LoginRequired)
-        {
-            <span class="monitoring-pass-flag monitoring-pass-flag--login">нужен вход</span>
-        }
-        else if (pass.LoginSucceeded)
+        @if (pass.LoginAttempted && pass.LoginSucceeded)
         {
             <span class="monitoring-pass-flag monitoring-pass-flag--login-ok">вход выполнен</span>
+        }
+        else if (pass.LoginAttempted)
+        {
+            <span class="monitoring-pass-flag monitoring-pass-flag--login">вход не выполнен</span>
         }
         @if (pass.InProgress && !pass.HasError)
         {

@@ -147,13 +147,13 @@ public sealed class MonitoringRunIngestService(OrbitaDbContext db)
                             "Position", "Total", "StartedAtUtc", "CompletedAtUtc",
                             "Outcome", "ErrorType", "ErrorMessage",
                             "FoundCount", "PublishedCount", "DeferredCount", "SkippedDuplicateCount",
-                            "CollectedCount", "CaptchaCount", "CaptchaSolvedCount")
+                            "CollectedCount", "CaptchaCount", "CaptchaSolvedCount", "LoginAttempted", "LoginSucceeded")
                         VALUES (
                             {subDto.Id}, {cycleDto.Id}, {subProfileId}, {subName},
                             {position}, {total}, {subStarted}, {subCompleted},
                             {outcome}, {errorType}, {errorMessage},
                             {found}, {published}, {deferred}, {skippedDup},
-                            {collected}, {captcha}, {captchaSolved})
+                            {collected}, {captcha}, {captchaSolved}, {subDto.LoginAttempted}, {subDto.LoginSucceeded})
                         ON CONFLICT ("Id") DO UPDATE SET
                             "CycleRunId" = EXCLUDED."CycleRunId",
                             "SubProfileId" = EXCLUDED."SubProfileId",
@@ -170,8 +170,10 @@ public sealed class MonitoringRunIngestService(OrbitaDbContext db)
                             "DeferredCount" = EXCLUDED."DeferredCount",
                             "SkippedDuplicateCount" = EXCLUDED."SkippedDuplicateCount",
                             "CollectedCount" = EXCLUDED."CollectedCount",
-                        "CaptchaCount" = EXCLUDED."CaptchaCount",
-                        "CaptchaSolvedCount" = EXCLUDED."CaptchaSolvedCount"
+                            "CaptchaCount" = EXCLUDED."CaptchaCount",
+                            "CaptchaSolvedCount" = EXCLUDED."CaptchaSolvedCount",
+                            "LoginAttempted" = EXCLUDED."LoginAttempted",
+                            "LoginSucceeded" = EXCLUDED."LoginSucceeded"
                     -- То же правило для под-профиля: Started не должен затереть
                     -- уже зафиксированный результат прохода.
                     WHERE "MonitoringSubProfileRuns"."Outcome" = {MonitoringSubProfileRunOutcomes.Started}
@@ -334,6 +336,8 @@ public sealed class MonitoringRunIngestService(OrbitaDbContext db)
                 subEntity.CaptchaSolvedCount = Math.Min(
                     subEntity.CaptchaCount,
                     Math.Max(0, subDto.CaptchaSolvedCount));
+                subEntity.LoginAttempted = subDto.LoginAttempted;
+                subEntity.LoginSucceeded = subDto.LoginSucceeded;
             }
 
             accepted++;

@@ -122,7 +122,9 @@ public sealed record MonitoringCyclePassDto(
     string? ErrorDetail = null,
     bool InProgress = false,
     bool Skipped = false,
-    bool LoginRequired = false);
+    bool LoginRequired = false,
+    bool LoginAttempted = false,
+    bool LoginSucceeded = false);
 
 public sealed record MonitoringCycleSubProfileRowDto(
     int Position,

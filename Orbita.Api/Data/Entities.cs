@@ -465,6 +465,10 @@ public sealed class MonitoringSubProfileRunEntity
     public int CollectedCount { get; set; }
     public int CaptchaCount { get; set; }
     public int CaptchaSolvedCount { get; set; }
+    /// <summary>В ходе прохода воркер запустил восстановление авторизации Avito.</summary>
+    public bool LoginAttempted { get; set; }
+    /// <summary>Запущенное восстановление авторизации завершилось успехом.</summary>
+    public bool LoginSucceeded { get; set; }
 
     public MonitoringCycleRunEntity CycleRun { get; set; } = null!;
 }

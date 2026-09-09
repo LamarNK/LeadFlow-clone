@@ -22,7 +22,9 @@ public sealed class NullMonitoringCycleJournal : IMonitoringCycleJournal
         int skippedDuplicateCount = 0,
         int collectedCount = 0,
         int captchaCount = 0,
-        int captchaSolvedCount = 0)
+        int captchaSolvedCount = 0,
+        bool loginAttempted = false,
+        bool loginSucceeded = false)
     {
     }
 
@@ -46,7 +48,9 @@ public sealed class NullMonitoringCycleJournal : IMonitoringCycleJournal
         int publishedCount = 0,
         int collectedCount = 0,
         int captchaCount = 0,
-        int captchaSolvedCount = 0)
+        int captchaSolvedCount = 0,
+        bool loginAttempted = false,
+        bool loginSucceeded = false)
     {
     }
 
