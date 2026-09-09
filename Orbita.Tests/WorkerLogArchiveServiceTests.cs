@@ -123,6 +123,33 @@ public sealed class WorkerLogArchiveServiceTests
     }
 
     [Fact]
+    public void Filter_KeepsCandidateTimingFields_AndDropsCandidateContent()
+    {
+        var filtered = WorkerLogPropertyAllowlist.Filter(new Dictionary<string, object?>
+        {
+            ["candidates.accountId"] = "54ae6c4f-d7a1-4728-8d21-0800530c1c2e",
+            ["candidates.subProfileId"] = "440629974",
+            ["candidates.prepare.scrollMs"] = 12345L,
+            ["candidates.prepare.scrollDomCalls"] = 42,
+            ["candidates.prepare.scrollProfileItemsParsed"] = 900,
+            ["candidates.pipeline.messengerMs"] = 6789L,
+            ["candidates.fullName"] = "sensitive candidate name",
+            ["candidates.phone"] = "79990000000",
+            ["candidates.chatMessages"] = "sensitive chat"
+        });
+
+        Assert.Equal("54ae6c4f-d7a1-4728-8d21-0800530c1c2e", filtered["candidates.accountId"]);
+        Assert.Equal("440629974", filtered["candidates.subProfileId"]);
+        Assert.Equal(12345L, filtered["candidates.prepare.scrollMs"]);
+        Assert.Equal(42, filtered["candidates.prepare.scrollDomCalls"]);
+        Assert.Equal(900, filtered["candidates.prepare.scrollProfileItemsParsed"]);
+        Assert.Equal(6789L, filtered["candidates.pipeline.messengerMs"]);
+        Assert.DoesNotContain("candidates.fullName", filtered.Keys);
+        Assert.DoesNotContain("candidates.phone", filtered.Keys);
+        Assert.DoesNotContain("candidates.chatMessages", filtered.Keys);
+    }
+
+    [Fact]
     public async Task IngestBatch_WritesAllowlistedStructuredProperties_ToArchivedWorkerLog()
     {
         var root = Path.Combine(Path.GetTempPath(), $"orbita-worker-log-test-{Guid.NewGuid():N}");

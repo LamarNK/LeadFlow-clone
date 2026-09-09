@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using LeadFlow.Core.Logging.Audit;
@@ -34,6 +35,8 @@ public static class AvitoCandidatesListPreparer
         Func<AvitoFirewallProbe.Detection, string?, CancellationToken, Task<bool>>? trySolveCaptchaAsync = null,
         IReadOnlyCollection<WorkerOpenPhoneWatchDto>? openPhoneWatches = null)
     {
+        var totalSw = Stopwatch.StartNew();
+        var firewallSw = Stopwatch.StartNew();
         await AvitoFirewallProbe.ThrowIfBlockedAsync(
                 executeScript,
                 fetchHtmlSnapshot,
@@ -41,6 +44,7 @@ public static class AvitoCandidatesListPreparer
                 cancellationToken,
                 trySolveCaptchaAsync)
             .ConfigureAwait(false);
+        firewallSw.Stop();
 
         _ = await executeScript(
                 AvitoCandidatesPageScripts.BuildResetCandidateCollectionStateScript(),
@@ -53,6 +57,11 @@ public static class AvitoCandidatesListPreparer
         var seenUnknownCard = false;
         var consecutiveKnownOnlyLoadRounds = 0;
         var stoppedOnKnownHistory = false;
+        var scrollStepCalls = 0;
+        var scrollProfileProbeCalls = 0;
+        var scrollFingerprintProbeCalls = 0;
+        var scrollProfileItemsParsed = 0;
+        var scrollFingerprintItemsParsed = 0;
         var phoneRevealBudget = AvitoHumanVariation.NextPhoneRevealBudget();
         var remainingPhoneWatchNames = (openPhoneWatches ?? [])
             .Select(static x => ResponsePhoneWatchEvaluator.BuildFullNameKey(x.FullName))
@@ -60,6 +69,7 @@ public static class AvitoCandidatesListPreparer
             .ToHashSet(StringComparer.Ordinal);
         var maxScrollRounds = CandidatesScrollBudget.Resolve(remainingPhoneWatchNames.Count > 0);
 
+        var scrollSw = Stopwatch.StartNew();
         for (var round = 0; round < maxScrollRounds; round++)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -77,13 +87,16 @@ public static class AvitoCandidatesListPreparer
             }
 
             var previousCount = lastCount < 0 ? 0 : lastCount;
+            scrollStepCalls++;
             var step = await TryParseScrollStepAsync(executeScript, cancellationToken).ConfigureAwait(false);
             var count = step?.ItemCount ?? 0;
 
             if (remainingPhoneWatchNames.Count > 0)
             {
+                scrollProfileProbeCalls++;
                 var loadedProfiles = await TryParseListItemProfilesAsync(executeScript, cancellationToken)
                     .ConfigureAwait(false);
+                scrollProfileItemsParsed += loadedProfiles.Count;
                 foreach (var loaded in loadedProfiles)
                 {
                     remainingPhoneWatchNames.Remove(
@@ -94,14 +107,16 @@ public static class AvitoCandidatesListPreparer
             if (count > previousCount
                 && resolveExistingCardFingerprintsAsync is not null)
             {
-                var newItemsAllKnown = await AreLoadedItemsAllKnownAsync(
+                scrollFingerprintProbeCalls++;
+                var knownHistoryProbe = await ProbeLoadedItemsKnownAsync(
                         executeScript,
                         previousCount,
                         count,
                         resolveExistingCardFingerprintsAsync,
                         cancellationToken)
                     .ConfigureAwait(false);
-                if (newItemsAllKnown)
+                scrollFingerprintItemsParsed += knownHistoryProbe.ParsedItems;
+                if (knownHistoryProbe.AllKnown)
                 {
                     consecutiveKnownOnlyLoadRounds++;
                 }
@@ -146,15 +161,19 @@ public static class AvitoCandidatesListPreparer
 
             await HumanDelay.AfterListScrollAsync(cancellationToken).ConfigureAwait(false);
         }
+        scrollSw.Stop();
 
+        var postScrollSw = Stopwatch.StartNew();
         _ = await executeScript(AvitoCandidatesPageScripts.BuildScrollToTopScript(), cancellationToken)
             .ConfigureAwait(false);
         await HumanDelay.AfterListScrollAsync(cancellationToken).ConfigureAwait(false);
         await HumanDelay.AfterListReadyAsync(cancellationToken).ConfigureAwait(false);
+        postScrollSw.Stop();
 
         var domItems = lastCount < 0 ? 0 : lastCount;
         var phoneRevealRounds = 0;
         var phoneClicksTotal = 0;
+        var prioritySw = Stopwatch.StartNew();
         var openWatchProtected = await ResolveOpenPhoneWatchProtectedIndicesAsync(
                 executeScript,
                 isOpenPhoneWatchAsync,
@@ -196,8 +215,10 @@ public static class AvitoCandidatesListPreparer
                 responseCollectionFilters,
                 cancellationToken)
             .ConfigureAwait(false);
+        prioritySw.Stop();
         PhonesReadyProbe? phonesProbe = null;
 
+        var phoneRevealSw = Stopwatch.StartNew();
         await TryEnableClipboardGuardAsync(executeScript, cancellationToken).ConfigureAwait(false);
         try
         {
@@ -256,7 +277,9 @@ public static class AvitoCandidatesListPreparer
         }
 
         phonesProbe ??= await TryParsePhonesReadyAsync(executeScript, cancellationToken).ConfigureAwait(false);
+        phoneRevealSw.Stop();
 
+        var detailEnrichSw = Stopwatch.StartNew();
         var detailEnrichClicks = 0;
         var detailEnrichSkipped = 0;
         var detailEnrichHits = 0;
@@ -283,6 +306,7 @@ public static class AvitoCandidatesListPreparer
                     .ConfigureAwait(false);
             }
         }
+        detailEnrichSw.Stop();
 
         var result = new CandidatesListPrepareResult(
             scrollRounds,
@@ -314,6 +338,7 @@ public static class AvitoCandidatesListPreparer
             DeskLinkAuditLogLevel.Info,
             properties: new Dictionary<string, object?>
             {
+                ["candidates.context"] = logContext,
                 ["candidates.prepare.isJobCrmPage"] = isJobCrmPage,
                 ["candidates.prepare.skipDetailEnrich"] = skipDetailEnrich,
                 ["candidates.prepare.scrollStopKnownHistory"] = stoppedOnKnownHistory,
@@ -331,7 +356,20 @@ public static class AvitoCandidatesListPreparer
                 ["candidates.prepare.detailEnrichHits"] = result.DetailEnrichHits,
                 ["candidates.prepare.cardFingerprintSkips"] = result.CardFingerprintSkips,
                 ["candidates.prepare.phoneSkips"] = result.PhoneSkips,
-                ["candidates.prepare.profileSkips"] = result.ProfileSkips
+                ["candidates.prepare.profileSkips"] = result.ProfileSkips,
+                ["candidates.prepare.totalMs"] = totalSw.ElapsedMilliseconds,
+                ["candidates.prepare.firewallMs"] = firewallSw.ElapsedMilliseconds,
+                ["candidates.prepare.scrollMs"] = scrollSw.ElapsedMilliseconds,
+                ["candidates.prepare.postScrollMs"] = postScrollSw.ElapsedMilliseconds,
+                ["candidates.prepare.priorityMs"] = prioritySw.ElapsedMilliseconds,
+                ["candidates.prepare.phoneRevealMs"] = phoneRevealSw.ElapsedMilliseconds,
+                ["candidates.prepare.detailEnrichMs"] = detailEnrichSw.ElapsedMilliseconds,
+                ["candidates.prepare.scrollDomCalls"] = scrollStepCalls + scrollProfileProbeCalls + scrollFingerprintProbeCalls,
+                ["candidates.prepare.scrollStepCalls"] = scrollStepCalls,
+                ["candidates.prepare.scrollProfileProbeCalls"] = scrollProfileProbeCalls,
+                ["candidates.prepare.scrollFingerprintProbeCalls"] = scrollFingerprintProbeCalls,
+                ["candidates.prepare.scrollProfileItemsParsed"] = scrollProfileItemsParsed,
+                ["candidates.prepare.scrollFingerprintItemsParsed"] = scrollFingerprintItemsParsed
             });
 
         return result;
@@ -845,7 +883,7 @@ public static class AvitoCandidatesListPreparer
         return digits.Length >= 10;
     }
 
-    private static async Task<bool> AreLoadedItemsAllKnownAsync(
+    private static async Task<KnownHistoryProbe> ProbeLoadedItemsKnownAsync(
         Func<string, CancellationToken, Task<string>> executeScript,
         int fromIndex,
         int toIndexExclusive,
@@ -854,18 +892,19 @@ public static class AvitoCandidatesListPreparer
     {
         if (toIndexExclusive <= fromIndex)
         {
-            return true;
+            return new KnownHistoryProbe(true, 0);
         }
 
         var fingerprintsByIndex = await TryParseCardFingerprintsAsync(executeScript, cancellationToken)
             .ConfigureAwait(false);
+        var parsedItems = fingerprintsByIndex.Count;
         var batch = new List<string>();
         for (var index = fromIndex; index < toIndexExclusive; index++)
         {
             if (!fingerprintsByIndex.TryGetValue(index, out var fingerprint)
                 || string.IsNullOrWhiteSpace(fingerprint))
             {
-                return false;
+                return new KnownHistoryProbe(false, parsedItems);
             }
 
             batch.Add(fingerprint);
@@ -873,7 +912,7 @@ public static class AvitoCandidatesListPreparer
 
         if (batch.Count == 0)
         {
-            return false;
+            return new KnownHistoryProbe(false, parsedItems);
         }
 
         var existing = await resolveExistingCardFingerprintsAsync(
@@ -884,11 +923,11 @@ public static class AvitoCandidatesListPreparer
         {
             if (!existing.Contains(fingerprint))
             {
-                return false;
+                return new KnownHistoryProbe(false, parsedItems);
             }
         }
 
-        return true;
+        return new KnownHistoryProbe(true, parsedItems);
     }
 
     private static async Task<int> TryApplyKnownCardFingerprintSkipsAsync(
@@ -1252,6 +1291,8 @@ public static class AvitoCandidatesListPreparer
     }
 
     private sealed record ScrollStepProbe(int ItemCount, bool Moved, bool AtEnd);
+
+    private sealed record KnownHistoryProbe(bool AllKnown, int ParsedItems);
 
     private sealed record PhonesReadyProbe(bool Ready, int Items, int WithPhone, int Masked);
 
