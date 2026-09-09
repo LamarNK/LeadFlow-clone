@@ -4275,7 +4275,18 @@ public sealed class CrmWorkspaceService(
                 card.Response.RawText,
                 card.Response.ChatMessagesJson),
             contactPhones,
-            !string.IsNullOrWhiteSpace(card.Response.SourceResponseId));
+            !string.IsNullOrWhiteSpace(card.Response.SourceResponseId),
+            ResponsePhoneMetricKinds.Normalize(card.Response.PhoneMetricKind),
+            card.Response.PreviousPhoneRaw,
+            card.Response.PreviousPhoneNormalized,
+            card.Response.PhoneUnchangedHours,
+            card.Response.PhoneChangedAtUtc,
+            ResponsePhoneMetricKinds.FormatLabel(
+                card.Response.PhoneMetricKind,
+                card.Response.PhoneUnchangedHours,
+                string.IsNullOrWhiteSpace(card.Response.PreviousPhoneRaw)
+                    ? card.Response.PreviousPhoneNormalized
+                    : card.Response.PreviousPhoneRaw));
     }
 
     private static CrmTaskDto ToTaskDto(

@@ -216,6 +216,11 @@
                     {
                         var initials = string.Concat(card.FullName.Split(' ', StringSplitOptions.RemoveEmptyEntries).Take(2).Select(part => char.ToUpperInvariant(part[0])));
                         var avatarUrl = Url.Action("Avatar", "Crm", new { id = card.Id });
+                        var phoneMetricKind = ResponsePhoneMetricKinds.Normalize(card.PhoneMetricKind);
+                        var phoneMetricText = phoneMetricKind == ResponsePhoneMetricKinds.PhoneChanged
+                            && (!string.IsNullOrWhiteSpace(card.PreviousPhoneRaw) || !string.IsNullOrWhiteSpace(card.PreviousPhoneNormalized))
+                                ? $"Был: {ResponseDisplay.FormatPhone(card.PreviousPhoneRaw, card.PreviousPhoneNormalized)}"
+                                : card.PhoneMetricLabel;
                         <tr data-card-manager-user-id="@card.ManagerUserId">
                             @if (canUseBulkActions)
                             {
@@ -232,7 +237,15 @@
                                     <span class="crm-table-candidate__copy"><strong title="@card.FullName">@card.FullName</strong><small>@(card.Age?.ToString() ?? "—") лет</small></span>
                                 </a>
                             </td>
-                            <td class="crm-table-contact" data-label="Контакты"><a href="tel:@card.PhoneRaw">@card.PhoneRaw</a><span>@card.City</span></td>
+                            <td class="crm-table-contact" data-label="Контакты">
+                                <a href="tel:@card.PhoneRaw">@card.PhoneRaw</a>
+                                @if (!string.IsNullOrWhiteSpace(phoneMetricText))
+                                {
+                                    <span class="crm-phone-metric @(phoneMetricKind == ResponsePhoneMetricKinds.PhoneChanged ? "crm-phone-metric--changed" : "crm-phone-metric--unchanged")"
+                                          title="@card.PhoneMetricLabel"><i class="fa-solid @(phoneMetricKind == ResponsePhoneMetricKinds.PhoneChanged ? "fa-arrow-right-arrow-left" : "fa-shield-check")" aria-hidden="true"></i>@phoneMetricText</span>
+                                }
+                                <span>@card.City</span>
+                            </td>
                             <td class="crm-table-vacancy" data-label="Вакансия"><strong title="@card.Vacancy">@card.Vacancy</strong></td>
                             <td data-label="Этап"><span class="crm-queue-list__stage">@card.Stage</span></td>
                             <td class="crm-table-manager" data-label="Ответственный">@(card.ManagerName ?? "Не назначен")</td>
