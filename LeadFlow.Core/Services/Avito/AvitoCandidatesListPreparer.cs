@@ -153,7 +153,6 @@ public static class AvitoCandidatesListPreparer
         await HumanDelay.AfterListReadyAsync(cancellationToken).ConfigureAwait(false);
 
         var domItems = lastCount < 0 ? 0 : lastCount;
-        var phoneRevealLimit = domItems == 0 ? MaxPhoneRevealRoundsWhenNoItems : MaxPhoneRevealRounds;
         var phoneRevealRounds = 0;
         var phoneClicksTotal = 0;
         var openWatchProtected = await ResolveOpenPhoneWatchProtectedIndicesAsync(
@@ -165,6 +164,10 @@ public static class AvitoCandidatesListPreparer
                     .ToHashSet(StringComparer.Ordinal),
                 cancellationToken)
             .ConfigureAwait(false);
+        phoneRevealBudget = CandidatePhoneRevealBudget.Resolve(phoneRevealBudget, openWatchProtected.Count);
+        var phoneRevealLimit = domItems == 0
+            ? MaxPhoneRevealRoundsWhenNoItems
+            : Math.Max(MaxPhoneRevealRounds, openWatchProtected.Count);
         _ = await executeScript(
                 AvitoCandidatesPageScripts.BuildApplyPhoneWatchPriorityScript(openWatchProtected),
                 cancellationToken)

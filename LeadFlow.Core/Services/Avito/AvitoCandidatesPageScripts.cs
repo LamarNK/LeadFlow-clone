@@ -629,7 +629,9 @@ public static class AvitoCandidatesPageScripts
             const ratio = 0.32 + Math.random() * 0.28;
             const delta = Math.max(Math.floor(scroller.clientHeight * ratio), 180);
             try {
-                scroller.scrollBy({ top: delta, left: 0, behavior: "smooth" });
+                // The result is sampled immediately below, so animation would report moved=false
+                // before the first frame and make the C# loop stop after three false stable rounds.
+                scroller.scrollBy({ top: delta, left: 0, behavior: "auto" });
             } catch {
                 scroller.scrollBy(0, delta);
             }
@@ -728,10 +730,14 @@ public static class AvitoCandidatesPageScripts
 
             let withPhone = 0;
             let masked = 0;
+            let priorityPending = 0;
             for (let index = 0; index < items.length; index++) {
                 const item = items[index];
                 if (needsPhoneReveal(item, index)) {
                     masked++;
+                    if (isPhoneWatchPriority(index)) {
+                        priorityPending++;
+                    }
                     continue;
                 }
 
@@ -740,10 +746,13 @@ public static class AvitoCandidatesPageScripts
 
             const ratio = withPhone / items.length;
             return JSON.stringify({
-                ready: ratio >= 0.92 || (items.length <= 3 && withPhone === items.length),
+                // General readiness must never leave an active phone-watch unopened.
+                ready: priorityPending === 0
+                    && (ratio >= 0.92 || (items.length <= 3 && withPhone === items.length)),
                 items: items.length,
                 withPhone,
-                masked
+                masked,
+                priorityPending
             });
         })();
         """;
