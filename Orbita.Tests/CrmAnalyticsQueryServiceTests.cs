@@ -486,7 +486,7 @@ public sealed partial class CrmAnalyticsQueryServiceTests
     }
 
     [Fact]
-    public async Task GetAsync_DecompositionCountsConfirmedContactsAndExcludesNdzRobotAndDisappeared()
+    public async Task GetAsync_DecompositionUsesApprovedFirstContactSourcesAndExplicitHistory()
     {
         await using var harness = await Harness.CreateAsync(Now);
         harness.AddOffice(
@@ -627,6 +627,9 @@ public sealed partial class CrmAnalyticsQueryServiceTests
                 fromUtc.AddHours(8),
                 ManagerOneId,
                 "Анна"));
+        // Closures must have a source stage; current card state is not historical proof.
+        foreach (var history in harness.Db.CrmCandidateHistory.Local.Where(x => x.Action == "Closed"))
+            history.StageAtEvent = CrmStages.Lead;
         await harness.Db.SaveChangesAsync();
 
         var result = await harness.Sut.GetAsync(
@@ -638,21 +641,17 @@ public sealed partial class CrmAnalyticsQueryServiceTests
         var decomposition = Assert.IsType<CrmAnalyticsDecompositionDto>(
             Assert.IsType<CrmAnalyticsDto>(result.Data).Decomposition);
         Assert.Equal(12, decomposition.Leads);
-        Assert.Equal(7, decomposition.Contacts);
+        Assert.Equal(6, decomposition.Contacts);
         Assert.Equal(1, decomposition.Questionnaires);
         Assert.Equal(1, decomposition.Tickets);
         Assert.Equal(1, decomposition.Contracts);
-        Assert.Equal(58.33, decomposition.ContactConversionPercent);
+        Assert.Equal(50, decomposition.ContactConversionPercent);
         Assert.Equal(8.33, decomposition.QuestionnaireConversionPercent);
         Assert.Equal(8.33, decomposition.TicketConversionPercent);
         Assert.Equal(8.33, decomposition.ContractConversionPercent);
 
         var breakdown = decomposition.ContactBreakdown.ToDictionary(x => x.Label, StringComparer.Ordinal);
-        Assert.Equal(3, breakdown["Переговоры и дальше"].Count);
-        Assert.Equal(1, breakdown["Было закрытие «Успех»"].Count);
-        Assert.Equal(1, breakdown["Отказ: контракт"].Count);
-        Assert.Equal(1, breakdown[CrmCloseReasons.NotRelevant].Count);
-        Assert.Equal(1, breakdown[CrmCloseReasons.Officer].Count);
+        Assert.Equal(6, breakdown["Первый контакт"].Count);
         Assert.Equal(decomposition.Contacts, breakdown.Values.Sum(x => x.Count));
         Assert.DoesNotContain(CrmCloseReasons.NoAnswer, breakdown.Keys);
         Assert.DoesNotContain(CrmCloseReasons.Disappeared, breakdown.Keys);

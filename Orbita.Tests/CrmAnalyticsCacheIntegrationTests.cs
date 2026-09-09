@@ -31,7 +31,7 @@ public sealed partial class CrmAnalyticsQueryServiceTests
         Assert.Equal(0, (await sut.GetAsync(OfficeScope.GlobalAdmin, "admin", true, received)).Data!.Cards.Received);
         Assert.Equal(2, cache.Loads);
         Assert.Equal(1, cache.Hits);
-        Assert.All(cache.Parameters, p => Assert.Contains("crm-analytics-v2", p));
+        Assert.All(cache.Parameters, p => Assert.Contains("crm-analytics-v3-sales", p));
     }
 
     [Theory]

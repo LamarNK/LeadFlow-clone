@@ -1,629 +1,227 @@
 @model CrmAnalyticsViewModel
 @using Orbita.Contracts
-@using Orbita.Web.Models.ViewModels
+@using Orbita.Web.Helpers
 @{
     ViewData["Title"] = "CRM — Аналитика";
-    string Percent(double value) => value != 0d && Math.Abs(value) < 1d
-        ? $"{value:0.00}%"
-        : $"{value:0.#}%";
+    var tz = BrowserTimeZone.Resolve(Context);
+    var from = Model.Header.DateFrom.ToString("yyyy-MM-dd");
+    var to = Model.Header.DateTo.ToString("yyyy-MM-dd");
+    var period = Model.Header.DateFrom == Model.Header.DateTo ? Model.Header.DateFrom.ToString("dd.MM.yyyy")
+        : $"{Model.Header.DateFrom:dd.MM.yyyy} — {Model.Header.DateTo:dd.MM.yyyy}";
+    string Evidence(string metric, string? manager = null, Guid? office = null) => Url.Action("AnalyticsEvidence", "Crm", new {
+        from, to, metric, managerUserId = manager ?? Model.SelectedManagerUserId,
+        evidenceOfficeId = office, tz, cohortBasis = CrmAnalyticsCohortBases.Received, inline = true
+    })!;
+    string Percentage(double? percent) => percent is null ? "—" : $"{percent:0.#}%";
 }
-
 <partial name="_PageHeader" model="Model.Header" />
-
-<main class="orbita-main crm-analytics">
-    @if (Model.Analytics is not { } analytics)
-    {
-        <section class="card crm-analytics-empty" role="status">
-            <span class="crm-analytics-empty__icon"><i class="fa-solid fa-chart-column" aria-hidden="true"></i></span>
-            <h2>Аналитика временно недоступна</h2>
-            <p>@Model.ErrorMessage</p>
-            <a class="settings-primary-btn" href="@Url.Action("Analytics", "Crm")">Повторить</a>
-        </section>
-    }
-    else
-    {
-        var cards = analytics.Cards;
-        var decomposition = analytics.Decomposition;
-        var callQuality = analytics.CallQuality;
-        var periodActivity = analytics.PeriodActivity;
-        var cohortBasis = analytics.CohortBasis;
-        var firstAssignedCohort = cohortBasis == CrmAnalyticsCohortBases.FirstAssigned;
-        // These are presentation modes only; the API's counting rules are unchanged.
-        var report = string.Equals(Context.Request.Query["report"], "leads", StringComparison.Ordinal) ? "leads" : "activity";
-        var leadView = string.Equals(Context.Request.Query["leadView"], "progress", StringComparison.Ordinal) ? "progress" : "snapshot";
-        var isActivityReport = report == "activity";
-        var isLeadProgress = !isActivityReport && leadView == "progress";
-        var timeZoneOffset = Orbita.Web.Helpers.BrowserTimeZone.Resolve(Context);
-        var periodLabel = Model.Header.DateFrom.Date == Model.Header.DateTo.Date
-            ? Model.Header.DateFrom.ToString("dd.MM.yyyy")
-            : $"{Model.Header.DateFrom:dd.MM.yyyy} — {Model.Header.DateTo:dd.MM.yyyy}";
-        string ReportUrl(string selectedReport, string selectedLeadView = "snapshot", string? basis = null) => Url.Action("Analytics", "Crm", new {
-            from = Model.Header.DateFrom.ToString("yyyy-MM-dd"),
-            to = Model.Header.DateTo.ToString("yyyy-MM-dd"),
-            managerUserId = Model.SelectedManagerUserId,
-            report = selectedReport, leadView = selectedLeadView, tz = timeZoneOffset, cohortBasis = basis ?? cohortBasis
-        })!;
-        string EvidenceUrl(string metric, string? manager = null, Guid? evidenceOfficeId = null) => Url.Action("AnalyticsEvidence", "Crm", new {
-            from = Model.Header.DateFrom.ToString("yyyy-MM-dd"), to = Model.Header.DateTo.ToString("yyyy-MM-dd"),
-            managerUserId = manager ?? Model.SelectedManagerUserId, metric, report, leadView, tz = timeZoneOffset, evidenceOfficeId,
-            cohortBasis, returnManagerUserId = Model.SelectedManagerUserId ?? "all"
-        })!;
-        var kpiMetrics = new[] { "cohort.received", "cohort.assigned", "cohort.active", "cohort.closed", "cohort.success", "cohort.success" };
-        var selectedManager = analytics.ManagerOptions.FirstOrDefault(x =>
-            string.Equals(x.UserId, Model.SelectedManagerUserId, StringComparison.Ordinal));
-        var managerLabel = selectedManager?.DisplayName
-                           ?? analytics.Managers.FirstOrDefault()?.DisplayName
-                           ?? "Мои показатели";
-        var managerCohortSelected = !string.IsNullOrWhiteSpace(analytics.ManagerUserId);
-        var closedInPeriod = analytics.CloseReasons.Sum(x => x.Count);
-        var visibleFunnels = analytics.Funnels
-            .Where(x => x.Received > 0 || string.IsNullOrWhiteSpace(analytics.ManagerUserId))
-            .ToList();
-        var kpis = new[]
+<main class="orbita-main crm-analytics-sales">
+@if (Model.Analytics is not { Sales: { } sales } analytics)
+{
+    <section class="card sales-error" role="alert">
+        <h2>Не удалось загрузить аналитику</h2>
+        <p>@(Model.ErrorMessage ?? "Обновите страницу. Если ошибка повторяется, проверьте совместимость версий API и панели.")</p>
+        <p>Ошибка загрузки не означает, что у команды нет результатов.</p>
+        <a class="settings-primary-btn" href="@Url.Action("Analytics", "Crm", new { from, to, tz, managerUserId = Model.SelectedManagerUserId })">Повторить</a>
+    </section>
+}
+else
+{
+    <form class="card sales-filters" method="get" asp-controller="Crm" asp-action="Analytics">
+        <input type="hidden" name="from" value="@from" data-period-form-from />
+        <input type="hidden" name="to" value="@to" data-period-form-to />
+        <input type="hidden" name="tz" value="@tz" />
+        <div class="sales-office"><span class="sales-eyebrow">Офис</span><strong><i class="fa-regular fa-building" aria-hidden="true"></i> @Model.OfficeContextLabel</strong><small>Меняется переключателем в шапке</small></div>
+        @if (Model.IsAdmin)
         {
-            new { Label = firstAssignedCohort ? "Первичная выдача" : "Поступило лидов", Value = cards.Received.ToString("N0"), Caption = firstAssignedCohort ? "Первое назначение карточки за период" : "Карточек поступило в CRM за период", Icon = "fa-solid fa-user-plus", Tone = "blue" },
-            new { Label = managerCohortSelected ? "Сейчас у менеджера" : "Назначено", Value = cards.Assigned.ToString("N0"), Caption = managerCohortSelected ? $"{Percent(cards.AssignmentRatePercent)} полученных остались у менеджера" : $"{Percent(cards.AssignmentRatePercent)} от полученных", Icon = "fa-solid fa-user-check", Tone = "indigo" },
-            new { Label = "Не закрыты", Value = cards.Active.ToString("N0"), Caption = "Из полученных · не равно нагрузке", Icon = "fa-regular fa-folder-open", Tone = "orange" },
-            new { Label = "Закрытые", Value = cards.Closed.ToString("N0"), Caption = $"{Percent(cards.CloseRatePercent)} от полученных", Icon = "fa-solid fa-box-archive", Tone = "slate" },
-            new { Label = "Успешно закрыто", Value = cards.SuccessfulClosed.ToString("N0"), Caption = $"{Percent(cards.SuccessAmongClosedPercent)} среди закрытых", Icon = "fa-solid fa-circle-check", Tone = "green" },
-            new { Label = "Конверсия в успех", Value = cards.Received > 0 ? Percent(cards.SuccessRatePercent) : "—", Caption = cards.Received > 0 ? "Получено → успешное закрытие" : "Нет базы для расчёта", Icon = "fa-solid fa-arrow-trend-up", Tone = "purple" }
-        };
-
-        <nav class="crm-analytics-reports" aria-label="Выбор отчёта">
-            <a href="@ReportUrl("activity")" class="crm-analytics-report-link @(isActivityReport ? "is-active" : null)" aria-current="@(isActivityReport ? "page" : null)">
-                <span class="crm-analytics-report-link__icon"><i class="fa-solid fa-calendar-check" aria-hidden="true"></i></span>
-                <span><strong>Работа команды</strong><small>Что сделали за выбранные даты</small></span>
-                <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
-            </a>
-            <a href="@ReportUrl("leads", leadView)" class="crm-analytics-report-link crm-analytics-report-link--leads @(!isActivityReport ? "is-active" : null)" aria-current="@(!isActivityReport ? "page" : null)">
-                <span class="crm-analytics-report-link__icon"><i class="fa-solid fa-user-group" aria-hidden="true"></i></span>
-                <span><strong>Полученные лиды</strong><small>Что стало с поступившими карточками</small></span>
-                <i class="fa-solid fa-chevron-right" aria-hidden="true"></i>
-            </a>
-        </nav>
-
-        <section class="card crm-analytics-filter-card" aria-label="Фильтры аналитики">
-            <form method="get" asp-controller="Crm" asp-action="Analytics" class="crm-analytics-filters">
-                <input type="hidden" name="from" value="@Model.Header.DateFrom.ToString("yyyy-MM-dd")" data-period-form-from />
-                <input type="hidden" name="to" value="@Model.Header.DateTo.ToString("yyyy-MM-dd")" data-period-form-to />
-                <input type="hidden" name="report" value="@report" />
-                <input type="hidden" name="leadView" value="@leadView" />
-                <input type="hidden" name="cohortBasis" value="@cohortBasis" />
-                <input type="hidden" name="tz" value="@timeZoneOffset" />
-
-                <div class="crm-analytics-filter crm-analytics-filter--office">
-                    <span class="crm-analytics-filter__label">Офис</span>
-                    <strong><i class="fa-regular fa-building" aria-hidden="true"></i>@Model.OfficeContextLabel</strong>
-                    <small>Меняется переключателем в шапке</small>
-                </div>
-
-                <label class="crm-analytics-filter crm-analytics-filter--manager">
-                    <span class="crm-analytics-filter__label">Менеджер</span>
-                    @if (Model.IsAdmin)
+            <div class="sales-manager-filter"><label for="sales-manager">Менеджер</label>
+                <select id="sales-manager" name="managerUserId" aria-label="Фильтр по менеджеру">
+                    <option value="">Все сотрудники</option>
+                    @foreach (var option in analytics.ManagerOptions.DistinctBy(x => x.UserId))
                     {
-                        <select name="managerUserId" aria-label="Фильтр по менеджеру">
-                            <option value="">Все менеджеры</option>
-                            @foreach (var officeGroup in analytics.ManagerOptions.GroupBy(x => new { x.OfficeId, x.OfficeName }))
-                            {
-                                <optgroup label="@officeGroup.Key.OfficeName">
-                                    @foreach (var option in officeGroup)
-                                    {
-                                        <option value="@option.UserId" selected="@(string.Equals(option.UserId, Model.SelectedManagerUserId, StringComparison.Ordinal) ? "selected" : null)">@option.DisplayName</option>
-                                    }
-                                </optgroup>
-                            }
-                        </select>
+                        <option value="@option.UserId" selected="@(option.UserId == Model.SelectedManagerUserId)">@option.DisplayName</option>
                     }
-                    else
-                    {
-                        <select disabled aria-label="Текущий менеджер">
-                            <option>@managerLabel</option>
-                        </select>
-                        <small>Менеджеру доступны только свои показатели</small>
-                    }
-                </label>
-
-                <div class="crm-analytics-filter-actions">
-                    @if (Model.IsAdmin)
-                    {
-                        <button type="submit" class="settings-primary-btn">Применить</button>
-                    }
-                    <a class="settings-secondary-btn" href="@Url.Action("Analytics", "Crm", new { report, leadView, tz = timeZoneOffset })">Сбросить</a>
-                </div>
-            </form>
-        </section>
-
-        @if (!isActivityReport)
-        {
-            <nav class="crm-analytics-cohort-bases" aria-label="Какие лиды отбираем">
-                <a href="@ReportUrl("leads", leadView, CrmAnalyticsCohortBases.Received)" aria-current="@(!firstAssignedCohort ? "page" : null)">Поступления в CRM</a>
-                <a href="@ReportUrl("leads", leadView, CrmAnalyticsCohortBases.FirstAssigned)" aria-current="@(firstAssignedCohort ? "page" : null)">Первичная выдача</a>
-            </nav>
-            <nav class="crm-analytics-lead-views" aria-label="Показатели полученных лидов">
-                <a href="@ReportUrl("leads")" aria-current="@(!isLeadProgress ? "page" : null)">Состояние сейчас</a>
-                <a href="@ReportUrl("leads", "progress")" aria-current="@(isLeadProgress ? "page" : null)">Продвижение за период</a>
-            </nav>
-        }
-
-        <section class="crm-analytics-context @(!isActivityReport ? "crm-analytics-context--leads" : null)" aria-label="Как читать этот отчёт">
-            <div>
-                <span class="crm-analytics-context__eyebrow">@(isActivityReport ? "Даты действий" : firstAssignedCohort ? "Даты первой выдачи менеджерам" : "Даты поступления в CRM") · @periodLabel</span>
-                <h2>@(isActivityReport ? (managerCohortSelected ? "Что сделал сотрудник за этот период?" : "Что произошло по карточкам за этот период?") : isLeadProgress ? "Как продвигались эти лиды за выбранные даты?" : "Что с полученными лидами сейчас?")</h2>
-                <p>@(isActivityReport
-                    ? "Переходы и закрытия по всем карточкам — новым и полученным раньше. Дата поступления лида не ограничивает этот отчёт."
-                    : firstAssignedCohort
-                        ? "Только карточки, впервые назначенные ответственному за эти даты. Дата поступления в CRM может быть раньше."
-                        : "Только карточки, поступившие в CRM за эти даты. Выбор менеджера не меняет даты поступления.")</p>
-                @if (!isActivityReport && managerCohortSelected)
-                {
-                    <p>Первый ответственный — «@managerLabel». Результат группы включает действия последующих владельцев. Передачи и личные действия — в «Работе команды».</p>
-                }
+                </select>
             </div>
-            <div class="crm-analytics-context__scope">
-                <span>@(isActivityReport ? "Какие карточки" : "Когда смотрим результат")</span>
-                <strong>@(isActivityReport ? "Новые и старые" : isLeadProgress ? "В выбранном периоде" : "На сегодня")</strong>
-                <small>@(isActivityReport ? "Включая действия вне смен" : isLeadProgress ? "Только фактические изменения за эти даты" : "Включая изменения после выбранных дат")</small>
-            </div>
-        </section>
-
-        @if (!isActivityReport && cards.Received == 0)
-        {
-            <aside class="crm-analytics-reading-note crm-analytics-empty-cohort" role="status">
-                <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
-                <div><strong>Нет карточек по выбранному правилу и фильтрам</strong><p>Это не означает, что работы не было. За эти даты: назначений — @(periodActivity?.Assignments ?? 0), из них от коллег — @(periodActivity?.TransfersReceived ?? 0), переходов — @(periodActivity?.StageChanges ?? 0), закрытий — @(periodActivity?.ClosedCards ?? 0). Проверьте основание отбора выше.</p></div>
-                <a href="@ReportUrl("activity")">Посмотреть работу за эти даты <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
-            </aside>
+            <button class="settings-primary-btn" type="submit">Применить</button>
+            <a class="sales-reset" href="@Url.Action("Analytics", "Crm", new { from, to, tz })">Сбросить</a>
         }
+        else { <div class="sales-self"><span class="sales-eyebrow">Сотрудник</span><strong>@(analytics.ManagerOptions.FirstOrDefault()?.DisplayName ?? "Мои результаты")</strong></div> }
+    </form>
 
-        @if (!isActivityReport && analytics.InferredReceiptCards > 0)
-        {
-            <aside class="crm-analytics-reading-note" role="status">У @analytics.InferredReceiptCards карточек часть истории поступления или первой выдачи не сохранена. Использованы доступные поля карточки; прошлую принадлежность нельзя подтвердить полностью.</aside>
-        }
-
-        <details class="crm-analytics-methodology">
-            <summary><i class="fa-solid fa-circle-info" aria-hidden="true"></i>Правила этого отчёта</summary>
-            @if (isActivityReport)
-            {
-                <p>Переходы, закрытия и повторные открытия — события. Одна карточка может дать несколько действий; повторное открытие не стирает факт закрытия. Смены не исключают действия из результата, отсутствие смены отмечается отдельно. Исполнитель — тот, кто записал действие, а не нынешний владелец карточки. Выдачи относятся к получателю; передачи не создают новый CRM-лид. Автоматические действия имеют исполнителя «Система».</p>
-            }
-            else if (isLeadProgress)
-            {
-                <p>Каждая карточка учитывается один раз в каждом показателе. Контакт определяется по этапам и причинам закрытия, а не по числу телефонных вызовов. Учитывается история всей выбранной группы, включая работу последующих ответственных. Анкета и билет считаются только при фактическом переводе в эти этапы; промежуточные этапы не добавляются. Успех — последнее закрытие с причиной «Успех» внутри периода без последующего открытия в этом периоде. Все доли считаются от полученных лидов, а не от соседней колонки.</p>
-            }
-            else
-            {
-                <p>Основание отбора выбирается отдельно: поступление в CRM или первое назначение ответственному. Фильтр сотрудника оставляет карточки его первичной выдачи, не меняя выбранное основание дат. Смены не ограничивают получение. Статусы и процент успеха показаны на сегодня; это результат группы, а не оценка личных действий в тот день. Сравнивайте конверсию групп при одинаковом сроке наблюдения.</p>
-            }
-        </details>
-
-        @if (!isActivityReport && !isLeadProgress && cards.Received > 0)
-        {
-        <header class="crm-analytics-section-heading">
-            <div>
-                <h2>Состояние выбранных лидов</h2>
-                <p>В этой группе — @cards.Received.ToString("N0") карточек. Все показатели ниже относятся только к ним.</p>
-            </div>
-            <span>состояние сейчас</span>
+    <section class="card sales-block sales-block--work" data-report-block="work" aria-labelledby="sales-work-title">
+        <header class="sales-block-heading">
+            <div class="sales-heading-main"><span class="sales-section-number">01</span><div><h2 id="sales-work-title">Результаты за период</h2><p>Вся работа за @period — с новыми и ранее полученными карточками.</p></div></div>
+            <span class="sales-scope-tag">По дате действия</span>
         </header>
-
-        <section class="crm-analytics-kpis" aria-label="Ключевые показатели CRM">
-            @for (var i = 0; i < kpis.Length; i++)
+        <div class="sales-kpis">
+            @foreach (var metric in sales.Results)
             {
-                var kpi = kpis[i];
-                <article class="card crm-analytics-kpi crm-analytics-kpi--@kpi.Tone" style="--analytics-index:@i">
-                    <header>
-                        <span class="crm-analytics-kpi__icon"><i class="@kpi.Icon" aria-hidden="true"></i></span>
-                        <span>@kpi.Label</span>
-                    </header>
-                    <strong><a class="crm-analytics-value-link" href="@EvidenceUrl(kpiMetrics[i])" aria-label="@kpi.Label: @kpi.Value — показать карточки">@kpi.Value</a></strong>
-                    <p>@kpi.Caption</p>
-                </article>
+                var tone = metric.Key == CrmSalesMetrics.Contacts ? "contact" : metric.Key == CrmSalesMetrics.Successes ? "success" : "default";
+                <button type="button" class="sales-kpi sales-kpi--@tone" data-evidence-url="@Evidence(metric.Key)" data-evidence-title="@metric.Label" aria-expanded="false">
+                    <span class="sales-kpi-label">@metric.Label <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i></span>
+                    <strong data-metric="@metric.Key">@metric.Count.ToString("N0")</strong><span class="sales-kpi-unit">@metric.Unit</span>
+                    <small>@metric.Description</small>
+                </button>
             }
-        </section>
-        <aside class="crm-analytics-reading-note">
-            <i class="fa-regular fa-clock" aria-hidden="true"></i>
-            <div><strong>Поздний успех обновит этот результат</strong><p>Если лид пришёл 1-го числа, а успешно закрылся 20-го, здесь он появится в успехах группы за 1-е число. Чтобы оценить работу за 20-е, откройте «Работу команды» и выберите эту дату.</p></div>
-            <a href="@ReportUrl("leads", "progress")">Посмотреть продвижение за период <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
-        </aside>
-        }
-
-        @if (isActivityReport && periodActivity is not null)
+        </div>
+        <div class="sales-context-line"><i class="fa-regular fa-circle-question" aria-hidden="true"></i><span>Карточка пришла 1-го, закрылась в успех 20-го — успех учитывается за 20-е. Числа выше не являются последовательной воронкой.</span></div>
+        <div class="sales-breakdown-grid">
+            <details class="sales-details" open>
+                <summary>Откуда дозвоны <span>@sales.ContactSources.Sum(x => x.Count)</span></summary>
+                <div class="sales-breakdown">
+                    @foreach (var source in sales.ContactSources) { <button type="button" data-evidence-url="@Evidence(source.Key)" data-evidence-title="Дозвоны из @source.Label"><span>@source.Label</span><strong>@source.Count</strong></button> }
+                    @if (sales.ContactSources.Count == 0) { <p class="sales-empty">За период нет первых контактов по согласованным правилам.</p> }
+                </div>
+            </details>
+            <details class="sales-details">
+                <summary>Причины закрытия <span>@sales.CloseReasons.Sum(x => x.Count)</span></summary>
+                <div class="sales-breakdown">
+                    @foreach (var reason in sales.CloseReasons) { <button type="button" data-evidence-url="@Evidence(reason.Key)" data-evidence-title="Закрытия: @reason.Label"><span>@reason.Label</span><strong>@reason.Count</strong></button> }
+                    @if (sales.CloseReasons.Count == 0) { <p class="sales-empty">За период закрытий нет.</p> }
+                </div>
+            </details>
+        </div>
+        @if (sales.UnclassifiedClosures > 0)
         {
-            var outsideShift = periodActivity.StageChangesOutsideShift + periodActivity.ClosedCardsOutsideShift;
-            @if (analytics.ReceiptSummary is {} receipts)
-            {
-                <aside class="crm-analytics-reading-note crm-analytics-receipt-summary" role="status">
-                    <div><strong>Поступления в CRM за эти даты: <a href="@EvidenceUrl("period.received")">@receipts.Received</a></strong>
-                        <p>@(managerCohortSelected ? "Карточки выбранного первого ответственного." : "Все новые карточки офиса, даже если их ещё не выдали в работу.")
-                            Из них без ответственного сейчас: <a href="@EvidenceUrl("period.unassigned")">@receipts.WithoutResponsible</a>.
-                            Передачи старых лидов входят в назначения ниже, а не в новые поступления.</p>
-                    </div>
-                </aside>
-            }
-            <section class="card crm-analytics-panel crm-analytics-period-activity">
-                <header class="crm-analytics-panel__header">
-                    <div>
-                        <h2>Результат работы</h2>
-                        <p>@(managerCohortSelected
-                            ? $"Фактические действия «{managerLabel}» по всем карточкам, включая полученные раньше и работу вне смены."
-                            : "Фактические события по всем карточкам, включая полученные раньше. По клику на число — список действий и исполнителей.")</p>
-                    </div>
-                    <span>@periodLabel</span>
-                </header>
-                <div class="crm-analytics-period-activity__kpis">
-                    <div><span>Переходов</span><strong><a class="crm-analytics-value-link" href="@EvidenceUrl("activity.transitions")">@periodActivity.StageChanges.ToString("N0")</a></strong><small>реальные изменения этапа</small></div>
-                    <div><span>Закрытий</span><strong><a class="crm-analytics-value-link" href="@EvidenceUrl("activity.closed")">@periodActivity.ClosedCards.ToString("N0")</a></strong><small>события, не остаток карточек</small></div>
-                    <div class="is-success"><span>Из них успешных</span><strong><a class="crm-analytics-value-link" href="@EvidenceUrl("activity.success")">@periodActivity.SuccessfulClosedCards.ToString("N0")</a></strong><small>подтверждённое закрытие «Успех»</small></div>
-                    <div><span>Назначений всего</span><strong><a class="crm-analytics-value-link" href="@EvidenceUrl("activity.assignments")">@periodActivity.Assignments</a></strong><small>первичные назначения и передачи</small></div>
-                    <div><span>Из них — от коллег</span><strong><a class="crm-analytics-value-link" href="@EvidenceUrl("activity.received")">@periodActivity.TransfersReceived</a></strong><small>уже входят в назначения всего</small></div>
-                    <div><span>Возвращено в работу</span><strong><a class="crm-analytics-value-link" href="@EvidenceUrl("activity.reopened")">@periodActivity.ReopenedCards</a></strong><small>из успеха: @periodActivity.ReturnedFromSuccess · по сохранённой причине</small></div>
-                </div>
-                @if (periodActivity.StageTransitions.Count > 0)
-                {
-                    <div class="crm-analytics-period-activity__transitions" aria-label="Переходы между этапами">
-                        @foreach (var transition in periodActivity.StageTransitions)
-                        {
-                            <div>
-                                <span>@transition.FromStage <i class="fa-solid fa-arrow-right" aria-hidden="true"></i> @transition.ToStage</span>
-                                <strong><a class="crm-analytics-value-link" href="@EvidenceUrl("transition:" + transition.FromStage + "→" + transition.ToStage)">@transition.Count.ToString("N0")</a></strong>
-                            </div>
-                        }
-                    </div>
-                }
-                else
-                {
-                    <div class="crm-analytics-panel-empty"><i class="fa-solid fa-arrow-right-arrow-left" aria-hidden="true"></i><span>В выбранном периоде переходов между этапами не было</span></div>
-                }
-                @if (outsideShift > 0)
-                {
-                    <p class="crm-analytics-period-activity__excluded">
-                        <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
-                        Включено без записанной смены: переходов — @periodActivity.StageChangesOutsideShift.ToString("N0"), закрытий — @periodActivity.ClosedCardsOutsideShift.ToString("N0").
-                    </p>
-                }
-                @if (periodActivity.InferredContextEvents > 0 || periodActivity.UnattributedAssignments > 0)
-                {
-                    <p class="crm-analytics-period-activity__excluded">Неполная старая история: @periodActivity.InferredContextEvents событий без достоверного контекста офиса; @periodActivity.UnattributedAssignments назначений без записанного получателя. Получатели и прежние ответственные не восстанавливаются догадками.</p>
-                }
-                @if (periodActivity.RepeatedClosuresWithoutReopen > 0)
-                {
-                    <p class="crm-analytics-period-activity__excluded">Нужна проверка истории: <a href="@EvidenceUrl("activity.repeated-closures")">@periodActivity.RepeatedClosuresWithoutReopen повторных закрытий</a> без записанного открытия между ними. Они входят в события закрытия, но не означают новых кандидатов.</p>
-                }
-            </section>
+            <p class="sales-alert" role="status">У @sales.UnclassifiedClosures закрытий не сохранён исходный этап или причина. Они учтены в закрытиях, но дозвон достоверно определить нельзя. <button type="button" data-evidence-url="@Evidence(CrmSalesMetrics.UnknownClosures)" data-evidence-title="Закрытия с неполной историей">Показать карточки</button></p>
         }
-
-        @if (isActivityReport)
+        @if (sales.InferredEvents > 0 || analytics.InferredReceiptCards > 0)
         {
-        <section class="card crm-analytics-panel crm-analytics-managers">
-            <header class="crm-analytics-panel__header">
-                <div>
-                    <h2>Кто какой результат принёс</h2>
-                    <p>Первичная выдача — первому ответственному. Передачи — получателю и прежнему владельцу. Переходы, закрытия и возвраты — исполнителю, включая работу со старыми карточками и вне смен.</p>
-                </div>
-                <span>@analytics.Managers.Count менеджеров</span>
-            </header>
-            @if (analytics.Managers.Count == 0)
-            {
-                <div class="crm-analytics-panel-empty"><i class="fa-solid fa-users-slash" aria-hidden="true"></i><span>Нет менеджеров по выбранным фильтрам</span></div>
-            }
-            else
-            {
-                var showOffice = analytics.Managers.Select(x => x.OfficeId).Distinct().Count() > 1;
-                <div class="crm-analytics-table-wrap">
-                    <table class="crm-analytics-table">
-                        <thead>
-                            <tr>
-                                <th>Менеджер</th>
-                                @if (showOffice) { <th>Офис</th> }
-                                <th>Первичная выдача</th>
-                                <th>От коллег</th><th>Передал</th>
-                                <th>Переходов</th>
-                                <th>Закрыл</th>
-                                <th>Из них успешно</th>
-                                <th>Открыл снова</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            @foreach (var manager in analytics.Managers)
-                            {
-                                <tr>
-                                    <td data-label="Менеджер">
-                                        <span class="crm-analytics-manager">
-                                            <span><strong>@manager.DisplayName</strong></span>
-                                        </span>
-                                    </td>
-                                    @if (showOffice) { <td data-label="Офис">@manager.OfficeName</td> }
-                                    <td data-label="Первичная выдача"><a href="@EvidenceUrl("manager.primary", manager.UserId, manager.OfficeId)">@manager.CardsInPeriod.ToString("N0")</a></td>
-                                    <td data-label="От коллег"><a href="@EvidenceUrl("activity.received", manager.UserId, manager.OfficeId)">@manager.TransfersReceived</a></td>
-                                    <td data-label="Передал"><a href="@EvidenceUrl("activity.sent", manager.UserId, manager.OfficeId)">@manager.TransfersSent</a></td>
-                                    <td data-label="Переходов"><a href="@EvidenceUrl("activity.transitions", manager.UserId, manager.OfficeId)">@manager.StageChangesInPeriod.ToString("N0")</a></td>
-                                    <td data-label="Закрыл"><a href="@EvidenceUrl("activity.closed", manager.UserId, manager.OfficeId)">@manager.ClosedCardsInPeriod.ToString("N0")</a></td>
-                                    <td data-label="Из них успешно"><a href="@EvidenceUrl("activity.success", manager.UserId, manager.OfficeId)">@manager.SuccessfulClosedCardsInPeriod.ToString("N0")</a></td>
-                                    <td data-label="Открыл снова"><a href="@EvidenceUrl("activity.reopened", manager.UserId, manager.OfficeId)">@manager.ReopenedCardsInPeriod</a></td>
-                                </tr>
-                            }
-                        </tbody>
-                    </table>
-                </div>
-            }
-        </section>
+            <p class="sales-data-note">Старая история: у @sales.InferredEvents событий контекст восстановлен; у @analytics.InferredReceiptCards карточек дата или атрибуция поступления определена по резервным полям. Эти записи не скрыты из отчёта.</p>
+        }
+        @if (sales.UnattributedActions > 0)
+        {
+            <p class="sales-alert">У @sales.UnattributedActions событий не записан исполнитель. Они входят в общие результаты, но не приписаны сотруднику. <button type="button" data-evidence-url="@Evidence(CrmSalesMetrics.UnattributedActions)" data-evidence-title="События без исполнителя">Проверить</button></p>
+        }
+        <details class="sales-rules"><summary>Как считаются дозвоны и результаты</summary>
+            <p>Первый переход из лида, НДЗ, НДЗ 2 или недоступных подменных в переговоры, переговоры долгосрок, анкету либо закрытие по любой причине, кроме НДЗ. Каждый первый контакт учитывается один раз за историю карточки. Названия этапов сопоставляются с воронкой офиса.</p>
+            <p>Анкеты, билеты и закрытия — события за выбранные даты. Повторные переходы видны в детализации. Результат принадлежит исполнителю действия и не исчезает при смене ответственного. Запись смены не является условием учёта.</p>
+        </details>
+        <div class="sales-evidence" data-evidence-host hidden role="region" aria-label="Детализация результатов"></div>
+    </section>
 
-        <details class="card crm-analytics-panel crm-analytics-current-load" open>
-            <summary><span><strong>Требует внимания сейчас</strong><small>Текущая нагрузка и задачи · не зависит от выбранных дат. Пороги длительности этапов здесь не задаются.</small></span><i class="fa-solid fa-chevron-down" aria-hidden="true"></i></summary>
-            <div class="crm-analytics-table-wrap">
-                <table class="crm-analytics-table">
-                    <thead><tr><th>Менеджер</th><th>Текущие карточки</th><th>Нагрузка / лимит</th><th>Задачи</th><th>Просрочено</th></tr></thead>
-                    <tbody>
-                        @foreach (var manager in analytics.Managers)
-                        {
-                            var hasCapacity = manager.Capacity > 0;
-                            var utilization = hasCapacity ? Math.Clamp(manager.CapacityUtilizationPercent, 0d, 100d) : 0d;
-                            var utilizationWidth = utilization.ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
-                            <tr class="@(hasCapacity && manager.CapacityUtilizationPercent >= 100 ? "is-at-limit" : null)">
-                                <td data-label="Менеджер"><span class="crm-analytics-manager"><i class="@(manager.IsShiftActive ? "is-online" : null)" aria-hidden="true"></i><span><strong>@manager.DisplayName</strong><small>@manager.OfficeName · @(manager.IsShiftActive ? "На смене сейчас" : "Сейчас не на смене")</small></span></span></td>
-                                    <td data-label="Текущие карточки">@manager.CurrentAssignedCards.ToString("N0")</td>
-                                    <td data-label="Нагрузка / лимит">
-                                        <div class="crm-analytics-load">
-                                            <span>
-                                                <strong>@manager.ActiveLoad</strong> / @(hasCapacity ? manager.Capacity.ToString() : "—")
-                                                <small>@(hasCapacity ? Percent(manager.CapacityUtilizationPercent) : "лимит не задан")</small>
-                                            </span>
-                                            <span class="crm-analytics-progress"><i style="width:@(utilizationWidth)%"></i></span>
-                                        </div>
-                                    </td>
-                                    <td data-label="Задачи"><strong>@manager.OpenTasks</strong> открыто <small>из @manager.TasksTotal</small>
-                                        @if (analytics.OfficeId == manager.OfficeId) { <a href="@Url.Action("Tasks", "Crm", new { managerUserId = manager.UserId, scope = "all" })">Открыть задачи</a> }
-                                        else { <small>Для списка выберите офис в шапке</small> }
-                                    </td>
-                                    <td data-label="Просрочено">@if (analytics.OfficeId == manager.OfficeId) { <a class="crm-analytics-overdue @(manager.OverdueTasks > 0 ? "has-overdue" : null)" href="@Url.Action("Tasks", "Crm", new { managerUserId = manager.UserId, scope = "overdue" })">@manager.OverdueTasks</a> } else { <span>@manager.OverdueTasks</span> }</td>
-                            </tr>
-                        }
-                    </tbody>
-                </table>
+    <section class="card sales-block sales-block--stages" data-report-block="stages" aria-labelledby="sales-stages-title">
+        <header class="sales-block-heading">
+            <div class="sales-heading-main"><span class="sales-section-number">02</span><div><h2 id="sales-stages-title">Переходы по этапам</h2><p>Куда переводили карточки за @period. Все этапы — из воронки вашего офиса.</p></div></div>
+            <span class="sales-scope-tag">Новые и старые карточки</span>
+        </header>
+        @foreach (var office in sales.Offices)
+        {
+            <div class="sales-office-transitions">
+                <h3>@office.OfficeName <small>@office.Transitions.Sum(x => x.Count) переходов</small></h3>
+                <div class="sales-stage-grid">
+                    @foreach (var stage in office.Stages)
+                    {
+                        <button type="button" class="sales-stage @(stage.Archived ? "sales-stage--archive" : "")" data-evidence-url="@Evidence(stage.Key, office: office.OfficeId)" data-evidence-title="Переводы в этап: @stage.Stage">
+                            <span>@stage.Stage @if (stage.Archived) { <small>Исторический этап</small> }</span><strong>@stage.Count</strong><small>переходов в этап</small>
+                        </button>
+                    }
+                </div>
+                <details class="sales-details"><summary>Откуда → куда <span>@office.Transitions.Sum(x => x.Count)</span></summary>
+                    <div class="sales-transition-list">
+                    @foreach (var transition in office.Transitions)
+                    {
+                        <button type="button" data-evidence-url="@Evidence(transition.Key, office: office.OfficeId)" data-evidence-title="@transition.From → @transition.To">
+                            <span>@transition.From</span><span aria-hidden="true">→</span><span>@transition.To</span><strong>@transition.Count</strong>
+                        </button>
+                    }
+                    @if (office.Transitions.Count == 0) { <p class="sales-empty">За выбранные даты переходов нет. Поступление карточки сразу в этап не считается переходом.</p> }
+                    </div>
+                </details>
+            </div>
+        }
+        <h3 class="sales-subheading">Результаты сотрудников</h3>
+        <p class="sales-data-note">Показатели действий — по исполнителю, новые лиды — по первому ответственному. «Выдано впервые» включает старые карточки, впервые назначенные за период.</p>
+        <div class="sales-table-scroll" tabindex="0" aria-label="Результаты сотрудников">
+            <table class="sales-table sales-manager-table">
+                <thead><tr><th>Сотрудник</th><th>Новые лиды</th><th>Дозвоны</th><th>Анкеты</th><th>Билеты</th><th>Успехи</th><th>Без успеха</th><th>Выдано впервые</th><th>От коллег / коллегам</th></tr></thead>
+                <tbody>
+                @foreach (var manager in sales.Managers)
+                {
+                    var cells = new[] { (CrmSalesMetrics.Received, "Новые лиды", manager.NewLeads), (CrmSalesMetrics.Contacts, "Дозвоны", manager.Contacts),
+                        (CrmSalesMetrics.Questionnaires, "Анкеты", manager.Questionnaires), (CrmSalesMetrics.Tickets, "Билеты", manager.Tickets),
+                        (CrmSalesMetrics.Successes, "Успехи", manager.Successes), (CrmSalesMetrics.Refusals, "Без успеха", manager.Refusals),
+                        ("manager.primary", "Выдано впервые", manager.FirstAssignments) };
+                    <tr><th scope="row">@manager.DisplayName<small>@manager.OfficeName</small></th>
+                        @foreach (var cell in cells) { <td><button type="button" class="sales-number" data-evidence-url="@Evidence(cell.Item1, manager.UserId, manager.OfficeId)" data-evidence-title="@manager.DisplayName · @cell.Item2">@cell.Item3</button></td> }
+                        <td><button type="button" class="sales-number" data-evidence-url="@Evidence("activity.received", manager.UserId, manager.OfficeId)" data-evidence-title="@manager.DisplayName · Получено от коллег">@manager.TransfersReceived</button> / <button type="button" class="sales-number" data-evidence-url="@Evidence("activity.sent", manager.UserId, manager.OfficeId)" data-evidence-title="@manager.DisplayName · Передано коллегам">@manager.TransfersSent</button></td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+        @if (analytics.PeriodActivity is { } activity)
+        {
+            <div class="sales-context-line"><span>Возвраты в работу: <button type="button" class="sales-number" data-evidence-url="@Evidence("activity.reopened")" data-evidence-title="Возвраты в работу">@activity.ReopenedCards</button>. Получено от коллег: @activity.TransfersReceived. Передано коллегам: @activity.TransfersSent.</span></div>
+            @if (activity.RepeatedClosuresWithoutReopen > 0) { <p class="sales-alert">В истории @activity.RepeatedClosuresWithoutReopen повторных закрытий без записанного открытия. <button type="button" data-evidence-url="@Evidence("activity.repeated-closures")" data-evidence-title="Повторные закрытия">Проверить события</button></p> }
+            @if (activity.UnattributedAssignments > 0) { <p class="sales-alert">У @activity.UnattributedAssignments старых назначений не записан получатель. Они не приписаны текущему ответственному автоматически.</p> }
+        }
+        <details class="sales-details sales-supplement">
+            <summary>Текущая нагрузка и задачи <span>На сейчас · все даты</span></summary>
+            <div class="sales-supplement-content">
+                <p class="sales-data-note">Это текущее состояние, а не результаты выбранного периода. Лимит нагрузки зависит от правил офиса.</p>
+                <div class="sales-table-scroll" tabindex="0" aria-label="Текущая нагрузка">
+                    <table class="sales-table"><thead><tr><th>Сотрудник</th><th>Назначено открытых</th><th>В нагрузке / лимит</th><th>Загрузка</th><th>Задач всего</th><th>Открыто задач</th><th>Просрочено</th></tr></thead><tbody>
+                    @foreach (var manager in analytics.Managers)
+                    {
+                        <tr><th scope="row">@manager.DisplayName<small>@manager.OfficeName</small></th><td>@manager.CurrentAssignedCards</td><td>@manager.ActiveLoad / @manager.Capacity</td><td>@Percentage(manager.CapacityUtilizationPercent)</td><td>@manager.TasksTotal</td><td>@manager.OpenTasks</td><td>@manager.OverdueTasks</td></tr>
+                    }
+                    </tbody></table>
+                </div>
             </div>
         </details>
-        }
-
-        @if (isLeadProgress && decomposition is not null && cards.Received > 0)
+        @if (analytics.CallQuality is { } quality)
         {
-            var decompositionSteps = new[]
-            {
-                new { Label = "Лиды", Count = decomposition.Leads, Caption = firstAssignedCohort ? "Впервые выданы за период" : "Поступили в CRM за период", Icon = "fa-solid fa-user-plus", Tone = "leads", Conversion = (double?)null },
-                new { Label = "Контакт подтверждён", Count = decomposition.Contacts, Caption = "По этапам и причинам закрытия", Icon = "fa-solid fa-phone-volume", Tone = "contacts", Conversion = (double?)decomposition.ContactConversionPercent },
-                new { Label = "Анкеты", Count = decomposition.Questionnaires, Caption = "Переведены в анкету", Icon = "fa-solid fa-clipboard-list", Tone = "questionnaires", Conversion = (double?)decomposition.QuestionnaireConversionPercent },
-                new { Label = "Билеты", Count = decomposition.Tickets, Caption = "Переведены в билет", Icon = "fa-solid fa-ticket", Tone = "tickets", Conversion = (double?)decomposition.TicketConversionPercent },
-                new { Label = "Успех", Count = decomposition.Contracts, Caption = "Подтверждённое закрытие", Icon = "fa-solid fa-file-signature", Tone = "contracts", Conversion = (double?)decomposition.ContractConversionPercent }
-            };
-            var contactBreakdown = decomposition.ContactBreakdown.Where(x => x.Count > 0).ToList();
-            var decompositionMetrics = new[] { "cohort.received", "cohort.contacts", "cohort.questionnaires", "cohort.tickets", "cohort.contracts" };
-
-            <section class="card crm-analytics-panel crm-analytics-decomposition" aria-labelledby="crm-decomposition-title">
-            <header class="crm-analytics-panel__header">
-                <div>
-                    <h2 id="crm-decomposition-title">От лида до результата</h2>
-                    <p>@(firstAssignedCohort
-                        ? $"Только продвижение за {periodLabel} по лидам, впервые выданным за эти же даты. Каждая карточка считается один раз на шаг."
-                        : $"Только продвижение за {periodLabel} по лидам, поступившим в эти же даты. Каждая карточка считается один раз на шаг.")</p>
-                </div>
-                <span>Доля от полученных лидов · не обязательный маршрут</span>
-            </header>
-            <div class="crm-analytics-decomposition-scroll">
-                <div class="crm-analytics-decomposition-flow">
-                    @for (var stepIndex = 0; stepIndex < decompositionSteps.Length; stepIndex++)
-                    {
-                        var step = decompositionSteps[stepIndex];
-                        <article class="crm-analytics-decomposition-step crm-analytics-decomposition-step--@step.Tone">
-                            <span class="crm-analytics-decomposition-step__icon"><i class="@step.Icon" aria-hidden="true"></i></span>
-                            <div>
-                                <span>@step.Label</span>
-                                <strong><a class="crm-analytics-value-link" href="@EvidenceUrl(decompositionMetrics[stepIndex])">@step.Count.ToString("N0")</a></strong>
-                                <small>@step.Caption</small>
-                                @if (stepIndex > 0) { <small>@(decomposition.Leads > 0 ? Percent(step.Conversion ?? 0) + " от полученных" : "Нет базы для расчёта")</small> }
-                            </div>
-                        </article>
-                    }
-                </div>
-            </div>
-            <details class="crm-analytics-contact-details">
-                <summary>
-                    <span><i class="fa-solid fa-list-check" aria-hidden="true"></i>Чем подтверждён контакт · не число телефонных вызовов</span>
-                    <strong>@decomposition.Contacts.ToString("N0")</strong>
-                    <i class="fa-solid fa-chevron-down" aria-hidden="true"></i>
-                </summary>
-                @if (contactBreakdown.Count == 0)
-                {
-                    <p>По этой группе за выбранные даты нет подтверждённого контакта по этапам и причинам закрытия.</p>
-                }
-                else
-                {
-                    <p>Каждая карточка учитывается один раз. Основание: сначала бывшее закрытие «Успех», затем достигнутый этап, затем причина отказа. Повторное открытие не стирает подтверждение контакта.</p>
-                    <div class="crm-analytics-contact-breakdown">
-                        @foreach (var item in contactBreakdown)
+            <details class="sales-details sales-supplement">
+                <summary>Качество разговоров <span>За выбранные даты</span></summary>
+                <div class="sales-supplement-content">
+                    <p class="sales-data-note">Звонков с записью: @quality.RecordedCalls · Расшифровано: @quality.TranscribedCalls · Проанализировано: @quality.AnalyzedCalls · Покрытие: @Percentage(quality.CoveragePercent) · Средняя оценка: @(quality.AverageScore?.ToString("0.#") ?? "—"). Телефонные записи не заменяют показатель «Дозвоны» по переходам CRM.</p>
+                    <div class="sales-table-scroll" tabindex="0" aria-label="Качество разговоров сотрудников">
+                        <table class="sales-table"><thead><tr><th>Сотрудник</th><th>С записью</th><th>Расшифровано</th><th>Проанализировано</th><th>Покрытие</th><th>Оценка</th></tr></thead><tbody>
+                        @foreach (var manager in quality.Managers)
                         {
-                            <div><span>@item.Label</span><strong>@item.Count.ToString("N0")</strong></div>
+                            <tr><th scope="row">@manager.DisplayName</th><td>@manager.RecordedCalls</td><td>@manager.TranscribedCalls</td><td>@manager.AnalyzedCalls</td><td>@Percentage(manager.CoveragePercent)</td><td>@(manager.AverageScore?.ToString("0.#") ?? "—")</td></tr>
                         }
+                        </tbody></table>
                     </div>
-                }
+                    <div class="sales-quality-findings">
+                        <div><h4>Сильные стороны</h4>@foreach (var finding in quality.CommonStrengths) { <p>@finding.Label · @finding.Count (@Percentage(finding.PercentOfAnalyzed))</p> }</div>
+                        <div><h4>Что улучшить</h4>@foreach (var finding in quality.CommonWeaknesses) { <p>@finding.Label · @finding.Count (@Percentage(finding.PercentOfAnalyzed))</p> }</div>
+                    </div>
+                </div>
             </details>
-            </section>
         }
+        <div class="sales-evidence" data-evidence-host hidden role="region" aria-label="Детализация переходов и сотрудников"></div>
+    </section>
 
-        @if (isActivityReport)
+    <section class="card sales-block sales-block--cohort" data-report-block="cohort" aria-labelledby="sales-cohort-title">
+        <header class="sales-block-heading">
+            <div class="sales-heading-main"><span class="sales-section-number">03</span><div><h2 id="sales-cohort-title">Конверсия новых лидов</h2><p>Только карточки, поступившие за @period, и их результаты за эти же даты.</p></div></div>
+            <span class="sales-scope-tag">Одна группа карточек</span>
+        </header>
+        <div class="sales-cohort-base"><div><span class="sales-eyebrow">База расчёта</span><button type="button" data-evidence-url="@Evidence(CrmSalesMetrics.Received)" data-evidence-title="Новые лиды"><strong>@sales.Cohort.Received</strong> новых лидов</button></div><p>Все проценты ниже считаются от этой базы. Старые НДЗ входят в общие дозвоны выше, но не увеличивают конверсию новых лидов.</p></div>
+        @if (sales.Cohort.Received == 0)
         {
-        <div class="crm-analytics-grid">
-            <section class="card crm-analytics-panel crm-analytics-panel--reasons">
-                <header class="crm-analytics-panel__header">
-                    <div>
-                        <h2>С чем закрыли карточки</h2>
-                        <p>Причины событий закрытия за выбранные даты, включая старые лиды. Повторные открытия показаны отдельно выше.</p>
-                    </div>
-                    <span>@closedInPeriod.ToString("N0") закрыто</span>
-                </header>
-                @if (closedInPeriod == 0)
-                {
-                    <div class="crm-analytics-panel-empty"><i class="fa-regular fa-circle-check" aria-hidden="true"></i><span>За период нет закрытий</span></div>
-                }
-                else
-                {
-                    <div class="crm-analytics-reasons">
-                        @foreach (var reason in analytics.CloseReasons.Where(x => x.Count > 0).OrderByDescending(x => x.Count))
-                        {
-                            var isSuccess = string.Equals(reason.Reason, CrmCloseReasons.Success, StringComparison.Ordinal);
-                            var width = Math.Clamp(reason.PercentOfClosed, 0d, 100d).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture);
-                            <div class="crm-analytics-reason @(isSuccess ? "is-success" : null)">
-                                <div class="crm-analytics-reason__line">
-                                    <span>@(reason.Reason == CrmCloseReasons.Contract ? "Отказ: контракт" : reason.Reason)</span>
-                                    <strong><a class="crm-analytics-value-link" href="@EvidenceUrl("reason:" + reason.Reason)">@reason.Count.ToString("N0")</a> <small>@Percent(reason.PercentOfClosed)</small></strong>
-                                </div>
-                                <span class="crm-analytics-progress" aria-hidden="true"><i style="width:@(width)%"></i></span>
-                            </div>
-                        }
-                    </div>
-                }
-            </section>
-
-            <aside class="card crm-analytics-example">
-                <span class="crm-analytics-example__label"><i class="fa-regular fa-lightbulb" aria-hidden="true"></i> Как читать результат</span>
-                <h2>Старый лид — сегодняшний результат</h2>
-                <p>Менеджер может не получить ни одного нового лида и при этом успешно закрыть карточки, с которыми работал раньше.</p>
-                <div class="crm-analytics-example__timeline" aria-label="Пример: получен 1-го числа, успешно закрыт 20-го">
-                    <div><span>1-е число</span><strong>Получил лид</strong></div>
-                    <i class="fa-solid fa-arrow-right" aria-hidden="true"></i>
-                    <div><span>20-е число</span><strong>Закрыл в успех</strong></div>
-                </div>
-                <p class="crm-analytics-example__result">В «Работе команды» это <strong>успех за 20-е число</strong>.</p>
-                <a href="@ReportUrl("leads")">А что стало с полученными лидами? <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
-            </aside>
-        </div>
+            <p class="sales-empty sales-cohort-empty">За выбранные даты новых лидов нет — процент не рассчитывается. Работа со старыми карточками показана в первых двух блоках.</p>
         }
-
-        @if (isLeadProgress && cards.Received > 0)
+        else
         {
-        <section class="card crm-analytics-panel crm-analytics-funnels">
-            <header class="crm-analytics-panel__header">
-                <div>
-                    <h2>Подробнее по этапам</h2>
-                    <p>Реальные переводы этой группы за выбранные даты. Карточка считается один раз на этап. Порядок колонок сохранён, пропущенные этапы не добавляются.</p>
-                </div>
-            </header>
-            @if (visibleFunnels.Count == 0)
-            {
-                <div class="crm-analytics-panel-empty"><i class="fa-solid fa-filter-circle-xmark" aria-hidden="true"></i><span>По выбранным фильтрам нет карточек</span></div>
-            }
-            else
-            {
-                @foreach (var funnel in visibleFunnels)
+            <div class="sales-conversions">
+                @foreach (var metric in sales.Cohort.Results)
                 {
-                    <article class="crm-analytics-funnel">
-                        <header>
-                            <div>
-                                <span class="crm-analytics-funnel__office"><i class="fa-regular fa-building" aria-hidden="true"></i>@funnel.OfficeName</span>
-                                <strong>@funnel.Received.ToString("N0") получено</strong>
-                            </div>
-                            @if (analytics.Funnels.Count > 1)
-                            {
-                                <small>Воронки офисов считаются отдельно</small>
-                            }
-                        </header>
-                        <div class="crm-analytics-funnel-scroll">
-                            @if (funnel.EntrySources is { Count: > 0 })
-                            {
-                                <div class="crm-analytics-entry-sources" aria-label="Начальные этапы полученных карточек">
-                                    @foreach (var source in funnel.EntrySources) { <span><small>Вход: @source.Stage</small><strong>@source.Count</strong></span> }
-                                </div>
-                            }
-                            <div class="crm-analytics-funnel-stages" style="--stage-count:@Math.Max(1, funnel.Stages.Count)">
-                                @foreach (var stage in funnel.Stages)
-                                {
-                                    <div class="crm-analytics-funnel-stage @(stage.IsArchive ? "is-archive" : null)">
-                                        <span class="crm-analytics-funnel-stage__position">@(stage.Position + 1)</span>
-                                        <h3>@stage.Stage</h3>
-                                        <div class="crm-analytics-funnel-stage__metrics">
-                                            <div><span>Переведено карточек</span><strong><a class="crm-analytics-value-link" href="@EvidenceUrl("stage:" + funnel.OfficeId + ":" + stage.Stage)">@stage.ReachedCount.ToString("N0")</a></strong></div>
-                                        </div>
-                                        <p>@(funnel.Received > 0 ? Percent(stage.ConversionFromReceivedPercent) + " от полученных" : "Нет базы для расчёта")</p>
-                                        @if (stage.CreatedCount > 0) { <p>Создано сразу здесь: <strong>@stage.CreatedCount</strong> · не перевод</p> }
-                                        @if (stage.IsArchive) { <p>Исторический этап, отсутствует в настройках</p> }
-                                    </div>
-                                }
-                            </div>
-                        </div>
-                    </article>
+                    <button type="button" class="sales-conversion" data-evidence-url="@Evidence(metric.Key)" data-evidence-title="Новые лиды · @metric.Label">
+                        <span>@metric.Label</span><strong>@Percentage(metric.Percent)</strong><small>@metric.Count из @sales.Cohort.Received карточек</small>
+                        <span class="sales-bar" aria-hidden="true"><span style="width:@((metric.Percent ?? 0).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture))%"></span></span>
+                    </button>
                 }
-            }
-        </section>
+            </div>
         }
-
-        @if (isActivityReport && callQuality is not null)
-        {
-            <section class="card crm-analytics-panel crm-call-quality">
-                <header class="crm-analytics-panel__header">
-                    <div>
-                        <h2>Качество звонков</h2>
-                        <p>Завершённые звонки за выбранные даты с сохранённой записью. Отдельная оценка, не счётчик переходов или закрытий.</p>
-                    </div>
-                    <span>@callQuality.AnalyzedCalls проанализировано</span>
-                </header>
-                @if (callQuality.RecordedCalls == 0)
-                {
-                    <div class="crm-analytics-panel-empty"><i class="fa-solid fa-headphones" aria-hidden="true"></i><span>За выбранный период записей звонков нет</span></div>
-                }
-                else
-                {
-                    <div class="crm-call-quality__kpis">
-                        <div><span>Записей</span><strong>@callQuality.RecordedCalls.ToString("N0")</strong><small>завершённые звонки</small></div>
-                        <div><span>Расшифровано</span><strong>@callQuality.TranscribedCalls.ToString("N0")</strong><small>текст уже доступен</small></div>
-                        <div><span>Проанализировано</span><strong>@callQuality.AnalyzedCalls.ToString("N0")</strong><small>@Percent(callQuality.CoveragePercent) покрытия</small></div>
-                        <div><span>Средняя оценка</span><strong>@(callQuality.AverageScore?.ToString("0.0") ?? "—")</strong><small>из 10 баллов</small></div>
-                    </div>
-                    <div class="crm-call-quality__findings">
-                        <section class="crm-call-quality__finding crm-call-quality__finding--strength">
-                            <h3><i class="fa-solid fa-circle-check" aria-hidden="true"></i>Частые сильные стороны</h3>
-                            @if (callQuality.CommonStrengths.Count == 0)
-                            {
-                                <p>Пока недостаточно структурированных анализов.</p>
-                            }
-                            else
-                            {
-                                <ul>@foreach (var item in callQuality.CommonStrengths) { <li><span>@item.Label</span><strong>@item.Count</strong><small>@Percent(item.PercentOfAnalyzed)</small></li> }</ul>
-                            }
-                        </section>
-                        <section class="crm-call-quality__finding crm-call-quality__finding--weakness">
-                            <h3><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i>Частые зоны роста</h3>
-                            @if (callQuality.CommonWeaknesses.Count == 0)
-                            {
-                                <p>Пока недостаточно структурированных анализов.</p>
-                            }
-                            else
-                            {
-                                <ul>@foreach (var item in callQuality.CommonWeaknesses) { <li><span>@item.Label</span><strong>@item.Count</strong><small>@Percent(item.PercentOfAnalyzed)</small></li> }</ul>
-                            }
-                        </section>
-                    </div>
-                    @if (callQuality.Managers.Count > 0)
-                    {
-                        <div class="crm-analytics-table-wrap crm-call-quality__table">
-                            <table class="crm-analytics-table">
-                                <thead><tr><th>Менеджер</th><th>Записи</th><th>Расшифровано</th><th>Анализы</th><th>Покрытие</th><th>Средняя оценка</th></tr></thead>
-                                <tbody>
-                                    @foreach (var manager in callQuality.Managers)
-                                    {
-                                        <tr>
-                                            <td data-label="Менеджер"><strong>@manager.DisplayName</strong></td>
-                                            <td data-label="Записи">@manager.RecordedCalls</td>
-                                            <td data-label="Расшифровано">@manager.TranscribedCalls</td>
-                                            <td data-label="Анализы">@manager.AnalyzedCalls</td>
-                                            <td data-label="Покрытие">@Percent(manager.CoveragePercent)</td>
-                                            <td data-label="Средняя оценка">@(manager.AverageScore?.ToString("0.0") ?? "—")</td>
-                                        </tr>
-                                    }
-                                </tbody>
-                            </table>
-                        </div>
-                    }
-                }
-            </section>
-        }
-
-    }
+        <p class="sales-data-note">Одна карточка учитывается один раз в каждом результате. Переходы последующих ответственных не теряются. События после выбранной конечной даты сюда не входят.</p>
+        @if (sales.Cohort.Unassigned > 0) { <p class="sales-alert">Сейчас без ответственного: <button type="button" data-evidence-url="@Evidence(CrmSalesMetrics.Unassigned)" data-evidence-title="Новые лиды без ответственного">@sales.Cohort.Unassigned</button>. Они входят в общую базу новых лидов.</p> }
+        <div class="sales-evidence" data-evidence-host hidden role="region" aria-label="Детализация конверсии"></div>
+    </section>
+    <noscript><p class="sales-alert">Для раскрытия карточек внутри страницы нужен JavaScript. Итоговые показатели выше уже загружены с сервера.</p></noscript>
+}
 </main>
+@section Scripts { <script src="~/js/crm-analytics.js" asp-append-version="true" defer></script> }

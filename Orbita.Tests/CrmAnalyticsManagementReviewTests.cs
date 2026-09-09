@@ -26,6 +26,7 @@ public sealed partial class CrmAnalyticsQueryServiceTests
         AttachReviewResponse(card);
         var close = NewCloseHistory(card.Id, reason, from.AddHours(3), ManagerOneId, "Анна");
         close.OfficeId = OfficeOneId; close.ResponsibleUserId = ManagerOneId;
+        close.StageAtEvent = CrmStages.Lead;
         var reopen = NewReopenHistory(card.Id, from.AddHours(4), ManagerTwoId, "Борис");
         reopen.OfficeId = OfficeOneId; reopen.PreviousCloseReason = reason;
         h.Db.CrmCandidateCards.Add(card);
@@ -34,7 +35,7 @@ public sealed partial class CrmAnalyticsQueryServiceTests
         var q = new CrmAnalyticsQuery(from, from.AddDays(1), OfficeOneId, null, CrmAnalyticsCohortBases.Received);
         var data = (await h.Sut.GetAsync(OfficeScope.GlobalAdmin, "admin", true, q)).Data!;
         Assert.Equal(1, data.Decomposition!.Contacts);
-        Assert.Equal(0, data.Decomposition.Contracts);
+        Assert.Equal(reason == CrmCloseReasons.Success ? 1 : 0, data.Decomposition.Contracts);
         Assert.Equal(0, data.Cards.SuccessfulClosed);
         Assert.Equal(1, data.PeriodActivity!.ClosedCards);
         Assert.Equal(1, data.PeriodActivity.ReopenedCards);

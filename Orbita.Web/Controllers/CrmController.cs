@@ -24,7 +24,7 @@ public sealed class CrmController(
     [Authorize(Policy = PanelPermissions.CrmBoard)]
     public async Task<IActionResult> AnalyticsEvidence(string? from, string? to, string metric,
         string? managerUserId, string? report, string? leadView, string? cohortBasis = null, string? returnManagerUserId = null,
-        int page = 1, Guid? evidenceOfficeId = null, CancellationToken ct = default)
+        int page = 1, Guid? evidenceOfficeId = null, bool inline = false, CancellationToken ct = default)
     {
         var tz = BrowserTimeZone.Resolve(HttpContext);
         var period = DashboardPeriod.Parse(from, to, tz);
@@ -33,7 +33,7 @@ public sealed class CrmController(
         var resolvedOffice = officeContext.EffectiveOfficeId ?? evidenceOfficeId;
         var basis = cohortBasis == CrmAnalyticsCohortBases.FirstAssigned ? cohortBasis : CrmAnalyticsCohortBases.Received;
         var data = await api.GetCrmAnalyticsEvidenceAsync(fromUtc, toUtc, resolvedOffice, manager, metric, page, ct, basis);
-        return View(new CrmAnalyticsEvidenceViewModel
+        var model = new CrmAnalyticsEvidenceViewModel
         {
             Data = data, Metric = metric, From = period.From.ToString("yyyy-MM-dd"), To = period.To.ToString("yyyy-MM-dd"),
             ManagerUserId = manager, EvidenceOfficeId = resolvedOffice, Report = report == "leads" ? "leads" : "activity",
@@ -42,7 +42,8 @@ public sealed class CrmController(
             ReturnManagerUserId = returnManagerUserId == "all" ? null
                 : Request.Query.ContainsKey("returnManagerUserId") ? returnManagerUserId : manager,
             Header = new() { Title = "Из чего сложился показатель", Subtitle = period.Label }
-        });
+        };
+        return inline ? PartialView("_AnalyticsEvidenceRows", model) : View(model);
     }
 
     [HttpGet]
@@ -68,14 +69,14 @@ public sealed class CrmController(
             toUtc,
             officeContext.EffectiveOfficeId,
             selectedManagerUserId,
-            ct, cohortBasis == CrmAnalyticsCohortBases.FirstAssigned ? cohortBasis : CrmAnalyticsCohortBases.Received);
+            ct, CrmAnalyticsCohortBases.Received);
 
         return View(new CrmAnalyticsViewModel
         {
             Header = new PageHeaderViewModel
             {
                 Title = "Аналитика CRM",
-                Subtitle = "Воронка, результаты и нагрузка команды",
+                Subtitle = "Результаты работы, переходы и конверсия новых лидов",
                 ShowRefresh = true,
                 ShowDateRange = true,
                 DateRangeLabel = period.Label,

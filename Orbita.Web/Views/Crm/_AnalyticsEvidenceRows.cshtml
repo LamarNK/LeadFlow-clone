@@ -1,0 +1,70 @@
+@model CrmAnalyticsEvidenceViewModel
+@using Orbita.Contracts
+@{
+    string PageUrl(int page) => Url.Action("AnalyticsEvidence", "Crm", new {
+        from = Model.From, to = Model.To, managerUserId = Model.ManagerUserId,
+        metric = Model.Metric, tz = Model.TimeZoneOffset, evidenceOfficeId = Model.EvidenceOfficeId,
+        cohortBasis = Model.CohortBasis, page, inline = true
+    })!;
+    string Local(DateTime at) => at.AddMinutes(-Model.TimeZoneOffset).ToString("dd.MM.yyyy HH:mm");
+    string ActionName(string action) => action switch {
+        "StageChanged" => "Переход", "Closed" => "Закрытие", "Reopened" => "Возврат в работу",
+        "Assigned" => "Выдача", "Card" => Model.Metric == "manager.primary" ? "Первая выдача" : "Поступление", _ => action
+    };
+}
+@if (Model.Data is not { } data)
+{
+    <p class="sales-alert" role="alert">Не удалось загрузить детали. Это ошибка загрузки, а не нулевой результат. Попробуйте ещё раз.</p>
+}
+else
+{
+    <p class="sales-evidence-summary">В показателе <strong>@data.Total</strong>. Карточки открываются с вашими обычными правами доступа.</p>
+    @if (data.RestrictedCount > 0)
+    {
+        <p class="sales-alert" role="status">@data.RestrictedCount записей учтено в результате, но карточки сейчас вам недоступны. Результат работы сохранён; данные чужих карточек не раскрываются.</p>
+    }
+    @if (data.Rows.Count == 0)
+    {
+        <p class="sales-empty">@(data.Total == 0 ? "По выбранным фильтрам таких событий нет." : "Нет доступных для просмотра карточек.")</p>
+    }
+    else
+    {
+        <div class="sales-table-scroll" tabindex="0" aria-label="Карточки показателя">
+            <table class="sales-table sales-evidence-table">
+                <thead><tr><th>Дата события</th><th>Карточка</th><th>Что произошло</th><th>Кто выполнил</th><th>Ответственный</th></tr></thead>
+                <tbody>
+                @foreach (var row in data.Rows)
+                {
+                    var basis = row.BasisEvents?.FirstOrDefault();
+                    <tr>
+                        <td>@Local(basis?.AtUtc ?? row.AtUtc)</td>
+                        <td><a asp-controller="Crm" asp-action="Card" asp-route-id="@row.CardId">@row.CandidateName</a></td>
+                        <td><strong>@ActionName(basis?.Action ?? row.Action)</strong><span class="sales-detail-text">@(basis?.Details ?? row.Details)</span>
+                            @if (row.BasisEvents is { Count: > 1 } proofs)
+                            {
+                                <details><summary>Все основания (@proofs.Count)</summary>
+                                    @foreach (var proof in proofs) { <p>@Local(proof.AtUtc) · @proof.ActorName · @proof.Details</p> }
+                                </details>
+                            }
+                        </td>
+                        <td>@(basis?.ActorName ?? row.ActorName)</td>
+                        <td>@(basis?.ResponsibleName ?? row.ResponsibleName ?? "Не назначен")
+                            <small>@(row.Action == "Card" && basis is null ? "Сейчас" : "На момент события")</small>
+                            @if (basis?.InferredContext == true || row.InferredContext) { <small>Контекст старой истории восстановлен</small> }
+                        </td>
+                    </tr>
+                }
+                </tbody>
+            </table>
+        </div>
+    }
+    var pages = Math.Max(1, (data.Total - data.RestrictedCount + data.PageSize - 1) / data.PageSize);
+    @if (pages > 1)
+    {
+        <nav class="sales-pagination" aria-label="Страницы детализации">
+            <button type="button" data-evidence-page="@PageUrl(data.Page - 1)" disabled="@(data.Page <= 1)">← Назад</button>
+            <span>Страница @data.Page из @pages</span>
+            <button type="button" data-evidence-page="@PageUrl(data.Page + 1)" disabled="@(data.Page >= pages)">Далее →</button>
+        </nav>
+    }
+}

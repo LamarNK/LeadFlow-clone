@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Orbita.Contracts;
+using Orbita.Web.Helpers;
 using Orbita.Web.Models.ViewModels;
 using Orbita.Web.Services;
 
@@ -18,7 +19,7 @@ public sealed class OfficeSwitcherViewComponent(
         }
 
         var offices = await api.GetOfficesAsync(HttpContext.RequestAborted) ?? [];
-        var returnUrl = httpContextAccessor.HttpContext?.Request.Path + httpContextAccessor.HttpContext?.Request.QueryString;
+        var returnUrl = OfficeSwitchReturnUrl.Build(httpContextAccessor.HttpContext?.Request);
         var model = new OfficeSwitcherViewModel
         {
             IsVisible = true,

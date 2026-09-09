@@ -50,20 +50,7 @@ public sealed partial class CrmAnalyticsQueryService(
     private const string NoCloseReason = "Без причины";
     private const int MaxPeriodDays = LocalCalendarDateRange.MaxCalendarDays;
     private const string FunnelUpdatedSuffix = " (воронка обновлена)";
-    private const string ReachedNegotiationsBreakdown = "Переговоры и дальше";
-    private const string SuccessfulCloseBreakdown = "Было закрытие «Успех»";
     private readonly CrmAnalyticsOptions analyticsOptions = analyticsOptions.Value;
-    private static readonly IReadOnlyList<string> ContactCloseReasons =
-    [
-        CrmCloseReasons.Woman,
-        CrmCloseReasons.Contract,
-        CrmCloseReasons.SelectedOthers,
-        CrmCloseReasons.Age,
-        CrmCloseReasons.Health,
-        CrmCloseReasons.AlreadyAtSvo,
-        CrmCloseReasons.NotRelevant,
-        CrmCloseReasons.Officer
-    ];
 
     public Task<CrmAnalyticsQueryResult> GetAsync(
         OfficeScope scope,
@@ -81,7 +68,7 @@ public sealed partial class CrmAnalyticsQueryService(
                 OrbitaCacheDomain.Analytics,
                 scope.ResolveFilter(query.OfficeId),
                 $"{requesterUserId}:{isAdmin}:{scope.IsGlobalAdmin}:{scope.OfficeId?.ToString("D") ?? "-"}",
-                new { Kind = "crm-analytics-v2", query.OfficeId, query.ManagerUserId, query.FromUtc, query.ToUtc,
+                new { Kind = "crm-analytics-v3-sales", query.OfficeId, query.ManagerUserId, query.FromUtc, query.ToUtc,
                     query.CohortBasis, analyticsOptions = this.analyticsOptions },
                 OrbitaCachePolicy.Analytics,
                 Load,
@@ -299,13 +286,9 @@ public sealed partial class CrmAnalyticsQueryService(
             generatedAtUtc,
             periodActivityResult.Events,
             ct);
-        var decomposition = BuildManagerDecomposition(
-            cohort.Count,
-            await LoadManagerActivitiesAsync(
-                cohort.Select(x => x.Id).ToArray(),
-                fromUtc,
-                toUtc,
-                ct));
+        var sales = await BuildSalesReportAsync(offices, cohort, managers, periodActivityResult,
+            effectiveManagerUserId, fromUtc, toUtc, ct);
+        var decomposition = BuildCompatibleDecomposition(sales);
         var callQuality = await BuildCallQualityAsync(
             officeIds,
             selectedManagerProfiles,
@@ -332,7 +315,8 @@ public sealed partial class CrmAnalyticsQueryService(
             await cohortQuery.CountAsync(x => x.EnteredCrmAtUtc == null || x.EntryOfficeId == null
                 || ((firstAssignedCohort || effectiveManagerUserId != null)
                     && (x.InitialManagerUserId == null || x.InitialManagerUserId == "" || x.InitialAssignedAtUtc == null)), ct),
-            receiptSummary));
+            receiptSummary,
+            sales));
     }
 
     private async Task<CrmCallQualityAnalyticsDto> BuildCallQualityAsync(
@@ -514,6 +498,12 @@ public sealed partial class CrmAnalyticsQueryService(
             .Where(x => officeIds.Contains(x.InitialAssignedOfficeId ?? x.OfficeId)
                         && x.InitialManagerUserId != null
                         && x.InitialManagerUserId != "");
+        // Receipt and first assignment can belong to different offices. Preserve the
+        // first owner's dimension in the entry office too, even without any action there.
+        var receiptManagersQuery = db.CrmCandidateCards.AsNoTracking()
+            .Where(x => officeIds.Contains(x.EntryOfficeId ?? x.OfficeId)
+                && (x.InitialManagerUserId != null && x.InitialManagerUserId != ""
+                    || x.ManagerUserId != null && x.ManagerUserId != ""));
         var factualTaskManagersQuery = db.CrmTasks
             .AsNoTracking()
             .Where(x => officeIds.Contains(x.OfficeId) && x.AssigneeUserId != "");
@@ -521,6 +511,8 @@ public sealed partial class CrmAnalyticsQueryService(
         {
             factualCardManagersQuery = factualCardManagersQuery.Where(x => x.ManagerUserId == requesterUserId);
             initialCardManagersQuery = initialCardManagersQuery.Where(x => x.InitialManagerUserId == requesterUserId);
+            receiptManagersQuery = receiptManagersQuery.Where(x =>
+                (x.InitialManagerUserId == null || x.InitialManagerUserId == "" ? x.ManagerUserId : x.InitialManagerUserId) == requesterUserId);
             factualTaskManagersQuery = factualTaskManagersQuery.Where(x => x.AssigneeUserId == requesterUserId);
         }
 
@@ -536,6 +528,10 @@ public sealed partial class CrmAnalyticsQueryService(
             .Select(x => new { x.OfficeId, UserId = x.AssigneeUserId })
             .Distinct()
             .ToListAsync(ct);
+        var receiptManagers = await receiptManagersQuery.Select(x => new {
+            OfficeId = x.EntryOfficeId ?? x.OfficeId,
+            UserId = x.InitialManagerUserId == null || x.InitialManagerUserId == "" ? x.ManagerUserId! : x.InitialManagerUserId
+        }).Distinct().ToListAsync(ct);
 
         var historicalPeople = await (
             from history in db.CrmCandidateHistory.AsNoTracking()
@@ -569,6 +565,10 @@ public sealed partial class CrmAnalyticsQueryService(
         }
 
         foreach (var item in initialCardManagers)
+        {
+            dimensionKeys.Add(new ManagerKey(item.OfficeId, item.UserId));
+        }
+        foreach (var item in receiptManagers)
         {
             dimensionKeys.Add(new ManagerKey(item.OfficeId, item.UserId));
         }
@@ -729,25 +729,7 @@ public sealed partial class CrmAnalyticsQueryService(
     }
 
     private static bool IsRealStageEvent(PeriodHistoryRow x) =>
-        x.Action == "StageChanged"
-        && x.Details?.EndsWith(FunnelUpdatedSuffix, StringComparison.Ordinal) != true
-        && ParseSourceStage(x.Details) is { Length: > 0 } from
-        && ParseDestinationStage(x.Details) is { Length: > 0 } to
-        && !string.Equals(from, to, StringComparison.Ordinal);
-
-    private async Task<IReadOnlyList<ManagerActivityRow>> LoadManagerActivitiesAsync(
-        IReadOnlyCollection<Guid> cardIds, DateTime fromUtc, DateTime toUtc,
-        CancellationToken ct)
-    {
-        // This is the progress of the received group, not the actions of only its first owner.
-        if (cardIds.Count == 0) return [];
-        return await db.CrmCandidateHistory.AsNoTracking()
-            .Where(x => cardIds.Contains(x.CardId) && x.CreatedAtUtc >= fromUtc && x.CreatedAtUtc < toUtc
-                && (x.Action == "StageChanged" || x.Action == "Closed" || x.Action == "Reopened")
-                && (x.Action != "StageChanged" || x.Details == null || !x.Details.EndsWith(FunnelUpdatedSuffix)))
-            .Select(x => new ManagerActivityRow(x.Id, x.OfficeId ?? Guid.Empty, x.ActorUserId,
-                x.CardId, x.Action, x.Details, x.CreatedAtUtc)).ToListAsync(ct);
-    }
+        x.Action == "StageChanged" && CrmSalesRules.Transition(x.Details) is not null;
 
     private async Task<ShiftWindowIndex> LoadShiftWindowsAsync(
         IReadOnlyCollection<Guid> officeIds,
@@ -793,141 +775,13 @@ public sealed partial class CrmAnalyticsQueryService(
                 toUtc))
             .ToList();
 
-    private CrmAnalyticsDecompositionDto BuildManagerDecomposition(
-        int leads,
-        IReadOnlyList<ManagerActivityRow> activities)
+    // Wire compatibility for older clients; there is only one calculation of contacts.
+    private static CrmAnalyticsDecompositionDto BuildCompatibleDecomposition(CrmSalesAnalyticsDto sales)
     {
-        var contacts = 0;
-        var questionnaires = 0;
-        var tickets = 0;
-        var contracts = 0;
-        var breakdown = ContactCloseReasons
-            .Prepend(SuccessfulCloseBreakdown)
-            .Prepend(ReachedNegotiationsBreakdown)
-            .ToDictionary(label => label, _ => 0, StringComparer.Ordinal);
-
-        foreach (var cardActivities in activities.GroupBy(activity => activity.CardId))
-        {
-            var reachedStages = cardActivities
-                .Where(activity => string.Equals(activity.Action, "StageChanged", StringComparison.Ordinal)
-                    && ParseSourceStage(activity.Details) is { Length: > 0 } source
-                    && ParseDestinationStage(activity.Details) is { Length: > 0 } destination
-                    && source != destination)
-                .Select(activity => ParseDestinationStage(activity.Details) is {} stage
-                    ? analyticsOptions.ResolveMilestone(activity.OfficeId, stage) : null)
-                .Where(stage => !string.IsNullOrWhiteSpace(stage))
-                .Select(stage => stage!)
-                .ToHashSet(StringComparer.OrdinalIgnoreCase);
-            var resultingClose = cardActivities
-                .Where(activity => string.Equals(activity.Action, "Closed", StringComparison.Ordinal)
-                                   || string.Equals(activity.Action, "Reopened", StringComparison.Ordinal))
-                .OrderByDescending(activity => activity.CreatedAtUtc)
-                .ThenByDescending(activity => activity.Id)
-                .FirstOrDefault();
-            var closeReasons = new HashSet<string>(StringComparer.Ordinal);
-            if (resultingClose is not null
-                && string.Equals(resultingClose.Action, "Closed", StringComparison.Ordinal))
-            {
-                var closeReason = CrmActivityDetails.Split(resultingClose.Details).Details;
-                if (!string.IsNullOrWhiteSpace(closeReason))
-                {
-                    closeReasons.Add(closeReason.Trim());
-                }
-            }
-
-            var isContract = closeReasons.Contains(CrmCloseReasons.Success);
-            // Contact is a historical fact inferred from a qualifying action. Reopening
-            // changes the closure result, but must not erase an earlier contact basis.
-            var historicalCloseReasons = cardActivities.Where(x => x.Action == "Closed")
-                .Select(x => CrmActivityDetails.Split(x.Details).Details?.Trim())
-                .Where(x => !string.IsNullOrWhiteSpace(x)).ToHashSet(StringComparer.Ordinal);
-            var hadSuccessfulClose = historicalCloseReasons.Contains(CrmCloseReasons.Success);
-            var isTicket = reachedStages.Contains(CrmStages.Ticket);
-            var isQuestionnaire = reachedStages.Contains(CrmStages.Questionnaire);
-            var hasStageContact = isQuestionnaire || isTicket
-                                  || reachedStages.Contains(CrmStages.PreparingToSend)
-                                  || reachedStages.Contains(CrmStages.InTransit)
-                                  || reachedStages.Contains(CrmStages.Signing)
-                                  || reachedStages.Any(stage =>
-                                      stage.StartsWith(CrmStages.Negotiations, StringComparison.OrdinalIgnoreCase));
-            var contactCloseReason = ContactCloseReasons
-                .FirstOrDefault(reason => historicalCloseReasons.Contains(reason));
-            var hasContact = hasStageContact || hadSuccessfulClose || contactCloseReason is not null;
-
-            if (hasContact)
-            {
-                contacts++;
-                AddCardEvidence("cohort.contacts", [cardActivities.Key]);
-                AddProofEvidence("cohort.contacts", cardActivities.Where(IsContactEvidence).Select(x => x.Id));
-                var breakdownLabel = hadSuccessfulClose
-                    ? SuccessfulCloseBreakdown
-                    : hasStageContact
-                        ? ReachedNegotiationsBreakdown
-                        : contactCloseReason!;
-                breakdown[breakdownLabel]++;
-            }
-
-            if (isQuestionnaire)
-            {
-                questionnaires++;
-                AddCardEvidence("cohort.questionnaires", [cardActivities.Key]);
-                AddProofEvidence("cohort.questionnaires", cardActivities.Where(x => IsMilestoneEvidence(x, CrmStages.Questionnaire)).Select(x => x.Id));
-            }
-
-            if (isTicket)
-            {
-                tickets++;
-                AddCardEvidence("cohort.tickets", [cardActivities.Key]);
-                AddProofEvidence("cohort.tickets", cardActivities.Where(x => IsMilestoneEvidence(x, CrmStages.Ticket)).Select(x => x.Id));
-            }
-
-            if (isContract)
-            {
-                contracts++;
-                AddCardEvidence("cohort.contracts", [cardActivities.Key]);
-                AddProofEvidence("cohort.contracts", [resultingClose!.Id]);
-            }
-        }
-
-        var orderedBreakdown = breakdown
-            .Select(item => new CrmAnalyticsContactBreakdownDto(
-                string.Equals(item.Key, CrmCloseReasons.Contract, StringComparison.Ordinal)
-                    ? "Отказ: контракт"
-                    : item.Key,
-                item.Value))
-            .ToList();
-
-        return new CrmAnalyticsDecompositionDto(
-            leads,
-            contacts,
-            questionnaires,
-            tickets,
-            contracts,
-            Percent(contacts, leads),
-            Percent(questionnaires, leads),
-            Percent(tickets, leads),
-            Percent(contracts, leads),
-            orderedBreakdown);
-    }
-
-    private bool IsMilestoneEvidence(ManagerActivityRow row, string stage) =>
-        row.Action == "StageChanged" && ParseSourceStage(row.Details) is { Length: > 0 } source
-        && ParseDestinationStage(row.Details) is { Length: > 0 } destination && source != destination
-        && string.Equals(analyticsOptions.ResolveMilestone(row.OfficeId, destination), stage, StringComparison.OrdinalIgnoreCase);
-
-    private bool IsContactEvidence(ManagerActivityRow row)
-    {
-        if (row.Action == "Closed")
-        {
-            var reason = CrmActivityDetails.Split(row.Details).Details?.Trim();
-            return reason == CrmCloseReasons.Success || ContactCloseReasons.Contains(reason!);
-        }
-        if (row.Action != "StageChanged" || ParseSourceStage(row.Details) is not { Length: > 0 } source
-            || ParseDestinationStage(row.Details) is not { Length: > 0 } destination || source == destination) return false;
-        var stage = analyticsOptions.ResolveMilestone(row.OfficeId, destination);
-        return new[] { CrmStages.Questionnaire, CrmStages.Ticket, CrmStages.PreparingToSend,
-                CrmStages.InTransit, CrmStages.Signing }.Contains(stage, StringComparer.OrdinalIgnoreCase)
-            || stage.StartsWith(CrmStages.Negotiations, StringComparison.OrdinalIgnoreCase);
+        var results = sales.Cohort.Results;
+        return new(sales.Cohort.Received, results[0].Count, results[1].Count, results[2].Count, results[3].Count,
+            results[0].Percent ?? 0, results[1].Percent ?? 0, results[2].Percent ?? 0, results[3].Percent ?? 0,
+            results[0].Count == 0 ? [] : [new("Первый контакт", results[0].Count)]);
     }
 
     private CrmAnalyticsOfficeFunnelDto BuildFunnel(
@@ -1278,15 +1132,6 @@ public sealed partial class CrmAnalyticsQueryService(
     private sealed record CloseEventRow(
         Guid Id,
         Guid CardId,
-        string? Details,
-        DateTime CreatedAtUtc);
-
-    private sealed record ManagerActivityRow(
-        Guid Id,
-        Guid OfficeId,
-        string UserId,
-        Guid CardId,
-        string Action,
         string? Details,
         DateTime CreatedAtUtc);
 

@@ -439,7 +439,8 @@ public sealed record CrmAnalyticsDto(
     CrmAnalyticsPeriodActivityDto? PeriodActivity = null,
     string CohortBasis = CrmAnalyticsCohortBases.Received,
     int InferredReceiptCards = 0,
-    CrmAnalyticsReceiptSummaryDto? ReceiptSummary = null);
+    CrmAnalyticsReceiptSummaryDto? ReceiptSummary = null,
+    CrmSalesAnalyticsDto? Sales = null);
 
 public sealed record CrmAnalyticsReceiptSummaryDto(int Received, int WithoutResponsible);
 
