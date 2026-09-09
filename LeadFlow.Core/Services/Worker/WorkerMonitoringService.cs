@@ -1514,6 +1514,9 @@ public sealed class WorkerMonitoringService(
 
                 var singleRunId = _cycleJournal.BeginSubProfile(cycleId, string.Empty, "—", 1, 1);
                 var singlePending = GroupPendingOutbound(pendingAll, avitoSubProfileId: null);
+                var singleOpenPhoneWatches = await duplicateRepository
+                    .GetOpenPhoneWatchesAsync(account.Id, string.Empty, phoneWatchHours, cancellationToken)
+                    .ConfigureAwait(false);
                 var singleProfileHints = new CandidatesMessengerEnrichmentHints(
                     account.Id,
                     settings.DuplicateScope,
@@ -1526,7 +1529,8 @@ public sealed class WorkerMonitoringService(
                     PendingBySourceResponseId: singlePending,
                     ClaimOutboundChatForDeliveryAsync: _outboundChat.ClaimForDeliveryAsync,
                     AckOutboundChatSentAsync: _outboundChat.AckSentAsync,
-                    PhoneWatchHours: phoneWatchHours);
+                    PhoneWatchHours: phoneWatchHours,
+                    OpenPhoneWatches: singleOpenPhoneWatches);
                 var rawJson = await session
                     .ExtractCandidatesJsonAsync(singleProfileHints, cancellationToken)
                     .ConfigureAwait(false);
@@ -1757,6 +1761,9 @@ public sealed class WorkerMonitoringService(
                         sub.Name,
                         "Читает отклики");
                     var pendingForSub = GroupPendingOutbound(pendingAll, sub.Id);
+                    var openPhoneWatches = await duplicateRepository
+                        .GetOpenPhoneWatchesAsync(account.Id, sub.Id, phoneWatchHours, cancellationToken)
+                        .ConfigureAwait(false);
                     var messengerHints = new CandidatesMessengerEnrichmentHints(
                         account.Id,
                         settings.DuplicateScope,
@@ -1770,7 +1777,8 @@ public sealed class WorkerMonitoringService(
                         PendingBySourceResponseId: pendingForSub,
                         ClaimOutboundChatForDeliveryAsync: _outboundChat.ClaimForDeliveryAsync,
                         AckOutboundChatSentAsync: _outboundChat.AckSentAsync,
-                        PhoneWatchHours: phoneWatchHours);
+                        PhoneWatchHours: phoneWatchHours,
+                        OpenPhoneWatches: openPhoneWatches);
                     var rawJson = await session
                         .ExtractCandidatesJsonAsync(messengerHints, cancellationToken)
                         .ConfigureAwait(false);

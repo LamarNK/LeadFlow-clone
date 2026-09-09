@@ -70,6 +70,15 @@ internal sealed class FakeDuplicateRepository : ICandidateDuplicateRepository
         return Task.FromResult(result);
     }
 
+    public IReadOnlyList<WorkerOpenPhoneWatchDto> OpenPhoneWatches { get; set; } = [];
+
+    public Task<IReadOnlyList<WorkerOpenPhoneWatchDto>> GetOpenPhoneWatchesAsync(
+        Guid accountId,
+        string avitoSubProfileId,
+        int phoneWatchHours,
+        CancellationToken cancellationToken) =>
+        Task.FromResult(OpenPhoneWatches);
+
     public Task<HashSet<string>> GetExistingCardFingerprintsAsync(
         IEnumerable<string> cardFingerprintCandidates,
         DuplicateScope scope,

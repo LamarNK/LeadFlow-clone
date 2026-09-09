@@ -951,7 +951,8 @@ public sealed partial class AdsPowerAvitoAutomationService
             messengerEnrichmentHints?.ResponseFilters,
             messengerEnrichmentHints?.IsOpenPhoneWatchAsync,
             skipDetailEnrich: true,
-            CreateCaptchaSolveCallback(page)).ConfigureAwait(false);
+            CreateCaptchaSolveCallback(page),
+            messengerEnrichmentHints?.OpenPhoneWatches).ConfigureAwait(false);
 
         var raw = await EvaluateWithRetryAsync<string>(page, ExtractionScript, cancellationToken).ConfigureAwait(false);
         if (string.IsNullOrWhiteSpace(raw))

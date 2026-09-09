@@ -38,6 +38,16 @@ public interface ICandidateDuplicateRepository
         CancellationToken cancellationToken);
 
     /// <summary>
+    /// Активные phone-watch аккаунта/субпрофиля. Нужны до парсинга списка, чтобы ранний
+    /// scroll-stop не оставил наблюдаемого кандидата ниже загруженной части страницы.
+    /// </summary>
+    Task<IReadOnlyList<WorkerOpenPhoneWatchDto>> GetOpenPhoneWatchesAsync(
+        Guid accountId,
+        string avitoSubProfileId,
+        int phoneWatchHours,
+        CancellationToken cancellationToken);
+
+    /// <summary>
     /// Какие из ключей карточек Avito (без телефона) уже есть в локальной базе для аккаунта / суб-профиля.
     /// </summary>
     Task<HashSet<string>> GetExistingCardFingerprintsAsync(

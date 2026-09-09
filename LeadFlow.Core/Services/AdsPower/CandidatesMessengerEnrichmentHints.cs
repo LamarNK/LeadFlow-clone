@@ -19,4 +19,6 @@ public sealed record CandidatesMessengerEnrichmentHints(
     Func<Guid, CancellationToken, Task<bool>>? ClaimOutboundChatForDeliveryAsync = null,
     Func<IReadOnlyList<Guid>, CancellationToken, Task>? AckOutboundChatSentAsync = null,
     /// <summary>Длительность window phone-watch; сохранённые в Orbita записи в этом окне перечитываются.</summary>
-    int PhoneWatchHours = ResponsePhoneWatchRules.DefaultUnchangedHours);
+    int PhoneWatchHours = ResponsePhoneWatchRules.DefaultUnchangedHours,
+    /// <summary>Активные наблюдения Orbita, которые должны быть найдены даже ниже ранней границы скролла.</summary>
+    IReadOnlyList<WorkerOpenPhoneWatchDto>? OpenPhoneWatches = null);

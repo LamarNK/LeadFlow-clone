@@ -270,6 +270,21 @@ public sealed class AvitoCandidatesPageScriptsTests
     }
 
     [Fact]
+    public void PhoneWatchPriority_IsAppliedBeforePhoneRevealAndCycleCacheCanBeReset()
+    {
+        var priority = AvitoCandidatesPageScripts.BuildApplyPhoneWatchPriorityScript([26]);
+        var maskedReveal = AvitoCandidatesPageScripts.BuildRevealMaskedPhonesStepScript();
+        var popupReveal = AvitoCandidatesPageScripts.BuildRevealNextContactsPopupPhoneScript();
+        var reset = AvitoCandidatesPageScripts.BuildResetCandidateCollectionStateScript();
+
+        Assert.Contains("26", priority, StringComparison.Ordinal);
+        Assert.Contains("__leadflowPhoneWatchPriority", priority, StringComparison.Ordinal);
+        Assert.Contains("isPhoneWatchPriority", maskedReveal, StringComparison.Ordinal);
+        Assert.Contains("isPhoneWatchPriority", popupReveal, StringComparison.Ordinal);
+        Assert.Contains("__leadflowRevealedPhones = {}", reset, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void VacancyAndCityScripts_SupportQuotedAndLinkedVacancyLines()
     {
         var scripts = new[]

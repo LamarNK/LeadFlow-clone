@@ -103,6 +103,12 @@ public static class AvitoCandidatesPageScripts
             return !!(skips[String(index)] || skips[index]);
         };
 
+        const isPhoneWatchPriority = (index) => {
+            const priorities = window.__leadflowPhoneWatchPriority;
+            return !!(priorities && typeof priorities === "object"
+                && (priorities[String(index)] || priorities[index]));
+        };
+
         // Skip «уже известен» не действует, если номер под маской — иначе phone-watch не увидит смену.
         const needsPhoneReveal = (item, index) => {
             const inline = readInlinePhone(item);
@@ -741,6 +747,28 @@ public static class AvitoCandidatesPageScripts
             });
         })();
         """;
+
+    /// <summary>Очищает привязанный к DOM-индексам кэш перед новым проходом/субпрофилем.</summary>
+    public static string BuildResetCandidateCollectionStateScript() =>
+        """
+        (() => {
+            window.__leadflowRevealedPhones = {};
+            window.__leadflowSkipPhoneReveal = {};
+            window.__leadflowPhoneWatchPriority = {};
+            return JSON.stringify({ ok: true });
+        })();
+        """;
+
+    /// <summary>Phone-watch раскрываются раньше остальных карточек в ограниченном бюджете кликов.</summary>
+    public static string BuildApplyPhoneWatchPriorityScript(IReadOnlyCollection<int> priorityIndices)
+    {
+        var priorityJson = System.Text.Json.JsonSerializer.Serialize(
+            priorityIndices
+                .Where(static x => x >= 0)
+                .Distinct()
+                .ToDictionary(static x => x.ToString(), static _ => true));
+        return $"window.__leadflowPhoneWatchPriority = {priorityJson}; JSON.stringify({{ ok: true, prioritized: Object.keys(window.__leadflowPhoneWatchPriority).length }});";
+    }
 
     /// <summary>Блокирует копирование в буфер на странице (клик «телефон» на Avito часто вызывает copy).</summary>
     public static string BuildEnableClipboardGuardScript() =>
@@ -1909,9 +1937,11 @@ public static class AvitoCandidatesPageScripts
             };
 
             const items = Array.from(document.querySelectorAll("[data-marker='job-application/item']"));
+            const orderedIndexes = Array.from(items.keys()).sort((a, b) =>
+                Number(isPhoneWatchPriority(b)) - Number(isPhoneWatchPriority(a)) || a - b);
             let masked = 0;
             let clicked = 0;
-            for (let index = 0; index < items.length; index++) {
+            for (const index of orderedIndexes) {
                 const item = items[index];
                 const btn = item.querySelector("[data-marker='job-application/phone']");
                 if (!btn || btn.closest?.("[data-marker^='download-report-button']")) {
@@ -1978,7 +2008,9 @@ public static class AvitoCandidatesPageScripts
 
             let targetIndex = -1;
             let targetItem = null;
-            for (let index = 0; index < items.length; index++) {
+            const orderedIndexes = Array.from(items.keys()).sort((a, b) =>
+                Number(isPhoneWatchPriority(b)) - Number(isPhoneWatchPriority(a)) || a - b);
+            for (const index of orderedIndexes) {
                 const item = items[index];
                 if (!needsPhoneReveal(item, index)) {
                     continue;
