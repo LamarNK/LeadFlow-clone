@@ -176,19 +176,33 @@ public sealed class ResponseDeliveryService(
             await cacheInvalidator.InvalidateAsync(officeId);
         }
 
-        panelRealtime.Notify(
-            [PanelChangeKind.Responses, PanelChangeKind.Dashboard, PanelChangeKind.NavBadges],
-            primaryOfficeId,
-            entity.WorkerId);
-
         // The response can be delivered to several CRM offices. Each board needs its own scoped event.
         var crmResults = channels.Where(x => x.Channel == "CRM").ToList();
+        var responseVisibilityOfficeIds = new HashSet<Guid>();
+        if (entity.OfficeId is Guid responseOfficeId)
+        {
+            responseVisibilityOfficeIds.Add(responseOfficeId);
+        }
+        else if (primaryOfficeId is Guid fallbackOfficeId)
+        {
+            responseVisibilityOfficeIds.Add(fallbackOfficeId);
+        }
+
         foreach (var (officeId, result) in officeIds.Zip(crmResults))
         {
             if (result.Success)
             {
+                responseVisibilityOfficeIds.Add(officeId);
                 panelRealtime.Notify([PanelChangeKind.Crm], officeId, entity.WorkerId);
             }
+        }
+
+        foreach (var officeId in responseVisibilityOfficeIds)
+        {
+            panelRealtime.Notify(
+                [PanelChangeKind.Responses, PanelChangeKind.Dashboard, PanelChangeKind.NavBadges],
+                officeId,
+                entity.WorkerId);
         }
 
         await invalidationBatch.FlushAsync();

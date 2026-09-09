@@ -5,6 +5,7 @@ namespace Orbita.Tests;
 
 internal sealed class CapturingPanelRealtimeNotifier : IPanelRealtimeNotifier
 {
+    public List<(IReadOnlyList<PanelChangeKind> Kinds, Guid? OfficeId, Guid? WorkerId)> Notifications { get; } = [];
     public IReadOnlyList<PanelChangeKind> LastKinds { get; private set; } = [];
     public Guid? LastOfficeId { get; private set; }
     public Guid? LastWorkerId { get; private set; }
@@ -20,6 +21,7 @@ internal sealed class CapturingPanelRealtimeNotifier : IPanelRealtimeNotifier
         string? operatorMessageVariant = null)
     {
         NotifyCount++;
+        Notifications.Add((kinds, officeId, workerId));
         LastKinds = kinds;
         LastOfficeId = officeId;
         LastWorkerId = workerId;

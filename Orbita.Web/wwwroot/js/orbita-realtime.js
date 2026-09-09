@@ -23,6 +23,7 @@
     var connectPromise = null;
     var debounceTimer = null;
     var fetchInFlight = false;
+    var refreshQueuedWhileInFlight = false;
     var pendingKinds = [];
     var accessToken = null;
     var pollTimer = null;
@@ -89,15 +90,19 @@
 
     function flushPending() {
         debounceTimer = null;
-        pendingKinds = [];
-        fetchNavBadges();
 
         var page = getActivePage();
         if (!page || !handlers[page]) return;
 
         var handler = handlers[page];
         if (typeof handler.fetchSnapshot !== 'function') return;
-        if (fetchInFlight) return;
+        if (fetchInFlight) {
+            refreshQueuedWhileInFlight = true;
+            return;
+        }
+
+        pendingKinds = [];
+        fetchNavBadges();
 
         fetchInFlight = true;
         if (window.OrbitaLiveShared) {
@@ -113,6 +118,11 @@
                 fetchInFlight = false;
                 if (window.OrbitaLiveShared) {
                     window.OrbitaLiveShared.setRefreshBusy(false);
+                }
+                if (refreshQueuedWhileInFlight) {
+                    refreshQueuedWhileInFlight = false;
+                    if (debounceTimer) window.clearTimeout(debounceTimer);
+                    debounceTimer = window.setTimeout(flushPending, 0);
                 }
             });
     }

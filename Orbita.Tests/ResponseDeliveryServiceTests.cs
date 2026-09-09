@@ -215,6 +215,14 @@ public sealed class ResponseDeliveryServiceTests
             x.ResponseId == responseId
             && x.OfficeId == officeB
             && x.Outcome == ResponseCrmDeliveryOutcomes.Sent));
+
+        var notifications = provider.GetRequiredService<CapturingPanelRealtimeNotifier>().Notifications;
+        Assert.Contains(notifications, notification =>
+            notification.OfficeId == officeA
+            && notification.Kinds.Contains(PanelChangeKind.Responses));
+        Assert.Contains(notifications, notification =>
+            notification.OfficeId == officeB
+            && notification.Kinds.Contains(PanelChangeKind.Responses));
     }
 
     [Fact]
@@ -395,7 +403,9 @@ public sealed class ResponseDeliveryServiceTests
         services.AddScoped<ResponseCacheInvalidator>();
         services.AddSingleton<IOrbitaQueryCache, NoopQueryCache>();
         services.AddScoped<ManualBitrixSendService>();
-        services.AddSingleton<IPanelRealtimeNotifier, NoopPanelRealtimeNotifier>();
+        services.AddSingleton<CapturingPanelRealtimeNotifier>();
+        services.AddSingleton<IPanelRealtimeNotifier>(provider =>
+            provider.GetRequiredService<CapturingPanelRealtimeNotifier>());
         services.AddScoped<ResponseDeliveryService>();
 
         var provider = services.BuildServiceProvider();
