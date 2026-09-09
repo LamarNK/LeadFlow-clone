@@ -13,7 +13,6 @@ namespace LeadFlow.Core.Services.Avito;
 /// </summary>
 public static class AvitoCandidatesListPreparer
 {
-    private const int MaxScrollRounds = 48;
     private const int StableRoundsRequired = 3;
     private const int MaxPhoneRevealRounds = 40;
     private const int MaxPhoneRevealRoundsWhenNoItems = 2;
@@ -59,8 +58,9 @@ public static class AvitoCandidatesListPreparer
             .Select(static x => ResponsePhoneWatchEvaluator.BuildFullNameKey(x.FullName))
             .Where(static x => !string.IsNullOrWhiteSpace(x))
             .ToHashSet(StringComparer.Ordinal);
+        var maxScrollRounds = CandidatesScrollBudget.Resolve(remainingPhoneWatchNames.Count > 0);
 
-        for (var round = 0; round < MaxScrollRounds; round++)
+        for (var round = 0; round < maxScrollRounds; round++)
         {
             cancellationToken.ThrowIfCancellationRequested();
             scrollRounds++;
