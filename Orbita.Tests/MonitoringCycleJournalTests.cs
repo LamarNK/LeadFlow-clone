@@ -235,6 +235,33 @@ public sealed class MonitoringCycleJournalTests
     }
 
     [Fact]
+    public void BuildFromJournal_MarksPassThatRequiresLogin()
+    {
+        var started = TimeZoneInfo.ConvertTimeToUtc(Day.AddHours(13), TimeZoneInfo.Local);
+        var completed = started.AddMinutes(2);
+        var cycles = new List<MonitoringCycleRunSnapshot>
+        {
+            new(
+                Guid.NewGuid(),
+                "Avito 1",
+                started,
+                completed,
+                MonitoringCycleRunStatuses.Aborted,
+                [
+                    new MonitoringSubProfileRunSnapshot(
+                        Guid.NewGuid(), "sp-1", "main", 1, 1, started, completed,
+                        MonitoringSubProfileRunOutcomes.Failed, "auth-required", "нужен вход", 0)
+                ])
+        };
+
+        var report = MonitoringCycleReportBuilder.BuildFromJournal(cycles, Day, Day);
+
+        var pass = Assert.Single(report.AccountReports[0].Rows[0].Passes!);
+        Assert.True(pass.LoginRequired);
+        Assert.Equal("нужен вход", pass.ErrorDetail);
+    }
+
+    [Fact]
     public void BuildFromJournal_CaptchaTiedToPassTimestamp()
     {
         var firstStart = TimeZoneInfo.ConvertTimeToUtc(Day.AddHours(10).AddMinutes(4), TimeZoneInfo.Local);

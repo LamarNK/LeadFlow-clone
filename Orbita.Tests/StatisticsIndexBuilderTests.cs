@@ -183,6 +183,32 @@ public sealed class StatisticsIndexBuilderTests
         Assert.Null(row.Passes[0].CaptchaStatus);
         Assert.Equal(secondPass, row.Passes[1].TimestampUtc);
         Assert.Equal("решена", row.Passes[1].CaptchaStatus);
+        Assert.True(row.Passes[0].LoginSucceeded);
+    }
+
+    [Fact]
+    public void Build_MapsLoginRequiredToPass()
+    {
+        var passTime = DateTime.SpecifyKind(new DateTime(2026, 8, 22, 9, 17, 13), DateTimeKind.Utc);
+        var monitoring = new MonitoringCycleReportDto(
+            true, 0, 0, 0, [], [],
+            [
+                new MonitoringCycleAccountReportDto(
+                    "Авито 1", passTime.Date, 1, 1, 0,
+                    [
+                        new MonitoringCycleSubProfileRowDto(
+                            1, 1, "Основной", [], [], [], WasStarted: true,
+                            Passes: [new MonitoringCyclePassDto(
+                                passTime, false, 0, false, ErrorDetail: "нужен вход", LoginRequired: true)])
+                    ],
+                    [])
+            ]);
+
+        var model = BuildModel(CreateData(lowBalanceCount: 0, monitoringCycles: monitoring), DashboardPeriod.Today, new FakeOfficeContext());
+
+        var pass = Assert.Single(model.MonitoringCycles.AccountReports[0].Rows[0].Passes);
+        Assert.True(pass.LoginRequired);
+        Assert.False(pass.LoginSucceeded);
     }
 
     [Fact]

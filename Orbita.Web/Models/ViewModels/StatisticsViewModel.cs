@@ -226,6 +226,9 @@ public sealed class MonitoringCyclePassViewModel
     public bool CaptchaUnsolved { get; init; }
     public string? ErrorDetail { get; init; }
     public bool Skipped { get; init; }
+    public bool LoginRequired { get; init; }
+    /// <summary>Завершённый проход подтверждает, что в момент проверки сессия Avito была авторизована.</summary>
+    public bool LoginSucceeded => Completed && !LoginRequired;
     public bool HasCaptcha => !string.IsNullOrWhiteSpace(CaptchaStatus);
     public bool HasError => !string.IsNullOrWhiteSpace(ErrorDetail);
 }

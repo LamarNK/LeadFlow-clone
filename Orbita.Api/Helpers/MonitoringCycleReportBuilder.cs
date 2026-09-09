@@ -898,6 +898,7 @@ internal static partial class MonitoringCycleReportBuilder
         var timestamp = run.CompletedAtUtc ?? run.StartedAtUtc;
         var captchaStatus = captchaSeen > 0 ? FormatCaptchaPass(captchaSeen, captchaSolved) : null;
         var captchaUnsolved = captchaSeen > 0 && captchaSolved < captchaSeen;
+        var loginRequired = string.Equals(run.ErrorType, "auth-required", StringComparison.OrdinalIgnoreCase);
         if (run.Outcome == MonitoringSubProfileRunOutcomes.Completed
             && run.CompletedAtUtc is DateTime)
         {
@@ -948,7 +949,8 @@ internal static partial class MonitoringCycleReportBuilder
                 HasCollected: passLeads > 0,
                 CaptchaStatus: captchaStatus,
                 CaptchaUnsolved: captchaUnsolved,
-                ErrorDetail: detail);
+                ErrorDetail: detail,
+                LoginRequired: loginRequired);
         }
 
         if (cycle.Status != MonitoringCycleRunStatuses.Running)

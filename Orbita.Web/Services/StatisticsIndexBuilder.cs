@@ -405,7 +405,8 @@ internal static class StatisticsIndexBuilder
                     CaptchaStatus = pass.CaptchaStatus,
                     CaptchaUnsolved = pass.CaptchaUnsolved,
                     ErrorDetail = pass.ErrorDetail,
-                    Skipped = pass.Skipped
+                    Skipped = pass.Skipped,
+                    LoginRequired = pass.LoginRequired
                 })
                 .ToList();
         }
