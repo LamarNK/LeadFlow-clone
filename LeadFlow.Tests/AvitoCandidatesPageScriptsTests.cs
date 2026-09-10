@@ -221,11 +221,20 @@ public sealed class AvitoCandidatesPageScriptsTests
     [Fact]
     public void BuildScrollStepScript_UsesPartialViewportAndImmediateBehavior()
     {
-        var script = AvitoCandidatesPageScripts.BuildScrollStepScript();
+        var script = AvitoCandidatesPageScripts.BuildScrollStepScript(17);
 
         Assert.Contains("scrollBy", script, StringComparison.Ordinal);
         Assert.Contains("behavior: \"auto\"", script, StringComparison.Ordinal);
         Assert.Contains("Math.random()", script, StringComparison.Ordinal);
+        Assert.Contains("const previousItemCount = 17;", script, StringComparison.Ordinal);
+        Assert.Contains("items.slice(previousItemCount)", script, StringComparison.Ordinal);
+        Assert.Contains("item.querySelector(\"h3, h4\")", script, StringComparison.Ordinal);
+        Assert.Contains("cardFingerprint", script, StringComparison.Ordinal);
+        Assert.Contains("phoneDigits", script, StringComparison.Ordinal);
+        Assert.Contains("fullRescan", script, StringComparison.Ordinal);
+        Assert.Contains("structureValid", script, StringComparison.Ordinal);
+        Assert.Contains("__leadflowScrollBoundary", script, StringComparison.Ordinal);
+        Assert.Contains("domChanged", script, StringComparison.Ordinal);
         Assert.DoesNotContain("clientHeight * 0.9", script, StringComparison.Ordinal);
     }
 
@@ -284,6 +293,7 @@ public sealed class AvitoCandidatesPageScriptsTests
         Assert.Contains("isPhoneWatchPriority", popupReveal, StringComparison.Ordinal);
         Assert.Contains("priorityPending", readyProbe, StringComparison.Ordinal);
         Assert.Contains("__leadflowRevealedPhones = {}", reset, StringComparison.Ordinal);
+        Assert.Contains("__leadflowScrollBoundary = null", reset, StringComparison.Ordinal);
     }
 
     [Fact]
