@@ -12,7 +12,7 @@ using Orbita.Contracts;
 
 namespace Orbita.Tests;
 
-public sealed class CrmWorkspaceServiceTests
+public sealed partial class CrmWorkspaceServiceTests
 {
     private static readonly Guid OfficeId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
     private static readonly Guid WorkerId = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");

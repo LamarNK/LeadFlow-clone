@@ -347,6 +347,9 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
         modelBuilder.Entity<CrmCandidateCardEntity>(entity =>
         {
             entity.HasKey(x => x.Id);
+            // A request started before an office transfer/reopening must not overwrite it.
+            entity.Property(x => x.OfficeId).IsConcurrencyToken();
+            entity.Property(x => x.IsClosed).IsConcurrencyToken();
             entity.HasIndex(x => x.ResponseId).IsUnique();
             entity.HasIndex(x => new { x.OfficeId, x.EnteredCrmAtUtc });
             entity.HasIndex(x => new { x.OfficeId, x.ManagerUserId, x.IsInActiveLoad });

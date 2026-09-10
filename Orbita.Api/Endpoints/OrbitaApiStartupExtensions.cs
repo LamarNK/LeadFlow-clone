@@ -330,6 +330,7 @@ public static class OrbitaApiStartupExtensions
         builder.Services.Configure<CrmSipRuntimeOptions>(builder.Configuration.GetSection(CrmSipRuntimeOptions.SectionName));
         builder.Services.Configure<CrmDeadlineNotificationOptions>(builder.Configuration.GetSection(CrmDeadlineNotificationOptions.SectionName));
         builder.Services.Configure<CrmAnalyticsOptions>(builder.Configuration.GetSection(CrmAnalyticsOptions.SectionName));
+        builder.Services.Configure<CrmReprocessingOptions>(builder.Configuration.GetSection(CrmReprocessingOptions.SectionName));
         builder.Services.Configure<ServiceLogsOptions>(builder.Configuration.GetSection(ServiceLogsOptions.SectionName));
         builder.Services.AddSingleton<WorkerReleaseService>();
         builder.Services.AddScoped<WorkerDiagnosticsService>();
@@ -348,6 +349,8 @@ public static class OrbitaApiStartupExtensions
         });
         builder.Services.AddScoped<CrmLeadDistributionService>();
         builder.Services.AddScoped<CrmWorkspaceService>();
+        builder.Services.AddScoped<CrmReprocessingService>();
+        builder.Services.AddHostedService<CrmReprocessingHostedService>();
         builder.Services.AddScoped<CrmTelephonyService>();
         builder.Services.AddScoped<CrmTelephonyProviderAccountService>();
         builder.Services.AddScoped<CrmTelephonyCredentialProtector>();

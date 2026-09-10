@@ -1,0 +1,14 @@
+# Optional override; append to the existing compose file list. Disabled by default.
+services:
+  api:
+    environment:
+      CrmReprocessing__Enabled: ${CRM_REPROCESSING_ENABLED:-false}
+      CrmReprocessing__DestinationOfficeId: ${CRM_REPROCESSING_OFFICE_ID:-00000000-0000-0000-0000-000000000000}
+      CrmReprocessing__ClosedFromUtc: ${CRM_REPROCESSING_CLOSED_FROM_UTC:-}
+      CrmReprocessing__SourceOfficeNames__0: "1 офис"
+      CrmReprocessing__SourceOfficeNames__1: "2 офис"
+      CrmReprocessing__SourceOfficeNames__2: "3 офис"
+      CrmReprocessing__SourceOfficeNames__3: "4 офис"
+      CrmReprocessing__SourceOfficeNames__4: "6 офис"
+      CrmReprocessing__BatchSize: ${CRM_REPROCESSING_BATCH_SIZE:-25}
+      CrmReprocessing__ScanIntervalSeconds: ${CRM_REPROCESSING_INTERVAL_SECONDS:-10}

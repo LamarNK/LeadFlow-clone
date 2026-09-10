@@ -1373,6 +1373,7 @@ namespace Orbita.Api.Data.Migrations
                         .HasColumnType("character varying(128)");
 
                     b.Property<bool>("IsClosed")
+                        .IsConcurrencyToken()
                         .HasColumnType("boolean");
 
                     b.Property<bool>("IsInActiveLoad")
@@ -1389,6 +1390,7 @@ namespace Orbita.Api.Data.Migrations
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<Guid>("OfficeId")
+                        .IsConcurrencyToken()
                         .HasColumnType("uuid");
 
                     b.Property<Guid>("ResponseId")

@@ -28,6 +28,19 @@ app.UseWebSockets();
 app.UseAuthentication();
 app.UseAuthorization();
 app.UseRateLimiter();
+app.Use(async (context, next) =>
+{
+    try { await next(); }
+    catch (Microsoft.EntityFrameworkCore.DbUpdateConcurrencyException)
+        when (context.Request.Path.StartsWithSegments("/api/v1/crm") && !context.Response.HasStarted)
+    {
+        context.Response.StatusCode = StatusCodes.Status409Conflict;
+        await context.Response.WriteAsJsonAsync(new
+        {
+            error = "Карточка уже изменена или передана в другой офис. Обновите страницу перед повторным действием."
+        });
+    }
+});
 app.MapHub<PanelHub>("/hubs/panel");
 app.MapHub<CaptchaRelayHub>("/hubs/captcha");
 app.MapHub<BrowserMonitorHub>("/hubs/browser-monitor");

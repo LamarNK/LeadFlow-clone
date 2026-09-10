@@ -4474,6 +4474,8 @@ public sealed class CrmWorkspaceService(
         "ChatSent" => "Сообщение отправлено в Avito",
         "BitrixDealImported" => "Карточка импортирована из Bitrix24",
         "ChatCancelled" => "Сообщение в чат отменено",
+        "ReprocessingSent" => "Передано на повторную обработку",
+        "ReprocessingReceived" => "Получено на повторную обработку",
         _ => action
     };
 

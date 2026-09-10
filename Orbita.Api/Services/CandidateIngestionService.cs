@@ -160,10 +160,13 @@ public sealed class CandidateIngestionService(
         // Collection pool: global person match (no office filter).
         var matchedPerson = await personMatch.FindMatchingPersonAsync(officeId: null, profile, ct);
         var phoneMetricKind = ResponsePhoneMetricKinds.Normalize(candidate.PhoneMetricKind);
-        // PhoneChanged — новый пункт с новым номером (не считаем FIO-дублем).
+        // PhoneChanged сохраняет новый отклик, но существующую CRM-карточку
+        // дополняем номером вместо повторной доставки кандидата в другой офис.
         // PhoneUnchanged — метка стабильного номера; дублем её делает только совпадение кандидата.
+        var alreadyInCrm = matchedPerson is not null && await db.CrmCandidateCards.AsNoTracking()
+            .AnyAsync(x => x.Response.PersonId == matchedPerson.Id, ct);
         var isLocalDuplicate = matchedPerson is not null
-            && phoneMetricKind != ResponsePhoneMetricKinds.PhoneChanged;
+            && (phoneMetricKind != ResponsePhoneMetricKinds.PhoneChanged || alreadyInCrm);
 
         CandidatePersonEntity person;
         if (matchedPerson is not null)
@@ -238,6 +241,7 @@ public sealed class CandidateIngestionService(
         await db.SaveChangesAsync(ct);
 
         await personPhone.ApplyPhoneFromResponseAsync(person, candidate.PhoneRaw, phoneNormalized, entity.Id, ct);
+        var enrichedOffices = await personPhone.StageCrmContactAsync(person.Id, candidate.PhoneRaw, phoneNormalized, ct);
 
         entity.IsLocalDuplicate = isLocalDuplicate;
         entity.ProcessedAt = DateTime.UtcNow;
@@ -258,6 +262,7 @@ public sealed class CandidateIngestionService(
                 _ => "Локальный дубль: найден существующий кандидат по ФИО."
             };
             await db.SaveChangesAsync(ct);
+            foreach (var crmOfficeId in enrichedOffices) panelRealtime.Notify([PanelChangeKind.Crm], crmOfficeId);
             return new WorkerCandidateIngestionItemResultDto(
                 entity.Id,
                 candidate.SourceResponseId,
@@ -425,12 +430,15 @@ public sealed class CandidateIngestionService(
         }
 
         var phoneChanged = !string.Equals(tracked.PhoneNormalized, phoneNormalized, StringComparison.Ordinal);
+        Guid[] phoneChangedOffices = [];
         if (phoneChanged)
         {
             // Temporary Avito numbers can change after CRM/Bitrix send — keep the same response
             // and append person/response phone history (do not re-run auto delivery).
             var previousRaw = tracked.PhoneRaw;
             var previousNormalized = tracked.PhoneNormalized;
+            // Seed the previous dialable number before updating the response's main number.
+            await personPhone.StageCrmContactAsync(tracked.PersonId, previousRaw, previousNormalized, ct);
             tracked.PhoneRaw = candidate.PhoneRaw;
             tracked.PhoneNormalized = phoneNormalized;
 
@@ -463,11 +471,13 @@ public sealed class CandidateIngestionService(
                 phoneNormalized,
                 tracked.Id,
                 ct);
+            phoneChangedOffices = await personPhone.StageCrmContactAsync(tracked.PersonId, candidate.PhoneRaw, phoneNormalized, ct);
         }
 
         if (changed)
         {
             await db.SaveChangesAsync(ct);
+            foreach (var crmOfficeId in phoneChangedOffices) panelRealtime.Notify([PanelChangeKind.Crm], crmOfficeId);
             panelRealtime.Notify(
                 [PanelChangeKind.Responses, PanelChangeKind.NavBadges],
                 worker.OfficeId,

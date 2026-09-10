@@ -216,6 +216,7 @@
                                 {
                                     <span>
                                         <i class="fa-solid fa-phone" aria-hidden="true"></i>@ph.PhoneRaw
+                                        <button type="button" class="crm-link-btn" data-orbita-call data-phone="@ph.PhoneRaw">Позвонить</button>
                                         @if (ph.IsPrimary) { <em>основной</em> }
                                         else if (!string.IsNullOrWhiteSpace(ph.Label)) { <em>@ph.Label</em> }
                                         @if (canEdit && ph.Id != Guid.Empty)

@@ -9,7 +9,7 @@ using CandidateParser = Orbita.Api.Services.CandidateParser;
 
 namespace Orbita.Tests;
 
-public sealed class CandidateIngestionServiceTests
+public sealed partial class CandidateIngestionServiceTests
 {
     private static readonly Guid OfficeId = Guid.Parse("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
     private static readonly Guid WorkerId = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb");
