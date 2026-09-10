@@ -1,3 +1,4 @@
+using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Orbita.Api.Data;
@@ -216,7 +217,9 @@ public sealed class WorkerLogArchiveServiceTests
             var entries = await logger.ReadEntriesNewerThanAsync(timestamp.AddMinutes(-1), 20);
             var entry = Assert.Single(entries, e => e.Message.Contains("user/list", StringComparison.Ordinal));
             Assert.Contains("corr-farm-1", entry.Properties, StringComparison.Ordinal);
-            Assert.Contains("чтение прокси профиля", entry.Properties, StringComparison.Ordinal);
+            using var archivedProperties = JsonDocument.Parse(entry.Properties!);
+            Assert.Equal("чтение прокси профиля", archivedProperties.RootElement
+                .GetProperty("context").GetProperty("startup.stage").GetString());
             Assert.Contains("user/list", entry.Properties, StringComparison.Ordinal);
             Assert.Contains("http_response", entry.Properties, StringComparison.Ordinal);
             Assert.Contains("PagesAsync", entry.Properties, StringComparison.Ordinal);
