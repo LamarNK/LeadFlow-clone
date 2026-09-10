@@ -85,8 +85,7 @@ public sealed class CrmDeadlineNotificationService(
     {
         limit = Math.Clamp(limit, 1, 50);
         var deadlineEnabled = await IsEnabledForOfficeAsync(officeId, ct);
-        var deskAlertsQuery = db.CrmDeskAlerts
-            .Where(x => x.OfficeId == officeId && x.RecipientUserId == recipientUserId);
+        var deskAlertsQuery = ActiveDeskAlerts(officeId, recipientUserId);
         var deskUnread = await deskAlertsQuery.CountAsync(x => x.ReadAtUtc == null, ct);
 
         var taskItems = new List<CrmTaskNotificationDto>();
@@ -150,8 +149,8 @@ public sealed class CrmDeadlineNotificationService(
         var taskUnread = deadlineEnabled
             ? await ActiveForUser(officeId, recipientUserId).CountAsync(x => x.ReadAtUtc == null, ct)
             : 0;
-        var deskUnread = await db.CrmDeskAlerts
-            .CountAsync(x => x.OfficeId == officeId && x.RecipientUserId == recipientUserId && x.ReadAtUtc == null, ct);
+        var deskUnread = await ActiveDeskAlerts(officeId, recipientUserId)
+            .CountAsync(x => x.ReadAtUtc == null, ct);
         return new CrmTaskNotificationSummaryDto(
             taskUnread + deskUnread,
             Enabled: true,
@@ -283,6 +282,13 @@ public sealed class CrmDeadlineNotificationService(
         await db.SaveChangesAsync(ct);
         return expired.Count;
     }
+
+    // New missed-call alerts share the call ID. A corrected ANSWER hides the stale alert,
+    // including its badge, but preserves both history records. Legacy alerts remain readable.
+    private IQueryable<CrmDeskAlertEntity> ActiveDeskAlerts(Guid officeId, string recipientUserId) =>
+        db.CrmDeskAlerts.Where(x => x.OfficeId == officeId && x.RecipientUserId == recipientUserId)
+            .Where(x => x.Kind != CrmTaskNotificationKinds.MissedCall
+                || !db.CrmCalls.Any(c => c.Id == x.Id && c.Status == CrmCallStatuses.Answered));
 
     private IQueryable<CrmTaskNotificationEntity> ActiveForUser(Guid officeId, string recipientUserId) =>
         db.CrmTaskNotifications

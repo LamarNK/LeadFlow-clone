@@ -45,6 +45,11 @@
     }
 
     function taskUrl(item) {
+        if (item.kind === 'missed_call') {
+            return item.cardId
+                ? '/Crm/Card/' + encodeURIComponent(item.cardId)
+                : '/Crm/MissedCalls?callId=' + encodeURIComponent(item.id);
+        }
         if (item.cardId && (!item.taskId || item.taskId === '00000000-0000-0000-0000-000000000000')) {
             return '/Crm/Card/' + encodeURIComponent(item.cardId);
         }
@@ -234,7 +239,8 @@
         var link = document.createElement('a');
         link.href = taskUrl(item);
         link.className = 'orbita-crm-realtime-notification' + (item.kind === 'overdue' ? ' is-overdue' : item.kind === 'missed_call' ? ' is-missed' : ' is-upcoming');
-        link.setAttribute('aria-label', (opensCard(item) ? 'Открыть карточку «' : 'Открыть задачу «') + item.taskTitle + '»');
+        link.setAttribute('aria-label', (opensCard(item) ? 'Открыть карточку «'
+            : item.kind === 'missed_call' ? 'Открыть пропущенный звонок «' : 'Открыть задачу «') + item.taskTitle + '»');
 
         var icon = document.createElement('span');
         icon.className = 'orbita-crm-realtime-notification__icon';
@@ -260,7 +266,8 @@
         message.textContent = item.message;
         var action = document.createElement('span');
         action.className = 'orbita-crm-realtime-notification__action';
-        action.textContent = opensCard(item) ? 'Открыть карточку' : 'Открыть задачу';
+        action.textContent = opensCard(item) ? 'Открыть карточку'
+            : item.kind === 'missed_call' ? 'Открыть звонок' : 'Открыть задачу';
         body.appendChild(meta);
         body.appendChild(title);
         body.appendChild(message);

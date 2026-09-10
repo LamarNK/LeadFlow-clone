@@ -11,7 +11,7 @@ using Orbita.Contracts;
 
 namespace Orbita.Tests;
 
-public sealed class CrmTelephonyServiceTests
+public sealed partial class CrmTelephonyServiceTests
 {
     [Fact]
     public void IceCredentialFactory_CreatesCoturnRestApiCredential()

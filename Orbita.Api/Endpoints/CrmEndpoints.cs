@@ -30,6 +30,20 @@ public static class CrmEndpoints
         var crmAnalytics = app.MapGroup("/api/v1/crm").RequireAuthorization(PanelPermissions.CrmAnalytics);
         var crmAdmin = app.MapGroup("/api/v1/crm").RequireAuthorization(PanelPermissions.CrmTeam);
 
+        crmBoard.MapGet("/calls/missed", async (Guid? officeId, DateTime fromUtc, DateTime toUtc,
+            string? managerUserId, string? status, int? page, Guid? callId, ClaimsPrincipal principal,
+            OfficeScopeService officeScope, CrmMissedCallsQueryService calls, CancellationToken ct) =>
+        {
+            var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier) ?? principal.FindFirstValue("sub");
+            if (string.IsNullOrWhiteSpace(userId)) return Results.Forbid();
+            var scope = await officeScope.ResolveAsync(principal, ct);
+            var data = await calls.GetAsync(scope.ResolveFilter(officeId), userId,
+                PanelRoles.HasElevatedOfficeAccess(principal), PanelRoles.IsGlobalAdmin(principal),
+                DateTime.SpecifyKind(fromUtc, DateTimeKind.Utc), DateTime.SpecifyKind(toUtc, DateTimeKind.Utc),
+                managerUserId, status, page ?? 1, ct, callId);
+            return data is null ? Results.BadRequest(new { error = "Проверьте офис и период (не более года)." }) : Results.Ok(data);
+        });
+
         crmBoard.MapGet("/calls/{callId:guid}/recording", async (
             Guid callId,
             CrmWorkspaceService workspace,

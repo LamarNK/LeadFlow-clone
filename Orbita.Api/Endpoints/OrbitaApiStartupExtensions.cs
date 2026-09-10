@@ -352,6 +352,7 @@ public static class OrbitaApiStartupExtensions
         builder.Services.AddScoped<CrmReprocessingService>();
         builder.Services.AddHostedService<CrmReprocessingHostedService>();
         builder.Services.AddScoped<CrmTelephonyService>();
+        builder.Services.AddScoped<CrmMissedCallsQueryService>();
         builder.Services.AddScoped<CrmTelephonyProviderAccountService>();
         builder.Services.AddScoped<CrmTelephonyCredentialProtector>();
         builder.Services.AddSingleton<CrmSipRuntimeConfigWriter>();

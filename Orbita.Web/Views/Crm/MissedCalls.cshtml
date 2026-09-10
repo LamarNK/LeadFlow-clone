@@ -1,0 +1,87 @@
+@using Orbita.Contracts
+@model CrmMissedCallsViewModel
+@{
+    ViewData["Title"] = "Пропущенные звонки";
+    string Link(string? status, int page = 1) => Url.Action("MissedCalls", "Crm", new {
+        from = Model.From, to = Model.To, managerUserId = Model.ManagerUserId,
+        status, page, callId = Model.CallId, tz = Model.TimeZoneOffset })!;
+    string StatusName(string status) => status switch {
+        CrmCallStatuses.Rejected => "Отклонён / занято",
+        CrmCallStatuses.Failed => "Не доставлен", _ => "Не ответили" };
+}
+<partial name="_PageHeader" model="Model.Header" />
+<main class="orbita-main crm-missed">
+    @if (Model.CallId is not null)
+    { <p class="crm-missed__note">Открыт звонок из уведомления, независимо от его даты. <a asp-action="MissedCalls">Показать все пропущенные</a></p> }
+    <form method="get" class="card crm-missed__filters">
+        <input type="hidden" name="tz" value="@Model.TimeZoneOffset" />
+        <input type="hidden" name="status" value="@Model.Status" />
+        <label>С даты<input type="date" name="from" value="@Model.From" required /></label>
+        <label>По дату включительно<input type="date" name="to" value="@Model.To" required /></label>
+        @if (Model.ShowManagers)
+        {
+            <label class="crm-missed__manager">Ответственный сейчас
+                <select name="managerUserId"><option value="">Все сотрудники</option>
+                @foreach (var manager in Model.Data?.Managers ?? [])
+                { <option value="@manager.Id" selected="@(manager.Id == Model.ManagerUserId)">@manager.Name</option> }
+                </select>
+            </label>
+        }
+        <button type="submit" class="settings-primary-btn">Показать</button>
+        <a asp-action="MissedCalls" class="crm-missed__reset">Последние 7 дней</a>
+    </form>
+    @if (Model.Data is not { } data)
+    {
+        <section class="card crm-missed__empty" role="alert">
+            <h2>Не удалось загрузить звонки</h2>
+            <p>Проверьте выбранный офис и период (не более года), затем повторите запрос. Ошибка загрузки не означает отсутствие пропущенных.</p>
+            <a class="settings-primary-btn" href="@Link(Model.Status)">Повторить</a>
+        </section>
+    }
+    else
+    {
+        <nav class="crm-missed__stats" aria-label="Причина непринятого звонка">
+            <a href="@Link(null)" class="card @(Model.Status == null ? "is-selected" : "")"><span>Все непринятые</span><strong>@(data.Missed + data.Rejected + data.Failed)</strong><small>За выбранный период</small></a>
+            <a href="@Link(CrmCallStatuses.Missed)" class="card @(Model.Status == CrmCallStatuses.Missed ? "is-selected" : "")"><span>Не ответили</span><strong>@data.Missed</strong><small>Нет ответа или звонящий отменил вызов</small></a>
+            <a href="@Link(CrmCallStatuses.Rejected)" class="card @(Model.Status == CrmCallStatuses.Rejected ? "is-selected" : "")"><span>Отклонён / занято</span><strong>@data.Rejected</strong><small>Линия вернула статус «занято»</small></a>
+            <a href="@Link(CrmCallStatuses.Failed)" class="card @(Model.Status == CrmCallStatuses.Failed ? "is-selected" : "")"><span>Не доставлен</span><strong>@data.Failed</strong><small>Недоступен телефон или ошибка связи</small></a>
+        </nav>
+        <section class="card crm-missed__list">
+            <header><div><h2>Непринятые входящие</h2><p>Каждая строка — один входящий звонок. Принятые звонки сюда не входят.</p></div><span>Всего: @data.Total</span></header>
+            @if (data.Rows.Count == 0)
+            {
+                <div class="crm-missed__empty"><i class="fa-regular fa-circle-check" aria-hidden="true"></i><h3>@(Model.CallId is null ? "Пропущенных за эти даты нет" : "Звонок не найден среди доступных пропущенных")</h3><p>@(Model.CallId is null ? "Можно выбрать другой период или сбросить фильтр причины." : "Возможно, статус уточнился на «принят» или изменился доступ. Можно открыть общий список.")</p></div>
+            }
+            else
+            {
+                <div class="crm-missed__table-wrap"><table>
+                    <thead><tr><th>Когда</th><th>Кто звонил</th><th>Результат</th><th>Ответственный</th><th>Действие</th></tr></thead>
+                    <tbody>@foreach (var call in data.Rows)
+                    {
+                        <tr>
+                            <td data-label="Когда"><strong>@call.StartedAtUtc.AddMinutes(-Model.TimeZoneOffset).ToString("dd.MM.yyyy")</strong><small>@call.StartedAtUtc.AddMinutes(-Model.TimeZoneOffset).ToString("HH:mm:ss")</small></td>
+                            <td data-label="Кто звонил">
+                                @if (call.CardId is Guid cardId)
+                                { <a class="crm-missed__candidate" asp-action="Card" asp-route-id="@cardId">@(string.IsNullOrWhiteSpace(call.CandidateName) ? "Карточка кандидата" : call.CandidateName)</a> }
+                                else { <strong>Нет доступной карточки</strong> }
+                                <span class="crm-missed__phone">@(string.IsNullOrEmpty(call.Phone) ? "Номер не определён" : "+" + call.Phone)</span>
+                                @if (!string.IsNullOrWhiteSpace(call.CalledPhone)) { <small>На номер / линию @call.CalledPhone</small> }
+                            </td>
+                            <td data-label="Результат"><span class="crm-missed__status is-@call.Status">@StatusName(call.Status)</span></td>
+                            <td data-label="Ответственный"><strong>@(call.ResponsibleName ?? "Не определён")</strong><small>@call.OfficeName</small></td>
+                            <td data-label="Действие">@if (!string.IsNullOrEmpty(call.Phone))
+                                { <button type="button" class="settings-primary-btn" data-orbita-call data-phone="@call.Phone"><i class="fa-solid fa-phone" aria-hidden="true"></i> Перезвонить</button> }
+                            </td>
+                        </tr>
+                    }</tbody>
+                </table></div>
+                <nav class="crm-missed__pagination" aria-label="Страницы звонков">
+                    @if (data.Page > 1) { <a href="@Link(Model.Status, data.Page - 1)">← Назад</a> }
+                    <span>Страница @data.Page из @Math.Max(1, (int)Math.Ceiling(data.Total / (double)data.PageSize))</span>
+                    @if ((long)data.Page * data.PageSize < data.Total) { <a href="@Link(Model.Status, data.Page + 1)">Далее →</a> }
+                </nav>
+            }
+            <p class="crm-missed__note">Это история непринятых входящих, а не список задач: перезвон и прочтение уведомления не удаляют запись. Вызовы, не дошедшие до Asterisk или не переданные в CRM, здесь не появятся.</p>
+        </section>
+    }
+</main>

@@ -20,6 +20,28 @@ public sealed class CrmController(
     IOptions<DesignPreviewOptions> previewOptions) : Controller
 {
     [HttpGet]
+    [Authorize(Policy = PanelPermissions.CrmBoard)]
+    public async Task<IActionResult> MissedCalls(string? from, string? to, string? managerUserId,
+        string? status, int page = 1, Guid? callId = null, CancellationToken ct = default)
+    {
+        var tz = BrowserTimeZone.Resolve(HttpContext);
+        var period = string.IsNullOrWhiteSpace(from) || string.IsNullOrWhiteSpace(to)
+            ? DashboardPeriod.CreateLastDays(7, tz) : DashboardPeriod.Parse(from, to, tz);
+        var (fromUtc, toUtc) = LocalCalendarDateRange.ToUtcRange(period);
+        var elevated = PanelRoles.HasElevatedOfficeAccess(User);
+        var manager = elevated ? managerUserId : null;
+        status = CrmCallStatuses.IsUnanswered(status) ? status : null;
+        var data = await api.GetCrmMissedCallsAsync(fromUtc, toUtc, officeContext.EffectiveOfficeId,
+            manager, status, page, ct, callId);
+        return View(new CrmMissedCallsViewModel
+        {
+            Data = data, From = period.From.ToString("yyyy-MM-dd"), To = period.To.ToString("yyyy-MM-dd"),
+            ManagerUserId = manager, Status = status, CallId = callId, ShowManagers = elevated, TimeZoneOffset = tz,
+            Header = new() { Title = "Пропущенные звонки", Subtitle = "Входящие, которые не удалось принять", ShowRefresh = true }
+        });
+    }
+
+    [HttpGet]
     [Authorize(Policy = PanelPermissions.CrmAnalytics)]
     [Authorize(Policy = PanelPermissions.CrmBoard)]
     public async Task<IActionResult> AnalyticsEvidence(string? from, string? to, string metric,

@@ -1916,6 +1916,9 @@ public sealed class CrmTelephonyService(
             var card = await FindCardAsync(call.OfficeId, [call.ClientPhoneNormalized], ct);
             if (card is null) continue;
             call.CardId = card.Id;
+            var alert = await db.CrmDeskAlerts.FirstOrDefaultAsync(x => x.Id == call.Id
+                && x.Kind == CrmTaskNotificationKinds.MissedCall, ct);
+            if (alert is not null && card.ManagerUserId == alert.RecipientUserId) alert.CardId = card.Id;
             call.UpdatedAtUtc = timeProvider.GetUtcNow().UtcDateTime;
             matched++;
             panelRealtime?.Notify([PanelChangeKind.Crm], call.OfficeId);
@@ -1992,6 +1995,20 @@ public sealed class CrmTelephonyService(
         var dialStatus = NormalizeCallSignal(payload.DialStatus);
         var hangupCause = ParseNullableNonNegativeInt(payload.HangupCause);
         var status = ResolveCallStatus(provider, durationSeconds, disposition, dialStatus);
+        var previousStatus = existing?.Status;
+        // Delivery retries/late fragments must not turn an answered call into a missed one.
+        if (existing is not null && (previousStatus == CrmCallStatuses.Answered
+                && status != CrmCallStatuses.Answered
+            || previousStatus != CrmCallStatuses.Unknown && status == CrmCallStatuses.Unknown))
+        {
+            status = existing.Status;
+            durationSeconds = existing.DurationSeconds;
+            disposition = existing.Disposition;
+            dialStatus = existing.DialStatus;
+            hangupCause = existing.HangupCause;
+            startedAt = existing.StartedAtUtc;
+            managerUserId = existing.ManagerUserId ?? managerUserId;
+        }
 
         var call = existing ?? new CrmCallEntity
         {
@@ -2032,28 +2049,31 @@ public sealed class CrmTelephonyService(
 
         CrmDeskAlertEntity? missedCallAlert = null;
         string? missedCallRecipient = null;
-        if (existing is null
-            && card is not null
+        if ((existing is null || !CrmCallStatuses.IsUnanswered(previousStatus))
             && direction == CrmCallDirections.Incoming
             && CrmCallStatuses.IsUnanswered(status))
         {
-            missedCallRecipient = !string.IsNullOrWhiteSpace(card.ManagerUserId)
-                ? card.ManagerUserId
+            missedCallRecipient = !string.IsNullOrWhiteSpace(card?.ManagerUserId)
+                ? card!.ManagerUserId
                 : managerUserId;
-            if (!string.IsNullOrWhiteSpace(missedCallRecipient))
+            if (!string.IsNullOrWhiteSpace(missedCallRecipient)
+                && !await db.CrmDeskAlerts.AnyAsync(x => x.Id == call.Id, ct))
             {
-                var candidateName = await db.CandidateResponses.AsNoTracking()
-                    .Where(x => x.Id == card.ResponseId)
+                // A line binding alone does not grant access to an unassigned CRM card.
+                var canLinkCard = card is not null && card.ManagerUserId == missedCallRecipient;
+                var candidateName = !canLinkCard ? null : await db.CandidateResponses.AsNoTracking()
+                    .Where(x => x.Id == card!.ResponseId)
                     .Select(x => x.FullName)
                     .FirstOrDefaultAsync(ct);
                 missedCallAlert = new CrmDeskAlertEntity
                 {
-                    Id = Guid.NewGuid(),
+                    // The call ID is also the alert ID: retry-safe correlation without a schema change.
+                    Id = call.Id,
                     OfficeId = officeId,
                     RecipientUserId = missedCallRecipient,
                     Kind = CrmTaskNotificationKinds.MissedCall,
-                    CardId = card.Id,
-                    Title = string.IsNullOrWhiteSpace(candidateName) ? "Кандидат" : candidateName,
+                    CardId = canLinkCard ? card!.Id : null,
+                    Title = string.IsNullOrWhiteSpace(candidateName) ? $"Входящий от +{clientPhone}" : candidateName,
                     Message = BuildUnansweredCallMessage(status, clientPhone),
                     CreatedAtUtc = now
                 };
@@ -2741,7 +2761,7 @@ public sealed class CrmTelephonyService(
         var phone = string.IsNullOrWhiteSpace(clientPhone) ? string.Empty : $" от +{clientPhone}";
         return status switch
         {
-            CrmCallStatuses.Rejected => $"Входящий звонок{phone} был отклонён.",
+            CrmCallStatuses.Rejected => $"Входящий звонок{phone}: линия занята или вызов отклонён.",
             CrmCallStatuses.Failed => $"Входящий звонок{phone} не удалось доставить.",
             _ => $"Пропущен входящий звонок{phone}."
         };

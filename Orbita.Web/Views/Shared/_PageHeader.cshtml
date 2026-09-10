@@ -58,7 +58,12 @@
                     <div class="orbita-notifications__list" data-crm-notifications-list>
                         <p class="orbita-notifications__empty">Загрузка…</p>
                     </div>
-                    <footer><a asp-controller="Crm" asp-action="Tasks">Открыть задачи</a></footer>
+                    <footer>
+                        <a asp-controller="Crm" asp-action="Tasks">Открыть задачи</a>
+                        @if (User.HasClaim(PanelPermissions.ClaimType, PanelPermissions.CrmBoard)
+                            || User.HasClaim(PanelPermissions.ClaimType, PanelPermissions.Crm))
+                        { <a asp-controller="Crm" asp-action="MissedCalls">Пропущенные звонки</a> }
+                    </footer>
                 </section>
             </div>
         }

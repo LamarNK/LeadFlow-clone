@@ -2594,6 +2594,19 @@ public sealed class OrbitaApiClient(
         return GetAsync<CrmAnalyticsEvidenceDto>(url, ct);
     }
 
+    public Task<CrmMissedCallsDto?> GetCrmMissedCallsAsync(DateTime fromUtc, DateTime toUtc,
+        Guid? officeId, string? managerUserId, string? status, int page, CancellationToken ct = default, Guid? callId = null)
+    {
+        var url = WithOfficeQuery("api/v1/crm/calls/missed", officeId);
+        url = AppendQuery(url, "callId", callId?.ToString("D"));
+        url = AppendQuery(url, "fromUtc", fromUtc.ToUniversalTime().ToString("O"));
+        url = AppendQuery(url, "toUtc", toUtc.ToUniversalTime().ToString("O"));
+        url = AppendQuery(url, "managerUserId", managerUserId);
+        url = AppendQuery(url, "status", status);
+        url = AppendQuery(url, "page", page.ToString());
+        return GetAsync<CrmMissedCallsDto>(url, ct);
+    }
+
     public Task<CrmAnalyticsDto?> GetCrmAnalyticsAsync(
         DateTime fromUtc,
         DateTime toUtc,
