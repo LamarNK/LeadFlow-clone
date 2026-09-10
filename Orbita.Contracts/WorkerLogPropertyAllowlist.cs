@@ -76,6 +76,8 @@ public static class WorkerLogPropertyAllowlist
         "candidates.prepare.scrollFingerprintProbeCalls",
         "candidates.prepare.scrollProfileItemsParsed",
         "candidates.prepare.scrollFingerprintItemsParsed",
+        "candidates.prepare.scrollFullRescans",
+        "candidates.prepare.scrollFallbackRescans",
         "candidates.pipeline.navigationMs",
         "candidates.pipeline.prepareMs",
         "candidates.pipeline.extractMs",

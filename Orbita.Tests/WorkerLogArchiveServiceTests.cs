@@ -132,6 +132,8 @@ public sealed class WorkerLogArchiveServiceTests
             ["candidates.prepare.scrollMs"] = 12345L,
             ["candidates.prepare.scrollDomCalls"] = 42,
             ["candidates.prepare.scrollProfileItemsParsed"] = 900,
+            ["candidates.prepare.scrollFullRescans"] = 2,
+            ["candidates.prepare.scrollFallbackRescans"] = 1,
             ["candidates.pipeline.messengerMs"] = 6789L,
             ["candidates.fullName"] = "sensitive candidate name",
             ["candidates.phone"] = "79990000000",
@@ -143,6 +145,8 @@ public sealed class WorkerLogArchiveServiceTests
         Assert.Equal(12345L, filtered["candidates.prepare.scrollMs"]);
         Assert.Equal(42, filtered["candidates.prepare.scrollDomCalls"]);
         Assert.Equal(900, filtered["candidates.prepare.scrollProfileItemsParsed"]);
+        Assert.Equal(2, filtered["candidates.prepare.scrollFullRescans"]);
+        Assert.Equal(1, filtered["candidates.prepare.scrollFallbackRescans"]);
         Assert.Equal(6789L, filtered["candidates.pipeline.messengerMs"]);
         Assert.DoesNotContain("candidates.fullName", filtered.Keys);
         Assert.DoesNotContain("candidates.phone", filtered.Keys);
