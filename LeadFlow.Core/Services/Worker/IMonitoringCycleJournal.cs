@@ -27,7 +27,9 @@ public interface IMonitoringCycleJournal
         int skippedDuplicateCount = 0,
         int collectedCount = 0,
         int captchaCount = 0,
-        int captchaSolvedCount = 0);
+        int captchaSolvedCount = 0,
+        bool loginAttempted = false,
+        bool loginSucceeded = false);
 
     /// <summary>Субпрофиль не запускался в этом цикле — очередь не дошла.</summary>
     void SkipSubProfile(
@@ -49,7 +51,9 @@ public interface IMonitoringCycleJournal
         int publishedCount = 0,
         int collectedCount = 0,
         int captchaCount = 0,
-        int captchaSolvedCount = 0);
+        int captchaSolvedCount = 0,
+        bool loginAttempted = false,
+        bool loginSucceeded = false);
 
     /// <summary>Цикл завершён нормально (все субпрофили в очереди отработаны).</summary>
     void CompleteCycle(Guid cycleId);

@@ -49,4 +49,6 @@ public sealed record MonitoringSubProfileRunUploadDto(
     int SkippedDuplicateCount = 0,
     int CollectedCount = 0,
     int CaptchaCount = 0,
-    int CaptchaSolvedCount = 0);
+    int CaptchaSolvedCount = 0,
+    bool LoginAttempted = false,
+    bool LoginSucceeded = false);

@@ -306,6 +306,10 @@
 .crm-table-contact a, .crm-table-vacancy strong { display: block; overflow: hidden; color: #35465e; font-size: 12px; font-weight: 700; line-height: 1.35; text-decoration: none; text-overflow: ellipsis; white-space: nowrap; }
 .crm-table-contact a:hover { color: #2563eb; }
 .crm-table-contact span, .crm-table-vacancy span { display: -webkit-box; margin-top: 3px; overflow: hidden; color: #8b98ac; font-size: 11px; line-height: 1.3; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.crm-phone-metric { display: inline-flex !important; align-items: center; gap: 4px; width: fit-content; max-width: 100%; margin-top: 4px; overflow: hidden; font-size: 10px !important; font-weight: 700; line-height: 1.25; text-overflow: ellipsis; white-space: nowrap; -webkit-line-clamp: unset !important; }
+.crm-phone-metric--changed { color: #b54708 !important; }
+.crm-phone-metric--unchanged { color: #027a48 !important; }
+.crm-phone-metric > i { flex: 0 0 auto; font-size: 9px; }
 .crm-table-vacancy strong { color: #2563eb; }
 .crm-table-manager { color: #5c6b80; font-weight: 650; }
 .crm-table-result { display: inline-block; max-width: 145px; overflow: hidden; padding: 4px 8px; border-radius: 6px; background: #f2f4f7; color: #66758b; font-size: 11px; font-weight: 650; line-height: 1.3; text-overflow: ellipsis; white-space: nowrap; }
@@ -409,6 +413,7 @@
 .crm-tile__top { display: flex; align-items: flex-start; justify-content: space-between; gap: 6px; }
 .crm-tile__top strong { color: #101828; font-size: 12px; line-height: 1.35; }
 .crm-tile__meta, .crm-tile__phone { margin-top: 4px; color: #667085; font-size: 11px; }
+.crm-tile .crm-phone-metric { margin-top: 6px; }
 .crm-tile__vacancy { margin-top: 8px; color: #475467; font-size: 11px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .crm-tile__foot { display: flex; align-items: center; gap: 8px; margin-top: 10px; padding-top: 8px; border-top: 1px solid #f2f4f7; color: #98a2b3; font-size: 10px; }
 .crm-tile__foot span { display: inline-flex; align-items: center; gap: 4px; }

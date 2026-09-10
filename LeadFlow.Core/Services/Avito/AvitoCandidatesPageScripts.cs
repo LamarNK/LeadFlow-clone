@@ -589,9 +589,15 @@ public static class AvitoCandidatesPageScripts
         """;
 
     /// <summary>Один шаг прокрутки вниз по контейнеру списка откликов.</summary>
-    public static string BuildScrollStepScript() =>
-        """
+    public static string BuildScrollStepScript(int previousItemCount = 0) =>
+        $$"""
         (() => {
+        {{ContactsPhoneHelpersJs}}
+        {{AgeParseHelpersJs}}
+        {{CardFingerprintJs}}
+        {{VacancyParseHelpersJs}}
+        {{SourceResponseIdJs}}
+            const previousItemCount = {{Math.Max(0, previousItemCount)}};
             const countItems = () => document.querySelectorAll("[data-marker='job-application/item']").length;
             const findScroller = () => {
                 const first = document.querySelector("[data-marker='job-application/item']");
@@ -636,12 +642,120 @@ public static class AvitoCandidatesPageScripts
                 scroller.scrollBy(0, delta);
             }
             const atEnd = scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 8;
+            initRevealedPhonesStore();
+            const items = Array.from(document.querySelectorAll("[data-marker='job-application/item']"));
+            const normalizeUrl = (href) => {
+                const value = (href ?? "").trim();
+                if (!value || value === "#") return "";
+                if (value.startsWith("//")) return `https:${value}`;
+                if (value.startsWith("/")) return `${window.location.origin}${value}`;
+                return value;
+            };
+            const resolveMessengerUrl = (root) => {
+                const attrCandidates = ["href", "data-href", "data-url", "data-to", "data-link", "data-state", "onclick"];
+                const fromAttributes = (element) => {
+                    if (!element) return "";
+                    for (const attr of attrCandidates) {
+                        const raw = element.getAttribute?.(attr);
+                        if (!raw) continue;
+                        const direct = normalizeUrl(raw);
+                        if (direct && /(messenger|chat|dialog)/i.test(direct)) return direct;
+                        const match = String(raw).match(/https?:\/\/[^"'\\\s]*(messenger|chat|dialog)[^"'\\\s]*/i);
+                        if (match?.[0]) return normalizeUrl(match[0]);
+                    }
+                    return "";
+                };
+                const chatElement = root.querySelector("[data-marker='job-application/link/to-chat']");
+                const direct = fromAttributes(chatElement);
+                if (direct) return direct;
+                const parent = chatElement?.closest("a");
+                const parentUrl = fromAttributes(parent);
+                if (parentUrl) return parentUrl;
+                for (const element of root.querySelectorAll("[href],[data-href],[data-url],[data-to],[data-link],[data-state],[onclick]")) {
+                    const url = fromAttributes(element);
+                    if (url) return url;
+                }
+                return "";
+            };
+            const parseVacancyLink = (root, vacancyAnchor) => {
+                const direct = normalizeUrl(vacancyAnchor?.getAttribute("href") ?? "");
+                if (direct && /\/\d{5,}/.test(direct) && !/\/profile\/candidates(?:[/?#]|$)/i.test(direct)) {
+                    return direct;
+                }
+                for (const paragraph of root.querySelectorAll("p")) {
+                    if (!/на вакансию/i.test(normalizeCardText(paragraph.textContent))) continue;
+                    const href = normalizeUrl(paragraph.querySelector("a[href]")?.getAttribute("href") ?? "");
+                    if (href && /\/\d{5,}/.test(href)) return href;
+                }
+                return direct;
+            };
+            const parseAgeText = (root) => {
+                for (const line of root.querySelectorAll("p")) {
+                    const age = extractAgeYearsFromText(line.textContent);
+                    if (age) return age;
+                }
+                return "";
+            };
+            const parseGenderText = (root) => {
+                for (const line of root.querySelectorAll("p")) {
+                    const text = normalizeCardText(line.textContent);
+                    if (/(?:^|[\s·•|,\-—])мужчина(?![а-яё])/i.test(text)) return "male";
+                    if (/(?:^|[\s·•|,\-—])женщина(?![а-яё])/i.test(text)) return "female";
+                }
+                return "";
+            };
+            const mapItem = (item, index) => {
+                const fullName = normalizeCardText(item.querySelector("h3, h4")?.textContent ?? "");
+                const vacancyAnchor = item.querySelector("[data-marker='job-application/link/to-resume']");
+                const parsed = parseVacancyAndCityFromRoot(item, vacancyAnchor);
+                const vacancyUrl = parseVacancyLink(item, vacancyAnchor);
+                const messengerUrl = resolveMessengerUrl(item);
+                const age = parseAgeText(item);
+                const phone = readItemPhone(item, index);
+                return {
+                    index,
+                    fullName,
+                    cardFingerprint: buildCardFingerprint(fullName, parsed.vacancy, parsed.city, vacancyUrl, messengerUrl, age),
+                    city: parsed.city,
+                    age,
+                    gender: parseGenderText(item),
+                    phoneDigits: normalizePhoneKeyForSourceId(phone)
+                };
+            };
+            const itemKey = (item) => [
+                normalizeCardText(item?.querySelector("h3, h4")?.textContent ?? ""),
+                normalizeUrl(item?.querySelector("[data-marker='job-application/link/to-resume']")?.getAttribute("href") ?? ""),
+                resolveMessengerUrl(item)
+            ].join("\u001f");
+            const boundary = window.__leadflowScrollBoundary;
+            const domChanged = previousItemCount > 0 && (
+                !boundary
+                || boundary.count !== previousItemCount
+                || boundary.firstKey !== itemKey(items[0])
+                || boundary.lastKey !== itemKey(items[previousItemCount - 1])
+            );
+            const candidateItems = domChanged || items.length < previousItemCount
+                ? items
+                : items.slice(previousItemCount);
+            const structureValid = candidateItems.every((item) =>
+                !!normalizeCardText(item.querySelector("h3, h4")?.textContent ?? ""));
+            const fullRescan = items.length < previousItemCount || domChanged || !structureValid;
+            const newItems = (fullRescan ? items : items.slice(previousItemCount))
+                .map((item, offset) => mapItem(item, fullRescan ? offset : previousItemCount + offset));
+            window.__leadflowScrollBoundary = {
+                count: items.length,
+                firstKey: itemKey(items[0]),
+                lastKey: itemKey(items.at(-1))
+            };
             return JSON.stringify({
-                itemCount: countItems(),
+                itemCount: items.length,
                 scrollTop: scroller.scrollTop,
                 scrollHeight: scroller.scrollHeight,
                 moved: Math.abs(scroller.scrollTop - beforeTop) > 2,
-                atEnd
+                atEnd,
+                fullRescan,
+                structureValid,
+                newItems
             });
         })();
         """;
@@ -764,6 +878,7 @@ public static class AvitoCandidatesPageScripts
             window.__leadflowRevealedPhones = {};
             window.__leadflowSkipPhoneReveal = {};
             window.__leadflowPhoneWatchPriority = {};
+            window.__leadflowScrollBoundary = null;
             return JSON.stringify({ ok: true });
         })();
         """;

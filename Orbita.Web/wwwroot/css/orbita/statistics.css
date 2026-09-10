@@ -1366,6 +1366,16 @@
     color: var(--text-secondary);
 }
 
+.monitoring-pass-flag--login {
+    background: color-mix(in srgb, var(--warning) 22%, var(--bg-card));
+    color: #92400e;
+}
+
+.monitoring-pass-flag--login-ok {
+    background: color-mix(in srgb, var(--success) 16%, var(--bg-card));
+    color: #16794a;
+}
+
 .monitoring-pass-error {
     color: #b42318;
     max-width: 32ch;
@@ -1410,6 +1420,10 @@
 [data-theme="dark"] .monitoring-pass-flag--bad,
 [data-theme="dark"] .monitoring-pass-error {
     color: #fca5a5;
+}
+
+[data-theme="dark"] .monitoring-pass-flag--login-ok {
+    color: #86efac;
 }
 
 .monitoring-report-captcha-total {

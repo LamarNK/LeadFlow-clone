@@ -1365,6 +1365,8 @@ public sealed class WorkerMonitoringService(
         var monitorContext = new BrowserMonitorRuntimeContext();
         var loginCredentials = AvitoLoginCredentials.TryCreate(account.AvitoLogin, account.AvitoPassword);
         using var loginScope = AvitoAutoLoginContext.Use(loginCredentials);
+        var loginAttempt = new AvitoAutoLoginAttempt();
+        using var loginAttemptScope = AvitoAutoLoginContext.UseAttempt(loginAttempt);
         using var loginCaptchaScope = AvitoAutoLoginContext.UseSolver(
             _geeTestSolver is null
                 ? null
@@ -1558,7 +1560,9 @@ public sealed class WorkerMonitoringService(
                     singlePublishResult.SkippedPersonDuplicates,
                     singlePublishResult.CollectedCount,
                     singleCaptcha.Seen,
-                    singleCaptcha.Solved);
+                    singleCaptcha.Solved,
+                    loginAttempt.Attempted,
+                    loginAttempt.Succeeded);
                 if (account.Status == AvitoAccountStatus.RequiresLogin
                     || account.Status == AvitoAccountStatus.RequiresManualAction)
                 {
@@ -1652,6 +1656,10 @@ public sealed class WorkerMonitoringService(
                 }
 
                 var sub = switchQueue[i].Sub;
+                if (i > 0)
+                {
+                    loginAttempt.Reset();
+                }
                 var deferredRetry = switchQueue[i].Deferred;
                 lastStartedIndex = i;
                 diagnosticSubProfile = sub;
@@ -1829,7 +1837,9 @@ public sealed class WorkerMonitoringService(
                         publishResult.SkippedPersonDuplicates,
                         publishResult.CollectedCount,
                         captcha.Seen,
-                        captcha.Solved);
+                        captcha.Solved,
+                        loginAttempt.Attempted,
+                        loginAttempt.Succeeded);
                     subProfilesProcessed++;
                     consecutiveCaptchaFails = 0;
                     MonitoringAccountResume.MarkSubCompleted(account.MonitoringPassCompletedSubIds, sub.Id);
@@ -1869,7 +1879,9 @@ public sealed class WorkerMonitoringService(
                         subPublishedCount,
                         subCollectedCount,
                         captcha.Seen,
-                        captcha.Solved);
+                        captcha.Solved,
+                        loginAttempt.Attempted,
+                        loginAttempt.Succeeded);
                     consecutiveCaptchaFails++;
                     await HandleCaptchaForAccountAsync(
                             account,
@@ -1906,7 +1918,9 @@ public sealed class WorkerMonitoringService(
                         subPublishedCount,
                         subCollectedCount,
                         captcha.Seen,
-                        captcha.Solved);
+                        captcha.Solved,
+                        loginAttempt.Attempted,
+                        loginAttempt.Succeeded);
                     aborted = true;
                     remainingSkipReason = FormatRemainingSkipReason("auth-required", sub.Name);
                     await HandleLoginRequiredForAccountAsync(

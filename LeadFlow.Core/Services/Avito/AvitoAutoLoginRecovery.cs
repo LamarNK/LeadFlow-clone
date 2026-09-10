@@ -142,7 +142,7 @@ public static class AvitoAutoLoginRecovery
                     steps,
                     page.Url)
                 .ConfigureAwait(false);
-            return new RecoveryResult(false, true, false, "no_orbit_credentials", steps);
+            return Track(new RecoveryResult(false, true, false, "no_orbit_credentials", steps));
         }
 
         steps.Add("credentials Орбиты: есть");
@@ -163,7 +163,7 @@ public static class AvitoAutoLoginRecovery
                 steps.Add("сессия восстановлена");
                 await LogAsync(DeskLinkAuditLogLevel.Info, "Avito auto-login succeeded after page refresh.", steps, page.Url)
                     .ConfigureAwait(false);
-                return new RecoveryResult(true, false, false, null, steps);
+                return Track(new RecoveryResult(true, false, false, null, steps));
             }
         }
 
@@ -197,7 +197,7 @@ public static class AvitoAutoLoginRecovery
                         steps,
                         page.Url)
                     .ConfigureAwait(false);
-                return new RecoveryResult(false, true, false, "probe_failed", steps);
+                return Track(new RecoveryResult(false, true, false, "probe_failed", steps));
             }
 
             if (state.RequiresPasswordResetSms)
@@ -219,7 +219,7 @@ public static class AvitoAutoLoginRecovery
                         steps,
                         state.Url)
                     .ConfigureAwait(false);
-                return new RecoveryResult(false, true, true, "captcha", steps);
+                return Track(new RecoveryResult(false, true, true, "captcha", steps));
             }
 
             if (captchaDecision == LoginCaptchaDecision.Solve)
@@ -248,7 +248,7 @@ public static class AvitoAutoLoginRecovery
                         steps,
                         state.Url)
                     .ConfigureAwait(false);
-                return new RecoveryResult(false, true, true, "captcha", steps);
+                return Track(new RecoveryResult(false, true, true, "captcha", steps));
             }
 
             if (state.IsAuthorized || !state.NeedsLogin)
@@ -256,7 +256,7 @@ public static class AvitoAutoLoginRecovery
                 steps.Add("сессия восстановлена");
                 await LogAsync(DeskLinkAuditLogLevel.Info, "Avito auto-login succeeded.", steps, state.Url)
                     .ConfigureAwait(false);
-                return new RecoveryResult(true, false, false, null, steps);
+                return Track(new RecoveryResult(true, false, false, null, steps));
             }
 
             var progressed = false;
@@ -358,7 +358,7 @@ public static class AvitoAutoLoginRecovery
             steps.Add("сессия восстановлена");
             await LogAsync(DeskLinkAuditLogLevel.Info, "Avito auto-login succeeded after final probe.", steps, finalState.Url)
                 .ConfigureAwait(false);
-            return new RecoveryResult(true, false, false, null, steps);
+            return Track(new RecoveryResult(true, false, false, null, steps));
         }
 
         var reason = finalState switch
@@ -376,12 +376,12 @@ public static class AvitoAutoLoginRecovery
                 finalState?.Url)
             .ConfigureAwait(false);
 
-        return new RecoveryResult(
+        return Track(new RecoveryResult(
             false,
             finalState?.NeedsLogin ?? true,
             finalState?.HasCaptcha ?? false,
             reason,
-            steps);
+            steps));
     }
 
     private static async Task<RecoveryResult> StopForPasswordResetSmsAsync(
@@ -398,7 +398,13 @@ public static class AvitoAutoLoginRecovery
                 steps,
                 state.Url)
             .ConfigureAwait(false);
-        return new RecoveryResult(false, true, false, "password_reset_sms_required", steps, state.PasswordResetSmsPhone);
+        return Track(new RecoveryResult(false, true, false, "password_reset_sms_required", steps, state.PasswordResetSmsPhone));
+    }
+
+    private static RecoveryResult Track(RecoveryResult result)
+    {
+        AvitoAutoLoginContext.RecordAttemptResult(result.Recovered);
+        return result;
     }
 
     private static async Task<ProbeState?> ProbeAsync(IPage page, CancellationToken cancellationToken)

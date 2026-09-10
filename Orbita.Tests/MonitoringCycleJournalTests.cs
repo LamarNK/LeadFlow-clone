@@ -235,6 +235,64 @@ public sealed class MonitoringCycleJournalTests
     }
 
     [Fact]
+    public void BuildFromJournal_ShowsSuccessfulLoginOnlyWhenItWasAttempted()
+    {
+        var started = TimeZoneInfo.ConvertTimeToUtc(Day.AddHours(14), TimeZoneInfo.Local);
+        var completed = started.AddMinutes(2);
+        var cycles = new List<MonitoringCycleRunSnapshot>
+        {
+            new(
+                Guid.NewGuid(), "Avito 1", started, completed, MonitoringCycleRunStatuses.Completed,
+                [
+                    new MonitoringSubProfileRunSnapshot(
+                        Guid.NewGuid(), "sp-1", "обычный", 1, 2, started, completed,
+                        MonitoringSubProfileRunOutcomes.Completed, null, null, 0),
+                    new MonitoringSubProfileRunSnapshot(
+                        Guid.NewGuid(), "sp-2", "после входа", 2, 2, started, completed,
+                        MonitoringSubProfileRunOutcomes.Completed, null, null, 0,
+                        LoginAttempted: true, LoginSucceeded: true)
+                ])
+        };
+
+        var report = MonitoringCycleReportBuilder.BuildFromJournal(cycles, Day, Day);
+
+        var ordinary = Assert.Single(report.AccountReports[0].Rows, row => row.Name == "обычный").Passes![0];
+        var afterLogin = Assert.Single(report.AccountReports[0].Rows, row => row.Name == "после входа").Passes![0];
+        Assert.False(ordinary.LoginAttempted);
+        Assert.False(ordinary.LoginSucceeded);
+        Assert.True(afterLogin.LoginAttempted);
+        Assert.True(afterLogin.LoginSucceeded);
+    }
+
+    [Fact]
+    public void BuildFromJournal_MarksPassThatRequiresLogin()
+    {
+        var started = TimeZoneInfo.ConvertTimeToUtc(Day.AddHours(13), TimeZoneInfo.Local);
+        var completed = started.AddMinutes(2);
+        var cycles = new List<MonitoringCycleRunSnapshot>
+        {
+            new(
+                Guid.NewGuid(),
+                "Avito 1",
+                started,
+                completed,
+                MonitoringCycleRunStatuses.Aborted,
+                [
+                    new MonitoringSubProfileRunSnapshot(
+                        Guid.NewGuid(), "sp-1", "main", 1, 1, started, completed,
+                        MonitoringSubProfileRunOutcomes.Failed, "auth-required", "нужен вход", 0)
+                ])
+        };
+
+        var report = MonitoringCycleReportBuilder.BuildFromJournal(cycles, Day, Day);
+
+        var pass = Assert.Single(report.AccountReports[0].Rows[0].Passes!);
+        Assert.True(pass.LoginRequired);
+        Assert.False(pass.LoginAttempted);
+        Assert.Equal("нужен вход", pass.ErrorDetail);
+    }
+
+    [Fact]
     public void BuildFromJournal_CaptchaTiedToPassTimestamp()
     {
         var firstStart = TimeZoneInfo.ConvertTimeToUtc(Day.AddHours(10).AddMinutes(4), TimeZoneInfo.Local);

@@ -1876,6 +1876,34 @@ public sealed partial class CrmWorkspaceServiceTests
     }
 
     [Fact]
+    public async Task GetBoard_PhoneChangedResponse_ExposesVisualMetricOnCrmCard()
+    {
+        await using var harness = await Harness.CreateAsync();
+        SeedOffice(harness.Db, crmEnabled: true);
+        var manager = await harness.CreateManagerAsync("phone-changed-card@test.local", capacity: 5, onShift: true);
+        var response = await SeedResponseAsync(harness.Db, "phone-changed-card");
+        response.PhoneMetricKind = ResponsePhoneMetricKinds.PhoneChanged;
+        response.PreviousPhoneRaw = "+7 912 345-67-89";
+        response.PreviousPhoneNormalized = "79123456789";
+        response.PhoneChangedAtUtc = DateTime.UtcNow.AddMinutes(-5);
+        harness.Db.CrmCandidateCards.Add(NewCard(response.Id, manager.Id));
+        await harness.Db.SaveChangesAsync();
+
+        var board = await harness.Sut.GetBoardAsync(
+            OfficeId,
+            manager.Id,
+            isAdmin: false,
+            new CrmBoardQuery(Scope: CrmBoardScopes.Mine, View: CrmBoardViews.List));
+
+        var card = Assert.Single(board!.ListCards!);
+        Assert.Equal(ResponsePhoneMetricKinds.PhoneChanged, card.PhoneMetricKind);
+        Assert.Equal(response.PreviousPhoneRaw, card.PreviousPhoneRaw);
+        Assert.Equal(response.PreviousPhoneNormalized, card.PreviousPhoneNormalized);
+        Assert.Equal(response.PhoneChangedAtUtc, card.PhoneChangedAtUtc);
+        Assert.Equal("номер изменился (был +7 912 345-67-89)", card.PhoneMetricLabel);
+    }
+
+    [Fact]
     public async Task GetBoard_BoardView_LoadsFirstPagePerStageAndKeepsFullStageCounts()
     {
         await using var harness = await Harness.CreateAsync();

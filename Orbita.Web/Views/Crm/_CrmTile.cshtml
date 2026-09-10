@@ -8,6 +8,11 @@
     var hasOverdueTask = !card.IsClosed && card.HasOverdueTask;
     var hasActiveTask = !card.IsClosed && card.OpenTaskCount > 0 && !hasOverdueTask;
     var excludedFromLoadByStage = CrmManagerLoadRules.IsExcludedStage(card.Stage);
+    var phoneMetricKind = ResponsePhoneMetricKinds.Normalize(card.PhoneMetricKind);
+    var phoneMetricText = phoneMetricKind == ResponsePhoneMetricKinds.PhoneChanged
+        && (!string.IsNullOrWhiteSpace(card.PreviousPhoneRaw) || !string.IsNullOrWhiteSpace(card.PreviousPhoneNormalized))
+            ? $"Был: {ResponseDisplay.FormatPhone(card.PreviousPhoneRaw, card.PreviousPhoneNormalized)}"
+            : card.PhoneMetricLabel;
 }
 <article class="crm-tile @(card.IsClosed ? "is-closed" : "") @(hasOverdueTask ? "is-overdue" : "") @(hasActiveTask ? "has-active-task" : "")"
          data-card-id="@card.Id"
@@ -28,6 +33,11 @@
             @if (card.IsClosed) { <span class="crm-tag crm-tag--muted">@card.CloseReason</span> }
         </div>
         <div class="crm-tile__meta">@(card.Age?.ToString() ?? "—") лет · @card.City</div>
+        @if (!string.IsNullOrWhiteSpace(phoneMetricText))
+        {
+            <div class="crm-phone-metric @(phoneMetricKind == ResponsePhoneMetricKinds.PhoneChanged ? "crm-phone-metric--changed" : "crm-phone-metric--unchanged")"
+                 title="@card.PhoneMetricLabel"><i class="fa-solid @(phoneMetricKind == ResponsePhoneMetricKinds.PhoneChanged ? "fa-arrow-right-arrow-left" : "fa-shield-check")" aria-hidden="true"></i>@phoneMetricText</div>
+        }
         <div class="crm-tile__vacancy">@card.Vacancy</div>
         <footer class="crm-tile__foot">
             <span class="crm-tile__assignee">

@@ -684,7 +684,14 @@ public sealed record CrmCandidateCardDto(
     /// <summary>All active contact phones known for the candidate.</summary>
     IReadOnlyList<string>? ContactPhones = null,
     /// <summary>Whether this card is linked to a response and can receive chat messages.</summary>
-    bool CanSendChat = false);
+    bool CanSendChat = false,
+    /// <summary>Phone observation metric copied from the source response.</summary>
+    string PhoneMetricKind = "",
+    string? PreviousPhoneRaw = null,
+    string? PreviousPhoneNormalized = null,
+    int? PhoneUnchangedHours = null,
+    DateTime? PhoneChangedAtUtc = null,
+    string? PhoneMetricLabel = null);
 
 public sealed record CrmCandidateDetailDto(
     CrmCandidateCardDto Card,

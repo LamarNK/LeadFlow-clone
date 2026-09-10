@@ -7,6 +7,25 @@ namespace Orbita.Tests
     public sealed class MonitoringCycleJournalSinkTests
     {
         [Fact]
+        public async Task CompleteSubProfile_RecordsExplicitSuccessfulLoginAttempt()
+        {
+            var api = new OrbitaApiClient();
+            var credentials = new WorkerCredentials { WorkerId = Guid.NewGuid() };
+            await using var sink = new MonitoringCycleJournalSink(api, credentials);
+
+            var cycleId = sink.BeginCycle(Guid.NewGuid(), "авито 88");
+            var subRunId = sink.BeginSubProfile(cycleId, "sp-10", "Кадровый отдел Воронеж 10", 1, 1);
+            sink.CompleteSubProfile(cycleId, subRunId, 0, 0, loginAttempted: true, loginSucceeded: true);
+            sink.CompleteCycle(cycleId);
+            await sink.FlushAsync();
+
+            var sub = Assert.Single(api.Batches.Last().Cycles.Single().SubProfiles);
+            Assert.True(sub.LoginAttempted);
+            Assert.True(sub.LoginSucceeded);
+            Assert.Null(sub.ErrorType);
+        }
+
+        [Fact]
         public async Task AbortCycle_OpenSubProfile_ClosesItAsFailed()
         {
             var api = new OrbitaApiClient();

@@ -35,6 +35,9 @@ public static class AvitoAdvanceTopUpScripts
     /// </summary>
     public static readonly string[] SbpVariantSelectors =
     [
+        // Текущая вёрстка Avito: кликабельный paymentVariant содержит вложенный span[data-marker='sbp'].
+        // Оставляем этот точный селектор первым, чтобы не зависеть от порядка остальных вариантов.
+        "[data-marker='paymentVariant'] [data-marker='sbp']",
         "[data-marker='payment-method/sbp']",
         "[data-marker='payment-method/sbp/option']",
         "[data-marker='payment-method/sbp/radio']",

@@ -898,6 +898,7 @@ public sealed partial class AdsPowerAvitoAutomationService
         CandidatesMessengerEnrichmentHints? messengerEnrichmentHints,
         CancellationToken cancellationToken)
     {
+        var pipelineSw = Stopwatch.StartNew();
         var executeScript = (string script, CancellationToken ct) =>
             EvaluateWithRetryAsync<string>(page, script, ct);
 
@@ -908,7 +909,9 @@ public sealed partial class AdsPowerAvitoAutomationService
             await HumanDelay.AfterItemsLingerAsync(cancellationToken).ConfigureAwait(false);
         }
 
+        var navigationSw = Stopwatch.StartNew();
         await EnsureOnCandidatesPageAsync(page, adsPowerUserId, cancellationToken).ConfigureAwait(false);
+        navigationSw.Stop();
 
         var finalSignature = await AvitoCandidatesPageWaiter
             .TryCaptureListSignatureAsync(executeScript, cancellationToken)
@@ -928,9 +931,10 @@ public sealed partial class AdsPowerAvitoAutomationService
                 ["candidates.waitMs"] = waitSw.ElapsedMilliseconds
             });
 
+        var prepareSw = Stopwatch.StartNew();
         await AvitoCandidatesListPreparer.PrepareAsync(
             executeScript,
-            $"AdsPower:{adsPowerUserId}",
+            BuildCandidateCollectionLogContext(adsPowerUserId, messengerEnrichmentHints),
             cancellationToken,
             async ct =>
             {
@@ -953,15 +957,30 @@ public sealed partial class AdsPowerAvitoAutomationService
             skipDetailEnrich: true,
             CreateCaptchaSolveCallback(page),
             messengerEnrichmentHints?.OpenPhoneWatches).ConfigureAwait(false);
+        prepareSw.Stop();
 
+        var extractSw = Stopwatch.StartNew();
         var raw = await EvaluateWithRetryAsync<string>(page, ExtractionScript, cancellationToken).ConfigureAwait(false);
         if (string.IsNullOrWhiteSpace(raw))
         {
             throw new InvalidOperationException("AdsPower CDP: скрипт извлечения вернул пустой результат.");
         }
+        extractSw.Stop();
 
+        var messengerSw = Stopwatch.StartNew();
         raw = await TryEnrichCandidatesJsonMessengerUrlsAsync(page, raw, messengerEnrichmentHints, cancellationToken)
             .ConfigureAwait(false);
+        messengerSw.Stop();
+        pipelineSw.Stop();
+        LogCandidatePipelineTiming(
+            adsPowerUserId,
+            messengerEnrichmentHints,
+            navigationSw.ElapsedMilliseconds,
+            prepareSw.ElapsedMilliseconds,
+            extractSw.ElapsedMilliseconds,
+            messengerSw.ElapsedMilliseconds,
+            pipelineSw.ElapsedMilliseconds,
+            nameof(ExtractCandidatesJsonOnPageAsync));
 
         return raw;
     }

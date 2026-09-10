@@ -10,10 +10,20 @@ public static class AvitoAutoLoginContext
 {
     private static readonly AsyncLocal<AvitoLoginCredentials?> Current = new();
     private static readonly AsyncLocal<Func<IPage, CancellationToken, Task<bool>>?> CurrentSolver = new();
+    private static readonly AsyncLocal<AvitoAutoLoginAttempt?> CurrentAttempt = new();
 
     public static AvitoLoginCredentials? Credentials => Current.Value;
 
     public static Func<IPage, CancellationToken, Task<bool>>? CaptchaSolver => CurrentSolver.Value;
+
+    public static void RecordAttemptResult(bool succeeded) => CurrentAttempt.Value?.Record(succeeded);
+
+    public static IDisposable UseAttempt(AvitoAutoLoginAttempt attempt)
+    {
+        var previous = CurrentAttempt.Value;
+        CurrentAttempt.Value = attempt;
+        return new Scope(() => CurrentAttempt.Value = previous);
+    }
 
     public static IDisposable Use(AvitoLoginCredentials? credentials)
     {
@@ -42,5 +52,24 @@ public static class AvitoAutoLoginContext
 
             restore();
         }
+    }
+}
+
+/// <summary>Результат фактически запущенного автовхода для текущего прохода.</summary>
+public sealed class AvitoAutoLoginAttempt
+{
+    public bool Attempted { get; private set; }
+    public bool Succeeded { get; private set; }
+
+    internal void Record(bool succeeded)
+    {
+        Attempted = true;
+        Succeeded = succeeded;
+    }
+
+    public void Reset()
+    {
+        Attempted = false;
+        Succeeded = false;
     }
 }

@@ -40,6 +40,23 @@ public sealed class AvitoAdvanceTopUpScriptsTests
         }
     }
 
+    [Fact]
+    public void SbpVariantSelectors_SupportsPaymentVariantWithNestedSbpMarker()
+    {
+        // В одном из актуальных вариантов страницы Avito СБП — это span внутри
+        // интерактивной карточки paymentVariant, а не самостоятельная кнопка.
+        const string liveHtml = "<div data-marker=\"paymentVariant\"><span data-marker=\"sbp\">СБП</span></div>";
+
+        Assert.Contains("data-marker=\"paymentVariant\"", liveHtml, StringComparison.Ordinal);
+        Assert.Contains("data-marker=\"sbp\"", liveHtml, StringComparison.Ordinal);
+        Assert.Contains(
+            "[data-marker='paymentVariant'] [data-marker='sbp']",
+            AvitoAdvanceTopUpScripts.SbpVariantSelectors);
+
+        var script = AvitoAdvanceTopUpScripts.BuildSelectSbpScript();
+        Assert.Contains("closest('[role=\"option\"], [data-marker=\"paymentVariant\"]", script, StringComparison.Ordinal);
+    }
+
     [Theory]
     [InlineData(300, "300")]
     [InlineData(900, "900")]

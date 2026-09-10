@@ -53,7 +53,9 @@ internal sealed record MonitoringSubProfileRunSnapshot(
     int FoundCount = 0,
     int CollectedCount = 0,
     int CaptchaCount = 0,
-    int CaptchaSolvedCount = 0);
+    int CaptchaSolvedCount = 0,
+    bool LoginAttempted = false,
+    bool LoginSucceeded = false);
 
 /// <summary>Enabled subprofiles of an account (panel order) for a full day matrix.</summary>
 internal sealed record MonitoringAccountSubProfileCatalogEntry(
@@ -898,6 +900,9 @@ internal static partial class MonitoringCycleReportBuilder
         var timestamp = run.CompletedAtUtc ?? run.StartedAtUtc;
         var captchaStatus = captchaSeen > 0 ? FormatCaptchaPass(captchaSeen, captchaSolved) : null;
         var captchaUnsolved = captchaSeen > 0 && captchaSolved < captchaSeen;
+        var loginRequired = string.Equals(run.ErrorType, "auth-required", StringComparison.OrdinalIgnoreCase);
+        var loginAttempted = run.LoginAttempted;
+        var loginSucceeded = run.LoginSucceeded;
         if (run.Outcome == MonitoringSubProfileRunOutcomes.Completed
             && run.CompletedAtUtc is DateTime)
         {
@@ -907,7 +912,9 @@ internal static partial class MonitoringCycleReportBuilder
                 CollectedCount: passLeads,
                 HasCollected: true,
                 CaptchaStatus: captchaStatus,
-                CaptchaUnsolved: captchaUnsolved);
+                CaptchaUnsolved: captchaUnsolved,
+                LoginAttempted: loginAttempted,
+                LoginSucceeded: loginSucceeded);
         }
 
         if (run.Outcome == MonitoringSubProfileRunOutcomes.Skipped)
@@ -948,7 +955,10 @@ internal static partial class MonitoringCycleReportBuilder
                 HasCollected: passLeads > 0,
                 CaptchaStatus: captchaStatus,
                 CaptchaUnsolved: captchaUnsolved,
-                ErrorDetail: detail);
+                ErrorDetail: detail,
+                LoginRequired: loginRequired,
+                LoginAttempted: loginAttempted,
+                LoginSucceeded: loginSucceeded);
         }
 
         if (cycle.Status != MonitoringCycleRunStatuses.Running)

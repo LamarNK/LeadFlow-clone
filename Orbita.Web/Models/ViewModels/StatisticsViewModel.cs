@@ -226,6 +226,9 @@ public sealed class MonitoringCyclePassViewModel
     public bool CaptchaUnsolved { get; init; }
     public string? ErrorDetail { get; init; }
     public bool Skipped { get; init; }
+    public bool LoginRequired { get; init; }
+    public bool LoginAttempted { get; init; }
+    public bool LoginSucceeded { get; init; }
     public bool HasCaptcha => !string.IsNullOrWhiteSpace(CaptchaStatus);
     public bool HasError => !string.IsNullOrWhiteSpace(ErrorDetail);
 }

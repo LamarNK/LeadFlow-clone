@@ -52,6 +52,8 @@ public sealed class MonitoringCycleJournalSink(
         public int CollectedCount { get; set; }
         public int CaptchaCount { get; set; }
         public int CaptchaSolvedCount { get; set; }
+        public bool LoginAttempted { get; set; }
+        public bool LoginSucceeded { get; set; }
     }
 
     public Guid BeginCycle(Guid accountId, string accountName)
@@ -141,7 +143,9 @@ public sealed class MonitoringCycleJournalSink(
         int skippedDuplicateCount = 0,
         int collectedCount = 0,
         int captchaCount = 0,
-        int captchaSolvedCount = 0)
+        int captchaSolvedCount = 0,
+        bool loginAttempted = false,
+        bool loginSucceeded = false)
     {
         if (!_cycles.TryGetValue(cycleId, out var cycle)
             || !cycle.SubProfiles.TryGetValue(subProfileRunId, out var sub))
@@ -160,6 +164,8 @@ public sealed class MonitoringCycleJournalSink(
             collectedCount,
             captchaCount,
             captchaSolvedCount);
+        sub.LoginAttempted = loginAttempted;
+        sub.LoginSucceeded = loginSucceeded;
         cycle.Dirty = true;
         _ = MaybeFlushAsync();
     }
@@ -173,7 +179,9 @@ public sealed class MonitoringCycleJournalSink(
         int publishedCount = 0,
         int collectedCount = 0,
         int captchaCount = 0,
-        int captchaSolvedCount = 0)
+        int captchaSolvedCount = 0,
+        bool loginAttempted = false,
+        bool loginSucceeded = false)
     {
         if (!_cycles.TryGetValue(cycleId, out var cycle)
             || !cycle.SubProfiles.TryGetValue(subProfileRunId, out var sub))
@@ -194,6 +202,8 @@ public sealed class MonitoringCycleJournalSink(
             collectedCount,
             captchaCount,
             captchaSolvedCount);
+        sub.LoginAttempted = loginAttempted;
+        sub.LoginSucceeded = loginSucceeded;
         cycle.Dirty = true;
         _ = MaybeFlushAsync();
     }
@@ -403,7 +413,9 @@ public sealed class MonitoringCycleJournalSink(
                     s.SkippedDuplicateCount,
                     s.CollectedCount,
                     s.CaptchaCount,
-                    s.CaptchaSolvedCount))
+                    s.CaptchaSolvedCount,
+                    s.LoginAttempted,
+                    s.LoginSucceeded))
                 .ToList());
 
     private static void ApplyCounts(

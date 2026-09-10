@@ -54,12 +54,45 @@ public sealed partial class AdsPowerAvitoAutomationService(
     private const int MessengerEnrichmentViewportHeight = 900;
     private const int MessengerEnrichmentViewportResizeDelayMs = 800;
 
+    private static string BuildCandidateCollectionLogContext(
+        string adsPowerUserId,
+        CandidatesMessengerEnrichmentHints? hints) =>
+        $"AdsPower:{adsPowerUserId};account:{hints?.AccountId.ToString("D") ?? "none"};subprofile:{hints?.AvitoSubProfileId?.Trim() ?? "none"}";
+
+    private static void LogCandidatePipelineTiming(
+        string adsPowerUserId,
+        CandidatesMessengerEnrichmentHints? hints,
+        long navigationMs,
+        long prepareMs,
+        long extractMs,
+        long messengerMs,
+        long totalMs,
+        string memberName)
+    {
+        _ = GlobalLogger.Instance.LogAsync(
+            "Avito candidate collection timing completed.",
+            DeskLinkAuditLogLevel.Info,
+            memberName: memberName,
+            properties: new Dictionary<string, object?>
+            {
+                ["adsPower.userId"] = adsPowerUserId,
+                ["candidates.accountId"] = hints?.AccountId.ToString("D") ?? string.Empty,
+                ["candidates.subProfileId"] = hints?.AvitoSubProfileId?.Trim() ?? string.Empty,
+                ["candidates.pipeline.navigationMs"] = navigationMs,
+                ["candidates.pipeline.prepareMs"] = prepareMs,
+                ["candidates.pipeline.extractMs"] = extractMs,
+                ["candidates.pipeline.messengerMs"] = messengerMs,
+                ["candidates.pipeline.totalMs"] = totalMs
+            });
+    }
+
     public async Task<string> ExtractCandidatesJsonAsync(
         AdsPowerConnectionOptions options,
         string adsPowerUserId,
         CancellationToken cancellationToken = default,
         CandidatesMessengerEnrichmentHints? messengerEnrichmentHints = null)
     {
+        var pipelineSw = Stopwatch.StartNew();
         using var captchaScope = await UseProfileCaptchaContextAsync(options, adsPowerUserId, cancellationToken)
             .ConfigureAwait(false);
         var start = await adsPowerApiClient
@@ -99,11 +132,14 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 await HumanDelay.AfterItemsLingerAsync(cancellationToken).ConfigureAwait(false);
             }
 
+            var navigationSw = Stopwatch.StartNew();
             await EnsureOnCandidatesPageAsync(page, adsPowerUserId, cancellationToken).ConfigureAwait(false);
+            navigationSw.Stop();
 
+            var prepareSw = Stopwatch.StartNew();
             await AvitoCandidatesListPreparer.PrepareAsync(
                 executeScript,
-                $"AdsPower:{adsPowerUserId}",
+                BuildCandidateCollectionLogContext(adsPowerUserId, messengerEnrichmentHints),
                 cancellationToken,
                 async ct =>
                 {
@@ -126,15 +162,30 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 skipDetailEnrich: true,
                 CreateCaptchaSolveCallback(page),
                 messengerEnrichmentHints?.OpenPhoneWatches).ConfigureAwait(false);
+            prepareSw.Stop();
 
+            var extractSw = Stopwatch.StartNew();
             var raw = await EvaluateWithRetryAsync<string>(page, ExtractionScript, cancellationToken).ConfigureAwait(false);
             if (string.IsNullOrWhiteSpace(raw))
             {
                 throw new InvalidOperationException("AdsPower CDP: скрипт извлечения вернул пустой результат.");
             }
+            extractSw.Stop();
 
+            var messengerSw = Stopwatch.StartNew();
             raw = await TryEnrichCandidatesJsonMessengerUrlsAsync(page, raw, messengerEnrichmentHints, cancellationToken)
                 .ConfigureAwait(false);
+            messengerSw.Stop();
+            pipelineSw.Stop();
+            LogCandidatePipelineTiming(
+                adsPowerUserId,
+                messengerEnrichmentHints,
+                navigationSw.ElapsedMilliseconds,
+                prepareSw.ElapsedMilliseconds,
+                extractSw.ElapsedMilliseconds,
+                messengerSw.ElapsedMilliseconds,
+                pipelineSw.ElapsedMilliseconds,
+                nameof(ExtractCandidatesJsonAsync));
 
             _ = GlobalLogger.Instance.LogAsync(
                 "AdsPower CDP candidates extraction completed.",

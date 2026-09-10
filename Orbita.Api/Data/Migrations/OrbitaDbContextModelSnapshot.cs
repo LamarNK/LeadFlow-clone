@@ -1418,7 +1418,6 @@ namespace Orbita.Api.Data.Migrations
                     b.HasKey("Id");
                     b.HasIndex("EntryOfficeId", "EnteredCrmAtUtc");
 
-
                     b.HasIndex("ResponseId")
                         .IsUnique();
 
@@ -1480,7 +1479,6 @@ namespace Orbita.Api.Data.Migrations
 
                     b.HasKey("Id");
                     b.HasIndex("OfficeId", "CreatedAtUtc", "Action");
-
 
                     b.HasIndex("CardId", "CreatedAtUtc");
 
@@ -2433,6 +2431,12 @@ namespace Orbita.Api.Data.Migrations
 
                     b.Property<int>("FoundCount")
                         .HasColumnType("integer");
+
+                    b.Property<bool>("LoginAttempted")
+                        .HasColumnType("boolean");
+
+                    b.Property<bool>("LoginSucceeded")
+                        .HasColumnType("boolean");
 
                     b.Property<string>("Outcome")
                         .IsRequired()
