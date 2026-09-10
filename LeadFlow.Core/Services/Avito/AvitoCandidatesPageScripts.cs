@@ -652,6 +652,7 @@ public static class AvitoCandidatesPageScripts
                 return value;
             };
             const resolveMessengerUrl = (root) => {
+                if (!root) return "";
                 const attrCandidates = ["href", "data-href", "data-url", "data-to", "data-link", "data-state", "onclick"];
                 const fromAttributes = (element) => {
                     if (!element) return "";
@@ -722,14 +723,16 @@ public static class AvitoCandidatesPageScripts
                     phoneDigits: normalizePhoneKeyForSourceId(phone)
                 };
             };
-            const itemKey = (item) => [
+            // Empty/shrinking lists have no boundary card at the old index.
+            const itemKey = (item) => !item ? "" : [
                 normalizeCardText(item?.querySelector("h3, h4")?.textContent ?? ""),
                 normalizeUrl(item?.querySelector("[data-marker='job-application/link/to-resume']")?.getAttribute("href") ?? ""),
                 resolveMessengerUrl(item)
             ].join("\u001f");
             const boundary = window.__leadflowScrollBoundary;
             const domChanged = previousItemCount > 0 && (
-                !boundary
+                items.length < previousItemCount
+                || !boundary
                 || boundary.count !== previousItemCount
                 || boundary.firstKey !== itemKey(items[0])
                 || boundary.lastKey !== itemKey(items[previousItemCount - 1])
