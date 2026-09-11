@@ -235,6 +235,8 @@
             }
         } else if (key === 'accounts') {
             scripts = ['/js/orbita-accounts.js'];
+        } else if (key === 'balances') {
+            scripts = ['/js/orbita-balances.js'];
         } else if (key === 'statistics') {
             scripts = ['/lib/chart.js/dist/chart.umd.js', '/js/orbita-statistics.js'];
         } else if (key === 'events' || key === 'errors') {
