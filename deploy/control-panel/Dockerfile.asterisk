@@ -1,6 +1,10 @@
 FROM ubuntu:24.04
 
-RUN apt-get update \
+RUN sed -i \
+        -e 's|http://archive.ubuntu.com/ubuntu|http://mirror.yandex.ru/ubuntu|g' \
+        -e 's|http://security.ubuntu.com/ubuntu|http://mirror.yandex.ru/ubuntu|g' \
+        /etc/apt/sources.list.d/ubuntu.sources \
+    && apt-get update \
     && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         asterisk ca-certificates curl gettext-base tini \
     && rm -rf /var/lib/apt/lists/*
