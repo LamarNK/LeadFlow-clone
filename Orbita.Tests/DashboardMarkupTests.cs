@@ -52,6 +52,24 @@ public sealed class DashboardMarkupTests
     }
 
     [Fact]
+    public void ResponsesFilters_AllowMultipleWorkersAccountsAndCrmDestinations()
+    {
+        var view = ReadRepoFile("Orbita.Web/Views/Shared/_ResponsesFilterFields.cshtml");
+        var picker = ReadRepoFile("Orbita.Web/Views/Shared/_StatisticsMultiSelect.cshtml");
+
+        Assert.Contains("FieldName = \"workerIds\"", view);
+        Assert.Contains("FieldName = \"accountIds\"", view);
+        Assert.Contains("FieldName = \"bitrixDestination\"", view);
+        Assert.Contains("SelectedIds = Model.Filters.WorkerIds", view);
+        Assert.Contains("SelectedIds = Model.Filters.AccountIds", view);
+        Assert.Contains("SelectedValues = Model.Filters.BitrixDestinations", view);
+        Assert.DoesNotContain("name=\"workerId\"", view);
+        Assert.DoesNotContain("name=\"accountId\"", view);
+        Assert.Contains("data-statistics-multiselect", picker);
+        Assert.Contains("name=\"@Model.FieldName\"", picker);
+    }
+
+    [Fact]
     public void StatisticsFilters_AllowMultipleWorkersAndAccounts()
     {
         var filters = ReadRepoFile("Orbita.Web/Views/Shared/_StatisticsFilterFields.cshtml");

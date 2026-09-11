@@ -97,6 +97,7 @@
             '.orbita-filters-form input[type="search"], .workers-search input[type="search"], .accounts-search input[type="search"], [data-orbita-live-search]'
         ).forEach(function (input) {
             if (input.hasAttribute('data-orbita-debounce-bound')) return;
+            if (input.closest('[data-statistics-multiselect]')) return;
             input.setAttribute('data-orbita-debounce-bound', '1');
 
             var timer = null;

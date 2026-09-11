@@ -702,9 +702,7 @@
             '<input type="hidden" name="From" data-send-bitrix-from />' +
             '<input type="hidden" name="To" data-send-bitrix-to />' +
             '<input type="hidden" name="Status" data-send-bitrix-status />' +
-            '<input type="hidden" name="WorkerId" data-send-bitrix-worker-id />' +
-            '<input type="hidden" name="AccountId" data-send-bitrix-account-id />' +
-            '<input type="hidden" name="BitrixDestination" data-send-bitrix-destination />' +
+            '<div data-send-bitrix-filter-values></div>' +
             '<input type="hidden" name="Vacancy" data-send-bitrix-vacancy />' +
             '<input type="hidden" name="Search" data-send-bitrix-search />' +
             '<input type="hidden" name="Page" data-send-bitrix-page />' +
@@ -849,9 +847,6 @@
             ['from', 'From'],
             ['to', 'To'],
             ['status', 'Status'],
-            ['workerId', 'WorkerId'],
-            ['accountId', 'AccountId'],
-            ['bitrixDestination', 'BitrixDestination'],
             ['vacancy', 'Vacancy'],
             ['search', 'Search'],
             ['page', 'Page'],
@@ -861,6 +856,27 @@
         fields.forEach(function (pair) {
             var input = form.querySelector('[name="' + pair[1] + '"]');
             if (input) input.value = params.get(pair[0]) || '';
+        });
+
+        var valuesRoot = form.querySelector('[data-send-bitrix-filter-values]');
+        if (!valuesRoot) return;
+        valuesRoot.replaceChildren();
+        copyRepeatParams(params, valuesRoot, 'workerId', 'WorkerId');
+        copyRepeatParams(params, valuesRoot, 'workerIds', 'WorkerIds');
+        copyRepeatParams(params, valuesRoot, 'accountId', 'AccountId');
+        copyRepeatParams(params, valuesRoot, 'accountIds', 'AccountIds');
+        copyRepeatParams(params, valuesRoot, 'bitrixDestination', 'BitrixDestination');
+        copyRepeatParams(params, valuesRoot, 'bitrixDestinations', 'BitrixDestinations');
+    }
+
+    function copyRepeatParams(params, root, queryName, fieldName) {
+        params.getAll(queryName).forEach(function (value) {
+            if (!value) return;
+            var input = document.createElement('input');
+            input.type = 'hidden';
+            input.name = fieldName;
+            input.value = value;
+            root.appendChild(input);
         });
     }
 

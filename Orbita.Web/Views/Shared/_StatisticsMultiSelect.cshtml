@@ -1,9 +1,11 @@
 @model StatisticsMultiSelectViewModel
 @{
-    var selectedIds = Model.SelectedIds.ToHashSet();
-    var hasExplicitSelection = selectedIds.Count > 0;
+    var selectedValues = Model.SelectedValues.Count > 0
+        ? Model.SelectedValues.ToHashSet(StringComparer.OrdinalIgnoreCase)
+        : Model.SelectedIds.Select(id => id.ToString()).ToHashSet(StringComparer.OrdinalIgnoreCase);
+    var hasExplicitSelection = selectedValues.Count > 0;
     var selectedOptions = Model.Options
-        .Where(option => Guid.TryParse(option.Value, out var id) && selectedIds.Contains(id))
+        .Where(option => !string.IsNullOrWhiteSpace(option.Value) && selectedValues.Contains(option.Value))
         .ToList();
     var triggerText = selectedOptions.Count switch
     {
@@ -18,9 +20,9 @@
      data-statistics-field="@Model.FieldName"
      data-statistics-all-label="@Model.AllLabel">
     <div data-statistics-multiselect-values>
-        @foreach (var selectedId in Model.SelectedIds)
+        @foreach (var selectedValue in selectedValues)
         {
-            <input type="hidden" name="@Model.FieldName" value="@selectedId" />
+            <input type="hidden" name="@Model.FieldName" value="@selectedValue" />
         }
     </div>
     <button type="button"
@@ -45,10 +47,9 @@
                    aria-label="Поиск: @Model.Label" />
         </div>
         <div class="statistics-multiselect__options" role="group" aria-label="@Model.Label">
-            @foreach (var option in Model.Options)
+            @foreach (var option in Model.Options.Where(opt => !string.IsNullOrWhiteSpace(opt.Value)))
             {
-                var isSelected = !hasExplicitSelection
-                    || (Guid.TryParse(option.Value, out var optionId) && selectedIds.Contains(optionId));
+                var isSelected = !hasExplicitSelection || selectedValues.Contains(option.Value);
                 <label class="statistics-multiselect__option"
                        data-statistics-multiselect-option-row
                        data-statistics-search-text="@option.Label">

@@ -29,19 +29,25 @@ public sealed class ResponsesService(
         int? pageSize = null,
         string? sort = null,
         string? sortDir = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        IReadOnlyList<Guid>? workerIds = null,
+        IReadOnlyList<Guid>? accountIds = null,
+        IReadOnlyList<string>? bitrixDestinations = null)
     {
         page = Math.Max(1, page);
         pageSize = ListPageSizeDefaults.Normalize(pageSize, ListPageSizeDefaults.Responses);
         var period = DashboardPeriod.Parse(from, to, BrowserTimeZone.Resolve(httpContextAccessor.HttpContext));
         var tableSort = TableSort.Parse(sort, sortDir, TableSort.Responses.Default, TableSort.Responses.Columns);
         var normalizedStatus = ResponseStatusFilterValues.Normalize(status);
+        var selectedWorkerIds = ResponseCatalogFilterValues.MergeIds(workerIds, workerId);
+        var selectedAccountIds = ResponseCatalogFilterValues.MergeIds(accountIds, accountId);
+        var selectedDestinations = ResponseCatalogFilterValues.MergeValues(bitrixDestinations, bitrixDestination);
         var filters = new ResponsesFilterViewModel
         {
             Status = normalizedStatus,
-            WorkerId = workerId,
-            AccountId = accountId,
-            BitrixDestination = bitrixDestination,
+            WorkerIds = selectedWorkerIds,
+            AccountIds = selectedAccountIds,
+            BitrixDestinations = selectedDestinations,
             Gender = CandidateGenders.NormalizeFilterValue(gender),
             AgeFrom = NormalizeAgeFilter(ageFrom),
             AgeTo = NormalizeAgeFilter(ageTo),
@@ -62,9 +68,9 @@ public sealed class ResponsesService(
             normalizedStatus,
             search,
             vacancy,
-            workerId,
-            accountId,
-            bitrixDestination,
+            selectedWorkerIds,
+            selectedAccountIds,
+            selectedDestinations,
             filters.Gender,
             filters.AgeFrom,
             filters.AgeTo,
@@ -149,9 +155,10 @@ public sealed class ResponsesService(
                 summary,
                 period.From,
                 period.To,
-                workerId,
-                accountId,
-                period.TimeZoneOffsetMinutes),
+                selectedWorkerIds,
+                selectedAccountIds,
+                period.TimeZoneOffsetMinutes,
+                selectedDestinations),
             Statuses = ResponsesIndexBuilder.StatusOptions,
             Workers = workerOptions,
             Accounts = accountOptions,
@@ -383,9 +390,9 @@ public sealed class ResponsesService(
         string? status,
         string? search,
         string? vacancy,
-        Guid? workerId,
-        Guid? accountId,
-        string? bitrixDestination,
+        IReadOnlyList<Guid> workerIds,
+        IReadOnlyList<Guid> accountIds,
+        IReadOnlyList<string> bitrixDestinations,
         string? gender,
         int? ageFrom,
         int? ageTo,
@@ -429,20 +436,11 @@ public sealed class ResponsesService(
             parts.Add($"vacancy={Uri.EscapeDataString(vacancy)}");
         }
 
-        if (workerId is Guid wid)
-        {
-            parts.Add($"workerId={wid}");
-        }
+        parts.AddRange(workerIds.Select(id => $"workerIds={id}"));
+        parts.AddRange(accountIds.Select(id => $"accountIds={id}"));
 
-        if (accountId is Guid aid)
-        {
-            parts.Add($"accountId={aid}");
-        }
-
-        if (!string.IsNullOrWhiteSpace(bitrixDestination))
-        {
-            parts.Add($"bitrixDestination={Uri.EscapeDataString(bitrixDestination)}");
-        }
+        parts.AddRange(bitrixDestinations.Select(value =>
+            $"bitrixDestination={Uri.EscapeDataString(value)}"));
 
         if (!string.IsNullOrWhiteSpace(gender))
         {

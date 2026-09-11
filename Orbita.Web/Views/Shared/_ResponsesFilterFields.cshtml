@@ -1,22 +1,25 @@
 @model ResponsesIndexViewModel
 <div class="orbita-filters-fields responses-filters-row" id="responsesFilterPanel" data-orbita-collapsible-filters hidden>
-    <label class="responses-filter-field">
-        <span class="responses-filter-label">Воркер</span>
-        <select name="workerId" class="responses-select" aria-label="Воркер">
-            @foreach (var opt in Model.Workers)
-            {
-                <option value="@opt.Value" selected="@(opt.Value == (Model.Filters.WorkerId?.ToString() ?? ""))">@opt.Label</option>
-            }
-        </select>
-    </label>
-    <label class="responses-filter-field">
-        <span class="responses-filter-label">Аккаунт</span>
-        <partial name="_AccountCombobox" model="@(new AccountComboboxViewModel {
-            FieldName = "accountId",
-            SelectedValue = Model.Filters.AccountId?.ToString() ?? "",
-            Options = Model.Accounts
+    <div class="responses-filter-field">
+        <span class="responses-filter-label" id="responsesWorkerLabel">Воркер</span>
+        <partial name="_StatisticsMultiSelect" model="@(new StatisticsMultiSelectViewModel {
+            FieldName = "workerIds",
+            Label = "Воркеры",
+            AllLabel = "Все воркеры",
+            SelectedIds = Model.Filters.WorkerIds,
+            Options = Model.Workers.Where(opt => !string.IsNullOrWhiteSpace(opt.Value)).ToList()
         })" />
-    </label>
+    </div>
+    <div class="responses-filter-field">
+        <span class="responses-filter-label" id="responsesAccountLabel">Аккаунт</span>
+        <partial name="_StatisticsMultiSelect" model="@(new StatisticsMultiSelectViewModel {
+            FieldName = "accountIds",
+            Label = "Аккаунты",
+            AllLabel = "Все аккаунты",
+            SelectedIds = Model.Filters.AccountIds,
+            Options = Model.Accounts.Where(opt => !string.IsNullOrWhiteSpace(opt.Value)).ToList()
+        })" />
+    </div>
     <label class="responses-filter-field responses-filter-field--grow">
         <span class="responses-filter-label">Вакансия</span>
         <input type="search"
@@ -118,14 +121,15 @@
             </div>
         </div>
     </div>
-    <label class="responses-filter-field">
-        <span class="responses-filter-label">CRM</span>
-        <select name="bitrixDestination" class="responses-select" aria-label="Куда отправлен">
-            @foreach (var opt in Model.BitrixDestinations)
-            {
-                <option value="@opt.Value" selected="@(opt.Value == (Model.Filters.BitrixDestination ?? ""))">@opt.Label</option>
-            }
-        </select>
-    </label>
+    <div class="responses-filter-field">
+        <span class="responses-filter-label" id="responsesCrmLabel">CRM</span>
+        <partial name="_StatisticsMultiSelect" model="@(new StatisticsMultiSelectViewModel {
+            FieldName = "bitrixDestination",
+            Label = "CRM",
+            AllLabel = "Все",
+            SelectedValues = Model.Filters.BitrixDestinations,
+            Options = Model.BitrixDestinations.Where(opt => !string.IsNullOrWhiteSpace(opt.Value)).ToList()
+        })" />
+    </div>
     <partial name="_PageSizeFilterField" model="Model.Pagination.PageSize" />
 </div>

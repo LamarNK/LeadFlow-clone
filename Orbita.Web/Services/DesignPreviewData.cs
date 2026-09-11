@@ -4363,7 +4363,13 @@ internal static class DesignPreviewData
             Filters = filters,
             PeriodLabel = period.Label,
             ActivePeriodPreset = period.ActivePreset,
-            KpiCards = ResponsesIndexBuilder.BuildKpiCards(summary, period.From, period.To, filters.WorkerId, filters.AccountId),
+            KpiCards = ResponsesIndexBuilder.BuildKpiCards(
+                summary,
+                period.From,
+                period.To,
+                filters.WorkerIds,
+                filters.AccountIds,
+                bitrixDestinations: filters.BitrixDestinations),
             Statuses = ResponsesIndexBuilder.StatusOptions,
             Workers = BuildPreviewWorkerOptions(),
             Accounts = accountOptions,
@@ -4582,14 +4588,22 @@ internal static class DesignPreviewData
                     r.SourceResponseId));
         }
 
-        if (filters.WorkerId is Guid workerId)
+        if (filters.WorkerIds.Count > 0)
         {
-            query = query.Where(r => r.WorkerId == workerId);
+            var workerFilter = filters.WorkerIds.ToHashSet();
+            query = query.Where(r => workerFilter.Contains(r.WorkerId));
         }
 
-        if (filters.AccountId is Guid accountId)
+        if (filters.AccountIds.Count > 0)
         {
-            query = query.Where(r => r.AccountId == accountId);
+            var accountFilter = filters.AccountIds.ToHashSet();
+            query = query.Where(r => accountFilter.Contains(r.AccountId));
+        }
+
+        if (filters.BitrixDestinations.Count > 0)
+        {
+            var destinations = filters.BitrixDestinations.ToHashSet(StringComparer.OrdinalIgnoreCase);
+            query = query.Where(r => PreviewMatchesDestination(r, destinations));
         }
 
         var responseStatuses = ResponseStatusFilterValues.Parse(filters.Status)
@@ -4608,6 +4622,20 @@ internal static class DesignPreviewData
         query = query.Where(response => responseStatuses.Contains(response.Status));
 
         return query.ToList();
+    }
+
+    private static bool PreviewMatchesDestination(ResponseRowViewModel row, HashSet<string> destinations)
+    {
+        var isSent = string.Equals(row.Status, ResponseStatuses.Sent, StringComparison.Ordinal)
+            || row.BitrixDeliveries.Count > 0
+            || row.CrmDeliveries.Count > 0;
+        if (destinations.Contains("not_sent") && !isSent)
+        {
+            return true;
+        }
+
+        return destinations.Any(destination =>
+            !string.Equals(destination, "not_sent", StringComparison.OrdinalIgnoreCase) && isSent);
     }
 
     private static ResponseDetailViewModel? BuildPreviewResponseDetail(

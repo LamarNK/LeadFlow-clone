@@ -24,8 +24,14 @@ internal static class KpiCardLinks
         Guid? workerId = null,
         Guid? accountId = null,
         string? bitrixDestination = null,
-        int timeZoneOffsetMinutes = 0)
+        int timeZoneOffsetMinutes = 0,
+        IReadOnlyList<Guid>? workerIds = null,
+        IReadOnlyList<Guid>? accountIds = null,
+        IReadOnlyList<string>? bitrixDestinations = null)
     {
+        var workers = ResponseCatalogFilterValues.MergeIds(workerIds, workerId);
+        var accounts = ResponseCatalogFilterValues.MergeIds(accountIds, accountId);
+        var destinations = ResponseCatalogFilterValues.MergeValues(bitrixDestinations, bitrixDestination);
         var parts = new List<string>
         {
             $"from={from:yyyy-MM-dd}",
@@ -38,20 +44,26 @@ internal static class KpiCardLinks
             parts.Add($"status={Uri.EscapeDataString(status)}");
         }
 
-        if (workerId is Guid worker && worker != Guid.Empty)
+        if (workers.Count == 1)
         {
-            parts.Add($"workerId={worker}");
+            parts.Add($"workerId={workers[0]}");
+        }
+        else
+        {
+            parts.AddRange(workers.Select(id => $"workerIds={id}"));
         }
 
-        if (accountId is Guid account && account != Guid.Empty)
+        if (accounts.Count == 1)
         {
-            parts.Add($"accountId={account}");
+            parts.Add($"accountId={accounts[0]}");
+        }
+        else
+        {
+            parts.AddRange(accounts.Select(id => $"accountIds={id}"));
         }
 
-        if (!string.IsNullOrWhiteSpace(bitrixDestination))
-        {
-            parts.Add($"bitrixDestination={Uri.EscapeDataString(bitrixDestination)}");
-        }
+        parts.AddRange(destinations.Select(value =>
+            $"bitrixDestination={Uri.EscapeDataString(value)}"));
 
         return $"/Responses?{string.Join("&", parts)}";
     }
@@ -62,13 +74,16 @@ internal static class KpiCardLinks
         DateTime to,
         Guid? workerId = null,
         Guid? accountId = null,
-        int timeZoneOffsetMinutes = 0) => key switch
+        int timeZoneOffsetMinutes = 0,
+        IReadOnlyList<Guid>? workerIds = null,
+        IReadOnlyList<Guid>? accountIds = null,
+        IReadOnlyList<string>? bitrixDestinations = null) => key switch
     {
-        "total" => Responses(from, to, workerId: workerId, accountId: accountId, timeZoneOffsetMinutes: timeZoneOffsetMinutes),
-        "unique" => Responses(from, to, status: ResponseStatusFilterValues.DefaultSelection, workerId: workerId, accountId: accountId, timeZoneOffsetMinutes: timeZoneOffsetMinutes),
-        "duplicates" => Responses(from, to, status: "duplicate", workerId: workerId, accountId: accountId, timeZoneOffsetMinutes: timeZoneOffsetMinutes),
-        "sent" => Responses(from, to, status: "sent", workerId: workerId, accountId: accountId, timeZoneOffsetMinutes: timeZoneOffsetMinutes),
-        "unique_authors" => Responses(from, to, workerId: workerId, accountId: accountId, timeZoneOffsetMinutes: timeZoneOffsetMinutes),
+        "total" => Responses(from, to, workerId: workerId, accountId: accountId, timeZoneOffsetMinutes: timeZoneOffsetMinutes, workerIds: workerIds, accountIds: accountIds, bitrixDestinations: bitrixDestinations),
+        "unique" => Responses(from, to, status: ResponseStatusFilterValues.DefaultSelection, workerId: workerId, accountId: accountId, timeZoneOffsetMinutes: timeZoneOffsetMinutes, workerIds: workerIds, accountIds: accountIds, bitrixDestinations: bitrixDestinations),
+        "duplicates" => Responses(from, to, status: "duplicate", workerId: workerId, accountId: accountId, timeZoneOffsetMinutes: timeZoneOffsetMinutes, workerIds: workerIds, accountIds: accountIds, bitrixDestinations: bitrixDestinations),
+        "sent" => Responses(from, to, status: "sent", workerId: workerId, accountId: accountId, timeZoneOffsetMinutes: timeZoneOffsetMinutes, workerIds: workerIds, accountIds: accountIds, bitrixDestinations: bitrixDestinations),
+        "unique_authors" => Responses(from, to, workerId: workerId, accountId: accountId, timeZoneOffsetMinutes: timeZoneOffsetMinutes, workerIds: workerIds, accountIds: accountIds, bitrixDestinations: bitrixDestinations),
         _ => null
     };
 

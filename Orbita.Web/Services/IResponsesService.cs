@@ -22,7 +22,10 @@ public interface IResponsesService
         int? pageSize = null,
         string? sort = null,
         string? sortDir = null,
-        CancellationToken ct = default);
+        CancellationToken ct = default,
+        IReadOnlyList<Guid>? workerIds = null,
+        IReadOnlyList<Guid>? accountIds = null,
+        IReadOnlyList<string>? bitrixDestinations = null);
 
     Task<(bool Success, string? Error)> ResendToBitrixAsync(Guid id, CancellationToken ct = default);
 

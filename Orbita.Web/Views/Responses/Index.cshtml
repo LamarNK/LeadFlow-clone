@@ -6,41 +6,48 @@
     ViewData["Title"] = "Отклики";
     var formAction = Url.Action("Index", "Responses");
     var pagination = Model.Pagination;
-    var responsesSortRoute = new
+    var responsesSortRoute = new RouteValueDictionary
     {
-        from = Model.Filters.DateFrom.ToString("yyyy-MM-dd"),
-        to = Model.Filters.DateTo.ToString("yyyy-MM-dd"),
-        status = Model.Filters.Status,
-        workerId = Model.Filters.WorkerId,
-        accountId = Model.Filters.AccountId,
-        bitrixDestination = Model.Filters.BitrixDestination,
-        gender = Model.Filters.Gender,
-        ageFrom = Model.Filters.AgeFrom,
-        ageTo = Model.Filters.AgeTo,
-        vacancy = Model.Filters.VacancyQuery,
-        search = Model.Filters.SearchQuery,
-        pageSize = pagination.PageSize,
-        sort = Model.Sort.Column,
-        dir = Model.Sort.Dir
+        ["from"] = Model.Filters.DateFrom.ToString("yyyy-MM-dd"),
+        ["to"] = Model.Filters.DateTo.ToString("yyyy-MM-dd"),
+        ["status"] = Model.Filters.Status,
+        ["gender"] = Model.Filters.Gender,
+        ["ageFrom"] = Model.Filters.AgeFrom,
+        ["ageTo"] = Model.Filters.AgeTo,
+        ["vacancy"] = Model.Filters.VacancyQuery,
+        ["search"] = Model.Filters.SearchQuery,
+        ["pageSize"] = pagination.PageSize,
+        ["sort"] = Model.Sort.Column,
+        ["dir"] = Model.Sort.Dir
     };
-    var snapshotUrl = Url.Action("Snapshot", "Responses", new
+    if (Model.Filters.WorkerIds.Count == 1)
     {
-        responsesSortRoute.from,
-        responsesSortRoute.to,
-        responsesSortRoute.status,
-        responsesSortRoute.workerId,
-        responsesSortRoute.accountId,
-        responsesSortRoute.bitrixDestination,
-        responsesSortRoute.gender,
-        responsesSortRoute.ageFrom,
-        responsesSortRoute.ageTo,
-        responsesSortRoute.vacancy,
-        responsesSortRoute.search,
-        page = pagination.Page,
-        responsesSortRoute.pageSize,
-        responsesSortRoute.sort,
-        responsesSortRoute.dir
-    })!;
+        responsesSortRoute["workerId"] = Model.Filters.WorkerIds[0];
+    }
+    else if (Model.Filters.WorkerIds.Count > 1)
+    {
+        responsesSortRoute["workerIds"] = Model.Filters.WorkerIds;
+    }
+
+    if (Model.Filters.AccountIds.Count == 1)
+    {
+        responsesSortRoute["accountId"] = Model.Filters.AccountIds[0];
+    }
+    else if (Model.Filters.AccountIds.Count > 1)
+    {
+        responsesSortRoute["accountIds"] = Model.Filters.AccountIds;
+    }
+
+    if (Model.Filters.BitrixDestinations.Count == 1)
+    {
+        responsesSortRoute["bitrixDestination"] = Model.Filters.BitrixDestinations[0];
+    }
+    else if (Model.Filters.BitrixDestinations.Count > 1)
+    {
+        responsesSortRoute["bitrixDestination"] = Model.Filters.BitrixDestinations;
+    }
+    var snapshotRoute = new RouteValueDictionary(responsesSortRoute) { ["page"] = pagination.Page };
+    var snapshotUrl = Url.Action("Snapshot", "Responses", snapshotRoute)!;
 }
 <partial name="_PageHeader" model="Model.Header" />
 <div class="orbita-main responses-page"
@@ -89,6 +96,7 @@
             ResetUrl = formAction,
             FilterFieldsPartialName = "_ResponsesFilterFields",
             FilterFieldsModel = Model,
+            ShowApply = true,
             ExtraFormContent = $"<input type=\"hidden\" name=\"from\" value=\"{Model.Filters.DateFrom:yyyy-MM-dd}\" data-period-form-from /><input type=\"hidden\" name=\"to\" value=\"{Model.Filters.DateTo:yyyy-MM-dd}\" data-period-form-to /><input type=\"hidden\" name=\"sort\" value=\"{Model.Sort.Column}\" /><input type=\"hidden\" name=\"dir\" value=\"{Model.Sort.Dir}\" />"
         };
     }

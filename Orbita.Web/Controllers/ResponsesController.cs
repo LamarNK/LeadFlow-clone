@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Routing;
 using Orbita.Contracts;
 using Orbita.Web.Helpers;
 using Orbita.Web.Models.ViewModels;
@@ -25,8 +26,10 @@ public sealed class ResponsesController(IResponsesService responses) : Controlle
         string? to,
         string? status,
         Guid? workerId,
+        Guid[]? workerIds,
         Guid? accountId,
-        string? bitrixDestination,
+        Guid[]? accountIds,
+        string[]? bitrixDestination,
         string? gender,
         int? ageFrom,
         int? ageTo,
@@ -39,7 +42,7 @@ public sealed class ResponsesController(IResponsesService responses) : Controlle
         CancellationToken ct = default)
     {
         var model = await responses.GetIndexAsync(
-            from, to, status, workerId, accountId, bitrixDestination, gender, ageFrom, ageTo, vacancy, search, selectedId: null, page, pageSize, sort, dir, ct);
+            from, to, status, workerId, accountId, bitrixDestination: null, gender, ageFrom, ageTo, vacancy, search, selectedId: null, page, pageSize, sort, dir, ct, workerIds, accountIds, bitrixDestination);
 
         return Json(new ResponsesLiveSnapshotViewModel
         {
@@ -100,8 +103,10 @@ public sealed class ResponsesController(IResponsesService responses) : Controlle
         string? to,
         string? status,
         Guid? workerId,
+        Guid[]? workerIds,
         Guid? accountId,
-        string? bitrixDestination,
+        Guid[]? accountIds,
+        string[]? bitrixDestination,
         string? gender,
         int? ageFrom,
         int? ageTo,
@@ -115,7 +120,7 @@ public sealed class ResponsesController(IResponsesService responses) : Controlle
         CancellationToken ct = default)
     {
         var model = await responses.GetIndexAsync(
-            from, to, status, workerId, accountId, bitrixDestination, gender, ageFrom, ageTo, vacancy, search, id, page, pageSize, sort, dir, ct);
+            from, to, status, workerId, accountId, bitrixDestination: null, gender, ageFrom, ageTo, vacancy, search, id, page, pageSize, sort, dir, ct, workerIds, accountIds, bitrixDestination);
         return View(model);
     }
 
@@ -255,24 +260,7 @@ public sealed class ResponsesController(IResponsesService responses) : Controlle
         if (model.Id == Guid.Empty || model.BitrixInstanceId == Guid.Empty)
         {
             TempData["ResponsesError"] = "Укажите отклик и Битрикс для отправки.";
-            return RedirectToAction(nameof(Index), new
-            {
-                model.From,
-                model.To,
-                status = model.Status,
-                workerId = model.WorkerId,
-                accountId = model.AccountId,
-                bitrixDestination = model.BitrixDestination,
-                gender = model.Gender,
-                ageFrom = model.AgeFrom,
-                ageTo = model.AgeTo,
-                vacancy = model.Vacancy,
-                search = model.Search,
-                page = model.Page,
-                id = model.Id == Guid.Empty ? (Guid?)null : model.Id,
-                sort = model.Sort,
-                dir = model.Dir
-            });
+            return RedirectToAction(nameof(Index), BuildSendRedirect(model, includeEmptyId: true));
         }
 
         var (success, error) = await responses.SendToBitrixAsync(model.Id, model.BitrixInstanceId, ct);
@@ -281,44 +269,53 @@ public sealed class ResponsesController(IResponsesService responses) : Controlle
             TempData["ResponsesError"] = error;
         }
 
-        return RedirectToAction(nameof(Index), new
-        {
-            model.From,
-            model.To,
-            status = model.Status,
-            workerId = model.WorkerId,
-            accountId = model.AccountId,
-            bitrixDestination = model.BitrixDestination,
-            gender = model.Gender,
-            ageFrom = model.AgeFrom,
-            ageTo = model.AgeTo,
-            vacancy = model.Vacancy,
-            search = model.Search,
-            page = model.Page,
-            id = model.Id,
-            sort = model.Sort,
-            dir = model.Dir
-        });
+        return RedirectToAction(nameof(Index), BuildSendRedirect(model, includeEmptyId: false));
     }
 
-    private static object BuildRedirect(DeliverResponseFormModel model) => new
+    private static RouteValueDictionary BuildSendRedirect(SendResponseToBitrixFormModel model, bool includeEmptyId)
     {
-        model.From,
-        model.To,
-        status = model.Status,
-        workerId = model.WorkerId,
-        accountId = model.AccountId,
-        bitrixDestination = model.BitrixDestination,
-        gender = model.Gender,
-        ageFrom = model.AgeFrom,
-        ageTo = model.AgeTo,
-        vacancy = model.Vacancy,
-        search = model.Search,
-        page = model.Page,
-        id = model.Id == Guid.Empty ? (Guid?)null : model.Id,
-        sort = model.Sort,
-        dir = model.Dir
-    };
+        var id = includeEmptyId && model.Id == Guid.Empty ? (Guid?)null : model.Id;
+        return BuildFilterRedirect(
+            model.From,
+            model.To,
+            model.Status,
+            model.WorkerId,
+            model.WorkerIds,
+            model.AccountId,
+            model.AccountIds,
+            model.BitrixDestination,
+            model.BitrixDestinations,
+            model.Gender,
+            model.AgeFrom,
+            model.AgeTo,
+            model.Vacancy,
+            model.Search,
+            model.Page,
+            id,
+            model.Sort,
+            model.Dir);
+    }
+
+    private static RouteValueDictionary BuildRedirect(DeliverResponseFormModel model) =>
+        BuildFilterRedirect(
+            model.From,
+            model.To,
+            model.Status,
+            model.WorkerId,
+            model.WorkerIds,
+            model.AccountId,
+            model.AccountIds,
+            model.BitrixDestination,
+            model.BitrixDestinations,
+            model.Gender,
+            model.AgeFrom,
+            model.AgeTo,
+            model.Vacancy,
+            model.Search,
+            model.Page,
+            model.Id == Guid.Empty ? null : model.Id,
+            model.Sort,
+            model.Dir);
 
     [HttpPost]
     [ValidateAntiForgeryToken]
@@ -328,8 +325,10 @@ public sealed class ResponsesController(IResponsesService responses) : Controlle
         string? to,
         string? status,
         Guid? workerId,
+        Guid[]? workerIds,
         Guid? accountId,
-        string? bitrixDestination,
+        Guid[]? accountIds,
+        string[]? bitrixDestination,
         string? gender,
         int? ageFrom,
         int? ageTo,
@@ -346,14 +345,16 @@ public sealed class ResponsesController(IResponsesService responses) : Controlle
             TempData["ResponsesError"] = error;
         }
 
-        return RedirectToAction(nameof(Index), new
-        {
+        return RedirectToAction(nameof(Index), BuildFilterRedirect(
             from,
             to,
             status,
             workerId,
+            workerIds,
             accountId,
-            bitrixDestination,
+            accountIds,
+            bitrixDestination: null,
+            bitrixDestinations: bitrixDestination,
             gender,
             ageFrom,
             ageTo,
@@ -362,7 +363,75 @@ public sealed class ResponsesController(IResponsesService responses) : Controlle
             page,
             id,
             sort,
-            dir
-        });
+            dir));
+    }
+
+    private static RouteValueDictionary BuildFilterRedirect(
+        string? from,
+        string? to,
+        string? status,
+        Guid? workerId,
+        IReadOnlyList<Guid>? workerIds,
+        Guid? accountId,
+        IReadOnlyList<Guid>? accountIds,
+        string? bitrixDestination,
+        IReadOnlyList<string>? bitrixDestinations,
+        string? gender,
+        int? ageFrom,
+        int? ageTo,
+        string? vacancy,
+        string? search,
+        int page,
+        Guid? id,
+        string? sort,
+        string? dir)
+    {
+        var workers = ResponseCatalogFilterValues.MergeIds(workerIds, workerId);
+        var accounts = ResponseCatalogFilterValues.MergeIds(accountIds, accountId);
+        var destinations = ResponseCatalogFilterValues.MergeValues(bitrixDestinations, bitrixDestination);
+        var route = new RouteValueDictionary
+        {
+            ["from"] = from,
+            ["to"] = to,
+            ["status"] = status,
+            ["gender"] = gender,
+            ["ageFrom"] = ageFrom,
+            ["ageTo"] = ageTo,
+            ["vacancy"] = vacancy,
+            ["search"] = search,
+            ["page"] = page,
+            ["id"] = id,
+            ["sort"] = sort,
+            ["dir"] = dir
+        };
+
+        if (workers.Count == 1)
+        {
+            route["workerId"] = workers[0];
+        }
+        else if (workers.Count > 1)
+        {
+            route["workerIds"] = workers;
+        }
+
+        if (accounts.Count == 1)
+        {
+            route["accountId"] = accounts[0];
+        }
+        else if (accounts.Count > 1)
+        {
+            route["accountIds"] = accounts;
+        }
+
+        if (destinations.Count == 1)
+        {
+            route["bitrixDestination"] = destinations[0];
+        }
+        else if (destinations.Count > 1)
+        {
+            route["bitrixDestination"] = destinations;
+        }
+
+        return route;
     }
 }

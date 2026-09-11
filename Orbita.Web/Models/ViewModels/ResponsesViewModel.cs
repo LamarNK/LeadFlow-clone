@@ -37,9 +37,12 @@ public sealed class ResponsesIndexViewModel
 public sealed record ResponsesFilterViewModel
 {
     public string? Status { get; init; }
-    public Guid? WorkerId { get; init; }
-    public Guid? AccountId { get; init; }
-    public string? BitrixDestination { get; init; }
+    public IReadOnlyList<Guid> WorkerIds { get; init; } = [];
+    public IReadOnlyList<Guid> AccountIds { get; init; } = [];
+    public IReadOnlyList<string> BitrixDestinations { get; init; } = [];
+    public Guid? WorkerId => WorkerIds.Count == 1 ? WorkerIds[0] : null;
+    public Guid? AccountId => AccountIds.Count == 1 ? AccountIds[0] : null;
+    public string? BitrixDestination => BitrixDestinations.Count == 1 ? BitrixDestinations[0] : null;
     public string? Gender { get; init; }
     public int? AgeFrom { get; init; }
     public int? AgeTo { get; init; }
@@ -213,8 +216,11 @@ public sealed class SendResponseToBitrixFormModel
     public string? To { get; set; }
     public string? Status { get; set; }
     public Guid? WorkerId { get; set; }
+    public List<Guid> WorkerIds { get; set; } = [];
     public Guid? AccountId { get; set; }
+    public List<Guid> AccountIds { get; set; } = [];
     public string? BitrixDestination { get; set; }
+    public List<string> BitrixDestinations { get; set; } = [];
     public string? Gender { get; set; }
     public int? AgeFrom { get; set; }
     public int? AgeTo { get; set; }
@@ -238,8 +244,11 @@ public sealed class DeliverResponseFormModel
     public string? To { get; set; }
     public string? Status { get; set; }
     public Guid? WorkerId { get; set; }
+    public List<Guid> WorkerIds { get; set; } = [];
     public Guid? AccountId { get; set; }
+    public List<Guid> AccountIds { get; set; } = [];
     public string? BitrixDestination { get; set; }
+    public List<string> BitrixDestinations { get; set; } = [];
     public string? Gender { get; set; }
     public int? AgeFrom { get; set; }
     public int? AgeTo { get; set; }

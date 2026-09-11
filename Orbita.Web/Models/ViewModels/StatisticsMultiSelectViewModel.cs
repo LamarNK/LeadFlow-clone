@@ -6,5 +6,6 @@ public sealed class StatisticsMultiSelectViewModel
     public string Label { get; init; } = string.Empty;
     public string AllLabel { get; init; } = string.Empty;
     public IReadOnlyList<Guid> SelectedIds { get; init; } = [];
+    public IReadOnlyList<string> SelectedValues { get; init; } = [];
     public IReadOnlyList<EventFilterOptionViewModel> Options { get; init; } = [];
 }

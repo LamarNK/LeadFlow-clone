@@ -22,19 +22,22 @@ internal static class ResponsesIndexBuilder
         ResponsesSummaryDto summary,
         DateTime from,
         DateTime to,
-        Guid? workerId = null,
-        Guid? accountId = null,
-        int timeZoneOffsetMinutes = 0)
+        IReadOnlyList<Guid>? workerIds = null,
+        IReadOnlyList<Guid>? accountIds = null,
+        int timeZoneOffsetMinutes = 0,
+        IReadOnlyList<string>? bitrixDestinations = null)
     {
         var total = Math.Max(1, summary.Total);
-        string Pct(int value) => $"{value * 100.0 / total:0.#}%";
+        var duplicateShareBase = Math.Max(1, Math.Max(summary.Total, summary.Duplicates));
+        string Pct(int value, int? denominator = null) =>
+            $"{value * 100.0 / Math.Max(1, denominator ?? total):0.#}%";
 
         return
         [
             new()
             {
                 Key = "total",
-                Href = KpiCardLinks.ResponsesCard("total", from, to, workerId, accountId, timeZoneOffsetMinutes),
+                Href = KpiCardLinks.ResponsesCard("total", from, to, timeZoneOffsetMinutes: timeZoneOffsetMinutes, workerIds: workerIds, accountIds: accountIds, bitrixDestinations: bitrixDestinations),
                 Label = "Всего откликов",
                 Value = summary.Total.ToString(),
                 CountValue = summary.Total,
@@ -46,7 +49,7 @@ internal static class ResponsesIndexBuilder
             new()
             {
                 Key = "unique",
-                Href = KpiCardLinks.ResponsesCard("unique", from, to, workerId, accountId, timeZoneOffsetMinutes),
+                Href = KpiCardLinks.ResponsesCard("unique", from, to, timeZoneOffsetMinutes: timeZoneOffsetMinutes, workerIds: workerIds, accountIds: accountIds, bitrixDestinations: bitrixDestinations),
                 Label = "Уникальных",
                 Value = summary.Unique.ToString(),
                 CountValue = summary.Unique,
@@ -58,11 +61,11 @@ internal static class ResponsesIndexBuilder
             new()
             {
                 Key = "duplicates",
-                Href = KpiCardLinks.ResponsesCard("duplicates", from, to, workerId, accountId, timeZoneOffsetMinutes),
+                Href = KpiCardLinks.ResponsesCard("duplicates", from, to, timeZoneOffsetMinutes: timeZoneOffsetMinutes, workerIds: workerIds, accountIds: accountIds, bitrixDestinations: bitrixDestinations),
                 Label = "Дублей",
                 Value = summary.Duplicates.ToString(),
                 CountValue = summary.Duplicates,
-                Delta = Pct(summary.Duplicates),
+                Delta = Pct(summary.Duplicates, duplicateShareBase),
                 DeltaTone = "neutral",
                 IconClass = "fa-solid fa-clone",
                 IconTone = "orange"
@@ -70,7 +73,7 @@ internal static class ResponsesIndexBuilder
             new()
             {
                 Key = "sent",
-                Href = KpiCardLinks.ResponsesCard("sent", from, to, workerId, accountId, timeZoneOffsetMinutes),
+                Href = KpiCardLinks.ResponsesCard("sent", from, to, timeZoneOffsetMinutes: timeZoneOffsetMinutes, workerIds: workerIds, accountIds: accountIds, bitrixDestinations: bitrixDestinations),
                 Label = "Отправленные",
                 Value = summary.Sent.ToString(),
                 CountValue = summary.Sent,
@@ -82,7 +85,7 @@ internal static class ResponsesIndexBuilder
             new()
             {
                 Key = "unique_authors",
-                Href = KpiCardLinks.ResponsesCard("unique_authors", from, to, workerId, accountId, timeZoneOffsetMinutes),
+                Href = KpiCardLinks.ResponsesCard("unique_authors", from, to, timeZoneOffsetMinutes: timeZoneOffsetMinutes, workerIds: workerIds, accountIds: accountIds, bitrixDestinations: bitrixDestinations),
                 Label = "Уникальных авторов",
                 Value = summary.UniqueAuthors.ToString(),
                 CountValue = summary.UniqueAuthors,
@@ -563,9 +566,9 @@ internal static class ResponsesIndexBuilder
 
     public static bool HasActiveFilters(ResponsesFilterViewModel filters, DashboardPeriod period) =>
         !ResponseStatusFilterValues.IsDefault(filters.Status)
-        || filters.WorkerId.HasValue
-        || filters.AccountId.HasValue
-        || !string.IsNullOrWhiteSpace(filters.BitrixDestination)
+        || filters.WorkerIds.Count > 0
+        || filters.AccountIds.Count > 0
+        || filters.BitrixDestinations.Count > 0
         || !string.IsNullOrWhiteSpace(filters.Gender)
         || filters.AgeFrom.HasValue
         || filters.AgeTo.HasValue

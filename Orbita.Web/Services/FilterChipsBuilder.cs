@@ -236,34 +236,99 @@ internal static class FilterChipsBuilder
         return chips;
     }
 
-    private static (string Key, string? Value)[] ResponsesFilterPairs(
+    private static List<(string Key, string? Value)> ResponsesFilterPairs(
         ResponsesFilterViewModel filters,
         DashboardPeriod period,
         params (string Key, string? Value)[] overrides)
     {
-        var pairs = new Dictionary<string, string?>(StringComparer.OrdinalIgnoreCase)
+        var pairs = new List<(string Key, string? Value)>
         {
-            ["from"] = period.FromIso,
-            ["to"] = period.ToIso,
-            ["tz"] = period.TimeZoneOffsetMinutes.ToString(),
-            ["status"] = ResponseStatusFilterValues.IsDefault(filters.Status) ? null : filters.Status,
-            ["workerId"] = filters.WorkerId?.ToString(),
-            ["accountId"] = filters.AccountId?.ToString(),
-            ["bitrixDestination"] = filters.BitrixDestination,
-            ["gender"] = filters.Gender,
-            ["ageFrom"] = filters.AgeFrom?.ToString(),
-            ["ageTo"] = filters.AgeTo?.ToString(),
-            ["vacancy"] = filters.VacancyQuery,
-            ["search"] = filters.SearchQuery,
-            ["page"] = "1"
+            ("from", period.FromIso),
+            ("to", period.ToIso),
+            ("tz", period.TimeZoneOffsetMinutes.ToString()),
+            ("status", ResponseStatusFilterValues.IsDefault(filters.Status) ? null : filters.Status),
+            ("gender", filters.Gender),
+            ("ageFrom", filters.AgeFrom?.ToString()),
+            ("ageTo", filters.AgeTo?.ToString()),
+            ("vacancy", filters.VacancyQuery),
+            ("search", filters.SearchQuery),
+            ("page", "1")
         };
+
+        if (filters.WorkerIds.Count == 1)
+        {
+            pairs.Add(("workerId", filters.WorkerIds[0].ToString()));
+        }
+        else
+        {
+            pairs.AddRange(filters.WorkerIds.Select(id => ("workerIds", (string?)id.ToString())));
+        }
+
+        if (filters.AccountIds.Count == 1)
+        {
+            pairs.Add(("accountId", filters.AccountIds[0].ToString()));
+        }
+        else
+        {
+            pairs.AddRange(filters.AccountIds.Select(id => ("accountIds", (string?)id.ToString())));
+        }
+
+        pairs.AddRange(filters.BitrixDestinations.Select(value => ("bitrixDestination", (string?)value)));
 
         foreach (var (key, value) in overrides)
         {
-            pairs[key] = value;
+            if (string.Equals(key, "workerId", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(key, "workerIds", StringComparison.OrdinalIgnoreCase))
+            {
+                pairs.RemoveAll(pair =>
+                    string.Equals(pair.Key, "workerId", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(pair.Key, "workerIds", StringComparison.OrdinalIgnoreCase));
+                if (value is not null)
+                {
+                    pairs.Add((key, value));
+                }
+
+                continue;
+            }
+
+            if (string.Equals(key, "accountId", StringComparison.OrdinalIgnoreCase)
+                || string.Equals(key, "accountIds", StringComparison.OrdinalIgnoreCase))
+            {
+                pairs.RemoveAll(pair =>
+                    string.Equals(pair.Key, "accountId", StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(pair.Key, "accountIds", StringComparison.OrdinalIgnoreCase));
+                if (value is not null)
+                {
+                    pairs.Add((key, value));
+                }
+
+                continue;
+            }
+
+            if (string.Equals(key, "bitrixDestination", StringComparison.OrdinalIgnoreCase))
+            {
+                pairs.RemoveAll(pair =>
+                    string.Equals(pair.Key, "bitrixDestination", StringComparison.OrdinalIgnoreCase));
+                if (value is not null)
+                {
+                    pairs.Add((key, value));
+                }
+
+                continue;
+            }
+
+            var index = pairs.FindIndex(pair => string.Equals(pair.Key, key, StringComparison.OrdinalIgnoreCase));
+            if (index >= 0)
+            {
+                pairs[index] = (key, value);
+            }
+            else
+            {
+                pairs.Add((key, value));
+            }
         }
 
-        return pairs.Select(p => (p.Key, p.Value)).ToArray();
+        return pairs;
     }
 
     public static IReadOnlyList<ActiveFilterChipViewModel> ForResponses(
@@ -334,37 +399,52 @@ internal static class FilterChipsBuilder
             });
         }
 
-        if (filters.WorkerId is Guid workerId)
+        if (filters.WorkerIds.Count > 0)
         {
+            var workerLabels = filters.WorkerIds
+                .Select(id => OptionLabel(workers, id.ToString()) ?? id.ToString()[..8])
+                .ToList();
             chips.Add(new ActiveFilterChipViewModel
             {
-                Label = $"Воркер: {OptionLabel(workers, workerId.ToString()) ?? workerId.ToString()[..8]}",
+                Label = workerLabels.Count == 1
+                    ? $"Воркер: {workerLabels[0]}"
+                    : $"Воркеры: {string.Join(", ", workerLabels)}",
                 RemoveUrl = BuildListUrl(
                     path,
                     pageSize,
                     ListPageSizeDefaults.Responses,
-                    ResponsesFilterPairs(filters, period, ("workerId", null)))
+                    ResponsesFilterPairs(filters, period, ("workerIds", null)))
             });
         }
 
-        if (filters.AccountId is Guid accountId)
+        if (filters.AccountIds.Count > 0)
         {
+            var accountLabels = filters.AccountIds
+                .Select(id => OptionLabel(accounts, id.ToString()) ?? id.ToString()[..8])
+                .ToList();
             chips.Add(new ActiveFilterChipViewModel
             {
-                Label = $"Аккаунт: {OptionLabel(accounts, accountId.ToString()) ?? accountId.ToString()[..8]}",
+                Label = accountLabels.Count == 1
+                    ? $"Аккаунт: {accountLabels[0]}"
+                    : $"Аккаунты: {string.Join(", ", accountLabels)}",
                 RemoveUrl = BuildListUrl(
                     path,
                     pageSize,
                     ListPageSizeDefaults.Responses,
-                    ResponsesFilterPairs(filters, period, ("accountId", null)))
+                    ResponsesFilterPairs(filters, period, ("accountIds", null)))
             });
         }
 
-        if (!string.IsNullOrWhiteSpace(filters.BitrixDestination))
+        if (filters.BitrixDestinations.Count > 0)
         {
+            var destinationLabels = filters.BitrixDestinations
+                .Select(value => OptionLabel(bitrixDestinations, value) ?? value)
+                .ToList();
             chips.Add(new ActiveFilterChipViewModel
             {
-                Label = $"CRM: {OptionLabel(bitrixDestinations, filters.BitrixDestination) ?? filters.BitrixDestination}",
+                Label = destinationLabels.Count == 1
+                    ? $"CRM: {destinationLabels[0]}"
+                    : $"CRM: {string.Join(", ", destinationLabels)}",
                 RemoveUrl = BuildListUrl(
                     path,
                     pageSize,
