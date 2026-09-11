@@ -104,6 +104,47 @@
         sync();
     }
 
+    var pollTimer = null;
+
+    function statusLabel(status) {
+        return ({
+            requested: 'В очереди',
+            started: 'В работе',
+            payment_claimed: 'В работе',
+            qr_ready: 'QR готов',
+            awaiting_balance: 'Ожидает баланс',
+            completed: 'Подтверждено',
+            verification_required: 'Требует проверки',
+            failed: 'Ошибка',
+            expired: 'Истекло',
+            cancelled: 'Отменено'
+        })[status] || status || 'Низкий баланс';
+    }
+
+    function isLiveStatus(status) {
+        return status === 'requested'
+            || status === 'started'
+            || status === 'payment_claimed'
+            || status === 'awaiting_balance';
+    }
+
+    function belongsToTab(tab, status) {
+        if (!status) return tab === 'low' || tab === 'all' || !tab;
+        if (tab === 'all') return true;
+        if (tab === 'queue') return status === 'requested' || status === 'started';
+        if (tab === 'working') return status === 'payment_claimed' || status === 'qr_ready';
+        if (tab === 'awaiting') return status === 'awaiting_balance' || status === 'verification_required';
+        if (tab === 'history') return true;
+        return false;
+    }
+
+    function stopStatusPoll() {
+        if (pollTimer) {
+            window.clearInterval(pollTimer);
+            pollTimer = null;
+        }
+    }
+
     function token() {
         var meta = document.querySelector('meta[name="orbita-antiforgery-token"]');
         return meta ? meta.content : '';
@@ -132,7 +173,10 @@
         var page = document.querySelector('[data-balances-page]');
         if (!page) return;
         initKpiCounters();
-        if (page.getAttribute('data-balances-bound') === '1') return;
+        if (page.getAttribute('data-balances-bound') === '1') {
+            startStatusPoll(page);
+            return;
+        }
         page.setAttribute('data-balances-bound', '1');
 
         function selected() {
@@ -144,6 +188,10 @@
             var button = page.querySelector('[data-balances-batch]');
             if (label) label.textContent = count + ' выбрано';
             if (button) button.disabled = count === 0;
+            page.querySelectorAll('[data-balance-row]').forEach(function (row) {
+                var box = row.querySelector('[data-balance-select]');
+                row.classList.toggle('is-selected', !!(box && box.checked));
+            });
         }
         function selectQr(button) {
             page.querySelectorAll('[data-qr-select]').forEach(function (item) { item.classList.toggle('is-active', item === button); });
@@ -210,14 +258,101 @@
             if (qrPaid && qrPaid.dataset.sessionId) {
                 post(page.dataset.markPaidUrl + '?sessionId=' + encodeURIComponent(qrPaid.dataset.sessionId), new URLSearchParams())
                     .then(function () { location.reload(); }).catch(function (error) { alert(error.message); });
+                return;
             }
+            var row = event.target.closest('[data-balance-row]');
+            if (!row || event.target.closest('button, a, input, label')) return;
+            var box = row.querySelector('[data-balance-select]');
+            if (!box || box.disabled) return;
+            box.checked = !box.checked;
+            updateBulk();
         });
         var firstQr = page.querySelector('[data-qr-select]');
         if (firstQr) selectQr(firstQr);
         initWorkerFilter();
         updateBulk();
+        startStatusPoll(page);
+    }
+
+    function rowKey(workerId, accountId, subProfileId) {
+        return String(workerId || '').toLowerCase() + '|' + String(accountId || '').toLowerCase() + '|' + String(subProfileId || '');
+    }
+
+    function sessionField(session, camel, pascal) {
+        if (!session) return '';
+        return session[camel] || session[pascal] || '';
+    }
+
+    function applyStatus(rowEl, session) {
+        var badge = rowEl.querySelector('[data-balance-status] .balance-status');
+        var detail = rowEl.querySelector('[data-balance-status-detail]');
+        var status = sessionField(session, 'status', 'Status');
+        var text = sessionField(session, 'progressMessage', 'ProgressMessage')
+            || sessionField(session, 'failureMessage', 'FailureMessage');
+        rowEl.dataset.sessionId = sessionField(session, 'id', 'Id');
+        rowEl.dataset.sessionStatus = status;
+        if (badge) {
+            badge.className = 'balance-status balance-status--' + (status || 'low');
+            badge.textContent = status ? statusLabel(status) : 'Низкий баланс';
+        }
+        if (detail) {
+            detail.textContent = text;
+            if (text) detail.removeAttribute('hidden');
+            else detail.setAttribute('hidden', '');
+        }
+    }
+
+    function startStatusPoll(page) {
+        stopStatusPoll();
+        var snapshotUrl = page.dataset.snapshotUrl;
+        if (!snapshotUrl) return;
+        var hasLive = Array.from(page.querySelectorAll('[data-session-status]')).some(function (row) {
+            return isLiveStatus(row.dataset.sessionStatus);
+        });
+        if (!hasLive) return;
+
+        pollTimer = window.setInterval(function () {
+            if (!document.contains(page)) {
+                stopStatusPoll();
+                return;
+            }
+            fetch(snapshotUrl, { credentials: 'same-origin', headers: { 'Accept': 'application/json' } })
+                .then(function (response) { return response.ok ? response.json() : null; })
+                .then(function (data) {
+                    var rows = data.rows || data.Rows;
+                    if (!data || !Array.isArray(rows)) return;
+                    var tab = page.dataset.balancesTab || 'low';
+                    var byKey = {};
+                    rows.forEach(function (row) {
+                        byKey[rowKey(row.workerId || row.WorkerId, row.accountId || row.AccountId, row.subProfileId || row.SubProfileId)] = row;
+                    });
+                    var shouldReload = false;
+                    page.querySelectorAll('[data-balance-row]').forEach(function (rowEl) {
+                        var next = byKey[rowKey(rowEl.dataset.workerId, rowEl.dataset.accountId, rowEl.dataset.subprofileId)];
+                        var previous = rowEl.dataset.sessionStatus || '';
+                        var session = next && (next.session || next.Session);
+                        var nextStatus = sessionField(session, 'status', 'Status');
+                        if (previous && nextStatus && previous !== nextStatus && !belongsToTab(tab, nextStatus)) {
+                            shouldReload = true;
+                        }
+                        var sessionId = sessionField(session, 'id', 'Id');
+                        if (nextStatus === 'qr_ready' && previous !== 'qr_ready' && !page.querySelector('[data-qr-select="' + sessionId + '"]')) {
+                            shouldReload = true;
+                        }
+                        applyStatus(rowEl, session);
+                    });
+                    if (shouldReload) {
+                        stopStatusPoll();
+                        location.reload();
+                    }
+                })
+                .catch(function () { });
+        }, 2000);
     }
 
     initPage();
-    document.addEventListener('orbita:content-updated', initPage);
+    document.addEventListener('orbita:content-updated', function () {
+        stopStatusPoll();
+        initPage();
+    });
 })();

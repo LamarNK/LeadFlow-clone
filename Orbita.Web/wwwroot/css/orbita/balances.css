@@ -38,8 +38,12 @@
 .balances-table td > strong, .balances-table td > small { display: block; }
 .balances-table td > small { margin-top: 4px; color: var(--text-muted); line-height: 1.35; }
 .balances-table tr.is-low { background: rgba(245, 158, 11, .055); }
+.balances-table tr:has([data-balance-select]:not(:disabled)) { cursor: pointer; }
+.balances-table tr.is-selected { background: rgba(86, 104, 232, .10); }
 .balances-check { width: 42px; text-align: center; }
 .balance-status { display: inline-flex; align-items: center; min-height: 26px; padding: 0 9px; border-radius: 999px; background: rgba(100, 116, 139, .12); color: var(--text-secondary); font-size: 11px; font-weight: 750; white-space: nowrap; }
+[data-balance-status-detail] { display: block; margin-top: 4px; color: var(--text-muted); font-weight: 500; line-height: 1.35; white-space: normal; }
+[data-balance-status-detail][hidden] { display: none; }
 .balance-status--low, .balance-status--verification_required, .balance-status--awaiting_balance { background: rgba(245, 158, 11, .14); color: #a15c00; }
 .balance-status--completed { background: rgba(34, 197, 94, .13); color: #17763a; }
 .balance-status--qr_ready, .balance-status--started, .balance-status--requested, .balance-status--payment_claimed { background: rgba(86, 104, 232, .13); color: #4252bd; }
@@ -59,6 +63,7 @@
 [data-theme="dark"] .balance-status--low, [data-theme="dark"] .balance-status--verification_required, [data-theme="dark"] .balance-status--awaiting_balance { color: #f5b84d; }
 [data-theme="dark"] .balance-status--completed { color: #71d996; }
 [data-theme="dark"] .balance-status--qr_ready, [data-theme="dark"] .balance-status--started, [data-theme="dark"] .balance-status--requested, [data-theme="dark"] .balance-status--payment_claimed { color: #aab4ff; }
+[data-theme="dark"] .balances-table tr.is-selected { background: rgba(86, 104, 232, .22); }
 [data-theme="dark"] .balances-worker-picker__trigger,
 [data-theme="dark"] .balances-worker-picker__menu { background: var(--bg-card); border-color: var(--border); color: var(--text-primary); }
 [data-theme="dark"] .balances-worker-picker__option { color: var(--text-secondary); }

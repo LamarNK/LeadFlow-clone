@@ -28,10 +28,10 @@
 
     var statusLabel = (string status) => status switch
     {
-        TopUpSessionStatuses.Requested => "Ожидает воркер",
-        TopUpSessionStatuses.Started => "Воркер формирует QR",
-        TopUpSessionStatuses.PaymentClaimed => "Переход к оплате",
-        TopUpSessionStatuses.QrReady => "QR-код готов",
+        TopUpSessionStatuses.Requested => "В очереди",
+        TopUpSessionStatuses.Started => "В работе",
+        TopUpSessionStatuses.PaymentClaimed => "В работе",
+        TopUpSessionStatuses.QrReady => "QR готов",
         TopUpSessionStatuses.AwaitingBalance => "Ожидает баланс",
         TopUpSessionStatuses.Completed => "Подтверждено",
         TopUpSessionStatuses.VerificationRequired => "Требует проверки",
@@ -44,6 +44,8 @@
 <partial name="_PageHeader" model="Model.Header" />
 <main class="orbita-main balances-page"
       data-balances-page
+      data-balances-tab="@activeTab"
+      data-snapshot-url="@Url.Action("Snapshot", "Balances")@Context.Request.QueryString"
       data-mark-paid-url="@Url.Action("MarkPaid", "Balances")"
       data-cancel-url="@Url.Action("Cancel", "Balances")"
       data-batch-url="@Url.Action("CreateBatch", "Balances")">
@@ -114,7 +116,7 @@
                     @foreach (var session in Model.Sessions)
                     {
                         <tr>
-                            <td data-label="Дата">@session.CompletedAtUtc?.ToLocalTime().ToString("dd.MM.yyyy HH:mm")</td>
+                            <td data-label="Дата">@((session.CompletedAtUtc ?? session.CreatedAtUtc).ToLocalTime().ToString("dd.MM.yyyy HH:mm"))</td>
                             <td data-label="Аккаунт"><strong>@session.AccountName</strong><small>@session.SubProfileName</small></td>
                             <td data-label="Воркер">@session.WorkerName</td>
                             <td data-label="Баланс до">@session.CurrentBalance.ToString("N0") ₽</td>
@@ -136,7 +138,8 @@
                     {
                         var session = row.Session;
                         var canSelect = row.IsLowBalance && row.WorkerOnline && session is null;
-                        <tr class="@(row.IsLowBalance ? "is-low" : "")" data-balance-row data-worker-id="@row.WorkerId" data-account-id="@row.AccountId" data-subprofile-id="@row.SubProfileId" data-account-name="@row.AccountName" data-subprofile-name="@row.SubProfileName">
+                        var statusDetail = session?.ProgressMessage ?? session?.FailureMessage;
+                        <tr class="@(row.IsLowBalance ? "is-low" : "")" data-balance-row data-worker-id="@row.WorkerId" data-account-id="@row.AccountId" data-subprofile-id="@row.SubProfileId" data-account-name="@row.AccountName" data-subprofile-name="@row.SubProfileName" data-session-id="@(session?.Id.ToString() ?? "")" data-session-status="@(session?.Status ?? "")">
                             <td class="balances-check"><input type="checkbox" data-balance-select @(canSelect ? null : "disabled") /></td>
                             <td data-label="Аккаунт"><strong>@row.AccountName</strong><small>@row.SubProfileName · @row.WorkerName</small></td>
                             <td data-label="Баланс">
@@ -154,7 +157,7 @@
                                 </small>
                             </td>
                             <td data-label="Рекомендуемое пополнение"><strong>@row.RecommendedAmount.ToString("N0") ₽</strong><small>до @row.RecommendedTarget.ToString("N0") ₽ · @row.TodayResponses откликов</small></td>
-                            <td data-label="Статус">
+                            <td data-label="Статус" data-balance-status>
                                 @if (session is null)
                                 {
                                     <span class="balance-status balance-status--low">Низкий баланс</span>
@@ -163,6 +166,7 @@
                                 {
                                     <span class="balance-status balance-status--@session.Status">@statusLabel(session.Status)</span>
                                 }
+                                <small data-balance-status-detail @(string.IsNullOrWhiteSpace(statusDetail) ? "hidden" : null)>@statusDetail</small>
                             </td>
                             <td data-label="Последняя операция">
                                 @if (session is not null)

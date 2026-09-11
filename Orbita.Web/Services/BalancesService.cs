@@ -93,6 +93,10 @@ public sealed class BalancesService(
         var rows = filteredRows.Skip((page - 1) * pageSize).Take(pageSize).ToList();
 
         var today = DateTime.UtcNow.Date;
+        var historySessions = sessions
+            .OrderByDescending(x => x.CompletedAtUtc ?? x.CreatedAtUtc)
+            .ThenByDescending(x => x.CreatedAtUtc)
+            .ToArray();
         return new BalancesIndexViewModel
         {
             Header = PageHeaderBuilder.WithOfficeScope(
@@ -101,7 +105,7 @@ public sealed class BalancesService(
             KpiCards = BuildKpiCards(allRows, sessions, today),
             Rows = rows,
             Sessions = history
-                ? sessions.Skip((page - 1) * pageSize).Take(pageSize).ToArray()
+                ? historySessions.Skip((page - 1) * pageSize).Take(pageSize).ToArray()
                 : sessions,
             Workers = workerOptions,
             ExcludedWorkerIds = excludedIds,
