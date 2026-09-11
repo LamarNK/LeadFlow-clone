@@ -1,4 +1,6 @@
 using Microsoft.EntityFrameworkCore;
+using System.Security.Cryptography;
+using System.Text;
 using Microsoft.Extensions.Options;
 using Orbita.Api.Data;
 using Orbita.Api.Models;
@@ -40,8 +42,15 @@ public sealed class CandidateIngestionService(
 
         foreach (var candidate in request.Candidates)
         {
-            var item = await IngestOneAsync(worker, candidate, ct);
+            var item = await IngestOneSerializedAsync(worker, candidate, ct);
             items.Add(item);
+
+            if (item.Outcome is WorkerCandidateIngestionOutcomes.WatchUpdated
+                or WorkerCandidateIngestionOutcomes.PhoneChanged
+                or WorkerCandidateIngestionOutcomes.KnownSkipped)
+            {
+                continue;
+            }
 
             switch (item.Status)
             {
@@ -73,11 +82,37 @@ public sealed class CandidateIngestionService(
         return new WorkerCandidateIngestionResultDto(received, ingested, skippedDuplicates, errors, items);
     }
 
+    private async Task<WorkerCandidateIngestionItemResultDto> IngestOneSerializedAsync(
+        WorkerEntity worker,
+        WorkerCandidateDto candidate,
+        CancellationToken ct)
+    {
+        if (!db.Database.IsRelational()
+            || !string.Equals(
+                db.Database.ProviderName,
+                "Npgsql.EntityFrameworkCore.PostgreSQL",
+                StringComparison.Ordinal))
+        {
+            return await IngestOneAsync(worker, candidate, ct);
+        }
+
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        var lockKey = BuildCandidateLockKey(candidate);
+        await db.Database.ExecuteSqlInterpolatedAsync(
+            $"SELECT pg_advisory_xact_lock({lockKey})",
+            ct);
+
+        var item = await IngestOneAsync(worker, candidate, ct);
+        await transaction.CommitAsync(ct);
+        return item;
+    }
+
     private async Task<WorkerCandidateIngestionItemResultDto> IngestOneAsync(
         WorkerEntity worker,
         WorkerCandidateDto candidate,
         CancellationToken ct)
     {
+        var operationKind = WorkerCandidateOperationKinds.Normalize(candidate.OperationKind);
         var phoneNormalized = phoneNormalizer.Normalize(candidate.PhoneRaw);
         if (string.IsNullOrWhiteSpace(candidate.SourceResponseId) || string.IsNullOrWhiteSpace(phoneNormalized))
         {
@@ -95,7 +130,16 @@ public sealed class CandidateIngestionService(
                 ct);
         if (existing is not null)
         {
-            return await UpdateExistingResponseAsync(worker, candidate, existing, phoneNormalized, ct);
+            var updated = await UpdateExistingResponseAsync(worker, candidate, existing, phoneNormalized, ct);
+            return updated with
+            {
+                Outcome = operationKind switch
+                {
+                    WorkerCandidateOperationKinds.WatchRefresh => WorkerCandidateIngestionOutcomes.WatchUpdated,
+                    WorkerCandidateOperationKinds.PhoneChanged => WorkerCandidateIngestionOutcomes.PhoneChanged,
+                    _ => WorkerCandidateIngestionOutcomes.KnownSkipped
+                }
+            };
         }
 
         var (firstName, lastName, middleName) = candidateParser.ParseName(candidate.FullName);
@@ -159,6 +203,33 @@ public sealed class CandidateIngestionService(
 
         // Collection pool: global person match (no office filter).
         var matchedPerson = await personMatch.FindMatchingPersonAsync(officeId: null, profile, ct);
+        if (matchedPerson is not null
+            && operationKind is WorkerCandidateOperationKinds.WatchRefresh
+                or WorkerCandidateOperationKinds.PhoneChanged)
+        {
+            var canonical = await db.CandidateResponses
+                .AsNoTracking()
+                .Where(x => x.PersonId == matchedPerson.Id)
+                .OrderBy(x => x.SourceResponseId.StartsWith("phone-watch:"))
+                .ThenBy(x => x.Status == ResponseStatuses.Duplicate)
+                .ThenByDescending(x => x.CollectedAt)
+                .FirstAsync(ct);
+            var updated = await UpdateExistingResponseAsync(
+                worker,
+                candidate,
+                canonical,
+                phoneNormalized,
+                ct);
+            return updated with
+            {
+                Id = canonical.Id,
+                Status = canonical.Status,
+                Outcome = operationKind == WorkerCandidateOperationKinds.PhoneChanged
+                    ? WorkerCandidateIngestionOutcomes.PhoneChanged
+                    : WorkerCandidateIngestionOutcomes.WatchUpdated
+            };
+        }
+
         var phoneMetricKind = ResponsePhoneMetricKinds.Normalize(candidate.PhoneMetricKind);
         // PhoneChanged сохраняет новый отклик, но существующую CRM-карточку
         // дополняем номером вместо повторной доставки кандидата в другой офис.
@@ -267,7 +338,8 @@ public sealed class CandidateIngestionService(
                 entity.Id,
                 candidate.SourceResponseId,
                 entity.Status,
-                entity.DuplicateSummary);
+                entity.DuplicateSummary,
+                WorkerCandidateIngestionOutcomes.Duplicate);
         }
 
         // Delivery (CRM and/or Bitrix) is driven by worker auto flags — not office route alone.
@@ -287,7 +359,8 @@ public sealed class CandidateIngestionService(
             entity.Id,
             candidate.SourceResponseId,
             entity.Status,
-            entity.ErrorMessage);
+            entity.ErrorMessage,
+            WorkerCandidateIngestionOutcomes.Ingested);
     }
 
     private async Task<WorkerCandidateIngestionItemResultDto> UpdateExistingResponseAsync(
@@ -608,6 +681,18 @@ public sealed class CandidateIngestionService(
             candidate.VacancyUrl,
             candidate.MessengerUrl,
             AvitoResponseCardFingerprint.NormalizeAgeText(null, candidate.Age));
+    }
+
+    private static long BuildCandidateLockKey(WorkerCandidateDto candidate)
+    {
+        var normalizedName = CandidateNameNormalizer.Normalize(candidate.FullName).FullName;
+        var identity = string.Join(
+            '\u001f',
+            normalizedName,
+            candidate.Age?.ToString() ?? string.Empty,
+            candidate.City?.Trim().ToLowerInvariant() ?? string.Empty);
+        var hash = SHA256.HashData(Encoding.UTF8.GetBytes(identity));
+        return BitConverter.ToInt64(hash, 0);
     }
 
     private static bool TryApplyUnlocked(

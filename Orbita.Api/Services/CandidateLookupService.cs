@@ -41,6 +41,10 @@ public sealed class CandidateLookupService(
             .ToArray();
 
         var duplicateCutoffUtc = CandidateDuplicateLookback.GetCutoffUtc(DateTime.UtcNow);
+        var globalLookup = string.Equals(
+            request.DuplicateScope,
+            "GlobalAcrossAllAccounts",
+            StringComparison.OrdinalIgnoreCase);
 
         var existingSourceIds = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         IReadOnlyList<WorkerKnownSourceResponseDto> existingSourceResponses = [];
@@ -48,8 +52,7 @@ public sealed class CandidateLookupService(
         {
             var matched = await db.CandidateResponses
                 .AsNoTracking()
-                .Where(x => x.OfficeId == worker.OfficeId
-                            && x.AccountId == request.AccountId
+                .Where(x => x.AccountId == request.AccountId
                             && x.CreatedAt >= duplicateCutoffUtc
                             && sourceIds.Contains(x.SourceResponseId))
                 .OrderByDescending(x => x.CollectedAt)
@@ -76,9 +79,12 @@ public sealed class CandidateLookupService(
         {
             var phoneQuery = db.CandidateResponses
                 .AsNoTracking()
-                .Where(x => x.OfficeId == worker.OfficeId
-                            && x.CreatedAt >= duplicateCutoffUtc
+                .Where(x => x.CreatedAt >= duplicateCutoffUtc
                             && x.PhoneNormalized != "");
+            if (!globalLookup)
+            {
+                phoneQuery = phoneQuery.Where(x => x.OfficeId == worker.OfficeId);
+            }
 
             if (!request.IncludeAllKnownPhones)
             {
@@ -103,8 +109,7 @@ public sealed class CandidateLookupService(
 
             var storedQuery = db.CandidateResponses
                 .AsNoTracking()
-                .Where(x => x.OfficeId == worker.OfficeId
-                            && x.AccountId == request.AccountId
+                .Where(x => x.AccountId == request.AccountId
                             && x.CreatedAt >= duplicateCutoffUtc
                             && x.CardFingerprint != "");
             if (!string.IsNullOrWhiteSpace(subProfileId))
@@ -129,8 +134,7 @@ public sealed class CandidateLookupService(
             {
                 var legacyQuery = db.CandidateResponses
                     .AsNoTracking()
-                    .Where(x => x.OfficeId == worker.OfficeId
-                                && x.AccountId == request.AccountId
+                    .Where(x => x.AccountId == request.AccountId
                                 && x.CreatedAt >= duplicateCutoffUtc
                                 && x.CardFingerprint == "");
                 if (!string.IsNullOrWhiteSpace(subProfileId))
@@ -203,7 +207,10 @@ public sealed class CandidateLookupService(
                 item.City,
                 item.PhoneNormalized,
                 item.ResponseAtUtc);
-            var matchedPerson = await personMatch.FindMatchingPersonAsync(worker.OfficeId, profile, ct);
+            var matchedPerson = await personMatch.FindMatchingPersonAsync(
+                globalLookup ? null : worker.OfficeId,
+                profile,
+                ct);
             if (matchedPerson is not null)
             {
                 matchedProfileIndexes.Add(i);

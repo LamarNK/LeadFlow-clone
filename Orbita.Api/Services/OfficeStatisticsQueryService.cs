@@ -115,7 +115,9 @@ public sealed class OfficeStatisticsQueryService(
         // Scoped responses (worker / account / vacancy) without time filter — used for send-date joins.
         var scopedResponsesQuery = db.CandidateResponses
             .AsNoTracking()
-            .Where(x => x.WorkerId != null && workerIds.Contains(x.WorkerId.Value));
+            .Where(x => x.WorkerId != null
+                && workerIds.Contains(x.WorkerId.Value)
+                && !x.SourceResponseId.StartsWith("phone-watch:"));
         if (accountFilterSet is not null)
         {
             scopedResponsesQuery = scopedResponsesQuery.Where(x => accountFilterSet.Contains(x.AccountId));
@@ -426,6 +428,7 @@ public sealed class OfficeStatisticsQueryService(
             .AsNoTracking()
             .Where(x => x.WorkerId != null && workerIds.Contains(x.WorkerId.Value))
             .Where(x => x.CollectedAt >= padStart && x.CollectedAt < padEnd)
+            .Where(x => !x.SourceResponseId.StartsWith("phone-watch:"))
             .Select(x => new
             {
                 x.AccountName,
@@ -888,7 +891,11 @@ public sealed class OfficeStatisticsQueryService(
         // Collected-period totals/duplicates/errors still by CollectedAt.
         var responseStats = await db.CandidateResponses
             .AsNoTracking()
-            .Where(x => x.WorkerId != null && workerIds.Contains(x.WorkerId.Value) && x.CollectedAt >= utcStart && x.CollectedAt < utcEnd)
+            .Where(x => x.WorkerId != null
+                && workerIds.Contains(x.WorkerId.Value)
+                && x.CollectedAt >= utcStart
+                && x.CollectedAt < utcEnd
+                && !x.SourceResponseId.StartsWith("phone-watch:"))
             .GroupBy(x => x.WorkerId)
             .Select(g => new
             {

@@ -64,4 +64,7 @@ public sealed class CandidateResponse
     public string? PreviousPhoneNormalized { get; set; }
     public int? PhoneUnchangedHours { get; set; }
     public DateTime? PhoneChangedAtUtc { get; set; }
+
+    /// <summary>Назначение публикации в Orbita: новый отклик или обновление phone-watch.</summary>
+    public string OperationKind { get; set; } = Orbita.Contracts.WorkerCandidateOperationKinds.NewResponse;
 }

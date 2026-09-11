@@ -265,7 +265,8 @@ public sealed class OrbitaCandidateSink(
             candidate.PhoneChangedAtUtc,
             avatar?.ContentType,
             avatar is null ? null : Convert.ToBase64String(avatar.Bytes),
-            candidate.Citizenship);
+            candidate.Citizenship,
+            candidate.OperationKind);
     }
 
     private static string? NormalizePhone(string phoneRaw) =>

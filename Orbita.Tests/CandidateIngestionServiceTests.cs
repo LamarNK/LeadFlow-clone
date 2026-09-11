@@ -605,6 +605,127 @@ public sealed partial class CandidateIngestionServiceTests
     }
 
     [Fact]
+    public async Task IngestBatchAsync_WatchRefreshForKnownPerson_DoesNotCreateDuplicateResponse()
+    {
+        await using var db = CreateDb();
+        SeedWorker(db, autoDistributionEnabled: false);
+
+        var person = TestCandidatePersonFactory.CreatePerson(
+            OfficeId,
+            fullName: "Иванов Иван Иванович",
+            firstName: "Иван",
+            lastName: "Иванов",
+            middleName: "Иванович",
+            age: 35,
+            city: "Самара",
+            phoneRaw: "+79001111111",
+            phoneNormalized: "79001111111");
+        db.CandidatePersons.Add(person);
+        db.CandidateResponses.Add(TestCandidatePersonFactory.CreateResponse(
+            OfficeId,
+            person.Id,
+            WorkerId,
+            phone: "79001111111",
+            sourceResponseId: "original-response",
+            fullName: person.FullName,
+            age: person.Age,
+            city: person.City));
+        await db.SaveChangesAsync();
+
+        var result = await CreateService(db).IngestBatchAsync(
+            WorkerId,
+            new WorkerCandidateBatchRequest([
+                new WorkerCandidateDto(
+                    Guid.NewGuid(),
+                    "other-account",
+                    "Avito",
+                    "phone-watch:new-account",
+                    "fingerprint",
+                    person.FullName,
+                    person.Age,
+                    null,
+                    "+79001111111",
+                    person.City,
+                    "Охранник",
+                    "",
+                    "https://www.avito.ru/messenger",
+                    "sub-1",
+                    "",
+                    "[{\"text\":\"обновлённый чат\"}]",
+                    DateTime.UtcNow,
+                    OperationKind: WorkerCandidateOperationKinds.WatchRefresh)
+            ]));
+
+        Assert.Equal(WorkerCandidateIngestionOutcomes.WatchUpdated, Assert.Single(result.Items).Outcome);
+        Assert.Equal(0, result.SkippedDuplicates);
+        Assert.Single(await db.CandidateResponses.ToListAsync());
+    }
+
+    [Fact]
+    public async Task IngestBatchAsync_PhoneChangedForKnownPerson_UpdatesCanonicalResponse()
+    {
+        await using var db = CreateDb();
+        SeedWorker(db, autoDistributionEnabled: false);
+
+        var person = TestCandidatePersonFactory.CreatePerson(
+            OfficeId,
+            fullName: "Петров Пётр Петрович",
+            firstName: "Пётр",
+            lastName: "Петров",
+            middleName: "Петрович",
+            age: 42,
+            city: "Самара",
+            phoneRaw: "+79002222222",
+            phoneNormalized: "79002222222");
+        var canonical = TestCandidatePersonFactory.CreateResponse(
+            OfficeId,
+            person.Id,
+            WorkerId,
+            phone: "79002222222",
+            sourceResponseId: "canonical-response",
+            fullName: person.FullName,
+            age: person.Age,
+            city: person.City);
+        db.CandidatePersons.Add(person);
+        db.CandidateResponses.Add(canonical);
+        await db.SaveChangesAsync();
+
+        var result = await CreateService(db).IngestBatchAsync(
+            WorkerId,
+            new WorkerCandidateBatchRequest([
+                new WorkerCandidateDto(
+                    Guid.NewGuid(),
+                    "other-account",
+                    "Avito",
+                    "phone-watch:changed",
+                    "fingerprint",
+                    person.FullName,
+                    person.Age,
+                    null,
+                    "+79003333333",
+                    person.City,
+                    "Охранник",
+                    "",
+                    "",
+                    "sub-1",
+                    "",
+                    "",
+                    DateTime.UtcNow,
+                    PreviousPhoneRaw: "+79002222222",
+                    PreviousPhoneNormalized: "79002222222",
+                    PhoneChangedAtUtc: DateTime.UtcNow,
+                    OperationKind: WorkerCandidateOperationKinds.PhoneChanged)
+            ]));
+
+        Assert.Equal(WorkerCandidateIngestionOutcomes.PhoneChanged, Assert.Single(result.Items).Outcome);
+        Assert.Equal(0, result.SkippedDuplicates);
+        Assert.Single(await db.CandidateResponses.ToListAsync());
+        var stored = await db.CandidateResponses.SingleAsync(x => x.Id == canonical.Id);
+        Assert.Equal("79003333333", stored.PhoneNormalized);
+        Assert.Equal(ResponsePhoneMetricKinds.PhoneChanged, stored.PhoneMetricKind);
+    }
+
+    [Fact]
     public async Task IngestBatchAsync_SamePersonDifferentCitySamePhone_StoresDuplicateStatus()
     {
         await using var db = CreateDb();

@@ -213,7 +213,19 @@ public sealed record WorkerCandidateDto(
     string? AvatarContentType = null,
     /// <summary>Скачанный аватар кандидата в Base64; ограничен <see cref="CandidateResponseAvatar.MaxImageBytes"/>.</summary>
     string? AvatarImageBase64 = null,
-    string? Citizenship = null);
+    string? Citizenship = null,
+    /// <summary>Назначение отправки. Пусто у старых воркеров и трактуется как новый отклик.</summary>
+    string? OperationKind = null);
+
+public static class WorkerCandidateOperationKinds
+{
+    public const string NewResponse = "NewResponse";
+    public const string WatchRefresh = "WatchRefresh";
+    public const string PhoneChanged = "PhoneChanged";
+
+    public static string Normalize(string? value) =>
+        value is WatchRefresh or PhoneChanged ? value : NewResponse;
+}
 
 public sealed record WorkerCandidateBatchRequest(
     IReadOnlyList<WorkerCandidateDto> Candidates);
@@ -289,7 +301,18 @@ public sealed record WorkerCandidateIngestionItemResultDto(
     Guid? Id,
     string SourceResponseId,
     string Status,
-    string? ErrorMessage);
+    string? ErrorMessage,
+    string? Outcome = null);
+
+public static class WorkerCandidateIngestionOutcomes
+{
+    public const string Ingested = "Ingested";
+    public const string Duplicate = "Duplicate";
+    public const string WatchUpdated = "WatchUpdated";
+    public const string PhoneChanged = "PhoneChanged";
+    public const string KnownSkipped = "KnownSkipped";
+    public const string Error = "Error";
+}
 
 public sealed record WorkerCandidateIngestionResultDto(
     int Received,

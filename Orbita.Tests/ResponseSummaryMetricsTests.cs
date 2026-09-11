@@ -14,6 +14,39 @@ public sealed class ResponseSummaryMetricsTests
     private static readonly Guid PersonTwo = Guid.Parse("dddddddd-dddd-dddd-dddd-dddddddddddd");
 
     [Fact]
+    public async Task GetSummaryAsync_DuplicateFilter_ExcludesTechnicalPhoneWatchRows()
+    {
+        await using var db = CreateDb();
+        SeedOffice(db);
+        var now = DateTime.UtcNow;
+        var realDuplicate = CreateResponse("real-duplicate", Guid.NewGuid(), "79001111111", now, now);
+        realDuplicate.Status = ResponseStatuses.Duplicate;
+        var watchDuplicate = CreateResponse("phone-watch:technical", Guid.NewGuid(), "79002222222", now, now);
+        watchDuplicate.Status = ResponseStatuses.Duplicate;
+        db.CandidateResponses.AddRange(realDuplicate, watchDuplicate);
+        await db.SaveChangesAsync();
+
+        var summary = await new ResponsesQueryService(db, new ResponseBitrixDeliveryService(db))
+            .GetSummaryAsync(
+                OfficeScope.ForOffice(OfficeId),
+                OfficeId,
+                status: "duplicate",
+                search: null,
+                vacancy: null,
+                workerId: null,
+                accountId: null,
+                bitrixDestination: null,
+                gender: null,
+                ageFrom: null,
+                ageTo: null,
+                fromUtc: now.AddMinutes(-1),
+                toUtc: now.AddMinutes(1));
+
+        Assert.Equal(1, summary.Total);
+        Assert.Equal(1, summary.Duplicates);
+    }
+
+    [Fact]
     public async Task CountUniqueAuthorsAsync_SamePersonDifferentPhones_ReturnsOne()
     {
         await using var db = CreateDb();

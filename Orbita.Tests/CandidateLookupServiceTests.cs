@@ -274,7 +274,7 @@ public sealed class CandidateLookupServiceTests
     }
 
     [Fact]
-    public async Task LookupAsync_BatchPhones_IgnoresOtherOffices()
+    public async Task LookupAsync_GlobalBatchPhones_MatchesOtherOffices()
     {
         await using var db = CreateDb();
         SeedWorker(db);
@@ -291,7 +291,51 @@ public sealed class CandidateLookupServiceTests
                 ["79005555555"]));
 
         Assert.NotNull(result);
-        Assert.Empty(result!.ExistingPhones);
+        Assert.Equal(["79005555555"], result!.ExistingPhones);
+    }
+
+    [Fact]
+    public async Task LookupAsync_GlobalProfiles_MatchesOtherOffices()
+    {
+        await using var db = CreateDb();
+        SeedWorker(db);
+        var person = TestCandidatePersonFactory.CreatePerson(
+            OtherOfficeId,
+            fullName: "Иванов Иван Иванович",
+            firstName: "Иван",
+            lastName: "Иванов",
+            middleName: "Иванович",
+            age: 35,
+            city: "Самара",
+            phoneNormalized: "79005555555");
+        db.CandidatePersons.Add(person);
+        db.CandidateResponses.Add(TestCandidatePersonFactory.CreateResponse(
+            OtherOfficeId,
+            person.Id,
+            phone: "79005555555",
+            fullName: person.FullName,
+            age: person.Age,
+            city: person.City));
+        await db.SaveChangesAsync();
+
+        var result = await CreateSut(db).LookupAsync(
+            WorkerId,
+            new WorkerCandidateLookupRequest(
+                AccountId,
+                "GlobalAcrossAllAccounts",
+                [],
+                [],
+                Profiles:
+                [
+                    new CandidateLookupProfileDto(
+                        person.FullName,
+                        person.Age,
+                        person.City,
+                        person.PhoneNormalized)
+                ]));
+
+        Assert.NotNull(result);
+        Assert.Equal([0], result!.MatchedProfileIndexes);
     }
 
     [Fact]

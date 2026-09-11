@@ -1113,6 +1113,7 @@ public sealed class WorkerMonitoringService(
                     && hasPendingOutbound
                     && !string.IsNullOrWhiteSpace(candidate.ChatMessagesJson))
                 {
+                    candidate.OperationKind = WorkerCandidateOperationKinds.WatchRefresh;
                     await PublishCandidateAsync(candidate, cancellationToken).ConfigureAwait(false);
                     publishedCount++;
                     publishedTotal++;
@@ -2239,6 +2240,7 @@ public sealed class WorkerMonitoringService(
         switch (decision.Action)
         {
             case ResponsePhoneWatchAction.PublishPhoneChanged:
+                candidate.OperationKind = WorkerCandidateOperationKinds.PhoneChanged;
                 candidate.PhoneMetricKind = ResponsePhoneMetricKinds.PhoneChanged;
                 candidate.PreviousPhoneRaw = decision.PreviousPhoneRaw;
                 candidate.PreviousPhoneNormalized = decision.PreviousPhoneNormalized;
@@ -2247,6 +2249,7 @@ public sealed class WorkerMonitoringService(
                 break;
 
             case ResponsePhoneWatchAction.PublishInitial:
+                candidate.OperationKind = WorkerCandidateOperationKinds.NewResponse;
                 candidate.PhoneMetricKind = ResponsePhoneMetricKinds.None;
                 candidate.PreviousPhoneRaw = null;
                 candidate.PreviousPhoneNormalized = null;
@@ -2255,6 +2258,7 @@ public sealed class WorkerMonitoringService(
                 break;
 
             default:
+                candidate.OperationKind = WorkerCandidateOperationKinds.WatchRefresh;
                 candidate.PhoneMetricKind = ResponsePhoneMetricKinds.None;
                 candidate.PreviousPhoneRaw = null;
                 candidate.PreviousPhoneNormalized = null;

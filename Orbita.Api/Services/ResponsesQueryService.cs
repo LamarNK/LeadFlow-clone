@@ -766,6 +766,7 @@ public sealed class ResponsesQueryService(
         var query = db.CandidateResponses
             .AsNoTracking()
             .Include(x => x.Worker)
+            .Where(x => !x.SourceResponseId.StartsWith("phone-watch:"))
             .AsQueryable();
 
         query = ApplyOfficeFilter(query, scope, officeFilter);
