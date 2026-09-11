@@ -5,20 +5,27 @@
     var activeTab = (string?)ViewData["BalancesTab"] ?? "low";
     var query = (string?)ViewData["BalancesQuery"];
     var excludedWorkerIds = Model.ExcludedWorkerIds;
-    string BalancesUrl(string tab, bool history = false, int? page = null)
+    var pagination = Model.Pagination;
+    var balancesFormAction = Url.Action("Index", "Balances");
+
+    string BalancesUrl(string tab, bool history = false, int? page = null, bool includeQuery = true)
     {
-        var url = Url.Action("Index", "Balances", new { tab, q = query, history, page })!;
-        if (excludedWorkerIds.Count == 0)
+        var url = Url.Action("Index", "Balances", new
         {
-            return url;
-        }
+            tab,
+            q = includeQuery ? query : null,
+            history,
+            page
+        })!;
 
         foreach (var workerId in excludedWorkerIds)
         {
             url += $"{(url.Contains('?') ? '&' : '?')}excludedWorkerIds={Uri.EscapeDataString(workerId.ToString())}";
         }
+
         return url;
     }
+
     var statusLabel = (string status) => status switch
     {
         TopUpSessionStatuses.Requested => "Ожидает воркер",
@@ -40,109 +47,42 @@
       data-mark-paid-url="@Url.Action("MarkPaid", "Balances")"
       data-cancel-url="@Url.Action("Cancel", "Balances")"
       data-batch-url="@Url.Action("CreateBatch", "Balances")">
-    <section class="balances-kpis" aria-label="Сводка балансов">
-        <a class="balances-kpi balances-kpi--money" href="@BalancesUrl("all")">
-            <span>Общий баланс</span><strong>@Model.TotalBalance.ToString("N0") ₽</strong><small>по субпрофилям с известными данными</small>
-        </a>
-        <a class="balances-kpi" href="@BalancesUrl("all")">
-            <span>Всего субпрофилей</span><strong>@Model.TotalSubProfiles</strong><small>с известным балансом</small>
-        </a>
-        <a class="balances-kpi @(activeTab == "low" ? "is-active" : "")" href="@BalancesUrl("low")">
-            <span>Низкий баланс</span><strong>@Model.LowBalanceCount</strong><small>ниже 150 ₽</small>
-        </a>
-        <a class="balances-kpi @(activeTab == "queue" ? "is-active" : "")" href="@BalancesUrl("queue")">
-            <span>В очереди</span><strong>@Model.QueueCount</strong><small>запросов пополнения</small>
-        </a>
-        <a class="balances-kpi @(activeTab == "awaiting" ? "is-active" : "")" href="@BalancesUrl("awaiting")">
-            <span>Ожидают баланс</span><strong>@Model.AwaitingBalanceCount</strong><small>требуют внимания</small>
-        </a>
-        <a class="balances-kpi @(activeTab == "history" ? "is-active" : "")" href="@BalancesUrl("history", true)">
-            <span>Пополнено сегодня</span><strong>@Model.CompletedTodayCount</strong><small>подтверждено</small>
-        </a>
-    </section>
+    <div class="kpi-row balances-kpi-row">
+        @{ var kpiIdx = 0; }
+        @foreach (var kpi in Model.KpiCards)
+        {
+            <partial name="_KpiCard" model="@(new KpiCardPartialViewModel { Card = kpi, Index = kpiIdx, Layout = KpiCardLayout.StatDelta, ExtraClass = " kpi-card--stat" })" />
+            kpiIdx++;
+        }
+    </div>
 
     <nav class="balances-tabs" aria-label="Фильтр балансов">
-        <a class="@(activeTab == "low" ? "is-active" : "")" href="@BalancesUrl("low")">Требуют пополнения</a>
-        <a class="@(activeTab == "queue" ? "is-active" : "")" href="@BalancesUrl("queue")">В очереди</a>
-        <a class="@(activeTab == "working" ? "is-active" : "")" href="@BalancesUrl("working")">В работе</a>
-        <a class="@(activeTab == "awaiting" ? "is-active" : "")" href="@BalancesUrl("awaiting")">Ожидают баланс</a>
-        <a class="@(activeTab == "history" ? "is-active" : "")" href="@BalancesUrl("history", true)">История</a>
+        <a class="balances-tab @(activeTab == "low" ? "balances-tab--active" : "")" href="@BalancesUrl("low", page: 1)" aria-current="@(activeTab == "low" ? "page" : null)">Требуют пополнения</a>
+        <a class="balances-tab @(activeTab == "queue" ? "balances-tab--active" : "")" href="@BalancesUrl("queue", page: 1)" aria-current="@(activeTab == "queue" ? "page" : null)">В очереди</a>
+        <a class="balances-tab @(activeTab == "working" ? "balances-tab--active" : "")" href="@BalancesUrl("working", page: 1)" aria-current="@(activeTab == "working" ? "page" : null)">В работе</a>
+        <a class="balances-tab @(activeTab == "awaiting" ? "balances-tab--active" : "")" href="@BalancesUrl("awaiting", page: 1)" aria-current="@(activeTab == "awaiting" ? "page" : null)">Ожидают баланс</a>
+        <a class="balances-tab @(activeTab == "history" ? "balances-tab--active" : "")" href="@BalancesUrl("history", true, 1)" aria-current="@(activeTab == "history" ? "page" : null)">История</a>
     </nav>
 
-    <form class="balances-filter" method="get">
-        <input type="hidden" name="tab" value="@activeTab" />
-        <input type="hidden" name="history" value="@(activeTab == "history" ? "true" : "false")" />
-        <div class="balances-worker-filter">
-            <span>Воркеры</span>
-            <div class="balances-worker-picker" data-balances-worker-picker>
-                <div data-balances-worker-values>
-                    @foreach (var workerId in Model.ExcludedWorkerIds)
-                    {
-                        <input type="hidden" name="excludedWorkerIds" value="@workerId" />
-                    }
-                </div>
-                <button type="button"
-                        class="balances-worker-picker__trigger"
-                        data-balances-worker-trigger
-                        aria-expanded="false"
-                        aria-controls="balancesWorkerOptions">
-                    <span data-balances-worker-trigger-text>
-                        @(Model.ExcludedWorkerIds.Count == 0
-                            ? "Все воркеры"
-                            : $"Скрыто: {Model.ExcludedWorkerIds.Count}")
-                    </span>
-                    <i class="fa-solid fa-chevron-down" aria-hidden="true"></i>
-                </button>
-                <div class="balances-worker-picker__menu"
-                     id="balancesWorkerOptions"
-                     data-balances-worker-menu
-                     hidden>
-                    <label class="balances-worker-picker__option balances-worker-picker__option--all">
-                        <input type="checkbox"
-                               data-balances-worker-all
-                               checked="@(Model.ExcludedWorkerIds.Count == 0)" />
-                        <span>Показывать всех</span>
-                    </label>
-                    <label class="balances-worker-picker__search">
-                        <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
-                        <input type="search"
-                               data-balances-worker-search
-                               placeholder="Найти воркер..."
-                               aria-label="Поиск воркера" />
-                    </label>
-                    <div class="balances-worker-picker__options" role="group" aria-label="Воркеры">
-                        @foreach (var worker in Model.Workers)
-                        {
-                            var workerId = Guid.Parse(worker.Value);
-                            var isVisible = !Model.ExcludedWorkerIds.Contains(workerId);
-                            <label class="balances-worker-picker__option"
-                                   data-balances-worker-option-row
-                                   data-search-text="@worker.Label">
-                                <input type="checkbox"
-                                       value="@worker.Value"
-                                       data-balances-worker-option
-                                       checked="@isVisible" />
-                                <span>@worker.Label</span>
-                            </label>
-                        }
-                    </div>
-                    <footer class="balances-worker-picker__footer">
-                        <button type="button" data-balances-worker-reset>Сбросить</button>
-                        <button type="button"
-                                class="balances-worker-picker__apply"
-                                data-balances-worker-apply>
-                            Применить
-                        </button>
-                    </footer>
-                </div>
-            </div>
-        </div>
-        <label class="balances-search">
-            <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
-            <input type="search" name="q" value="@query" placeholder="Поиск по аккаунту, субпрофилю или воркеру" />
-        </label>
-        <button class="balances-filter__button" type="submit">Найти</button>
-    </form>
+    @{
+        var balancesFilterBar = new ListFiltersBarViewModel
+        {
+            FormAction = balancesFormAction!,
+            FormClass = "orbita-filters-form balances-filters",
+            SearchName = "q",
+            SearchPlaceholder = "Поиск по аккаунту, субпрофилю или воркеру",
+            SearchValue = query,
+            FilterPanelId = "balancesFilterPanel",
+            FilterToggleClass = "orbita-filters-toggle balances-filter-btn",
+            HasActiveFilters = excludedWorkerIds.Count > 0,
+            ActiveFilterCount = excludedWorkerIds.Count,
+            ResetUrl = Url.Action("Index", "Balances", new { tab = activeTab, history = activeTab == "history" })!,
+            FilterFieldsPartialName = "_BalancesFilterFields",
+            FilterFieldsModel = Model,
+            ExtraFormContent = $"<input type=\"hidden\" name=\"tab\" value=\"{activeTab}\" /><input type=\"hidden\" name=\"history\" value=\"{(activeTab == "history" ? "true" : "false")}\" />"
+        };
+    }
+    <partial name="_ListFiltersBar" model="balancesFilterBar" />
 
     @if (activeTab != "history")
     {
@@ -151,27 +91,24 @@
             <span data-balances-selected>0 выбрано</span>
             <button type="button" class="balances-primary" data-balances-batch disabled>Запросить пополнение</button>
         </div>
-        @if (Model.OfflineLowBalanceCount > 0)
-        {
-            <div class="balances-guidance">
-                <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
-                <div>
-                    <strong>Что делать с низким балансом</strong>
-                    <span>
-                        Выберите доступные строки и нажмите «Запросить пополнение».
-                        Давность баланса показывается справочно и не блокирует пополнение.
-                        @Model.OfflineLowBalanceCount строк ждут подключения воркера.
-                    </span>
-                </div>
-            </div>
-        }
     }
 
-    <section class="card balances-table-card">
-        <div class="card-body card-body-table">
-            @if (activeTab == "history")
+    <div class="card card--balances-table">
+        <div class="card-body card-body-table balances-table-wrap">
+            @if ((activeTab == "history" && Model.Sessions.Count == 0) || (activeTab != "history" && Model.Rows.Count == 0))
             {
-                <table class="data-table data-table--cards balances-table">
+                <partial name="_TableEmptyState" model="@(new TableEmptyStateViewModel
+                {
+                    IconClass = "fa-solid fa-wallet",
+                    Title = "Нет записей",
+                    Description = activeTab == "history" ? "История пополнений пуста." : "Нет субпрофилей, соответствующих текущему фильтру.",
+                    CtaLabel = "Показать все",
+                    CtaUrl = BalancesUrl("all", includeQuery: false)
+                })" />
+            }
+            else if (activeTab == "history")
+            {
+                <table class="data-table data-table--cards balances-table balances-table--history">
                     <thead><tr><th>Дата</th><th>Аккаунт</th><th>Воркер</th><th>Баланс до</th><th>Сумма</th><th>Баланс после</th><th>Статус</th><th>Оператор</th></tr></thead>
                     <tbody>
                     @foreach (var session in Model.Sessions)
@@ -192,16 +129,14 @@
             }
             else
             {
-                <table class="data-table data-table--cards balances-table">
-                    <thead><tr><th class="balances-check"></th><th>Аккаунт</th><th>Баланс</th><th>Рекомендуемое пополнение</th><th>Статус</th><th>Последняя операция</th><th></th></tr></thead>
+                <table class="data-table data-table--cards balances-table balances-table--list">
+                    <thead><tr><th class="balances-check" aria-label="Выбор"></th><th>Аккаунт</th><th>Баланс</th><th>Рекомендуемое пополнение</th><th>Статус</th><th>Последняя операция</th><th class="balances-actions">Действия</th></tr></thead>
                     <tbody>
                     @foreach (var row in Model.Rows)
                     {
                         var session = row.Session;
                         var canSelect = row.IsLowBalance && row.WorkerOnline && session is null;
-                        <tr class="@(row.IsLowBalance ? "is-low" : "")"
-                            data-balance-row data-worker-id="@row.WorkerId" data-account-id="@row.AccountId"
-                            data-subprofile-id="@row.SubProfileId" data-account-name="@row.AccountName" data-subprofile-name="@row.SubProfileName">
+                        <tr class="@(row.IsLowBalance ? "is-low" : "")" data-balance-row data-worker-id="@row.WorkerId" data-account-id="@row.AccountId" data-subprofile-id="@row.SubProfileId" data-account-name="@row.AccountName" data-subprofile-name="@row.SubProfileName">
                             <td class="balances-check"><input type="checkbox" data-balance-select @(canSelect ? null : "disabled") /></td>
                             <td data-label="Аккаунт"><strong>@row.AccountName</strong><small>@row.SubProfileName · @row.WorkerName</small></td>
                             <td data-label="Баланс">
@@ -236,7 +171,7 @@
                                 }
                                 else { <span>—</span> }
                             </td>
-                            <td class="balances-actions">
+                            <td class="balances-actions" data-label="Действия">
                                 @if (session is not null && session.Status == TopUpSessionStatuses.QrReady)
                                 {
                                     <button type="button" class="balances-primary balances-primary--small" data-topup-paid="@session.Id">Оплачено</button>
@@ -255,25 +190,17 @@
                     </tbody>
                 </table>
             }
+
+            <partial name="_Pagination" model="@(new PaginationPartialViewModel
+            {
+                Pagination = Model.Pagination,
+                Controller = "Balances",
+                Action = "Index",
+                RouteValues = new { tab = activeTab, q = query, history = activeTab == "history", excludedWorkerIds },
+                ExtraClass = "balances-pagination"
+            })" />
         </div>
-    </section>
-    @if (Model.Pagination.TotalPages > 1)
-    {
-        <nav class="orbita-pagination balances-pagination" aria-label="Пагинация">
-            <span class="orbita-pagination__info">Показано @Model.Pagination.RangeStart–@Model.Pagination.RangeEnd из @Model.Pagination.TotalItems</span>
-            <div class="orbita-pagination__controls">
-                @if (Model.Pagination.Page > 1)
-                {
-                    <a class="orbita-pagination__btn orbita-pagination__btn--nav" href="@BalancesUrl(activeTab, activeTab == "history", Model.Pagination.Page - 1)">Назад</a>
-                }
-                <span class="orbita-pagination__btn orbita-pagination__btn--active">@Model.Pagination.Page</span>
-                @if (Model.Pagination.Page < Model.Pagination.TotalPages)
-                {
-                    <a class="orbita-pagination__btn orbita-pagination__btn--nav" href="@BalancesUrl(activeTab, activeTab == "history", Model.Pagination.Page + 1)">Далее</a>
-                }
-            </div>
-        </nav>
-    }
+    </div>
 
     @{
         var qrSessions = Model.Sessions.Where(x => x.Status == TopUpSessionStatuses.QrReady).ToList();
@@ -285,10 +212,7 @@
                 <h2 id="balancesQrTitle">QR готовы к оплате</h2>
                 @foreach (var session in qrSessions)
                 {
-                    <button type="button" data-qr-select="@session.Id"
-                            data-qr-src="@(!string.IsNullOrWhiteSpace(session.QrImageBase64) ? $"data:image/png;base64,{session.QrImageBase64}" : session.QrImageUrl)"
-                            data-qr-account="@session.AccountName" data-qr-profile="@session.SubProfileName"
-                            data-qr-amount="@session.RequestedAmount.ToString("N0") ₽">
+                    <button type="button" data-qr-select="@session.Id" data-qr-src="@(!string.IsNullOrWhiteSpace(session.QrImageBase64) ? $"data:image/png;base64,{session.QrImageBase64}" : session.QrImageUrl)" data-qr-account="@session.AccountName" data-qr-profile="@session.SubProfileName" data-qr-amount="@session.RequestedAmount.ToString("N0") ₽">
                         <strong>@session.AccountName</strong><span>@session.SubProfileName · @session.RequestedAmount.ToString("N0") ₽</span>
                     </button>
                 }
@@ -305,6 +229,7 @@
         </section>
     }
 </main>
+
 @section Scripts {
     <script src="~/js/orbita-balances.js" asp-append-version="true"></script>
 }

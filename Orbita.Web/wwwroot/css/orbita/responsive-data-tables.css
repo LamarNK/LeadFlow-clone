@@ -399,6 +399,7 @@
 @media (max-width: 1100px) {
     .workers-table-wrap,
     .accounts-table-wrap,
+    .balances-table-wrap,
     .events-table-wrap,
     .errors-table-wrap,
     .responses-table-wrap,
@@ -411,6 +412,7 @@
 
     /* Table-only cards: drop outer shell so rows are not nested inside another card */
     .card--accounts-table,
+    .card--balances-table,
     .card--workers-table,
     .card--responses-table,
     .card--events-table,
@@ -423,6 +425,7 @@
     }
 
     .card--accounts-table .card-body-table,
+    .card--balances-table .card-body-table,
     .card--workers-table .card-body-table,
     .card--responses-table .card-body-table,
     .card--events-table .card-body-table,
@@ -588,6 +591,7 @@
     }
 
     .card--accounts-table,
+    .card--balances-table,
     .card--workers-table,
     .card--responses-table,
     .card--events-table,

@@ -5,6 +5,7 @@ namespace Orbita.Web.Models.ViewModels;
 public sealed class BalancesIndexViewModel
 {
     public PageHeaderViewModel Header { get; init; } = new();
+    public IReadOnlyList<DashboardKpiCardViewModel> KpiCards { get; init; } = [];
     public IReadOnlyList<BalanceSubProfileRowViewModel> Rows { get; init; } = [];
     public IReadOnlyList<TopUpSessionDto> Sessions { get; init; } = [];
     public PaginationViewModel Pagination { get; init; } = new();

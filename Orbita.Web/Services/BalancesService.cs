@@ -98,6 +98,7 @@ public sealed class BalancesService(
             Header = PageHeaderBuilder.WithOfficeScope(
                 PageHeaderBuilder.Create("Балансы", "Контроль балансов и пополнение аккаунтов Avito"),
                 officeContext),
+            KpiCards = BuildKpiCards(allRows, sessions, today),
             Rows = rows,
             Sessions = history
                 ? sessions.Skip((page - 1) * pageSize).Take(pageSize).ToArray()
@@ -120,6 +121,95 @@ public sealed class BalancesService(
             SelectableCount = allRows.Count(x => x.IsLowBalance && x.WorkerOnline && x.Session is null),
             OfflineLowBalanceCount = allRows.Count(x => x.IsLowBalance && !x.WorkerOnline && x.Session is null)
         };
+    }
+
+    private static IReadOnlyList<DashboardKpiCardViewModel> BuildKpiCards(
+        List<BalanceSubProfileRowViewModel> rows,
+        IReadOnlyList<TopUpSessionDto> sessions,
+        DateTime today)
+    {
+        var totalBalance = rows.Sum(x => x.Balance);
+        var lowBalanceCount = rows.Count(x => x.IsLowBalance && x.Session is null);
+        var queueCount = sessions.Count(x => x.Status is TopUpSessionStatuses.Requested or TopUpSessionStatuses.Started or TopUpSessionStatuses.PaymentClaimed or TopUpSessionStatuses.QrReady);
+        var awaitingCount = sessions.Count(x => x.Status is TopUpSessionStatuses.AwaitingBalance or TopUpSessionStatuses.VerificationRequired);
+        var completedToday = sessions.Count(x => x.Status is TopUpSessionStatuses.Completed && x.CompletedAtUtc?.ToUniversalTime().Date == today);
+
+        return
+        [
+            new()
+            {
+                Key = "total_balance",
+                Href = "/Balances?tab=all",
+                Label = "Общий баланс",
+                Value = $"{totalBalance:N0} ₽",
+                CountValue = (double)totalBalance,
+                ValueSuffix = " ₽",
+                Delta = "по субпрофилям с известными данными",
+                DeltaTone = "neutral",
+                IconClass = "fa-solid fa-wallet",
+                IconTone = "blue"
+            },
+            new()
+            {
+                Key = "subprofiles",
+                Href = "/Balances?tab=all",
+                Label = "Всего субпрофилей",
+                Value = rows.Count.ToString(),
+                CountValue = rows.Count,
+                Delta = "с известным балансом",
+                DeltaTone = "neutral",
+                IconClass = "fa-regular fa-user",
+                IconTone = "gray"
+            },
+            new()
+            {
+                Key = "low_balance",
+                Href = "/Balances?tab=low",
+                Label = "Низкий баланс",
+                Value = lowBalanceCount.ToString(),
+                CountValue = lowBalanceCount,
+                Delta = "ниже 150 ₽",
+                DeltaTone = lowBalanceCount > 0 ? "bad" : "good",
+                IconClass = "fa-solid fa-triangle-exclamation",
+                IconTone = "orange"
+            },
+            new()
+            {
+                Key = "queue",
+                Href = "/Balances?tab=queue",
+                Label = "В очереди",
+                Value = queueCount.ToString(),
+                CountValue = queueCount,
+                Delta = "запросов пополнения",
+                DeltaTone = "neutral",
+                IconClass = "fa-solid fa-clock",
+                IconTone = "blue"
+            },
+            new()
+            {
+                Key = "awaiting",
+                Href = "/Balances?tab=awaiting",
+                Label = "Ожидают баланс",
+                Value = awaitingCount.ToString(),
+                CountValue = awaitingCount,
+                Delta = "требуют внимания",
+                DeltaTone = awaitingCount > 0 ? "bad" : "good",
+                IconClass = "fa-solid fa-hourglass-half",
+                IconTone = "orange"
+            },
+            new()
+            {
+                Key = "completed_today",
+                Href = "/Balances?tab=history&history=true",
+                Label = "Пополнено сегодня",
+                Value = completedToday.ToString(),
+                CountValue = completedToday,
+                Delta = "подтверждено",
+                DeltaTone = "good",
+                IconClass = "fa-solid fa-circle-check",
+                IconTone = "green"
+            }
+        ];
     }
 
     private static bool Matches(
