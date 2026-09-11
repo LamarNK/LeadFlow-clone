@@ -106,6 +106,8 @@
 }
 
 .orbita-filters-bar--statistics {
+    position: relative;
+    z-index: 40;
     margin-bottom: 0;
     padding: 0;
     overflow: visible;
@@ -168,9 +170,15 @@
     grid-template-columns: minmax(180px, .85fr) minmax(220px, 1.1fr) minmax(250px, 1.25fr);
     gap: 10px;
     padding: 12px 16px 16px;
+    overflow: visible;
     border: 0;
     border-radius: 0;
     background: transparent;
+}
+
+.statistics-filters-row,
+.statistics-filters .statistics-filter-field {
+    overflow: visible;
 }
 
 .statistics-filters__context {
@@ -254,6 +262,12 @@
 
 .statistics-multiselect {
     position: relative;
+    overflow: visible;
+    z-index: 1;
+}
+
+.statistics-multiselect:has([aria-expanded="true"]) {
+    z-index: 2;
 }
 
 .statistics-multiselect__trigger {
@@ -284,7 +298,7 @@
 
 .statistics-multiselect__menu {
     position: absolute;
-    z-index: 30;
+    z-index: 80;
     top: calc(100% + 5px);
     right: 0;
     left: 0;

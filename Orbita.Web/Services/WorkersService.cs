@@ -184,7 +184,8 @@ public sealed class WorkersService(
             var statisticsViewModel = await statistics.GetIndexAsync(
                 DashboardPeriod.CreateToday(BrowserTimeZone.Resolve(httpContextAccessor.HttpContext)),
                 workerIds: [workerId],
-                ct: ct);
+                ct: ct,
+                includeFilterCatalog: false);
             return statisticsViewModel.MonitoringCycles;
         }
         catch (Exception)

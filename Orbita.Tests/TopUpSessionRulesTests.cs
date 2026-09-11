@@ -99,6 +99,9 @@ public sealed class TopUpSessionRulesTests
     [InlineData(TopUpSessionStatuses.QrReady, TopUpSessionStatuses.Failed, true)]
     [InlineData(TopUpSessionStatuses.QrReady, TopUpSessionStatuses.Expired, true)]
     [InlineData(TopUpSessionStatuses.QrReady, TopUpSessionStatuses.Paid, true)]
+    [InlineData(TopUpSessionStatuses.QrReady, TopUpSessionStatuses.Completed, true)]
+    [InlineData(TopUpSessionStatuses.AwaitingBalance, TopUpSessionStatuses.Completed, true)]
+    [InlineData(TopUpSessionStatuses.VerificationRequired, TopUpSessionStatuses.Completed, true)]
     [InlineData(TopUpSessionStatuses.QrReady, TopUpSessionStatuses.Started, false)]
     [InlineData(TopUpSessionStatuses.QrReady, TopUpSessionStatuses.Requested, false)]
     [InlineData(TopUpSessionStatuses.Started, TopUpSessionStatuses.Paid, false)]
@@ -115,6 +118,29 @@ public sealed class TopUpSessionRulesTests
     public void PauseLeaseTtl_IsTenMinutes()
     {
         Assert.Equal(TimeSpan.FromMinutes(10), TopUpSessionRules.PauseLeaseTtl);
+    }
+
+    [Fact]
+    public void QueueTtl_IsTwoHours()
+    {
+        Assert.Equal(TimeSpan.FromHours(2), TopUpSessionRules.QueueTtl);
+    }
+
+    [Theory]
+    [InlineData(100, 200, 300, 300, true)]
+    [InlineData(100, 200, 300, 299, true)]
+    [InlineData(100, 200, 300, 298.99, false)]
+    [InlineData(100, 200, 300, 101, false)]
+    [InlineData(100, 200, 300, 100, false)]
+    [InlineData(100, 200, 300, 99, false)]
+    public void IsExpectedBalanceIncrease_RequiresRequestedAmount(
+        decimal current,
+        decimal requested,
+        decimal target,
+        decimal actual,
+        bool expected)
+    {
+        Assert.Equal(expected, TopUpSessionRules.IsExpectedBalanceIncrease(current, requested, target, actual));
     }
 
     [Fact]

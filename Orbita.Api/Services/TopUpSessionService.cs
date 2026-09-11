@@ -1,6 +1,8 @@
 using System.Security.Claims;
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using Npgsql;
 using Orbita.Api.Data;
 using Orbita.Api.Helpers;
@@ -20,8 +22,10 @@ public sealed class TopUpSessionService(
     IPanelRealtimeNotifier panelRealtime,
     IWorkerPushNotifier workerPushNotifier,
     WorkerConnectionRegistry connectionRegistry,
-    TimeProvider timeProvider)
+    TimeProvider timeProvider,
+    ILogger<TopUpSessionService>? logger = null)
 {
+    private readonly ILogger _log = logger ?? NullLogger<TopUpSessionService>.Instance;
     private static readonly TimeSpan SessionTtl = TopUpSessionRules.PauseLeaseTtl;
     private static readonly TimeSpan BalanceSpendLookback = TimeSpan.FromHours(1);
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
@@ -34,6 +38,19 @@ public sealed class TopUpSessionService(
         TopUpSessionStatuses.PaymentClaimed,
         TopUpSessionStatuses.QrReady
     ];
+    /// <summary>Воркер берёт в работу только эти статусы. Готовый QR — задача оператора.</summary>
+    private static readonly string[] WorkerDispatchStatuses =
+    [
+        TopUpSessionStatuses.Requested,
+        TopUpSessionStatuses.Started
+    ];
+    /// <summary>Пауза мониторинга держится, пока воркер ещё автоматизирует пополнение.</summary>
+    private static readonly string[] PauseHoldingStatuses =
+    [
+        TopUpSessionStatuses.Requested,
+        TopUpSessionStatuses.Started,
+        TopUpSessionStatuses.PaymentClaimed
+    ];
     private static readonly string[] ConflictStatuses =
     [
         TopUpSessionStatuses.Requested,
@@ -41,6 +58,12 @@ public sealed class TopUpSessionService(
         TopUpSessionStatuses.PaymentClaimed,
         TopUpSessionStatuses.QrReady,
         TopUpSessionStatuses.AwaitingBalance
+    ];
+    private static readonly string[] ConfirmableStatuses =
+    [
+        TopUpSessionStatuses.QrReady,
+        TopUpSessionStatuses.AwaitingBalance,
+        TopUpSessionStatuses.VerificationRequired
     ];
     private static readonly TimeSpan BalanceConfirmationTimeout = TimeSpan.FromMinutes(10);
 
@@ -87,6 +110,11 @@ public sealed class TopUpSessionService(
         // Воркер должен быть онлайн: иначе воркер не сможет подхватить сессию и сформировать QR.
         if (!WorkerOnlineRules.IsOnline(worker.LastSeenAtUtc, now, connectionRegistry.IsConnected(worker.Id)))
         {
+            _log.LogWarning(
+                "Top-up: отказ создания, воркер {WorkerId} оффлайн, account={AccountId} subprofile={SubProfileId}.",
+                workerId,
+                accountId,
+                subProfileId);
             return (null, new TopUpSessionConflictDto("Воркер оффлайн — пополнение недоступно."));
         }
 
@@ -105,6 +133,13 @@ public sealed class TopUpSessionService(
         {
             if (active.ExpiresAtUtc > now)
             {
+                _log.LogInformation(
+                    "Top-up: отказ создания, уже есть сессия {ExistingSessionId} ({Status}) worker={WorkerId} account={AccountId} subprofile={SubProfileId}.",
+                    active.Id,
+                    active.Status,
+                    workerId,
+                    accountId,
+                    subProfileId);
                 return (null, new TopUpSessionConflictDto(
                     "Для этого аккаунта уже есть активная сессия пополнения.",
                     active.Id,
@@ -141,6 +176,12 @@ public sealed class TopUpSessionService(
         var currentBalance = subProfile?.Balance ?? lockedAccount.TotalBalance;
         if (!TopUpSessionRules.IsEligible(currentBalance))
         {
+            _log.LogInformation(
+                "Top-up: отказ создания, баланс {Balance} не ниже порога worker={WorkerId} account={AccountId} subprofile={SubProfileId}.",
+                currentBalance,
+                workerId,
+                accountId,
+                subProfileId);
             return (null, new TopUpSessionConflictDto(
                 $"Баланс аккаунта ({currentBalance:0.##} ₽) не ниже порога пополнения."));
         }
@@ -181,7 +222,7 @@ public sealed class TopUpSessionService(
             RequestedAmount = requestedAmount,
             DailyResponseCount = dailyResponses,
             CreatedAtUtc = now,
-            ExpiresAtUtc = now.Add(SessionTtl),
+            ExpiresAtUtc = now.Add(TopUpSessionRules.QueueTtl),
             ProgressMessage = "Ставим мониторинг на паузу и передаём задачу воркеру…"
         };
 
@@ -215,6 +256,12 @@ public sealed class TopUpSessionService(
                         && ConflictStatuses.Contains(x.Status),
                     ct)
                 .ConfigureAwait(false);
+            _log.LogInformation(
+                "Top-up: отказ создания, конкурентная сессия {ExistingSessionId} worker={WorkerId} account={AccountId} subprofile={SubProfileId}.",
+                winner?.Id,
+                workerId,
+                accountId,
+                subProfileId);
             return (null, new TopUpSessionConflictDto(
                 "Для этого аккаунта уже есть активная сессия пополнения.",
                 winner?.Id,
@@ -223,17 +270,27 @@ public sealed class TopUpSessionService(
 
         await transaction.CommitAsync(ct).ConfigureAwait(false);
 
+        _log.LogInformation(
+            "Top-up: создана сессия {SessionId} worker={WorkerId} account={AccountId} ({AccountName}) subprofile={SubProfileId}/{SubProfileName} balance={Current} target={Target} amount={Requested} expires={ExpiresAtUtc} pauseLease={OwnsPause}.",
+            session.Id,
+            session.WorkerId,
+            session.AccountId,
+            session.AccountName,
+            session.SubProfileId,
+            session.SubProfileName,
+            session.CurrentBalance,
+            session.TargetBalance,
+            session.RequestedAmount,
+            session.ExpiresAtUtc,
+            session.OwnsPauseLease);
+
         panelRealtime.Notify(
             [PanelChangeKind.Workers, PanelChangeKind.Accounts],
             worker.OfficeId,
             worker.Id);
         await workerPushNotifier.PushConfigChangedAsync(worker.Id, ct).ConfigureAwait(false);
 
-        var pending = await GetPendingForWorkerAsync(worker.Id, ct).ConfigureAwait(false);
-        if (pending is not null)
-        {
-            await workerPushNotifier.TryPushTopUpSessionAsync(worker.Id, pending, ct).ConfigureAwait(false);
-        }
+        await PushNextPendingAsync(worker.Id, ct).ConfigureAwait(false);
 
         return (ToDto(session, worker.DisplayName), null);
     }
@@ -356,8 +413,16 @@ public sealed class TopUpSessionService(
             return (false, ownerError);
         }
 
-        if (string.Equals(session.Status, terminalStatus, StringComparison.OrdinalIgnoreCase))
+        if (string.Equals(session.Status, terminalStatus, StringComparison.OrdinalIgnoreCase)
+            || (terminalStatus == TopUpSessionStatuses.AwaitingBalance
+                && session.Status == TopUpSessionStatuses.Completed))
         {
+            _log.LogInformation(
+                "Top-up: повторное действие для {SessionId}, статус уже {Status} worker={WorkerId} account={AccountName}.",
+                session.Id,
+                session.Status,
+                session.WorkerId,
+                session.AccountName);
             await transaction.RollbackAsync(ct).ConfigureAwait(false);
             return (true, null);
         }
@@ -365,6 +430,14 @@ public sealed class TopUpSessionService(
         var validationError = validate(session);
         if (validationError is not null)
         {
+            _log.LogWarning(
+                "Top-up: оператор не смог перевести {SessionId} в {Status}: {Error} (сейчас {CurrentStatus}) worker={WorkerId} account={AccountName}.",
+                session.Id,
+                terminalStatus,
+                validationError,
+                session.Status,
+                session.WorkerId,
+                session.AccountName);
             await transaction.RollbackAsync(ct).ConfigureAwait(false);
             return (false, validationError);
         }
@@ -390,6 +463,15 @@ public sealed class TopUpSessionService(
             [PanelChangeKind.Workers, PanelChangeKind.Accounts],
             session.OfficeId,
             session.WorkerId);
+        _log.LogInformation(
+            "Top-up: оператор {Operator} перевёл {SessionId} в {Status} worker={WorkerId} account={AccountName} subprofile={SubProfileName}.",
+            session.OperatorDisplayName,
+            session.Id,
+            session.Status,
+            session.WorkerId,
+            session.AccountName,
+            session.SubProfileName);
+        await PushNextPendingAsync(session.WorkerId, ct).ConfigureAwait(false);
         return (true, null);
     }
 
@@ -472,6 +554,7 @@ public sealed class TopUpSessionService(
                 [PanelChangeKind.Workers, PanelChangeKind.Accounts],
                 session.OfficeId,
                 session.WorkerId);
+            await PushNextPendingAsync(session.WorkerId, ct).ConfigureAwait(false);
             return (false, "Сессия истекла.");
         }
 
@@ -486,6 +569,7 @@ public sealed class TopUpSessionService(
             return (false, $"Недопустимый переход статуса '{session.Status}' → '{request.Status}'.");
         }
 
+        var previousStatus = session.Status;
         var statusChanged = !string.Equals(session.Status, request.Status, StringComparison.OrdinalIgnoreCase);
         var applyingQr = request.Status == TopUpSessionStatuses.QrReady
                          && (statusChanged || request.QrImageBase64 is not null || request.QrImageUrl is not null);
@@ -504,14 +588,17 @@ public sealed class TopUpSessionService(
             if (request.Status == TopUpSessionStatuses.Started)
             {
                 session.StartedAtUtc ??= now;
+                session.ExpiresAtUtc = now.Add(SessionTtl);
             }
             else if (request.Status == TopUpSessionStatuses.PaymentClaimed)
             {
                 session.PaymentClaimedAtUtc ??= now;
+                session.ExpiresAtUtc = now.Add(SessionTtl);
             }
             else if (request.Status == TopUpSessionStatuses.QrReady)
             {
                 session.QrReadyAtUtc ??= now;
+                session.ExpiresAtUtc = now.Add(SessionTtl);
                 session.QrImageBase64 = request.QrImageBase64;
                 session.QrImageUrl = request.QrImageUrl;
             }
@@ -520,6 +607,7 @@ public sealed class TopUpSessionService(
         {
             session.QrImageBase64 = request.QrImageBase64;
             session.QrImageUrl = request.QrImageUrl;
+            session.ExpiresAtUtc = now.Add(SessionTtl);
         }
 
         if (request.ProgressMessage is not null)
@@ -527,22 +615,73 @@ public sealed class TopUpSessionService(
             session.ProgressMessage = TopUpSessionRules.SanitizeProgressMessage(request.ProgressMessage);
         }
 
-        if (!TopUpSessionStatuses.IsActive(request.Status))
+        var dispatchNext = false;
+        if (statusChanged && request.Status == TopUpSessionStatuses.QrReady)
+        {
+            await ReleasePauseAsync(session, ct).ConfigureAwait(false);
+            dispatchNext = true;
+        }
+        else if (!TopUpSessionStatuses.IsActive(request.Status))
         {
             session.CompletedAtUtc = now;
             session.FailureMessage = request.FailureMessage;
             ClearQrData(session);
             await ReleasePauseAsync(session, ct).ConfigureAwait(false);
+            dispatchNext = true;
         }
 
         await db.SaveChangesAsync(ct).ConfigureAwait(false);
 
-        if (!TopUpSessionStatuses.IsActive(request.Status))
+        if (!TopUpSessionStatuses.IsActive(request.Status)
+            || (statusChanged && request.Status == TopUpSessionStatuses.QrReady))
         {
             panelRealtime.Notify(
                 [PanelChangeKind.Workers, PanelChangeKind.Accounts],
                 session.OfficeId,
                 session.WorkerId);
+        }
+
+        if (statusChanged)
+        {
+            if (request.Status == TopUpSessionStatuses.QrReady)
+            {
+                _log.LogInformation(
+                    "Top-up: QR готов {SessionId} worker={WorkerId} account={AccountName} subprofile={SubProfileName} amount={Requested} expires={ExpiresAtUtc}.",
+                    session.Id,
+                    session.WorkerId,
+                    session.AccountName,
+                    session.SubProfileName,
+                    session.RequestedAmount,
+                    session.ExpiresAtUtc);
+            }
+            else if (request.Status is TopUpSessionStatuses.Failed or TopUpSessionStatuses.Expired)
+            {
+                _log.LogWarning(
+                    "Top-up: сессия {SessionId} {PreviousStatus} → {Status} worker={WorkerId} account={AccountName} subprofile={SubProfileName}: {Failure}.",
+                    session.Id,
+                    previousStatus,
+                    request.Status,
+                    session.WorkerId,
+                    session.AccountName,
+                    session.SubProfileName,
+                    request.FailureMessage);
+            }
+            else
+            {
+                _log.LogInformation(
+                    "Top-up: сессия {SessionId} {PreviousStatus} → {Status} worker={WorkerId} account={AccountName} subprofile={SubProfileName}.",
+                    session.Id,
+                    previousStatus,
+                    request.Status,
+                    session.WorkerId,
+                    session.AccountName,
+                    session.SubProfileName);
+            }
+        }
+
+        if (dispatchNext)
+        {
+            await PushNextPendingAsync(session.WorkerId, ct).ConfigureAwait(false);
         }
 
         return (true, null);
@@ -625,6 +764,7 @@ public sealed class TopUpSessionService(
 
             session.Status = TopUpSessionStatuses.PaymentClaimed;
             session.PaymentClaimedAtUtc = now;
+            session.ExpiresAtUtc = now.Add(SessionTtl);
 
             await db.SaveChangesAsync(ct).ConfigureAwait(false);
             await transaction.CommitAsync(ct).ConfigureAwait(false);
@@ -661,11 +801,14 @@ public sealed class TopUpSessionService(
     {
         var now = timeProvider.GetUtcNow().UtcDateTime;
         var session = await db.TopUpSessions.AsNoTracking()
-            .Where(x => x.WorkerId == workerId && ActiveStatuses.Contains(x.Status))
-            .OrderByDescending(x => x.CreatedAtUtc)
+            .Where(x =>
+                x.WorkerId == workerId
+                && WorkerDispatchStatuses.Contains(x.Status)
+                && x.ExpiresAtUtc > now)
+            .OrderBy(x => x.CreatedAtUtc)
             .FirstOrDefaultAsync(ct)
             .ConfigureAwait(false);
-        if (session is null || session.ExpiresAtUtc <= now)
+        if (session is null)
         {
             return null;
         }
@@ -730,6 +873,14 @@ public sealed class TopUpSessionService(
             .ConfigureAwait(false);
         foreach (var session in unconfirmed)
         {
+            _log.LogWarning(
+                "Top-up: сессия {SessionId} требует проверки, баланс не вырос за 10 минут worker={WorkerId} account={AccountName} subprofile={SubProfileName} current={Current} requested={Requested}.",
+                session.Id,
+                session.WorkerId,
+                session.AccountName,
+                session.SubProfileName,
+                session.CurrentBalance,
+                session.RequestedAmount);
             session.Status = TopUpSessionStatuses.VerificationRequired;
             session.CompletedAtUtc = now;
             session.ProgressMessage = "Баланс не обновился за 10 минут. Требуется ручная проверка.";
@@ -752,38 +903,91 @@ public sealed class TopUpSessionService(
         DateTime capturedAtUtc,
         CancellationToken ct = default)
     {
-        var awaiting = await db.TopUpSessions
-            .Where(x => x.WorkerId == workerId && x.Status == TopUpSessionStatuses.AwaitingBalance)
+        var candidates = await db.TopUpSessions
+            .Where(x => x.WorkerId == workerId && ConfirmableStatuses.Contains(x.Status))
             .ToListAsync(ct)
             .ConfigureAwait(false);
-        if (awaiting.Count == 0)
+        if (candidates.Count == 0)
         {
             return 0;
         }
 
+        var conflicts = await db.TopUpSessions.AsNoTracking()
+            .Where(x => x.WorkerId == workerId && ConflictStatuses.Contains(x.Status))
+            .Select(x => new { x.Id, x.AccountId, x.SubProfileId, x.CreatedAtUtc })
+            .ToListAsync(ct)
+            .ConfigureAwait(false);
+
         var completed = 0;
-        foreach (var session in awaiting)
+        foreach (var session in candidates)
         {
             var account = balances.FirstOrDefault(x => x.AccountId == session.AccountId);
             if (account is null)
             {
+                _log.LogWarning(
+                    "Top-up: снимок воркера {WorkerId} без аккаунта {AccountId} для сессии {SessionId} ({Status}).",
+                    workerId,
+                    session.AccountId,
+                    session.Id,
+                    session.Status);
                 continue;
             }
 
-            decimal? balanceAfter = null;
-            if (!string.IsNullOrWhiteSpace(session.SubProfileId) || !string.IsNullOrWhiteSpace(session.SubProfileName))
+            var blockedByNewer = conflicts.Any(x =>
+                x.Id != session.Id
+                && x.AccountId == session.AccountId
+                && string.Equals(x.SubProfileId, session.SubProfileId, StringComparison.Ordinal)
+                && x.CreatedAtUtc > session.CreatedAtUtc);
+            if (blockedByNewer)
             {
-                var profile = account.SubProfiles.FirstOrDefault(x =>
-                    string.Equals(x.SubProfileName, session.SubProfileName, StringComparison.OrdinalIgnoreCase));
-                balanceAfter = profile?.Balance;
-            }
-            else
-            {
-                balanceAfter = account.TotalBalance;
+                _log.LogInformation(
+                    "Top-up: сессию {SessionId} ({Status}) не подтверждаем, на субпрофиле {SubProfileId} уже есть более новая операция.",
+                    session.Id,
+                    session.Status,
+                    session.SubProfileId);
+                continue;
             }
 
-            if (balanceAfter is not decimal actual || actual <= session.CurrentBalance)
+            var previousStatus = session.Status;
+            var balanceAfter = TryGetAccountBalance(account, session.SubProfileId, session.SubProfileName);
+            if (balanceAfter is not decimal actual
+                || !TopUpSessionRules.IsExpectedBalanceIncrease(
+                    session.CurrentBalance,
+                    session.RequestedAmount,
+                    session.TargetBalance,
+                    actual))
             {
+                if (balanceAfter is not decimal seen)
+                {
+                    _log.LogWarning(
+                        "Top-up: в снимке нет баланса субпрофиля {SubProfileId}/{SubProfileName} для сессии {SessionId} ({Status}).",
+                        session.SubProfileId,
+                        session.SubProfileName,
+                        session.Id,
+                        session.Status);
+                }
+                else if (seen > session.CurrentBalance)
+                {
+                    _log.LogWarning(
+                        "Top-up: сессия {SessionId} ({Status}) не подтверждена: было {Current}, стало {Actual}, ждали {Requested} до {Target}.",
+                        session.Id,
+                        session.Status,
+                        session.CurrentBalance,
+                        seen,
+                        session.RequestedAmount,
+                        session.TargetBalance);
+                }
+                else
+                {
+                    _log.LogDebug(
+                        "Top-up: сессия {SessionId} ({Status}) ждёт рост баланса: было {Current}, снимок {Actual}, ждали {Requested}.",
+                        session.Id,
+                        session.Status,
+                        session.CurrentBalance,
+                        seen,
+                        session.RequestedAmount);
+                }
+
                 continue;
             }
 
@@ -792,13 +996,35 @@ public sealed class TopUpSessionService(
             session.BalanceConfirmedAtUtc = capturedAtUtc;
             session.CompletedAtUtc = capturedAtUtc;
             session.ProgressMessage = "Пополнение подтверждено новым снимком баланса.";
+            ClearQrData(session);
+            await ReleasePauseAsync(session, ct).ConfigureAwait(false);
             completed++;
+            _log.LogInformation(
+                "Top-up: баланс подтверждён {SessionId} {PreviousStatus} → completed {Current} → {Actual} requested={Requested} worker={WorkerId} account={AccountName} subprofile={SubProfileName}.",
+                session.Id,
+                previousStatus,
+                session.CurrentBalance,
+                actual,
+                session.RequestedAmount,
+                session.WorkerId,
+                session.AccountName,
+                session.SubProfileName);
         }
 
         if (completed > 0)
         {
             await db.SaveChangesAsync(ct).ConfigureAwait(false);
+            foreach (var session in candidates.Where(x => x.Status == TopUpSessionStatuses.Completed))
+            {
+                panelRealtime.Notify(
+                    [PanelChangeKind.Workers, PanelChangeKind.Accounts],
+                    session.OfficeId,
+                    session.WorkerId);
+            }
+
+            await PushNextPendingAsync(workerId, ct).ConfigureAwait(false);
         }
+
         return completed;
     }
 
@@ -832,6 +1058,13 @@ public sealed class TopUpSessionService(
 
     private async Task ExpireSessionAsync(TopUpSessionEntity session, DateTime now, CancellationToken ct)
     {
+        _log.LogInformation(
+            "Top-up: сессия {SessionId} истекла (была {Status}) worker={WorkerId} account={AccountName} subprofile={SubProfileName}.",
+            session.Id,
+            session.Status,
+            session.WorkerId,
+            session.AccountName,
+            session.SubProfileName);
         session.Status = TopUpSessionStatuses.Expired;
         session.CompletedAtUtc = now;
         session.FailureMessage = "Истекло время сессии.";
@@ -944,30 +1177,62 @@ public sealed class TopUpSessionService(
                 return null;
             }
 
-            if (string.IsNullOrWhiteSpace(subProfileId))
-            {
-                return account.TotalBalance;
-            }
-
-            var byId = account.SubProfiles
-                .FirstOrDefault(x => string.Equals(x.SubProfileId, subProfileId, StringComparison.Ordinal));
-            if (byId?.Balance is not null)
-            {
-                return byId.Balance.Value;
-            }
-
-            // Старые снимки не содержали Id. Имя годится только если оно однозначно,
-            // иначе чужой субпрофиль мог бы искусственно увеличить сумму пополнения.
-            var nameMatches = account.SubProfiles
-                .Where(x => string.IsNullOrWhiteSpace(x.SubProfileId)
-                            && string.Equals(x.SubProfileName, subProfileName, StringComparison.Ordinal))
-                .ToList();
-            return nameMatches.Count == 1 ? nameMatches[0].Balance : null;
+            return TryGetAccountBalance(account, subProfileId, subProfileName);
         }
         catch (JsonException)
         {
             return null;
         }
+    }
+
+    private static decimal? TryGetAccountBalance(
+        WorkerBalanceDto account,
+        string? subProfileId,
+        string? subProfileName)
+    {
+        if (string.IsNullOrWhiteSpace(subProfileId) && string.IsNullOrWhiteSpace(subProfileName))
+        {
+            return account.TotalBalance;
+        }
+
+        var byId = string.IsNullOrWhiteSpace(subProfileId)
+            ? null
+            : account.SubProfiles
+                .FirstOrDefault(x => string.Equals(x.SubProfileId, subProfileId, StringComparison.Ordinal));
+        if (byId?.Balance is not null)
+        {
+            return byId.Balance.Value;
+        }
+
+        if (string.IsNullOrWhiteSpace(subProfileName))
+        {
+            return string.IsNullOrWhiteSpace(subProfileId) ? account.TotalBalance : null;
+        }
+
+        var nameMatches = account.SubProfiles
+            .Where(x => string.Equals(x.SubProfileName, subProfileName, StringComparison.OrdinalIgnoreCase))
+            .ToList();
+        return nameMatches.Count == 1 ? nameMatches[0].Balance : null;
+    }
+
+    private async Task PushNextPendingAsync(Guid workerId, CancellationToken ct)
+    {
+        var pending = await GetPendingForWorkerAsync(workerId, ct).ConfigureAwait(false);
+        if (pending is null)
+        {
+            _log.LogDebug("Top-up: у воркера {WorkerId} нет следующей сессии в очереди.", workerId);
+            return;
+        }
+
+        _log.LogInformation(
+            "Top-up: следующая сессия {SessionId} отдана воркеру {WorkerId} account={AccountName} subprofile={SubProfileId}/{SubProfileName} amount={Requested}.",
+            pending.SessionId,
+            workerId,
+            pending.AccountName,
+            pending.SubProfileId,
+            pending.SubProfileName,
+            pending.RequestedAmount);
+        await workerPushNotifier.TryPushTopUpSessionAsync(workerId, pending, ct).ConfigureAwait(false);
     }
 
     private async Task ReleasePauseAsync(TopUpSessionEntity session, CancellationToken ct)
@@ -980,16 +1245,21 @@ public sealed class TopUpSessionService(
             return;
         }
 
-        // Если есть другие активные сессии этого воркера — аренда остаётся (пауза сохраняется).
+        // Если воркер ещё автоматизирует другую сессию — аренда остаётся (пауза сохраняется).
         var hasOtherActiveSession = await db.TopUpSessions
             .AnyAsync(x =>
                     x.WorkerId == session.WorkerId
                     && x.Id != session.Id
-                    && ActiveStatuses.Contains(x.Status),
+                    && PauseHoldingStatuses.Contains(x.Status),
                 ct)
             .ConfigureAwait(false);
         if (hasOtherActiveSession)
         {
+            _log.LogInformation(
+                "Top-up: пауза воркера {WorkerId} сохранена, после {SessionId} ({Status}) в очереди ещё есть сессии.",
+                session.WorkerId,
+                session.Id,
+                session.Status);
             return;
         }
 
@@ -999,6 +1269,11 @@ public sealed class TopUpSessionService(
         worker.IsMonitoringPaused = worker.TopUpPauseBaselinePaused;
         worker.TopUpPauseLeaseId = null;
         worker.TopUpPauseLeaseVersion++;
+        _log.LogInformation(
+            "Top-up: пауза воркера {WorkerId} снята после {SessionId} ({Status}).",
+            session.WorkerId,
+            session.Id,
+            session.Status);
     }
 
     private async Task<WorkerEntity?> LockWorkerAsync(Guid workerId, CancellationToken ct)

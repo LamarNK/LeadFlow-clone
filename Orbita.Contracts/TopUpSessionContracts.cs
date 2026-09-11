@@ -38,8 +38,9 @@ public static class TopUpSessionStatuses
             [Requested] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { Started, Failed, Expired },
             [Started] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { PaymentClaimed, QrReady, Failed, Expired },
             [PaymentClaimed] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { QrReady, Failed, Expired },
-            [QrReady] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { Paid, AwaitingBalance, Failed, Expired },
+            [QrReady] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { Paid, AwaitingBalance, Completed, Failed, Expired },
             [AwaitingBalance] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { Completed, VerificationRequired, Failed, Expired },
+            [VerificationRequired] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { Completed },
         };
 
     /// <summary>
@@ -89,10 +90,16 @@ public static class TopUpSessionRules
     public const decimal RapidSpendHighThresholdRub = 900m;
 
     /// <summary>
-    /// Срок паузы мониторинга с момента создания сессии. Если оператор оплатил QR
-    /// и закрыл вкладку, sweeper снимет паузу по истечении этого интервала.
+    /// Срок автоматизации и оплаты QR: от <c>started</c> до готового QR и от
+    /// <c>qr_ready</c> до оплаты. Не применяется к сессиям, которые ещё ждут воркера.
     /// </summary>
     public static readonly TimeSpan PauseLeaseTtl = TimeSpan.FromMinutes(10);
+
+    /// <summary>Срок жизни сессии в очереди воркера, пока её не взяли в работу.</summary>
+    public static readonly TimeSpan QueueTtl = TimeSpan.FromHours(2);
+
+    /// <summary>Допуск при сверке нового баланса с ожидаемой суммой пополнения.</summary>
+    public const decimal BalanceEpsilonRub = 1m;
 
     public static TimeZoneInfo MoscowTimeZone { get; } = ResolveMoscow();
 
@@ -119,6 +126,28 @@ public static class TopUpSessionRules
 
     public static decimal ResolveRequestedAmount(decimal currentBalance, int dailyResponses, decimal spentLastHour) =>
         Math.Max(0m, ResolveTargetBalance(dailyResponses, spentLastHour) - currentBalance);
+
+    /// <summary>
+    /// Снимок подтверждает пополнение, если баланс вырос и достиг ожидаемой суммы
+    /// (<c>min(current + requested, target)</c>) с допуском <see cref="BalanceEpsilonRub"/>.
+    /// Любой рост на 1 ₽ успехом не считается.
+    /// </summary>
+    public static bool IsExpectedBalanceIncrease(
+        decimal currentBalance,
+        decimal requestedAmount,
+        decimal targetBalance,
+        decimal actualBalance)
+    {
+        if (actualBalance <= currentBalance)
+        {
+            return false;
+        }
+
+        var expected = requestedAmount > 0m
+            ? Math.Min(currentBalance + requestedAmount, targetBalance)
+            : targetBalance;
+        return actualBalance + BalanceEpsilonRub >= expected;
+    }
 
     private static decimal ResolveTargetBalanceByHourlySpend(decimal spentLastHour) =>
         spentLastHour >= RapidSpendHighThresholdRub

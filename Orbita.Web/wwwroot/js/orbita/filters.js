@@ -139,8 +139,116 @@
         });
     }
 
+    function statisticsPickerOptions(picker) {
+        return Array.prototype.slice.call(picker.querySelectorAll('[data-statistics-multiselect-option]'));
+    }
+
+    function closeStatisticsPicker(picker) {
+        var menu = picker.querySelector('[data-statistics-multiselect-menu]');
+        var trigger = picker.querySelector('[data-statistics-multiselect-trigger]');
+        if (menu) menu.hidden = true;
+        if (trigger) trigger.setAttribute('aria-expanded', 'false');
+    }
+
+    function syncStatisticsPicker(picker, forceAll) {
+        var fieldName = picker.getAttribute('data-statistics-field');
+        var triggerText = picker.querySelector('[data-statistics-multiselect-text]');
+        var valuesRoot = picker.querySelector('[data-statistics-multiselect-values]');
+        var selectAll = picker.querySelector('[data-statistics-multiselect-all]');
+        var options = statisticsPickerOptions(picker);
+        if (!fieldName || !triggerText || !valuesRoot || !selectAll) return;
+
+        var selected = options.filter(function (option) { return option.checked; });
+        var isAll = forceAll === true || selected.length === 0 || selected.length === options.length;
+        if (isAll) {
+            options.forEach(function (option) { option.checked = true; });
+            selected = options;
+        }
+
+        selectAll.checked = isAll;
+        selectAll.indeterminate = !isAll && selected.length > 0;
+        valuesRoot.replaceChildren();
+        if (!isAll) {
+            selected.forEach(function (option) {
+                var value = document.createElement('input');
+                value.type = 'hidden';
+                value.name = fieldName;
+                value.value = option.value;
+                valuesRoot.appendChild(value);
+            });
+        }
+
+        if (isAll) {
+            triggerText.textContent = picker.getAttribute('data-statistics-all-label') || 'Все';
+        } else if (selected.length === 1) {
+            triggerText.textContent = selected[0].parentElement.textContent.trim();
+        } else {
+            triggerText.textContent = 'Выбрано: ' + selected.length;
+        }
+    }
+
+    runtime.initStatisticsMultiSelects = function initStatisticsMultiSelects() {
+        if (window.__orbitaStatisticsMultiSelectBound) return;
+        window.__orbitaStatisticsMultiSelectBound = true;
+
+        document.addEventListener('click', function (event) {
+            var picker = event.target.closest('[data-statistics-multiselect]');
+            var trigger = event.target.closest('[data-statistics-multiselect-trigger]');
+
+            document.querySelectorAll('[data-statistics-multiselect]').forEach(function (el) {
+                if (el !== picker) closeStatisticsPicker(el);
+            });
+
+            if (!trigger || !picker) return;
+
+            var menu = picker.querySelector('[data-statistics-multiselect-menu]');
+            if (!menu) return;
+            var willOpen = menu.hidden;
+            menu.hidden = !willOpen;
+            trigger.setAttribute('aria-expanded', String(willOpen));
+            if (willOpen) {
+                var search = picker.querySelector('[data-statistics-multiselect-search]');
+                if (search) search.focus();
+            }
+        });
+
+        document.addEventListener('change', function (event) {
+            var picker = event.target.closest('[data-statistics-multiselect]');
+            if (!picker) return;
+            if (event.target.closest('[data-statistics-multiselect-all]')) {
+                syncStatisticsPicker(picker, true);
+                return;
+            }
+            if (event.target.closest('[data-statistics-multiselect-option]')) {
+                syncStatisticsPicker(picker, false);
+            }
+        });
+
+        document.addEventListener('input', function (event) {
+            var search = event.target.closest('[data-statistics-multiselect-search]');
+            if (!search) return;
+            var picker = search.closest('[data-statistics-multiselect]');
+            if (!picker) return;
+            var query = search.value.trim().toLocaleLowerCase();
+            picker.querySelectorAll('[data-statistics-multiselect-option-row]').forEach(function (row) {
+                row.hidden = query.length > 0
+                    && (row.getAttribute('data-statistics-search-text') || '').toLocaleLowerCase().indexOf(query) < 0;
+            });
+        });
+
+        document.addEventListener('keydown', function (event) {
+            if (event.key !== 'Escape') return;
+            var picker = event.target.closest('[data-statistics-multiselect]');
+            if (!picker) return;
+            closeStatisticsPicker(picker);
+            var trigger = picker.querySelector('[data-statistics-multiselect-trigger]');
+            if (trigger) trigger.focus();
+        });
+    }
+
     runtime.initFilterPanels = function initFilterPanels() {
         runtime.syncFilterToggleCounts();
+        runtime.initStatisticsMultiSelects();
         document.querySelectorAll('[data-orbita-filter-toggle]').forEach(function (btn) {
             if (btn.hasAttribute('data-orbita-filter-bound')) return;
             btn.setAttribute('data-orbita-filter-bound', '1');

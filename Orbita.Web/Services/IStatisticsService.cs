@@ -9,5 +9,6 @@ public interface IStatisticsService
         IReadOnlyList<Guid>? workerIds = null,
         IReadOnlyList<Guid>? accountIds = null,
         string? vacancy = null,
-        CancellationToken ct = default);
+        CancellationToken ct = default,
+        bool includeFilterCatalog = true);
 }

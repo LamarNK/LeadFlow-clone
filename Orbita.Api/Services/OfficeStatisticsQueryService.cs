@@ -149,7 +149,10 @@ public sealed class OfficeStatisticsQueryService(
             scope,
             officeFilter,
             ct);
-        var hrInsights = await BuildHrInsightsAsync(collectedQuery, ct);
+        var hrInsights = await BuildHrInsightsAsync(
+            collectedQuery,
+            dailyTrend.Sum(x => x.Total),
+            ct);
         var workerInfrastructure = await BuildWorkerInfrastructureAsync(
             workers,
             workerIds,
@@ -823,9 +826,10 @@ public sealed class OfficeStatisticsQueryService(
 
     private static async Task<HrInsightsDto> BuildHrInsightsAsync(
         IQueryable<CandidateResponseEntity> query,
+        int collectedTotal,
         CancellationToken ct)
     {
-        var total = await query.CountAsync(ct);
+        var total = collectedTotal;
         if (total == 0)
         {
             return new HrInsightsDto([], [], [], [], "н/д", "0%");

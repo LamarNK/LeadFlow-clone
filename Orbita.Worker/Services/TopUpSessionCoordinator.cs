@@ -55,12 +55,13 @@ public sealed class TopUpSessionCoordinator(
         CancellationToken cancellationToken)
     {
         await TopUpWorkerLog.InfoAsync(
-            $"Top-up: подхвачена сессия {pending.SessionId:D}, аккаунт {pending.AccountName} ({pending.AccountId:D}), сумма {pending.RequestedAmount:0.##} ₽.",
+            $"Top-up: подхвачена сессия {pending.SessionId:D}, аккаунт {pending.AccountName} ({pending.AccountId:D}), субпрофиль {pending.SubProfileName} ({pending.SubProfileId}), сумма {pending.RequestedAmount:0.##} ₽.",
             nameof(RunAsync),
             new Dictionary<string, object?>
             {
                 ["topup.sessionId"] = pending.SessionId,
                 ["topup.accountId"] = pending.AccountId,
+                ["topup.subProfileId"] = pending.SubProfileId,
                 ["topup.amount"] = pending.RequestedAmount
             })
             .ConfigureAwait(false);

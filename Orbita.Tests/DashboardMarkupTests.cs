@@ -64,7 +64,10 @@ public sealed class DashboardMarkupTests
         Assert.Contains("data-statistics-multiselect", picker);
         Assert.Contains("name=\"@Model.FieldName\"", picker);
         Assert.Contains("function initStatisticsMultiSelects()", js);
-        Assert.Contains("value.name = fieldName", js);
+        var filtersJs = ReadRepoFile("Orbita.Web/wwwroot/js/orbita/filters.js");
+        Assert.Contains("runtime.initStatisticsMultiSelects", filtersJs);
+        Assert.Contains("value.name = fieldName", filtersJs);
+        Assert.Contains("[data-statistics-multiselect-trigger]", filtersJs);
     }
 
     [Fact]
@@ -83,6 +86,8 @@ public sealed class DashboardMarkupTests
     public void StatisticsFilters_InitializeBeforeDeferredChartWorkAfterContentSwap()
     {
         var js = ReadRepoFile("Orbita.Web/wwwroot/js/orbita-statistics.js");
+        var filtersJs = ReadRepoFile("Orbita.Web/wwwroot/js/orbita/filters.js");
+        var navigationJs = ReadRepoFile("Orbita.Web/wwwroot/js/orbita/navigation.js");
 
         var schedule = js.IndexOf("function scheduleStatisticsInit()", StringComparison.Ordinal);
         var pickerInit = js.IndexOf("initStatisticsMultiSelects();", schedule, StringComparison.Ordinal);
@@ -93,6 +98,16 @@ public sealed class DashboardMarkupTests
         Assert.True(firstAnimationFrame > schedule);
         Assert.True(pickerInit < firstAnimationFrame,
             "The statistics pickers must be interactive before deferred chart initialization.");
+        Assert.Contains("runtime.initStatisticsMultiSelects();", filtersJs);
+        Assert.Contains("isChartLibrary(src)", navigationJs);
+        Assert.Contains("chartReady.then(reinitChartsAfterLibraryLoad);", navigationJs);
+        Assert.Contains("url.searchParams.append(key, value);", navigationJs);
+        Assert.DoesNotContain("url.searchParams.set(key, value);", navigationJs);
+
+        var controller = ReadRepoFile("Orbita.Web/Controllers/StatisticsController.cs");
+        var snapshot = controller.IndexOf("public async Task<IActionResult> Snapshot(", StringComparison.Ordinal);
+        Assert.True(snapshot >= 0);
+        Assert.Contains("includeFilterCatalog: false", controller[snapshot..]);
     }
 
     [Fact]

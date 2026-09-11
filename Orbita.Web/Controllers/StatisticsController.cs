@@ -53,7 +53,8 @@ public sealed class StatisticsController(
             StatisticsService.NormalizeIds(workerIds),
             StatisticsService.NormalizeIds(accountIds),
             vacancy,
-            ct);
+            ct,
+            includeFilterCatalog: false);
         if (!string.IsNullOrWhiteSpace(model.ErrorMessage))
         {
             return StatusCode(StatusCodes.Status503ServiceUnavailable, new { error = model.ErrorMessage });

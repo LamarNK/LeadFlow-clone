@@ -176,7 +176,7 @@
                                 {
                                     <button type="button" class="balances-primary balances-primary--small" data-topup-paid="@session.Id">Оплачено</button>
                                 }
-                                @if (session is not null && session.Status is not TopUpSessionStatuses.Completed and not TopUpSessionStatuses.VerificationRequired)
+                                @if (session is not null && TopUpSessionStatuses.IsActive(session.Status))
                                 {
                                     <button type="button" class="balances-link" data-topup-cancel="@session.Id">Отменить</button>
                                 }

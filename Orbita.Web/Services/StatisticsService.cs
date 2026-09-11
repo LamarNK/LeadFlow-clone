@@ -15,7 +15,8 @@ public sealed class StatisticsService(
         IReadOnlyList<Guid>? workerIds = null,
         IReadOnlyList<Guid>? accountIds = null,
         string? vacancy = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        bool includeFilterCatalog = true)
     {
         var filters = new StatisticsFiltersViewModel
         {
@@ -29,8 +30,12 @@ public sealed class StatisticsService(
             return DesignPreviewData.BuildStatisticsIndexViewModel(period, officeContext, filters);
         }
 
-        var workersTask = api.GetWorkersAsync(ct);
-        var accountsTask = api.GetResponseFilterAccountsAsync(ct);
+        var workersTask = includeFilterCatalog
+            ? api.GetWorkersAsync(ct)
+            : Task.FromResult<IReadOnlyList<WorkerListItem>?>([]);
+        var accountsTask = includeFilterCatalog
+            ? api.GetResponseFilterAccountsAsync(ct)
+            : Task.FromResult<IReadOnlyList<ResponseFilterAccountDto>?>([]);
         var dataTask = api.GetStatisticsAsync(
             period.From,
             period.To,

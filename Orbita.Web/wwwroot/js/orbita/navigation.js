@@ -262,15 +262,47 @@
         return scripts;
     }
 
+    function isChartLibrary(src) {
+        return /chart\.umd\.js(?:\?|$)/i.test(src || '');
+    }
+
+    function reinitChartsAfterLibraryLoad() {
+        if (window.OrbitaStatistics && typeof window.OrbitaStatistics.reinit === 'function') {
+            window.OrbitaStatistics.reinit();
+        }
+        if (window.OrbitaDashboard && typeof window.OrbitaDashboard.reinit === 'function') {
+            window.OrbitaDashboard.reinit();
+        }
+        if (window.OrbitaWorker && typeof window.OrbitaWorker.reinit === 'function') {
+            window.OrbitaWorker.reinit();
+        }
+    }
+
     async function ensurePageScripts(fullPath, controllerKey) {
         var scripts = runtime.getScriptsForPath(fullPath, controllerKey);
-        for (var i = 0; i < scripts.length; i++) {
+        var pageScripts = [];
+        var chartScripts = [];
+        scripts.forEach(function (src) {
+            if (isChartLibrary(src)) chartScripts.push(src);
+            else pageScripts.push(src);
+        });
+
+        // Chart.js is large. Do not block page controls (filters, tables) on it.
+        var chartReady = Promise.all(chartScripts.map(function (src) {
+            return runtime.loadScriptOnce(src).catch(function (e) {
+                console.warn('Page script load:', e);
+            });
+        }));
+
+        for (var i = 0; i < pageScripts.length; i++) {
             try {
-                await runtime.loadScriptOnce(scripts[i]);
+                await runtime.loadScriptOnce(pageScripts[i]);
             } catch (e) {
                 console.warn('Page script load:', e);
             }
         }
+
+        chartReady.then(reinitChartsAfterLibraryLoad);
     }
 
     var NAV_STALE_MS = 5000;
@@ -611,13 +643,16 @@
                 var formData = new FormData(form);
                 var url = new URL(form.action || window.location.href, window.location.origin);
 
-                // Clear existing and apply form values (so empty values are removed)
-                // Keep existing non-form params if needed, but for our filters it's usually clean
-                formData.forEach((value, key) => {
-                    if (value !== '' && value != null) {
-                        url.searchParams.set(key, value);
-                    } else {
+                // Replace query from the form. Repeat keys (workerIds, accountIds) must
+                // be appended — set() would keep only the last value.
+                var seenKeys = {};
+                formData.forEach(function (value, key) {
+                    if (!Object.prototype.hasOwnProperty.call(seenKeys, key)) {
                         url.searchParams.delete(key);
+                        seenKeys[key] = true;
+                    }
+                    if (value !== '' && value != null) {
+                        url.searchParams.append(key, value);
                     }
                 });
 
