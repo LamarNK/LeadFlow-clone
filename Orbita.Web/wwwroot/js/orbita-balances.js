@@ -1,6 +1,33 @@
 (function () {
     'use strict';
 
+    function initKpiCounters() {
+        var shared = window.OrbitaLiveShared;
+        var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+        document.querySelectorAll('.balances-kpi-row [data-kpi-count]').forEach(function (el, index) {
+            if (el.getAttribute('data-balances-kpi-initialized') === '1') return;
+
+            var target = parseFloat(el.getAttribute('data-kpi-count'));
+            if (isNaN(target)) return;
+
+            el.setAttribute('data-balances-kpi-initialized', '1');
+            var suffix = el.getAttribute('data-kpi-suffix') || '';
+
+            if (reduced) {
+                el.textContent = Math.round(target) + suffix;
+                return;
+            }
+
+            if (shared && typeof shared.animateKpiValue === 'function') {
+                shared.animateKpiValue(el, 0, target, suffix, 720, 80 + index * 70);
+                return;
+            }
+
+            el.textContent = Math.round(target) + suffix;
+        });
+    }
+
     function initWorkerFilter() {
         var page = document.querySelector('[data-balances-page]');
         if (!page) return;
@@ -104,6 +131,7 @@
     function initPage() {
         var page = document.querySelector('[data-balances-page]');
         if (!page) return;
+        initKpiCounters();
         if (page.getAttribute('data-balances-bound') === '1') return;
         page.setAttribute('data-balances-bound', '1');
 
