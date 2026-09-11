@@ -2999,6 +2999,16 @@ namespace Orbita.Api.Data.Migrations
                     b.Property<string>("QrImageBase64")
                         .HasColumnType("text");
 
+                    b.Property<DateTime?>("AwaitingBalanceAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<decimal?>("BalanceAfter")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("numeric(18,2)");
+
+                    b.Property<DateTime?>("BalanceConfirmedAtUtc")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<string>("QrImageUrl")
                         .HasMaxLength(2048)
                         .HasColumnType("character varying(2048)");
@@ -3043,10 +3053,10 @@ namespace Orbita.Api.Data.Migrations
 
                     b.HasKey("Id");
 
-                    b.HasIndex("AccountId")
+                    b.HasIndex("AccountId", "SubProfileId")
                         .IsUnique()
                         .HasDatabaseName("IX_TopUpSessions_Account_Active")
-                        .HasFilter("\"Status\" IN ('requested', 'started', 'payment_claimed', 'qr_ready')");
+                        .HasFilter("\"Status\" IN ('requested', 'started', 'payment_claimed', 'qr_ready', 'awaiting_balance')");
 
                     b.HasIndex("WorkerId", "Status");
 

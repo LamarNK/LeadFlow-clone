@@ -961,6 +961,9 @@ public sealed class TopUpSessionEntity
     public DateTime? StartedAtUtc { get; set; }
     public DateTime? PaymentClaimedAtUtc { get; set; }
     public DateTime? QrReadyAtUtc { get; set; }
+    public DateTime? AwaitingBalanceAtUtc { get; set; }
+    public DateTime? BalanceConfirmedAtUtc { get; set; }
+    public decimal? BalanceAfter { get; set; }
     public string? QrImageBase64 { get; set; }
     public string? QrImageUrl { get; set; }
     public string? FailureMessage { get; set; }

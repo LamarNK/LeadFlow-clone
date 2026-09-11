@@ -144,4 +144,5 @@ public interface IWorkersService
     Task<TopUpSessionViewModel?> GetTopUpSessionAsync(Guid sessionId, CancellationToken ct = default);
     Task<(bool Success, string? Error)> CancelTopUpSessionAsync(Guid sessionId, CancellationToken ct = default);
     Task<(bool Success, string? Error)> MarkTopUpSessionPaidAsync(Guid sessionId, CancellationToken ct = default);
+    Task<IReadOnlyList<TopUpSessionViewModel>> GetTopUpSessionsAsync(bool history, CancellationToken ct = default);
 }

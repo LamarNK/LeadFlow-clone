@@ -21,6 +21,9 @@ public static class TopUpSessionStatuses
     public const string Cancelled = "cancelled";
     /// <summary>Оператор подтвердил, что оплатил QR. Снимает паузу мониторинга.</summary>
     public const string Paid = "paid";
+    public const string AwaitingBalance = "awaiting_balance";
+    public const string Completed = "completed";
+    public const string VerificationRequired = "verification_required";
 
     public static bool IsActive(string? status) =>
         status is Requested or Started or PaymentClaimed or QrReady;
@@ -35,7 +38,8 @@ public static class TopUpSessionStatuses
             [Requested] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { Started, Failed, Expired },
             [Started] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { PaymentClaimed, QrReady, Failed, Expired },
             [PaymentClaimed] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { QrReady, Failed, Expired },
-            [QrReady] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { Paid, Failed, Expired },
+            [QrReady] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { Paid, AwaitingBalance, Failed, Expired },
+            [AwaitingBalance] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { Completed, VerificationRequired, Failed, Expired },
         };
 
     /// <summary>
@@ -338,7 +342,10 @@ public sealed record TopUpSessionDto(
     string? FailureMessage,
     string SubProfileId = "",
     string SubProfileName = "",
-    string? ProgressMessage = null);
+    string? ProgressMessage = null,
+    decimal? BalanceAfter = null,
+    DateTime? BalanceConfirmedAtUtc = null,
+    DateTime? AwaitingBalanceAtUtc = null);
 
 /// <summary>
 /// Pending-снимок сессии для воркера (через worker config / push). Воркер уже знает

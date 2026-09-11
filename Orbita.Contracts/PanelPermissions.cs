@@ -9,6 +9,7 @@ public static class PanelPermissions
     public const string Dashboard = "dashboard";
     public const string Workers = "workers";
     public const string Accounts = "accounts";
+    public const string Balances = "balances";
     public const string Statistics = "statistics";
     public const string Responses = "responses";
     public const string Events = "events";
@@ -36,6 +37,7 @@ public static class PanelPermissions
         new(Dashboard, "Панель управления", "Сводка по работе офисов."),
         new(Workers, "Воркеры", "Просмотр и управление воркерами."),
         new(Accounts, "Аккаунты", "Просмотр аккаунтов и их состояния."),
+        new(Balances, "Балансы", "Контроль балансов и пополнение аккаунтов Avito."),
         new(Statistics, "Статистика", "Просмотр аналитики по откликам."),
         new(Responses, "Отклики", "Работа с откликами и их доставкой."),
         new(Events, "События", "Просмотр и обработка событий."),
@@ -69,7 +71,7 @@ public static class PanelPermissions
         {
             PanelRoles.Admin => All.Select(x => x.Id).ToArray(),
             PanelRoles.OfficeLead => All
-                .Where(x => x.Id != Administration)
+                .Where(x => x.Id is not Administration and not Balances)
                 .Select(x => x.Id)
                 .ToArray(),
             PanelRoles.SeniorManager =>
@@ -78,6 +80,7 @@ public static class PanelPermissions
             ],
             // Manager: only own CRM desk work — no team board / analytics by default.
             PanelRoles.Manager => [CrmBoard, CrmTasks, Settings],
+            PanelRoles.Operator => [Dashboard, Workers, Accounts, Balances, Statistics, Responses, Events, Settings],
             _ => [Dashboard, Workers, Accounts, Statistics, Responses, Events, Settings]
         };
 

@@ -774,6 +774,16 @@ public sealed class WorkersService(
             ? Task.FromResult<(bool, string?)>((true, null))
             : api.MarkTopUpSessionPaidAsync(sessionId, ct);
 
+    public async Task<IReadOnlyList<TopUpSessionViewModel>> GetTopUpSessionsAsync(bool history, CancellationToken ct = default)
+    {
+        if (previewOptions.Value.Enabled)
+        {
+            return [];
+        }
+        var sessions = await api.GetTopUpSessionsAsync(history, ct);
+        return sessions.Select(MapTopUpSession).ToArray();
+    }
+
     private static TopUpSessionViewModel MapTopUpSession(TopUpSessionDto dto) => new()
     {
         SessionId = dto.Id,
@@ -797,5 +807,8 @@ public sealed class WorkersService(
         SubProfileId = dto.SubProfileId,
         SubProfileName = dto.SubProfileName,
         ProgressMessage = dto.ProgressMessage
+        ,BalanceAfter = dto.BalanceAfter
+        ,BalanceConfirmedAtUtc = dto.BalanceConfirmedAtUtc
+        ,AwaitingBalanceAtUtc = dto.AwaitingBalanceAtUtc
     };
 }

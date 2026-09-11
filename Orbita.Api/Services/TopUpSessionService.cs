@@ -34,6 +34,15 @@ public sealed class TopUpSessionService(
         TopUpSessionStatuses.PaymentClaimed,
         TopUpSessionStatuses.QrReady
     ];
+    private static readonly string[] ConflictStatuses =
+    [
+        TopUpSessionStatuses.Requested,
+        TopUpSessionStatuses.Started,
+        TopUpSessionStatuses.PaymentClaimed,
+        TopUpSessionStatuses.QrReady,
+        TopUpSessionStatuses.AwaitingBalance
+    ];
+    private static readonly TimeSpan BalanceConfirmationTimeout = TimeSpan.FromMinutes(10);
 
     /// <summary>Срок хранения QR-данных после завершения сессии, после которого они удаляются.</summary>
     private static readonly TimeSpan QrRetention = TimeSpan.FromHours(6);
@@ -88,7 +97,8 @@ public sealed class TopUpSessionService(
         var active = await db.TopUpSessions
             .FirstOrDefaultAsync(x =>
                     x.AccountId == accountId
-                    && ActiveStatuses.Contains(x.Status),
+                    && x.SubProfileId == (subProfileId ?? string.Empty)
+                    && ConflictStatuses.Contains(x.Status),
                 ct)
             .ConfigureAwait(false);
         if (active is not null)
@@ -201,7 +211,8 @@ public sealed class TopUpSessionService(
             var winner = await db.TopUpSessions.AsNoTracking()
                 .FirstOrDefaultAsync(x =>
                         x.AccountId == accountId
-                        && ActiveStatuses.Contains(x.Status),
+                        && x.SubProfileId == (subProfileId ?? string.Empty)
+                        && ConflictStatuses.Contains(x.Status),
                     ct)
                 .ConfigureAwait(false);
             return (null, new TopUpSessionConflictDto(
@@ -247,6 +258,40 @@ public sealed class TopUpSessionService(
         return ToDto(session, session.Worker.DisplayName);
     }
 
+    public async Task<IReadOnlyList<TopUpSessionDto>> GetOfficeAsync(
+        ClaimsPrincipal principal,
+        bool history,
+        CancellationToken ct = default)
+    {
+        var scope = await officeScope.ResolveAsync(principal, ct).ConfigureAwait(false);
+        if (!scope.HasAccess)
+        {
+            return [];
+        }
+
+        var query = db.TopUpSessions.AsNoTracking().Include(x => x.Worker).AsQueryable();
+        if (!scope.IsGlobalAdmin && scope.OfficeId is Guid officeId)
+        {
+            query = query.Where(x => x.OfficeId == officeId);
+        }
+
+        if (!history)
+        {
+            query = query.Where(x =>
+                ActiveStatuses.Contains(x.Status)
+                || x.Status == TopUpSessionStatuses.AwaitingBalance
+                || x.Status == TopUpSessionStatuses.VerificationRequired);
+        }
+
+        var sessions = await query
+            .OrderBy(x => x.CreatedAtUtc)
+            .Take(history ? 500 : 200)
+            .ToListAsync(ct)
+            .ConfigureAwait(false);
+
+        return sessions.Select(x => ToDto(x, x.Worker.DisplayName)).ToArray();
+    }
+
     public Task<(bool Success, string? Error)> CancelAsync(
         Guid sessionId,
         ClaimsPrincipal principal,
@@ -272,7 +317,7 @@ public sealed class TopUpSessionService(
         CompleteByOperatorAsync(
             sessionId,
             principal,
-            TopUpSessionStatuses.Paid,
+            TopUpSessionStatuses.AwaitingBalance,
             session => session.Status == TopUpSessionStatuses.QrReady
                 ? null
                 : TopUpSessionStatuses.IsActive(session.Status)
@@ -311,8 +356,7 @@ public sealed class TopUpSessionService(
             return (false, ownerError);
         }
 
-        if (string.Equals(session.Status, terminalStatus, StringComparison.OrdinalIgnoreCase)
-            && !TopUpSessionStatuses.IsActive(session.Status))
+        if (string.Equals(session.Status, terminalStatus, StringComparison.OrdinalIgnoreCase))
         {
             await transaction.RollbackAsync(ct).ConfigureAwait(false);
             return (true, null);
@@ -326,7 +370,17 @@ public sealed class TopUpSessionService(
         }
 
         session.Status = terminalStatus;
-        session.CompletedAtUtc = timeProvider.GetUtcNow().UtcDateTime;
+        var completedAt = timeProvider.GetUtcNow().UtcDateTime;
+        if (terminalStatus == TopUpSessionStatuses.AwaitingBalance)
+        {
+            session.AwaitingBalanceAtUtc = completedAt;
+            session.CompletedAtUtc = null;
+            session.ProgressMessage = "Оплата отмечена. Ожидаем новый баланс от воркера…";
+        }
+        else
+        {
+            session.CompletedAtUtc = completedAt;
+        }
         ClearQrData(session);
         await ReleasePauseAsync(session, ct).ConfigureAwait(false);
         await db.SaveChangesAsync(ct).ConfigureAwait(false);
@@ -667,7 +721,85 @@ public sealed class TopUpSessionService(
             }
         }
 
-        return expired.Count;
+        var awaitingCutoff = now - BalanceConfirmationTimeout;
+        var unconfirmed = await db.TopUpSessions
+            .Where(x => x.Status == TopUpSessionStatuses.AwaitingBalance
+                        && x.AwaitingBalanceAtUtc != null
+                        && x.AwaitingBalanceAtUtc <= awaitingCutoff)
+            .ToListAsync(ct)
+            .ConfigureAwait(false);
+        foreach (var session in unconfirmed)
+        {
+            session.Status = TopUpSessionStatuses.VerificationRequired;
+            session.CompletedAtUtc = now;
+            session.ProgressMessage = "Баланс не обновился за 10 минут. Требуется ручная проверка.";
+        }
+        if (unconfirmed.Count > 0)
+        {
+            await db.SaveChangesAsync(ct).ConfigureAwait(false);
+            foreach (var session in unconfirmed)
+            {
+                panelRealtime.Notify([PanelChangeKind.Workers, PanelChangeKind.Accounts], session.OfficeId, session.WorkerId);
+            }
+        }
+
+        return expired.Count + unconfirmed.Count;
+    }
+
+    public async Task<int> ConfirmBalancesAsync(
+        Guid workerId,
+        IReadOnlyList<WorkerBalanceDto> balances,
+        DateTime capturedAtUtc,
+        CancellationToken ct = default)
+    {
+        var awaiting = await db.TopUpSessions
+            .Where(x => x.WorkerId == workerId && x.Status == TopUpSessionStatuses.AwaitingBalance)
+            .ToListAsync(ct)
+            .ConfigureAwait(false);
+        if (awaiting.Count == 0)
+        {
+            return 0;
+        }
+
+        var completed = 0;
+        foreach (var session in awaiting)
+        {
+            var account = balances.FirstOrDefault(x => x.AccountId == session.AccountId);
+            if (account is null)
+            {
+                continue;
+            }
+
+            decimal? balanceAfter = null;
+            if (!string.IsNullOrWhiteSpace(session.SubProfileId) || !string.IsNullOrWhiteSpace(session.SubProfileName))
+            {
+                var profile = account.SubProfiles.FirstOrDefault(x =>
+                    string.Equals(x.SubProfileName, session.SubProfileName, StringComparison.OrdinalIgnoreCase));
+                balanceAfter = profile?.Balance;
+            }
+            else
+            {
+                balanceAfter = account.TotalBalance;
+            }
+
+            if (balanceAfter is not decimal actual || actual <= session.CurrentBalance)
+            {
+                continue;
+            }
+
+            session.Status = TopUpSessionStatuses.Completed;
+            session.BalanceAfter = actual;
+            session.BalanceConfirmedAtUtc = capturedAtUtc;
+            session.CompletedAtUtc = capturedAtUtc;
+            session.ProgressMessage = "Пополнение подтверждено новым снимком баланса.";
+            completed++;
+        }
+
+        if (completed > 0)
+        {
+            await db.SaveChangesAsync(ct).ConfigureAwait(false);
+        }
+        return completed;
     }
 
     /// <summary>
@@ -921,5 +1053,8 @@ public sealed class TopUpSessionService(
             session.FailureMessage,
             session.SubProfileId,
             session.SubProfileName,
-            session.ProgressMessage);
+            session.ProgressMessage,
+            session.BalanceAfter,
+            session.BalanceConfirmedAtUtc,
+            session.AwaitingBalanceAtUtc);
 }

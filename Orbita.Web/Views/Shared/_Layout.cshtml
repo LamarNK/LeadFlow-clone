@@ -67,6 +67,7 @@ else
     <link rel="stylesheet" href="~/css/orbita/workers.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/orbita/worker-detail.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/orbita/accounts.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/orbita/balances.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/orbita/events.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/orbita/errors.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/orbita/settings.css" asp-append-version="true" />
@@ -113,6 +114,8 @@ else
                 var canDashboard = can(PanelPermissions.Dashboard);
                 var canWorkers = can(PanelPermissions.Workers);
                 var canAccounts = can(PanelPermissions.Accounts);
+                var canBalances = can(PanelPermissions.Balances)
+                    && (User.IsInRole(PanelRoles.Admin) || User.IsInRole(PanelRoles.Operator));
                 var canStatistics = can(PanelPermissions.Statistics);
                 var canResponses = can(PanelPermissions.Responses);
                 var canCrmBoard = can(PanelPermissions.CrmBoard);
@@ -124,7 +127,7 @@ else
                 var canTelephony = can(PanelPermissions.Administration) || User.IsInRole(PanelRoles.OfficeLead);
                 var canAdministration = can(PanelPermissions.Administration);
             }
-            @if (canDashboard || canWorkers || canAccounts || canStatistics || canResponses)
+            @if (canDashboard || canWorkers || canAccounts || canBalances || canStatistics || canResponses)
             {
                 <section class="orbita-nav-section orbita-nav-section--primary" aria-labelledby="navMainTitle">
                     <h2 class="orbita-nav-section-title" id="navMainTitle">Основное</h2>
@@ -140,6 +143,10 @@ else
                         @if (canAccounts)
                         {
                             <a class="nav-item @(ctrl == "Accounts" ? "active" : "")" href="@Url.Action("Index", "Accounts")" title="Аккаунты"><i class="fa-solid fa-users" aria-hidden="true"></i><span class="nav-item-label">Аккаунты</span></a>
+                        }
+                        @if (canBalances)
+                        {
+                            <a class="nav-item @(ctrl == "Balances" ? "active" : "")" href="@Url.Action("Index", "Balances")" title="Балансы"><i class="fa-solid fa-wallet" aria-hidden="true"></i><span class="nav-item-label">Балансы</span></a>
                         }
                         @if (canStatistics)
                         {

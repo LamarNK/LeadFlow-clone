@@ -1,0 +1,58 @@
+.balances-page { display: grid; gap: 18px; }
+.balances-kpis { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; }
+.balances-kpi { display: grid; gap: 5px; min-height: 116px; padding: 18px; border: 1px solid var(--border); border-radius: 14px; background: var(--bg-card); color: var(--text-primary); text-decoration: none; transition: border-color .18s ease, transform .18s ease, box-shadow .18s ease; }
+.balances-kpi:hover, .balances-kpi.is-active { border-color: #8091f5; box-shadow: 0 10px 26px rgba(37, 54, 130, .10); transform: translateY(-1px); }
+.balances-kpi span { color: var(--text-secondary); font-size: 13px; font-weight: 650; }
+.balances-kpi strong { font-size: 30px; line-height: 1; font-variant-numeric: tabular-nums; }
+.balances-kpi small { color: var(--text-muted); }
+.balances-tabs { display: flex; gap: 4px; overflow-x: auto; border-bottom: 1px solid var(--border); }
+.balances-tabs a { padding: 11px 14px; border-bottom: 2px solid transparent; color: var(--text-secondary); font-size: 13px; font-weight: 650; text-decoration: none; white-space: nowrap; }
+.balances-tabs a:hover, .balances-tabs a.is-active { border-color: #6172ee; color: var(--text-primary); }
+.balances-filter { display: flex; gap: 10px; }
+.balances-search { display: flex; flex: 1; align-items: center; gap: 10px; min-height: 42px; padding: 0 13px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-card); color: var(--text-muted); }
+.balances-search:focus-within { border-color: #7182ef; box-shadow: 0 0 0 3px rgba(97, 114, 238, .15); }
+.balances-search input { width: 100%; border: 0; outline: 0; background: transparent; color: var(--text-primary); font: inherit; }
+.balances-filter__button, .balances-primary { min-height: 40px; padding: 0 16px; border: 0; border-radius: 9px; background: #5668e8; color: #fff; font: inherit; font-size: 13px; font-weight: 700; cursor: pointer; }
+.balances-primary:hover, .balances-filter__button:hover { background: #4355d6; }
+.balances-primary:disabled { opacity: .45; cursor: not-allowed; }
+.balances-primary--small { min-height: 32px; padding: 0 11px; }
+.balances-bulkbar { display: flex; align-items: center; gap: 16px; min-height: 56px; padding: 10px 14px; border-radius: 12px; background: rgba(97, 114, 238, .08); color: var(--text-secondary); }
+.balances-bulkbar [data-balances-selected] { margin-left: auto; font-weight: 650; }
+.balances-table-card { overflow: hidden; }
+.balances-table td > strong, .balances-table td > small { display: block; }
+.balances-table td > small { margin-top: 4px; color: var(--text-muted); line-height: 1.35; }
+.balances-table tr.is-low { background: rgba(245, 158, 11, .055); }
+.balances-check { width: 42px; text-align: center; }
+.balance-status { display: inline-flex; align-items: center; min-height: 26px; padding: 0 9px; border-radius: 999px; background: rgba(100, 116, 139, .12); color: var(--text-secondary); font-size: 11px; font-weight: 750; white-space: nowrap; }
+.balance-status--low, .balance-status--verification_required, .balance-status--awaiting_balance { background: rgba(245, 158, 11, .14); color: #a15c00; }
+.balance-status--completed { background: rgba(34, 197, 94, .13); color: #17763a; }
+.balance-status--qr_ready, .balance-status--started, .balance-status--requested, .balance-status--payment_claimed { background: rgba(86, 104, 232, .13); color: #4252bd; }
+.balance-status--failed, .balance-status--expired { background: rgba(239, 68, 68, .11); color: #b42d2d; }
+.balances-actions { display: flex; justify-content: flex-end; align-items: center; gap: 8px; }
+.balances-link { padding: 5px; border: 0; background: transparent; color: #5265df; font: inherit; font-size: 12px; font-weight: 700; cursor: pointer; }
+.balances-workspace { display: grid; grid-template-columns: minmax(260px, .8fr) minmax(360px, 1.2fr); overflow: hidden; border-radius: 15px; background: var(--bg-card); box-shadow: 0 16px 42px rgba(30, 42, 86, .13); }
+.balances-workspace__queue { max-height: 560px; overflow: auto; padding: 20px; border-right: 1px solid var(--border); }
+.balances-workspace__queue h2 { margin: 0 0 14px; font-size: 18px; }
+.balances-workspace__queue button { display: grid; width: 100%; gap: 4px; margin-bottom: 8px; padding: 13px; border: 1px solid var(--border); border-radius: 10px; background: transparent; color: var(--text-primary); text-align: left; cursor: pointer; }
+.balances-workspace__queue button:hover, .balances-workspace__queue button.is-active { border-color: #7182ef; background: rgba(97, 114, 238, .07); }
+.balances-workspace__queue span { color: var(--text-muted); font-size: 12px; }
+.balances-workspace__qr { display: grid; place-items: center; align-content: center; gap: 16px; min-height: 430px; padding: 30px; text-align: center; }
+.balances-workspace__qr > div { display: grid; gap: 5px; }
+.balances-workspace__qr img { width: min(300px, 72vw); aspect-ratio: 1; padding: 12px; border-radius: 12px; background: #fff; }
+.balances-workspace__qr p { max-width: 58ch; margin: 0; color: var(--text-secondary); }
+[data-theme="dark"] .balance-status--low, [data-theme="dark"] .balance-status--verification_required, [data-theme="dark"] .balance-status--awaiting_balance { color: #f5b84d; }
+[data-theme="dark"] .balance-status--completed { color: #71d996; }
+[data-theme="dark"] .balance-status--qr_ready, [data-theme="dark"] .balance-status--started, [data-theme="dark"] .balance-status--requested, [data-theme="dark"] .balance-status--payment_claimed { color: #aab4ff; }
+@media (max-width: 900px) {
+  .balances-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .balances-workspace { grid-template-columns: 1fr; }
+  .balances-workspace__queue { max-height: 240px; border-right: 0; border-bottom: 1px solid var(--border); }
+}
+@media (max-width: 620px) {
+  .balances-kpis { grid-template-columns: 1fr 1fr; gap: 8px; }
+  .balances-kpi { min-height: 96px; padding: 14px; }
+  .balances-filter { align-items: stretch; flex-direction: column; }
+  .balances-bulkbar { align-items: stretch; flex-direction: column; }
+  .balances-bulkbar [data-balances-selected] { margin-left: 0; }
+  .balances-actions { justify-content: flex-start; }
+}

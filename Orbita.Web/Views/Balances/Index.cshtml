@@ -1,0 +1,186 @@
+@model BalancesIndexViewModel
+@using Orbita.Contracts
+@{
+    ViewData["Title"] = "Балансы";
+    var activeTab = (string?)ViewData["BalancesTab"] ?? "low";
+    var query = (string?)ViewData["BalancesQuery"];
+    var statusLabel = (string status) => status switch
+    {
+        TopUpSessionStatuses.Requested => "Ожидает воркер",
+        TopUpSessionStatuses.Started => "Воркер формирует QR",
+        TopUpSessionStatuses.PaymentClaimed => "Переход к оплате",
+        TopUpSessionStatuses.QrReady => "QR-код готов",
+        TopUpSessionStatuses.AwaitingBalance => "Ожидает баланс",
+        TopUpSessionStatuses.Completed => "Подтверждено",
+        TopUpSessionStatuses.VerificationRequired => "Требует проверки",
+        TopUpSessionStatuses.Failed => "Ошибка",
+        TopUpSessionStatuses.Expired => "Истекло",
+        TopUpSessionStatuses.Cancelled => "Отменено",
+        _ => status
+    };
+}
+<partial name="_PageHeader" model="Model.Header" />
+<main class="orbita-main balances-page"
+      data-balances-page
+      data-mark-paid-url="@Url.Action("MarkPaid", "Balances")"
+      data-cancel-url="@Url.Action("Cancel", "Balances")"
+      data-batch-url="@Url.Action("CreateBatch", "Balances")">
+    <section class="balances-kpis" aria-label="Сводка балансов">
+        <a class="balances-kpi" href="@Url.Action("Index", new { tab = "all" })">
+            <span>Всего субпрофилей</span><strong>@Model.TotalSubProfiles</strong><small>с известным балансом</small>
+        </a>
+        <a class="balances-kpi @(activeTab == "low" ? "is-active" : "")" href="@Url.Action("Index", new { tab = "low" })">
+            <span>Низкий баланс</span><strong>@Model.LowBalanceCount</strong><small>ниже 150 ₽</small>
+        </a>
+        <a class="balances-kpi @(activeTab == "queue" ? "is-active" : "")" href="@Url.Action("Index", new { tab = "queue" })">
+            <span>В очереди</span><strong>@Model.QueueCount</strong><small>запросов пополнения</small>
+        </a>
+        <a class="balances-kpi @(activeTab == "awaiting" ? "is-active" : "")" href="@Url.Action("Index", new { tab = "awaiting" })">
+            <span>Ожидают баланс</span><strong>@Model.AwaitingBalanceCount</strong><small>требуют внимания</small>
+        </a>
+        <a class="balances-kpi @(activeTab == "history" ? "is-active" : "")" href="@Url.Action("Index", new { tab = "history", history = true })">
+            <span>Пополнено сегодня</span><strong>@Model.CompletedTodayCount</strong><small>подтверждено</small>
+        </a>
+    </section>
+
+    <nav class="balances-tabs" aria-label="Фильтр балансов">
+        <a class="@(activeTab == "low" ? "is-active" : "")" href="@Url.Action("Index", new { tab = "low" })">Требуют пополнения</a>
+        <a class="@(activeTab == "queue" ? "is-active" : "")" href="@Url.Action("Index", new { tab = "queue" })">В очереди</a>
+        <a class="@(activeTab == "working" ? "is-active" : "")" href="@Url.Action("Index", new { tab = "working" })">В работе</a>
+        <a class="@(activeTab == "awaiting" ? "is-active" : "")" href="@Url.Action("Index", new { tab = "awaiting" })">Ожидают баланс</a>
+        <a class="@(activeTab == "history" ? "is-active" : "")" href="@Url.Action("Index", new { tab = "history", history = true })">История</a>
+    </nav>
+
+    <form class="balances-filter" method="get">
+        <input type="hidden" name="tab" value="@activeTab" />
+        <input type="hidden" name="history" value="@(activeTab == "history" ? "true" : "false")" />
+        <label class="balances-search">
+            <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+            <input type="search" name="q" value="@query" placeholder="Поиск по аккаунту, субпрофилю или воркеру" />
+        </label>
+        <button class="balances-filter__button" type="submit">Найти</button>
+    </form>
+
+    @if (activeTab != "history")
+    {
+        <div class="balances-bulkbar" data-balances-bulkbar>
+            <label><input type="checkbox" data-balances-select-all /> Выбрать доступные</label>
+            <span data-balances-selected>0 выбрано</span>
+            <button type="button" class="balances-primary" data-balances-batch disabled>Запросить пополнение</button>
+        </div>
+    }
+
+    <section class="card balances-table-card">
+        <div class="card-body card-body-table">
+            @if (activeTab == "history")
+            {
+                <table class="data-table data-table--cards balances-table">
+                    <thead><tr><th>Дата</th><th>Аккаунт</th><th>Воркер</th><th>Баланс до</th><th>Сумма</th><th>Баланс после</th><th>Статус</th><th>Оператор</th></tr></thead>
+                    <tbody>
+                    @foreach (var session in Model.Sessions)
+                    {
+                        <tr>
+                            <td data-label="Дата">@session.CompletedAtUtc?.ToLocalTime().ToString("dd.MM.yyyy HH:mm")</td>
+                            <td data-label="Аккаунт"><strong>@session.AccountName</strong><small>@session.SubProfileName</small></td>
+                            <td data-label="Воркер">@session.WorkerName</td>
+                            <td data-label="Баланс до">@session.CurrentBalance.ToString("N0") ₽</td>
+                            <td data-label="Сумма">@session.RequestedAmount.ToString("N0") ₽</td>
+                            <td data-label="Баланс после">@(session.BalanceAfter?.ToString("N0") ?? "—")@(session.BalanceAfter.HasValue ? " ₽" : "")</td>
+                            <td data-label="Статус"><span class="balance-status balance-status--@session.Status">@statusLabel(session.Status)</span></td>
+                            <td data-label="Оператор">@session.OperatorDisplayName</td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            }
+            else
+            {
+                <table class="data-table data-table--cards balances-table">
+                    <thead><tr><th class="balances-check"></th><th>Аккаунт</th><th>Баланс</th><th>Рекомендуемое пополнение</th><th>Статус</th><th>Последняя операция</th><th></th></tr></thead>
+                    <tbody>
+                    @foreach (var row in Model.Rows)
+                    {
+                        var session = row.Session;
+                        var canSelect = row.IsLowBalance && row.WorkerOnline && !row.IsStale && session is null;
+                        <tr class="@(row.IsLowBalance ? "is-low" : "")"
+                            data-balance-row data-worker-id="@row.WorkerId" data-account-id="@row.AccountId"
+                            data-subprofile-id="@row.SubProfileId" data-account-name="@row.AccountName" data-subprofile-name="@row.SubProfileName">
+                            <td class="balances-check"><input type="checkbox" data-balance-select @(canSelect ? null : "disabled") /></td>
+                            <td data-label="Аккаунт"><strong>@row.AccountName</strong><small>@row.SubProfileName · @row.WorkerName</small></td>
+                            <td data-label="Баланс">
+                                <strong>@row.Balance.ToString("N0") ₽</strong>
+                                <small>@(row.LastUpdatedAtUtc?.ToLocalTime().ToString("dd.MM HH:mm") ?? "Нет снимка") · @(row.IsStale ? "данные устарели" : row.WorkerOnline ? "воркер онлайн" : "воркер офлайн")</small>
+                            </td>
+                            <td data-label="Рекомендуемое пополнение"><strong>@row.RecommendedAmount.ToString("N0") ₽</strong><small>до @row.RecommendedTarget.ToString("N0") ₽ · @row.TodayResponses откликов</small></td>
+                            <td data-label="Статус">
+                                @if (session is null)
+                                {
+                                    <span class="balance-status balance-status--low">Низкий баланс</span>
+                                }
+                                else
+                                {
+                                    <span class="balance-status balance-status--@session.Status">@statusLabel(session.Status)</span>
+                                }
+                            </td>
+                            <td data-label="Последняя операция">
+                                @if (session is not null)
+                                {
+                                    <strong>@session.RequestedAmount.ToString("N0") ₽</strong><small>@session.OperatorDisplayName</small>
+                                }
+                                else { <span>—</span> }
+                            </td>
+                            <td class="balances-actions">
+                                @if (session is not null && session.Status == TopUpSessionStatuses.QrReady)
+                                {
+                                    <button type="button" class="balances-primary balances-primary--small" data-topup-paid="@session.Id">Оплачено</button>
+                                }
+                                @if (session is not null && session.Status is not TopUpSessionStatuses.Completed and not TopUpSessionStatuses.VerificationRequired)
+                                {
+                                    <button type="button" class="balances-link" data-topup-cancel="@session.Id">Отменить</button>
+                                }
+                                @if (session is null && canSelect)
+                                {
+                                    <button type="button" class="balances-link" data-single-topup>Пополнить</button>
+                                }
+                            </td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            }
+        </div>
+    </section>
+
+    @{
+        var qrSessions = Model.Sessions.Where(x => x.Status == TopUpSessionStatuses.QrReady).ToList();
+    }
+    @if (qrSessions.Count > 0)
+    {
+        <section class="balances-workspace" aria-labelledby="balancesQrTitle">
+            <div class="balances-workspace__queue">
+                <h2 id="balancesQrTitle">QR готовы к оплате</h2>
+                @foreach (var session in qrSessions)
+                {
+                    <button type="button" data-qr-select="@session.Id"
+                            data-qr-src="@(!string.IsNullOrWhiteSpace(session.QrImageBase64) ? $"data:image/png;base64,{session.QrImageBase64}" : session.QrImageUrl)"
+                            data-qr-account="@session.AccountName" data-qr-profile="@session.SubProfileName"
+                            data-qr-amount="@session.RequestedAmount.ToString("N0") ₽">
+                        <strong>@session.AccountName</strong><span>@session.SubProfileName · @session.RequestedAmount.ToString("N0") ₽</span>
+                    </button>
+                }
+            </div>
+            <div class="balances-workspace__qr">
+                <div><span data-qr-account-label>Выберите QR</span><strong data-qr-amount-label></strong></div>
+                @if (qrSessions.Any(x => !string.IsNullOrWhiteSpace(x.QrImageBase64) || !string.IsNullOrWhiteSpace(x.QrImageUrl)))
+                {
+                    <img data-qr-image src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" alt="QR-код для оплаты" hidden />
+                }
+                <p data-qr-profile-label>Готовые QR остаются на одной странице — переключайтесь без возврата к воркерам.</p>
+                <button type="button" class="balances-primary" data-qr-paid disabled>Оплачено</button>
+            </div>
+        </section>
+    }
+</main>
+@section Scripts {
+    <script src="~/js/orbita-balances.js" asp-append-version="true"></script>
+}

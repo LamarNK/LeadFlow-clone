@@ -25,6 +25,8 @@ public static class PanelEndpoints
     public static void Map(WebApplication app)
     {
         var workers = app.MapGroup("/api/v1/panel").RequireAuthorization(PanelPermissions.Workers);
+        var balances = app.MapGroup("/api/v1/panel")
+            .RequireAuthorization(policy => policy.RequireRole(PanelRoles.Admin, PanelRoles.Operator));
         var events = app.MapGroup("/api/v1/panel").RequireAuthorization(PanelPermissions.Events);
         var settings = app.MapGroup("/api/v1/panel").RequireAuthorization(PanelPermissions.Settings);
 
@@ -81,7 +83,7 @@ public static class PanelEndpoints
             return lockState is null ? Results.NotFound() : Results.Ok(lockState);
         });
 
-        workers.MapPost("/workers/{id:guid}/accounts/{accountId:guid}/top-up-sessions", async (
+        balances.MapPost("/workers/{id:guid}/accounts/{accountId:guid}/top-up-sessions", async (
             Guid id,
             Guid accountId,
             string subProfileId,
@@ -110,7 +112,7 @@ public static class PanelEndpoints
                 : Results.Ok(session);
         });
 
-        workers.MapGet("/top-up-sessions/{id:guid}", async (
+        balances.MapGet("/top-up-sessions/{id:guid}", async (
             Guid id,
             TopUpSessionService topUpSessions,
             ClaimsPrincipal principal,
@@ -120,7 +122,14 @@ public static class PanelEndpoints
             return session is null ? Results.NotFound() : Results.Ok(session);
         });
 
-        workers.MapPost("/top-up-sessions/{id:guid}/cancel", async (
+        balances.MapGet("/top-up-sessions", async (
+            bool history,
+            TopUpSessionService topUpSessions,
+            ClaimsPrincipal principal,
+            CancellationToken ct) =>
+            Results.Ok(await topUpSessions.GetOfficeAsync(principal, history, ct)));
+
+        balances.MapPost("/top-up-sessions/{id:guid}/cancel", async (
             Guid id,
             TopUpSessionService topUpSessions,
             ClaimsPrincipal principal,
@@ -130,7 +139,7 @@ public static class PanelEndpoints
             return success ? Results.Ok() : Results.BadRequest(new { error });
         });
 
-        workers.MapPost("/top-up-sessions/{id:guid}/paid", async (
+        balances.MapPost("/top-up-sessions/{id:guid}/paid", async (
             Guid id,
             TopUpSessionService topUpSessions,
             ClaimsPrincipal principal,

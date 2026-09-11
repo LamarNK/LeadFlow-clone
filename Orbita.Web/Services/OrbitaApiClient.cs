@@ -4021,6 +4021,19 @@ public sealed class OrbitaApiClient(
                 : (false, await ReadApiErrorAsync(response, ct));
     }
 
+    public async Task<IReadOnlyList<TopUpSessionDto>> GetTopUpSessionsAsync(bool history, CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"api/v1/panel/top-up-sessions?history={history.ToString().ToLowerInvariant()}");
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null || !response.IsSuccessStatusCode)
+        {
+            return [];
+        }
+        return await response.Content.ReadFromJsonAsync<IReadOnlyList<TopUpSessionDto>>(ApiJsonOptions, ct) ?? [];
+    }
+
     private static string AppendQuery(string url, string key, string? value)
     {
         if (string.IsNullOrWhiteSpace(value))

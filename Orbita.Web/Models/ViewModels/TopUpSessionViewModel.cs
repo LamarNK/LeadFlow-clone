@@ -26,8 +26,11 @@ public sealed class TopUpSessionViewModel
     public string SubProfileId { get; init; } = string.Empty;
     public string SubProfileName { get; init; } = string.Empty;
     public string? ProgressMessage { get; init; }
+    public decimal? BalanceAfter { get; init; }
+    public DateTime? BalanceConfirmedAtUtc { get; init; }
+    public DateTime? AwaitingBalanceAtUtc { get; init; }
 
-    public bool IsActive => Status is "requested" or "started" or "payment_claimed" or "qr_ready";
+    public bool IsActive => Status is "requested" or "started" or "payment_claimed" or "qr_ready" or "awaiting_balance";
     public bool IsTerminal => !IsActive;
     public bool HasQr => !string.IsNullOrWhiteSpace(QrImageBase64) || !string.IsNullOrWhiteSpace(QrImageUrl);
 
@@ -41,6 +44,9 @@ public sealed class TopUpSessionViewModel
         "failed" => "Ошибка",
         "cancelled" => "Отменено",
         "paid" => "Оплачено",
+        "awaiting_balance" => "Ожидает обновления баланса",
+        "completed" => "Подтверждено",
+        "verification_required" => "Требует проверки",
         _ => "Неизвестно"
     };
 

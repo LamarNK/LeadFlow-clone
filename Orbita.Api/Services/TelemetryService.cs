@@ -10,7 +10,8 @@ namespace Orbita.Api.Services;
 public sealed class TelemetryService(
     OrbitaDbContext db,
     OfficeAdminService offices,
-    IPanelRealtimeNotifier panelRealtime)
+    IPanelRealtimeNotifier panelRealtime,
+    TopUpSessionService? topUpSessions = null)
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
@@ -218,6 +219,10 @@ public sealed class TelemetryService(
         }
 
         await SaveSnapshotChangesAsync(request.WorkerId, ct);
+        if (topUpSessions is not null)
+        {
+            await topUpSessions.ConfirmBalancesAsync(request.WorkerId, mergedBalances, capturedAtUtc, ct);
+        }
 
         if (!IsMostlyEmptySnapshot(request))
         {

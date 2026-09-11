@@ -56,6 +56,7 @@ builder.Services.AddScoped<IResponsesService, ResponsesService>();
 builder.Services.AddScoped<IErrorsService, ErrorsService>();
 builder.Services.AddScoped<IOfficeContext, OfficeContext>();
 builder.Services.AddScoped<IAccountsService, AccountsService>();
+builder.Services.AddScoped<IBalancesService, BalancesService>();
 builder.Services.AddScoped<IStatisticsService, StatisticsService>();
 builder.Services.AddScoped<NavBadgesService>();
 builder.Services.AddScoped<GlobalSearchService>();
@@ -80,7 +81,11 @@ builder.Services.AddAuthorization(options =>
     {
         options.AddPolicy(permission.Id, policy =>
         {
-            if (permission.Id is PanelPermissions.CrmBoard or PanelPermissions.CrmTasks or PanelPermissions.CrmAnalytics)
+            if (permission.Id == PanelPermissions.Balances)
+            {
+                policy.RequireRole(PanelRoles.Admin, PanelRoles.Operator);
+            }
+            else if (permission.Id is PanelPermissions.CrmBoard or PanelPermissions.CrmTasks or PanelPermissions.CrmAnalytics)
             {
                 policy.RequireAssertion(context =>
                     context.User.HasClaim(PanelPermissions.ClaimType, permission.Id)

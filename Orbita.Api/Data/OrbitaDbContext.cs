@@ -964,10 +964,10 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
             entity.HasIndex(x => new { x.WorkerId, x.Status });
             entity.HasIndex(x => new { x.WorkerId, x.AccountId, x.Status });
             // Идемпотентность: не более одной активной сессии на аккаунт (глобально по AccountId).
-            entity.HasIndex(x => x.AccountId)
+            entity.HasIndex(x => new { x.AccountId, x.SubProfileId })
                 .HasDatabaseName("IX_TopUpSessions_Account_Active")
                 .IsUnique()
-                .HasFilter("\"Status\" IN ('requested', 'started', 'payment_claimed', 'qr_ready')");
+                .HasFilter("\"Status\" IN ('requested', 'started', 'payment_claimed', 'qr_ready', 'awaiting_balance')");
             entity.Property(x => x.AccountName).HasMaxLength(200);
             entity.Property(x => x.SubProfileId).HasMaxLength(128);
             entity.Property(x => x.SubProfileName).HasMaxLength(200);
@@ -977,6 +977,7 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
             entity.Property(x => x.CurrentBalance).HasPrecision(18, 2);
             entity.Property(x => x.TargetBalance).HasPrecision(18, 2);
             entity.Property(x => x.RequestedAmount).HasPrecision(18, 2);
+            entity.Property(x => x.BalanceAfter).HasPrecision(18, 2);
             entity.Property(x => x.ExpectedPauseLeaseVersion).HasDefaultValue(0L);
             entity.Property(x => x.OwnsPauseLease).HasDefaultValue(false);
             entity.Property(x => x.QrImageUrl).HasMaxLength(2048);
