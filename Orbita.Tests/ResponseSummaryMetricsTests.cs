@@ -14,6 +14,76 @@ public sealed class ResponseSummaryMetricsTests
     private static readonly Guid PersonTwo = Guid.Parse("dddddddd-dddd-dddd-dddd-dddddddddddd");
 
     [Fact]
+    public async Task GetSummaryAsync_DefaultStatus_CountsDuplicatesEvenWhenListExcludesThem()
+    {
+        await using var db = CreateDb();
+        SeedOffice(db);
+        var now = DateTime.UtcNow;
+        var unique = CreateResponse("unique", PersonOne, "79001111111", now);
+        unique.Status = ResponseStatuses.New;
+        var duplicate = CreateResponse("duplicate", Guid.NewGuid(), "79002222222", now);
+        duplicate.Status = ResponseStatuses.Duplicate;
+        var watchDuplicate = CreateResponse("phone-watch:technical", Guid.NewGuid(), "79003333333", now);
+        watchDuplicate.Status = ResponseStatuses.Duplicate;
+        db.CandidateResponses.AddRange(unique, duplicate, watchDuplicate);
+        await db.SaveChangesAsync();
+
+        var sut = new ResponsesQueryService(db, new ResponseBitrixDeliveryService(db));
+        var summary = await sut.GetSummaryAsync(
+            OfficeScope.ForOffice(OfficeId),
+            OfficeId,
+            status: ResponseStatusFilterValues.DefaultSelection,
+            search: null,
+            vacancy: null,
+            workerId: null,
+            accountId: null,
+            bitrixDestination: null,
+            gender: null,
+            ageFrom: null,
+            ageTo: null,
+            fromUtc: now.AddDays(-1),
+            toUtc: now.AddDays(1));
+
+        Assert.Equal(1, summary.Total);
+        Assert.Equal(1, summary.Unique);
+        Assert.Equal(1, summary.Duplicates);
+    }
+
+    [Fact]
+    public async Task GetSummaryAsync_DefaultStatus_CountsDuplicatesWhenTheyAreTheOnlyResponses()
+    {
+        await using var db = CreateDb();
+        SeedOffice(db);
+        var now = DateTime.UtcNow;
+        var first = CreateResponse("duplicate-a", PersonOne, "79001111111", now);
+        first.Status = ResponseStatuses.Duplicate;
+        var second = CreateResponse("duplicate-b", PersonTwo, "79002222222", now);
+        second.Status = ResponseStatuses.Duplicate;
+        db.CandidateResponses.AddRange(first, second);
+        await db.SaveChangesAsync();
+
+        var sut = new ResponsesQueryService(db, new ResponseBitrixDeliveryService(db));
+        var summary = await sut.GetSummaryAsync(
+            OfficeScope.ForOffice(OfficeId),
+            OfficeId,
+            status: ResponseStatusFilterValues.DefaultSelection,
+            search: null,
+            vacancy: null,
+            workerId: null,
+            accountId: null,
+            bitrixDestination: null,
+            gender: null,
+            ageFrom: null,
+            ageTo: null,
+            fromUtc: now.AddDays(-1),
+            toUtc: now.AddDays(1));
+
+        Assert.Equal(0, summary.Total);
+        Assert.Equal(0, summary.Unique);
+        Assert.Equal(2, summary.Duplicates);
+    }
+
+    [Fact]
     public async Task GetSummaryAsync_DuplicateFilter_ExcludesTechnicalPhoneWatchRows()
     {
         await using var db = CreateDb();
@@ -190,6 +260,66 @@ public sealed class ResponseSummaryMetricsTests
 
         Assert.Equal(1, page.TotalCount);
         Assert.Equal(exact.Id, Assert.Single(page.Items).Id);
+    }
+
+    [Fact]
+    public async Task GetPageAsync_MultipleWorkersAndAccounts_ReturnsUnion()
+    {
+        await using var db = CreateDb();
+        SeedOffice(db);
+        var now = DateTime.UtcNow;
+        var workerTwo = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbb2");
+        db.Workers.Add(new WorkerEntity
+        {
+            Id = workerTwo,
+            OfficeId = OfficeId,
+            DisplayName = "worker-2",
+            MachineName = "pc-2",
+            ApiKeyHash = "hash-2",
+            AppVersion = "1.0",
+            MonitoringStatus = "Running",
+            LastSeenAtUtc = now,
+            CreatedAtUtc = now
+        });
+        var accountOne = Guid.Parse("cccccccc-cccc-cccc-cccc-ccccccccccc1");
+        var accountTwo = Guid.Parse("cccccccc-cccc-cccc-cccc-ccccccccccc2");
+        var first = CreateResponse("w1-a1", PersonOne, "79930099416", now);
+        first.WorkerId = WorkerId;
+        first.AccountId = accountOne;
+        first.Status = ResponseStatuses.New;
+        var second = CreateResponse("w2-a2", PersonTwo, "79910001122", now);
+        second.WorkerId = workerTwo;
+        second.AccountId = accountTwo;
+        second.Status = ResponseStatuses.New;
+        var other = CreateResponse("other", Guid.NewGuid(), "79910002233", now);
+        other.Status = ResponseStatuses.New;
+        db.CandidateResponses.AddRange(first, second, other);
+        await db.SaveChangesAsync();
+
+        var sut = new ResponsesQueryService(db, new ResponseBitrixDeliveryService(db));
+        var page = await sut.GetPageAsync(
+            OfficeScope.ForOffice(OfficeId),
+            OfficeId,
+            status: "all",
+            search: null,
+            vacancy: null,
+            workerId: null,
+            accountId: null,
+            bitrixDestination: null,
+            gender: null,
+            ageFrom: null,
+            ageTo: null,
+            fromUtc: now.AddDays(-1),
+            toUtc: now.AddDays(1),
+            page: 1,
+            pageSize: 25,
+            workerIds: [WorkerId, workerTwo],
+            accountIds: [accountOne, accountTwo]);
+
+        Assert.Equal(2, page.TotalCount);
+        Assert.Contains(page.Items, item => item.Id == first.Id);
+        Assert.Contains(page.Items, item => item.Id == second.Id);
+        Assert.DoesNotContain(page.Items, item => item.Id == other.Id);
     }
 
     [Fact]

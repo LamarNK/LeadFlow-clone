@@ -36,8 +36,10 @@ public static class PanelResponseEndpoints
             string? search,
             string? vacancy,
             Guid? workerId,
+            Guid[]? workerIds,
             Guid? accountId,
-            string? bitrixDestination,
+            Guid[]? accountIds,
+            string[]? bitrixDestination,
             string? gender,
             int? ageFrom,
             int? ageTo,
@@ -64,7 +66,7 @@ public static class PanelResponseEndpoints
                 vacancy,
                 workerId,
                 accountId,
-                bitrixDestination,
+                bitrixDestination: null,
                 gender,
                 ageFrom,
                 ageTo,
@@ -74,7 +76,10 @@ public static class PanelResponseEndpoints
                 pageSize ?? 10,
                 sort,
                 dir,
-                ct));
+                ct,
+                workerIds,
+                accountIds,
+                bitrixDestination));
         });
 
         responses.MapGet("/responses/summary", async (
@@ -85,8 +90,10 @@ public static class PanelResponseEndpoints
             string? search,
             string? vacancy,
             Guid? workerId,
+            Guid[]? workerIds,
             Guid? accountId,
-            string? bitrixDestination,
+            Guid[]? accountIds,
+            string[]? bitrixDestination,
             string? gender,
             int? ageFrom,
             int? ageTo,
@@ -109,13 +116,16 @@ public static class PanelResponseEndpoints
                 vacancy,
                 workerId,
                 accountId,
-                bitrixDestination,
+                bitrixDestination: null,
                 gender,
                 ageFrom,
                 ageTo,
                 from,
                 to,
-                ct));
+                ct,
+                workerIds,
+                accountIds,
+                bitrixDestination));
         });
 
         statistics.MapGet("/statistics", async (

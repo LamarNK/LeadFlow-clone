@@ -28,10 +28,16 @@ public sealed class ResponsesQueryService(
         int pageSize,
         string? sort = null,
         string? sortDir = null,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        IReadOnlyList<Guid>? workerIds = null,
+        IReadOnlyList<Guid>? accountIds = null,
+        IReadOnlyList<string>? bitrixDestinations = null)
     {
+        var workers = ResponseCatalogFilterValues.MergeIds(workerIds, workerId);
+        var accounts = ResponseCatalogFilterValues.MergeIds(accountIds, accountId);
+        var destinations = ResponseCatalogFilterValues.MergeValues(bitrixDestinations, bitrixDestination);
         Task<ResponsesPageDto> Load(CancellationToken token) => GetPageInternalAsync(
-            scope, officeFilter, status, search, vacancy, workerId, accountId, bitrixDestination,
+            scope, officeFilter, status, search, vacancy, workers, accounts, destinations,
             gender, ageFrom, ageTo, fromUtc, toUtc, page, pageSize, sort, sortDir, token);
 
         return queryCache is null
@@ -40,7 +46,25 @@ public sealed class ResponsesQueryService(
                 OrbitaCacheDomain.Responses,
                 scope.ResolveFilter(officeFilter),
                 scope.IsGlobalAdmin ? "global-admin" : $"office:{scope.OfficeId?.ToString("D") ?? "-"}",
-                new { Kind = "page", status, search, vacancy, workerId, accountId, bitrixDestination, gender, ageFrom, ageTo, fromUtc, toUtc, page, pageSize, sort, sortDir },
+                new
+                {
+                    Kind = "page",
+                    status,
+                    search,
+                    vacancy,
+                    workerIds = ResponseCatalogFilterValues.CacheKey(workers),
+                    accountIds = ResponseCatalogFilterValues.CacheKey(accounts),
+                    bitrixDestination = ResponseCatalogFilterValues.CacheKey(destinations),
+                    gender,
+                    ageFrom,
+                    ageTo,
+                    fromUtc,
+                    toUtc,
+                    page,
+                    pageSize,
+                    sort,
+                    sortDir
+                },
                 OrbitaCachePolicy.Realtime,
                 Load,
                 ct);
@@ -60,10 +84,16 @@ public sealed class ResponsesQueryService(
         int? ageTo,
         DateTime? fromUtc,
         DateTime? toUtc,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        IReadOnlyList<Guid>? workerIds = null,
+        IReadOnlyList<Guid>? accountIds = null,
+        IReadOnlyList<string>? bitrixDestinations = null)
     {
+        var workers = ResponseCatalogFilterValues.MergeIds(workerIds, workerId);
+        var accounts = ResponseCatalogFilterValues.MergeIds(accountIds, accountId);
+        var destinations = ResponseCatalogFilterValues.MergeValues(bitrixDestinations, bitrixDestination);
         Task<ResponsesSummaryDto> Load(CancellationToken token) => GetSummaryUncachedAsync(
-            scope, officeFilter, status, search, vacancy, workerId, accountId, bitrixDestination,
+            scope, officeFilter, status, search, vacancy, workers, accounts, destinations,
             gender, ageFrom, ageTo, fromUtc, toUtc, token);
 
         return queryCache is null
@@ -72,7 +102,21 @@ public sealed class ResponsesQueryService(
                 OrbitaCacheDomain.Responses,
                 scope.ResolveFilter(officeFilter),
                 scope.IsGlobalAdmin ? "global-admin" : $"office:{scope.OfficeId?.ToString("D") ?? "-"}",
-                new { Kind = "summary", status, search, vacancy, workerId, accountId, bitrixDestination, gender, ageFrom, ageTo, fromUtc, toUtc },
+                new
+                {
+                    Kind = "summary",
+                    status,
+                    search,
+                    vacancy,
+                    workerIds = ResponseCatalogFilterValues.CacheKey(workers),
+                    accountIds = ResponseCatalogFilterValues.CacheKey(accounts),
+                    bitrixDestination = ResponseCatalogFilterValues.CacheKey(destinations),
+                    gender,
+                    ageFrom,
+                    ageTo,
+                    fromUtc,
+                    toUtc
+                },
                 OrbitaCachePolicy.Realtime,
                 Load,
                 ct);
@@ -84,9 +128,9 @@ public sealed class ResponsesQueryService(
         string? status,
         string? search,
         string? vacancy,
-        Guid? workerId,
-        Guid? accountId,
-        string? bitrixDestination,
+        IReadOnlyList<Guid> workerIds,
+        IReadOnlyList<Guid> accountIds,
+        IReadOnlyList<string> bitrixDestinations,
         string? gender,
         int? ageFrom,
         int? ageTo,
@@ -100,37 +144,53 @@ public sealed class ResponsesQueryService(
             status,
             search,
             vacancy,
-            workerId,
-            accountId,
-            bitrixDestination,
+            workerIds,
+            accountIds,
+            bitrixDestinations,
             gender,
             ageFrom,
             ageTo,
             fromUtc,
             toUtc);
+        // Default list filter excludes duplicates; KPI still counts the duplicate slice.
+        var duplicates = await BuildFilteredQuery(
+            scope,
+            officeFilter,
+            "duplicate",
+            search,
+            vacancy,
+            workerIds,
+            accountIds,
+            bitrixDestinations,
+            gender,
+            ageFrom,
+            ageTo,
+            fromUtc,
+            toUtc)
+            .CountAsync(ct);
         var total = await query.CountAsync(ct);
         if (total == 0)
         {
-            return new ResponsesSummaryDto(0, 0, 0, 0, 0, null);
+            return new ResponsesSummaryDto(0, 0, duplicates, 0, 0, null);
         }
 
-        var duplicates = await query.CountAsync(x => x.Status == ResponseStatuses.Duplicate, ct);
+        var duplicatesInSelection = await query.CountAsync(x => x.Status == ResponseStatuses.Duplicate, ct);
         var sent = await CountSentAsync(
             scope,
             officeFilter,
             status,
             search,
             vacancy,
-            workerId,
-            accountId,
-            bitrixDestination,
+            workerIds,
+            accountIds,
+            bitrixDestinations,
             gender,
             ageFrom,
             ageTo,
             fromUtc,
             toUtc,
             ct);
-        var unique = total - duplicates;
+        var unique = total - duplicatesInSelection;
         var uniqueAuthors = await ResponseSummaryMetrics.CountUniqueAuthorsAsync(query, ct);
 
         var avgMinutes = await query
@@ -157,9 +217,9 @@ public sealed class ResponsesQueryService(
         string? status,
         string? search,
         string? vacancy,
-        Guid? workerId,
-        Guid? accountId,
-        string? bitrixDestination,
+        IReadOnlyList<Guid> workerIds,
+        IReadOnlyList<Guid> accountIds,
+        IReadOnlyList<string> bitrixDestinations,
         string? gender,
         int? ageFrom,
         int? ageTo,
@@ -173,9 +233,9 @@ public sealed class ResponsesQueryService(
             status,
             search,
             vacancy,
-            workerId,
-            accountId,
-            bitrixDestination,
+            workerIds,
+            accountIds,
+            bitrixDestinations,
             gender,
             ageFrom,
             ageTo);
@@ -406,9 +466,9 @@ public sealed class ResponsesQueryService(
         string? status,
         string? search,
         string? vacancy,
-        Guid? workerId,
-        Guid? accountId,
-        string? bitrixDestination,
+        IReadOnlyList<Guid> workerIds,
+        IReadOnlyList<Guid> accountIds,
+        IReadOnlyList<string> bitrixDestinations,
         string? gender,
         int? ageFrom,
         int? ageTo,
@@ -429,9 +489,9 @@ public sealed class ResponsesQueryService(
             status,
             search,
             vacancy,
-            workerId,
-            accountId,
-            bitrixDestination,
+            workerIds,
+            accountIds,
+            bitrixDestinations,
             gender,
             ageFrom,
             ageTo,
@@ -494,12 +554,12 @@ public sealed class ResponsesQueryService(
             })
             .ToListAsync(ct);
 
-        var accountIds = rows.Select(x => x.AccountId).Distinct().ToList();
-        var subProfileRows = accountIds.Count == 0
+        var rowAccountIds = rows.Select(x => x.AccountId).Distinct().ToList();
+        var subProfileRows = rowAccountIds.Count == 0
             ? []
             : await db.WorkerAccounts
                 .AsNoTracking()
-                .Where(a => accountIds.Contains(a.AccountId))
+                .Where(a => rowAccountIds.Contains(a.AccountId))
                 .Select(a => new { a.AccountId, a.SubProfilesJson })
                 .ToListAsync(ct);
 
@@ -711,9 +771,9 @@ public sealed class ResponsesQueryService(
         string? status,
         string? search,
         string? vacancy,
-        Guid? workerId,
-        Guid? accountId,
-        string? bitrixDestination,
+        IReadOnlyList<Guid> workerIds,
+        IReadOnlyList<Guid> accountIds,
+        IReadOnlyList<string> bitrixDestinations,
         string? gender,
         int? ageFrom,
         int? ageTo,
@@ -726,9 +786,9 @@ public sealed class ResponsesQueryService(
             status,
             search,
             vacancy,
-            workerId,
-            accountId,
-            bitrixDestination,
+            workerIds,
+            accountIds,
+            bitrixDestinations,
             gender,
             ageFrom,
             ageTo);
@@ -756,9 +816,9 @@ public sealed class ResponsesQueryService(
         string? status,
         string? search,
         string? vacancy,
-        Guid? workerId,
-        Guid? accountId,
-        string? bitrixDestination,
+        IReadOnlyList<Guid> workerIds,
+        IReadOnlyList<Guid> accountIds,
+        IReadOnlyList<string> bitrixDestinations,
         string? gender,
         int? ageFrom,
         int? ageTo)
@@ -770,18 +830,20 @@ public sealed class ResponsesQueryService(
 
         query = ApplyOfficeFilter(query, scope, officeFilter);
 
-        if (workerId is Guid wid)
+        if (workerIds.Count > 0)
         {
-            query = query.Where(x => x.WorkerId == wid);
+            var workerFilter = workerIds as Guid[] ?? workerIds.ToArray();
+            query = query.Where(x => x.WorkerId != null && workerFilter.Contains(x.WorkerId.Value));
         }
 
-        if (accountId is Guid aid)
+        if (accountIds.Count > 0)
         {
-            query = query.Where(x => x.AccountId == aid);
+            var accountFilter = accountIds as Guid[] ?? accountIds.ToArray();
+            query = query.Where(x => accountFilter.Contains(x.AccountId));
         }
 
         query = ApplyStatusFilter(query, status);
-        query = ApplyBitrixDestinationFilter(query, bitrixDestination);
+        query = ApplyBitrixDestinationFilter(query, bitrixDestinations);
 
         query = ApplySearchFilter(query, search);
         query = ApplyVacancyFilter(query, vacancy);
@@ -830,53 +892,72 @@ public sealed class ResponsesQueryService(
 
     private IQueryable<CandidateResponseEntity> ApplyBitrixDestinationFilter(
         IQueryable<CandidateResponseEntity> query,
-        string? bitrixDestination)
+        IReadOnlyList<string> bitrixDestinations)
     {
-        if (string.IsNullOrWhiteSpace(bitrixDestination))
+        if (bitrixDestinations.Count == 0)
         {
             return query;
         }
 
-        if (string.Equals(bitrixDestination, "not_sent", StringComparison.OrdinalIgnoreCase))
+        var includeNotSent = false;
+        var crmOfficeIds = new List<Guid>();
+        var bitrixInstanceIds = new List<Guid>();
+        foreach (var destination in bitrixDestinations)
         {
-            return query.Where(x =>
-                x.Status != ResponseStatuses.Sent
+            if (string.Equals(destination, "not_sent", StringComparison.OrdinalIgnoreCase))
+            {
+                includeNotSent = true;
+                continue;
+            }
+
+            if (destination.StartsWith("crm:", StringComparison.OrdinalIgnoreCase))
+            {
+                var officeRaw = destination["crm:".Length..];
+                if (Guid.TryParse(officeRaw, out var officeId))
+                {
+                    crmOfficeIds.Add(officeId);
+                }
+
+                continue;
+            }
+
+            if (Guid.TryParse(destination, out var instanceId))
+            {
+                bitrixInstanceIds.Add(instanceId);
+            }
+        }
+
+        var crmIds = crmOfficeIds.Distinct().ToArray();
+        var bitrixIds = bitrixInstanceIds.Distinct().ToArray();
+        var hasCrm = crmIds.Length > 0;
+        var hasBitrix = bitrixIds.Length > 0;
+        if (!includeNotSent && !hasCrm && !hasBitrix)
+        {
+            return query;
+        }
+
+        return query.Where(x =>
+            (includeNotSent
+                && x.Status != ResponseStatuses.Sent
                 && x.BitrixInstanceId == null
                 && !db.ResponseBitrixDeliveries.Any(d =>
                     d.ResponseId == x.Id
                     && d.Outcome == ResponseBitrixDeliveryOutcomes.Sent)
                 && !db.ResponseCrmDeliveries.Any(d =>
                     d.ResponseId == x.Id
-                    && d.Outcome == ResponseCrmDeliveryOutcomes.Sent));
-        }
-
-        // CRM office: crm:{officeId}
-        if (bitrixDestination.StartsWith("crm:", StringComparison.OrdinalIgnoreCase))
-        {
-            var officeRaw = bitrixDestination["crm:".Length..];
-            if (!Guid.TryParse(officeRaw, out var officeId))
-            {
-                return query;
-            }
-
-            return query.Where(x =>
-                db.ResponseCrmDeliveries.Any(d =>
-                    d.ResponseId == x.Id
-                    && d.OfficeId == officeId
-                    && d.Outcome == ResponseCrmDeliveryOutcomes.Sent));
-        }
-
-        if (!Guid.TryParse(bitrixDestination, out var instanceId))
-        {
-            return query;
-        }
-
-        return query.Where(x =>
-            (x.BitrixInstanceId == instanceId && x.Status == ResponseStatuses.Sent)
-            || db.ResponseBitrixDeliveries.Any(d =>
+                    && d.Outcome == ResponseCrmDeliveryOutcomes.Sent))
+            || (hasCrm && db.ResponseCrmDeliveries.Any(d =>
                 d.ResponseId == x.Id
-                && d.BitrixInstanceId == instanceId
-                && d.Outcome == ResponseBitrixDeliveryOutcomes.Sent));
+                && crmIds.Contains(d.OfficeId)
+                && d.Outcome == ResponseCrmDeliveryOutcomes.Sent))
+            || (hasBitrix && (
+                (x.BitrixInstanceId != null
+                    && bitrixIds.Contains(x.BitrixInstanceId.Value)
+                    && x.Status == ResponseStatuses.Sent)
+                || db.ResponseBitrixDeliveries.Any(d =>
+                    d.ResponseId == x.Id
+                    && bitrixIds.Contains(d.BitrixInstanceId)
+                    && d.Outcome == ResponseBitrixDeliveryOutcomes.Sent))));
     }
 
     private static IQueryable<CandidateResponseEntity> ApplySearchFilter(
