@@ -9,7 +9,7 @@ namespace LeadFlow.Core.Services.Worker;
 internal static class WorkerMonitoringLogger
 {
     public static void CycleStarted(int accountCount) =>
-        LogInfo($"Цикл мониторинга: старт, {accountCount} аккаунт(ов) AdsPower в очереди.");
+        LogInfo($"Цикл мониторинга: старт, {accountCount} аккаунт(ов) в очереди.");
 
     public static void CycleParallelism(int parallelism) =>
         LogInfo($"Цикл: параллелизм — до {parallelism} аккаунт(ов) одновременно.");
@@ -44,7 +44,7 @@ internal static class WorkerMonitoringLogger
     }
 
     public static void CycleSkippedNoAccounts() =>
-        LogInfo("Цикл пропущен: нет включённых аккаунтов AdsPower.");
+        LogInfo("Цикл пропущен: нет включённых аккаунтов.");
 
     public static void CycleFailed(string detail) =>
         LogError($"Сбой цикла мониторинга: {detail}");

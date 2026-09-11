@@ -132,7 +132,7 @@ public sealed class AdsPowerAvitoAuthService(
             browser = await Puppeteer.ConnectAsync(connectOptions).ConfigureAwait(false);
             Log(
                 DeskLinkAuditLogLevel.Info,
-                "Connected to AdsPower browser via CDP.",
+                "Браузер CDP: подключение установлено.",
                 new Dictionary<string, object?>
                 {
                     ["step"] = "cdp_connected",
@@ -283,7 +283,7 @@ public sealed class AdsPowerAvitoAuthService(
                     browser.Disconnect();
                     Log(
                         DeskLinkAuditLogLevel.Info,
-                        "Disconnected from AdsPower browser via CDP.",
+                        "Браузер CDP: подключение закрыто.",
                         new Dictionary<string, object?>
                         {
                             ["step"] = "cdp_disconnected"

@@ -918,7 +918,7 @@ public sealed partial class AdsPowerAvitoAutomationService
             .ConfigureAwait(false);
 
         _ = GlobalLogger.Instance.LogAsync(
-            "AdsPower CDP candidates page stable (session).",
+            "Браузер CDP: страница кандидатов стабилизировалась (сессия).",
             DeskLinkAuditLogLevel.Info,
             memberName: nameof(ExtractCandidatesJsonOnPageAsync),
             properties: new Dictionary<string, object?>
@@ -963,7 +963,7 @@ public sealed partial class AdsPowerAvitoAutomationService
         var raw = await EvaluateWithRetryAsync<string>(page, ExtractionScript, cancellationToken).ConfigureAwait(false);
         if (string.IsNullOrWhiteSpace(raw))
         {
-            throw new InvalidOperationException("AdsPower CDP: скрипт извлечения вернул пустой результат.");
+            throw new InvalidOperationException("Браузер CDP: скрипт извлечения вернул пустой результат.");
         }
         extractSw.Stop();
 
@@ -1554,7 +1554,7 @@ public sealed partial class AdsPowerAvitoAutomationService
 
         if (string.IsNullOrWhiteSpace(html))
         {
-            throw new InvalidOperationException("AdsPower CDP: страница объявлений Avito вернула пустой HTML.");
+            throw new InvalidOperationException("Браузер CDP: страница объявлений Avito вернула пустой HTML.");
         }
 
         await ThrowIfCaptchaAsync(page, html, cancellationToken).ConfigureAwait(false);
@@ -1590,7 +1590,7 @@ public sealed partial class AdsPowerAvitoAutomationService
 
         if (string.IsNullOrWhiteSpace(html))
         {
-            throw new InvalidOperationException("AdsPower CDP: вкладка «С ошибками» вернула пустой HTML.");
+            throw new InvalidOperationException("Браузер CDP: вкладка «С ошибками» вернула пустой HTML.");
         }
 
         await ThrowIfCaptchaAsync(page, html, cancellationToken).ConfigureAwait(false);
@@ -1612,7 +1612,7 @@ public sealed partial class AdsPowerAvitoAutomationService
         catch (Exception ex)
         {
             _ = GlobalLogger.Instance.LogAsync(
-                $"AdsPower profile-items: shell selector wait timed out: {ex.Message}",
+                $"Браузер: истекло ожидание основного контейнера страницы объявлений: {ex.Message}",
                 DeskLinkAuditLogLevel.Warning,
                 memberName: callerMemberName,
                 properties: new Dictionary<string, object?>
@@ -1662,7 +1662,7 @@ public sealed partial class AdsPowerAvitoAutomationService
         catch (Exception ex)
         {
             _ = GlobalLogger.Instance.LogAsync(
-                $"AdsPower profile-items: items wait timed out, capturing whatever is on the page: {ex.Message}",
+                $"Браузер: истекло ожидание элементов страницы объявлений, сохраняем текущее состояние: {ex.Message}",
                 DeskLinkAuditLogLevel.Warning,
                 memberName: callerMemberName,
                 properties: new Dictionary<string, object?>
@@ -1687,7 +1687,7 @@ public sealed partial class AdsPowerAvitoAutomationService
         catch (Exception ex)
         {
             _ = GlobalLogger.Instance.LogAsync(
-                $"AdsPower blocked-items: shell wait timed out: {ex.Message}",
+                $"Браузер: истекло ожидание контейнера заблокированных объявлений: {ex.Message}",
                 DeskLinkAuditLogLevel.Warning,
                 memberName: nameof(LoadBlockedItemsHtmlOnPageAsync));
         }
@@ -1727,7 +1727,7 @@ public sealed partial class AdsPowerAvitoAutomationService
         catch (Exception ex)
         {
             _ = GlobalLogger.Instance.LogAsync(
-                $"AdsPower blocked-items: items wait timed out, capturing whatever is on the page: {ex.Message}",
+                $"Браузер: истекло ожидание заблокированных объявлений, сохраняем текущее состояние: {ex.Message}",
                 DeskLinkAuditLogLevel.Warning,
                 memberName: nameof(LoadBlockedItemsHtmlOnPageAsync),
                 properties: new Dictionary<string, object?>

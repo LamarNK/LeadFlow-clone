@@ -7,7 +7,7 @@ namespace LeadFlow.Core.Services.AdsPower;
 /// </summary>
 internal static class AdsPowerCdpGuard
 {
-    public const string TimeoutPrefix = "AdsPower CDP:";
+    public const string TimeoutPrefix = "Браузер CDP:";
 
     public static bool IsCdpTimeout(Exception exception)
     {

@@ -168,7 +168,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
             var raw = await EvaluateWithRetryAsync<string>(page, ExtractionScript, cancellationToken).ConfigureAwait(false);
             if (string.IsNullOrWhiteSpace(raw))
             {
-                throw new InvalidOperationException("AdsPower CDP: скрипт извлечения вернул пустой результат.");
+                throw new InvalidOperationException("Браузер CDP: скрипт извлечения вернул пустой результат.");
             }
             extractSw.Stop();
 
@@ -188,7 +188,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 nameof(ExtractCandidatesJsonAsync));
 
             _ = GlobalLogger.Instance.LogAsync(
-                "AdsPower CDP candidates extraction completed.",
+                "Браузер CDP: извлечение кандидатов завершено.",
                 DeskLinkAuditLogLevel.Info,
                 memberName: nameof(ExtractCandidatesJsonAsync),
                 
@@ -214,7 +214,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
         CancellationToken cancellationToken = default)
     {
         _ = GlobalLogger.Instance.LogAsync(
-            $"AdsPower profile-items load started for user {adsPowerUserId}.",
+            $"Браузер: начало загрузки страницы объявлений для пользователя {adsPowerUserId}.",
             DeskLinkAuditLogLevel.Info,
             memberName: nameof(LoadProfileItemsHtmlAsync),
             
@@ -249,7 +249,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
         {
             browser = await Puppeteer.ConnectAsync(connectOptions).ConfigureAwait(false);
             _ = GlobalLogger.Instance.LogAsync(
-                "AdsPower profile-items: connected via CDP.",
+                "Браузер CDP: подключение к странице объявлений установлено.",
                 DeskLinkAuditLogLevel.Info,
                 memberName: nameof(LoadProfileItemsHtmlAsync),
                 
@@ -276,7 +276,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 catch (Exception ex) when (IsRecoverableNavigationError(ex))
                 {
                     _ = GlobalLogger.Instance.LogAsync(
-                        $"AdsPower profile-items navigation transient error, retrying after delay: {ex.Message}",
+                        $"Браузер: временная ошибка навигации страницы объявлений, повтор после паузы: {ex.Message}",
                         DeskLinkAuditLogLevel.Warning,
                         memberName: nameof(LoadProfileItemsHtmlAsync));
                     await Task.Delay(1400, cancellationToken).ConfigureAwait(false);
@@ -291,7 +291,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
                     new WaitForSelectorOptions { Timeout = 30_000 }).ConfigureAwait(false);
 
                 _ = GlobalLogger.Instance.LogAsync(
-                    "AdsPower profile-items: list shell selector ready.",
+                    "Браузер: основной контейнер страницы объявлений найден.",
                     DeskLinkAuditLogLevel.Info,
                     memberName: nameof(LoadProfileItemsHtmlAsync),
                     
@@ -304,7 +304,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
             catch (Exception ex)
             {
                 _ = GlobalLogger.Instance.LogAsync(
-                    $"AdsPower profile-items: shell selector wait timed out: {ex.Message}",
+                    $"Браузер: истекло ожидание основного контейнера страницы объявлений: {ex.Message}",
                     DeskLinkAuditLogLevel.Warning,
                     memberName: nameof(LoadProfileItemsHtmlAsync),
                     
@@ -351,7 +351,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
                     .ConfigureAwait(false);
 
                 _ = GlobalLogger.Instance.LogAsync(
-                    "AdsPower profile-items: loader gone and items rendered.",
+                    "Браузер: загрузка страницы объявлений завершена, элементы отображены.",
                     DeskLinkAuditLogLevel.Info,
                     memberName: nameof(LoadProfileItemsHtmlAsync),
                     
@@ -364,7 +364,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
             catch (Exception ex)
             {
                 _ = GlobalLogger.Instance.LogAsync(
-                    $"AdsPower profile-items: items wait timed out, capturing whatever is on the page: {ex.Message}",
+                    $"Браузер: истекло ожидание элементов страницы объявлений, сохраняем текущее состояние: {ex.Message}",
                     DeskLinkAuditLogLevel.Warning,
                     memberName: nameof(LoadProfileItemsHtmlAsync),
                     
@@ -386,13 +386,13 @@ public sealed partial class AdsPowerAvitoAutomationService(
 
             if (string.IsNullOrWhiteSpace(html))
             {
-                throw new InvalidOperationException("AdsPower CDP: страница объявлений Avito вернула пустой HTML.");
+                throw new InvalidOperationException("Браузер CDP: страница объявлений Avito вернула пустой HTML.");
             }
 
             await ThrowIfCaptchaAsync(page, html, cancellationToken).ConfigureAwait(false);
 
             _ = GlobalLogger.Instance.LogAsync(
-                $"AdsPower profile-items: HTML captured ({html.Length} chars).",
+                $"Браузер: HTML страницы объявлений получен ({html.Length} chars).",
                 DeskLinkAuditLogLevel.Info,
                 memberName: nameof(LoadProfileItemsHtmlAsync),
                 
@@ -419,7 +419,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
         CancellationToken cancellationToken = default)
     {
         _ = GlobalLogger.Instance.LogAsync(
-            $"AdsPower blocked-items load started for user {adsPowerUserId}.",
+            $"Браузер: начало загрузки страницы заблокированных объявлений для пользователя {adsPowerUserId}.",
             DeskLinkAuditLogLevel.Info,
             memberName: nameof(LoadBlockedItemsHtmlAsync),
             
@@ -483,7 +483,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
             catch (Exception ex)
             {
                 _ = GlobalLogger.Instance.LogAsync(
-                    $"AdsPower blocked-items: shell wait timed out: {ex.Message}",
+                    $"Браузер: истекло ожидание контейнера заблокированных объявлений: {ex.Message}",
                     DeskLinkAuditLogLevel.Warning,
                     memberName: nameof(LoadBlockedItemsHtmlAsync));
             }
@@ -519,7 +519,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
             catch (Exception ex)
             {
                 _ = GlobalLogger.Instance.LogAsync(
-                    $"AdsPower blocked-items: items wait timed out, capturing whatever is on the page: {ex.Message}",
+                    $"Браузер: истекло ожидание заблокированных объявлений, сохраняем текущее состояние: {ex.Message}",
                     DeskLinkAuditLogLevel.Warning,
                     memberName: nameof(LoadBlockedItemsHtmlAsync),
                     
@@ -539,13 +539,13 @@ public sealed partial class AdsPowerAvitoAutomationService(
 
             if (string.IsNullOrWhiteSpace(html))
             {
-                throw new InvalidOperationException("AdsPower CDP: вкладка «С ошибками» вернула пустой HTML.");
+                throw new InvalidOperationException("Браузер CDP: вкладка «С ошибками» вернула пустой HTML.");
             }
 
             await ThrowIfCaptchaAsync(page, html, cancellationToken).ConfigureAwait(false);
 
             _ = GlobalLogger.Instance.LogAsync(
-                $"AdsPower blocked-items: HTML captured ({html.Length} chars).",
+                $"Браузер: HTML заблокированных объявлений получен ({html.Length} chars).",
                 DeskLinkAuditLogLevel.Info,
                 memberName: nameof(LoadBlockedItemsHtmlAsync),
                 
@@ -798,7 +798,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
         CancellationToken cancellationToken = default)
     {
         _ = GlobalLogger.Instance.LogAsync(
-            $"AdsPower profile-switch load started for user {adsPowerUserId}.",
+            $"Браузер: начало загрузки переключателя профилей для пользователя {adsPowerUserId}.",
             DeskLinkAuditLogLevel.Info,
             memberName: nameof(LoadProfileSwitchHtmlAsync),
             
@@ -901,7 +901,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
                     }
 
                     _ = GlobalLogger.Instance.LogAsync(
-                        "AdsPower profile-switch: modal not ready — retry after session refresh.",
+                        "Браузер: переключатель профилей не готов, повтор после обновления сессии.",
                         DeskLinkAuditLogLevel.Info,
                         memberName: nameof(CaptureProfileSwitchHtmlInSessionAsync),
                         properties: new Dictionary<string, object?>
@@ -919,7 +919,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
                     throw new AvitoLoginRequiredException(modalFailState?.Url, modalFailState?.Title);
                 }
 
-                throw new InvalidOperationException("AdsPower CDP: модалка переключения профилей не загрузилась.");
+                throw new InvalidOperationException("Браузер CDP: модалка переключения профилей не загрузилась.");
             }
 
             var html = await EvaluateWithRetryAsync<string>(
@@ -931,13 +931,13 @@ public sealed partial class AdsPowerAvitoAutomationService(
 
             if (string.IsNullOrWhiteSpace(html))
             {
-                throw new InvalidOperationException("AdsPower CDP: страница переключения профилей вернула пустой HTML.");
+                throw new InvalidOperationException("Браузер CDP: страница переключения профилей вернула пустой HTML.");
             }
 
             await ThrowIfCaptchaAsync(page, html, cancellationToken).ConfigureAwait(false);
 
             _ = GlobalLogger.Instance.LogAsync(
-                $"AdsPower profile-switch: HTML captured ({html.Length} chars).",
+                $"Браузер: HTML переключателя профилей получен ({html.Length} chars).",
                 DeskLinkAuditLogLevel.Info,
                 memberName: nameof(CaptureProfileSwitchHtmlInSessionAsync),
                 
@@ -964,7 +964,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
             return html;
         }
 
-        throw new InvalidOperationException("AdsPower CDP: не удалось снять HTML модалки переключения профилей.");
+        throw new InvalidOperationException("Браузер CDP: не удалось снять HTML модалки переключения профилей.");
     }
 
     public async Task<bool> SwitchActiveProfileAsync(
@@ -980,7 +980,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
         }
 
         _ = GlobalLogger.Instance.LogAsync(
-            $"AdsPower profile-switch click started: subProfile={subProfileId}.",
+            $"Браузер: начало переключения профиля: subProfile={subProfileId}.",
             DeskLinkAuditLogLevel.Info,
             memberName: nameof(SwitchActiveProfileAsync),
             
@@ -1043,7 +1043,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
             {
                 await DismissProfileSwitchModalAsync(page, cancellationToken).ConfigureAwait(false);
                 _ = GlobalLogger.Instance.LogAsync(
-                    $"AdsPower profile-switch: subProfile {subProfileId} already current — closed modal, no click.",
+                    $"Браузер: субпрофиль {subProfileId} already current — closed modal, no click.",
                     DeskLinkAuditLogLevel.Info,
                     memberName: nameof(SwitchActiveProfileAsync),
                     
@@ -1750,7 +1750,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
             }
 
             _ = GlobalLogger.Instance.LogAsync(
-                "AdsPower: URL открыт через CDP.",
+                "Браузер CDP: URL открыт.",
                 DeskLinkAuditLogLevel.Info,
                 memberName: nameof(OpenUrlInRunningProfileAsync),
                 
@@ -1887,7 +1887,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
                     .ConfigureAwait(false);
 
                 _ = GlobalLogger.Instance.LogAsync(
-                    "AdsPower profile-switch: switch page navigation completed.",
+                    "Браузер: переключатель профилей: switch page navigation completed.",
                     DeskLinkAuditLogLevel.Info,
                     memberName: callerMemberName,
                     properties: new Dictionary<string, object?>
@@ -1901,7 +1901,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 if (switchNavState?.IsTransientPageError == true)
                 {
                     _ = GlobalLogger.Instance.LogAsync(
-                        "AdsPower profile-switch: Avito error page after switch navigation, refreshing.",
+                        "Браузер: переключатель профилей: Avito error page after switch navigation, refreshing.",
                         DeskLinkAuditLogLevel.Warning,
                         memberName: callerMemberName,
                         properties: new Dictionary<string, object?>
@@ -1935,7 +1935,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
             catch (Exception ex) when (IsRecoverableNavigationError(ex))
             {
                 _ = GlobalLogger.Instance.LogAsync(
-                    $"AdsPower profile-switch: navigation retry {i + 1}/3: {ex.Message}",
+                    $"Браузер: переключатель профилей: navigation retry {i + 1}/3: {ex.Message}",
                     DeskLinkAuditLogLevel.Warning,
                     memberName: callerMemberName,
                     properties: new Dictionary<string, object?>
@@ -1970,7 +1970,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
         string callerMemberName)
     {
         _ = GlobalLogger.Instance.LogAsync(
-            "AdsPower profile-switch: bounce to dashboard before reopening switch modal.",
+            "Браузер: переключатель профилей: bounce to dashboard before reopening switch modal.",
             DeskLinkAuditLogLevel.Info,
             memberName: callerMemberName,
             properties: new Dictionary<string, object?>
@@ -2019,7 +2019,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
         }
 
         _ = GlobalLogger.Instance.LogAsync(
-            "AdsPower profile-switch: modal/cards not ready — retry via dashboard bounce.",
+            "Браузер: переключатель профилей: modal/cards not ready — retry via dashboard bounce.",
             DeskLinkAuditLogLevel.Warning,
             memberName: callerMemberName,
             properties: new Dictionary<string, object?>
@@ -2082,7 +2082,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
         catch (Exception ex)
         {
             _ = GlobalLogger.Instance.LogAsync(
-                $"AdsPower profile-switch: modal selector wait timed out: {ex.Message}",
+                $"Браузер: переключатель профилей: modal selector wait timed out: {ex.Message}",
                 DeskLinkAuditLogLevel.Warning,
                 memberName: callerMemberName,
                 properties: new Dictionary<string, object?>
@@ -2116,7 +2116,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
         catch (Exception ex)
         {
             _ = GlobalLogger.Instance.LogAsync(
-                $"AdsPower profile-switch: profile cards not detected in time: {ex.Message}",
+                $"Браузер: переключатель профилей: profile cards not detected in time: {ex.Message}",
                 DeskLinkAuditLogLevel.Warning,
                 memberName: callerMemberName,
                 properties: new Dictionary<string, object?>
@@ -2266,8 +2266,8 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 var alreadyOnTarget = IsOnUrl(page.Url, targetUrl);
                 _ = GlobalLogger.Instance.LogAsync(
                     alreadyOnTarget
-                        ? $"AdsPower candidates: hard navigation attempt {attempt}/{maxAttemptsPerUrl} ({targetUrl})."
-                        : $"AdsPower candidates: navigating to responses page (attempt {attempt}/{maxAttemptsPerUrl}).",
+                        ? $"Браузер: кандидаты: hard navigation attempt {attempt}/{maxAttemptsPerUrl} ({targetUrl})."
+                        : $"Браузер: кандидаты: navigating to responses page (attempt {attempt}/{maxAttemptsPerUrl}).",
                     DeskLinkAuditLogLevel.Info,
                     memberName: nameof(EnsureOnCandidatesPageAsync),
                     properties: new Dictionary<string, object?>
@@ -2409,7 +2409,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
         string callerMemberName)
     {
         _ = GlobalLogger.Instance.LogAsync(
-            "AdsPower profile-switch: leaving candidates page before opening switch modal.",
+            "Браузер: выход со страницы кандидатов перед открытием переключателя профилей.",
             DeskLinkAuditLogLevel.Info,
             memberName: callerMemberName,
             properties: new Dictionary<string, object?>
@@ -2548,7 +2548,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
         };
         AdsPowerStartupDiagnostics.TryCopyIdentity(selectedProperties);
         _ = GlobalLogger.Instance.LogAsync(
-            $"AdsPower CDP: рабочая вкладка выбрана (ветка {branch}, закрыто лишних: {closed}, было: {existingPages.Count}).",
+            $"Браузер CDP: рабочая вкладка выбрана (ветка {branch}, закрыто лишних: {closed}, было: {existingPages.Count}).",
             DeskLinkAuditLogLevel.Info,
             memberName: callerMemberName,
             properties: selectedProperties);
@@ -2585,7 +2585,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
         };
         AdsPowerStartupDiagnostics.TryCopyIdentity(properties);
         _ = GlobalLogger.Instance.LogAsync(
-            $"AdsPower CDP: поиск рабочей вкладки, ветка {branch}, pages={pages.Count}{suffix}.",
+            $"Браузер CDP: поиск рабочей вкладки, ветка {branch}, pages={pages.Count}{suffix}.",
             branch == "empty_pages" ? DeskLinkAuditLogLevel.Warning : DeskLinkAuditLogLevel.Info,
             memberName: callerMemberName,
             properties: properties);
@@ -2665,7 +2665,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
             if (!ShouldKeepWaitingForStartupNavigation(urls, started.Elapsed, timeout))
             {
                 _ = GlobalLogger.Instance.LogAsync(
-                    $"AdsPower CDP: ожидание стартовой навигации завершено ({started.Elapsed.TotalMilliseconds:F0} мс).",
+                    $"Браузер CDP: ожидание стартовой навигации завершено ({started.Elapsed.TotalMilliseconds:F0} мс).",
                     DeskLinkAuditLogLevel.Info,
                     memberName: callerMemberName,
                     properties: new Dictionary<string, object?>
@@ -2728,7 +2728,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 if (status == AdsPowerStartPageProxyStatus.Failed)
                 {
                     _ = GlobalLogger.Instance.LogAsync(
-                        "AdsPower: стартовая страница показала отказ прокси.",
+                        "Браузер: стартовая страница показала отказ прокси.",
                         DeskLinkAuditLogLevel.Warning,
                         memberName: callerMemberName,
                         errorKey: AdsPowerProxyFailureException.ErrorKey,
@@ -2790,7 +2790,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
         catch (TimeoutException ex)
         {
             throw new TimeoutException(
-                $"AdsPower CDP: не прочитал стартовую вкладку за {CdpPageReadTimeout.TotalSeconds:0} с.",
+                $"Браузер CDP: не прочитал стартовую вкладку за {CdpPageReadTimeout.TotalSeconds:0} с.",
                 ex);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -2812,7 +2812,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
         catch (TimeoutException ex)
         {
             throw new TimeoutException(
-                $"AdsPower CDP: не прочитал текст стартовой вкладки за {CdpPageReadTimeout.TotalSeconds:0} с.",
+                $"Браузер CDP: не прочитал текст стартовой вкладки за {CdpPageReadTimeout.TotalSeconds:0} с.",
                 ex);
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -2883,11 +2883,11 @@ public sealed partial class AdsPowerAvitoAutomationService(
             if (next == AdsPowerStartupNavigationStep.Failed)
             {
                 throw new InvalidOperationException(
-                    $"AdsPower: вкладка осталась на «{currentUrl}», страница Avito не открылась.");
+                    $"Браузер: вкладка осталась на «{currentUrl}», страница Avito не открылась.");
             }
 
             _ = GlobalLogger.Instance.LogAsync(
-                $"AdsPower CDP: навигация {next} → {targetUrl} (сейчас {currentUrl}).",
+                $"Браузер CDP: навигация {next} → {targetUrl} (сейчас {currentUrl}).",
                 DeskLinkAuditLogLevel.Info,
                 memberName: callerMemberName,
                 properties: new Dictionary<string, object?>
@@ -3079,7 +3079,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
         {
             ObserveCdpPages(operation, started.Elapsed, pages: null, ok: false);
             throw new TimeoutException(
-                $"AdsPower CDP: {operation} не получил список вкладок за {CdpPageDiscoveryTimeout.TotalSeconds:0} с.",
+                $"Браузер CDP: {operation} не получил список вкладок за {CdpPageDiscoveryTimeout.TotalSeconds:0} с.",
                 ex);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -3117,7 +3117,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
         catch (TimeoutException ex)
         {
             throw new TimeoutException(
-                $"AdsPower CDP: не прочитал адрес вкладки за {CdpPageReadTimeout.TotalSeconds:0} с.",
+                $"Браузер CDP: не прочитал адрес вкладки за {CdpPageReadTimeout.TotalSeconds:0} с.",
                 ex);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -3271,7 +3271,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
         {
             ObserveCdpCall("Connect", "подключение CDP", started.Elapsed, ok: false);
             throw new TimeoutException(
-                $"AdsPower: CDP-подключение не открылось за {CdpConnectTimeout.TotalSeconds:0} с.",
+                $"Браузер: CDP-подключение не открылось за {CdpConnectTimeout.TotalSeconds:0} с.",
                 ex);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -3382,7 +3382,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
             catch (TimeoutException)
             {
                 _ = GlobalLogger.Instance.LogAsync(
-                    $"AdsPower CDP: закрытие лишней вкладки зависло ({page.Url}), продолжаем с рабочей.",
+                    $"Браузер CDP: закрытие лишней вкладки зависло ({page.Url}), продолжаем с рабочей.",
                     DeskLinkAuditLogLevel.Warning,
                     memberName: callerMemberName,
                     properties: new Dictionary<string, object?>
@@ -3396,7 +3396,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
             catch (Exception ex)
             {
                 _ = GlobalLogger.Instance.LogAsync(
-                    $"AdsPower CDP: не удалось закрыть лишнюю вкладку ({page.Url}): {ex.Message}",
+                    $"Браузер CDP: не удалось закрыть лишнюю вкладку ({page.Url}): {ex.Message}",
                     DeskLinkAuditLogLevel.Debug,
                     memberName: callerMemberName,
                     properties: new Dictionary<string, object?>
@@ -3635,7 +3635,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
 
     /// <summary>
     /// На странице откликов кнопка «в чат» часто без href; ссылка канала появляется в шапке мини-мессенджера
-    /// (<c>mini-messenger/messenger-page-link</c>) только после клика — дополняем JSON для AdsPower CDP.
+    /// (<c>mini-messenger/messenger-page-link</c>) только после клика — дополняем JSON для браузера через CDP.
     /// </summary>
     /// <summary>Номер уже полностью на карточке (не «узнать в чате»): после <see cref="IPhoneNormalizer.Normalize"/> — типичный РФ-мобильный.</summary>
     private static bool LooksLikeCompleteRussianMobile(string normalized) =>

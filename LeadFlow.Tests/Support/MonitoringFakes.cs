@@ -156,31 +156,31 @@ internal sealed class StubAdsPowerAvitoAutomationService : IAdsPowerAvitoAutomat
         string adsPowerUserId,
         CancellationToken cancellationToken = default,
         CandidatesMessengerEnrichmentHints? messengerEnrichmentHints = null) =>
-        throw new InvalidOperationException("AdsPower CDP не должен вызываться в этих тестах.");
+        throw new InvalidOperationException("Браузер CDP не должен вызываться в этих тестах.");
 
     public Task<string> LoadProfileItemsHtmlAsync(
         AdsPowerConnectionOptions options,
         string adsPowerUserId,
         CancellationToken cancellationToken = default) =>
-        throw new InvalidOperationException("AdsPower CDP не должен вызываться в этих тестах.");
+        throw new InvalidOperationException("Браузер CDP не должен вызываться в этих тестах.");
 
     public Task<string> LoadBlockedItemsHtmlAsync(
         AdsPowerConnectionOptions options,
         string adsPowerUserId,
         CancellationToken cancellationToken = default) =>
-        throw new InvalidOperationException("AdsPower CDP не должен вызываться в этих тестах.");
+        throw new InvalidOperationException("Браузер CDP не должен вызываться в этих тестах.");
 
     public Task<string> LoadProfileSwitchHtmlAsync(
         AdsPowerConnectionOptions options,
         string adsPowerUserId,
         CancellationToken cancellationToken = default) =>
-        throw new InvalidOperationException("AdsPower CDP не должен вызываться в этих тестах.");
+        throw new InvalidOperationException("Браузер CDP не должен вызываться в этих тестах.");
 
     public Task<string> CaptureProfileSwitchHtmlInSessionAsync(
         PuppeteerSharp.IPage page,
         string adsPowerUserId,
         CancellationToken cancellationToken = default) =>
-        throw new InvalidOperationException("AdsPower CDP не должен вызываться в этих тестах.");
+        throw new InvalidOperationException("Браузер CDP не должен вызываться в этих тестах.");
 
     public Task<bool> SwitchActiveProfileAsync(
         AdsPowerConnectionOptions options,
@@ -188,7 +188,7 @@ internal sealed class StubAdsPowerAvitoAutomationService : IAdsPowerAvitoAutomat
         string subProfileId,
         CancellationToken cancellationToken = default,
         bool closeBrowserAfter = false) =>
-        throw new InvalidOperationException("AdsPower CDP не должен вызываться в этих тестах.");
+        throw new InvalidOperationException("Браузер CDP не должен вызываться в этих тестах.");
 
     public Task CloseBrowserAsync(
         AdsPowerConnectionOptions options,
@@ -202,11 +202,11 @@ internal sealed class StubAdsPowerAvitoAutomationService : IAdsPowerAvitoAutomat
         string url,
         CancellationToken cancellationToken = default,
         bool closeBrowserAfter = false) =>
-        throw new InvalidOperationException("AdsPower CDP не должен вызываться в этих тестах.");
+        throw new InvalidOperationException("Браузер CDP не должен вызываться в этих тестах.");
 
     public Task<IAdsPowerAccountSession> OpenAccountSessionAsync(
         AdsPowerConnectionOptions options,
         string adsPowerUserId,
         CancellationToken cancellationToken = default) =>
-        throw new InvalidOperationException("AdsPower CDP не должен вызываться в этих тестах.");
+        throw new InvalidOperationException("Браузер CDP не должен вызываться в этих тестах.");
 }
