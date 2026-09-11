@@ -175,10 +175,12 @@ fi
 build_docker_image
 acquire_deploy_lock
 compose_src="$cache_dir/deploy/control-panel/docker-compose.images.yml"
-if [[ -f "$compose_src" ]]; then
+if [[ "${LEADFLOW_PRESERVE_COMPOSE:-0}" != "1" && -f "$compose_src" ]]; then
   cp "$compose_src" "$remote_dir/docker-compose.images.yml"
   cp "$compose_src" "$remote_dir/docker-compose.yml"
   echo "Updated docker-compose.images.yml and docker-compose.yml in $remote_dir"
+elif [[ "${LEADFLOW_PRESERVE_COMPOSE:-0}" == "1" ]]; then
+  echo "Compose update skipped (LEADFLOW_PRESERVE_COMPOSE=1)."
 fi
 
 cd "$remote_dir"
