@@ -1,10 +1,22 @@
 using System.Diagnostics;
 using System.Text;
+using Orbita.Web.Services;
 
 namespace Orbita.Tests;
 
 public sealed class DashboardMarkupTests
 {
+    [Fact]
+    public void DashboardPreview_IncludesUniqueResponsesKpi()
+    {
+        var model = DesignPreviewData.BuildDashboardViewModel();
+
+        var card = Assert.Single(model.KpiCards, card => card.Key == "unique");
+        Assert.Equal("Уникальных откликов", card.Label);
+        Assert.Equal(978, card.CountValue);
+        Assert.Contains("status=unique", card.Href);
+    }
+
     [Fact]
     public void DashboardJs_InitializesWorkerControlsWhenChartLibraryIsStillLoading()
     {

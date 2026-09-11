@@ -216,6 +216,9 @@ public sealed class DashboardService(
         AccountStatsViewModel accountStats)
     {
         var responsesSeries = periodStats.ResponsesSeries;
+        var uniqueResponsesSeries = responsesSeries
+            .Zip(periodStats.DuplicatesSeries, (responses, duplicates) => Math.Max(0, responses - duplicates))
+            .ToList();
         var sentSeries = periodStats.SentSeries;
         var duplicatesSeries = periodStats.DuplicatesSeries;
         var errorsSeries = periodStats.ErrorsSeries;
@@ -238,6 +241,20 @@ public sealed class DashboardService(
                 IconTone = "blue",
                 Sparkline = SparklineGenerator.FromSeries(responsesSeries),
                 SparkColor = "#2563eb"
+            },
+            new()
+            {
+                Key = "unique",
+                Href = KpiCardLinks.Dashboard("unique", period.From, period.To, period.TimeZoneOffsetMinutes),
+                Label = "Уникальных откликов",
+                Value = periodStats.UniqueResponses.ToString(),
+                CountValue = periodStats.UniqueResponses,
+                Delta = "За период",
+                DeltaTone = "neutral",
+                IconClass = "fa-solid fa-user-check",
+                IconTone = "purple",
+                Sparkline = SparklineGenerator.FromSeries(uniqueResponsesSeries),
+                SparkColor = "#7c3aed"
             },
             new()
             {
@@ -340,5 +357,8 @@ public sealed class DashboardService(
         IReadOnlyList<int> SentSeries,
         IReadOnlyList<int> DuplicatesSeries,
         IReadOnlyList<int> ErrorsSeries,
-        IReadOnlyList<ActivityPointDto> DailyPoints);
+        IReadOnlyList<ActivityPointDto> DailyPoints)
+    {
+        public int UniqueResponses => Math.Max(0, Responses - Duplicates);
+    }
 }

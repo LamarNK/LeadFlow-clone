@@ -7,6 +7,7 @@ internal static class KpiCardLinks
     public static string? Dashboard(string key, DateTime from, DateTime to, int timeZoneOffsetMinutes = 0) => key switch
     {
         "responses" => Responses(from, to, timeZoneOffsetMinutes: timeZoneOffsetMinutes),
+        "unique" => Responses(from, to, status: "unique", timeZoneOffsetMinutes: timeZoneOffsetMinutes),
         "sent" => Responses(from, to, status: "sent", timeZoneOffsetMinutes: timeZoneOffsetMinutes),
         "duplicates" => Responses(from, to, status: "duplicate", timeZoneOffsetMinutes: timeZoneOffsetMinutes),
         "errors" => "/Events?level=errors",

@@ -2397,6 +2397,9 @@ internal static class DesignPreviewData
         var previewResponses = HourlyResponsesGenerator.DailyValues.ToList();
         var previewSent = previewResponses.Select(v => Math.Max(0, (int)Math.Round(v * 0.89))).ToList();
         var previewDuplicates = previewResponses.Select(v => Math.Max(0, v / 5)).ToList();
+        var previewUnique = previewResponses
+            .Zip(previewDuplicates, (responses, duplicates) => Math.Max(0, responses - duplicates))
+            .ToList();
         var previewErrors = previewResponses.Select((v, i) => i == 14 ? 2 : (i % 9 == 0 ? 1 : 0)).ToList();
         var accountStats = new AccountStatsViewModel
         {
@@ -2421,6 +2424,20 @@ internal static class DesignPreviewData
                     IconTone = "blue",
                     Sparkline = SparklineGenerator.FromSeries(previewResponses),
                     SparkColor = "#2563eb"
+                },
+                new()
+                {
+                    Key = "unique",
+                    Href = KpiCardLinks.Dashboard("unique", period.From, period.To),
+                    Label = "Уникальных откликов",
+                    Value = "978",
+                    CountValue = 978,
+                    Delta = "За период",
+                    DeltaTone = "neutral",
+                    IconClass = "fa-solid fa-user-check",
+                    IconTone = "purple",
+                    Sparkline = SparklineGenerator.FromSeries(previewUnique),
+                    SparkColor = "#7c3aed"
                 },
                 new()
                 {
