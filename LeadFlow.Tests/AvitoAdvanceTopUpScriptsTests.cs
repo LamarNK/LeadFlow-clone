@@ -103,6 +103,10 @@ public sealed class AvitoAdvanceTopUpScriptsTests
         Assert.Contains("sbp/confirmation", script, StringComparison.Ordinal);
         Assert.Contains("img[alt='qr']", script, StringComparison.Ordinal);
         Assert.Contains("Подтвердите платёж по СБП", script, StringComparison.Ordinal);
+        Assert.Contains("querySelectorAll('img,canvas,svg')", script, StringComparison.Ordinal);
+        Assert.Contains("parentElement", script, StringComparison.Ordinal);
+        Assert.Contains("naturalWidth", script, StringComparison.Ordinal);
+        Assert.Contains("XMLSerializer", script, StringComparison.Ordinal);
         Assert.Contains("toDataURL", script, StringComparison.Ordinal);
         Assert.Contains("getAttribute('src')", script, StringComparison.Ordinal);
         Assert.Contains("blob:", script, StringComparison.Ordinal);
@@ -114,6 +118,23 @@ public sealed class AvitoAdvanceTopUpScriptsTests
         var expression = AvitoAdvanceTopUpScripts.QrReadyWaitExpression;
         Assert.Contains("img[alt='qr']", expression, StringComparison.Ordinal);
         Assert.Contains("Подтвердите платёж по СБП", expression, StringComparison.Ordinal);
+        Assert.Contains("querySelectorAll('img,canvas,svg')", expression, StringComparison.Ordinal);
+        Assert.Contains("h1,h2,h3,h4,h5,p,div,span", expression, StringComparison.Ordinal);
+        Assert.Contains("parentElement", expression, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void QrCapture_DoesNotRequireLegacyMarkerOrAltAttribute()
+    {
+        // Актуальный экран Avito показывает QR рядом с текстом подтверждения, но сам
+        // QR может быть img/canvas/svg без data-marker и alt.
+        var script = AvitoAdvanceTopUpScripts.BuildCaptureQrScript();
+
+        Assert.Contains("Подтвердите платёж по СБП", script, StringComparison.Ordinal);
+        Assert.Contains("findQrVisual", script, StringComparison.Ordinal);
+        Assert.Contains("Math.abs(rect.width - rect.height)", script, StringComparison.Ordinal);
+        Assert.Contains("img,canvas,svg", script, StringComparison.Ordinal);
+        Assert.Contains("h1,h2,h3,h4,h5,p,div,span", script, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -48,8 +48,8 @@ public static class AvitoAdvanceTopUpScripts
     ];
 
     /// <summary>
-    /// QR-изображение. На актуальной странице СБП Avito маркер часто отсутствует —
-    /// остаётся <c>img[alt=qr]</c>.
+    /// QR-изображение. На актуальной странице СБП Avito маркер и alt могут отсутствовать,
+    /// а QR может быть отрисован как <c>img</c>, <c>canvas</c> или <c>svg</c>.
     /// </summary>
     public const string QrImageSelector =
         "[data-marker='sbp/qr'] img, [data-marker='payment/qr'] img, [data-marker='qr-code'] img, img[alt='qr'], img[alt='QR']";
@@ -59,17 +59,37 @@ public static class AvitoAdvanceTopUpScripts
         "[data-marker='sbp/confirmation'], [data-marker='payment/sbp/confirmation'], [data-marker='sbp/qr']";
 
     /// <summary>
-    /// Ожидание экрана QR: маркеры, <c>img[alt=qr]</c> или заголовок «Подтвердите платёж по СБП».
+    /// Ожидание экрана QR: маркеры, <c>img[alt=qr]</c> или квадратный визуальный элемент
+    /// рядом с заголовком «Подтвердите платёж по СБП».
     /// </summary>
     public const string QrReadyWaitExpression = """
         () => {
+            const isQrSized = (el) => {
+                const rect = el.getBoundingClientRect();
+                const minSide = Math.min(rect.width, rect.height);
+                return minSide >= 80
+                    && Math.max(rect.width, rect.height) <= 500
+                    && Math.abs(rect.width - rect.height) <= Math.max(16, minSide * 0.2);
+            };
+            const findQrVisual = (root) => {
+                if (!root || !root.querySelectorAll) return null;
+                for (const el of root.querySelectorAll('img,canvas,svg')) {
+                    if (isQrSized(el)) return el;
+                }
+                return null;
+            };
             const byMarker = document.querySelector("[data-marker='sbp/confirmation'], [data-marker='payment/sbp/confirmation'], [data-marker='sbp/qr']");
             const byAlt = document.querySelector("img[alt='qr'], img[alt='QR']");
             if (byMarker || byAlt) return true;
-            const nodes = document.querySelectorAll('h1,h2,h3,h4,h5,p');
+            const nodes = document.querySelectorAll('h1,h2,h3,h4,h5,p,div,span');
             for (const el of nodes) {
                 const text = (el.textContent || '').replace(/\s+/g, ' ');
-                if (text.includes('Подтвердите платёж по СБП') || text.includes('отсканируйте QR')) return true;
+                if (text.length > 300) continue;
+                if (!text.includes('Подтвердите платёж по СБП') && !text.includes('отсканируйте QR')) continue;
+                let container = el;
+                for (let depth = 0; container && depth < 7; depth++, container = container.parentElement) {
+                    if (findQrVisual(container)) return true;
+                }
             }
             return false;
         }
@@ -138,8 +158,8 @@ public static class AvitoAdvanceTopUpScripts
 
     /// <summary>
     /// Снимает QR-изображение с экрана подтверждения СБП. Ищет маркер, <c>img[alt=qr]</c>
-    /// или заголовок «Подтвердите платёж по СБП». Предпочитает байты (canvas / blob),
-    /// иначе <c>src</c>. Никогда не логирует содержимое.
+    /// или квадратный img/canvas/svg рядом с заголовком «Подтвердите платёж по СБП».
+    /// Предпочитает PNG-байты, иначе <c>src</c>. Никогда не логирует содержимое.
     /// </summary>
     public static string BuildCaptureQrScript()
     {
@@ -147,23 +167,92 @@ public static class AvitoAdvanceTopUpScripts
         var confirmationSelector = JsonSerializer.Serialize(SbpConfirmationSelector);
         return $$"""
             (async () => {
+                const isQrSized = (el) => {
+                    const rect = el.getBoundingClientRect();
+                    const minSide = Math.min(rect.width, rect.height);
+                    return minSide >= 80
+                        && Math.max(rect.width, rect.height) <= 500
+                        && Math.abs(rect.width - rect.height) <= Math.max(16, minSide * 0.2);
+                };
+                const findQrVisual = (root) => {
+                    if (!root || !root.querySelectorAll) return null;
+                    for (const el of root.querySelectorAll('img,canvas,svg')) {
+                        if (isQrSized(el)) return el;
+                    }
+                    return null;
+                };
                 const byMarker = document.querySelector({{confirmationSelector}});
                 const byAlt = document.querySelector("img[alt='qr'], img[alt='QR']");
                 let confirmation = byMarker || byAlt;
+                let visual = byAlt || (byMarker && findQrVisual(byMarker));
                 if (!confirmation) {
-                    const nodes = document.querySelectorAll('h1,h2,h3,h4,h5,p');
+                    const nodes = document.querySelectorAll('h1,h2,h3,h4,h5,p,div,span');
                     for (const el of nodes) {
                         const text = (el.textContent || '').replace(/\s+/g, ' ');
+                        if (text.length > 300) continue;
                         if (text.includes('Подтвердите платёж по СБП') || text.includes('отсканируйте QR')) {
-                            confirmation = el.closest('div') || el;
+                            confirmation = el;
+                            let container = el;
+                            for (let depth = 0; container && depth < 7; depth++, container = container.parentElement) {
+                                visual = findQrVisual(container);
+                                if (visual) {
+                                    confirmation = container;
+                                    break;
+                                }
+                            }
                             break;
                         }
                     }
                 }
                 if (!confirmation) return JSON.stringify({ found: false, reason: 'no_sbp_confirmation' });
-                const img = (confirmation.tagName === 'IMG' ? confirmation : confirmation.querySelector('img'))
+                visual = visual
+                    || (confirmation.matches && confirmation.matches('img,canvas,svg') ? confirmation : null)
+                    || findQrVisual(confirmation)
                     || document.querySelector({{qrSelector}});
-                if (!img) return JSON.stringify({ found: false, reason: 'no_qr_image' });
+                if (!visual) return JSON.stringify({ found: false, reason: 'no_qr_visual' });
+
+                const visualTag = (visual.tagName || '').toUpperCase();
+                if (visualTag === 'CANVAS') {
+                    try {
+                        const dataUrl = visual.toDataURL('image/png');
+                        if (dataUrl) return JSON.stringify({ found: true, dataUrl, src: null });
+                    } catch {}
+                    return JSON.stringify({ found: false, reason: 'canvas_export_failed' });
+                }
+
+                if (visualTag === 'SVG') {
+                    try {
+                        const rect = visual.getBoundingClientRect();
+                        const width = Math.max(1, Math.round(rect.width || 256));
+                        const height = Math.max(1, Math.round(rect.height || 256));
+                        const xml = new XMLSerializer().serializeToString(visual);
+                        const blobUrl = URL.createObjectURL(new Blob([xml], { type: 'image/svg+xml;charset=utf-8' }));
+                        try {
+                            const raster = await new Promise((resolve) => {
+                                const image = new Image();
+                                image.onload = () => {
+                                    try {
+                                        const canvas = document.createElement('canvas');
+                                        canvas.width = width;
+                                        canvas.height = height;
+                                        canvas.getContext('2d').drawImage(image, 0, 0, width, height);
+                                        resolve(canvas.toDataURL('image/png'));
+                                    } catch {
+                                        resolve(null);
+                                    }
+                                };
+                                image.onerror = () => resolve(null);
+                                image.src = blobUrl;
+                            });
+                            if (raster) return JSON.stringify({ found: true, dataUrl: raster, src: null });
+                        } finally {
+                            URL.revokeObjectURL(blobUrl);
+                        }
+                    } catch {}
+                    return JSON.stringify({ found: false, reason: 'svg_export_failed' });
+                }
+
+                const img = visual;
                 if (!img.complete || (img.naturalWidth === 0 && !img.src)) {
                     await new Promise((resolve) => {
                         const done = () => resolve();

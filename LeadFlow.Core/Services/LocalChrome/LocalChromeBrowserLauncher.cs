@@ -51,12 +51,31 @@ public sealed class LocalChromeBrowserLauncher : ILocalChromeBrowserLauncher
         await ReclaimAndLogAsync(userDataDir, cancellationToken).ConfigureAwait(false);
 
         Exception? lastError = null;
-        for (var attempt = 0; attempt < 2; attempt++)
+        for (var attempt = 0; attempt < 3; attempt++)
         {
             if (attempt > 0)
             {
                 await ReclaimAndLogAsync(userDataDir, cancellationToken).ConfigureAwait(false);
+                // После убийства дерева Chrome Windows ещё может несколько сотен
+                // миллисекунд держать профиль/SingletonLock. Не стартуем новый
+                // процесс в это окно: иначе Puppeteer получает ProcessException,
+                // хотя следующая попытка через секунду уже проходит.
+                await Task.Delay(TimeSpan.FromMilliseconds(350 * attempt), cancellationToken)
+                    .ConfigureAwait(false);
             }
+
+            _ = GlobalLogger.Instance.LogAsync(
+                $"Обычный браузер: попытка запуска Chrome {attempt + 1}/3.",
+                DeskLinkAuditLogLevel.Info,
+                errorKey: LocalChromeLaunchDiagnostics.ErrorKey,
+                memberName: nameof(LaunchAsync),
+                properties: new Dictionary<string, object?>
+                {
+                    ["localChrome.attempt"] = attempt + 1,
+                    ["localChrome.maxAttempts"] = 3,
+                    ["localChrome.profile"] = userDataDir,
+                    ["localChrome.reclaimDelayMs"] = attempt == 0 ? 0 : 350 * attempt
+                });
 
             var launchOptions = new LaunchOptions
             {
@@ -75,6 +94,16 @@ public sealed class LocalChromeBrowserLauncher : ILocalChromeBrowserLauncher
                     .ApplyAsync(browser, options, cancellationToken)
                     .ConfigureAwait(false);
                 await LogChromeVersionOnceAsync(browser).ConfigureAwait(false);
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"Обычный браузер: Chrome запущен с попытки {attempt + 1}/3.",
+                    DeskLinkAuditLogLevel.Info,
+                    errorKey: LocalChromeLaunchDiagnostics.ErrorKey,
+                    memberName: nameof(LaunchAsync),
+                    properties: new Dictionary<string, object?>
+                    {
+                        ["localChrome.attempt"] = attempt + 1,
+                        ["localChrome.profile"] = userDataDir
+                    });
                 return browser;
             }
             catch (OperationCanceledException)
@@ -86,8 +115,24 @@ public sealed class LocalChromeBrowserLauncher : ILocalChromeBrowserLauncher
             {
                 await AbandonAsync(browser, launchTask, userDataDir).ConfigureAwait(false);
                 lastError = ex;
-                if (attempt == 0 && LocalChromeLaunchDiagnostics.IsProfileBusy(ex))
+                if (ShouldRetryLaunch(attempt, ex))
                 {
+                    _ = GlobalLogger.Instance.LogAsync(
+                        $"Обычный браузер: попытка запуска Chrome {attempt + 1}/3 не удалась, повторяем.",
+                        DeskLinkAuditLogLevel.Warning,
+                        errorKey: LocalChromeLaunchDiagnostics.ErrorKey,
+                        memberName: nameof(LaunchAsync),
+                        properties: new Dictionary<string, object?>
+                        {
+                            ["localChrome.attempt"] = attempt + 1,
+                            ["localChrome.nextAttempt"] = attempt + 2,
+                            ["localChrome.stage"] = LocalChromeLaunchDiagnostics.ClassifyStage(ex),
+                            ["localChrome.exceptionType"] = LocalChromeLaunchDiagnostics.DescribeExceptionType(ex),
+                            ["localChrome.profileBusy"] = LocalChromeLaunchDiagnostics.IsProfileBusy(ex),
+                            ["localChrome.profile"] = userDataDir
+                        });
+                    await Task.Delay(TimeSpan.FromMilliseconds(500 * (attempt + 1)), cancellationToken)
+                        .ConfigureAwait(false);
                     continue;
                 }
 
@@ -185,6 +230,38 @@ public sealed class LocalChromeBrowserLauncher : ILocalChromeBrowserLauncher
             options.ProxyPassword);
     }
 
+    internal static bool ShouldRetryLaunch(int zeroBasedAttempt, Exception exception)
+    {
+        ArgumentNullException.ThrowIfNull(exception);
+        return zeroBasedAttempt < 2
+            && (LocalChromeLaunchDiagnostics.IsProfileBusy(exception)
+                || ContainsProcessException(exception));
+    }
+
+    private static bool ContainsProcessException(Exception exception)
+    {
+        for (var current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is ProcessException)
+            {
+                return true;
+            }
+
+            if (current is AggregateException aggregate)
+            {
+                foreach (var inner in aggregate.InnerExceptions)
+                {
+                    if (ContainsProcessException(inner))
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+
+        return false;
+    }
+
     private static async Task LogChromeVersionOnceAsync(IBrowser browser)
     {
         if (Interlocked.Exchange(ref _chromeVersionLogged, 1) != 0)
@@ -220,6 +297,20 @@ public sealed class LocalChromeBrowserLauncher : ILocalChromeBrowserLauncher
                 $"Обычный браузер: сняли зависший Chrome (pid {pids}) для профиля {userDataDir}.",
                 DeskLinkAuditLogLevel.Warning);
         }
+
+        _ = GlobalLogger.Instance.LogAsync(
+            "Обычный браузер: завершена очистка профиля перед запуском Chrome.",
+            result.StillOccupied ? DeskLinkAuditLogLevel.Warning : DeskLinkAuditLogLevel.Info,
+            errorKey: LocalChromeLaunchDiagnostics.ErrorKey,
+            memberName: nameof(ReclaimAndLogAsync),
+            properties: new Dictionary<string, object?>
+            {
+                ["localChrome.profile"] = userDataDir,
+                ["localChrome.killedProcessCount"] = result.KilledProcessCount,
+                ["localChrome.killedProcessIds"] = result.KilledProcessIds,
+                ["localChrome.staleLockFilesRemoved"] = result.StaleLockFilesRemoved,
+                ["localChrome.stillOccupied"] = result.StillOccupied
+            });
 
         if (result.StillOccupied)
         {

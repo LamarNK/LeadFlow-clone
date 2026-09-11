@@ -1181,6 +1181,17 @@ public sealed partial class AdsPowerAvitoAutomationService
                     "Не удалось перейти к оплате: кнопка оплаты не найдена.");
             }
 
+            _ = GlobalLogger.Instance.LogAsync(
+                "AdsPower advance top-up: payment page click completed, starting QR capture.",
+                DeskLinkAuditLogLevel.Info,
+                memberName: nameof(RunAdvanceTopUpOnPageAsync),
+                properties: new Dictionary<string, object?>
+                {
+                    ["step"] = "qr_capture_start",
+                    ["adsPower.userId"] = adsPowerUserId,
+                    ["page.url"] = page.Url
+                });
+
             // 6) Снятие QR из области подтверждения СБП.
             cancellationToken.ThrowIfCancellationRequested();
             await ReportTopUpProgressAsync(
@@ -1191,6 +1202,16 @@ public sealed partial class AdsPowerAvitoAutomationService
             var qr = await CaptureQrAsync(page, cancellationToken).ConfigureAwait(false);
             if (qr is null)
             {
+                _ = GlobalLogger.Instance.LogAsync(
+                    "AdsPower advance top-up: QR capture exhausted all attempts.",
+                    DeskLinkAuditLogLevel.Warning,
+                    memberName: nameof(RunAdvanceTopUpOnPageAsync),
+                    properties: new Dictionary<string, object?>
+                    {
+                        ["step"] = "qr_capture_failed",
+                        ["adsPower.userId"] = adsPowerUserId,
+                        ["page.url"] = page.Url
+                    });
                 return AvitoAdvanceTopUpResult.Failed(
                     "QR-код СБП не найден на странице подтверждения.");
             }
@@ -1414,9 +1435,19 @@ public sealed partial class AdsPowerAvitoAutomationService
                     new WaitForFunctionOptions { Timeout = 30_000, PollingInterval = 500 })
                 .ConfigureAwait(false);
         }
-        catch
+        catch (Exception ex)
         {
             // Пробуем снять QR напрямую — скрипт сам проверит наличие.
+            _ = GlobalLogger.Instance.LogAsync(
+                "AdsPower advance top-up: QR ready wait did not match; falling back to direct capture.",
+                DeskLinkAuditLogLevel.Warning,
+                memberName: nameof(CaptureQrAsync),
+                properties: new Dictionary<string, object?>
+                {
+                    ["step"] = "qr_wait_failed",
+                    ["page.url"] = page.Url,
+                    ["exceptionType"] = ex.GetType().Name
+                });
         }
 
         for (var attempt = 0; attempt < 5; attempt++)
@@ -1433,8 +1464,34 @@ public sealed partial class AdsPowerAvitoAutomationService
             var result = AvitoAdvanceTopUpScripts.TryParseQrCapture(raw);
             if (result is { Found: true })
             {
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"AdsPower advance top-up: QR capture succeeded on attempt {attempt + 1}/5.",
+                    DeskLinkAuditLogLevel.Info,
+                    memberName: nameof(CaptureQrAsync),
+                    properties: new Dictionary<string, object?>
+                    {
+                        ["step"] = "qr_capture_success",
+                        ["attempt"] = attempt + 1,
+                        ["page.url"] = page.Url,
+                        ["qr.reason"] = result.Reason,
+                        ["qr.hasDataUrl"] = !string.IsNullOrWhiteSpace(result.DataUrl),
+                        ["qr.hasSrc"] = !string.IsNullOrWhiteSpace(result.Src)
+                    });
                 return result;
             }
+
+            _ = GlobalLogger.Instance.LogAsync(
+                $"AdsPower advance top-up: QR capture attempt {attempt + 1}/5 did not find a usable QR.",
+                DeskLinkAuditLogLevel.Warning,
+                memberName: nameof(CaptureQrAsync),
+                properties: new Dictionary<string, object?>
+                {
+                    ["step"] = "qr_capture_miss",
+                    ["attempt"] = attempt + 1,
+                    ["page.url"] = page.Url,
+                    ["qr.reason"] = result?.Reason ?? "invalid_script_result",
+                    ["qr.rawResultPresent"] = !string.IsNullOrWhiteSpace(raw)
+                });
 
             await Task.Delay(800, cancellationToken).ConfigureAwait(false);
         }
