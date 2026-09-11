@@ -736,7 +736,10 @@ public sealed class WorkersService(
     {
         if (previewOptions.Value.Enabled)
         {
-            return (null, "Preview mode", null);
+            var result = DesignPreviewData.CreatePreviewTopUpSession(workerId, accountId, subProfileId);
+            return result.Session is null
+                ? (null, result.Error ?? "Не удалось создать демо-сессию.", result.ConflictSessionId)
+                : (MapTopUpSession(result.Session), null, null);
         }
 
         var (dto, conflict) = await api.CreateTopUpSessionAsync(workerId, accountId, subProfileId, ct);
@@ -757,7 +760,8 @@ public sealed class WorkersService(
     {
         if (previewOptions.Value.Enabled)
         {
-            return null;
+            var previewSession = DesignPreviewData.GetPreviewTopUpSession(sessionId);
+            return previewSession is null ? null : MapTopUpSession(previewSession);
         }
 
         var dto = await api.GetTopUpSessionAsync(sessionId, ct);
@@ -766,19 +770,21 @@ public sealed class WorkersService(
 
     public Task<(bool Success, string? Error)> CancelTopUpSessionAsync(Guid sessionId, CancellationToken ct = default) =>
         previewOptions.Value.Enabled
-            ? Task.FromResult<(bool, string?)>((true, null))
+            ? Task.FromResult(DesignPreviewData.CancelPreviewTopUp(sessionId))
             : api.CancelTopUpSessionAsync(sessionId, ct);
 
     public Task<(bool Success, string? Error)> MarkTopUpSessionPaidAsync(Guid sessionId, CancellationToken ct = default) =>
         previewOptions.Value.Enabled
-            ? Task.FromResult<(bool, string?)>((true, null))
+            ? Task.FromResult(DesignPreviewData.MarkPreviewTopUpPaid(sessionId))
             : api.MarkTopUpSessionPaidAsync(sessionId, ct);
 
     public async Task<IReadOnlyList<TopUpSessionViewModel>> GetTopUpSessionsAsync(bool history, CancellationToken ct = default)
     {
         if (previewOptions.Value.Enabled)
         {
-            return [];
+            return DesignPreviewData.GetPreviewTopUpSessions(history)
+                .Select(MapTopUpSession)
+                .ToArray();
         }
         var sessions = await api.GetTopUpSessionsAsync(history, ct);
         return sessions.Select(MapTopUpSession).ToArray();

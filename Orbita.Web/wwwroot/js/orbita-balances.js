@@ -4,42 +4,25 @@
     if (!page) return;
 
     function initWorkerFilter() {
-        var picker = page.querySelector('[data-statistics-multiselect]');
+        var picker = page.querySelector('[data-balances-worker-picker]');
         if (!picker) return;
-        var fieldName = picker.dataset.statisticsField;
-        var allLabel = picker.dataset.statisticsAllLabel || 'Все воркеры';
-        var trigger = picker.querySelector('[data-statistics-multiselect-trigger]');
-        var triggerText = picker.querySelector('[data-statistics-multiselect-text]');
-        var menu = picker.querySelector('[data-statistics-multiselect-menu]');
-        var values = picker.querySelector('[data-statistics-multiselect-values]');
-        var all = picker.querySelector('[data-statistics-multiselect-all]');
-        var search = picker.querySelector('[data-statistics-multiselect-search]');
-        var options = Array.from(picker.querySelectorAll('[data-statistics-multiselect-option]'));
-        var explicit = values.querySelectorAll('input').length > 0;
+        var form = picker.closest('form');
+        var trigger = picker.querySelector('[data-balances-worker-trigger]');
+        var triggerText = picker.querySelector('[data-balances-worker-trigger-text]');
+        var menu = picker.querySelector('[data-balances-worker-menu]');
+        var values = picker.querySelector('[data-balances-worker-values]');
+        var all = picker.querySelector('[data-balances-worker-all]');
+        var search = picker.querySelector('[data-balances-worker-search]');
+        var apply = picker.querySelector('[data-balances-worker-apply]');
+        var reset = picker.querySelector('[data-balances-worker-reset]');
+        var options = Array.from(picker.querySelectorAll('[data-balances-worker-option]'));
 
         function sync() {
             var checked = options.filter(function (option) { return option.checked; });
-            if (!checked.length || checked.length === options.length) {
-                explicit = false;
-                options.forEach(function (option) { option.checked = true; });
-                checked = options;
-            }
-            all.checked = !explicit;
-            values.replaceChildren();
-            if (explicit) {
-                checked.forEach(function (option) {
-                    var input = document.createElement('input');
-                    input.type = 'hidden';
-                    input.name = fieldName;
-                    input.value = option.value;
-                    values.appendChild(input);
-                });
-            }
-            triggerText.textContent = explicit
-                ? checked.length === 1
-                    ? checked[0].parentElement.textContent.trim()
-                    : 'Выбрано: ' + checked.length
-                : allLabel;
+            var hiddenCount = options.length - checked.length;
+            all.checked = hiddenCount === 0;
+            all.indeterminate = hiddenCount > 0 && checked.length > 0;
+            triggerText.textContent = hiddenCount === 0 ? 'Все воркеры' : 'Скрыто: ' + hiddenCount;
         }
 
         trigger.addEventListener('click', function () {
@@ -48,21 +31,38 @@
             if (!menu.hidden && search) search.focus();
         });
         all.addEventListener('change', function () {
-            explicit = false;
-            options.forEach(function (option) { option.checked = true; });
+            options.forEach(function (option) { option.checked = all.checked; });
             sync();
         });
         options.forEach(function (option) {
             option.addEventListener('change', function () {
-                explicit = true;
                 sync();
             });
+        });
+        apply.addEventListener('click', function () {
+            values.replaceChildren();
+            options.filter(function (option) { return !option.checked; }).forEach(function (option) {
+                var input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = 'excludedWorkerIds';
+                input.value = option.value;
+                values.appendChild(input);
+            });
+            menu.hidden = true;
+            trigger.setAttribute('aria-expanded', 'false');
+            form.requestSubmit();
+        });
+        reset.addEventListener('click', function () {
+            options.forEach(function (option) { option.checked = true; });
+            values.replaceChildren();
+            sync();
+            form.requestSubmit();
         });
         if (search) {
             search.addEventListener('input', function () {
                 var query = search.value.trim().toLocaleLowerCase();
-                picker.querySelectorAll('[data-statistics-multiselect-option-row]').forEach(function (row) {
-                    row.hidden = query && !row.dataset.statisticsSearchText.toLocaleLowerCase().includes(query);
+                picker.querySelectorAll('[data-balances-worker-option-row]').forEach(function (row) {
+                    row.hidden = query && !row.dataset.searchText.toLocaleLowerCase().includes(query);
                 });
             });
         }

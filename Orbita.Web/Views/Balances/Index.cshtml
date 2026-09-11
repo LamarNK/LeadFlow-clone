@@ -4,18 +4,18 @@
     ViewData["Title"] = "Балансы";
     var activeTab = (string?)ViewData["BalancesTab"] ?? "low";
     var query = (string?)ViewData["BalancesQuery"];
-    var selectedWorkerIds = Model.SelectedWorkerIds;
+    var excludedWorkerIds = Model.ExcludedWorkerIds;
     string BalancesUrl(string tab, bool history = false, int? page = null)
     {
         var url = Url.Action("Index", "Balances", new { tab, q = query, history, page })!;
-        if (selectedWorkerIds.Count == 0)
+        if (excludedWorkerIds.Count == 0)
         {
             return url;
         }
 
-        foreach (var workerId in selectedWorkerIds)
+        foreach (var workerId in excludedWorkerIds)
         {
-            url += $"{(url.Contains('?') ? '&' : '?')}workerIds={Uri.EscapeDataString(workerId.ToString())}";
+            url += $"{(url.Contains('?') ? '&' : '?')}excludedWorkerIds={Uri.EscapeDataString(workerId.ToString())}";
         }
         return url;
     }
@@ -74,14 +74,68 @@
         <input type="hidden" name="history" value="@(activeTab == "history" ? "true" : "false")" />
         <div class="balances-worker-filter">
             <span>Воркеры</span>
-            <partial name="_StatisticsMultiSelect" model="@(new StatisticsMultiSelectViewModel
-            {
-                FieldName = "workerIds",
-                Label = "Воркеры",
-                AllLabel = "Все воркеры",
-                SelectedIds = Model.SelectedWorkerIds,
-                Options = Model.Workers
-            })" />
+            <div class="balances-worker-picker" data-balances-worker-picker>
+                <div data-balances-worker-values>
+                    @foreach (var workerId in Model.ExcludedWorkerIds)
+                    {
+                        <input type="hidden" name="excludedWorkerIds" value="@workerId" />
+                    }
+                </div>
+                <button type="button"
+                        class="balances-worker-picker__trigger"
+                        data-balances-worker-trigger
+                        aria-expanded="false"
+                        aria-controls="balancesWorkerOptions">
+                    <span data-balances-worker-trigger-text>
+                        @(Model.ExcludedWorkerIds.Count == 0
+                            ? "Все воркеры"
+                            : $"Скрыто: {Model.ExcludedWorkerIds.Count}")
+                    </span>
+                    <i class="fa-solid fa-chevron-down" aria-hidden="true"></i>
+                </button>
+                <div class="balances-worker-picker__menu"
+                     id="balancesWorkerOptions"
+                     data-balances-worker-menu
+                     hidden>
+                    <label class="balances-worker-picker__option balances-worker-picker__option--all">
+                        <input type="checkbox"
+                               data-balances-worker-all
+                               checked="@(Model.ExcludedWorkerIds.Count == 0)" />
+                        <span>Показывать всех</span>
+                    </label>
+                    <label class="balances-worker-picker__search">
+                        <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+                        <input type="search"
+                               data-balances-worker-search
+                               placeholder="Найти воркер..."
+                               aria-label="Поиск воркера" />
+                    </label>
+                    <div class="balances-worker-picker__options" role="group" aria-label="Воркеры">
+                        @foreach (var worker in Model.Workers)
+                        {
+                            var workerId = Guid.Parse(worker.Value);
+                            var isVisible = !Model.ExcludedWorkerIds.Contains(workerId);
+                            <label class="balances-worker-picker__option"
+                                   data-balances-worker-option-row
+                                   data-search-text="@worker.Label">
+                                <input type="checkbox"
+                                       value="@worker.Value"
+                                       data-balances-worker-option
+                                       checked="@isVisible" />
+                                <span>@worker.Label</span>
+                            </label>
+                        }
+                    </div>
+                    <footer class="balances-worker-picker__footer">
+                        <button type="button" data-balances-worker-reset>Сбросить</button>
+                        <button type="button"
+                                class="balances-worker-picker__apply"
+                                data-balances-worker-apply>
+                            Применить
+                        </button>
+                    </footer>
+                </div>
+            </div>
         </div>
         <label class="balances-search">
             <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>

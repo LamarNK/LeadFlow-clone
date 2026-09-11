@@ -45,7 +45,7 @@ else
 <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, interactive-widget=resizes-content" />
-    @if (!PreviewOptions.Value.Enabled && User.Identity?.IsAuthenticated == true)
+    @if (User.Identity?.IsAuthenticated == true)
     {
         <meta name="orbita-antiforgery-token" content="@Antiforgery.GetAndStoreTokens(Context).RequestToken" />
     }

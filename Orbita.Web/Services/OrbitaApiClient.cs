@@ -190,7 +190,8 @@ public sealed class OrbitaApiClient(
     {
         if (_preview.Enabled)
         {
-            return Task.FromResult<IReadOnlyList<OfficeBalanceListItem>?>([]);
+            return Task.FromResult<IReadOnlyList<OfficeBalanceListItem>?>(
+                DesignPreviewData.GetOfficeBalances(officeContext.EffectiveOfficeId));
         }
 
         var path = WithOfficeQuery("api/v1/balances/accounts", officeId);
@@ -4064,6 +4065,14 @@ public sealed class OrbitaApiClient(
         string subProfileId,
         CancellationToken ct = default)
     {
+        if (_preview.Enabled)
+        {
+            var result = DesignPreviewData.CreatePreviewTopUpSession(workerId, accountId, subProfileId);
+            return result.Error is null
+                ? (result.Session, null)
+                : (null, new TopUpSessionConflictDto(result.Error, result.ConflictSessionId));
+        }
+
         using var request = new HttpRequestMessage(
             HttpMethod.Post,
             $"api/v1/panel/workers/{workerId:D}/accounts/{accountId:D}/top-up-sessions?subProfileId={Uri.EscapeDataString(subProfileId)}");
@@ -4081,6 +4090,11 @@ public sealed class OrbitaApiClient(
 
     public async Task<TopUpSessionDto?> GetTopUpSessionAsync(Guid sessionId, CancellationToken ct = default)
     {
+        if (_preview.Enabled)
+        {
+            return DesignPreviewData.GetPreviewTopUpSession(sessionId);
+        }
+
         using var request = new HttpRequestMessage(HttpMethod.Get, $"api/v1/panel/top-up-sessions/{sessionId:D}");
         using var response = await SendAuthenticatedAsync(request, ct);
         return response?.IsSuccessStatusCode == true
@@ -4090,6 +4104,11 @@ public sealed class OrbitaApiClient(
 
     public async Task<(bool Success, string? Error)> CancelTopUpSessionAsync(Guid sessionId, CancellationToken ct = default)
     {
+        if (_preview.Enabled)
+        {
+            return DesignPreviewData.CancelPreviewTopUp(sessionId);
+        }
+
         using var request = new HttpRequestMessage(HttpMethod.Post, $"api/v1/panel/top-up-sessions/{sessionId:D}/cancel");
         using var response = await SendAuthenticatedAsync(request, ct);
         return response is null
@@ -4101,6 +4120,11 @@ public sealed class OrbitaApiClient(
 
     public async Task<(bool Success, string? Error)> MarkTopUpSessionPaidAsync(Guid sessionId, CancellationToken ct = default)
     {
+        if (_preview.Enabled)
+        {
+            return DesignPreviewData.MarkPreviewTopUpPaid(sessionId);
+        }
+
         using var request = new HttpRequestMessage(HttpMethod.Post, $"api/v1/panel/top-up-sessions/{sessionId:D}/paid");
         using var response = await SendAuthenticatedAsync(request, ct);
         return response is null
@@ -4112,6 +4136,11 @@ public sealed class OrbitaApiClient(
 
     public async Task<IReadOnlyList<TopUpSessionDto>> GetTopUpSessionsAsync(bool history, CancellationToken ct = default)
     {
+        if (_preview.Enabled)
+        {
+            return DesignPreviewData.GetPreviewTopUpSessions(history);
+        }
+
         using var request = new HttpRequestMessage(
             HttpMethod.Get,
             $"api/v1/panel/top-up-sessions?history={history.ToString().ToLowerInvariant()}");

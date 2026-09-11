@@ -12,7 +12,7 @@ public sealed class BalancesService(
         string? query = null,
         bool history = false,
         int page = 1,
-        IReadOnlyList<Guid>? workerIds = null,
+        IReadOnlyList<Guid>? excludedWorkerIds = null,
         CancellationToken ct = default)
     {
         page = Math.Max(1, page);
@@ -30,17 +30,17 @@ public sealed class BalancesService(
             })
             .OrderBy(x => x.Label)
             .ToArray();
-        var selectedWorkerIds = (workerIds ?? [])
+        var excludedIds = (excludedWorkerIds ?? [])
             .Where(id => workerOptions.Any(option => option.Value == id.ToString()))
             .Distinct()
             .ToArray();
-        var workerFilter = selectedWorkerIds.ToHashSet();
-        var scopedAccounts = selectedWorkerIds.Length == 0
+        var excludedWorkers = excludedIds.ToHashSet();
+        var scopedAccounts = excludedIds.Length == 0
             ? accounts
-            : accounts.Where(x => workerFilter.Contains(x.WorkerId)).ToArray();
-        var sessions = selectedWorkerIds.Length == 0
+            : accounts.Where(x => !excludedWorkers.Contains(x.WorkerId)).ToArray();
+        var sessions = excludedIds.Length == 0
             ? await sessionsTask
-            : (await sessionsTask).Where(x => workerFilter.Contains(x.WorkerId)).ToArray();
+            : (await sessionsTask).Where(x => !excludedWorkers.Contains(x.WorkerId)).ToArray();
         var byKey = sessions
             .Where(x => !string.IsNullOrWhiteSpace(x.SubProfileId))
             .GroupBy(x => (x.WorkerId, x.AccountId, x.SubProfileId), EqualityComparer<(Guid, Guid, string)>.Default)
@@ -103,7 +103,7 @@ public sealed class BalancesService(
                 ? sessions.Skip((page - 1) * pageSize).Take(pageSize).ToArray()
                 : sessions,
             Workers = workerOptions,
-            SelectedWorkerIds = selectedWorkerIds,
+            ExcludedWorkerIds = excludedIds,
             Pagination = new PaginationViewModel
             {
                 Page = page,

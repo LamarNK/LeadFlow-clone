@@ -36,6 +36,8 @@ internal static class DesignPreviewData
     public static readonly Guid PreviewOffice2Id = Guid.Parse("22222222-2222-2222-2222-222222222201");
 
     private static readonly DateTime Now = DateTime.UtcNow;
+    private static readonly object TopUpSync = new();
+    private static readonly List<TopUpSessionDto> PreviewTopUpSessions = BuildPreviewTopUpSessions();
 
     // CRM preview intentionally lives only in memory. It lets designers click through the
     // manager workflow without starting the API or PostgreSQL.
@@ -2785,6 +2787,301 @@ internal static class DesignPreviewData
         GetAccounts(workerId)
             .Select(a => BuildDemoBalance(a.AccountId, a.DisplayName, a.SubProfiles))
             .ToList();
+
+    public static IReadOnlyList<OfficeBalanceListItem> GetOfficeBalances(Guid? officeId = null)
+    {
+        var workers = new[]
+        {
+            new { Id = WorkerMoscowId, Name = "Москва · Основной", Office = "Основной", Online = true },
+            new { Id = WorkerSpbId, Name = "Санкт-Петербург · Ночной", Office = "Основной", Online = true },
+            new { Id = WorkerKazanId, Name = "Казань · Резерв", Office = "Сибирь", Online = true },
+            new { Id = PreviewWorkerIds[3], Name = "Екатеринбург · Офлайн", Office = "Сибирь", Online = false }
+        };
+
+        var rows = new List<OfficeBalanceListItem>();
+        for (var workerIndex = 0; workerIndex < workers.Length; workerIndex++)
+        {
+            var worker = workers[workerIndex];
+            var workerOfficeId = workerIndex < 2 ? PreviewOfficeId : PreviewOffice2Id;
+            if (officeId is Guid selectedOffice && selectedOffice != workerOfficeId)
+            {
+                continue;
+            }
+
+            for (var accountIndex = 0; accountIndex < 3; accountIndex++)
+            {
+                var accountId = Guid.Parse($"44444444-4444-4444-{workerIndex + 1:D4}-{accountIndex + 1:D12}");
+                var baseSeed = workerIndex * 3 + accountIndex;
+                var profiles = BuildPreviewBalanceProfiles(workerIndex, accountIndex, baseSeed);
+                rows.Add(new OfficeBalanceListItem(
+                    worker.Id,
+                    worker.Name,
+                    worker.Office,
+                    worker.Online,
+                    accountId,
+                    $"Avito {workerIndex + 1}{accountIndex + 1}",
+                    worker.Online ? "Active" : "Offline",
+                    true,
+                    profiles.Sum(x => x.Balance ?? 0m),
+                    worker.Online
+                        ? Now.AddMinutes(-(7 + baseSeed * 11))
+                        : Now.AddHours(-4),
+                    profiles,
+                    AdsPowerGroupId: $"preview-{workerIndex + 1}",
+                    AdsPowerGroupName: workerIndex % 2 == 0 ? "Основная группа" : "Ночная группа"));
+            }
+        }
+
+        return rows;
+    }
+
+    private static IReadOnlyList<WorkerSubProfileDto> BuildPreviewBalanceProfiles(
+        int workerIndex,
+        int accountIndex,
+        int seed)
+    {
+        var balances = (workerIndex, accountIndex) switch
+        {
+            (0, 0) => new[] { 42m, 127m, 890m },
+            (0, 1) => new[] { 82m, 360m },
+            (0, 2) => new[] { 148m, 2_450m },
+            (1, 0) => new[] { 18m, 76m, 420m },
+            (1, 1) => new[] { 215m, 670m },
+            (1, 2) => new[] { 1_280m, 4_600m },
+            (2, 0) => new[] { -12m, 64m },
+            (2, 1) => new[] { 96m, 145m, 980m },
+            (2, 2) => new[] { 310m, 8_700m },
+            (3, 0) => new[] { 35m, 118m },
+            (3, 1) => new[] { 72m, 560m },
+            _ => new[] { 1_500m, 12_400m }
+        };
+
+        return balances.Select((balance, index) =>
+            new WorkerSubProfileDto(
+                $"preview-sp-{workerIndex + 1}-{accountIndex + 1}-{index + 1}",
+                index == 0 ? "Основной" : index == 1 ? "Дополнительный" : "Резерв",
+                index == 2 ? "Резерв" : "Работа",
+                index == 0,
+                balance,
+                null,
+                null,
+                null,
+                true,
+                WalletBalance: balance > 0 ? Math.Round(balance * .18m, 0) : 0m,
+                AdvanceDurationText: balance < 150 ? "закончится сегодня" : null,
+                TodayResponses: index == 0 ? seed * 2 : Math.Max(0, seed - index)))
+            .ToArray();
+    }
+
+    public static IReadOnlyList<TopUpSessionDto> GetPreviewTopUpSessions(bool history)
+    {
+        lock (TopUpSync)
+        {
+            var source = history
+                ? PreviewTopUpSessions
+                : PreviewTopUpSessions.Where(x =>
+                    TopUpSessionStatuses.IsActive(x.Status)
+                    || x.Status is TopUpSessionStatuses.AwaitingBalance
+                        or TopUpSessionStatuses.VerificationRequired);
+            return source.OrderByDescending(x => x.CreatedAtUtc).ToArray();
+        }
+    }
+
+    public static TopUpSessionDto? GetPreviewTopUpSession(Guid sessionId)
+    {
+        lock (TopUpSync)
+        {
+            return PreviewTopUpSessions.FirstOrDefault(x => x.Id == sessionId);
+        }
+    }
+
+    public static (TopUpSessionDto? Session, string? Error, Guid? ConflictSessionId)
+        CreatePreviewTopUpSession(Guid workerId, Guid accountId, string subProfileId)
+    {
+        lock (TopUpSync)
+        {
+            var existing = PreviewTopUpSessions.FirstOrDefault(x =>
+                x.WorkerId == workerId
+                && x.AccountId == accountId
+                && x.SubProfileId == subProfileId
+                && (TopUpSessionStatuses.IsActive(x.Status)
+                    || x.Status == TopUpSessionStatuses.AwaitingBalance));
+            if (existing is not null)
+            {
+                return (null, "Для субпрофиля уже есть активное пополнение.", existing.Id);
+            }
+
+            var account = GetOfficeBalances().FirstOrDefault(x =>
+                x.WorkerId == workerId && x.AccountId == accountId);
+            var profile = account?.SubProfiles.FirstOrDefault(x => x.Id == subProfileId);
+            if (account is null || profile?.Balance is not decimal balance)
+            {
+                return (null, "Демо-субпрофиль не найден.", null);
+            }
+
+            var target = TopUpSessionRules.ResolveTargetBalance(profile.TodayResponses);
+            var now = DateTime.UtcNow;
+            var session = new TopUpSessionDto(
+                Guid.NewGuid(),
+                workerId,
+                account.WorkerDisplayName,
+                accountId,
+                account.AccountName,
+                account.OfficeName == "Основной" ? PreviewOfficeId : PreviewOffice2Id,
+                "preview-admin",
+                "Администратор",
+                TopUpSessionStatuses.QrReady,
+                balance,
+                target,
+                Math.Max(0m, target - balance),
+                profile.TodayResponses,
+                now,
+                now.AddMinutes(10),
+                null,
+                now,
+                now,
+                now,
+                null,
+                BuildPreviewQrDataUrl(account.AccountName, profile.Name),
+                null,
+                profile.Id,
+                profile.Name,
+                "Демо: QR-код сформирован и готов к оплате.");
+            PreviewTopUpSessions.Add(session);
+            return (session, null, null);
+        }
+    }
+
+    public static (bool Success, string? Error) MarkPreviewTopUpPaid(Guid sessionId)
+    {
+        lock (TopUpSync)
+        {
+            var index = PreviewTopUpSessions.FindIndex(x => x.Id == sessionId);
+            if (index < 0)
+            {
+                return (false, "Демо-сессия не найдена.");
+            }
+
+            var current = PreviewTopUpSessions[index];
+            if (current.Status != TopUpSessionStatuses.QrReady)
+            {
+                return (false, "Отметить оплату можно только после подготовки QR.");
+            }
+
+            PreviewTopUpSessions[index] = current with
+            {
+                Status = TopUpSessionStatuses.AwaitingBalance,
+                AwaitingBalanceAtUtc = DateTime.UtcNow,
+                QrImageUrl = null,
+                ProgressMessage = "Оплата отмечена. Демо ожидает следующий снимок баланса."
+            };
+            return (true, null);
+        }
+    }
+
+    public static (bool Success, string? Error) CancelPreviewTopUp(Guid sessionId)
+    {
+        lock (TopUpSync)
+        {
+            var index = PreviewTopUpSessions.FindIndex(x => x.Id == sessionId);
+            if (index < 0)
+            {
+                return (false, "Демо-сессия не найдена.");
+            }
+            var current = PreviewTopUpSessions[index];
+            PreviewTopUpSessions[index] = current with
+            {
+                Status = TopUpSessionStatuses.Cancelled,
+                CompletedAtUtc = DateTime.UtcNow,
+                QrImageUrl = null,
+                ProgressMessage = "Демо-сессия отменена."
+            };
+            return (true, null);
+        }
+    }
+
+    private static List<TopUpSessionDto> BuildPreviewTopUpSessions()
+    {
+        var accounts = GetOfficeBalances();
+        var qrAccount = accounts[0];
+        var qrProfile = qrAccount.SubProfiles[0];
+        var queueAccount = accounts[1];
+        var queueProfile = queueAccount.SubProfiles[0];
+        var awaitingAccount = accounts[3];
+        var awaitingProfile = awaitingAccount.SubProfiles[0];
+        var completedAccount = accounts[5];
+        var completedProfile = completedAccount.SubProfiles[0];
+        return
+        [
+            BuildPreviewSession(qrAccount, qrProfile, TopUpSessionStatuses.QrReady, Now.AddMinutes(-3)),
+            BuildPreviewSession(queueAccount, queueProfile, TopUpSessionStatuses.Requested, Now.AddMinutes(-2)),
+            BuildPreviewSession(awaitingAccount, awaitingProfile, TopUpSessionStatuses.AwaitingBalance, Now.AddMinutes(-7)),
+            BuildPreviewSession(completedAccount, completedProfile, TopUpSessionStatuses.Completed, Now.AddHours(-2))
+                with
+                {
+                    CompletedAtUtc = Now.AddHours(-1).AddMinutes(-48),
+                    BalanceAfter = 2_000m,
+                    BalanceConfirmedAtUtc = Now.AddHours(-1).AddMinutes(-48),
+                    ProgressMessage = "Баланс подтверждён новым снимком."
+                }
+        ];
+    }
+
+    private static TopUpSessionDto BuildPreviewSession(
+        OfficeBalanceListItem account,
+        WorkerSubProfileDto profile,
+        string status,
+        DateTime createdAt)
+    {
+        var current = profile.Balance ?? 0m;
+        var target = TopUpSessionRules.ResolveTargetBalance(profile.TodayResponses);
+        return new TopUpSessionDto(
+            Guid.NewGuid(),
+            account.WorkerId,
+            account.WorkerDisplayName,
+            account.AccountId,
+            account.AccountName,
+            account.OfficeName == "Основной" ? PreviewOfficeId : PreviewOffice2Id,
+            "preview-admin",
+            "Администратор",
+            status,
+            current,
+            target,
+            Math.Max(0m, target - current),
+            profile.TodayResponses,
+            createdAt,
+            createdAt.AddMinutes(10),
+            null,
+            status == TopUpSessionStatuses.Requested ? null : createdAt.AddSeconds(5),
+            null,
+            null,
+            null,
+            status == TopUpSessionStatuses.QrReady
+                ? BuildPreviewQrDataUrl(account.AccountName, profile.Name)
+                : null,
+            null,
+            profile.Id,
+            profile.Name,
+            status == TopUpSessionStatuses.AwaitingBalance
+                ? "Оплата отмечена. Ожидаем новый баланс."
+                : "Демо-состояние операции.",
+            AwaitingBalanceAtUtc: status == TopUpSessionStatuses.AwaitingBalance ? createdAt.AddMinutes(1) : null);
+    }
+
+    private static string BuildPreviewQrDataUrl(string accountName, string profileName)
+    {
+        var svg = $"""
+            <svg xmlns="http://www.w3.org/2000/svg" width="320" height="320" viewBox="0 0 320 320">
+              <rect width="320" height="320" fill="white"/>
+              <g fill="#101828">
+                <path d="M24 24h88v88H24zm16 16v56h56V40zM208 24h88v88h-88zm16 16v56h56V40zM24 208h88v88H24zm16 16v56h56v-56z"/>
+                <path d="M136 24h24v24h-24zM176 24h16v40h-16zM128 72h40v16h-40zM144 104h24v24h-24zM192 128h32v16h-32zM240 128h56v16h-56zM128 152h24v48h-24zM168 152h40v24h-40zM224 160h24v40h-24zM264 160h32v24h-32zM152 208h24v24h-24zM192 200h40v16h-40zM248 208h48v24h-48zM128 248h32v48h-32zM176 240h24v24h-24zM208 272h32v24h-32zM256 256h40v40h-40z"/>
+              </g>
+              <text x="160" y="315" text-anchor="middle" font-family="Arial" font-size="9" fill="#667085">{System.Net.WebUtility.HtmlEncode(accountName)} · {System.Net.WebUtility.HtmlEncode(profileName)}</text>
+            </svg>
+            """;
+        return $"data:image/svg+xml,{Uri.EscapeDataString(svg)}";
+    }
 
     private static WorkerExtraInfoViewModel GetWorkerMeta(Guid workerId)
     {
