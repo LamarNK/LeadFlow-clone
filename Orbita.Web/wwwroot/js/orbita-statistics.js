@@ -1071,6 +1071,9 @@
 
     function scheduleStatisticsInit() {
         if (!getLiveRoot()) return;
+        // Filters must be ready as soon as the navigation swap completes.
+        // Chart initialization can remain deferred, but a user can click a filter immediately.
+        initStatisticsMultiSelects();
         if (statisticsInitPending) return;
         statisticsInitPending = true;
         requestAnimationFrame(function () {

@@ -1724,13 +1724,15 @@
 
     function initResponsesPage() {
         var shared = getShared();
+        // Bind the status picker immediately after an internal navigation.
+        // Live-page registration may schedule refresh work, but must not gate interaction.
+        initStatusPickers();
         if (shared && shared.registerLivePage) {
             shared.registerLivePage('responses', snapshotFetcher, function () {
                 initKpiCounters();
                 initRowNavigation();
                 initSendBitrixUi();
                 initBulkSelection();
-                initStatusPickers();
                 localizeRelativeResponseTimes();
                 syncRowCheckboxes();
                 updateBulkBar();

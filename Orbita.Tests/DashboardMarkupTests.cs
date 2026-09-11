@@ -34,6 +34,22 @@ public sealed class DashboardMarkupTests
     }
 
     [Fact]
+    public void ResponsesStatusFilter_InitializesBeforeLivePageRegistration()
+    {
+        var js = ReadRepoFile("Orbita.Web/wwwroot/js/orbita-responses.js");
+
+        var pageInit = js.IndexOf("function initResponsesPage()", StringComparison.Ordinal);
+        var pickerInit = js.IndexOf("initStatusPickers();", pageInit, StringComparison.Ordinal);
+        var liveRegistration = js.IndexOf("shared.registerLivePage('responses'", pageInit, StringComparison.Ordinal);
+
+        Assert.True(pageInit >= 0);
+        Assert.True(pickerInit > pageInit);
+        Assert.True(liveRegistration > pageInit);
+        Assert.True(pickerInit < liveRegistration,
+            "The response status picker must be interactive before live-page registration.");
+    }
+
+    [Fact]
     public void StatisticsFilters_AllowMultipleWorkersAndAccounts()
     {
         var filters = ReadRepoFile("Orbita.Web/Views/Shared/_StatisticsFilterFields.cshtml");
@@ -47,6 +63,22 @@ public sealed class DashboardMarkupTests
         Assert.Contains("name=\"@Model.FieldName\"", picker);
         Assert.Contains("function initStatisticsMultiSelects()", js);
         Assert.Contains("value.name = fieldName", js);
+    }
+
+    [Fact]
+    public void StatisticsFilters_InitializeBeforeDeferredChartWorkAfterContentSwap()
+    {
+        var js = ReadRepoFile("Orbita.Web/wwwroot/js/orbita-statistics.js");
+
+        var schedule = js.IndexOf("function scheduleStatisticsInit()", StringComparison.Ordinal);
+        var pickerInit = js.IndexOf("initStatisticsMultiSelects();", schedule, StringComparison.Ordinal);
+        var firstAnimationFrame = js.IndexOf("requestAnimationFrame(function ()", schedule, StringComparison.Ordinal);
+
+        Assert.True(schedule >= 0);
+        Assert.True(pickerInit > schedule);
+        Assert.True(firstAnimationFrame > schedule);
+        Assert.True(pickerInit < firstAnimationFrame,
+            "The statistics pickers must be interactive before deferred chart initialization.");
     }
 
     [Fact]
