@@ -246,7 +246,7 @@ internal static class FilterChipsBuilder
             ["from"] = period.FromIso,
             ["to"] = period.ToIso,
             ["tz"] = period.TimeZoneOffsetMinutes.ToString(),
-            ["status"] = filters.Status,
+            ["status"] = ResponseStatusFilterValues.IsDefault(filters.Status) ? null : filters.Status,
             ["workerId"] = filters.WorkerId?.ToString(),
             ["accountId"] = filters.AccountId?.ToString(),
             ["bitrixDestination"] = filters.BitrixDestination,
@@ -310,11 +310,22 @@ internal static class FilterChipsBuilder
             });
         }
 
-        if (!string.IsNullOrWhiteSpace(filters.Status))
+        if (!ResponseStatusFilterValues.IsDefault(filters.Status))
         {
+            var selectedStatuses = ResponseStatusFilterValues.Parse(filters.Status);
+            var selectableStatuses = statuses.Where(status => !string.IsNullOrWhiteSpace(status.Value)).ToList();
+            var statusLabel = selectedStatuses.Count switch
+            {
+                0 => "Не выбрано",
+                _ when selectedStatuses.Count == selectableStatuses.Count => "Все статусы",
+                _ => string.Join(", ", selectableStatuses
+                    .Where(status => selectedStatuses.Contains(status.Value, StringComparer.Ordinal))
+                    .Select(status => status.Label))
+            };
+
             chips.Add(new ActiveFilterChipViewModel
             {
-                Label = OptionLabel(statuses, filters.Status) ?? filters.Status,
+                Label = $"Статусы: {statusLabel}",
                 RemoveUrl = BuildListUrl(
                     path,
                     pageSize,

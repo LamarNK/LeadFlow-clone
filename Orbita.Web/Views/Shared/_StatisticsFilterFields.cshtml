@@ -1,35 +1,31 @@
 @model StatisticsViewModel
-@{
-    var selectedWorkerId = Model.Filters.WorkerIds.FirstOrDefault();
-    var selectedAccountId = Model.Filters.AccountIds.FirstOrDefault();
-}
 <div class="orbita-filters-fields statistics-filters-row" id="statisticsFilterPanel" data-orbita-collapsible-filters hidden>
     <div class="statistics-filters__context">
         <span><i class="fa-solid fa-chart-simple" aria-hidden="true"></i>Срез отчёта</span>
         <small>Уточните данные за период: @Model.Header.DateRangeLabel</small>
     </div>
-    <label class="orbita-filters-field statistics-filter-field">
+    <div class="orbita-filters-field statistics-filter-field">
         <span class="orbita-filters-label statistics-filter-label">Воркер</span>
-        <select name="workerIds" class="orbita-filters-select statistics-select" aria-label="Воркер">
-            <option value="" selected="@(selectedWorkerId == Guid.Empty)">Все воркеры</option>
-            @foreach (var opt in Model.WorkerOptions)
-            {
-                var selected = selectedWorkerId.ToString() == opt.Value;
-                <option value="@opt.Value" selected="@selected">@opt.Label</option>
-            }
-        </select>
-    </label>
-    <label class="orbita-filters-field statistics-filter-field statistics-filter-field--account">
+        <partial name="_StatisticsMultiSelect" model="@(new StatisticsMultiSelectViewModel
+        {
+            FieldName = "workerIds",
+            Label = "Воркеры",
+            AllLabel = "Все воркеры",
+            SelectedIds = Model.Filters.WorkerIds,
+            Options = Model.WorkerOptions
+        })" />
+    </div>
+    <div class="orbita-filters-field statistics-filter-field statistics-filter-field--account">
         <span class="orbita-filters-label statistics-filter-label">Аккаунт</span>
-        <partial name="_AccountCombobox" model="@(new AccountComboboxViewModel
+        <partial name="_StatisticsMultiSelect" model="@(new StatisticsMultiSelectViewModel
         {
             FieldName = "accountIds",
-            Label = "Аккаунт",
-            Placeholder = "Все аккаунты",
-            SelectedValue = selectedAccountId == Guid.Empty ? "" : selectedAccountId.ToString(),
+            Label = "Аккаунты",
+            AllLabel = "Все аккаунты",
+            SelectedIds = Model.Filters.AccountIds,
             Options = Model.AccountOptions
         })" />
-    </label>
+    </div>
     <label class="orbita-filters-field statistics-filter-field statistics-filter-field--vacancy">
         <span class="orbita-filters-label statistics-filter-label">Вакансия</span>
         <input type="search"

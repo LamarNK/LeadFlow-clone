@@ -1368,6 +1368,85 @@
         });
     }
 
+    function initStatusPickers() {
+        document.querySelectorAll('[data-responses-status-picker]').forEach(function (picker) {
+            if (picker.dataset.orbitaInitialized === 'true') return;
+            picker.dataset.orbitaInitialized = 'true';
+
+            var trigger = picker.querySelector('[data-responses-status-trigger]');
+            var triggerText = picker.querySelector('[data-responses-status-trigger-text]');
+            var menu = picker.querySelector('[data-responses-status-menu]');
+            var selectedValue = picker.querySelector('[data-responses-status-value]');
+            var selectAll = picker.querySelector('[data-responses-status-all]');
+            var options = Array.prototype.slice.call(
+                picker.querySelectorAll('[data-responses-status-option]'));
+
+            if (!trigger || !triggerText || !menu || !selectedValue || !selectAll) return;
+
+            function selectedOptions() {
+                return options.filter(function (option) { return option.checked; });
+            }
+
+            function close() {
+                menu.hidden = true;
+                trigger.setAttribute('aria-expanded', 'false');
+            }
+
+            function sync() {
+                var selected = selectedOptions();
+                var count = selected.length;
+                selectAll.checked = count === options.length;
+                selectAll.indeterminate = count > 0 && count < options.length;
+                selectedValue.value = count === options.length
+                    ? 'all'
+                    : count === 0
+                        ? 'none'
+                        : selected.map(function (option) { return option.value; }).join(',');
+
+                if (count === options.length) {
+                    triggerText.textContent = 'Все статусы';
+                } else if (count === 4 && !options.some(function (option) {
+                    return option.value === 'duplicate' && option.checked;
+                })) {
+                    triggerText.textContent = 'Все, кроме дублей';
+                } else if (count === 0) {
+                    triggerText.textContent = 'Не выбрано';
+                } else {
+                    triggerText.textContent = count + ' из ' + options.length + ' статусов';
+                }
+            }
+
+            trigger.addEventListener('click', function () {
+                var willOpen = menu.hidden;
+                menu.hidden = !willOpen;
+                trigger.setAttribute('aria-expanded', String(willOpen));
+            });
+
+            selectAll.addEventListener('change', function () {
+                options.forEach(function (option) {
+                    option.checked = selectAll.checked;
+                });
+                sync();
+            });
+
+            options.forEach(function (option) {
+                option.addEventListener('change', sync);
+            });
+
+            picker.addEventListener('keydown', function (event) {
+                if (event.key !== 'Escape') return;
+                close();
+                trigger.focus();
+            });
+
+            document.addEventListener('click', function (event) {
+                if (!picker.contains(event.target)) close();
+            });
+
+            sync();
+        });
+    }
+
     function initRowNavigation() {
         document.querySelectorAll('.responses-row').forEach(function (row) {
             if (row.hasAttribute('data-responses-row-bound')) return;
@@ -1651,6 +1730,7 @@
                 initRowNavigation();
                 initSendBitrixUi();
                 initBulkSelection();
+                initStatusPickers();
                 localizeRelativeResponseTimes();
                 syncRowCheckboxes();
                 updateBulkBar();
@@ -1664,6 +1744,7 @@
         initRowNavigation();
         initSendBitrixUi();
         initBulkSelection();
+        initStatusPickers();
         localizeRelativeResponseTimes();
         syncRowCheckboxes();
         updateBulkBar();

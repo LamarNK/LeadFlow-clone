@@ -160,6 +160,47 @@ public sealed class ResponseSummaryMetricsTests
     }
 
     [Fact]
+    public async Task GetPageAsync_DefaultStatusSelection_ExcludesDuplicates()
+    {
+        await using var db = CreateDb();
+        SeedOffice(db);
+        var now = DateTime.UtcNow;
+        var unique = CreateResponse("unique", PersonOne, "79930099416", now);
+        unique.Status = ResponseStatuses.New;
+        var sent = CreateResponse("sent", Guid.NewGuid(), "79910001122", now);
+        sent.Status = ResponseStatuses.Sent;
+        var waitingForCrm = CreateResponse("crm", Guid.NewGuid(), "79910002233", now);
+        waitingForCrm.Status = ResponseStatuses.ActionRequired;
+        var error = CreateResponse("error", Guid.NewGuid(), "79910003344", now);
+        error.Status = ResponseStatuses.Error;
+        var duplicate = CreateResponse("duplicate", Guid.NewGuid(), "79910004455", now);
+        duplicate.Status = ResponseStatuses.Duplicate;
+        db.CandidateResponses.AddRange(unique, sent, waitingForCrm, error, duplicate);
+        await db.SaveChangesAsync();
+
+        var sut = new ResponsesQueryService(db, new ResponseBitrixDeliveryService(db));
+        var page = await sut.GetPageAsync(
+            OfficeScope.ForOffice(OfficeId),
+            OfficeId,
+            status: ResponseStatusFilterValues.DefaultSelection,
+            search: null,
+            vacancy: null,
+            workerId: null,
+            accountId: null,
+            bitrixDestination: null,
+            gender: null,
+            ageFrom: null,
+            ageTo: null,
+            fromUtc: now.AddDays(-1),
+            toUtc: now.AddDays(1),
+            page: 1,
+            pageSize: 25);
+
+        Assert.Equal(4, page.TotalCount);
+        Assert.DoesNotContain(page.Items, response => response.Id == duplicate.Id);
+    }
+
+    [Fact]
     public async Task GetSummaryAsync_SentCountsDeliveriesBySendDate_NotCollectionDate()
     {
         await using var db = CreateDb();

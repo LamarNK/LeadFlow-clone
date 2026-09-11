@@ -67,15 +67,57 @@
                    aria-label="Возраст до" />
         </div>
     </label>
-    <label class="responses-filter-field">
-        <span class="responses-filter-label">Статус</span>
-        <select name="status" class="responses-select" aria-label="Статус">
-            @foreach (var opt in Model.Statuses)
-            {
-                <option value="@opt.Value" selected="@(opt.Value == (Model.Filters.Status ?? ""))">@opt.Label</option>
-            }
-        </select>
-    </label>
+    @{
+        var selectedStatuses = ResponseStatusFilterValues.Parse(Model.Filters.Status);
+        var selectableStatuses = Model.Statuses.Where(opt => !string.IsNullOrWhiteSpace(opt.Value)).ToList();
+        var allStatusesSelected = selectedStatuses.Count == selectableStatuses.Count;
+        var defaultStatusesSelected = ResponseStatusFilterValues.IsDefault(Model.Filters.Status);
+        var statusTriggerText = allStatusesSelected
+            ? "Все статусы"
+            : defaultStatusesSelected
+                ? "Все, кроме дублей"
+                : selectedStatuses.Count == 0
+                    ? "Не выбрано"
+                    : $"{selectedStatuses.Count} из {selectableStatuses.Count} статусов";
+    }
+    <div class="responses-filter-field">
+        <span class="responses-filter-label" id="responsesStatusLabel">Статус</span>
+        <div class="responses-status-picker" data-responses-status-picker>
+            <input type="hidden"
+                   name="status"
+                   value="@Model.Filters.Status"
+                   data-responses-status-value />
+            <button type="button"
+                    class="responses-status-trigger"
+                    data-responses-status-trigger
+                    aria-labelledby="responsesStatusLabel responsesStatusTriggerText"
+                    aria-expanded="false"
+                    aria-controls="responsesStatusOptions">
+                <span id="responsesStatusTriggerText" data-responses-status-trigger-text>@statusTriggerText</span>
+                <i class="fa-solid fa-chevron-down" aria-hidden="true"></i>
+            </button>
+            <div class="responses-status-menu" id="responsesStatusOptions" data-responses-status-menu hidden>
+                <label class="responses-status-option responses-status-option--all">
+                    <input type="checkbox"
+                           data-responses-status-all
+                           checked="@allStatusesSelected" />
+                    <span>Все статусы</span>
+                </label>
+                <div class="responses-status-options" role="group" aria-label="Статусы откликов">
+                    @foreach (var opt in selectableStatuses)
+                    {
+                        <label class="responses-status-option">
+                            <input type="checkbox"
+                                   value="@opt.Value"
+                                   data-responses-status-option
+                                   checked="@selectedStatuses.Contains(opt.Value, StringComparer.Ordinal)" />
+                            <span>@opt.Label</span>
+                        </label>
+                    }
+                </div>
+            </div>
+        </div>
+    </div>
     <label class="responses-filter-field">
         <span class="responses-filter-label">CRM</span>
         <select name="bitrixDestination" class="responses-select" aria-label="Куда отправлен">

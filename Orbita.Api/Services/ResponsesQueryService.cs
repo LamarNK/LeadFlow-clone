@@ -931,21 +931,26 @@ public sealed class ResponsesQueryService(
         IQueryable<CandidateResponseEntity> query,
         string? status)
     {
-        if (string.IsNullOrWhiteSpace(status))
+        var selectedStatuses = ResponseStatusFilterValues.Parse(status);
+        if (selectedStatuses.Count == 0)
         {
-            return query;
+            return query.Where(_ => false);
         }
 
-        return status.ToLowerInvariant() switch
-        {
-            "unique" => query.Where(x => x.Status != ResponseStatuses.Duplicate),
-            "duplicate" => query.Where(x => x.Status == ResponseStatuses.Duplicate),
-            "sent" => query.Where(x => x.Status == ResponseStatuses.Sent),
-            "action_required" => query.Where(x => x.Status == ResponseStatuses.ActionRequired),
-            "error" => query.Where(x => x.Status == ResponseStatuses.Error),
-            "exclude-duplicates" => query.Where(x => x.Status != ResponseStatuses.Duplicate),
-            _ => query.Where(x => x.Status == status)
-        };
+        var responseStatuses = selectedStatuses
+            .SelectMany(selectedStatus => selectedStatus switch
+            {
+                "unique" => new[] { ResponseStatuses.New, ResponseStatuses.InProgress },
+                "duplicate" => new[] { ResponseStatuses.Duplicate },
+                "sent" => new[] { ResponseStatuses.Sent },
+                "action_required" => new[] { ResponseStatuses.ActionRequired },
+                "error" => new[] { ResponseStatuses.Error },
+                _ => Array.Empty<string>()
+            })
+            .Distinct(StringComparer.Ordinal)
+            .ToArray();
+
+        return query.Where(response => responseStatuses.Contains(response.Status));
     }
 
     private static IQueryable<CandidateResponseEntity> ApplyOfficeFilter(

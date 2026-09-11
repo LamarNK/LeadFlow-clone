@@ -848,6 +848,118 @@
         });
     }
 
+    function initStatisticsMultiSelects() {
+        document.querySelectorAll('[data-statistics-multiselect]').forEach(function (picker) {
+            if (picker.dataset.orbitaInitialized === 'true') return;
+            picker.dataset.orbitaInitialized = 'true';
+
+            var fieldName = picker.getAttribute('data-statistics-field');
+            var allLabel = picker.getAttribute('data-statistics-all-label') || 'Все';
+            var trigger = picker.querySelector('[data-statistics-multiselect-trigger]');
+            var triggerText = picker.querySelector('[data-statistics-multiselect-text]');
+            var menu = picker.querySelector('[data-statistics-multiselect-menu]');
+            var valuesRoot = picker.querySelector('[data-statistics-multiselect-values]');
+            var selectAll = picker.querySelector('[data-statistics-multiselect-all]');
+            var search = picker.querySelector('[data-statistics-multiselect-search]');
+            var options = Array.prototype.slice.call(
+                picker.querySelectorAll('[data-statistics-multiselect-option]'));
+
+            if (!fieldName || !trigger || !triggerText || !menu || !valuesRoot || !selectAll) return;
+
+            var isAllSelected = valuesRoot.querySelectorAll('input').length === 0;
+
+            function close() {
+                menu.hidden = true;
+                trigger.setAttribute('aria-expanded', 'false');
+            }
+
+            function selectedOptions() {
+                return options.filter(function (option) { return option.checked; });
+            }
+
+            function updateHiddenValues(selected) {
+                valuesRoot.replaceChildren();
+                if (isAllSelected) return;
+
+                selected.forEach(function (option) {
+                    var value = document.createElement('input');
+                    value.type = 'hidden';
+                    value.name = fieldName;
+                    value.value = option.value;
+                    valuesRoot.appendChild(value);
+                });
+            }
+
+            function updateTriggerText(selected) {
+                if (isAllSelected) {
+                    triggerText.textContent = allLabel;
+                } else if (selected.length === 1) {
+                    triggerText.textContent = selected[0].parentElement.textContent.trim();
+                } else {
+                    triggerText.textContent = 'Выбрано: ' + selected.length;
+                }
+            }
+
+            function sync() {
+                var selected = selectedOptions();
+                if (selected.length === 0 || selected.length === options.length) {
+                    isAllSelected = true;
+                    options.forEach(function (option) { option.checked = true; });
+                    selected = options;
+                }
+
+                selectAll.checked = isAllSelected;
+                selectAll.indeterminate = !isAllSelected && selected.length > 0;
+                updateHiddenValues(selected);
+                updateTriggerText(selected);
+            }
+
+            trigger.addEventListener('click', function () {
+                var willOpen = menu.hidden;
+                menu.hidden = !willOpen;
+                trigger.setAttribute('aria-expanded', String(willOpen));
+                if (willOpen && search) search.focus();
+            });
+
+            selectAll.addEventListener('change', function () {
+                isAllSelected = true;
+                options.forEach(function (option) { option.checked = true; });
+                sync();
+            });
+
+            options.forEach(function (option) {
+                option.addEventListener('change', function () {
+                    if (isAllSelected && !option.checked) {
+                        isAllSelected = false;
+                    }
+                    sync();
+                });
+            });
+
+            if (search) {
+                search.addEventListener('input', function () {
+                    var query = search.value.trim().toLocaleLowerCase();
+                    picker.querySelectorAll('[data-statistics-multiselect-option-row]').forEach(function (row) {
+                        row.hidden = query.length > 0
+                            && (row.getAttribute('data-statistics-search-text') || '').toLocaleLowerCase().indexOf(query) < 0;
+                    });
+                });
+            }
+
+            picker.addEventListener('keydown', function (event) {
+                if (event.key !== 'Escape') return;
+                close();
+                trigger.focus();
+            });
+
+            document.addEventListener('click', function (event) {
+                if (!picker.contains(event.target)) close();
+            });
+
+            sync();
+        });
+    }
+
     function applyCharts(payload) {
         if (!payload) return;
 
@@ -940,6 +1052,7 @@
 
         initKpiCounters();
         initRowNavigation();
+        initStatisticsMultiSelects();
         initMonitoringAccountRows();
         initMonitoringSearch();
         initLiveRefresh();

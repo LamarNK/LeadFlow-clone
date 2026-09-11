@@ -562,7 +562,7 @@ internal static class ResponsesIndexBuilder
     }
 
     public static bool HasActiveFilters(ResponsesFilterViewModel filters, DashboardPeriod period) =>
-        !string.IsNullOrWhiteSpace(filters.Status)
+        !ResponseStatusFilterValues.IsDefault(filters.Status)
         || filters.WorkerId.HasValue
         || filters.AccountId.HasValue
         || !string.IsNullOrWhiteSpace(filters.BitrixDestination)

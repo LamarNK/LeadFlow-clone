@@ -35,9 +35,10 @@ public sealed class ResponsesService(
         pageSize = ListPageSizeDefaults.Normalize(pageSize, ListPageSizeDefaults.Responses);
         var period = DashboardPeriod.Parse(from, to, BrowserTimeZone.Resolve(httpContextAccessor.HttpContext));
         var tableSort = TableSort.Parse(sort, sortDir, TableSort.Responses.Default, TableSort.Responses.Columns);
+        var normalizedStatus = ResponseStatusFilterValues.Normalize(status);
         var filters = new ResponsesFilterViewModel
         {
-            Status = status,
+            Status = normalizedStatus,
             WorkerId = workerId,
             AccountId = accountId,
             BitrixDestination = bitrixDestination,
@@ -58,7 +59,7 @@ public sealed class ResponsesService(
 
         var (fromUtc, toUtc) = LocalCalendarDateRange.ToUtcRange(period);
         var query = BuildQueryParams(
-            status,
+            normalizedStatus,
             search,
             vacancy,
             workerId,

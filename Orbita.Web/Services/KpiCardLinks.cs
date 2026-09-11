@@ -1,3 +1,4 @@
+using Orbita.Contracts;
 using Orbita.Web.Models.ViewModels;
 
 namespace Orbita.Web.Services;
@@ -7,7 +8,7 @@ internal static class KpiCardLinks
     public static string? Dashboard(string key, DateTime from, DateTime to, int timeZoneOffsetMinutes = 0) => key switch
     {
         "responses" => Responses(from, to, timeZoneOffsetMinutes: timeZoneOffsetMinutes),
-        "unique" => Responses(from, to, status: "unique", timeZoneOffsetMinutes: timeZoneOffsetMinutes),
+        "unique" => Responses(from, to, status: ResponseStatusFilterValues.DefaultSelection, timeZoneOffsetMinutes: timeZoneOffsetMinutes),
         "sent" => Responses(from, to, status: "sent", timeZoneOffsetMinutes: timeZoneOffsetMinutes),
         "duplicates" => Responses(from, to, status: "duplicate", timeZoneOffsetMinutes: timeZoneOffsetMinutes),
         "errors" => "/Events?level=errors",
@@ -64,7 +65,7 @@ internal static class KpiCardLinks
         int timeZoneOffsetMinutes = 0) => key switch
     {
         "total" => Responses(from, to, workerId: workerId, accountId: accountId, timeZoneOffsetMinutes: timeZoneOffsetMinutes),
-        "unique" => Responses(from, to, status: "unique", workerId: workerId, accountId: accountId, timeZoneOffsetMinutes: timeZoneOffsetMinutes),
+        "unique" => Responses(from, to, status: ResponseStatusFilterValues.DefaultSelection, workerId: workerId, accountId: accountId, timeZoneOffsetMinutes: timeZoneOffsetMinutes),
         "duplicates" => Responses(from, to, status: "duplicate", workerId: workerId, accountId: accountId, timeZoneOffsetMinutes: timeZoneOffsetMinutes),
         "sent" => Responses(from, to, status: "sent", workerId: workerId, accountId: accountId, timeZoneOffsetMinutes: timeZoneOffsetMinutes),
         "unique_authors" => Responses(from, to, workerId: workerId, accountId: accountId, timeZoneOffsetMinutes: timeZoneOffsetMinutes),
@@ -90,7 +91,7 @@ internal static class KpiCardLinks
     public static string AccountTodayUnique(Guid workerId, Guid accountId, int timeZoneOffsetMinutes = 0)
     {
         var today = DashboardPeriod.GetLocalCalendarDate(DateTime.UtcNow, timeZoneOffsetMinutes);
-        return Responses(today, today, status: "unique", workerId: workerId, accountId: accountId, timeZoneOffsetMinutes: timeZoneOffsetMinutes)!;
+        return Responses(today, today, status: ResponseStatusFilterValues.DefaultSelection, workerId: workerId, accountId: accountId, timeZoneOffsetMinutes: timeZoneOffsetMinutes)!;
     }
 
     public static string AccountErrors(Guid workerId, Guid accountId) =>
@@ -148,7 +149,7 @@ internal static class KpiCardLinks
         "sent" when from is not null && to is not null => Responses(from.Value, to.Value, status: "sent", workerId: filters?.WorkerIds.FirstOrDefault(), accountId: filters?.AccountIds.FirstOrDefault()),
         "duplicates" when from is not null && to is not null => Responses(from.Value, to.Value, status: "duplicate", workerId: filters?.WorkerIds.FirstOrDefault(), accountId: filters?.AccountIds.FirstOrDefault()),
         "errors" when from is not null && to is not null => "/Events?level=errors",
-        "unique" when from is not null && to is not null => Responses(from.Value, to.Value, status: "unique", workerId: filters?.WorkerIds.FirstOrDefault(), accountId: filters?.AccountIds.FirstOrDefault()),
+        "unique" when from is not null && to is not null => Responses(from.Value, to.Value, status: ResponseStatusFilterValues.DefaultSelection, workerId: filters?.WorkerIds.FirstOrDefault(), accountId: filters?.AccountIds.FirstOrDefault()),
         "unique_authors" when from is not null && to is not null => Responses(from.Value, to.Value, workerId: filters?.WorkerIds.FirstOrDefault(), accountId: filters?.AccountIds.FirstOrDefault()),
         "workers" => "/Workers?status=online",
         _ => "/Statistics"

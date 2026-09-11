@@ -4284,18 +4284,20 @@ internal static class DesignPreviewData
             query = query.Where(r => r.AccountId == accountId);
         }
 
-        if (!string.IsNullOrWhiteSpace(filters.Status))
-        {
-            query = filters.Status switch
+        var responseStatuses = ResponseStatusFilterValues.Parse(filters.Status)
+            .SelectMany(status => status switch
             {
-                "unique" => query.Where(r => r.Status != ResponseStatuses.Duplicate),
-                "duplicate" => query.Where(r => r.Status == ResponseStatuses.Duplicate),
-                "sent" => query.Where(r => r.Status == ResponseStatuses.Sent),
-                "action_required" => query.Where(r => r.Status == ResponseStatuses.ActionRequired),
-                "error" => query.Where(r => r.Status == ResponseStatuses.Error),
-                _ => query
-            };
-        }
+                "unique" => new[] { ResponseStatuses.New, ResponseStatuses.InProgress },
+                "duplicate" => new[] { ResponseStatuses.Duplicate },
+                "sent" => new[] { ResponseStatuses.Sent },
+                "action_required" => new[] { ResponseStatuses.ActionRequired },
+                "error" => new[] { ResponseStatuses.Error },
+                _ => Array.Empty<string>()
+            })
+            .Distinct(StringComparer.Ordinal)
+            .ToHashSet(StringComparer.Ordinal);
+
+        query = query.Where(response => responseStatuses.Contains(response.Status));
 
         return query.ToList();
     }

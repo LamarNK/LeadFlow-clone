@@ -1,0 +1,64 @@
+@model StatisticsMultiSelectViewModel
+@{
+    var selectedIds = Model.SelectedIds.ToHashSet();
+    var hasExplicitSelection = selectedIds.Count > 0;
+    var selectedOptions = Model.Options
+        .Where(option => Guid.TryParse(option.Value, out var id) && selectedIds.Contains(id))
+        .ToList();
+    var triggerText = selectedOptions.Count switch
+    {
+        0 => Model.AllLabel,
+        1 => selectedOptions[0].Label,
+        _ => $"Выбрано: {selectedOptions.Count}"
+    };
+    var pickerId = $"statistics-{Model.FieldName}-options";
+}
+<div class="statistics-multiselect"
+     data-statistics-multiselect
+     data-statistics-field="@Model.FieldName"
+     data-statistics-all-label="@Model.AllLabel">
+    <div data-statistics-multiselect-values>
+        @foreach (var selectedId in Model.SelectedIds)
+        {
+            <input type="hidden" name="@Model.FieldName" value="@selectedId" />
+        }
+    </div>
+    <button type="button"
+            class="statistics-multiselect__trigger"
+            data-statistics-multiselect-trigger
+            aria-expanded="false"
+            aria-controls="@pickerId">
+        <span data-statistics-multiselect-text>@triggerText</span>
+        <i class="fa-solid fa-chevron-down" aria-hidden="true"></i>
+    </button>
+    <div class="statistics-multiselect__menu" id="@pickerId" data-statistics-multiselect-menu hidden>
+        <label class="statistics-multiselect__option statistics-multiselect__option--all">
+            <input type="checkbox" data-statistics-multiselect-all checked="@(!hasExplicitSelection)" />
+            <span>@Model.AllLabel</span>
+        </label>
+        <div class="statistics-multiselect__search-wrap">
+            <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+            <input type="search"
+                   class="statistics-multiselect__search"
+                   data-statistics-multiselect-search
+                   placeholder="Поиск..."
+                   aria-label="Поиск: @Model.Label" />
+        </div>
+        <div class="statistics-multiselect__options" role="group" aria-label="@Model.Label">
+            @foreach (var option in Model.Options)
+            {
+                var isSelected = !hasExplicitSelection
+                    || (Guid.TryParse(option.Value, out var optionId) && selectedIds.Contains(optionId));
+                <label class="statistics-multiselect__option"
+                       data-statistics-multiselect-option-row
+                       data-statistics-search-text="@option.Label">
+                    <input type="checkbox"
+                           value="@option.Value"
+                           data-statistics-multiselect-option
+                           checked="@isSelected" />
+                    <span>@option.Label</span>
+                </label>
+            }
+        </div>
+    </div>
+</div>

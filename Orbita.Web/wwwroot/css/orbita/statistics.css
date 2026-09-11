@@ -227,7 +227,7 @@
 
 .statistics-filters .statistics-select,
 .statistics-filters .statistics-input,
-.statistics-filters .statistics-filter-field--account .orbita-account-combobox__input {
+.statistics-filters .statistics-multiselect__trigger {
     width: 100%;
     height: 36px;
     min-width: 0;
@@ -246,19 +246,118 @@
 
 .statistics-filters .statistics-select:focus,
 .statistics-filters .statistics-input:focus,
-.statistics-filters .statistics-filter-field--account .orbita-account-combobox__input:focus {
+.statistics-filters .statistics-multiselect__trigger:focus-visible {
     outline: none;
     border-color: #7198e0;
     box-shadow: 0 0 0 3px rgba(64, 113, 205, .1);
 }
 
-.statistics-filters .statistics-filter-field--account .orbita-account-combobox__control,
-.statistics-filters .statistics-filter-field--account .orbita-account-combobox__input {
-    height: 36px;
+.statistics-multiselect {
+    position: relative;
 }
 
-.statistics-filters .statistics-filter-field--account .orbita-account-combobox__input {
-    padding-right: 32px;
+.statistics-multiselect__trigger {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 0 10px;
+    text-align: left;
+    cursor: pointer;
+    transition: border-color .16s ease, box-shadow .16s ease, background .16s ease;
+}
+
+.statistics-multiselect__trigger > i {
+    color: #718198;
+    font-size: 10px;
+    transition: transform .16s ease;
+}
+
+.statistics-multiselect__trigger[aria-expanded="true"] {
+    border-color: #7198e0;
+    box-shadow: 0 0 0 3px rgba(64, 113, 205, .1);
+}
+
+.statistics-multiselect__trigger[aria-expanded="true"] > i {
+    transform: rotate(180deg);
+}
+
+.statistics-multiselect__menu {
+    position: absolute;
+    z-index: 30;
+    top: calc(100% + 5px);
+    right: 0;
+    left: 0;
+    overflow: hidden;
+    border: 1px solid #dce5f1;
+    border-radius: 10px;
+    background: #fff;
+    box-shadow: 0 10px 22px rgba(35, 52, 78, .14);
+}
+
+.statistics-multiselect__option {
+    display: flex;
+    min-height: 32px;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    color: #34465f;
+    font-size: 12px;
+    cursor: pointer;
+}
+
+.statistics-multiselect__option:hover {
+    background: #f2f6fc;
+}
+
+.statistics-multiselect__option--all {
+    border-bottom: 1px solid #e7edf5;
+    color: #3862ad;
+    font-weight: 700;
+}
+
+.statistics-multiselect__option input {
+    width: 14px;
+    height: 14px;
+    margin: 0;
+    accent-color: #4d78cf;
+}
+
+.statistics-multiselect__search-wrap {
+    position: relative;
+    padding: 8px 9px 4px;
+}
+
+.statistics-multiselect__search-wrap > i {
+    position: absolute;
+    top: 18px;
+    left: 18px;
+    color: #93a1b4;
+    font-size: 10px;
+}
+
+.statistics-multiselect__search {
+    width: 100%;
+    height: 30px;
+    padding: 0 8px 0 26px;
+    border: 1px solid #e1e8f1;
+    border-radius: 6px;
+    background: #fbfcfe;
+    color: #34465f;
+    font: inherit;
+    font-size: 12px;
+}
+
+.statistics-multiselect__search:focus {
+    outline: none;
+    border-color: #90afe5;
+    box-shadow: 0 0 0 2px rgba(64, 113, 205, .09);
+}
+
+.statistics-multiselect__options {
+    max-height: 224px;
+    overflow-y: auto;
+    padding: 4px 0;
 }
 
 .orbita-filters-toolbar--no-search .orbita-filters-toolbar-actions {
@@ -404,10 +503,30 @@
 
 [data-theme="dark"] .statistics-filters .statistics-select,
 [data-theme="dark"] .statistics-filters .statistics-input,
-[data-theme="dark"] .statistics-filters .statistics-filter-field--account .orbita-account-combobox__input {
+[data-theme="dark"] .statistics-filters .statistics-multiselect__trigger,
+[data-theme="dark"] .statistics-multiselect__search {
     border-color: var(--border);
     background: var(--bg-card);
     color: var(--text-primary);
+}
+
+[data-theme="dark"] .statistics-multiselect__menu {
+    border-color: var(--border);
+    background: var(--bg-card);
+    box-shadow: 0 10px 22px rgba(0, 0, 0, .3);
+}
+
+[data-theme="dark"] .statistics-multiselect__option {
+    color: var(--text-primary);
+}
+
+[data-theme="dark"] .statistics-multiselect__option:hover {
+    background: color-mix(in srgb, var(--bg-card) 85%, #4c6fff);
+}
+
+[data-theme="dark"] .statistics-multiselect__option--all {
+    border-color: var(--border);
+    color: #a9c2ff;
 }
 
 .card-header-meta {

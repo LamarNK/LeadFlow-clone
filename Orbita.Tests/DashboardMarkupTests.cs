@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Text;
+using Orbita.Contracts;
 using Orbita.Web.Services;
 
 namespace Orbita.Tests;
@@ -14,7 +15,38 @@ public sealed class DashboardMarkupTests
         var card = Assert.Single(model.KpiCards, card => card.Key == "unique");
         Assert.Equal("Уникальных откликов", card.Label);
         Assert.Equal(978, card.CountValue);
-        Assert.Contains("status=unique", card.Href);
+        Assert.Contains($"status={Uri.EscapeDataString(ResponseStatusFilterValues.DefaultSelection)}", card.Href);
+    }
+
+    [Fact]
+    public void ResponsesStatusFilter_AllowsMultipleSelections_AndDefaultsToExcludeDuplicates()
+    {
+        var view = ReadRepoFile("Orbita.Web/Views/Shared/_ResponsesFilterFields.cshtml");
+        var js = ReadRepoFile("Orbita.Web/wwwroot/js/orbita-responses.js");
+
+        Assert.Contains("data-responses-status-picker", view);
+        Assert.Contains("data-responses-status-option", view);
+        Assert.Contains("ResponseStatusFilterValues.Parse(Model.Filters.Status)", view);
+        Assert.Contains("Все, кроме дублей", view);
+        Assert.Contains("function initStatusPickers()", js);
+        Assert.Contains("selectedValue.value", js);
+        Assert.Contains("data-responses-status-all", js);
+    }
+
+    [Fact]
+    public void StatisticsFilters_AllowMultipleWorkersAndAccounts()
+    {
+        var filters = ReadRepoFile("Orbita.Web/Views/Shared/_StatisticsFilterFields.cshtml");
+        var picker = ReadRepoFile("Orbita.Web/Views/Shared/_StatisticsMultiSelect.cshtml");
+        var js = ReadRepoFile("Orbita.Web/wwwroot/js/orbita-statistics.js");
+
+        Assert.Contains("FieldName = \"workerIds\"", filters);
+        Assert.Contains("FieldName = \"accountIds\"", filters);
+        Assert.DoesNotContain("FirstOrDefault()", filters);
+        Assert.Contains("data-statistics-multiselect", picker);
+        Assert.Contains("name=\"@Model.FieldName\"", picker);
+        Assert.Contains("function initStatisticsMultiSelects()", js);
+        Assert.Contains("value.name = fieldName", js);
     }
 
     [Fact]
