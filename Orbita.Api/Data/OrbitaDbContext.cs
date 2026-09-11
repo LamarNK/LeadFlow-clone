@@ -23,6 +23,7 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
     public DbSet<PanelUserBitrixSettingsEntity> PanelUserBitrixSettings => Set<PanelUserBitrixSettingsEntity>();
     public DbSet<CandidatePersonEntity> CandidatePersons => Set<CandidatePersonEntity>();
     public DbSet<CandidatePhoneHistoryEntity> CandidatePhoneHistory => Set<CandidatePhoneHistoryEntity>();
+    public DbSet<CandidatePhoneWatchEntity> CandidatePhoneWatches => Set<CandidatePhoneWatchEntity>();
     public DbSet<CandidateContactPhoneEntity> CandidateContactPhones => Set<CandidateContactPhoneEntity>();
     public DbSet<CandidateResponseEntity> CandidateResponses => Set<CandidateResponseEntity>();
     public DbSet<CrmCandidateCardEntity> CrmCandidateCards => Set<CrmCandidateCardEntity>();
@@ -327,6 +328,29 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
             entity.HasOne(x => x.Worker).WithMany().HasForeignKey(x => x.WorkerId).OnDelete(DeleteBehavior.SetNull);
             entity.HasOne(x => x.BitrixInstance).WithMany().HasForeignKey(x => x.BitrixInstanceId).OnDelete(DeleteBehavior.SetNull);
             entity.HasOne(x => x.DuplicateBitrixInstance).WithMany().HasForeignKey(x => x.DuplicateBitrixInstanceId).OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<CandidatePhoneWatchEntity>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => new { x.AccountId, x.AvitoSubProfileId, x.FullNameKey }).IsUnique();
+            entity.HasIndex(x => new { x.WorkerId, x.State, x.ExpiresAtUtc });
+            entity.HasIndex(x => x.PersonId);
+            entity.HasIndex(x => x.CanonicalResponseId);
+            entity.Property(x => x.AvitoSubProfileId).HasMaxLength(128);
+            entity.Property(x => x.FullName).HasMaxLength(300);
+            entity.Property(x => x.FullNameKey).HasMaxLength(300);
+            entity.Property(x => x.PublishedSourceResponseId).HasMaxLength(64);
+            entity.Property(x => x.CurrentPhoneRaw).HasMaxLength(64);
+            entity.Property(x => x.CurrentPhoneNormalized).HasMaxLength(32);
+            entity.Property(x => x.LastPublishedPhoneNormalized).HasMaxLength(32);
+            entity.Property(x => x.State).HasMaxLength(16);
+            entity.Property(x => x.MessengerUrl).HasMaxLength(2000);
+            entity.Property(x => x.ChatFingerprint).HasMaxLength(64);
+            entity.Property(x => x.ProfileFingerprint).HasMaxLength(64);
+            entity.HasOne(x => x.Worker).WithMany().HasForeignKey(x => x.WorkerId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(x => x.Person).WithMany().HasForeignKey(x => x.PersonId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(x => x.CanonicalResponse).WithMany().HasForeignKey(x => x.CanonicalResponseId).OnDelete(DeleteBehavior.SetNull);
         });
 
         modelBuilder.Entity<ResponseCrmDeliveryEntity>(entity =>

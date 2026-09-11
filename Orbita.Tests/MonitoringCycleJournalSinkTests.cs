@@ -26,6 +26,33 @@ namespace Orbita.Tests
         }
 
         [Fact]
+        public async Task CompleteSubProfile_RecordsPhoneWatchMetricsSeparately()
+        {
+            var api = new OrbitaApiClient();
+            var credentials = new WorkerCredentials { WorkerId = Guid.NewGuid() };
+            await using var sink = new MonitoringCycleJournalSink(api, credentials);
+
+            var cycleId = sink.BeginCycle(Guid.NewGuid(), "авито 56");
+            var subRunId = sink.BeginSubProfile(cycleId, "sp-1", "Самара", 1, 1);
+            sink.CompleteSubProfile(
+                cycleId,
+                subRunId,
+                foundCount: 12,
+                publishedCount: 2,
+                collectedCount: 2,
+                watchRefreshedCount: 7,
+                phoneChangedCount: 1);
+            sink.CompleteCycle(cycleId);
+            await sink.FlushAsync();
+
+            var sub = Assert.Single(api.Batches.Last().Cycles.Single().SubProfiles);
+            Assert.Equal(2, sub.PublishedCount);
+            Assert.Equal(2, sub.CollectedCount);
+            Assert.Equal(7, sub.WatchRefreshedCount);
+            Assert.Equal(1, sub.PhoneChangedCount);
+        }
+
+        [Fact]
         public async Task AbortCycle_OpenSubProfile_ClosesItAsFailed()
         {
             var api = new OrbitaApiClient();

@@ -991,7 +991,8 @@ public sealed class DashboardQueryService(
                 && workerIdList.Contains(x.WorkerId.Value)
                 && accountIds.Contains(x.AccountId)
                 && x.CollectedAt >= todayStart
-                && !x.SourceResponseId.StartsWith("phone-watch:"))
+                && !(x.Status == ResponseStatuses.Duplicate
+                    && x.SourceResponseId.StartsWith("phone-watch:")))
             .GroupBy(x => new { WorkerId = x.WorkerId!.Value, x.AccountId })
             .Select(g => new
             {
@@ -1023,7 +1024,8 @@ public sealed class DashboardQueryService(
                 && accountIds.Contains(x.AccountId)
                 && x.CollectedAt >= todayStart
                 && x.AvitoSubProfileId != ""
-                && !x.SourceResponseId.StartsWith("phone-watch:"))
+                && !(x.Status == ResponseStatuses.Duplicate
+                    && x.SourceResponseId.StartsWith("phone-watch:")))
             .GroupBy(x => new { WorkerId = x.WorkerId!.Value, x.AccountId, x.AvitoSubProfileId })
             .Select(g => new
             {
@@ -1350,7 +1352,8 @@ public sealed class DashboardQueryService(
                 && workerIds.Contains(x.WorkerId.Value)
                 && x.CollectedAt >= utcStart
                 && x.CollectedAt < utcEnd
-                && !x.SourceResponseId.StartsWith("phone-watch:"))
+                && !(x.Status == ResponseStatuses.Duplicate
+                    && x.SourceResponseId.StartsWith("phone-watch:")))
             .Select(x => new { x.CollectedAt, x.Status })
             .ToListAsync(ct);
 
@@ -1447,7 +1450,8 @@ public sealed class DashboardQueryService(
                 .Where(x => x.WorkerId != null
                     && workerIds.Contains(x.WorkerId.Value)
                     && x.CollectedAt >= todayStartUtc
-                    && !x.SourceResponseId.StartsWith("phone-watch:"))
+                    && !(x.Status == ResponseStatuses.Duplicate
+                        && x.SourceResponseId.StartsWith("phone-watch:")))
                 .Select(x => new { x.CollectedAt, x.Status })
                 .ToListAsync(ct);
 
@@ -1556,7 +1560,8 @@ public sealed class DashboardQueryService(
             .Where(x => x.WorkerId != null
                 && workerIds.Contains(x.WorkerId.Value)
                 && x.CollectedAt >= todayStartUtc
-                && !x.SourceResponseId.StartsWith("phone-watch:"));
+                && !(x.Status == ResponseStatuses.Duplicate
+                    && x.SourceResponseId.StartsWith("phone-watch:")));
 
         var statusCounts = await query
             .GroupBy(x => x.Status)
@@ -1818,7 +1823,8 @@ public sealed class DashboardQueryService(
             .Where(x => x.WorkerId != null
                 && idSet.Contains(x.WorkerId.Value)
                 && x.CollectedAt >= todayStartUtc
-                && !x.SourceResponseId.StartsWith("phone-watch:"))
+                && !(x.Status == ResponseStatuses.Duplicate
+                    && x.SourceResponseId.StartsWith("phone-watch:")))
             .GroupBy(x => x.WorkerId)
             .Select(g => new
             {

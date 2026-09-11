@@ -766,7 +766,6 @@ public sealed class ResponsesQueryService(
         var query = db.CandidateResponses
             .AsNoTracking()
             .Include(x => x.Worker)
-            .Where(x => !x.SourceResponseId.StartsWith("phone-watch:"))
             .AsQueryable();
 
         query = ApplyOfficeFilter(query, scope, officeFilter);
@@ -951,7 +950,10 @@ public sealed class ResponsesQueryService(
             .Distinct(StringComparer.Ordinal)
             .ToArray();
 
-        return query.Where(response => responseStatuses.Contains(response.Status));
+        return query.Where(response =>
+            responseStatuses.Contains(response.Status)
+            && !(response.Status == ResponseStatuses.Duplicate
+                && response.SourceResponseId.StartsWith("phone-watch:")));
     }
 
     private static IQueryable<CandidateResponseEntity> ApplyOfficeFilter(

@@ -1,4 +1,5 @@
 using LeadFlow.Core.Models;
+using Orbita.Contracts;
 
 namespace LeadFlow.Core.Services.Worker;
 
@@ -17,6 +18,29 @@ public static class ResponsePhoneWatchChatRefresh
             || !string.IsNullOrWhiteSpace(candidate.VacancyUrl)
             || !string.IsNullOrWhiteSpace(candidate.Citizenship)
             || !string.IsNullOrWhiteSpace(candidate.MessengerUrl));
+
+    public static bool HasPayloadChanged(
+        CandidateResponse candidate,
+        WorkerKnownSourceResponseDto? stored)
+    {
+        if (stored is null)
+        {
+            return HasProfileRefresh(candidate)
+                || !string.IsNullOrWhiteSpace(candidate.ChatMessagesJson);
+        }
+
+        var profileFingerprint = CandidateWatchFingerprint.Profile(
+            candidate.City,
+            candidate.Vacancy,
+            candidate.Age,
+            candidate.Gender,
+            candidate.VacancyUrl,
+            candidate.Citizenship,
+            candidate.MessengerUrl);
+        var chatFingerprint = CandidateWatchFingerprint.Chat(candidate.ChatMessagesJson);
+        return !string.Equals(profileFingerprint, stored.ProfileFingerprint, StringComparison.Ordinal)
+            || !string.Equals(chatFingerprint, stored.ChatFingerprint, StringComparison.Ordinal);
+    }
 
     public static bool ShouldPublish(
         bool watchingOpen,

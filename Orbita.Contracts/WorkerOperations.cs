@@ -225,6 +225,25 @@ public static class WorkerCandidateOperationKinds
 
     public static string Normalize(string? value) =>
         value is WatchRefresh or PhoneChanged ? value : NewResponse;
+
+    public static string Resolve(WorkerCandidateDto candidate)
+    {
+        var explicitKind = Normalize(candidate.OperationKind);
+        if (explicitKind != NewResponse || !string.IsNullOrWhiteSpace(candidate.OperationKind))
+        {
+            return explicitKind;
+        }
+
+        if (!candidate.SourceResponseId.StartsWith("phone-watch:", StringComparison.OrdinalIgnoreCase))
+        {
+            return NewResponse;
+        }
+
+        return ResponsePhoneMetricKinds.Normalize(candidate.PhoneMetricKind)
+            == ResponsePhoneMetricKinds.PhoneChanged
+            ? PhoneChanged
+            : WatchRefresh;
+    }
 }
 
 public sealed record WorkerCandidateBatchRequest(
@@ -266,14 +285,18 @@ public sealed record WorkerKnownSourceResponseDto(
     string SourceResponseId,
     DateTime CollectedAt,
     string PhoneRaw,
-    string PhoneNormalized);
+    string PhoneNormalized,
+    string ProfileFingerprint = "",
+    string ChatFingerprint = "");
 
 public sealed record WorkerOpenPhoneWatchDto(
     string SourceResponseId,
     string FullName,
     DateTime CollectedAt,
     string PhoneRaw,
-    string PhoneNormalized);
+    string PhoneNormalized,
+    string ProfileFingerprint = "",
+    string ChatFingerprint = "");
 
 public sealed record WorkerCandidateLookupResponse(
     IReadOnlyList<string> ExistingSourceResponseIds,

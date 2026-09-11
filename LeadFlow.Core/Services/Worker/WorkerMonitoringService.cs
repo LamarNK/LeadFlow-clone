@@ -1078,6 +1078,8 @@ public sealed class WorkerMonitoringService(
 
             var publishedCount = 0;
             var collectedCount = 0;
+            var watchRefreshedCount = 0;
+            var phoneChangedCount = 0;
             var skippedPersonDuplicates = 0;
             var filteredAge = 0;
             var filteredGender = 0;
@@ -1115,8 +1117,7 @@ public sealed class WorkerMonitoringService(
                 {
                     candidate.OperationKind = WorkerCandidateOperationKinds.WatchRefresh;
                     await PublishCandidateAsync(candidate, cancellationToken).ConfigureAwait(false);
-                    publishedCount++;
-                    publishedTotal++;
+                    watchRefreshedCount++;
                     continue;
                 }
 
@@ -1224,16 +1225,18 @@ public sealed class WorkerMonitoringService(
                         .UpsertAsync(decision.NextObservation, cancellationToken)
                         .ConfigureAwait(false);
 
+                    var watchPayloadChanged = ResponsePhoneWatchChatRefresh.HasPayloadChanged(
+                        candidate,
+                        storedPhoneWatch);
                     if (ResponsePhoneWatchChatRefresh.ShouldPublish(
                             watchingOpen,
                             decision.Action,
-                            candidate.ChatMessagesJson,
-                            ResponsePhoneWatchChatRefresh.HasProfileRefresh(candidate)))
+                            watchPayloadChanged ? candidate.ChatMessagesJson : null,
+                            watchPayloadChanged))
                     {
                         ApplyPhoneWatchDecision(candidate, decision, phoneNormalized);
                         await PublishCandidateAsync(candidate, cancellationToken).ConfigureAwait(false);
-                        publishedCount++;
-                        publishedTotal++;
+                        watchRefreshedCount++;
                         continue;
                     }
 
@@ -1256,12 +1259,16 @@ public sealed class WorkerMonitoringService(
 
                 ApplyPhoneWatchDecision(candidate, decision, phoneNormalized);
                 await PublishCandidateAsync(candidate, cancellationToken).ConfigureAwait(false);
-                publishedCount++;
-                publishedTotal++;
                 if (decision.Action == ResponsePhoneWatchAction.PublishInitial)
                 {
+                    publishedCount++;
+                    publishedTotal++;
                     collectedCount++;
                     collectedTotal++;
+                }
+                else if (decision.Action == ResponsePhoneWatchAction.PublishPhoneChanged)
+                {
+                    phoneChangedCount++;
                 }
             }
 
@@ -1278,7 +1285,9 @@ public sealed class WorkerMonitoringService(
                 publishedCount,
                 DeferredByCycleLimit: 0,
                 skippedPersonDuplicates,
-                collectedCount);
+                collectedCount,
+                watchRefreshedCount,
+                phoneChangedCount);
         }
 
         if (settings.DemoModeEnabled)
@@ -1840,7 +1849,9 @@ public sealed class WorkerMonitoringService(
                         captcha.Seen,
                         captcha.Solved,
                         loginAttempt.Attempted,
-                        loginAttempt.Succeeded);
+                        loginAttempt.Succeeded,
+                        publishResult.WatchRefreshedCount,
+                        publishResult.PhoneChangedCount);
                     subProfilesProcessed++;
                     consecutiveCaptchaFails = 0;
                     MonitoringAccountResume.MarkSubCompleted(account.MonitoringPassCompletedSubIds, sub.Id);
@@ -2235,11 +2246,10 @@ public sealed class WorkerMonitoringService(
                 ResponsePhoneWatchEvaluator.BuildFullNameKey(candidate.FullName));
         }
 
-        candidate.SourceResponseId = sourceId;
-
         switch (decision.Action)
         {
             case ResponsePhoneWatchAction.PublishPhoneChanged:
+                candidate.SourceResponseId = sourceId;
                 candidate.OperationKind = WorkerCandidateOperationKinds.PhoneChanged;
                 candidate.PhoneMetricKind = ResponsePhoneMetricKinds.PhoneChanged;
                 candidate.PreviousPhoneRaw = decision.PreviousPhoneRaw;
@@ -2258,6 +2268,7 @@ public sealed class WorkerMonitoringService(
                 break;
 
             default:
+                candidate.SourceResponseId = sourceId;
                 candidate.OperationKind = WorkerCandidateOperationKinds.WatchRefresh;
                 candidate.PhoneMetricKind = ResponsePhoneMetricKinds.None;
                 candidate.PreviousPhoneRaw = null;

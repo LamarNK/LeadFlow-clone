@@ -15,6 +15,7 @@ public sealed class CandidateIngestionService(
     CandidateParser candidateParser,
     CandidatePersonMatchService personMatch,
     CandidatePersonPhoneService personPhone,
+    CandidatePhoneWatchService phoneWatches,
     DistributionEngine distributionEngine,
     CandidateAutoDistributionService autoDistribution,
     ManualBitrixSendService manualBitrixSend,
@@ -112,7 +113,7 @@ public sealed class CandidateIngestionService(
         WorkerCandidateDto candidate,
         CancellationToken ct)
     {
-        var operationKind = WorkerCandidateOperationKinds.Normalize(candidate.OperationKind);
+        var operationKind = WorkerCandidateOperationKinds.Resolve(candidate);
         var phoneNormalized = phoneNormalizer.Normalize(candidate.PhoneRaw);
         if (string.IsNullOrWhiteSpace(candidate.SourceResponseId) || string.IsNullOrWhiteSpace(phoneNormalized))
         {
@@ -130,7 +131,58 @@ public sealed class CandidateIngestionService(
                 ct);
         if (existing is not null)
         {
+            if (operationKind is WorkerCandidateOperationKinds.WatchRefresh
+                    or WorkerCandidateOperationKinds.PhoneChanged
+                && existing.SourceResponseId.StartsWith("phone-watch:", StringComparison.OrdinalIgnoreCase))
+            {
+                var existingPerson = await personMatch.FindMatchingPersonAsync(
+                    officeId: null,
+                    CandidatePersonMatchService.ToProfile(
+                        candidate.FullName,
+                        candidate.Age,
+                        candidate.City,
+                        phoneNormalized,
+                        candidate.CreatedAt),
+                    ct);
+                var canonical = existingPerson is null
+                    ? null
+                    : await FindCanonicalResponseAsync(existingPerson.Id, ct);
+                if (canonical is not null)
+                {
+                    var canonicalUpdate = await UpdateExistingResponseAsync(
+                        worker,
+                        candidate,
+                        canonical,
+                        phoneNormalized,
+                        ct);
+                    await phoneWatches.UpsertAsync(
+                        worker,
+                        candidate,
+                        canonical.PersonId,
+                        canonical.Id,
+                        phoneNormalized,
+                        operationKind,
+                        ct);
+                    return canonicalUpdate with
+                    {
+                        Id = canonical.Id,
+                        Status = canonical.Status,
+                        Outcome = operationKind == WorkerCandidateOperationKinds.PhoneChanged
+                            ? WorkerCandidateIngestionOutcomes.PhoneChanged
+                            : WorkerCandidateIngestionOutcomes.WatchUpdated
+                    };
+                }
+            }
+
             var updated = await UpdateExistingResponseAsync(worker, candidate, existing, phoneNormalized, ct);
+            await phoneWatches.UpsertAsync(
+                worker,
+                candidate,
+                existing.PersonId,
+                existing.Id,
+                phoneNormalized,
+                operationKind,
+                ct);
             return updated with
             {
                 Outcome = operationKind switch
@@ -207,18 +259,21 @@ public sealed class CandidateIngestionService(
             && operationKind is WorkerCandidateOperationKinds.WatchRefresh
                 or WorkerCandidateOperationKinds.PhoneChanged)
         {
-            var canonical = await db.CandidateResponses
-                .AsNoTracking()
-                .Where(x => x.PersonId == matchedPerson.Id)
-                .OrderBy(x => x.SourceResponseId.StartsWith("phone-watch:"))
-                .ThenBy(x => x.Status == ResponseStatuses.Duplicate)
-                .ThenByDescending(x => x.CollectedAt)
-                .FirstAsync(ct);
+            var canonical = await FindCanonicalResponseAsync(matchedPerson.Id, ct)
+                ?? throw new InvalidOperationException("Для известного кандидата не найден канонический отклик.");
             var updated = await UpdateExistingResponseAsync(
                 worker,
                 candidate,
                 canonical,
                 phoneNormalized,
+                ct);
+            await phoneWatches.UpsertAsync(
+                worker,
+                candidate,
+                matchedPerson.Id,
+                canonical.Id,
+                phoneNormalized,
+                operationKind,
                 ct);
             return updated with
             {
@@ -341,6 +396,18 @@ public sealed class CandidateIngestionService(
                 entity.DuplicateSummary,
                 WorkerCandidateIngestionOutcomes.Duplicate);
         }
+
+        var watchCanonicalResponseId = matchedPerson is null
+            ? entity.Id
+            : (await FindCanonicalResponseAsync(matchedPerson.Id, ct))?.Id ?? entity.Id;
+        await phoneWatches.UpsertAsync(
+            worker,
+            candidate,
+            person.Id,
+            watchCanonicalResponseId,
+            phoneNormalized,
+            operationKind,
+            ct);
 
         // Delivery (CRM and/or Bitrix) is driven by worker auto flags — not office route alone.
         await responseDelivery.ApplyAutoDeliveryAsync(entity, worker, ct);
@@ -685,15 +752,27 @@ public sealed class CandidateIngestionService(
 
     private static long BuildCandidateLockKey(WorkerCandidateDto candidate)
     {
-        var normalizedName = CandidateNameNormalizer.Normalize(candidate.FullName).FullName;
-        var identity = string.Join(
-            '\u001f',
-            normalizedName,
-            candidate.Age?.ToString() ?? string.Empty,
-            candidate.City?.Trim().ToLowerInvariant() ?? string.Empty);
+        var normalizedName = CandidateNameNormalizer.Normalize(candidate.FullName);
+        var identity = CandidateNameNormalizer.IsCompleteFio(normalizedName)
+            ? normalizedName.FullName
+            : string.Join(
+                '\u001f',
+                normalizedName.FullName,
+                candidate.Age?.ToString() ?? string.Empty,
+                candidate.City?.Trim().ToLowerInvariant() ?? string.Empty);
         var hash = SHA256.HashData(Encoding.UTF8.GetBytes(identity));
         return BitConverter.ToInt64(hash, 0);
     }
+
+    private Task<CandidateResponseEntity?> FindCanonicalResponseAsync(Guid personId, CancellationToken ct) =>
+        db.CandidateResponses
+            .AsNoTracking()
+            .Where(x => x.PersonId == personId
+                && x.Status != ResponseStatuses.Duplicate)
+            .OrderBy(x => x.SourceResponseId.StartsWith("phone-watch:"))
+            .ThenByDescending(x => x.CollectedAt)
+            .ThenByDescending(x => x.Id)
+            .FirstOrDefaultAsync(ct);
 
     private static bool TryApplyUnlocked(
         string current,

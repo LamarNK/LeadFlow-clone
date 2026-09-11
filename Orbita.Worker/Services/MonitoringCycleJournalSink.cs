@@ -50,6 +50,8 @@ public sealed class MonitoringCycleJournalSink(
         public int DeferredCount { get; set; }
         public int SkippedDuplicateCount { get; set; }
         public int CollectedCount { get; set; }
+        public int WatchRefreshedCount { get; set; }
+        public int PhoneChangedCount { get; set; }
         public int CaptchaCount { get; set; }
         public int CaptchaSolvedCount { get; set; }
         public bool LoginAttempted { get; set; }
@@ -145,7 +147,9 @@ public sealed class MonitoringCycleJournalSink(
         int captchaCount = 0,
         int captchaSolvedCount = 0,
         bool loginAttempted = false,
-        bool loginSucceeded = false)
+        bool loginSucceeded = false,
+        int watchRefreshedCount = 0,
+        int phoneChangedCount = 0)
     {
         if (!_cycles.TryGetValue(cycleId, out var cycle)
             || !cycle.SubProfiles.TryGetValue(subProfileRunId, out var sub))
@@ -163,7 +167,9 @@ public sealed class MonitoringCycleJournalSink(
             skippedDuplicateCount,
             collectedCount,
             captchaCount,
-            captchaSolvedCount);
+            captchaSolvedCount,
+            watchRefreshedCount,
+            phoneChangedCount);
         sub.LoginAttempted = loginAttempted;
         sub.LoginSucceeded = loginSucceeded;
         cycle.Dirty = true;
@@ -415,7 +421,9 @@ public sealed class MonitoringCycleJournalSink(
                     s.CaptchaCount,
                     s.CaptchaSolvedCount,
                     s.LoginAttempted,
-                    s.LoginSucceeded))
+                    s.LoginSucceeded,
+                    s.WatchRefreshedCount,
+                    s.PhoneChangedCount))
                 .ToList());
 
     private static void ApplyCounts(
@@ -426,13 +434,17 @@ public sealed class MonitoringCycleJournalSink(
         int skippedDuplicateCount,
         int collectedCount,
         int captchaCount,
-        int captchaSolvedCount)
+        int captchaSolvedCount,
+        int watchRefreshedCount = 0,
+        int phoneChangedCount = 0)
     {
         sub.FoundCount = Math.Max(0, foundCount);
         sub.PublishedCount = Math.Max(0, publishedCount);
         sub.DeferredCount = Math.Max(0, deferredCount);
         sub.SkippedDuplicateCount = Math.Max(0, skippedDuplicateCount);
         sub.CollectedCount = Math.Max(0, collectedCount);
+        sub.WatchRefreshedCount = Math.Max(0, watchRefreshedCount);
+        sub.PhoneChangedCount = Math.Max(0, phoneChangedCount);
         sub.CaptchaCount = Math.Max(0, captchaCount);
         sub.CaptchaSolvedCount = Math.Min(sub.CaptchaCount, Math.Max(0, captchaSolvedCount));
     }

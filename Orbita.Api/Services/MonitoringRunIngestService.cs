@@ -332,6 +332,8 @@ public sealed class MonitoringRunIngestService(OrbitaDbContext db)
                 subEntity.DeferredCount = Math.Max(0, subDto.DeferredCount);
                 subEntity.SkippedDuplicateCount = Math.Max(0, subDto.SkippedDuplicateCount);
                 subEntity.CollectedCount = Math.Max(0, subDto.CollectedCount);
+                subEntity.WatchRefreshedCount = Math.Max(0, subDto.WatchRefreshedCount);
+                subEntity.PhoneChangedCount = Math.Max(0, subDto.PhoneChangedCount);
                 subEntity.CaptchaCount = Math.Max(0, subDto.CaptchaCount);
                 subEntity.CaptchaSolvedCount = Math.Min(
                     subEntity.CaptchaCount,

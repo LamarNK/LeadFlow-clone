@@ -55,7 +55,9 @@ internal sealed record MonitoringSubProfileRunSnapshot(
     int CaptchaCount = 0,
     int CaptchaSolvedCount = 0,
     bool LoginAttempted = false,
-    bool LoginSucceeded = false);
+    bool LoginSucceeded = false,
+    int WatchRefreshedCount = 0,
+    int PhoneChangedCount = 0);
 
 /// <summary>Enabled subprofiles of an account (panel order) for a full day matrix.</summary>
 internal sealed record MonitoringAccountSubProfileCatalogEntry(
@@ -914,7 +916,9 @@ internal static partial class MonitoringCycleReportBuilder
                 CaptchaStatus: captchaStatus,
                 CaptchaUnsolved: captchaUnsolved,
                 LoginAttempted: loginAttempted,
-                LoginSucceeded: loginSucceeded);
+                LoginSucceeded: loginSucceeded,
+                WatchRefreshedCount: run.WatchRefreshedCount,
+                PhoneChangedCount: run.PhoneChangedCount);
         }
 
         if (run.Outcome == MonitoringSubProfileRunOutcomes.Skipped)
@@ -958,7 +962,9 @@ internal static partial class MonitoringCycleReportBuilder
                 ErrorDetail: detail,
                 LoginRequired: loginRequired,
                 LoginAttempted: loginAttempted,
-                LoginSucceeded: loginSucceeded);
+                LoginSucceeded: loginSucceeded,
+                WatchRefreshedCount: run.WatchRefreshedCount,
+                PhoneChangedCount: run.PhoneChangedCount);
         }
 
         if (cycle.Status != MonitoringCycleRunStatuses.Running)

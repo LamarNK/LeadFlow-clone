@@ -6,7 +6,8 @@ namespace Orbita.Api.Services;
 
 public sealed class CandidateLookupService(
     OrbitaDbContext db,
-    CandidatePersonMatchService personMatch)
+    CandidatePersonMatchService personMatch,
+    CandidatePhoneWatchService phoneWatches)
 {
     public async Task<WorkerCandidateLookupResponse?> LookupAsync(
         Guid workerId,
@@ -50,6 +51,10 @@ public sealed class CandidateLookupService(
         IReadOnlyList<WorkerKnownSourceResponseDto> existingSourceResponses = [];
         if (sourceIds.Length > 0)
         {
+            var watchMatches = await phoneWatches.FindBySourceIdsAsync(
+                request.AccountId,
+                sourceIds,
+                ct);
             var matched = await db.CandidateResponses
                 .AsNoTracking()
                 .Where(x => x.AccountId == request.AccountId
@@ -62,14 +67,20 @@ public sealed class CandidateLookupService(
                     x.PhoneRaw,
                     x.PhoneNormalized))
                 .ToListAsync(ct);
-            foreach (var response in matched)
+            var combined = watchMatches
+                .Concat(matched)
+                .GroupBy(x => x.SourceResponseId, StringComparer.OrdinalIgnoreCase)
+                .Select(group => group.First())
+                .OrderByDescending(x => x.CollectedAt)
+                .ToList();
+            foreach (var response in combined)
             {
                 existingSourceIds.Add(response.SourceResponseId);
             }
 
             if (request.IncludeSourceResponseMetadata)
             {
-                existingSourceResponses = matched;
+                existingSourceResponses = combined;
             }
         }
 
@@ -178,8 +189,12 @@ public sealed class CandidateLookupService(
         var subProfileIdForWatches = request.AvitoSubProfileId?.Trim() ?? string.Empty;
         if (request.OpenPhoneWatchHours > 0)
         {
+            var storedWatches = await phoneWatches.GetOpenAsync(
+                request.AccountId,
+                subProfileIdForWatches,
+                ct);
             var watchCutoffUtc = DateTime.UtcNow.AddHours(-request.OpenPhoneWatchHours);
-            openPhoneWatches = await db.CandidateResponses
+            var legacyWatches = await db.CandidateResponses
                 .AsNoTracking()
                 .Where(x => x.OfficeId == worker.OfficeId
                             && x.AccountId == request.AccountId
@@ -194,6 +209,12 @@ public sealed class CandidateLookupService(
                     x.PhoneRaw,
                     x.PhoneNormalized))
                 .ToListAsync(ct);
+            openPhoneWatches = storedWatches
+                .Concat(legacyWatches)
+                .GroupBy(x => x.SourceResponseId, StringComparer.OrdinalIgnoreCase)
+                .Select(group => group.First())
+                .OrderByDescending(x => x.CollectedAt)
+                .ToList();
         }
 
         var matchedProfileIndexes = new List<int>();

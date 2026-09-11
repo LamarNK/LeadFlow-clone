@@ -124,7 +124,9 @@ public sealed record MonitoringCyclePassDto(
     bool Skipped = false,
     bool LoginRequired = false,
     bool LoginAttempted = false,
-    bool LoginSucceeded = false);
+    bool LoginSucceeded = false,
+    int WatchRefreshedCount = 0,
+    int PhoneChangedCount = 0);
 
 public sealed record MonitoringCycleSubProfileRowDto(
     int Position,

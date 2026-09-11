@@ -29,7 +29,9 @@ public interface IMonitoringCycleJournal
         int captchaCount = 0,
         int captchaSolvedCount = 0,
         bool loginAttempted = false,
-        bool loginSucceeded = false);
+        bool loginSucceeded = false,
+        int watchRefreshedCount = 0,
+        int phoneChangedCount = 0);
 
     /// <summary>Субпрофиль не запускался в этом цикле — очередь не дошла.</summary>
     void SkipSubProfile(

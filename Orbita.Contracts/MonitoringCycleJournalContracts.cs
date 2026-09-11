@@ -51,4 +51,6 @@ public sealed record MonitoringSubProfileRunUploadDto(
     int CaptchaCount = 0,
     int CaptchaSolvedCount = 0,
     bool LoginAttempted = false,
-    bool LoginSucceeded = false);
+    bool LoginSucceeded = false,
+    int WatchRefreshedCount = 0,
+    int PhoneChangedCount = 0);

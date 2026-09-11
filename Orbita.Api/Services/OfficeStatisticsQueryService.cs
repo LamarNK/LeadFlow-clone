@@ -117,7 +117,8 @@ public sealed class OfficeStatisticsQueryService(
             .AsNoTracking()
             .Where(x => x.WorkerId != null
                 && workerIds.Contains(x.WorkerId.Value)
-                && !x.SourceResponseId.StartsWith("phone-watch:"));
+                && !(x.Status == ResponseStatuses.Duplicate
+                    && x.SourceResponseId.StartsWith("phone-watch:")));
         if (accountFilterSet is not null)
         {
             scopedResponsesQuery = scopedResponsesQuery.Where(x => accountFilterSet.Contains(x.AccountId));
@@ -369,7 +370,9 @@ public sealed class OfficeStatisticsQueryService(
                 x.CaptchaCount,
                 x.CaptchaSolvedCount,
                 x.LoginAttempted,
-                x.LoginSucceeded
+                x.LoginSucceeded,
+                x.WatchRefreshedCount,
+                x.PhoneChangedCount
             })
             .ToListAsync(ct);
 
@@ -395,7 +398,9 @@ public sealed class OfficeStatisticsQueryService(
                         s.CaptchaCount,
                         s.CaptchaSolvedCount,
                         s.LoginAttempted,
-                        s.LoginSucceeded))
+                        s.LoginSucceeded,
+                        s.WatchRefreshedCount,
+                        s.PhoneChangedCount))
                     .OrderBy(s => s.Position)
                     .ThenBy(s => s.StartedAtUtc)
                     .ToList());
@@ -428,7 +433,8 @@ public sealed class OfficeStatisticsQueryService(
             .AsNoTracking()
             .Where(x => x.WorkerId != null && workerIds.Contains(x.WorkerId.Value))
             .Where(x => x.CollectedAt >= padStart && x.CollectedAt < padEnd)
-            .Where(x => !x.SourceResponseId.StartsWith("phone-watch:"))
+            .Where(x => !(x.Status == ResponseStatuses.Duplicate
+                && x.SourceResponseId.StartsWith("phone-watch:")))
             .Select(x => new
             {
                 x.AccountName,
@@ -895,7 +901,8 @@ public sealed class OfficeStatisticsQueryService(
                 && workerIds.Contains(x.WorkerId.Value)
                 && x.CollectedAt >= utcStart
                 && x.CollectedAt < utcEnd
-                && !x.SourceResponseId.StartsWith("phone-watch:"))
+                && !(x.Status == ResponseStatuses.Duplicate
+                    && x.SourceResponseId.StartsWith("phone-watch:")))
             .GroupBy(x => x.WorkerId)
             .Select(g => new
             {

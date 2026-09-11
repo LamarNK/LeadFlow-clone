@@ -602,6 +602,7 @@ public sealed partial class CandidateIngestionServiceTests
         Assert.Equal(ResponseStatuses.Duplicate, stored.Status);
         Assert.True(stored.IsLocalDuplicate);
         Assert.Equal(person.Id, stored.PersonId);
+        Assert.Empty(await db.CandidatePhoneWatches.ToListAsync());
     }
 
     [Fact]
@@ -659,6 +660,59 @@ public sealed partial class CandidateIngestionServiceTests
         Assert.Equal(WorkerCandidateIngestionOutcomes.WatchUpdated, Assert.Single(result.Items).Outcome);
         Assert.Equal(0, result.SkippedDuplicates);
         Assert.Single(await db.CandidateResponses.ToListAsync());
+    }
+
+    [Fact]
+    public async Task IngestBatchAsync_LegacyPhoneWatchWithoutOperationKind_DoesNotCreateDuplicateResponse()
+    {
+        await using var db = CreateDb();
+        SeedWorker(db, autoDistributionEnabled: false);
+
+        var person = TestCandidatePersonFactory.CreatePerson(
+            OfficeId,
+            fullName: "Сидоров Сидор Сидорович",
+            firstName: "Сидор",
+            lastName: "Сидоров",
+            middleName: "Сидорович",
+            phoneRaw: "+79004444444",
+            phoneNormalized: "79004444444");
+        db.CandidatePersons.Add(person);
+        db.CandidateResponses.Add(TestCandidatePersonFactory.CreateResponse(
+            OfficeId,
+            person.Id,
+            WorkerId,
+            phone: "79004444444",
+            sourceResponseId: "canonical-legacy",
+            fullName: person.FullName));
+        await db.SaveChangesAsync();
+
+        var result = await CreateService(db).IngestBatchAsync(
+            WorkerId,
+            new WorkerCandidateBatchRequest([
+                new WorkerCandidateDto(
+                    Guid.NewGuid(),
+                    "legacy-account",
+                    "Avito",
+                    "phone-watch:legacy",
+                    "",
+                    person.FullName,
+                    person.Age,
+                    null,
+                    "+79004444444",
+                    person.City,
+                    "Охранник",
+                    "",
+                    "",
+                    "sub-legacy",
+                    "",
+                    "",
+                    DateTime.UtcNow)
+            ]));
+
+        Assert.Equal(WorkerCandidateIngestionOutcomes.WatchUpdated, Assert.Single(result.Items).Outcome);
+        Assert.Equal(0, result.SkippedDuplicates);
+        Assert.Single(await db.CandidateResponses.ToListAsync());
+        Assert.Single(await db.CandidatePhoneWatches.ToListAsync());
     }
 
     [Fact]
@@ -911,6 +965,7 @@ public sealed partial class CandidateIngestionServiceTests
             new CandidateParser(),
             personMatch,
             personPhone,
+            new CandidatePhoneWatchService(db),
             distributionEngine,
             autoDistribution,
             manualSend,

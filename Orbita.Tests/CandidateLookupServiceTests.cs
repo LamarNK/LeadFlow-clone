@@ -510,7 +510,7 @@ public sealed class CandidateLookupServiceTests
     }
 
     private static CandidateLookupService CreateSut(OrbitaDbContext db) =>
-        new(db, new CandidatePersonMatchService(db));
+        new(db, new CandidatePersonMatchService(db), new CandidatePhoneWatchService(db));
 
     private static OrbitaDbContext CreateDb()
     {

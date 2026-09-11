@@ -71,6 +71,40 @@ public sealed class ResponsePhoneWatchChatRefreshTests
     }
 
     [Fact]
+    public void HasPayloadChanged_ReturnsFalseForSameStoredFingerprints()
+    {
+        var candidate = new CandidateResponse
+        {
+            City = "Самара",
+            Vacancy = "Охранник",
+            Age = 35,
+            Gender = CandidateGenders.Male,
+            VacancyUrl = "https://www.avito.ru/1",
+            MessengerUrl = "https://www.avito.ru/messenger",
+            ChatMessagesJson = """[{"text":"привет"}]"""
+        };
+        var stored = new WorkerKnownSourceResponseDto(
+            "phone-watch:1a2b3c4d",
+            DateTime.UtcNow,
+            "+79001111111",
+            "79001111111",
+            CandidateWatchFingerprint.Profile(
+                candidate.City,
+                candidate.Vacancy,
+                candidate.Age,
+                candidate.Gender,
+                candidate.VacancyUrl,
+                candidate.Citizenship,
+                candidate.MessengerUrl),
+            CandidateWatchFingerprint.Chat(candidate.ChatMessagesJson));
+
+        Assert.False(ResponsePhoneWatchChatRefresh.HasPayloadChanged(candidate, stored));
+
+        candidate.City = "Тольятти";
+        Assert.True(ResponsePhoneWatchChatRefresh.HasPayloadChanged(candidate, stored));
+    }
+
+    [Fact]
     public void RestoreFromOrbita_RecreatesOpenWatchFromStoredPhoneWatch()
     {
         var now = new DateTime(2026, 8, 23, 10, 0, 0, DateTimeKind.Utc);

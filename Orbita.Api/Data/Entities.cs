@@ -463,6 +463,8 @@ public sealed class MonitoringSubProfileRunEntity
     public int SkippedDuplicateCount { get; set; }
     /// <summary>Новые отклики, впервые собранные в этом проходе (без повторных публикаций).</summary>
     public int CollectedCount { get; set; }
+    public int WatchRefreshedCount { get; set; }
+    public int PhoneChangedCount { get; set; }
     public int CaptchaCount { get; set; }
     public int CaptchaSolvedCount { get; set; }
     /// <summary>В ходе прохода воркер запустил восстановление авторизации Avito.</summary>
@@ -519,6 +521,44 @@ public sealed class CandidatePhoneHistoryEntity
 
     public CandidatePersonEntity Person { get; set; } = null!;
     public CandidateResponseEntity? Response { get; set; }
+}
+
+public sealed class CandidatePhoneWatchEntity
+{
+    public Guid Id { get; set; }
+    public Guid WorkerId { get; set; }
+    public Guid AccountId { get; set; }
+    public string AvitoSubProfileId { get; set; } = string.Empty;
+    public string FullName { get; set; } = string.Empty;
+    public string FullNameKey { get; set; } = string.Empty;
+    public Guid PersonId { get; set; }
+    public Guid? CanonicalResponseId { get; set; }
+    public string PublishedSourceResponseId { get; set; } = string.Empty;
+    public string CurrentPhoneRaw { get; set; } = string.Empty;
+    public string CurrentPhoneNormalized { get; set; } = string.Empty;
+    public string LastPublishedPhoneNormalized { get; set; } = string.Empty;
+    public DateTime PhoneFirstSeenUtc { get; set; }
+    public DateTime LastSeenUtc { get; set; }
+    public DateTime WatchStartedUtc { get; set; }
+    public DateTime ExpiresAtUtc { get; set; }
+    public string State { get; set; } = CandidatePhoneWatchStates.Open;
+    public string MessengerUrl { get; set; } = string.Empty;
+    public string ChatMessagesJson { get; set; } = string.Empty;
+    public string ChatFingerprint { get; set; } = string.Empty;
+    public string ProfileFingerprint { get; set; } = string.Empty;
+    public DateTime CreatedAtUtc { get; set; }
+    public DateTime UpdatedAtUtc { get; set; }
+
+    public WorkerEntity Worker { get; set; } = null!;
+    public CandidatePersonEntity Person { get; set; } = null!;
+    public CandidateResponseEntity? CanonicalResponse { get; set; }
+}
+
+public static class CandidatePhoneWatchStates
+{
+    public const string Open = "Open";
+    public const string Changed = "Changed";
+    public const string Expired = "Expired";
 }
 
 public sealed class CandidateResponseEntity
