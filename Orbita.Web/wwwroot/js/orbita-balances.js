@@ -107,7 +107,4 @@
     var firstQr = page.querySelector('[data-qr-select]');
     if (firstQr) selectQr(firstQr);
     updateBulk();
-    window.setInterval(function () {
-        if (!document.hidden && selected().length === 0) location.reload();
-    }, 5000);
 })();

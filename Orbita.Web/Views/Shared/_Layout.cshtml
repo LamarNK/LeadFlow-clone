@@ -114,8 +114,7 @@ else
                 var canDashboard = can(PanelPermissions.Dashboard);
                 var canWorkers = can(PanelPermissions.Workers);
                 var canAccounts = can(PanelPermissions.Accounts);
-                var canBalances = can(PanelPermissions.Balances)
-                    && (User.IsInRole(PanelRoles.Admin) || User.IsInRole(PanelRoles.Operator));
+                var canBalances = User.IsInRole(PanelRoles.Admin) || User.IsInRole(PanelRoles.Operator);
                 var canStatistics = can(PanelPermissions.Statistics);
                 var canResponses = can(PanelPermissions.Responses);
                 var canCrmBoard = can(PanelPermissions.CrmBoard);

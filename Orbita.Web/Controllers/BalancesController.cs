@@ -16,9 +16,10 @@ public sealed class BalancesController(
         string? tab = null,
         string? q = null,
         bool history = false,
+        int page = 1,
         CancellationToken ct = default)
     {
-        var model = await balances.GetIndexAsync(tab, q, history || tab == "history", ct);
+        var model = await balances.GetIndexAsync(tab, q, history || tab == "history", page, ct);
         ViewData["BalancesTab"] = tab ?? "low";
         ViewData["BalancesQuery"] = q;
         return View(model);
@@ -29,8 +30,9 @@ public sealed class BalancesController(
         string? tab = null,
         string? q = null,
         bool history = false,
+        int page = 1,
         CancellationToken ct = default) =>
-        Json(await balances.GetIndexAsync(tab, q, history || tab == "history", ct));
+        Json(await balances.GetIndexAsync(tab, q, history || tab == "history", page, ct));
 
     [HttpPost]
     [ValidateAntiForgeryToken]

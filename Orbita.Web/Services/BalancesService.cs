@@ -11,8 +11,10 @@ public sealed class BalancesService(
         string? tab = null,
         string? query = null,
         bool history = false,
+        int page = 1,
         CancellationToken ct = default)
     {
+        page = Math.Max(1, page);
         var accountsTask = api.GetOfficeAccountsAsync(ct: ct);
         var sessionsTask = api.GetTopUpSessionsAsync(history, ct);
         await Task.WhenAll(accountsTask, sessionsTask);
@@ -64,12 +66,14 @@ public sealed class BalancesService(
             }
         }
 
-        var rows = allRows
+        var filteredRows = allRows
             .Where(x => Matches(x, tab, query, history))
             .OrderBy(x => x.Balance)
             .ThenBy(x => x.AccountName)
             .ThenBy(x => x.SubProfileName)
             .ToList();
+        const int pageSize = 50;
+        var rows = filteredRows.Skip((page - 1) * pageSize).Take(pageSize).ToList();
 
         var today = DateTime.UtcNow.Date;
         return new BalancesIndexViewModel
@@ -78,12 +82,24 @@ public sealed class BalancesService(
                 PageHeaderBuilder.Create("Балансы", "Контроль балансов и пополнение аккаунтов Avito"),
                 officeContext),
             Rows = rows,
-            Sessions = sessions,
+            Sessions = history
+                ? sessions.Skip((page - 1) * pageSize).Take(pageSize).ToArray()
+                : sessions,
+            Pagination = new PaginationViewModel
+            {
+                Page = page,
+                PageSize = pageSize,
+                TotalItems = history ? sessions.Count : filteredRows.Count
+            },
             TotalSubProfiles = allRows.Count,
             LowBalanceCount = allRows.Count(x => x.IsLowBalance && x.Session is null),
             QueueCount = sessions.Count(x => x.Status is TopUpSessionStatuses.Requested or TopUpSessionStatuses.Started or TopUpSessionStatuses.PaymentClaimed or TopUpSessionStatuses.QrReady),
             AwaitingBalanceCount = sessions.Count(x => x.Status is TopUpSessionStatuses.AwaitingBalance or TopUpSessionStatuses.VerificationRequired),
             CompletedTodayCount = sessions.Count(x => x.Status is TopUpSessionStatuses.Completed && x.CompletedAtUtc?.ToUniversalTime().Date == today)
+            ,
+            TotalBalance = allRows.Sum(x => x.Balance),
+            SelectableCount = allRows.Count(x => x.IsLowBalance && x.WorkerOnline && x.Session is null),
+            OfflineLowBalanceCount = allRows.Count(x => x.IsLowBalance && !x.WorkerOnline && x.Session is null)
         };
     }
 

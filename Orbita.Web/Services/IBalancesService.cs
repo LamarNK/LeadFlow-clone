@@ -8,5 +8,6 @@ public interface IBalancesService
         string? tab = null,
         string? query = null,
         bool history = false,
+        int page = 1,
         CancellationToken ct = default);
 }

@@ -26,6 +26,9 @@
       data-cancel-url="@Url.Action("Cancel", "Balances")"
       data-batch-url="@Url.Action("CreateBatch", "Balances")">
     <section class="balances-kpis" aria-label="Сводка балансов">
+        <a class="balances-kpi balances-kpi--money" href="@Url.Action("Index", new { tab = "all" })">
+            <span>Общий баланс</span><strong>@Model.TotalBalance.ToString("N0") ₽</strong><small>по субпрофилям с известными данными</small>
+        </a>
         <a class="balances-kpi" href="@Url.Action("Index", new { tab = "all" })">
             <span>Всего субпрофилей</span><strong>@Model.TotalSubProfiles</strong><small>с известным балансом</small>
         </a>
@@ -64,10 +67,24 @@
     @if (activeTab != "history")
     {
         <div class="balances-bulkbar" data-balances-bulkbar>
-            <label><input type="checkbox" data-balances-select-all /> Выбрать доступные</label>
+            <label><input type="checkbox" data-balances-select-all /> Выбрать доступные (@Model.SelectableCount)</label>
             <span data-balances-selected>0 выбрано</span>
             <button type="button" class="balances-primary" data-balances-batch disabled>Запросить пополнение</button>
         </div>
+        @if (Model.OfflineLowBalanceCount > 0)
+        {
+            <div class="balances-guidance">
+                <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+                <div>
+                    <strong>Что делать с низким балансом</strong>
+                    <span>
+                        Выберите доступные строки и нажмите «Запросить пополнение».
+                        Давность баланса показывается справочно и не блокирует пополнение.
+                        @Model.OfflineLowBalanceCount строк ждут подключения воркера.
+                    </span>
+                </div>
+            </div>
+        }
     }
 
     <section class="card balances-table-card">
@@ -101,7 +118,7 @@
                     @foreach (var row in Model.Rows)
                     {
                         var session = row.Session;
-                        var canSelect = row.IsLowBalance && row.WorkerOnline && !row.IsStale && session is null;
+                        var canSelect = row.IsLowBalance && row.WorkerOnline && session is null;
                         <tr class="@(row.IsLowBalance ? "is-low" : "")"
                             data-balance-row data-worker-id="@row.WorkerId" data-account-id="@row.AccountId"
                             data-subprofile-id="@row.SubProfileId" data-account-name="@row.AccountName" data-subprofile-name="@row.SubProfileName">
@@ -109,7 +126,17 @@
                             <td data-label="Аккаунт"><strong>@row.AccountName</strong><small>@row.SubProfileName · @row.WorkerName</small></td>
                             <td data-label="Баланс">
                                 <strong>@row.Balance.ToString("N0") ₽</strong>
-                                <small>@(row.LastUpdatedAtUtc?.ToLocalTime().ToString("dd.MM HH:mm") ?? "Нет снимка") · @(row.IsStale ? "данные устарели" : row.WorkerOnline ? "воркер онлайн" : "воркер офлайн")</small>
+                                <small>
+                                    @if (row.LastUpdatedAtUtc is not null)
+                                    {
+                                        <partial name="_UtcTime" model="@(new UtcTimeDisplayModel(row.LastUpdatedAtUtc, "short"))" />
+                                    }
+                                    else
+                                    {
+                                        <text>Нет снимка</text>
+                                    }
+                                    · @(row.IsStale ? "данные устарели" : row.WorkerOnline ? "воркер онлайн" : "воркер офлайн")
+                                </small>
                             </td>
                             <td data-label="Рекомендуемое пополнение"><strong>@row.RecommendedAmount.ToString("N0") ₽</strong><small>до @row.RecommendedTarget.ToString("N0") ₽ · @row.TodayResponses откликов</small></td>
                             <td data-label="Статус">
@@ -150,6 +177,13 @@
             }
         </div>
     </section>
+    <partial name="_Pagination" model="@(new PaginationPartialViewModel
+    {
+        Pagination = Model.Pagination,
+        Controller = "Balances",
+        Action = "Index",
+        RouteValues = new { tab = activeTab, q = query, history = activeTab == "history" }
+    })" />
 
     @{
         var qrSessions = Model.Sessions.Where(x => x.Status == TopUpSessionStatuses.QrReady).ToList();
