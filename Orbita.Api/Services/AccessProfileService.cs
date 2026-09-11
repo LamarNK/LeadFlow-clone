@@ -1,5 +1,7 @@
 using System.Security.Claims;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
+using Orbita.Api.Data;
 using Orbita.Contracts;
 using Orbita.Logging.Audit;
 
@@ -8,8 +10,20 @@ namespace Orbita.Api.Services;
 public sealed class AccessProfileService(
     RoleManager<IdentityRole> roles,
     UserManager<IdentityUser> users,
-    PanelAuditService audit)
+    PanelAuditService audit,
+    OrbitaDbContext db)
 {
+    private async Task BumpAccessVersionAsync(IdentityUser user, CancellationToken ct)
+    {
+        var panelProfile = await db.PanelUserProfiles.FirstOrDefaultAsync(x => x.UserId == user.Id, ct);
+        if (panelProfile is null)
+        {
+            panelProfile = new PanelUserProfileEntity { UserId = user.Id };
+            db.PanelUserProfiles.Add(panelProfile);
+        }
+        panelProfile.AccessVersion++;
+        await db.SaveChangesAsync(ct);
+    }
     public async Task EnsureDefaultsAsync(CancellationToken ct = default)
     {
         foreach (var profile in PanelPermissions.Profiles)
@@ -59,6 +73,7 @@ public sealed class AccessProfileService(
             {
                 foreach (var user in await users.GetUsersInRoleAsync(profile.Role))
                 {
+                    await BumpAccessVersionAsync(user, ct);
                     await users.UpdateSecurityStampAsync(user);
                 }
             }
@@ -261,6 +276,7 @@ public sealed class AccessProfileService(
 
         foreach (var user in await users.GetUsersInRoleAsync(profile.Role))
         {
+            await BumpAccessVersionAsync(user, ct);
             await users.UpdateSecurityStampAsync(user);
         }
 

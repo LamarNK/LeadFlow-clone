@@ -112,6 +112,7 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
         modelBuilder.Entity<PanelUserProfileEntity>(entity =>
         {
             entity.HasKey(x => x.UserId);
+            entity.Property(x => x.AccessVersion).HasDefaultValue(0L);
             entity.Property(x => x.FullName).HasMaxLength(256);
             entity.HasOne(x => x.Office)
                 .WithMany(x => x.UserProfiles)

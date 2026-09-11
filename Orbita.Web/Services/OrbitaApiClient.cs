@@ -11,7 +11,8 @@ public sealed class OrbitaApiClient(
     HttpClient http,
     AuthSession session,
     IOfficeContext officeContext,
-    IOptions<DesignPreviewOptions> previewOptions)
+    IOptions<DesignPreviewOptions> previewOptions,
+    OrbitaAuthService? auth = null)
 {
     private const string InvalidApiSessionError =
         "Сессия недействительна. Выйдите из панели и войдите снова.";
@@ -279,7 +280,82 @@ public sealed class OrbitaApiClient(
         }
 
         request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", session.Token!);
-        return await SendAsyncSafe(request, completionOption, ct);
+        var retry = await CloneRequestAsync(request, ct);
+        var response = await SendAsyncSafe(request, completionOption, ct);
+        if (response is null
+            || response.StatusCode is not (System.Net.HttpStatusCode.Unauthorized or System.Net.HttpStatusCode.Forbidden))
+        {
+            return response;
+        }
+
+        response.Dispose();
+        if (!await RefreshSessionAsync(ct))
+        {
+            return null;
+        }
+
+        retry.Headers.Authorization = new AuthenticationHeaderValue("Bearer", session.Token!);
+        return await SendAsyncSafe(retry, completionOption, ct);
+    }
+
+    public async Task<bool> RefreshSessionAsync(CancellationToken ct = default)
+    {
+        var token = session.Token;
+        if (!IsJwtToken(token))
+        {
+            return false;
+        }
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "api/v1/auth/refresh")
+        {
+            Content = JsonContent.Create(new RefreshTokenRequest(token!))
+        };
+        using var response = await SendAsyncSafe(request, HttpCompletionOption.ResponseContentRead, ct);
+        if (response?.IsSuccessStatusCode != true)
+        {
+            return false;
+        }
+
+        var refreshed = await response.Content.ReadFromJsonAsync<LoginResponse>(ApiJsonOptions, ct);
+        if (refreshed is null || string.IsNullOrWhiteSpace(refreshed.Token))
+        {
+            return false;
+        }
+
+        if (auth is null)
+        {
+            return false;
+        }
+
+        await auth.SignInAsync(refreshed.Token, refreshed.Email, rememberMe: true, ct);
+        return true;
+    }
+
+    private static async Task<HttpRequestMessage> CloneRequestAsync(
+        HttpRequestMessage request,
+        CancellationToken ct)
+    {
+        var clone = new HttpRequestMessage(request.Method, request.RequestUri)
+        {
+            Version = request.Version,
+            VersionPolicy = request.VersionPolicy
+        };
+        foreach (var header in request.Headers)
+        {
+            clone.Headers.TryAddWithoutValidation(header.Key, header.Value);
+        }
+
+        if (request.Content is not null)
+        {
+            var bytes = await request.Content.ReadAsByteArrayAsync(ct);
+            clone.Content = new ByteArrayContent(bytes);
+            foreach (var header in request.Content.Headers)
+            {
+                clone.Content.Headers.TryAddWithoutValidation(header.Key, header.Value);
+            }
+        }
+
+        return clone;
     }
 
     private async Task<HttpResponseMessage?> SendAsyncSafe(
@@ -4046,6 +4122,7 @@ public sealed class OrbitaApiClient(
     }
 
     private sealed record ApiErrorResponse(string? Error);
+    private sealed record RefreshTokenRequest(string Token);
 }
 
 public sealed record LoginResponse(string Token, string Email);

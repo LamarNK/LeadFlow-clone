@@ -21,6 +21,7 @@ namespace Orbita.Api.Endpoints;
 
 public static class JwtTokenFactory
 {
+    public const string AccessVersionClaimType = "av";
     public static readonly TimeSpan DefaultLifetime = TimeSpan.FromHours(12);
     public static readonly TimeSpan RememberMeLifetime = TimeSpan.FromDays(14);
 
@@ -30,8 +31,16 @@ public static class JwtTokenFactory
         IEnumerable<string> permissions,
         IConfiguration config,
         Guid? officeId = null,
+        long accessVersion = 0,
         bool rememberMe = false) =>
-        CreateToken(user, roles, permissions, config, officeId, rememberMe ? RememberMeLifetime : DefaultLifetime);
+        CreateToken(
+            user,
+            roles,
+            permissions,
+            config,
+            officeId,
+            accessVersion,
+            rememberMe ? RememberMeLifetime : DefaultLifetime);
 
     public static string CreateToken(
         IdentityUser user,
@@ -39,6 +48,7 @@ public static class JwtTokenFactory
         IEnumerable<string> permissions,
         IConfiguration config,
         Guid? officeId,
+        long accessVersion,
         TimeSpan lifetime)
     {
         var key = config["Jwt:Key"] ?? "OrbitaDevSigningKey_ChangeInProduction_32chars!";
@@ -53,7 +63,8 @@ public static class JwtTokenFactory
             new(ClaimTypes.NameIdentifier, user.Id),
             new(ClaimTypes.Email, user.Email ?? string.Empty),
             new(ClaimTypes.Name, user.UserName ?? string.Empty),
-            new(JwtSecurityStampValidator.SecurityStampClaimType, user.SecurityStamp ?? string.Empty)
+            new(JwtSecurityStampValidator.SecurityStampClaimType, user.SecurityStamp ?? string.Empty),
+            new(AccessVersionClaimType, accessVersion.ToString(System.Globalization.CultureInfo.InvariantCulture))
         };
 
         foreach (var role in roles)
@@ -84,5 +95,38 @@ public static class JwtTokenFactory
             signingCredentials: credentials);
 
         return new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler().WriteToken(token);
+    }
+
+    public static bool TryValidate(
+        string token,
+        IConfiguration config,
+        out ClaimsPrincipal? principal)
+    {
+        principal = null;
+        try
+        {
+            var key = config["Jwt:Key"] ?? "OrbitaDevSigningKey_ChangeInProduction_32chars!";
+            var issuer = config["Jwt:Issuer"] ?? "Orbita";
+            var audience = config["Jwt:Audience"] ?? "Orbita.Web";
+            principal = new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler().ValidateToken(
+                token,
+                new TokenValidationParameters
+                {
+                    ValidateIssuerSigningKey = true,
+                    IssuerSigningKey = new SymmetricSecurityKey(System.Text.Encoding.UTF8.GetBytes(key)),
+                    ValidateIssuer = true,
+                    ValidIssuer = issuer,
+                    ValidateAudience = true,
+                    ValidAudience = audience,
+                    ValidateLifetime = true,
+                    ClockSkew = TimeSpan.FromMinutes(1)
+                },
+                out _);
+            return true;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
     }
 }

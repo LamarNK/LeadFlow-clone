@@ -12,6 +12,24 @@ public sealed class PanelUserService(
     PanelAuditService audit,
     OrbitaDbContext db)
 {
+    public async Task<long> GetAccessVersionAsync(string userId, CancellationToken ct = default) =>
+        await db.PanelUserProfiles.AsNoTracking()
+            .Where(x => x.UserId == userId)
+            .Select(x => x.AccessVersion)
+            .FirstOrDefaultAsync(ct);
+
+    private async Task BumpAccessVersionAsync(string userId, CancellationToken ct)
+    {
+        var profile = await db.PanelUserProfiles.FirstOrDefaultAsync(x => x.UserId == userId, ct);
+        if (profile is null)
+        {
+            profile = new PanelUserProfileEntity { UserId = userId };
+            db.PanelUserProfiles.Add(profile);
+        }
+
+        profile.AccessVersion++;
+        await db.SaveChangesAsync(ct);
+    }
     public async Task<IReadOnlyList<PanelUserDto>> ListAsync(CancellationToken ct = default)
     {
         var result = new List<PanelUserDto>();
@@ -462,6 +480,7 @@ public sealed class PanelUserService(
         }
 
         await db.SaveChangesAsync(ct);
+        await BumpAccessVersionAsync(user.Id, ct);
         await users.UpdateSecurityStampAsync(user);
 
         await audit.LogAsync(
@@ -562,6 +581,7 @@ public sealed class PanelUserService(
             }
         }
 
+        await BumpAccessVersionAsync(user.Id, ct);
         await users.UpdateSecurityStampAsync(user);
         await audit.LogAsync(
             actor.UserId,
@@ -663,6 +683,7 @@ public sealed class PanelUserService(
         }
 
         await db.SaveChangesAsync(ct);
+        await BumpAccessVersionAsync(user.Id, ct);
         await users.UpdateSecurityStampAsync(user);
 
         await audit.LogAsync(

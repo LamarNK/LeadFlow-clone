@@ -84,6 +84,7 @@ public static class AuthenticationEndpoints
 
             var permissions = await panelUsers.GetPermissionOverrideAsync(user)
                 ?? await accessProfiles.GetPermissionsForRolesAsync(roles, ct);
+            var accessVersion = await panelUsers.GetAccessVersionAsync(user.Id, ct);
             // Always issue a 14-day session so closing the browser/tab does not force re-login.
             var token = JwtTokenFactory.CreateToken(
                 user,
@@ -91,6 +92,7 @@ public static class AuthenticationEndpoints
                 permissions,
                 config,
                 officeId,
+                accessVersion,
                 rememberMe: true);
             await panelUsers.RecordActivityAsync(user.Id, ct);
             await audit.LogAsync(user.Id, user.Email, PanelAuditActions.LoginSucceeded, "user", user.Id, null, ip, ct);
@@ -114,8 +116,72 @@ public static class AuthenticationEndpoints
             await panelUsers.RecordActivityAsync(userId, ct);
             return Results.NoContent();
         }).RequireAuthorization();
+
+        app.MapPost("/api/v1/auth/refresh", async (
+            RefreshTokenRequest request,
+            UserManager<IdentityUser> users,
+            PanelUserService panelUsers,
+            AccessProfileService accessProfiles,
+            IConfiguration config,
+            CancellationToken ct) =>
+        {
+            if (string.IsNullOrWhiteSpace(request.Token)
+                || !JwtTokenFactory.TryValidate(request.Token, config, out var current)
+                || current is null)
+            {
+                return Results.Unauthorized();
+            }
+
+            var userId = current.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (string.IsNullOrWhiteSpace(userId))
+            {
+                return Results.Unauthorized();
+            }
+
+            var user = await users.FindByIdAsync(userId);
+            if (user is null || await users.IsLockedOutAsync(user))
+            {
+                return Results.Unauthorized();
+            }
+
+            var accessVersion = await panelUsers.GetAccessVersionAsync(user.Id, ct);
+            _ = long.TryParse(
+                current.FindFirstValue(JwtTokenFactory.AccessVersionClaimType),
+                out var parsedAccessVersion);
+            var stampMatches = string.Equals(
+                current.FindFirstValue(JwtSecurityStampValidator.SecurityStampClaimType),
+                user.SecurityStamp,
+                StringComparison.Ordinal);
+            if (!stampMatches && parsedAccessVersion >= accessVersion)
+            {
+                return Results.Unauthorized();
+            }
+
+            var roles = await users.GetRolesAsync(user);
+            var isGlobalAdmin = roles.Any(PanelRoles.IsGlobalAdmin);
+            var officeId = isGlobalAdmin
+                ? null
+                : await panelUsers.GetOfficeIdForUserAsync(user.Id, ct);
+            if (!isGlobalAdmin && officeId is null)
+            {
+                return Results.StatusCode(StatusCodes.Status403Forbidden);
+            }
+
+            var permissions = await panelUsers.GetPermissionOverrideAsync(user)
+                ?? await accessProfiles.GetPermissionsForRolesAsync(roles, ct);
+            var token = JwtTokenFactory.CreateToken(
+                user,
+                roles,
+                permissions,
+                config,
+                officeId,
+                accessVersion,
+                rememberMe: true);
+            return Results.Ok(new LoginResponse(token, user.Email ?? string.Empty));
+        }).AllowAnonymous();
     }
 }
 
 public sealed record LoginRequest(string Email, string Password, bool RememberMe = false);
+public sealed record RefreshTokenRequest(string Token);
 public sealed record LoginResponse(string Token, string Email);

@@ -2800,6 +2800,10 @@ namespace Orbita.Api.Data.Migrations
                     b.Property<string>("UserId")
                         .HasColumnType("text");
 
+                    b.Property<long>("AccessVersion")
+                        .HasDefaultValue(0L)
+                        .HasColumnType("bigint");
+
                     b.Property<int>("CrmCapacity")
                         .HasColumnType("integer");
 

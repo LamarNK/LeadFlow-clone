@@ -44,6 +44,8 @@ public sealed class OfficeEntity
 public sealed class PanelUserProfileEntity
 {
     public string UserId { get; set; } = string.Empty;
+    /// <summary>Увеличивается при изменении роли, офиса или прав доступа.</summary>
+    public long AccessVersion { get; set; }
     public string? FullName { get; set; }
     public Guid? OfficeId { get; set; }
     /// <summary>UTC-момент последней активности пользователя в веб-панели.</summary>

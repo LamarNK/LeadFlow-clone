@@ -41,6 +41,7 @@ public sealed class OrbitaAuthService(IHttpContextAccessor httpContextAccessor, 
             .ToArray();
         var identity = new ClaimsIdentity(claims, CookieAuthenticationDefaults.AuthenticationScheme);
         var principal = new ClaimsPrincipal(identity);
+        context.User = principal;
 
         await context.SignInAsync(
             CookieAuthenticationDefaults.AuthenticationScheme,
@@ -80,6 +81,7 @@ public sealed class OrbitaAuthService(IHttpContextAccessor httpContextAccessor, 
             ClaimTypes.Name,
             ClaimTypes.Role);
         var principal = new ClaimsPrincipal(identity);
+        context.User = principal;
 
         // Persistent cookies always (up to JWT expiry, typically 14d) so closing the browser
         // does not force re-login. rememberMe is kept for callers but treated as always-on.
