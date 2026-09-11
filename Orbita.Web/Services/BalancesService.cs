@@ -42,7 +42,7 @@ public sealed class BalancesService(
             ? await sessionsTask
             : (await sessionsTask).Where(x => !excludedWorkers.Contains(x.WorkerId)).ToArray();
         var byKey = sessions
-            .Where(x => !string.IsNullOrWhiteSpace(x.SubProfileId))
+            .Where(x => !string.IsNullOrWhiteSpace(x.SubProfileId) && IsOpenSession(x.Status))
             .GroupBy(x => (x.WorkerId, x.AccountId, x.SubProfileId), EqualityComparer<(Guid, Guid, string)>.Default)
             .ToDictionary(x => x.Key, x => x.OrderByDescending(s => s.CreatedAtUtc).First());
 
@@ -92,7 +92,7 @@ public sealed class BalancesService(
         const int pageSize = 50;
         var rows = filteredRows.Skip((page - 1) * pageSize).Take(pageSize).ToList();
 
-        var today = DateTime.UtcNow.Date;
+        var todayRange = TopUpSessionRules.GetMoscowDayRange(DateTime.UtcNow);
         var historySessions = sessions
             .OrderByDescending(x => x.CompletedAtUtc ?? x.CreatedAtUtc)
             .ThenByDescending(x => x.CreatedAtUtc)
@@ -102,7 +102,7 @@ public sealed class BalancesService(
             Header = PageHeaderBuilder.WithOfficeScope(
                 PageHeaderBuilder.Create("Балансы", "Контроль балансов и пополнение аккаунтов Avito"),
                 officeContext),
-            KpiCards = BuildKpiCards(allRows, sessions, today),
+            KpiCards = BuildKpiCards(allRows, sessions, todayRange),
             Rows = rows,
             Sessions = history
                 ? historySessions.Skip((page - 1) * pageSize).Take(pageSize).ToArray()
@@ -119,24 +119,40 @@ public sealed class BalancesService(
             LowBalanceCount = allRows.Count(x => x.IsLowBalance && x.Session is null),
             QueueCount = sessions.Count(x => x.Status is TopUpSessionStatuses.Requested or TopUpSessionStatuses.Started or TopUpSessionStatuses.PaymentClaimed or TopUpSessionStatuses.QrReady),
             AwaitingBalanceCount = sessions.Count(x => x.Status is TopUpSessionStatuses.AwaitingBalance or TopUpSessionStatuses.VerificationRequired),
-            CompletedTodayCount = sessions.Count(x => x.Status is TopUpSessionStatuses.Completed && x.CompletedAtUtc?.ToUniversalTime().Date == today)
-            ,
+            CompletedTodayCount = CountCompletedToday(sessions, todayRange),
             TotalBalance = allRows.Sum(x => x.Balance),
             SelectableCount = allRows.Count(x => x.IsLowBalance && x.WorkerOnline && x.Session is null),
             OfflineLowBalanceCount = allRows.Count(x => x.IsLowBalance && !x.WorkerOnline && x.Session is null)
         };
     }
 
+    private static bool IsOpenSession(string? status) =>
+        status is TopUpSessionStatuses.Requested
+            or TopUpSessionStatuses.Started
+            or TopUpSessionStatuses.PaymentClaimed
+            or TopUpSessionStatuses.QrReady
+            or TopUpSessionStatuses.AwaitingBalance
+            or TopUpSessionStatuses.VerificationRequired;
+
+    private static int CountCompletedToday(
+        IReadOnlyList<TopUpSessionDto> sessions,
+        (DateTime UtcStartInclusive, DateTime UtcEndExclusive) todayRange) =>
+        sessions.Count(x =>
+            x.Status is TopUpSessionStatuses.Completed
+            && x.CompletedAtUtc is DateTime completed
+            && completed.ToUniversalTime() >= todayRange.UtcStartInclusive
+            && completed.ToUniversalTime() < todayRange.UtcEndExclusive);
+
     private static IReadOnlyList<DashboardKpiCardViewModel> BuildKpiCards(
         List<BalanceSubProfileRowViewModel> rows,
         IReadOnlyList<TopUpSessionDto> sessions,
-        DateTime today)
+        (DateTime UtcStartInclusive, DateTime UtcEndExclusive) todayRange)
     {
         var totalBalance = rows.Sum(x => x.Balance);
         var lowBalanceCount = rows.Count(x => x.IsLowBalance && x.Session is null);
         var queueCount = sessions.Count(x => x.Status is TopUpSessionStatuses.Requested or TopUpSessionStatuses.Started or TopUpSessionStatuses.PaymentClaimed or TopUpSessionStatuses.QrReady);
         var awaitingCount = sessions.Count(x => x.Status is TopUpSessionStatuses.AwaitingBalance or TopUpSessionStatuses.VerificationRequired);
-        var completedToday = sessions.Count(x => x.Status is TopUpSessionStatuses.Completed && x.CompletedAtUtc?.ToUniversalTime().Date == today);
+        var completedToday = CountCompletedToday(sessions, todayRange);
 
         return
         [

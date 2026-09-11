@@ -116,7 +116,7 @@
                     @foreach (var session in Model.Sessions)
                     {
                         <tr>
-                            <td data-label="Дата">@((session.CompletedAtUtc ?? session.CreatedAtUtc).ToLocalTime().ToString("dd.MM.yyyy HH:mm"))</td>
+                            <td data-label="Дата"><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(session.CompletedAtUtc ?? session.CreatedAtUtc, "datetime"))" /></td>
                             <td data-label="Аккаунт"><strong>@session.AccountName</strong><small>@session.SubProfileName</small></td>
                             <td data-label="Воркер">@session.WorkerName</td>
                             <td data-label="Баланс до">@session.CurrentBalance.ToString("N0") ₽</td>

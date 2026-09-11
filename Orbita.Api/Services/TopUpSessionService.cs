@@ -334,10 +334,12 @@ public sealed class TopUpSessionService(
 
         if (!history)
         {
+            var todayStartUtc = TopUpSessionRules.GetMoscowDayRange(timeProvider.GetUtcNow().UtcDateTime).UtcStartInclusive;
             query = query.Where(x =>
                 ActiveStatuses.Contains(x.Status)
                 || x.Status == TopUpSessionStatuses.AwaitingBalance
-                || x.Status == TopUpSessionStatuses.VerificationRequired);
+                || x.Status == TopUpSessionStatuses.VerificationRequired
+                || (x.Status == TopUpSessionStatuses.Completed && x.CompletedAtUtc >= todayStartUtc));
         }
 
         var sessions = await (history

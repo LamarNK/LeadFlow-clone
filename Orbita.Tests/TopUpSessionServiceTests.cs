@@ -516,6 +516,29 @@ public sealed class TopUpSessionServiceTests
     }
 
     [Fact]
+    public async Task GetOfficeAsync_WithoutHistory_IncludesCompletedToday()
+    {
+        await using var db = CreateDb();
+        var officeId = Guid.NewGuid();
+        var workerId = Guid.NewGuid();
+        var accountId = Guid.NewGuid();
+        SeedWorker(db, officeId, workerId, accountId, balance: 100m);
+
+        var service = CreateService(db);
+        var principal = TestPrincipalFactory.Operator("op1", "Operator 1", officeId);
+        var (session, _) = await service.CreateAsync(workerId, accountId, principal);
+        await AdvanceToQrReadyAsync(service, workerId, session!.Id);
+        Assert.True((await service.MarkPaidAsync(session.Id, principal)).Success);
+        await service.ConfirmBalancesAsync(
+            workerId,
+            [new WorkerBalanceDto(accountId, "Acc1", 300m, [])],
+            Now.UtcDateTime);
+
+        var live = await service.GetOfficeAsync(principal, history: false);
+        Assert.Contains(live, x => x.Id == session.Id && x.Status == TopUpSessionStatuses.Completed);
+    }
+
+    [Fact]
     public async Task UpdateStatusFromWorker_BackwardsTransition_IsRejected()
     {
         await using var db = CreateDb();

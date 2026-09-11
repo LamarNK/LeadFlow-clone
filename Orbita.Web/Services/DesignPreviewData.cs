@@ -2877,12 +2877,14 @@ internal static class DesignPreviewData
     {
         lock (TopUpSync)
         {
+            var todayStartUtc = TopUpSessionRules.GetMoscowDayRange(DateTime.UtcNow).UtcStartInclusive;
             var source = history
                 ? PreviewTopUpSessions
                 : PreviewTopUpSessions.Where(x =>
                     TopUpSessionStatuses.IsActive(x.Status)
                     || x.Status is TopUpSessionStatuses.AwaitingBalance
-                        or TopUpSessionStatuses.VerificationRequired);
+                        or TopUpSessionStatuses.VerificationRequired
+                    || (x.Status == TopUpSessionStatuses.Completed && x.CompletedAtUtc >= todayStartUtc));
             return source.OrderByDescending(x => x.CreatedAtUtc).ToArray();
         }
     }
