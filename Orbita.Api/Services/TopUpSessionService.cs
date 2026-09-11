@@ -340,8 +340,9 @@ public sealed class TopUpSessionService(
                 || x.Status == TopUpSessionStatuses.VerificationRequired);
         }
 
-        var sessions = await query
-            .OrderBy(x => x.CreatedAtUtc)
+        var sessions = await (history
+                ? query.OrderByDescending(x => x.CompletedAtUtc ?? x.CreatedAtUtc)
+                : query.OrderBy(x => x.CreatedAtUtc))
             .Take(history ? 500 : 200)
             .ToListAsync(ct)
             .ConfigureAwait(false);

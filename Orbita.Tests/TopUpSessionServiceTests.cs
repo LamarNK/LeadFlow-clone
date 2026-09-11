@@ -494,6 +494,28 @@ public sealed class TopUpSessionServiceTests
     }
 
     [Fact]
+    public async Task GetOfficeAsync_History_ReturnsNewestFirst()
+    {
+        await using var db = CreateDb();
+        var officeId = Guid.NewGuid();
+        var workerId = Guid.NewGuid();
+        var firstAccount = Guid.NewGuid();
+        var secondAccount = Guid.NewGuid();
+        SeedWorker(db, officeId, workerId, firstAccount, balance: 100m);
+        SeedWorkerAccount(db, workerId, secondAccount, balance: 80m);
+        await db.SaveChangesAsync();
+
+        var principal = TestPrincipalFactory.Operator("op1", "Operator 1", officeId);
+        var (first, _) = await CreateService(db).CreateAsync(workerId, firstAccount, principal);
+        var (second, _) = await CreateService(db, Now.AddMinutes(3)).CreateAsync(workerId, secondAccount, principal);
+        Assert.NotNull(first);
+        Assert.NotNull(second);
+
+        var history = await CreateService(db, Now.AddMinutes(3)).GetOfficeAsync(principal, history: true);
+        Assert.Equal(new[] { second!.Id, first!.Id }, history.Select(x => x.Id).ToArray());
+    }
+
+    [Fact]
     public async Task UpdateStatusFromWorker_BackwardsTransition_IsRejected()
     {
         await using var db = CreateDb();
