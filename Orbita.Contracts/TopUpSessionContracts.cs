@@ -39,8 +39,8 @@ public static class TopUpSessionStatuses
             [Started] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { PaymentClaimed, QrReady, Failed, Expired },
             [PaymentClaimed] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { QrReady, Failed, Expired },
             [QrReady] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { Paid, AwaitingBalance, Completed, Failed, Expired },
-            [AwaitingBalance] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { Completed, VerificationRequired, Failed, Expired },
-            [VerificationRequired] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { Completed },
+            [AwaitingBalance] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { Completed, Failed, Expired },
+            [VerificationRequired] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { Completed, Failed },
         };
 
     /// <summary>
@@ -97,6 +97,12 @@ public static class TopUpSessionRules
 
     /// <summary>Срок жизни сессии в очереди воркера, пока её не взяли в работу.</summary>
     public static readonly TimeSpan QueueTtl = TimeSpan.FromHours(2);
+
+    /// <summary>
+    /// После «Оплачено» ждём обычный снимок баланса со следующего прохода.
+    /// Если за это время баланс не вырос на сумму пополнения — сессия ошибочна.
+    /// </summary>
+    public static readonly TimeSpan BalanceConfirmationTtl = TimeSpan.FromHours(24);
 
     /// <summary>Допуск при сверке нового баланса с ожидаемой суммой пополнения.</summary>
     public const decimal BalanceEpsilonRub = 1m;

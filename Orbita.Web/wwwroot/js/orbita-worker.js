@@ -2324,7 +2324,7 @@
                 'paid': 'Оплачено',
                 'awaiting_balance': 'Ожидаем обновление баланса',
                 'completed': 'Пополнение подтверждено',
-                'verification_required': 'Требует ручной проверки'
+                'verification_required': 'Ожидает баланс'
             };
             return labels[status] || 'Неизвестно';
         }

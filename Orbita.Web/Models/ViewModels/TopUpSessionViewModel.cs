@@ -46,7 +46,7 @@ public sealed class TopUpSessionViewModel
         "paid" => "Оплачено",
         "awaiting_balance" => "Ожидает обновления баланса",
         "completed" => "Подтверждено",
-        "verification_required" => "Требует проверки",
+        "verification_required" => "Ожидает баланс",
         _ => "Неизвестно"
     };
 

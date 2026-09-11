@@ -101,7 +101,10 @@ public sealed class TopUpSessionRulesTests
     [InlineData(TopUpSessionStatuses.QrReady, TopUpSessionStatuses.Paid, true)]
     [InlineData(TopUpSessionStatuses.QrReady, TopUpSessionStatuses.Completed, true)]
     [InlineData(TopUpSessionStatuses.AwaitingBalance, TopUpSessionStatuses.Completed, true)]
+    [InlineData(TopUpSessionStatuses.AwaitingBalance, TopUpSessionStatuses.Failed, true)]
+    [InlineData(TopUpSessionStatuses.AwaitingBalance, TopUpSessionStatuses.VerificationRequired, false)]
     [InlineData(TopUpSessionStatuses.VerificationRequired, TopUpSessionStatuses.Completed, true)]
+    [InlineData(TopUpSessionStatuses.VerificationRequired, TopUpSessionStatuses.Failed, true)]
     [InlineData(TopUpSessionStatuses.QrReady, TopUpSessionStatuses.Started, false)]
     [InlineData(TopUpSessionStatuses.QrReady, TopUpSessionStatuses.Requested, false)]
     [InlineData(TopUpSessionStatuses.Started, TopUpSessionStatuses.Paid, false)]
@@ -124,6 +127,12 @@ public sealed class TopUpSessionRulesTests
     public void QueueTtl_IsTwoHours()
     {
         Assert.Equal(TimeSpan.FromHours(2), TopUpSessionRules.QueueTtl);
+    }
+
+    [Fact]
+    public void BalanceConfirmationTtl_Is24Hours()
+    {
+        Assert.Equal(TimeSpan.FromHours(24), TopUpSessionRules.BalanceConfirmationTtl);
     }
 
     [Theory]

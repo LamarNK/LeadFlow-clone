@@ -1297,7 +1297,7 @@ public sealed class TopUpSessionServiceTests
     }
 
     [Fact]
-    public async Task SweepExpiredAsync_MarksUnconfirmedPaymentForVerification()
+    public async Task SweepExpiredAsync_KeepsAwaitingBalanceUntilConfirmationTtl()
     {
         await using var db = CreateDb();
         var officeId = Guid.NewGuid();
@@ -1309,17 +1309,38 @@ public sealed class TopUpSessionServiceTests
         var principal = TestPrincipalFactory.Operator("op1", "Operator 1", officeId);
         var (session, _) = await service.CreateAsync(workerId, accountId, principal);
         Assert.NotNull(session);
-        await service.UpdateStatusFromWorkerAsync(workerId,
-            new UpdateTopUpSessionStatusRequest(session!.Id, TopUpSessionStatuses.Started));
-        await service.UpdateStatusFromWorkerAsync(workerId,
-            new UpdateTopUpSessionStatusRequest(session.Id, TopUpSessionStatuses.QrReady, QrImageBase64: ValidPngBase64));
+        await AdvanceToQrReadyAsync(service, workerId, session!.Id);
         Assert.True((await service.MarkPaidAsync(session.Id, principal)).Success);
 
-        var sweeper = CreateService(db, Now.AddMinutes(11));
+        var stillWaiting = CreateService(db, Now.AddHours(23));
+        Assert.Equal(0, await stillWaiting.SweepExpiredAsync());
+        Assert.Equal(
+            TopUpSessionStatuses.AwaitingBalance,
+            (await db.TopUpSessions.AsNoTracking().SingleAsync(x => x.Id == session.Id)).Status);
+    }
+
+    [Fact]
+    public async Task SweepExpiredAsync_FailsUnconfirmedPaymentAfter24Hours()
+    {
+        await using var db = CreateDb();
+        var officeId = Guid.NewGuid();
+        var workerId = Guid.NewGuid();
+        var accountId = Guid.NewGuid();
+        SeedWorker(db, officeId, workerId, accountId, balance: 100m);
+
+        var service = CreateService(db);
+        var principal = TestPrincipalFactory.Operator("op1", "Operator 1", officeId);
+        var (session, _) = await service.CreateAsync(workerId, accountId, principal);
+        Assert.NotNull(session);
+        await AdvanceToQrReadyAsync(service, workerId, session!.Id);
+        Assert.True((await service.MarkPaidAsync(session.Id, principal)).Success);
+
+        var sweeper = CreateService(db, Now.Add(TopUpSessionRules.BalanceConfirmationTtl));
         await sweeper.SweepExpiredAsync();
 
         var stored = await db.TopUpSessions.AsNoTracking().SingleAsync(x => x.Id == session.Id);
-        Assert.Equal(TopUpSessionStatuses.VerificationRequired, stored.Status);
+        Assert.Equal(TopUpSessionStatuses.Failed, stored.Status);
+        Assert.Contains("24 часа", stored.FailureMessage, StringComparison.Ordinal);
         Assert.NotNull(stored.CompletedAtUtc);
     }
 
@@ -1753,7 +1774,7 @@ public sealed class TopUpSessionServiceTests
     }
 
     [Fact]
-    public async Task ConfirmBalancesAsync_CompletesVerificationRequiredOnLateSnapshot()
+    public async Task ConfirmBalancesAsync_CompletesAwaitingBalanceOnLaterPass()
     {
         await using var db = CreateDb();
         var officeId = Guid.NewGuid();
@@ -1767,55 +1788,16 @@ public sealed class TopUpSessionServiceTests
         await AdvanceToQrReadyAsync(service, workerId, session!.Id);
         Assert.True((await service.MarkPaidAsync(session.Id, principal)).Success);
 
-        var sweeper = CreateService(db, Now.AddMinutes(11));
-        await sweeper.SweepExpiredAsync();
-        Assert.Equal(
-            TopUpSessionStatuses.VerificationRequired,
-            (await db.TopUpSessions.AsNoTracking().SingleAsync(x => x.Id == session.Id)).Status);
-
-        var completed = await sweeper.ConfirmBalancesAsync(
-            workerId,
-            [new WorkerBalanceDto(accountId, "Acc1", 300m, [])],
-            Now.AddMinutes(12).UtcDateTime);
-
-        Assert.Equal(1, completed);
-        Assert.Equal(TopUpSessionStatuses.Completed, (await db.TopUpSessions.AsNoTracking().SingleAsync(x => x.Id == session.Id)).Status);
-    }
-
-    [Fact]
-    public async Task ConfirmBalancesAsync_DoesNotCompleteOldVerificationWhenNewerSessionExists()
-    {
-        await using var db = CreateDb();
-        var officeId = Guid.NewGuid();
-        var workerId = Guid.NewGuid();
-        var accountId = Guid.NewGuid();
-        SeedWorker(db, officeId, workerId, accountId, balance: 100m);
-
-        var service = CreateService(db);
-        var principal = TestPrincipalFactory.Operator("op1", "Operator 1", officeId);
-        var (first, _) = await service.CreateAsync(workerId, accountId, principal);
-        await AdvanceToQrReadyAsync(service, workerId, first!.Id);
-        Assert.True((await service.MarkPaidAsync(first.Id, principal)).Success);
-
-        var later = CreateService(db, Now.AddMinutes(11));
-        await later.SweepExpiredAsync();
-
-        var worker = await db.Workers.FirstAsync(x => x.Id == workerId);
-        worker.LastSeenAtUtc = Now.AddMinutes(11).UtcDateTime;
-        await db.SaveChangesAsync();
-
-        var (second, conflict) = await later.CreateAsync(workerId, accountId, principal);
-        Assert.Null(conflict);
-        Assert.NotNull(second);
+        var later = CreateService(db, Now.AddHours(6));
+        Assert.Equal(0, await later.SweepExpiredAsync());
 
         var completed = await later.ConfirmBalancesAsync(
             workerId,
             [new WorkerBalanceDto(accountId, "Acc1", 300m, [])],
-            Now.AddMinutes(12).UtcDateTime);
+            Now.AddHours(6).UtcDateTime);
 
-        Assert.Equal(0, completed);
-        Assert.Equal(TopUpSessionStatuses.VerificationRequired, (await db.TopUpSessions.AsNoTracking().SingleAsync(x => x.Id == first.Id)).Status);
-        Assert.Equal(TopUpSessionStatuses.Requested, (await db.TopUpSessions.AsNoTracking().SingleAsync(x => x.Id == second!.Id)).Status);
+        Assert.Equal(1, completed);
+        Assert.Equal(TopUpSessionStatuses.Completed, (await db.TopUpSessions.AsNoTracking().SingleAsync(x => x.Id == session.Id)).Status);
     }
 
     [Fact]

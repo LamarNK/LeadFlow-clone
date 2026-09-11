@@ -114,7 +114,7 @@
             qr_ready: 'QR готов',
             awaiting_balance: 'Ожидает баланс',
             completed: 'Подтверждено',
-            verification_required: 'Требует проверки',
+            verification_required: 'Ожидает баланс',
             failed: 'Ошибка',
             expired: 'Истекло',
             cancelled: 'Отменено'

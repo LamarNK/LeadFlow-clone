@@ -65,7 +65,7 @@ public sealed class TopUpSessionService(
         TopUpSessionStatuses.AwaitingBalance,
         TopUpSessionStatuses.VerificationRequired
     ];
-    private static readonly TimeSpan BalanceConfirmationTimeout = TimeSpan.FromMinutes(10);
+    private static readonly TimeSpan BalanceConfirmationTimeout = TopUpSessionRules.BalanceConfirmationTtl;
 
     /// <summary>Срок хранения QR-данных после завершения сессии, после которого они удаляются.</summary>
     private static readonly TimeSpan QrRetention = TimeSpan.FromHours(6);
@@ -449,7 +449,7 @@ public sealed class TopUpSessionService(
         {
             session.AwaitingBalanceAtUtc = completedAt;
             session.CompletedAtUtc = null;
-            session.ProgressMessage = "Оплата отмечена. Ожидаем новый баланс от воркера…";
+            session.ProgressMessage = "Оплата отмечена. Баланс подтвердится на следующем проходе.";
         }
         else
         {
@@ -867,24 +867,27 @@ public sealed class TopUpSessionService(
 
         var awaitingCutoff = now - BalanceConfirmationTimeout;
         var unconfirmed = await db.TopUpSessions
-            .Where(x => x.Status == TopUpSessionStatuses.AwaitingBalance
-                        && x.AwaitingBalanceAtUtc != null
-                        && x.AwaitingBalanceAtUtc <= awaitingCutoff)
+            .Where(x =>
+                (x.Status == TopUpSessionStatuses.AwaitingBalance
+                 || x.Status == TopUpSessionStatuses.VerificationRequired)
+                && x.AwaitingBalanceAtUtc != null
+                && x.AwaitingBalanceAtUtc <= awaitingCutoff)
             .ToListAsync(ct)
             .ConfigureAwait(false);
         foreach (var session in unconfirmed)
         {
             _log.LogWarning(
-                "Top-up: сессия {SessionId} требует проверки, баланс не вырос за 10 минут worker={WorkerId} account={AccountName} subprofile={SubProfileName} current={Current} requested={Requested}.",
+                "Top-up: сессия {SessionId} не подтверждена за 24 часа worker={WorkerId} account={AccountName} subprofile={SubProfileName} current={Current} requested={Requested}.",
                 session.Id,
                 session.WorkerId,
                 session.AccountName,
                 session.SubProfileName,
                 session.CurrentBalance,
                 session.RequestedAmount);
-            session.Status = TopUpSessionStatuses.VerificationRequired;
+            session.Status = TopUpSessionStatuses.Failed;
             session.CompletedAtUtc = now;
-            session.ProgressMessage = "Баланс не обновился за 10 минут. Требуется ручная проверка.";
+            session.FailureMessage = "Баланс не увеличился за 24 часа.";
+            session.ProgressMessage = "Баланс не увеличился за 24 часа.";
         }
         if (unconfirmed.Count > 0)
         {
