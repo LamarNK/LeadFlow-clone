@@ -1,6 +1,8 @@
 using System.Diagnostics;
 using System.Text;
+using Microsoft.AspNetCore.Http;
 using Orbita.Contracts;
+using Orbita.Web.Models.ViewModels;
 using Orbita.Web.Services;
 
 namespace Orbita.Tests;
@@ -63,6 +65,18 @@ public sealed class DashboardMarkupTests
         Assert.Contains("name=\"@Model.FieldName\"", picker);
         Assert.Contains("function initStatisticsMultiSelects()", js);
         Assert.Contains("value.name = fieldName", js);
+    }
+
+    [Fact]
+    public void StatisticsPreview_ProvidesAccountOptionsForTheAccountMultiSelect()
+    {
+        var model = DesignPreviewData.BuildStatisticsIndexViewModel(
+            DashboardPeriod.Today,
+            new PreviewOfficeContext(),
+            new StatisticsFiltersViewModel());
+
+        Assert.NotEmpty(model.AccountOptions);
+        Assert.Contains(model.AccountOptions, option => option.Label == "Альфа HR");
     }
 
     [Fact]
@@ -364,4 +378,13 @@ public sealed class DashboardMarkupTests
         return Encoding.UTF8.GetString(Convert.FromBase64String(ExtractAttribute(html, attributeName)));
     }
 
+    private sealed class PreviewOfficeContext : IOfficeContext
+    {
+        public bool IsAdmin => false;
+        public bool ShowAllOffices => false;
+        public bool ShowOfficeColumn => false;
+        public Guid? EffectiveOfficeId => null;
+        public string? ContextLabel => null;
+        public void Bind(HttpContext context) { }
+    }
 }

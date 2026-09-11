@@ -2158,8 +2158,19 @@ internal static class DesignPreviewData
                     Label = w.DisplayName
                 })
                 .ToList(),
-            [],
-            FilterChipsBuilder.ForStatistics(filters, period, [], []));
+            BuildPreviewStatisticsAccountOptions(),
+            FilterChipsBuilder.ForStatistics(
+                filters,
+                period,
+                [],
+                BuildPreviewStatisticsAccountOptions()));
+
+    private static IReadOnlyList<EventFilterOptionViewModel> BuildPreviewStatisticsAccountOptions() =>
+    [
+        new() { Value = AccountAlphaId.ToString(), Label = "Альфа HR" },
+        new() { Value = AccountBetaId.ToString(), Label = "Бета Кадры" },
+        new() { Value = AccountGammaId.ToString(), Label = "Гамма Рекрут" }
+    ];
 
     public static WorkersIndexViewModel BuildWorkersIndexViewModel(
         string? searchQuery,
