@@ -160,6 +160,22 @@ public static class DashboardEndpoints
 
             return Results.Ok(await query.GetOfficeAccountsAsync(scope, officeId, workerId, ct));
         });
+        var balanceRead = app.MapGroup("/api/v1").RequireAuthorization(PanelPermissions.Balances);
+        balanceRead.MapGet("/balances/accounts", async (
+            Guid? officeId,
+            DashboardQueryService query,
+            OfficeScopeService officeScope,
+            ClaimsPrincipal principal,
+            CancellationToken ct) =>
+        {
+            var scope = await officeScope.ResolveAsync(principal, ct);
+            if (!scope.HasAccess)
+            {
+                return Results.Forbid();
+            }
+
+            return Results.Ok(await query.GetOfficeBalancesAsync(scope, officeId, ct));
+        });
         accountRead.MapGet("/workers/{id:guid}/accounts", async (
             Guid id,
             DashboardQueryService query,

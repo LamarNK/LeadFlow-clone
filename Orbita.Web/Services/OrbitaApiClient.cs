@@ -184,6 +184,19 @@ public sealed class OrbitaApiClient(
         return GetAsync<IReadOnlyList<OfficeAccountListItem>>(path, ct);
     }
 
+    public Task<IReadOnlyList<OfficeBalanceListItem>?> GetOfficeBalancesAsync(
+        Guid? officeId = null,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return Task.FromResult<IReadOnlyList<OfficeBalanceListItem>?>([]);
+        }
+
+        var path = WithOfficeQuery("api/v1/balances/accounts", officeId);
+        return GetAsync<IReadOnlyList<OfficeBalanceListItem>>(path, ct);
+    }
+
     public Task<IReadOnlyList<WorkerEventListItem>?> GetEventsAsync(
         Guid? workerId = null,
         int limit = 100,

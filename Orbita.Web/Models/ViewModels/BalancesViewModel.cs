@@ -8,6 +8,8 @@ public sealed class BalancesIndexViewModel
     public IReadOnlyList<BalanceSubProfileRowViewModel> Rows { get; init; } = [];
     public IReadOnlyList<TopUpSessionDto> Sessions { get; init; } = [];
     public PaginationViewModel Pagination { get; init; } = new();
+    public IReadOnlyList<EventFilterOptionViewModel> Workers { get; init; } = [];
+    public IReadOnlyList<Guid> SelectedWorkerIds { get; init; } = [];
     public int TotalSubProfiles { get; init; }
     public int LowBalanceCount { get; init; }
     public int QueueCount { get; init; }

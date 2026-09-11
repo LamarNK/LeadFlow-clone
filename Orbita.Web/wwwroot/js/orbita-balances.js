@@ -3,6 +3,78 @@
     var page = document.querySelector('[data-balances-page]');
     if (!page) return;
 
+    function initWorkerFilter() {
+        var picker = page.querySelector('[data-statistics-multiselect]');
+        if (!picker) return;
+        var fieldName = picker.dataset.statisticsField;
+        var allLabel = picker.dataset.statisticsAllLabel || 'Все воркеры';
+        var trigger = picker.querySelector('[data-statistics-multiselect-trigger]');
+        var triggerText = picker.querySelector('[data-statistics-multiselect-text]');
+        var menu = picker.querySelector('[data-statistics-multiselect-menu]');
+        var values = picker.querySelector('[data-statistics-multiselect-values]');
+        var all = picker.querySelector('[data-statistics-multiselect-all]');
+        var search = picker.querySelector('[data-statistics-multiselect-search]');
+        var options = Array.from(picker.querySelectorAll('[data-statistics-multiselect-option]'));
+        var explicit = values.querySelectorAll('input').length > 0;
+
+        function sync() {
+            var checked = options.filter(function (option) { return option.checked; });
+            if (!checked.length || checked.length === options.length) {
+                explicit = false;
+                options.forEach(function (option) { option.checked = true; });
+                checked = options;
+            }
+            all.checked = !explicit;
+            values.replaceChildren();
+            if (explicit) {
+                checked.forEach(function (option) {
+                    var input = document.createElement('input');
+                    input.type = 'hidden';
+                    input.name = fieldName;
+                    input.value = option.value;
+                    values.appendChild(input);
+                });
+            }
+            triggerText.textContent = explicit
+                ? checked.length === 1
+                    ? checked[0].parentElement.textContent.trim()
+                    : 'Выбрано: ' + checked.length
+                : allLabel;
+        }
+
+        trigger.addEventListener('click', function () {
+            menu.hidden = !menu.hidden;
+            trigger.setAttribute('aria-expanded', String(!menu.hidden));
+            if (!menu.hidden && search) search.focus();
+        });
+        all.addEventListener('change', function () {
+            explicit = false;
+            options.forEach(function (option) { option.checked = true; });
+            sync();
+        });
+        options.forEach(function (option) {
+            option.addEventListener('change', function () {
+                explicit = true;
+                sync();
+            });
+        });
+        if (search) {
+            search.addEventListener('input', function () {
+                var query = search.value.trim().toLocaleLowerCase();
+                picker.querySelectorAll('[data-statistics-multiselect-option-row]').forEach(function (row) {
+                    row.hidden = query && !row.dataset.statisticsSearchText.toLocaleLowerCase().includes(query);
+                });
+            });
+        }
+        document.addEventListener('click', function (event) {
+            if (!picker.contains(event.target)) {
+                menu.hidden = true;
+                trigger.setAttribute('aria-expanded', 'false');
+            }
+        });
+        sync();
+    }
+
     function token() {
         var meta = document.querySelector('meta[name="orbita-antiforgery-token"]');
         return meta ? meta.content : '';
@@ -106,5 +178,6 @@
     }
     var firstQr = page.querySelector('[data-qr-select]');
     if (firstQr) selectQr(firstQr);
+    initWorkerFilter();
     updateBulk();
 })();

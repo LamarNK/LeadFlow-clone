@@ -250,6 +250,25 @@ public sealed record OfficeAccountListItem(
     WorkerAccountDto Account,
     WorkerBalanceDto? Balance);
 
+/// <summary>
+/// Lightweight balance-only row. Unlike OfficeAccountListItem, this contract does not
+/// include response/event aggregates, activity payloads, or other expensive account data.
+/// </summary>
+public sealed record OfficeBalanceListItem(
+    Guid WorkerId,
+    string WorkerDisplayName,
+    string OfficeName,
+    bool WorkerIsOnline,
+    Guid AccountId,
+    string AccountName,
+    string AccountStatus,
+    bool IsEnabledInPanel,
+    decimal TotalBalance,
+    DateTime? LastMonitoringAtUtc,
+    IReadOnlyList<WorkerSubProfileDto> SubProfiles,
+    string? AdsPowerGroupId = null,
+    string? AdsPowerGroupName = null);
+
 public sealed record WorkerEventListItem(
     Guid Id,
     Guid WorkerId,

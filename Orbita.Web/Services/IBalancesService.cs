@@ -9,5 +9,6 @@ public interface IBalancesService
         string? query = null,
         bool history = false,
         int page = 1,
+        IReadOnlyList<Guid>? workerIds = null,
         CancellationToken ct = default);
 }

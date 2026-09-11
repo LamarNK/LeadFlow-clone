@@ -4,6 +4,21 @@
     ViewData["Title"] = "Балансы";
     var activeTab = (string?)ViewData["BalancesTab"] ?? "low";
     var query = (string?)ViewData["BalancesQuery"];
+    var selectedWorkerIds = Model.SelectedWorkerIds;
+    string BalancesUrl(string tab, bool history = false, int? page = null)
+    {
+        var url = Url.Action("Index", "Balances", new { tab, q = query, history, page })!;
+        if (selectedWorkerIds.Count == 0)
+        {
+            return url;
+        }
+
+        foreach (var workerId in selectedWorkerIds)
+        {
+            url += $"{(url.Contains('?') ? '&' : '?')}workerIds={Uri.EscapeDataString(workerId.ToString())}";
+        }
+        return url;
+    }
     var statusLabel = (string status) => status switch
     {
         TopUpSessionStatuses.Requested => "Ожидает воркер",
@@ -26,37 +41,48 @@
       data-cancel-url="@Url.Action("Cancel", "Balances")"
       data-batch-url="@Url.Action("CreateBatch", "Balances")">
     <section class="balances-kpis" aria-label="Сводка балансов">
-        <a class="balances-kpi balances-kpi--money" href="@Url.Action("Index", new { tab = "all" })">
+        <a class="balances-kpi balances-kpi--money" href="@BalancesUrl("all")">
             <span>Общий баланс</span><strong>@Model.TotalBalance.ToString("N0") ₽</strong><small>по субпрофилям с известными данными</small>
         </a>
-        <a class="balances-kpi" href="@Url.Action("Index", new { tab = "all" })">
+        <a class="balances-kpi" href="@BalancesUrl("all")">
             <span>Всего субпрофилей</span><strong>@Model.TotalSubProfiles</strong><small>с известным балансом</small>
         </a>
-        <a class="balances-kpi @(activeTab == "low" ? "is-active" : "")" href="@Url.Action("Index", new { tab = "low" })">
+        <a class="balances-kpi @(activeTab == "low" ? "is-active" : "")" href="@BalancesUrl("low")">
             <span>Низкий баланс</span><strong>@Model.LowBalanceCount</strong><small>ниже 150 ₽</small>
         </a>
-        <a class="balances-kpi @(activeTab == "queue" ? "is-active" : "")" href="@Url.Action("Index", new { tab = "queue" })">
+        <a class="balances-kpi @(activeTab == "queue" ? "is-active" : "")" href="@BalancesUrl("queue")">
             <span>В очереди</span><strong>@Model.QueueCount</strong><small>запросов пополнения</small>
         </a>
-        <a class="balances-kpi @(activeTab == "awaiting" ? "is-active" : "")" href="@Url.Action("Index", new { tab = "awaiting" })">
+        <a class="balances-kpi @(activeTab == "awaiting" ? "is-active" : "")" href="@BalancesUrl("awaiting")">
             <span>Ожидают баланс</span><strong>@Model.AwaitingBalanceCount</strong><small>требуют внимания</small>
         </a>
-        <a class="balances-kpi @(activeTab == "history" ? "is-active" : "")" href="@Url.Action("Index", new { tab = "history", history = true })">
+        <a class="balances-kpi @(activeTab == "history" ? "is-active" : "")" href="@BalancesUrl("history", true)">
             <span>Пополнено сегодня</span><strong>@Model.CompletedTodayCount</strong><small>подтверждено</small>
         </a>
     </section>
 
     <nav class="balances-tabs" aria-label="Фильтр балансов">
-        <a class="@(activeTab == "low" ? "is-active" : "")" href="@Url.Action("Index", new { tab = "low" })">Требуют пополнения</a>
-        <a class="@(activeTab == "queue" ? "is-active" : "")" href="@Url.Action("Index", new { tab = "queue" })">В очереди</a>
-        <a class="@(activeTab == "working" ? "is-active" : "")" href="@Url.Action("Index", new { tab = "working" })">В работе</a>
-        <a class="@(activeTab == "awaiting" ? "is-active" : "")" href="@Url.Action("Index", new { tab = "awaiting" })">Ожидают баланс</a>
-        <a class="@(activeTab == "history" ? "is-active" : "")" href="@Url.Action("Index", new { tab = "history", history = true })">История</a>
+        <a class="@(activeTab == "low" ? "is-active" : "")" href="@BalancesUrl("low")">Требуют пополнения</a>
+        <a class="@(activeTab == "queue" ? "is-active" : "")" href="@BalancesUrl("queue")">В очереди</a>
+        <a class="@(activeTab == "working" ? "is-active" : "")" href="@BalancesUrl("working")">В работе</a>
+        <a class="@(activeTab == "awaiting" ? "is-active" : "")" href="@BalancesUrl("awaiting")">Ожидают баланс</a>
+        <a class="@(activeTab == "history" ? "is-active" : "")" href="@BalancesUrl("history", true)">История</a>
     </nav>
 
     <form class="balances-filter" method="get">
         <input type="hidden" name="tab" value="@activeTab" />
         <input type="hidden" name="history" value="@(activeTab == "history" ? "true" : "false")" />
+        <div class="balances-worker-filter">
+            <span>Воркеры</span>
+            <partial name="_StatisticsMultiSelect" model="@(new StatisticsMultiSelectViewModel
+            {
+                FieldName = "workerIds",
+                Label = "Воркеры",
+                AllLabel = "Все воркеры",
+                SelectedIds = Model.SelectedWorkerIds,
+                Options = Model.Workers
+            })" />
+        </div>
         <label class="balances-search">
             <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
             <input type="search" name="q" value="@query" placeholder="Поиск по аккаунту, субпрофилю или воркеру" />
@@ -177,13 +203,23 @@
             }
         </div>
     </section>
-    <partial name="_Pagination" model="@(new PaginationPartialViewModel
+    @if (Model.Pagination.TotalPages > 1)
     {
-        Pagination = Model.Pagination,
-        Controller = "Balances",
-        Action = "Index",
-        RouteValues = new { tab = activeTab, q = query, history = activeTab == "history" }
-    })" />
+        <nav class="orbita-pagination balances-pagination" aria-label="Пагинация">
+            <span class="orbita-pagination__info">Показано @Model.Pagination.RangeStart–@Model.Pagination.RangeEnd из @Model.Pagination.TotalItems</span>
+            <div class="orbita-pagination__controls">
+                @if (Model.Pagination.Page > 1)
+                {
+                    <a class="orbita-pagination__btn orbita-pagination__btn--nav" href="@BalancesUrl(activeTab, activeTab == "history", Model.Pagination.Page - 1)">Назад</a>
+                }
+                <span class="orbita-pagination__btn orbita-pagination__btn--active">@Model.Pagination.Page</span>
+                @if (Model.Pagination.Page < Model.Pagination.TotalPages)
+                {
+                    <a class="orbita-pagination__btn orbita-pagination__btn--nav" href="@BalancesUrl(activeTab, activeTab == "history", Model.Pagination.Page + 1)">Далее</a>
+                }
+            </div>
+        </nav>
+    }
 
     @{
         var qrSessions = Model.Sessions.Where(x => x.Status == TopUpSessionStatuses.QrReady).ToList();

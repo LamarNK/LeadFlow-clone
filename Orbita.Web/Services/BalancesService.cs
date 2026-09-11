@@ -12,42 +12,60 @@ public sealed class BalancesService(
         string? query = null,
         bool history = false,
         int page = 1,
+        IReadOnlyList<Guid>? workerIds = null,
         CancellationToken ct = default)
     {
         page = Math.Max(1, page);
-        var accountsTask = api.GetOfficeAccountsAsync(ct: ct);
+        var accountsTask = api.GetOfficeBalancesAsync(ct: ct);
         var sessionsTask = api.GetTopUpSessionsAsync(history, ct);
         await Task.WhenAll(accountsTask, sessionsTask);
 
         var accounts = await accountsTask ?? [];
-        var sessions = await sessionsTask;
+        var workerOptions = accounts
+            .GroupBy(x => x.WorkerId)
+            .Select(group => new EventFilterOptionViewModel
+            {
+                Value = group.Key.ToString(),
+                Label = group.First().WorkerDisplayName
+            })
+            .OrderBy(x => x.Label)
+            .ToArray();
+        var selectedWorkerIds = (workerIds ?? [])
+            .Where(id => workerOptions.Any(option => option.Value == id.ToString()))
+            .Distinct()
+            .ToArray();
+        var workerFilter = selectedWorkerIds.ToHashSet();
+        var scopedAccounts = selectedWorkerIds.Length == 0
+            ? accounts
+            : accounts.Where(x => workerFilter.Contains(x.WorkerId)).ToArray();
+        var sessions = selectedWorkerIds.Length == 0
+            ? await sessionsTask
+            : (await sessionsTask).Where(x => workerFilter.Contains(x.WorkerId)).ToArray();
         var byKey = sessions
             .Where(x => !string.IsNullOrWhiteSpace(x.SubProfileId))
             .GroupBy(x => (x.WorkerId, x.AccountId, x.SubProfileId), EqualityComparer<(Guid, Guid, string)>.Default)
             .ToDictionary(x => x.Key, x => x.OrderByDescending(s => s.CreatedAtUtc).First());
 
         var allRows = new List<BalanceSubProfileRowViewModel>();
-        foreach (var item in accounts)
+        foreach (var item in scopedAccounts)
         {
-            var profiles = item.Account.SubProfiles ?? [];
-            var balances = item.Balance?.SubProfiles ?? [];
+            var profiles = item.SubProfiles ?? [];
             for (var i = 0; i < profiles.Count; i++)
             {
                 var profile = profiles[i];
-                var balance = ResolveBalance(profile, balances, i);
-                if (balance is not decimal current)
+                if (profile.Balance is not decimal current)
                 {
                     continue;
                 }
 
-                var session = byKey.GetValueOrDefault((item.WorkerId, item.Account.AccountId, profile.Id));
+                var session = byKey.GetValueOrDefault((item.WorkerId, item.AccountId, profile.Id));
                 var target = TopUpSessionRules.ResolveTargetBalance(profile.TodayResponses);
                 var row = new BalanceSubProfileRowViewModel
                 {
                     WorkerId = item.WorkerId,
-                    AccountId = item.Account.AccountId,
+                    AccountId = item.AccountId,
                     WorkerName = item.WorkerDisplayName,
-                    AccountName = item.Account.DisplayName,
+                    AccountName = item.AccountName,
                     SubProfileId = profile.Id,
                     SubProfileName = profile.Name,
                     Balance = current,
@@ -56,9 +74,8 @@ public sealed class BalancesService(
                     TodayResponses = profile.TodayResponses,
                     WorkerOnline = item.WorkerIsOnline,
                     IsLowBalance = current < TopUpSessionRules.LowBalanceThresholdRub,
-                    LastUpdatedAtUtc = item.Account.LastMonitoringAt,
-                    IsStale = item.Account.LastMonitoringAt is null
-                              || item.Account.LastMonitoringAt < DateTime.UtcNow.AddMinutes(-30),
+                    LastUpdatedAtUtc = item.LastMonitoringAtUtc,
+                    IsStale = item.LastMonitoringAtUtc is null,
                     Session = session
                 };
 
@@ -85,6 +102,8 @@ public sealed class BalancesService(
             Sessions = history
                 ? sessions.Skip((page - 1) * pageSize).Take(pageSize).ToArray()
                 : sessions,
+            Workers = workerOptions,
+            SelectedWorkerIds = selectedWorkerIds,
             Pagination = new PaginationViewModel
             {
                 Page = page,
@@ -101,23 +120,6 @@ public sealed class BalancesService(
             SelectableCount = allRows.Count(x => x.IsLowBalance && x.WorkerOnline && x.Session is null),
             OfflineLowBalanceCount = allRows.Count(x => x.IsLowBalance && !x.WorkerOnline && x.Session is null)
         };
-    }
-
-    private static decimal? ResolveBalance(
-        WorkerSubProfileDto profile,
-        IReadOnlyList<SubProfileBalanceDto> balances,
-        int index)
-    {
-        if (profile.Balance is decimal value)
-        {
-            return value;
-        }
-        if (index < balances.Count)
-        {
-            return balances[index].Balance;
-        }
-        return balances.FirstOrDefault(x =>
-            string.Equals(x.SubProfileName, profile.Name, StringComparison.OrdinalIgnoreCase))?.Balance;
     }
 
     private static bool Matches(

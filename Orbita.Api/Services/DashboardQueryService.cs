@@ -829,6 +829,100 @@ public sealed class DashboardQueryService(
                 ct);
     }
 
+    public async Task<IReadOnlyList<OfficeBalanceListItem>> GetOfficeBalancesAsync(
+        OfficeScope scope,
+        Guid? officeFilter = null,
+        CancellationToken ct = default)
+    {
+        return queryCache is null
+            ? await PanelAggregateCache.GetOrCreateAsync(
+                $"office-balances:{scope.ResolveFilter(officeFilter)}",
+                TimeSpan.FromSeconds(10),
+                () => ComputeOfficeBalancesCoreAsync(scope, officeFilter, ct))
+            : await queryCache.GetOrCreateAsync(
+                OrbitaCacheDomain.Dashboard,
+                scope.ResolveFilter(officeFilter),
+                ScopeAudience(scope),
+                new { Kind = "office-balances" },
+                OrbitaCachePolicy.Realtime,
+                token => ComputeOfficeBalancesCoreAsync(scope, officeFilter, token),
+                ct);
+    }
+
+    private async Task<IReadOnlyList<OfficeBalanceListItem>> ComputeOfficeBalancesCoreAsync(
+        OfficeScope scope,
+        Guid? officeFilter,
+        CancellationToken ct)
+    {
+        var nowUtc = DateTime.UtcNow;
+        var workers = await officeScope
+            .ApplyWorkerFilter(db.Workers.AsNoTracking(), scope, officeFilter)
+            .Where(x => x.MachineName != LeadFlowImportWorker.MachineName)
+            .Select(x => new
+            {
+                x.Id,
+                x.DisplayName,
+                OfficeName = x.Office.Name,
+                x.LastSeenAtUtc
+            })
+            .ToListAsync(ct);
+
+        var workerIds = workers.Select(x => x.Id).ToList();
+        if (workerIds.Count == 0)
+        {
+            return [];
+        }
+
+        var accounts = await db.WorkerAccounts
+            .AsNoTracking()
+            .Where(x => workerIds.Contains(x.WorkerId))
+            .Select(x => new
+            {
+                x.WorkerId,
+                x.AccountId,
+                x.DisplayName,
+                x.Status,
+                x.IsEnabledInPanel,
+                x.TotalBalance,
+                x.LastMonitoringAt,
+                x.SubProfilesJson,
+                x.SubProfilesDisabledIdsJson,
+                x.AdsPowerGroupId,
+                x.AdsPowerGroupName
+            })
+            .ToListAsync(ct);
+
+        var workerById = workers.ToDictionary(x => x.Id);
+        return accounts
+            .Select(account =>
+            {
+                var worker = workerById[account.WorkerId];
+                var profiles = SubProfileDeserializer.Deserialize(
+                    account.SubProfilesJson,
+                    account.SubProfilesDisabledIdsJson) ?? [];
+                return new OfficeBalanceListItem(
+                    account.WorkerId,
+                    worker.DisplayName,
+                    worker.OfficeName,
+                    WorkerOnlineRules.IsOnline(
+                        worker.LastSeenAtUtc,
+                        nowUtc,
+                        connectionRegistry.IsConnected(worker.Id)),
+                    account.AccountId,
+                    account.DisplayName,
+                    account.Status,
+                    account.IsEnabledInPanel,
+                    account.TotalBalance,
+                    account.LastMonitoringAt,
+                    profiles,
+                    account.AdsPowerGroupId,
+                    account.AdsPowerGroupName);
+            })
+            .OrderBy(x => x.WorkerDisplayName)
+            .ThenBy(x => x.AccountName)
+            .ToArray();
+    }
+
     private async Task<IReadOnlyList<OfficeAccountListItem>> ComputeOfficeAccountsCoreAsync(
         OfficeScope scope,
         Guid? officeFilter,
