@@ -4811,4 +4811,88 @@ internal static class DesignPreviewData
         var local = createdAtUtc.AddMinutes(-minutesBefore).ToLocalTime();
         return local.ToString("dd MMM HH:mm", CultureInfo.GetCultureInfo("ru-RU"));
     }
+
+    public static AvitoAdListingListResponse GetListings()
+    {
+        var now = DateTime.UtcNow;
+        var items = new List<AvitoAdListingListItem>
+        {
+            new(
+                Guid.Parse("aaaaaaaa-1111-1111-1111-111111111101"),
+                WorkerMoscowId,
+                "Москва-1",
+                Guid.Parse("bbbbbbbb-1111-1111-1111-111111111101"),
+                "Аккаунт Север",
+                "sp-1",
+                "Служба 1",
+                "8302808573",
+                "Логист в офис",
+                "https://www.avito.ru/perm/vakansii/logist_v_ofis_8302808573",
+                "Скрыто: не хватает денег на авансе",
+                now.AddDays(-4),
+                now.AddDays(27),
+                4,
+                27,
+                AvitoAdListingStates.Active,
+                AvitoAdPublicationDateSources.Exact,
+                now.AddHours(-2),
+                now.AddDays(-1),
+                true,
+                null),
+            new(
+                Guid.Parse("aaaaaaaa-1111-1111-1111-111111111102"),
+                WorkerMoscowId,
+                "Москва-1",
+                Guid.Parse("bbbbbbbb-1111-1111-1111-111111111101"),
+                "Аккаунт Север",
+                "sp-1",
+                "Служба 1",
+                "8252186474",
+                "Кладовщик",
+                "https://www.avito.ru/perm/vakansii/avitolog_v_ofis_8252186474",
+                "",
+                now.AddDays(-24),
+                now.AddDays(7),
+                24,
+                7,
+                AvitoAdListingStates.ApproachingExpiry,
+                AvitoAdPublicationDateSources.Exact,
+                now.AddHours(-2),
+                now.AddHours(-6),
+                true,
+                null)
+        };
+
+        var summary = new AvitoAdListingSummary(2, 0, 1, 0, 0);
+        return new AvitoAdListingListResponse(items, summary, items.Count);
+    }
+
+    public static ListingsIndexViewModel BuildListingsIndexViewModel(
+        string? searchQuery,
+        string? tab,
+        int page,
+        int pageSize,
+        string? sort,
+        string? sortDir,
+        IReadOnlyList<Guid>? workerIds = null,
+        IReadOnlyList<Guid>? accountIds = null,
+        IReadOnlyList<string>? subProfileIds = null)
+    {
+        var data = GetListings();
+        return ListingsIndexBuilder.Build(
+            data.Items,
+            data.Summary,
+            searchQuery,
+            tab,
+            page,
+            pageSize,
+            sort,
+            sortDir,
+            workerIds,
+            accountIds,
+            subProfileIds,
+            ResponsesIndexBuilder.BuildWorkerOptions(GetWorkers(null)),
+            [new() { Value = "", Label = "Все аккаунты" }],
+            [new() { Value = "", Label = "Все субпрофили" }]);
+    }
 }

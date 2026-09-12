@@ -176,6 +176,13 @@ public static class OrbitaApiStartupExtensions
                             || (permission.Id is PanelPermissions.CrmBoard or PanelPermissions.CrmTasks
                                 && context.User.HasClaim(PanelPermissions.ClaimType, PanelPermissions.CrmTeam)));
                     }
+                    else if (permission.Id == PanelPermissions.Listings)
+                    {
+                        policy.RequireAssertion(context =>
+                            context.User.HasClaim(PanelPermissions.ClaimType, PanelPermissions.Listings)
+                            || context.User.IsInRole(PanelRoles.Admin)
+                            || context.User.IsInRole(PanelRoles.Operator));
+                    }
                     else
                     {
                         policy.RequireClaim(PanelPermissions.ClaimType, permission.Id);
@@ -302,6 +309,8 @@ public static class OrbitaApiStartupExtensions
         builder.Services.AddScoped<WorkerSnapshotRetentionPruner>();
         builder.Services.AddHostedService<WorkerSnapshotRetentionService>();
         builder.Services.AddScoped<DashboardQueryService>();
+        builder.Services.AddScoped<AvitoAdsSyncService>();
+        builder.Services.AddScoped<AvitoAdsQueryService>();
         builder.Services.AddScoped<OfficeStatisticsQueryService>();
         builder.Services.AddScoped<PanelAuditService>();
         builder.Services.AddScoped<AccessProfileService>();

@@ -740,4 +740,96 @@ internal static class FilterChipsBuilder
 
         return chips;
     }
+
+    public static IReadOnlyList<ActiveFilterChipViewModel> ForListings(
+        string? searchQuery,
+        string? tab,
+        IReadOnlyList<AccountTabViewModel> tabs,
+        IReadOnlyList<Guid> workerIds,
+        IReadOnlyList<EventFilterOptionViewModel> workers,
+        IReadOnlyList<Guid> accountIds,
+        IReadOnlyList<EventFilterOptionViewModel> accounts,
+        IReadOnlyList<string> subProfileIds,
+        IReadOnlyList<EventFilterOptionViewModel> subProfiles,
+        int pageSize)
+    {
+        const string path = "/Listings";
+        var chips = new List<ActiveFilterChipViewModel>();
+        var pageSizeValue = pageSize == ListPageSizeDefaults.Listings ? null : pageSize.ToString();
+        var normalizedTab = string.IsNullOrWhiteSpace(tab) || tab == "active" ? null : tab;
+        workerIds ??= [];
+        accountIds ??= [];
+        subProfileIds ??= [];
+
+        (string Key, string? Value)[] BasePairs(params (string Key, string? Value)[] extra)
+        {
+            var pairs = new List<(string Key, string? Value)>
+            {
+                ("q", searchQuery),
+                ("tab", normalizedTab),
+                ("pageSize", pageSizeValue),
+                ("page", "1")
+            };
+            pairs.AddRange(workerIds.Select(id => ("workerIds", (string?)id.ToString())));
+            pairs.AddRange(accountIds.Select(id => ("accountIds", (string?)id.ToString())));
+            pairs.AddRange(subProfileIds.Select(id => ("subProfileIds", (string?)id)));
+            foreach (var item in extra)
+            {
+                pairs.RemoveAll(p => string.Equals(p.Key, item.Key, StringComparison.OrdinalIgnoreCase));
+                pairs.Add(item);
+            }
+
+            return pairs.ToArray();
+        }
+
+        if (!string.IsNullOrWhiteSpace(searchQuery))
+        {
+            chips.Add(new ActiveFilterChipViewModel
+            {
+                Label = $"Поиск: {searchQuery}",
+                RemoveUrl = BuildUrl(path, BasePairs(("q", null)))
+            });
+        }
+
+        if (!string.IsNullOrWhiteSpace(normalizedTab))
+        {
+            chips.Add(new ActiveFilterChipViewModel
+            {
+                Label = tabs.FirstOrDefault(t => t.Id == normalizedTab)?.Label ?? normalizedTab,
+                RemoveUrl = BuildUrl(path, BasePairs(("tab", null)))
+            });
+        }
+
+        if (workerIds.Count > 0)
+        {
+            var labels = workerIds.Select(id => OptionLabel(workers, id.ToString()) ?? id.ToString()[..8]).ToList();
+            chips.Add(new ActiveFilterChipViewModel
+            {
+                Label = labels.Count == 1 ? $"Воркер: {labels[0]}" : $"Воркеры: {string.Join(", ", labels)}",
+                RemoveUrl = BuildUrl(path, BasePairs().Where(p => p.Key != "workerIds").ToArray())
+            });
+        }
+
+        if (accountIds.Count > 0)
+        {
+            var labels = accountIds.Select(id => OptionLabel(accounts, id.ToString()) ?? id.ToString()[..8]).ToList();
+            chips.Add(new ActiveFilterChipViewModel
+            {
+                Label = labels.Count == 1 ? $"Аккаунт: {labels[0]}" : $"Аккаунты: {string.Join(", ", labels)}",
+                RemoveUrl = BuildUrl(path, BasePairs().Where(p => p.Key != "accountIds").ToArray())
+            });
+        }
+
+        if (subProfileIds.Count > 0)
+        {
+            var labels = subProfileIds.Select(id => OptionLabel(subProfiles, id) ?? id).ToList();
+            chips.Add(new ActiveFilterChipViewModel
+            {
+                Label = labels.Count == 1 ? $"Субпрофиль: {labels[0]}" : $"Субпрофили: {string.Join(", ", labels)}",
+                RemoveUrl = BuildUrl(path, BasePairs().Where(p => p.Key != "subProfileIds").ToArray())
+            });
+        }
+
+        return chips;
+    }
 }

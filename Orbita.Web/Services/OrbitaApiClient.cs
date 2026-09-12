@@ -198,6 +198,42 @@ public sealed class OrbitaApiClient(
         return GetAsync<IReadOnlyList<OfficeBalanceListItem>>(path, ct);
     }
 
+    public Task<AvitoAdListingListResponse?> GetListingsAsync(
+        string? q = null,
+        CancellationToken ct = default,
+        IReadOnlyList<Guid>? workerIds = null,
+        IReadOnlyList<Guid>? accountIds = null,
+        IReadOnlyList<string>? subProfileIds = null)
+    {
+        if (_preview.Enabled)
+        {
+            return Task.FromResult<AvitoAdListingListResponse?>(DesignPreviewData.GetListings());
+        }
+
+        var path = WithOfficeQuery("api/v1/listings");
+        foreach (var id in workerIds ?? [])
+        {
+            path = AppendQuery(path, "workerIds", id.ToString("D"));
+        }
+
+        foreach (var id in accountIds ?? [])
+        {
+            path = AppendQuery(path, "accountIds", id.ToString("D"));
+        }
+
+        foreach (var id in subProfileIds ?? [])
+        {
+            path = AppendQuery(path, "subProfileIds", id);
+        }
+
+        if (!string.IsNullOrWhiteSpace(q))
+        {
+            path = AppendQuery(path, "q", q);
+        }
+
+        return GetAsync<AvitoAdListingListResponse>(path, ct);
+    }
+
     public Task<IReadOnlyList<WorkerEventListItem>?> GetEventsAsync(
         Guid? workerId = null,
         int limit = 100,

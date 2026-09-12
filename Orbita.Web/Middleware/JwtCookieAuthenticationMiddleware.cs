@@ -82,7 +82,7 @@ public sealed class JwtCookieAuthenticationMiddleware(RequestDelegate next)
     private static bool HasPolicyAccess(ClaimsPrincipal user, string policy) =>
         policy switch
         {
-            PanelPermissions.Balances =>
+            PanelPermissions.Balances or PanelPermissions.Listings =>
                 user.IsInRole(PanelRoles.Admin) || user.IsInRole(PanelRoles.Operator),
             "OfficeStaff" =>
                 user.IsInRole(PanelRoles.Admin) || user.IsInRole(PanelRoles.OfficeLead),

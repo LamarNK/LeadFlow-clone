@@ -55,6 +55,15 @@ public sealed class PanelPermissionsTests
     }
 
     [Fact]
+    public void DefaultForRole_OperatorIncludesListings()
+    {
+        var permissions = PanelPermissions.DefaultForRole(PanelRoles.Operator);
+
+        Assert.Contains(PanelPermissions.Listings, permissions);
+        Assert.Contains(PanelPermissions.Balances, permissions);
+    }
+
+    [Fact]
     public void DefaultForRole_AdminIncludesCrmTeam()
     {
         var permissions = PanelPermissions.DefaultForRole(PanelRoles.Admin);
@@ -72,8 +81,12 @@ public sealed class PanelPermissionsTests
         Assert.Contains(PanelPermissions.CrmBoard, permissions);
         Assert.Contains(PanelPermissions.CrmTeam, permissions);
         Assert.DoesNotContain(PanelPermissions.Administration, permissions);
+        Assert.DoesNotContain(PanelPermissions.Balances, permissions);
+        Assert.DoesNotContain(PanelPermissions.Listings, permissions);
         Assert.Equal(
-            PanelPermissions.All.Count(x => x.Id != PanelPermissions.Administration),
+            PanelPermissions.All.Count(x => x.Id is not PanelPermissions.Administration
+                and not PanelPermissions.Balances
+                and not PanelPermissions.Listings),
             permissions.Count);
     }
 

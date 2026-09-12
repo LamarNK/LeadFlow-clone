@@ -644,6 +644,25 @@ public sealed class PanelUserService(
             claims = await users.GetClaimsAsync(user);
         }
 
+        if (!claims.Any(claim => claim.Type == PanelPermissions.PermissionUpgradeClaimType
+                                 && claim.Value == PanelPermissions.ListingsUpgrade))
+        {
+            var permissions = claims
+                .Where(claim => claim.Type == PanelPermissions.ClaimType)
+                .Select(claim => claim.Value)
+                .ToArray();
+            var roles = await users.GetRolesAsync(user);
+            if (PanelPermissions.NeedsListingsUpgrade(roles.FirstOrDefault(), permissions))
+            {
+                await users.AddClaimAsync(user, new Claim(PanelPermissions.ClaimType, PanelPermissions.Listings));
+            }
+
+            await users.AddClaimAsync(
+                user,
+                new Claim(PanelPermissions.PermissionUpgradeClaimType, PanelPermissions.ListingsUpgrade));
+            claims = await users.GetClaimsAsync(user);
+        }
+
         return PanelPermissions.Normalize(
             claims.Where(claim => claim.Type == PanelPermissions.ClaimType).Select(claim => claim.Value));
     }

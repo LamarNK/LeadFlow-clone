@@ -14,7 +14,8 @@ public enum PanelChangeKind
     /// <summary>Read models backing an individual worker page.</summary>
     WorkerDetails,
     /// <summary>Office-scoped reference/settings data.</summary>
-    Reference
+    Reference,
+    Listings
 }
 
 public sealed record PanelChangeNotification(

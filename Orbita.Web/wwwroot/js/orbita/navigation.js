@@ -237,6 +237,8 @@
             scripts = ['/js/orbita-accounts.js'];
         } else if (key === 'balances') {
             scripts = ['/js/orbita-balances.js'];
+        } else if (key === 'listings') {
+            scripts = ['/js/orbita-listings.js'];
         } else if (key === 'statistics') {
             scripts = ['/lib/chart.js/dist/chart.umd.js', '/js/orbita-statistics.js'];
         } else if (key === 'events' || key === 'errors') {
@@ -470,6 +472,11 @@
             && typeof window.OrbitaCrmBoard.init === 'function') {
             window.OrbitaCrmBoard.init();
         }
+        if (pageKey && pageKey.toLowerCase() === 'listings'
+            && window.OrbitaListings
+            && typeof window.OrbitaListings.init === 'function') {
+            window.OrbitaListings.init();
+        }
         return pageKey;
     }
 
@@ -495,6 +502,7 @@
                 keys.events = true;
             }
             if (kind === 'Responses') keys.responses = true;
+            if (kind === 'Listings') keys.listings = true;
             if (kind === 'Statistics') keys.statistics = true;
             if (kind === 'Crm') keys.crm = true;
         });

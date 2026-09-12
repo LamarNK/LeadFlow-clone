@@ -10,6 +10,7 @@ public static class ListPageSizeDefaults
     public const int Responses = 10;
     public const int Events = 10;
     public const int Errors = 10;
+    public const int Listings = 10;
 
     public static int Normalize(int? pageSize, int defaultSize)
     {

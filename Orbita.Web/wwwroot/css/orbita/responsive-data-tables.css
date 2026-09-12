@@ -348,7 +348,8 @@
     .responses-filters-row,
     .events-filters-row,
     .errors-filters-row,
-    .accounts-filters-row {
+    .accounts-filters-row,
+    .listings-filters-row {
         grid-template-columns: 1fr;
     }
 

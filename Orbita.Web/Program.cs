@@ -57,6 +57,7 @@ builder.Services.AddScoped<IErrorsService, ErrorsService>();
 builder.Services.AddScoped<IOfficeContext, OfficeContext>();
 builder.Services.AddScoped<IAccountsService, AccountsService>();
 builder.Services.AddScoped<IBalancesService, BalancesService>();
+builder.Services.AddScoped<IListingsService, ListingsService>();
 builder.Services.AddScoped<IStatisticsService, StatisticsService>();
 builder.Services.AddScoped<NavBadgesService>();
 builder.Services.AddScoped<GlobalSearchService>();
@@ -81,7 +82,7 @@ builder.Services.AddAuthorization(options =>
     {
         options.AddPolicy(permission.Id, policy =>
         {
-            if (permission.Id == PanelPermissions.Balances)
+            if (permission.Id is PanelPermissions.Balances or PanelPermissions.Listings)
             {
                 policy.RequireRole(PanelRoles.Admin, PanelRoles.Operator);
             }

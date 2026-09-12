@@ -1,0 +1,43 @@
+@model ListingsIndexViewModel
+<div class="orbita-filters-fields accounts-filters-row listings-filters-row" id="listingsFilterPanel" data-orbita-collapsible-filters hidden>
+    <div class="orbita-filters-field accounts-filter-field">
+        <span class="orbita-filters-label accounts-filter-label">Воркер</span>
+        <partial name="_StatisticsMultiSelect" model="@(new StatisticsMultiSelectViewModel {
+            FieldName = "workerIds",
+            Label = "Воркеры",
+            AllLabel = "Все воркеры",
+            SelectedIds = Model.WorkerIds,
+            Options = Model.Workers.Where(opt => !string.IsNullOrWhiteSpace(opt.Value)).ToList()
+        })" />
+    </div>
+    <div class="orbita-filters-field accounts-filter-field">
+        <span class="orbita-filters-label accounts-filter-label">Аккаунт</span>
+        <partial name="_StatisticsMultiSelect" model="@(new StatisticsMultiSelectViewModel {
+            FieldName = "accountIds",
+            Label = "Аккаунты",
+            AllLabel = "Все аккаунты",
+            SelectedIds = Model.AccountIds,
+            Options = Model.Accounts.Where(opt => !string.IsNullOrWhiteSpace(opt.Value)).ToList()
+        })" />
+    </div>
+    <div class="orbita-filters-field accounts-filter-field">
+        <span class="orbita-filters-label accounts-filter-label">Субпрофиль</span>
+        <partial name="_StatisticsMultiSelect" model="@(new StatisticsMultiSelectViewModel {
+            FieldName = "subProfileIds",
+            Label = "Субпрофили",
+            AllLabel = "Все субпрофили",
+            SelectedValues = Model.SubProfileIds,
+            Options = Model.SubProfiles.Where(opt => !string.IsNullOrWhiteSpace(opt.Value)).ToList()
+        })" />
+    </div>
+    <label class="orbita-filters-field accounts-filter-field">
+        <span class="orbita-filters-label accounts-filter-label">Категория</span>
+        <select name="tab" class="orbita-filters-select accounts-select" aria-label="Категория объявлений">
+            @foreach (var tab in Model.Tabs)
+            {
+                <option value="@tab.Id" selected="@(tab.Id == Model.ActiveTab)">@tab.Label</option>
+            }
+        </select>
+    </label>
+    <partial name="_PageSizeFilterField" model="Model.Pagination.PageSize" />
+</div>

@@ -1,0 +1,167 @@
+@model ListingsIndexViewModel
+@using Microsoft.AspNetCore.Routing
+@{
+    ViewData["Title"] = "Объявления";
+    var pagination = Model.Pagination;
+    var listingsSortRoute = new RouteValueDictionary
+    {
+        ["q"] = Model.SearchQuery,
+        ["tab"] = Model.ActiveTab,
+        ["pageSize"] = pagination.PageSize,
+        ["sort"] = Model.Sort.Column,
+        ["dir"] = Model.Sort.Dir
+    };
+    if (Model.WorkerIds.Count == 1)
+    {
+        listingsSortRoute["workerId"] = Model.WorkerIds[0];
+    }
+    else if (Model.WorkerIds.Count > 1)
+    {
+        listingsSortRoute["workerIds"] = Model.WorkerIds;
+    }
+
+    if (Model.AccountIds.Count == 1)
+    {
+        listingsSortRoute["accountId"] = Model.AccountIds[0];
+    }
+    else if (Model.AccountIds.Count > 1)
+    {
+        listingsSortRoute["accountIds"] = Model.AccountIds;
+    }
+
+    if (Model.SubProfileIds.Count == 1)
+    {
+        listingsSortRoute["subProfileId"] = Model.SubProfileIds[0];
+    }
+    else if (Model.SubProfileIds.Count > 1)
+    {
+        listingsSortRoute["subProfileIds"] = Model.SubProfileIds;
+    }
+
+    var snapshotRoute = new RouteValueDictionary(listingsSortRoute) { ["page"] = pagination.Page };
+    var snapshotUrl = Url.Action("Snapshot", "Listings", snapshotRoute)!;
+}
+<partial name="_PageHeader" model="Model.Header" />
+<div class="orbita-main accounts-page listings-page"
+     data-orbita-live
+     data-orbita-live-page="listings"
+     data-orbita-snapshot="@snapshotUrl">
+    <div class="kpi-row accounts-kpi-row">
+        @{ var kpiIdx = 0; }
+        @foreach (var kpi in Model.KpiCards)
+        {
+            <partial name="_KpiCard" model="@(new KpiCardPartialViewModel { Card = kpi, Index = kpiIdx, Layout = KpiCardLayout.StatDelta, ExtraClass = " kpi-card--stat" })" />
+            kpiIdx++;
+        }
+    </div>
+
+    <nav class="accounts-tabs" aria-label="Фильтр объявлений">
+        @foreach (var tab in Model.Tabs)
+        {
+            var isActive = tab.Id == Model.ActiveTab;
+            <a class="accounts-tab @(isActive ? "accounts-tab--active" : "")"
+               href="@Url.Action("Index", new RouteValueDictionary(listingsSortRoute) { ["tab"] = tab.Id, ["page"] = 1 })"
+               aria-current="@(isActive ? "page" : null)">@tab.Label</a>
+        }
+    </nav>
+
+    @{
+        var listingsFormAction = Url.Action("Index", "Listings");
+        var listingsFilterBar = new ListFiltersBarViewModel
+        {
+            FormAction = listingsFormAction!,
+            FormClass = "orbita-filters-form accounts-filters",
+            SearchName = "q",
+            SearchPlaceholder = "Поиск по названию, ID, аккаунту или воркеру",
+            SearchValue = Model.SearchQuery,
+            FilterPanelId = "listingsFilterPanel",
+            FilterToggleClass = "orbita-filters-toggle accounts-filter-btn",
+            HasActiveFilters = Model.HasActiveFilters,
+            ActiveFilterCount = Model.ActiveFilterCount,
+            ActiveFilterChips = Model.ActiveFilterChips,
+            ResetUrl = listingsFormAction!,
+            FilterFieldsPartialName = "_ListingsFilterFields",
+            FilterFieldsModel = Model,
+            ExtraFormContent = $"<input type=\"hidden\" name=\"sort\" value=\"{Model.Sort.Column}\" /><input type=\"hidden\" name=\"dir\" value=\"{Model.Sort.Dir}\" />"
+        };
+    }
+    <partial name="_ListFiltersBar" model="listingsFilterBar" />
+
+    <div class="card card--accounts-table">
+        <div class="card-body card-body-table accounts-table-wrap">
+            @if (pagination.TotalItems == 0)
+            {
+                <partial name="_TableEmptyState" model="@(new TableEmptyStateViewModel
+                {
+                    IconClass = "fa-solid fa-bullhorn",
+                    Title = "Объявления не найдены",
+                    Description = "Измените фильтр или дождитесь проверки списка воркером.",
+                    CtaLabel = "Показать активные",
+                    CtaUrl = Url.Action("Index", new { tab = "active" })
+                })" />
+            }
+            else
+            {
+                <table class="data-table data-table--cards listings-table">
+                    <thead>
+                        <tr>
+                            <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Воркер", Column = "worker", Sort = Model.Sort, Controller = "Listings", Action = "Index", RouteValues = listingsSortRoute })" />
+                            <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Аккаунт", Column = "account", Sort = Model.Sort, Controller = "Listings", Action = "Index", RouteValues = listingsSortRoute })" />
+                            <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Субпрофиль", Column = "subprofile", Sort = Model.Sort, Controller = "Listings", Action = "Index", RouteValues = listingsSortRoute })" />
+                            <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Название", Column = "title", Sort = Model.Sort, Controller = "Listings", Action = "Index", RouteValues = listingsSortRoute })" />
+                            <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "ID Avito", Column = "id", Sort = Model.Sort, Controller = "Listings", Action = "Index", RouteValues = listingsSortRoute })" />
+                            <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Статус Avito", Column = "status", Sort = Model.Sort, Controller = "Listings", Action = "Index", RouteValues = listingsSortRoute })" />
+                            <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Публикация", Column = "published", Sort = Model.Sort, Controller = "Listings", Action = "Index", RouteValues = listingsSortRoute })" />
+                            <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Контрольный срок", Column = "expires", Sort = Model.Sort, Controller = "Listings", Action = "Index", RouteValues = listingsSortRoute })" />
+                            <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Возраст", Column = "age", Sort = Model.Sort, Controller = "Listings", Action = "Index", RouteValues = listingsSortRoute, Numeric = true })" />
+                            <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Осталось", Column = "remaining", Sort = Model.Sort, Controller = "Listings", Action = "Index", RouteValues = listingsSortRoute, Numeric = true })" />
+                            <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Состояние", Column = "state", Sort = Model.Sort, Controller = "Listings", Action = "Index", RouteValues = listingsSortRoute })" />
+                            <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Источник даты", Column = "source", Sort = Model.Sort, Controller = "Listings", Action = "Index", RouteValues = listingsSortRoute })" />
+                            <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Обнаружено", Column = "seen", Sort = Model.Sort, Controller = "Listings", Action = "Index", RouteValues = listingsSortRoute })" />
+                            <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Детальная проверка", Column = "detail", Sort = Model.Sort, Controller = "Listings", Action = "Index", RouteValues = listingsSortRoute })" />
+                        </tr>
+                    </thead>
+                    <tbody data-orbita-live-body="listings">
+                    @foreach (var row in Model.Rows)
+                    {
+                        <tr class="listings-row listings-row--@row.StateTone" data-listing-id="@row.Id">
+                            <td data-label="Воркер" class="cell-link">
+                                <a href="@row.WorkerUrl">@row.WorkerName</a>
+                            </td>
+                            <td data-label="Аккаунт" class="cell-link">
+                                <a href="@row.AccountUrl">@row.AccountName</a>
+                            </td>
+                            <td data-label="Субпрофиль">@row.SubProfileName</td>
+                            <td data-label="Название">
+                                @if (!string.IsNullOrWhiteSpace(row.Url))
+                                {
+                                    <a class="listings-title-link" href="@row.Url" target="_blank" rel="noopener noreferrer">@row.Title</a>
+                                }
+                                else
+                                {
+                                    <strong>@row.Title</strong>
+                                }
+                            </td>
+                            <td data-label="ID Avito"><code>@row.AvitoItemId</code></td>
+                            <td data-label="Статус Avito">@row.StatusText</td>
+                            <td data-label="Публикация"><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(row.PublishedAtUtc, "datetime"))" /></td>
+                            <td data-label="Контрольный срок"><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(row.ExpiresAtUtc, "datetime"))" /></td>
+                            <td data-label="Возраст" class="cell-num">@(row.AgeDays?.ToString() ?? "—")</td>
+                            <td data-label="Осталось" class="cell-num">@(row.RemainingDays?.ToString() ?? "—")</td>
+                            <td data-label="Состояние"><span class="listing-state listing-state--@row.StateTone">@row.StateLabel</span></td>
+                            <td data-label="Источник даты">@row.PublicationDateSourceLabel</td>
+                            <td data-label="Обнаружено"><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(row.LastSeenAtUtc, "short"))" /></td>
+                            <td data-label="Детальная проверка"><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(row.DetailCheckedAtUtc, "short"))" /></td>
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            }
+        </div>
+    </div>
+
+    <partial name="_Pagination" model="@(new PaginationPartialViewModel { Pagination = pagination, Controller = "Listings", RouteValues = listingsSortRoute })" />
+</div>
+@section Scripts {
+    <script src="~/js/orbita-listings.js" asp-append-version="true"></script>
+}

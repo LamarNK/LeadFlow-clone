@@ -67,6 +67,12 @@ public sealed class AccessProfileService(
             if (await UpgradeCrmTeamAccessAsync(role, claims))
             {
                 upgraded = true;
+                claims = await roles.GetClaimsAsync(role);
+            }
+
+            if (await UpgradeListingsAccessAsync(role, claims))
+            {
+                upgraded = true;
             }
 
             if (upgraded)
@@ -171,6 +177,30 @@ public sealed class AccessProfileService(
             role,
             new Claim(PanelPermissions.PermissionUpgradeClaimType, PanelPermissions.CrmTeamUpgrade));
         return addTeam;
+    }
+
+    private async Task<bool> UpgradeListingsAccessAsync(IdentityRole role, IEnumerable<Claim> claims)
+    {
+        if (claims.Any(claim => claim.Type == PanelPermissions.PermissionUpgradeClaimType
+                                && claim.Value == PanelPermissions.ListingsUpgrade))
+        {
+            return false;
+        }
+
+        var permissions = claims
+            .Where(claim => claim.Type == PanelPermissions.ClaimType)
+            .Select(claim => claim.Value)
+            .ToArray();
+        var addListings = PanelPermissions.NeedsListingsUpgrade(role.Name, permissions);
+        if (addListings)
+        {
+            await roles.AddClaimAsync(role, new Claim(PanelPermissions.ClaimType, PanelPermissions.Listings));
+        }
+
+        await roles.AddClaimAsync(
+            role,
+            new Claim(PanelPermissions.PermissionUpgradeClaimType, PanelPermissions.ListingsUpgrade));
+        return addListings;
     }
 
     public async Task<IReadOnlyList<AccessProfileDto>> GetAllAsync(CancellationToken ct = default)

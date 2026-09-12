@@ -10,6 +10,7 @@ public static class PanelPermissions
     public const string Workers = "workers";
     public const string Accounts = "accounts";
     public const string Balances = "balances";
+    public const string Listings = "listings";
     public const string Statistics = "statistics";
     public const string Responses = "responses";
     public const string Events = "events";
@@ -31,6 +32,7 @@ public static class PanelPermissions
     public const string CrmTeamUpgrade = "crm-team-v1";
     /// <summary>Strips team/analytics from Manager role so desk-only defaults stick after upgrades.</summary>
     public const string ManagerDeskOnlyUpgrade = "manager-desk-v1";
+    public const string ListingsUpgrade = "listings-v1";
 
     public static readonly IReadOnlyList<PanelPermissionDefinition> All =
     [
@@ -38,6 +40,7 @@ public static class PanelPermissions
         new(Workers, "Воркеры", "Просмотр и управление воркерами."),
         new(Accounts, "Аккаунты", "Просмотр аккаунтов и их состояния."),
         new(Balances, "Балансы", "Контроль балансов и пополнение аккаунтов Avito."),
+        new(Listings, "Объявления", "Контроль сроков размещения объявлений Avito."),
         new(Statistics, "Статистика", "Просмотр аналитики по откликам."),
         new(Responses, "Отклики", "Работа с откликами и их доставкой."),
         new(Events, "События", "Просмотр и обработка событий."),
@@ -71,7 +74,7 @@ public static class PanelPermissions
         {
             PanelRoles.Admin => All.Select(x => x.Id).ToArray(),
             PanelRoles.OfficeLead => All
-                .Where(x => x.Id is not Administration and not Balances)
+                .Where(x => x.Id is not Administration and not Balances and not Listings)
                 .Select(x => x.Id)
                 .ToArray(),
             PanelRoles.SeniorManager =>
@@ -80,7 +83,7 @@ public static class PanelPermissions
             ],
             // Manager: only own CRM desk work — no team board / analytics by default.
             PanelRoles.Manager => [CrmBoard, CrmTasks, Settings],
-            PanelRoles.Operator => [Dashboard, Workers, Accounts, Balances, Statistics, Responses, Events, Settings],
+            PanelRoles.Operator => [Dashboard, Workers, Accounts, Balances, Listings, Statistics, Responses, Events, Settings],
             _ => [Dashboard, Workers, Accounts, Statistics, Responses, Events, Settings]
         };
 
@@ -95,6 +98,18 @@ public static class PanelPermissions
     /// Pre-permission gate was Administration + CRM board + CRM tasks.
     /// Grant the explicit tab to users who already had that combination.
     /// </summary>
+    public static bool NeedsListingsUpgrade(string? role, IEnumerable<string>? permissions)
+    {
+        var current = permissions?.ToHashSet(StringComparer.Ordinal) ?? [];
+        if (current.Contains(Listings))
+        {
+            return false;
+        }
+
+        var normalized = PanelRoles.Normalize(role);
+        return normalized is PanelRoles.Admin or PanelRoles.Operator;
+    }
+
     public static bool NeedsCrmTeamUpgrade(IEnumerable<string>? permissions)
     {
         var current = permissions?.ToHashSet(StringComparer.Ordinal) ?? [];
