@@ -22,6 +22,10 @@
               data-kpi-count="@card.CountValue.ToString(System.Globalization.CultureInfo.InvariantCulture)"
               data-kpi-suffix="@(card.ValueSuffix ?? "")">0@(card.ValueSuffix)</span>
         <span class="kpi-delta-pill kpi-delta-@card.DeltaTone">@card.Delta</span>
+        @if (!string.IsNullOrWhiteSpace(card.Rate))
+        {
+            <span class="kpi-rate" data-kpi-rate title="Средняя скорость за выбранный период">@card.Rate</span>
+        }
     </div>
     <div class="kpi-sparkline-wrap@(hasSegments ? " kpi-sparkline-wrap--segments" : "")">
         @if (hasSegments)

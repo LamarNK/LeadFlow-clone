@@ -225,6 +225,7 @@ public sealed class DashboardService(
         var sentShare = periodStats.Responses == 0
             ? "0%"
             : $"{periodStats.Sent * 100.0 / periodStats.Responses:0.#}%";
+        var aggregatedAtUtc = summary.AggregatedAtUtc;
 
         return
         [
@@ -237,6 +238,7 @@ public sealed class DashboardService(
                 CountValue = periodStats.Responses,
                 Delta = "За период",
                 DeltaTone = "neutral",
+                Rate = DashboardRateFormatter.Format(periodStats.Responses, period, aggregatedAtUtc, "откл."),
                 IconClass = "fa-regular fa-comments",
                 IconTone = "blue",
                 Sparkline = SparklineGenerator.FromSeries(responsesSeries),
@@ -251,6 +253,7 @@ public sealed class DashboardService(
                 CountValue = periodStats.UniqueResponses,
                 Delta = "За период",
                 DeltaTone = "neutral",
+                Rate = DashboardRateFormatter.Format(periodStats.UniqueResponses, period, aggregatedAtUtc, "уник."),
                 IconClass = "fa-solid fa-user-check",
                 IconTone = "purple",
                 Sparkline = SparklineGenerator.FromSeries(uniqueResponsesSeries),
@@ -265,6 +268,7 @@ public sealed class DashboardService(
                 CountValue = periodStats.Sent,
                 Delta = sentShare,
                 DeltaTone = periodStats.Sent > 0 ? "good" : "neutral",
+                Rate = DashboardRateFormatter.Format(periodStats.Sent, period, aggregatedAtUtc, "отпр."),
                 IconClass = "fa-solid fa-paper-plane",
                 IconTone = "green",
                 Sparkline = SparklineGenerator.FromSeries(sentSeries),
@@ -279,6 +283,7 @@ public sealed class DashboardService(
                 CountValue = periodStats.Duplicates,
                 Delta = "За период",
                 DeltaTone = "neutral",
+                Rate = DashboardRateFormatter.Format(periodStats.Duplicates, period, aggregatedAtUtc, "дуб."),
                 IconClass = "fa-regular fa-clone",
                 IconTone = "green",
                 Sparkline = SparklineGenerator.FromSeries(duplicatesSeries),
@@ -293,6 +298,7 @@ public sealed class DashboardService(
                 CountValue = periodStats.Errors,
                 Delta = "За период",
                 DeltaTone = "neutral",
+                Rate = DashboardRateFormatter.Format(periodStats.Errors, period, aggregatedAtUtc, "ош."),
                 IconClass = "fa-solid fa-triangle-exclamation",
                 IconTone = "orange",
                 Sparkline = SparklineGenerator.FromSeries(errorsSeries),

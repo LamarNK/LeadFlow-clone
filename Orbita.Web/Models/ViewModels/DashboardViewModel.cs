@@ -41,6 +41,7 @@ public sealed class DashboardKpiCardViewModel
     public string? ValueSuffix { get; init; }
     public string Delta { get; init; } = string.Empty;
     public string DeltaTone { get; init; } = "neutral";
+    public string? Rate { get; init; }
     public string IconClass { get; init; } = "fa-solid fa-circle";
     public string IconTone { get; init; } = "blue";
     public IReadOnlyList<int> Sparkline { get; init; } = [];

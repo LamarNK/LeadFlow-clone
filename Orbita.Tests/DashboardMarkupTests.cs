@@ -17,6 +17,7 @@ public sealed class DashboardMarkupTests
         var card = Assert.Single(model.KpiCards, card => card.Key == "unique");
         Assert.Equal("Уникальных откликов", card.Label);
         Assert.Equal(978, card.CountValue);
+        Assert.Contains("уник./ч", card.Rate);
         Assert.Contains($"status={Uri.EscapeDataString(ResponseStatusFilterValues.DefaultSelection)}", card.Href);
     }
 

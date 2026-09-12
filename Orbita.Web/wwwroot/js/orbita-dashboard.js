@@ -1276,6 +1276,12 @@
                 deltaEl.className = 'kpi-delta-pill kpi-delta-' + (card.deltaTone || 'neutral');
             }
 
+            var rateEl = el.querySelector('[data-kpi-rate]');
+            if (rateEl) {
+                rateEl.textContent = card.rate || '';
+                rateEl.hidden = !card.rate;
+            }
+
             var segmentChanged = false;
             if (Array.isArray(card.segments) && card.segments.length > 0) {
                 var sparkCfg = payload.sparklines && payload.sparklines[index];

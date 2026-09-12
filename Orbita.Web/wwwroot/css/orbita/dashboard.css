@@ -350,6 +350,15 @@ a.kpi-card:focus-visible {
     background: transparent;
 }
 
+.kpi-card--dashboard .kpi-rate {
+    color: #b3bac6;
+    font-size: 9px;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+    line-height: 1.2;
+    white-space: nowrap;
+}
+
 .kpi-card--dashboard .kpi-sparkline-wrap {
     grid-column: 2;
     grid-row: 1 / span 2;
@@ -456,7 +465,8 @@ a.kpi-card:focus-visible {
 }
 
 [data-theme="dark"] .kpi-card--dashboard .kpi-card-label,
-[data-theme="dark"] .kpi-card--dashboard .kpi-delta-pill {
+[data-theme="dark"] .kpi-card--dashboard .kpi-delta-pill,
+[data-theme="dark"] .kpi-card--dashboard .kpi-rate {
     color: var(--text-secondary);
 }
 
