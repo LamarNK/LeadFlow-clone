@@ -48,6 +48,32 @@ public sealed class AvitoAdListingParserTests
     }
 
     [Fact]
+    public void ParseProfilePage_ReadsExactExpiryFromActiveCard_WithoutOpeningDetailPage()
+    {
+        const string html = """
+            <div data-marker="item-snippet/8285468940">
+              <a data-marker="view-link" href="/volginskiy/vakansii/mehanik_8285468940">
+                <span>Механик вахта</span>
+              </a>
+              <span class="styles-status-name-zJgof">Активно</span>&nbsp;ещё 13 дней — до 26 сен, 10:23
+              <div role-marker="offer/days-published">17 дней на Авито</div>
+            </div>
+            """;
+        var captured = new DateTime(2026, 9, 13, 0, 0, 0, DateTimeKind.Utc);
+
+        var card = Assert.Single(_parser.ToListCards(_parser.ParseProfilePage(html, capturedAtUtc: captured)));
+        var expiresLocal = Assert.IsType<DateTime>(card.ExpiresAtUtc);
+        expiresLocal = AvitoAdBusinessTime.ToLocal(expiresLocal);
+
+        Assert.Equal(2026, expiresLocal.Year);
+        Assert.Equal(9, expiresLocal.Month);
+        Assert.Equal(26, expiresLocal.Day);
+        Assert.Equal(10, expiresLocal.Hour);
+        Assert.Equal(23, expiresLocal.Minute);
+        Assert.Null(card.ExpiryParseError);
+    }
+
+    [Fact]
     public void ExtractListingUrl_UsesViewLinkEvenWhenCandidateAndChatLinksExist()
     {
         const string html = """
