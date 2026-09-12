@@ -3,6 +3,7 @@ using LeadFlow.Core.Models;
 using LeadFlow.Core.Services.AdsPower;
 using LeadFlow.Core.Services.Avito;
 using LeadFlow.Core.Services.LocalChrome;
+using Orbita.Contracts;
 
 namespace LeadFlow.Core.Services.Worker;
 
@@ -81,45 +82,33 @@ public sealed class WorkerAvitoAdsMonitor(
     }
 
     public static bool IsListDue(
-        IReadOnlyList<AvitoAdListingRecord> existing,
+        IReadOnlyList<WorkerAvitoAdListScheduleDto> schedules,
         IReadOnlyList<AvitoSubProfile> enabledSubProfiles,
-        DateTime utcNow,
-        AvitoAdListingScheduleOptions options)
+        DateTime utcNow)
     {
-        if (existing.Count == 0)
-        {
-            return true;
-        }
-
         if (enabledSubProfiles.Count == 0)
         {
-            var last = existing
-                .Select(x => x.LastSuccessfulListCheckAtUtc)
-                .Where(x => x.HasValue)
-                .Select(x => x!.Value)
-                .DefaultIfEmpty()
-                .Max();
-            return last == default
-                || AvitoAdListingScheduler.ShouldCheckList(last, utcNow, options.ListCheckInterval);
+            return IsSubProfileDue(schedules, string.Empty, utcNow);
         }
 
-        foreach (var sub in enabledSubProfiles)
-        {
-            var last = existing
-                .Where(x => string.Equals(x.AvitoSubProfileId, sub.Id, StringComparison.Ordinal))
-                .Select(x => x.LastSuccessfulListCheckAtUtc)
-                .Where(x => x.HasValue)
-                .Select(x => x!.Value)
-                .DefaultIfEmpty()
-                .Max();
-            if (last == default
-                || AvitoAdListingScheduler.ShouldCheckList(last, utcNow, options.ListCheckInterval))
-            {
-                return true;
-            }
-        }
+        return enabledSubProfiles.Any(sub => IsSubProfileDue(schedules, sub.Id, utcNow));
+    }
 
-        return false;
+    public static bool IsSubProfileDue(
+        IReadOnlyList<WorkerAvitoAdListScheduleDto> schedules,
+        string? avitoSubProfileId,
+        DateTime utcNow)
+    {
+        var subId = avitoSubProfileId ?? string.Empty;
+        var next = schedules
+            .Where(x => string.Equals(x.AvitoSubProfileId, subId, StringComparison.Ordinal))
+            .Select(x => x.NextCheckAtUtc)
+            .Where(x => x.HasValue)
+            .Select(x => x!.Value)
+            .DefaultIfEmpty()
+            .Max();
+
+        return next == default || next <= utcNow;
     }
 
     private async Task<bool> ProcessAccountAsync(Guid workerId, AvitoAccount account, CancellationToken cancellationToken)
@@ -128,11 +117,14 @@ public sealed class WorkerAvitoAdsMonitor(
             .GetAccountListingsAsync(workerId, account.Id, cancellationToken)
             .ConfigureAwait(false))
             .ToList();
+        var schedules = await catalog
+            .GetAccountSchedulesAsync(workerId, account.Id, cancellationToken)
+            .ConfigureAwait(false);
         var enabledSubs = SubProfileEnabledFilter
             .GetEnabled(account.SubProfiles, account.DisabledSubProfileIds)
             .ToList();
         var utcNow = DateTime.UtcNow;
-        if (!IsListDue(existing, enabledSubs, utcNow, DefaultSchedule))
+        if (!IsListDue(schedules, enabledSubs, utcNow))
         {
             return false;
         }
@@ -171,7 +163,8 @@ public sealed class WorkerAvitoAdsMonitor(
                 return true;
             }
 
-            foreach (var sub in enabledSubs)
+            var processedAny = false;
+            foreach (var sub in enabledSubs.Where(sub => IsSubProfileDue(schedules, sub.Id, utcNow)))
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 if (monitoringService.IsCaptchaHold)
@@ -202,9 +195,10 @@ public sealed class WorkerAvitoAdsMonitor(
                         existing,
                         cancellationToken)
                     .ConfigureAwait(false);
+                processedAny = true;
             }
 
-            return true;
+            return processedAny;
         }
         finally
         {
@@ -258,6 +252,7 @@ public sealed class WorkerAvitoAdsMonitor(
         }
 
         var utcNow = DateTime.UtcNow;
+        var nextListCheckAtUtc = utcNow.Add(DefaultSchedule.ListCheckInterval);
         var merged = AvitoAdListingSyncApplier
             .ApplyListSnapshot(
                 existing,
@@ -275,7 +270,8 @@ public sealed class WorkerAvitoAdsMonitor(
                 subProfileId,
                 merged,
                 capture.Complete,
-                DateTime.UtcNow,
+                utcNow,
+                nextListCheckAtUtc,
                 cancellationToken)
             .ConfigureAwait(false);
 

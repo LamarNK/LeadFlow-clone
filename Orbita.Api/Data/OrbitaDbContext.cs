@@ -16,6 +16,7 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
     public DbSet<WorkerSnapshotEntity> WorkerSnapshots => Set<WorkerSnapshotEntity>();
     public DbSet<WorkerAccountEntity> WorkerAccounts => Set<WorkerAccountEntity>();
     public DbSet<WorkerAvitoAdEntity> WorkerAvitoAds => Set<WorkerAvitoAdEntity>();
+    public DbSet<WorkerAvitoAdListScheduleEntity> WorkerAvitoAdListSchedules => Set<WorkerAvitoAdListScheduleEntity>();
     public DbSet<WorkerEventEntity> WorkerEvents => Set<WorkerEventEntity>();
     public DbSet<WorkerDiagnosticAttachmentEntity> WorkerDiagnosticAttachments => Set<WorkerDiagnosticAttachmentEntity>();
     public DbSet<MonitoringCycleRunEntity> MonitoringCycleRuns => Set<MonitoringCycleRunEntity>();
@@ -276,6 +277,19 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
             entity.Property(x => x.PublicationDateSource).HasMaxLength(32);
             entity.Property(x => x.State).HasMaxLength(32);
             entity.Property(x => x.LastParseError).HasMaxLength(500);
+            entity.HasOne(x => x.Worker)
+                .WithMany()
+                .HasForeignKey(x => x.WorkerId)
+                .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<WorkerAvitoAdListScheduleEntity>(entity =>
+        {
+            entity.ToTable("WorkerAvitoAdListSchedules");
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => new { x.WorkerId, x.AccountId, x.AvitoSubProfileId }).IsUnique();
+            entity.HasIndex(x => x.NextCheckAtUtc);
+            entity.Property(x => x.AvitoSubProfileId).HasMaxLength(128);
             entity.HasOne(x => x.Worker)
                 .WithMany()
                 .HasForeignKey(x => x.WorkerId)

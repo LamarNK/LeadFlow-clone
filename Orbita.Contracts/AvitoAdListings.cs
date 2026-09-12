@@ -64,9 +64,19 @@ public sealed record WorkerAvitoAdSyncRequest(
     string AvitoSubProfileId,
     bool ListComplete,
     DateTime CapturedAtUtc,
-    IReadOnlyList<WorkerAvitoAdSyncItemDto> Items);
+    IReadOnlyList<WorkerAvitoAdSyncItemDto> Items,
+    DateTime? NextListCheckAtUtc = null);
 
 public sealed record WorkerAvitoAdSyncResponse(int Upserted, int Deactivated);
+
+/// <summary>Персистентное расписание обхода активных объявлений одного субпрофиля.</summary>
+public sealed record WorkerAvitoAdListScheduleDto(
+    Guid WorkerId,
+    Guid AccountId,
+    string AvitoSubProfileId,
+    DateTime? LastSuccessfulCheckAtUtc,
+    DateTime? NextCheckAtUtc,
+    DateTime UpdatedAtUtc);
 
 public sealed record AvitoAdListingListItem(
     Guid Id,

@@ -69,6 +69,51 @@ public sealed class AvitoAdsSyncServiceTests
         Assert.Contains(PanelChangeKind.Listings, notifier.Kinds);
     }
 
+    [Fact]
+    public async Task Sync_PersistsNextListCheckForWorkerRestart()
+    {
+        await using var db = await CreateDbAsync();
+        var notifier = new FakeNotifier();
+        var service = new AvitoAdsSyncService(db, notifier);
+        var workerId = Guid.NewGuid();
+        var accountId = Guid.NewGuid();
+        var now = new DateTime(2026, 9, 13, 9, 0, 0, DateTimeKind.Utc);
+        var next = now.AddHours(12);
+        var officeId = Guid.NewGuid();
+        db.Offices.Add(new OfficeEntity
+        {
+            Id = officeId,
+            Name = "Office",
+            RegistrationSecretHash = "h",
+            IsEnabled = true
+        });
+        db.Workers.Add(new WorkerEntity
+        {
+            Id = workerId,
+            OfficeId = officeId,
+            DisplayName = "W",
+            MachineName = "m",
+            ApiKeyHash = "k"
+        });
+        await db.SaveChangesAsync();
+
+        var request = new WorkerAvitoAdSyncRequest(
+            workerId,
+            accountId,
+            "sp-1",
+            true,
+            now,
+            [],
+            next);
+
+        await service.SaveSubProfileSyncAsync(workerId, request, CancellationToken.None);
+        var schedule = Assert.Single(await service.GetAccountSchedulesAsync(workerId, accountId, CancellationToken.None));
+
+        Assert.Equal("sp-1", schedule.AvitoSubProfileId);
+        Assert.Equal(now, schedule.LastSuccessfulCheckAtUtc);
+        Assert.Equal(next, schedule.NextCheckAtUtc);
+    }
+
     private static async Task<OrbitaDbContext> CreateDbAsync()
     {
         var connection = new SqliteConnection("Data Source=:memory:");

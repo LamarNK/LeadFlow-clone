@@ -38,6 +38,12 @@ public sealed class OrbitaAvitoAdListingCatalog(OrbitaApiClient api) : IAvitoAdL
         }).ToList();
     }
 
+    public Task<IReadOnlyList<WorkerAvitoAdListScheduleDto>> GetAccountSchedulesAsync(
+        Guid workerId,
+        Guid accountId,
+        CancellationToken cancellationToken) =>
+        api.GetAvitoAdSchedulesAsync(accountId, cancellationToken);
+
     public async Task SaveSubProfileSyncAsync(
         Guid workerId,
         Guid accountId,
@@ -45,6 +51,7 @@ public sealed class OrbitaAvitoAdListingCatalog(OrbitaApiClient api) : IAvitoAdL
         IReadOnlyList<AvitoAdListingRecord> records,
         bool listComplete,
         DateTime capturedAtUtc,
+        DateTime nextListCheckAtUtc,
         CancellationToken cancellationToken)
     {
         var scoped = records
@@ -74,7 +81,8 @@ public sealed class OrbitaAvitoAdListingCatalog(OrbitaApiClient api) : IAvitoAdL
                     avitoSubProfileId ?? string.Empty,
                     listComplete,
                     capturedAtUtc,
-                    scoped),
+                    scoped,
+                    nextListCheckAtUtc),
                 cancellationToken)
             .ConfigureAwait(false);
     }

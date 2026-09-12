@@ -1,5 +1,7 @@
 using LeadFlow.Core.Models;
 using LeadFlow.Core.Services.Avito;
+using LeadFlow.Core.Services.Worker;
+using WorkerAvitoAdListScheduleDto = Orbita.Contracts.WorkerAvitoAdListScheduleDto;
 using Xunit;
 
 namespace LeadFlow.Tests;
@@ -22,6 +24,46 @@ public sealed class AvitoAdListingSchedulerTests
     {
         var card = new AvitoAdListCard { AvitoItemId = "1", Title = "A", Url = "/x", AgeDays = 1 };
         Assert.True(AvitoAdListingScheduler.ShouldOpenDetail(null, card, DateTime.UtcNow, Options));
+    }
+
+    [Fact]
+    public void PersistedFutureNextCheck_DoesNotRunAfterWorkerRestart()
+    {
+        var now = new DateTime(2026, 9, 13, 9, 0, 0, DateTimeKind.Utc);
+        IReadOnlyList<WorkerAvitoAdListScheduleDto> schedules =
+        [
+            new WorkerAvitoAdListScheduleDto(
+                Guid.NewGuid(),
+                Guid.NewGuid(),
+                "sub-1",
+                now.AddHours(-1),
+                now.AddHours(11),
+                now.AddHours(-1))
+        ];
+        var subProfiles = new List<AvitoSubProfile> { new() { Id = "sub-1", Name = "Подпрофиль" } };
+
+        Assert.False(WorkerAvitoAdsMonitor.IsListDue(schedules, subProfiles, now));
+    }
+
+    [Fact]
+    public void MissingOrElapsedNextCheck_RunsListMonitor()
+    {
+        var now = new DateTime(2026, 9, 13, 9, 0, 0, DateTimeKind.Utc);
+        var subProfiles = new List<AvitoSubProfile> { new() { Id = "sub-1", Name = "Подпрофиль" } };
+
+        Assert.True(WorkerAvitoAdsMonitor.IsListDue([], subProfiles, now));
+
+        IReadOnlyList<WorkerAvitoAdListScheduleDto> elapsed =
+        [
+            new WorkerAvitoAdListScheduleDto(
+                Guid.NewGuid(),
+                Guid.NewGuid(),
+                "sub-1",
+                now.AddHours(-12),
+                now.AddSeconds(-1),
+                now.AddHours(-12))
+        ];
+        Assert.True(WorkerAvitoAdsMonitor.IsListDue(elapsed, subProfiles, now));
     }
 
     [Fact]

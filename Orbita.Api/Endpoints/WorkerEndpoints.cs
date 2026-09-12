@@ -101,6 +101,20 @@ public static class WorkerEndpoints
             return Results.Ok(await ads.GetAccountListingsAsync(workerId, accountId, ct));
         }).RequireAuthorization("Worker");
 
+        workers.MapGet("/avito-ads/schedule", async (
+            Guid accountId,
+            AvitoAdsSyncService ads,
+            ClaimsPrincipal user,
+            CancellationToken ct) =>
+        {
+            if (!TryGetWorkerId(user, out var workerId))
+            {
+                return Results.Forbid();
+            }
+
+            return Results.Ok(await ads.GetAccountSchedulesAsync(workerId, accountId, ct));
+        }).RequireAuthorization("Worker");
+
         workers.MapPost("/avito-ads/sync", async (
             WorkerAvitoAdSyncRequest request,
             AvitoAdsSyncService ads,

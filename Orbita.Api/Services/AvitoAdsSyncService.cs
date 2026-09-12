@@ -18,6 +18,19 @@ public sealed class AvitoAdsSyncService(OrbitaDbContext db, IPanelRealtimeNotifi
         return rows.Select(ToDto).ToList();
     }
 
+    public async Task<IReadOnlyList<WorkerAvitoAdListScheduleDto>> GetAccountSchedulesAsync(
+        Guid workerId,
+        Guid accountId,
+        CancellationToken ct)
+    {
+        var rows = await db.WorkerAvitoAdListSchedules
+            .AsNoTracking()
+            .Where(x => x.WorkerId == workerId && x.AccountId == accountId)
+            .ToListAsync(ct);
+
+        return rows.Select(ToScheduleDto).ToList();
+    }
+
     public async Task<WorkerAvitoAdSyncResponse> SaveSubProfileSyncAsync(
         Guid workerId,
         WorkerAvitoAdSyncRequest request,
@@ -78,6 +91,30 @@ public sealed class AvitoAdsSyncService(OrbitaDbContext db, IPanelRealtimeNotifi
                 row.State = AvitoAdListingStates.NotActive;
                 row.UpdatedAtUtc = now;
             }
+
+            var schedule = await db.WorkerAvitoAdListSchedules
+                .SingleOrDefaultAsync(
+                    x => x.WorkerId == workerId
+                         && x.AccountId == request.AccountId
+                         && x.AvitoSubProfileId == subId,
+                    ct);
+            if (schedule is null)
+            {
+                schedule = new WorkerAvitoAdListScheduleEntity
+                {
+                    Id = Guid.NewGuid(),
+                    WorkerId = workerId,
+                    AccountId = request.AccountId,
+                    AvitoSubProfileId = subId
+                };
+                db.WorkerAvitoAdListSchedules.Add(schedule);
+            }
+
+            schedule.LastSuccessfulCheckAtUtc = now;
+            schedule.NextCheckAtUtc = request.NextListCheckAtUtc is DateTime next
+                ? DateTime.SpecifyKind(next, DateTimeKind.Utc)
+                : null;
+            schedule.UpdatedAtUtc = now;
         }
 
         await db.SaveChangesAsync(ct);
@@ -137,5 +174,14 @@ public sealed class AvitoAdsSyncService(OrbitaDbContext db, IPanelRealtimeNotifi
             string.IsNullOrWhiteSpace(row.State) ? AvitoAdListingStates.UnknownPublicationDate : row.State,
             row.LastParseError,
             row.CreatedAtUtc,
+            row.UpdatedAtUtc);
+
+    private static WorkerAvitoAdListScheduleDto ToScheduleDto(WorkerAvitoAdListScheduleEntity row) =>
+        new(
+            row.WorkerId,
+            row.AccountId,
+            row.AvitoSubProfileId,
+            row.LastSuccessfulCheckAtUtc,
+            row.NextCheckAtUtc,
             row.UpdatedAtUtc);
 }

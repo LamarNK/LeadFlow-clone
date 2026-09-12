@@ -426,6 +426,23 @@ public sealed class WorkerAvitoAdEntity
     public WorkerEntity Worker { get; set; } = null!;
 }
 
+/// <summary>
+/// Расписание лёгкого обхода списка объявлений. Отдельно от строк объявлений,
+/// поэтому сохраняется и для пустого субпрофиля.
+/// </summary>
+public sealed class WorkerAvitoAdListScheduleEntity
+{
+    public Guid Id { get; set; }
+    public Guid WorkerId { get; set; }
+    public Guid AccountId { get; set; }
+    public string AvitoSubProfileId { get; set; } = string.Empty;
+    public DateTime? LastSuccessfulCheckAtUtc { get; set; }
+    public DateTime? NextCheckAtUtc { get; set; }
+    public DateTime UpdatedAtUtc { get; set; }
+
+    public WorkerEntity Worker { get; set; } = null!;
+}
+
 public sealed class WorkerEventEntity
 {
     public Guid Id { get; set; }
