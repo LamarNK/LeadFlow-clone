@@ -15,6 +15,7 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
     public DbSet<WorkerSettingsTemplateEntity> WorkerSettingsTemplates => Set<WorkerSettingsTemplateEntity>();
     public DbSet<WorkerSnapshotEntity> WorkerSnapshots => Set<WorkerSnapshotEntity>();
     public DbSet<WorkerAccountEntity> WorkerAccounts => Set<WorkerAccountEntity>();
+    public DbSet<WorkerAvitoAdEntity> WorkerAvitoAds => Set<WorkerAvitoAdEntity>();
     public DbSet<WorkerEventEntity> WorkerEvents => Set<WorkerEventEntity>();
     public DbSet<WorkerDiagnosticAttachmentEntity> WorkerDiagnosticAttachments => Set<WorkerDiagnosticAttachmentEntity>();
     public DbSet<MonitoringCycleRunEntity> MonitoringCycleRuns => Set<MonitoringCycleRunEntity>();
@@ -258,6 +259,27 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
             entity.Property(x => x.LocalTrafficBlockedAnalytics).IsRequired().HasDefaultValue(0);
             entity.Property(x => x.LocalTrafficBlockedPrefetch).IsRequired().HasDefaultValue(0);
             entity.HasOne(x => x.Worker).WithMany(x => x.Accounts).HasForeignKey(x => x.WorkerId);
+        });
+
+        modelBuilder.Entity<WorkerAvitoAdEntity>(entity =>
+        {
+            entity.ToTable("WorkerAvitoAds");
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => new { x.WorkerId, x.AccountId, x.AvitoSubProfileId, x.AvitoItemId }).IsUnique();
+            entity.HasIndex(x => new { x.WorkerId, x.AccountId, x.IsActive });
+            entity.HasIndex(x => new { x.State, x.ExpiresAtUtc });
+            entity.Property(x => x.AvitoSubProfileId).HasMaxLength(128);
+            entity.Property(x => x.AvitoItemId).HasMaxLength(32);
+            entity.Property(x => x.Title).HasMaxLength(500);
+            entity.Property(x => x.Url).HasMaxLength(1024);
+            entity.Property(x => x.StatusText).HasMaxLength(500);
+            entity.Property(x => x.PublicationDateSource).HasMaxLength(32);
+            entity.Property(x => x.State).HasMaxLength(32);
+            entity.Property(x => x.LastParseError).HasMaxLength(500);
+            entity.HasOne(x => x.Worker)
+                .WithMany()
+                .HasForeignKey(x => x.WorkerId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<CandidatePersonEntity>(entity =>

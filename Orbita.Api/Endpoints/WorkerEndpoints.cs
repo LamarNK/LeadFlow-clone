@@ -87,6 +87,34 @@ public static class WorkerEndpoints
             return await telemetry.SaveSnapshotAsync(request, ct) ? Results.Ok() : Results.NotFound();
         }).RequireAuthorization("Worker");
 
+        workers.MapGet("/avito-ads", async (
+            Guid accountId,
+            AvitoAdsSyncService ads,
+            ClaimsPrincipal user,
+            CancellationToken ct) =>
+        {
+            if (!TryGetWorkerId(user, out var workerId))
+            {
+                return Results.Forbid();
+            }
+
+            return Results.Ok(await ads.GetAccountListingsAsync(workerId, accountId, ct));
+        }).RequireAuthorization("Worker");
+
+        workers.MapPost("/avito-ads/sync", async (
+            WorkerAvitoAdSyncRequest request,
+            AvitoAdsSyncService ads,
+            ClaimsPrincipal user,
+            CancellationToken ct) =>
+        {
+            if (!TryGetWorkerId(user, out var workerId) || workerId != request.WorkerId)
+            {
+                return Results.Forbid();
+            }
+
+            return Results.Ok(await ads.SaveSubProfileSyncAsync(workerId, request, ct));
+        }).RequireAuthorization("Worker");
+
         workers.MapGet("/config", async (WorkerConfigService configService, ClaimsPrincipal user, CancellationToken ct) =>
         {
             if (!TryGetWorkerId(user, out var workerId))

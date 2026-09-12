@@ -176,6 +176,42 @@ public static class DashboardEndpoints
 
             return Results.Ok(await query.GetOfficeBalancesAsync(scope, officeId, ct));
         });
+        var listingsRead = app.MapGroup("/api/v1").RequireAuthorization(PanelPermissions.Listings);
+        listingsRead.MapGet("/listings", async (
+            Guid? officeId,
+            Guid? workerId,
+            Guid[]? workerIds,
+            Guid? accountId,
+            Guid[]? accountIds,
+            string? subProfileId,
+            string[]? subProfileIds,
+            string? state,
+            bool? isActive,
+            string? q,
+            AvitoAdsQueryService listings,
+            OfficeScopeService officeScope,
+            ClaimsPrincipal principal,
+            CancellationToken ct) =>
+        {
+            var scope = await officeScope.ResolveAsync(principal, ct);
+            if (!scope.HasAccess)
+            {
+                return Results.Forbid();
+            }
+
+            return Results.Ok(await listings.GetListingsAsync(
+                scope,
+                workerId,
+                accountId,
+                subProfileId,
+                state,
+                isActive,
+                q,
+                ct,
+                workerIds,
+                accountIds,
+                subProfileIds));
+        });
         accountRead.MapGet("/workers/{id:guid}/accounts", async (
             Guid id,
             DashboardQueryService query,
