@@ -9,6 +9,31 @@ public sealed class BalanceSnapshotHelperTests
     private static readonly Guid AccountId = Guid.Parse("cccccccc-cccc-cccc-cccc-cccccccccccc");
 
     [Fact]
+    public void CountLowBalanceSubProfiles_IgnoresAccountTotalWithoutSubprofileAdvance()
+    {
+        var balance = new WorkerBalanceDto(AccountId, "acc-1", 20m, []);
+
+        Assert.Equal(0, BalanceSnapshotHelper.CountLowBalanceSubProfiles(balance));
+    }
+
+    [Fact]
+    public void CountLowBalanceSubProfiles_SkipsExcludedSubProfiles()
+    {
+        var balance = new WorkerBalanceDto(
+            AccountId,
+            "acc-1",
+            100m,
+            [
+                new SubProfileBalanceDto("Первый", 40m, SubProfileId: "one"),
+                new SubProfileBalanceDto("Второй", 50m, SubProfileId: "two")
+            ]);
+
+        Assert.Equal(1, BalanceSnapshotHelper.CountLowBalanceSubProfiles(
+            balance,
+            subProfile => subProfile.SubProfileId == "one"));
+    }
+
+    [Fact]
     public void HasMeaningfulBalanceData_ReturnsFalse_ForPlaceholderBalance()
     {
         var balance = new WorkerBalanceDto(

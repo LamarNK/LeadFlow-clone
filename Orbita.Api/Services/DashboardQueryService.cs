@@ -1831,6 +1831,7 @@ public sealed class DashboardQueryService(
         var accountCounts = BuildAccountCounts(
             accountRows.Select(x => (x.WorkerId, x.Status, x.IsEnabledInPanel)));
         var latestSnapshotBalances = await LoadLatestSnapshotBalancesAsync(workerIds, ct).ConfigureAwait(false);
+        var openTopUps = await LoadOpenTopUpKeysAsync(workerIds, ct).ConfigureAwait(false);
         var lowBalanceAccountCounts = accountRows
             .Select(x =>
             {
@@ -1844,7 +1845,8 @@ public sealed class DashboardQueryService(
                     Count = ResolveLowBalanceSubProfileCount(
                         snapshotBalance,
                         x.TotalBalance,
-                        x.SubProfilesJson)
+                        x.SubProfilesJson,
+                        subProfile => HasOpenTopUp(openTopUps, x.WorkerId, x.AccountId, subProfile))
                 };
             })
             .GroupBy(x => x.WorkerId)
@@ -1869,27 +1871,88 @@ public sealed class DashboardQueryService(
     private static int ResolveLowBalanceSubProfileCount(
         WorkerBalanceDto? snapshotBalance,
         decimal persistedTotalBalance,
-        string? persistedSubProfilesJson)
+        string? persistedSubProfilesJson,
+        Func<SubProfileBalanceDto, bool> isExcluded)
     {
         if (snapshotBalance is null)
         {
             return BalanceSnapshotHelper.CountLowBalancePersistedSubProfiles(
                 persistedTotalBalance,
-                persistedSubProfilesJson);
+                persistedSubProfilesJson,
+                isExcluded);
         }
 
         if (BalanceSnapshotHelper.HasKnownSubProfileAdvance(snapshotBalance))
         {
-            return BalanceSnapshotHelper.CountLowBalanceSubProfiles(snapshotBalance);
+            return BalanceSnapshotHelper.CountLowBalanceSubProfiles(snapshotBalance, isExcluded);
         }
 
         var persistedCount = BalanceSnapshotHelper.CountLowBalancePersistedSubProfiles(
             persistedTotalBalance,
-            persistedSubProfilesJson);
+            persistedSubProfilesJson,
+            isExcluded);
         return persistedCount > 0
             ? persistedCount
-            : BalanceSnapshotHelper.CountLowBalanceSubProfiles(snapshotBalance);
+            : BalanceSnapshotHelper.CountLowBalanceSubProfiles(snapshotBalance, isExcluded);
     }
+
+    private async Task<IReadOnlyList<OpenTopUpKey>> LoadOpenTopUpKeysAsync(
+        IReadOnlyList<Guid> workerIds,
+        CancellationToken ct)
+    {
+        if (workerIds.Count == 0)
+        {
+            return [];
+        }
+
+        return await db.TopUpSessions.AsNoTracking()
+            .Where(x => workerIds.Contains(x.WorkerId)
+                        && (x.Status == TopUpSessionStatuses.Requested
+                            || x.Status == TopUpSessionStatuses.Started
+                            || x.Status == TopUpSessionStatuses.PaymentClaimed
+                            || x.Status == TopUpSessionStatuses.QrReady
+                            || x.Status == TopUpSessionStatuses.AwaitingBalance
+                            || x.Status == TopUpSessionStatuses.VerificationRequired))
+            .Select(x => new OpenTopUpKey(x.WorkerId, x.AccountId, x.SubProfileId, x.SubProfileName))
+            .ToListAsync(ct)
+            .ConfigureAwait(false);
+    }
+
+    private static bool HasOpenTopUp(
+        IReadOnlyList<OpenTopUpKey> openTopUps,
+        Guid workerId,
+        Guid accountId,
+        SubProfileBalanceDto subProfile)
+    {
+        foreach (var session in openTopUps)
+        {
+            if (session.WorkerId != workerId || session.AccountId != accountId)
+            {
+                continue;
+            }
+
+            if (!string.IsNullOrWhiteSpace(subProfile.SubProfileId)
+                && string.Equals(session.SubProfileId, subProfile.SubProfileId, StringComparison.Ordinal))
+            {
+                return true;
+            }
+
+            if (string.IsNullOrWhiteSpace(subProfile.SubProfileId)
+                && !string.IsNullOrWhiteSpace(subProfile.SubProfileName)
+                && string.Equals(session.SubProfileName, subProfile.SubProfileName, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private readonly record struct OpenTopUpKey(
+        Guid WorkerId,
+        Guid AccountId,
+        string SubProfileId,
+        string SubProfileName);
 
     private async Task<Dictionary<Guid, Dictionary<Guid, WorkerBalanceDto>>> LoadLatestSnapshotBalancesAsync(
         IReadOnlyList<Guid> workerIds,

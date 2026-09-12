@@ -29,6 +29,13 @@ public static class TopUpSessionStatuses
         status is Requested or Started or PaymentClaimed or QrReady;
 
     /// <summary>
+    /// Операция ещё не закрыта: строка не должна висеть на «Требуют пополнения»
+    /// и воркер не должен подсвечиваться на главной из‑за неё.
+    /// </summary>
+    public static bool IsOpenOnLowBalanceTab(string? status) =>
+        IsActive(status) || status is AwaitingBalance or VerificationRequired;
+
+    /// <summary>
     /// Разрешённые переходы статусов (только вперёд). Отмена и «оплачено» выставляет
     /// панель из активных состояний; worker может завершить сессию статусами failed/expired.
     /// </summary>

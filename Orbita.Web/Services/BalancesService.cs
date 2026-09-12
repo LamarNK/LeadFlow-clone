@@ -127,12 +127,7 @@ public sealed class BalancesService(
     }
 
     private static bool IsOpenSession(string? status) =>
-        status is TopUpSessionStatuses.Requested
-            or TopUpSessionStatuses.Started
-            or TopUpSessionStatuses.PaymentClaimed
-            or TopUpSessionStatuses.QrReady
-            or TopUpSessionStatuses.AwaitingBalance
-            or TopUpSessionStatuses.VerificationRequired;
+        TopUpSessionStatuses.IsOpenOnLowBalanceTab(status);
 
     private static int CountCompletedToday(
         IReadOnlyList<TopUpSessionDto> sessions,

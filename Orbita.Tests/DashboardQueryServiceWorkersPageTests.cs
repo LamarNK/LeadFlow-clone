@@ -335,10 +335,10 @@ public sealed class DashboardQueryServiceWorkersPageTests
         SeedWorker(db, newestNormal, "m-normal-newest", now.AddMinutes(-2));
         SeedWorker(db, plainNormal, "n-normal", now.AddMinutes(-3));
         // Low-balance accounts push their workers to the top even without responses.
-        SeedAccount(db, newestLow, "acc-a", totalBalance: 20m);
-        SeedAccount(db, newestLow, "acc-a2", totalBalance: 30m);
-        SeedAccount(db, olderLow, "acc-b", totalBalance: 50m);
-        SeedAccount(db, plainNormal, "acc-c", totalBalance: 5000m);
+        SeedAccount(db, newestLow, "acc-a", totalBalance: 20m, subProfilesJson: """[{"Id":"a","Name":"A","Balance":20}]""");
+        SeedAccount(db, newestLow, "acc-a2", totalBalance: 30m, subProfilesJson: """[{"Id":"a2","Name":"A2","Balance":30}]""");
+        SeedAccount(db, olderLow, "acc-b", totalBalance: 50m, subProfilesJson: """[{"Id":"b","Name":"B","Balance":50}]""");
+        SeedAccount(db, plainNormal, "acc-c", totalBalance: 5000m, subProfilesJson: """[{"Id":"c","Name":"C","Balance":5000}]""");
         await db.SaveChangesAsync();
 
         var page = await CreateService(db).GetWorkersPageAsync(
@@ -505,10 +505,10 @@ public sealed class DashboardQueryServiceWorkersPageTests
         var worker = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbb41");
         SeedWorker(db, worker, "worker", now.AddMinutes(-1));
         // Threshold is 150 ₽; 149 and 100 are low, 150 and 500 are not.
-        SeedAccount(db, worker, "low-1", totalBalance: 100m);
-        SeedAccount(db, worker, "low-2", totalBalance: 149.99m);
-        SeedAccount(db, worker, "border", totalBalance: 150m);
-        SeedAccount(db, worker, "ok", totalBalance: 500m);
+        SeedAccount(db, worker, "low-1", totalBalance: 100m, subProfilesJson: """[{"Id":"one","Name":"One","Balance":100}]""");
+        SeedAccount(db, worker, "low-2", totalBalance: 149.99m, subProfilesJson: """[{"Id":"two","Name":"Two","Balance":149.99}]""");
+        SeedAccount(db, worker, "border", totalBalance: 150m, subProfilesJson: """[{"Id":"three","Name":"Three","Balance":150}]""");
+        SeedAccount(db, worker, "ok", totalBalance: 500m, subProfilesJson: """[{"Id":"four","Name":"Four","Balance":500}]""");
         await db.SaveChangesAsync();
 
         var page = await CreateService(db).GetWorkersPageAsync(
@@ -536,6 +536,53 @@ public sealed class DashboardQueryServiceWorkersPageTests
             "known-zero",
             totalBalance: 0m,
             subProfilesJson: """[{"Id":"sp-1","Name":"Основной","Balance":0,"WalletBalance":0}]""");
+        await db.SaveChangesAsync();
+
+        var page = await CreateService(db).GetWorkersPageAsync(
+            OfficeScope.ForOffice(OfficeId), OfficeId, page: 1, pageSize: 25);
+
+        Assert.Equal(1, Assert.Single(page.Items).LowBalanceAccountCount);
+    }
+
+    [Fact]
+    public async Task GetWorkersPageAsync_ExcludesOpenTopUpSessionFromLowBalanceCount()
+    {
+        DashboardQueryService.ClearCacheForTests();
+        await using var db = CreateDb();
+        var now = DateTime.UtcNow;
+        SeedOffice(db, now);
+        var worker = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbb44");
+        SeedWorker(db, worker, "worker", now.AddMinutes(-1));
+        var openAccount = SeedAccount(
+            db,
+            worker,
+            "open",
+            totalBalance: 40m,
+            subProfilesJson: """[{"Id":"open","Name":"Открытый","Balance":40}]""");
+        SeedAccount(
+            db,
+            worker,
+            "free",
+            totalBalance: 50m,
+            subProfilesJson: """[{"Id":"free","Name":"Свободный","Balance":50}]""");
+        db.TopUpSessions.Add(new TopUpSessionEntity
+        {
+            Id = Guid.NewGuid(),
+            WorkerId = worker,
+            AccountId = openAccount,
+            AccountName = "open",
+            SubProfileId = "open",
+            SubProfileName = "Открытый",
+            OfficeId = OfficeId,
+            OperatorUserId = "op1",
+            OperatorDisplayName = "Operator",
+            Status = TopUpSessionStatuses.AwaitingBalance,
+            CurrentBalance = 40m,
+            TargetBalance = 300m,
+            RequestedAmount = 260m,
+            CreatedAtUtc = now,
+            ExpiresAtUtc = now.AddHours(2)
+        });
         await db.SaveChangesAsync();
 
         var page = await CreateService(db).GetWorkersPageAsync(

@@ -80,30 +80,19 @@ internal static class BalanceSnapshotHelper
             SubProfilesJson = subProfilesJson ?? "[]"
         }) is not null;
 
-    public static int CountLowBalanceSubProfiles(WorkerBalanceDto? balance)
+    public static int CountLowBalanceSubProfiles(
+        WorkerBalanceDto? balance,
+        Func<SubProfileBalanceDto, bool>? isExcluded = null)
     {
         if (balance is null || !HasMeaningfulBalanceData(balance))
         {
             return 0;
         }
 
-        var subProfilesWithKnownAdvance = balance.SubProfiles
-            .Where(static subProfile => subProfile.Balance.HasValue)
-            .ToList();
-
-        if (subProfilesWithKnownAdvance.Count > 0)
-        {
-            return subProfilesWithKnownAdvance.Count(
-                static subProfile => subProfile.Balance < BalanceDisplayRules.WorkerDetailsLowBalanceThresholdRub);
-        }
-
-        // Older accounts may have no subprofile telemetry at all. Retain the
-        // account-level signal for those records, but never infer an advance
-        // balance from wallet-only subprofile data.
-        return balance.SubProfiles.Count == 0
-               && balance.TotalBalance < BalanceDisplayRules.WorkerDetailsLowBalanceThresholdRub
-            ? 1
-            : 0;
+        return balance.SubProfiles.Count(subProfile =>
+            subProfile.Balance is decimal current
+            && current < BalanceDisplayRules.WorkerDetailsLowBalanceThresholdRub
+            && isExcluded?.Invoke(subProfile) != true);
     }
 
     public static bool HasKnownSubProfileAdvance(WorkerBalanceDto? balance) =>
@@ -111,12 +100,13 @@ internal static class BalanceSnapshotHelper
 
     public static int CountLowBalancePersistedSubProfiles(
         decimal totalBalance,
-        string? subProfilesJson) =>
+        string? subProfilesJson,
+        Func<SubProfileBalanceDto, bool>? isExcluded = null) =>
         CountLowBalanceSubProfiles(FromWorkerAccount(new WorkerAccountEntity
         {
             TotalBalance = totalBalance,
             SubProfilesJson = subProfilesJson ?? "[]"
-        }));
+        }), isExcluded);
 
     public static IReadOnlyList<WorkerBalanceDto> MergeWithPersisted(
         IReadOnlyList<WorkerBalanceDto> incoming,
