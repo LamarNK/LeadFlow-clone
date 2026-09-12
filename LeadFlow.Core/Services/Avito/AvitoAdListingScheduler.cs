@@ -73,6 +73,22 @@ public static class AvitoAdListingScheduler
         DateTime utcNow,
         AvitoAdListingScheduleOptions options)
     {
+        return PlanDetailCheckQueue(records, cardsById, utcNow, options)
+            .Take(Math.Max(0, options.MaxDetailPagesPerRun))
+            .ToList();
+    }
+
+    /// <summary>
+    /// Полная упорядоченная очередь объявлений, которым нужна детальная проверка.
+    /// В отличие от <see cref="PlanDetailChecks"/>, лимит страниц здесь не применяется:
+    /// вызывающая сторона использует её для прозрачного журналирования ожидания в очереди.
+    /// </summary>
+    public static IReadOnlyList<AvitoAdListingRecord> PlanDetailCheckQueue(
+        IReadOnlyList<AvitoAdListingRecord> records,
+        IReadOnlyDictionary<string, AvitoAdListCard> cardsById,
+        DateTime utcNow,
+        AvitoAdListingScheduleOptions options)
+    {
         var ranked = new List<(int Priority, AvitoAdListingRecord Record)>();
         foreach (var record in records)
         {
@@ -102,7 +118,6 @@ public static class AvitoAdListingScheduler
         return ranked
             .OrderBy(x => x.Priority)
             .ThenBy(x => x.Record.DetailCheckedAtUtc ?? DateTime.MinValue)
-            .Take(Math.Max(0, options.MaxDetailPagesPerRun))
             .Select(x => x.Record)
             .ToList();
     }

@@ -78,6 +78,34 @@ public sealed class AvitoAdListingSchedulerTests
     }
 
     [Fact]
+    public void DetailCheckQueue_ReturnsEntriesBeyondPerRunLimit_ForPendingDiagnostics()
+    {
+        var now = DateTime.UtcNow;
+        var records = Enumerable.Range(1, 3)
+            .Select(index => new AvitoAdListingRecord
+            {
+                AvitoItemId = index.ToString(),
+                IsActive = true,
+                State = AvitoAdListingStates.UnknownPublicationDate
+            })
+            .ToList();
+        var cards = records.ToDictionary(
+            record => record.AvitoItemId,
+            record => new AvitoAdListCard
+            {
+                AvitoItemId = record.AvitoItemId,
+                Url = $"https://www.avito.ru/item/{record.AvitoItemId}"
+            });
+
+        var queue = AvitoAdListingScheduler.PlanDetailCheckQueue(records, cards, now, Options);
+        var plan = AvitoAdListingScheduler.PlanDetailChecks(records, cards, now, Options);
+
+        Assert.Equal(3, queue.Count);
+        Assert.Equal(2, plan.Count);
+        Assert.Equal(["1", "2", "3"], queue.Select(x => x.AvitoItemId));
+    }
+
+    [Fact]
     public void UnsupportedLayout_MustNotBeTreatedAsSuccessfulEmptyList()
     {
         Assert.False(AvitoProVacancyLayout.IsSupported(AvitoProVacancyLayout.UnsupportedProfileLayout));
