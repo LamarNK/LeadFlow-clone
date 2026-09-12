@@ -78,34 +78,6 @@ public sealed class AvitoAdListingSchedulerTests
     }
 
     [Fact]
-    public void DetailCheckQueue_ReturnsEntriesBeyondPerRunLimit_ForPendingDiagnostics()
-    {
-        var now = DateTime.UtcNow;
-        var records = Enumerable.Range(1, 3)
-            .Select(index => new AvitoAdListingRecord
-            {
-                AvitoItemId = index.ToString(),
-                IsActive = true,
-                State = AvitoAdListingStates.UnknownPublicationDate
-            })
-            .ToList();
-        var cards = records.ToDictionary(
-            record => record.AvitoItemId,
-            record => new AvitoAdListCard
-            {
-                AvitoItemId = record.AvitoItemId,
-                Url = $"https://www.avito.ru/item/{record.AvitoItemId}"
-            });
-
-        var queue = AvitoAdListingScheduler.PlanDetailCheckQueue(records, cards, now, Options);
-        var plan = AvitoAdListingScheduler.PlanDetailChecks(records, cards, now, Options);
-
-        Assert.Equal(3, queue.Count);
-        Assert.Equal(2, plan.Count);
-        Assert.Equal(["1", "2", "3"], queue.Select(x => x.AvitoItemId));
-    }
-
-    [Fact]
     public void UnsupportedLayout_MustNotBeTreatedAsSuccessfulEmptyList()
     {
         Assert.False(AvitoProVacancyLayout.IsSupported(AvitoProVacancyLayout.UnsupportedProfileLayout));
@@ -180,5 +152,40 @@ public sealed class AvitoAdListingSchedulerTests
         var active = Assert.Single(afterReturn);
         Assert.True(active.IsActive);
         Assert.Equal("Back", active.Title);
+    }
+
+    [Fact]
+    public void ListExpiry_SetsStateWithoutDetailPage()
+    {
+        var now = new DateTime(2026, 9, 13, 8, 0, 0, DateTimeKind.Utc);
+        var workerId = Guid.NewGuid();
+        var accountId = Guid.NewGuid();
+        var expiresAtUtc = new DateTime(2026, 9, 26, 7, 23, 0, DateTimeKind.Utc);
+
+        var result = AvitoAdListingSyncApplier.ApplyListSnapshot(
+            [],
+            workerId,
+            accountId,
+            "",
+            [
+                new AvitoAdListCard
+                {
+                    AvitoItemId = "8285468940",
+                    Title = "Механик",
+                    Url = "https://www.avito.ru/volginskiy/vakansii/mehanik_8285468940",
+                    AgeDays = 17,
+                    ExpiresAtUtc = expiresAtUtc,
+                    RemainingDays = 13
+                }
+            ],
+            now,
+            listComplete: true);
+
+        var record = Assert.Single(result);
+        Assert.Equal(AvitoAdPublicationDateSources.ListExpiry, record.PublicationDateSource);
+        Assert.Equal(expiresAtUtc, record.ExpiresAtUtc);
+        Assert.Equal(13, record.RemainingDays);
+        Assert.Equal(AvitoAdListingStates.Active, record.State);
+        Assert.Null(record.DetailCheckedAtUtc);
     }
 }

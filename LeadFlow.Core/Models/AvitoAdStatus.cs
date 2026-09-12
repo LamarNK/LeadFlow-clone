@@ -36,4 +36,11 @@ public class AvitoAdStatus
 
     /// <summary>True, если «N день/дня/дней на Авито» удалось прочитать из карточки.</summary>
     public bool HasDaysOnAvito { get; set; }
+
+    /// <summary>Точный срок размещения, который Avito показывает прямо в карточке списка.</summary>
+    public DateTime? ExpiresAtUtc { get; set; }
+
+    public int? RemainingDays { get; set; }
+
+    public string? ExpiryParseError { get; set; }
 }

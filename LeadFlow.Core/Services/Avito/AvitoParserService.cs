@@ -383,7 +383,7 @@ public class AvitoParserService
         ad.Favorites = favorites;
     }
 
-    private static void FillAgeAndStatus(AvitoAdStatus ad, string snippetHtml)
+    private static void FillAgeAndStatus(AvitoAdStatus ad, string snippetHtml, DateTime capturedAtUtc)
     {
         var publishedText = ExtractRoleMarkerInnerText(snippetHtml, "offer/days-published");
         var age = TryParseAgeDays(publishedText) ?? TryParseAgeDays(snippetHtml);
@@ -397,6 +397,21 @@ public class AvitoParserService
         if (!string.IsNullOrWhiteSpace(status))
         {
             ad.Status = status;
+        }
+
+        if (TryParseActiveListExpiry(
+                snippetHtml,
+                capturedAtUtc,
+                out var expiresAtUtc,
+                out var remainingDays,
+                out var expiryError))
+        {
+            ad.ExpiresAtUtc = expiresAtUtc;
+            ad.RemainingDays = remainingDays;
+        }
+        else
+        {
+            ad.ExpiryParseError = expiryError;
         }
     }
 
@@ -503,7 +518,10 @@ public class AvitoParserService
     /// Парсит «Активные» вкладку: счётчики всех вкладок + список активных вакансий.
     /// Заблокированные карточки пропускаем — их парсит <see cref="ParseBlockedTabPage"/> на вкладке «С ошибками».
     /// </summary>
-    public ProfileResult ParseProfilePage(string html, Guid? accountId = null)
+    public ProfileResult ParseProfilePage(
+        string html,
+        Guid? accountId = null,
+        DateTime? capturedAtUtc = null)
     {
         var result = new ProfileResult();
         if (string.IsNullOrEmpty(html))
@@ -524,6 +542,7 @@ public class AvitoParserService
 
         result.ParseSuccess = true;
         result.PageLoadedSuccessfully = true;
+        var capturedAt = capturedAtUtc ?? DateTime.UtcNow;
 
         // 1️⃣ Счётчики из вкладок (только цифры). Для «Активных» фиксируем, найден ли счётчик в HTML — иначе 0 ненадёжен.
         var (activeTabOk, activeCount) = TryExtractCounter(html, "tab(active)");
@@ -556,7 +575,7 @@ public class AvitoParserService
             ad.Url = listingUrl;
             ad.UrlParseError = urlError;
             FillViewsContactsFavorites(ad, snippetHtml);
-            FillAgeAndStatus(ad, snippetHtml);
+            FillAgeAndStatus(ad, snippetHtml, capturedAt);
             if (!string.IsNullOrWhiteSpace(status))
             {
                 ad.Status = status;
@@ -599,7 +618,7 @@ public class AvitoParserService
             ad.Status = ExtractBlockedStatusName(snippetHtml);
             ad.DeleteDate = ExtractBlockedDeleteDate(snippetHtml);
             FillViewsContactsFavorites(ad, snippetHtml);
-            FillAgeAndStatus(ad, snippetHtml);
+            FillAgeAndStatus(ad, snippetHtml, DateTime.UtcNow);
             if (string.IsNullOrWhiteSpace(ad.Status) || ad.Status == "Активно")
             {
                 ad.Status = ExtractBlockedStatusName(snippetHtml);
@@ -628,6 +647,9 @@ public class AvitoParserService
                 Url = ad.ExplicitListingUrl,
                 UrlParseError = ad.UrlParseError,
                 AgeDays = ad.HasDaysOnAvito ? ad.DaysOnAvito : null,
+                ExpiresAtUtc = ad.ExpiresAtUtc,
+                RemainingDays = ad.RemainingDays,
+                ExpiryParseError = ad.ExpiryParseError,
                 StatusText = string.Equals(ad.Status, "Активно", StringComparison.Ordinal) ? string.Empty : ad.Status
             })
             .ToList();
@@ -704,6 +726,100 @@ public class AvitoParserService
             @"Остал(?:ось|ся|ись)\s+(?<days>\d+)\s*(?:день|дня|дней)",
             RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
         return match.Success && int.TryParse(match.Groups["days"].Value, out var days) ? days : null;
+    }
+
+    /// <summary>
+    /// Parses the exact expiry displayed in an active list card, for example:
+    /// «Активно ещё 13 дней — до 26 сен, 10:23».
+    /// </summary>
+    public static bool TryParseActiveListExpiry(
+        string? htmlOrText,
+        DateTime capturedAtUtc,
+        out DateTime expiresAtUtc,
+        out int? remainingDays,
+        out string? error)
+    {
+        expiresAtUtc = default;
+        remainingDays = null;
+        error = null;
+        if (string.IsNullOrWhiteSpace(htmlOrText))
+        {
+            error = "list_expiry_text_empty";
+            return false;
+        }
+
+        var plain = Regex.Replace(htmlOrText, "<script[\\s\\S]*?</script>", " ", RegexOptions.IgnoreCase);
+        plain = Regex.Replace(plain, "<style[\\s\\S]*?</style>", " ", RegexOptions.IgnoreCase);
+        plain = Regex.Replace(plain, "<[^>]+>", " ");
+        plain = NormalizeSpaces(plain);
+
+        var match = Regex.Match(
+            plain,
+            @"(?:ещё\s+)?(?<remaining>\d+)\s*(?:день|дня|дней)\s*[—–-]\s*до\s*(?<day>\d{1,2})\s+(?<month>янв(?:аря)?|фев(?:раля)?|мар(?:та)?|апр(?:еля)?|мая|май|июн(?:я)?|июл(?:я)?|авг(?:уста)?|сен(?:тября)?|окт(?:ября)?|ноя(?:бря)?|дек(?:абря)?)\s*,?\s*(?<hour>\d{1,2}):(?<minute>\d{2})",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        if (!match.Success)
+        {
+            error = "list_expiry_unparsed";
+            return false;
+        }
+
+        if (!int.TryParse(match.Groups["remaining"].Value, out var parsedRemaining)
+            || !int.TryParse(match.Groups["day"].Value, out var day)
+            || !int.TryParse(match.Groups["hour"].Value, out var hour)
+            || !int.TryParse(match.Groups["minute"].Value, out var minute))
+        {
+            error = "list_expiry_numbers_unparsed";
+            return false;
+        }
+
+        var month = match.Groups["month"].Value.ToLowerInvariant() switch
+        {
+            "янв" or "января" => 1,
+            "фев" or "февраля" => 2,
+            "мар" or "марта" => 3,
+            "апр" or "апреля" => 4,
+            "май" or "мая" => 5,
+            "июн" or "июня" => 6,
+            "июл" or "июля" => 7,
+            "авг" or "августа" => 8,
+            "сен" or "сентября" => 9,
+            "окт" or "октября" => 10,
+            "ноя" or "ноября" => 11,
+            "дек" or "декабря" => 12,
+            _ => 0
+        };
+        if (month == 0)
+        {
+            error = "list_expiry_unknown_month";
+            return false;
+        }
+
+        var localNow = AvitoAdBusinessTime.LocalNow(capturedAtUtc);
+        try
+        {
+            var localExpiry = new DateTime(
+                localNow.Year,
+                month,
+                day,
+                hour,
+                minute,
+                0,
+                DateTimeKind.Unspecified);
+
+            if (localExpiry.Date < localNow.Date)
+            {
+                localExpiry = localExpiry.AddYears(1);
+            }
+
+            expiresAtUtc = AvitoAdBusinessTime.ToUtc(localExpiry);
+            remainingDays = parsedRemaining;
+            return true;
+        }
+        catch (ArgumentOutOfRangeException)
+        {
+            error = "list_expiry_invalid_calendar_date";
+            return false;
+        }
     }
 
     /// <summary>

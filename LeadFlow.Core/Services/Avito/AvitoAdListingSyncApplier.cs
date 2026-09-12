@@ -67,6 +67,18 @@ public static class AvitoAdListingSyncApplier
                 record.AgeDays = age;
             }
 
+            if (card.ExpiresAtUtc is DateTime expiresAtUtc)
+            {
+                record.ExpiresAtUtc = expiresAtUtc;
+                record.RemainingDays = card.RemainingDays;
+                record.PublicationDateSource = AvitoAdPublicationDateSources.ListExpiry;
+                record.LastParseError = null;
+            }
+            else if (!string.IsNullOrWhiteSpace(card.ExpiryParseError))
+            {
+                record.LastParseError = card.ExpiryParseError;
+            }
+
             record.IsActive = true;
             record.LastSeenAtUtc = utcNow;
             if (listComplete)

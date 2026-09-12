@@ -13,6 +13,27 @@ public static class AvitoAdListingStateCalculator
             return AvitoAdListingStates.NotActive;
         }
 
+        if (record.ExpiresAtUtc is DateTime directExpiry)
+        {
+            var directRemaining = AvitoAdExpiryCalculator.RemainingControlDays(directExpiry, utcNow);
+            if (directRemaining < 0)
+            {
+                return AvitoAdListingStates.Expired;
+            }
+
+            if (directRemaining == 0)
+            {
+                return AvitoAdListingStates.ExpiresToday;
+            }
+
+            if (directRemaining <= ApproachingDays)
+            {
+                return AvitoAdListingStates.ApproachingExpiry;
+            }
+
+            return AvitoAdListingStates.Active;
+        }
+
         if (record.PublishedAtUtc is null
             || !string.Equals(record.PublicationDateSource, AvitoAdPublicationDateSources.Exact, StringComparison.Ordinal))
         {
@@ -21,8 +42,7 @@ public static class AvitoAdListingStateCalculator
                 : AvitoAdListingStates.ParseFailed;
         }
 
-        var expiresAt = record.ExpiresAtUtc
-                        ?? AvitoAdExpiryCalculator.ComputeExpiresAtUtc(record.PublishedAtUtc.Value);
+        var expiresAt = AvitoAdExpiryCalculator.ComputeExpiresAtUtc(record.PublishedAtUtc.Value);
         var remaining = AvitoAdExpiryCalculator.RemainingControlDays(expiresAt, utcNow);
         if (remaining < 0)
         {

@@ -273,6 +273,7 @@ internal static class ListingsIndexBuilder
         {
             AvitoAdPublicationDateSources.Exact => "Точная",
             AvitoAdPublicationDateSources.Estimated => "Оценка",
+            AvitoAdPublicationDateSources.ListExpiry => "Срок из списка",
             _ => "Неизвестно"
         };
 }

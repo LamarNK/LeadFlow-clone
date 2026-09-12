@@ -239,7 +239,7 @@ public sealed class WorkerAvitoAdsMonitor(
         var sawSupportedLayout = false;
         foreach (var html in capture.PageHtml)
         {
-            var parsed = avitoParser.ParseProfilePage(html, account.Id);
+            var parsed = avitoParser.ParseProfilePage(html, account.Id, DateTime.UtcNow);
             if (!AvitoProVacancyLayout.IsSupported(parsed.LayoutKind) || !parsed.ParseSuccess)
             {
                 _ = GlobalLogger.Instance.LogAsync(
@@ -269,88 +269,6 @@ public sealed class WorkerAvitoAdsMonitor(
                 capture.Complete)
             .ToList();
 
-        var cardsById = cards
-            .GroupBy(x => x.AvitoItemId, StringComparer.Ordinal)
-            .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
-        var detailQueue = AvitoAdListingScheduler.PlanDetailCheckQueue(merged, cardsById, utcNow, DefaultSchedule);
-        var missingDetailUrl = detailQueue
-            .Where(record => string.IsNullOrWhiteSpace(record.Url))
-            .ToList();
-        foreach (var record in missingDetailUrl)
-        {
-            LogListingDiagnostic(
-                account,
-                subProfileId,
-                subProfileName,
-                record,
-                "missing_view_link",
-                DeskLinkAuditLogLevel.Warning,
-                "detail_skipped_no_url");
-        }
-
-        var eligibleDetailQueue = detailQueue
-            .Where(record => !string.IsNullOrWhiteSpace(record.Url))
-            .ToList();
-        var maxDetailPages = Math.Max(0, DefaultSchedule.MaxDetailPagesPerRun);
-        var detailPlan = eligibleDetailQueue.Take(maxDetailPages).ToList();
-        for (var index = detailPlan.Count; index < eligibleDetailQueue.Count; index++)
-        {
-            LogListingDiagnostic(
-                account,
-                subProfileId,
-                subProfileName,
-                eligibleDetailQueue[index],
-                "detail_pending",
-                DeskLinkAuditLogLevel.Info,
-                "detail_queue_limit",
-                queuePosition: index + 1,
-                queueLength: eligibleDetailQueue.Count,
-                detailLimit: maxDetailPages);
-        }
-
-        foreach (var record in detailPlan)
-        {
-            cancellationToken.ThrowIfCancellationRequested();
-            try
-            {
-                var detailHtml = await session.LoadItemDetailHtmlAsync(record.Url, cancellationToken).ConfigureAwait(false);
-                var detail = avitoParser.ParseItemDetailPage(detailHtml, DateTime.UtcNow);
-                AvitoAdListingSyncApplier.ApplyDetail(record, detail, DateTime.UtcNow);
-
-                if (!detail.Success || detail.PublishedAtUtc is null)
-                {
-                    LogListingDiagnostic(
-                        account,
-                        subProfileId,
-                        subProfileName,
-                        record,
-                        detail.FailureReason ?? "detail_parse_failed",
-                        DeskLinkAuditLogLevel.Warning,
-                        "detail_parse_failed",
-                        rawItemIdText: detail.RawItemIdText,
-                        rawLifeBarText: detail.RawLifeBarText);
-                }
-            }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
-            {
-                throw;
-            }
-            catch (Exception ex)
-            {
-                var failedDetail = AvitoAdPublicationDateParser.ToFailed("detail_load_failed");
-                AvitoAdListingSyncApplier.ApplyDetail(record, failedDetail, DateTime.UtcNow);
-                LogListingDiagnostic(
-                    account,
-                    subProfileId,
-                    subProfileName,
-                    record,
-                    "detail_load_failed",
-                    DeskLinkAuditLogLevel.Warning,
-                    "detail_load_failed",
-                    exception: ex);
-            }
-        }
-
         await catalog.SaveSubProfileSyncAsync(
                 workerId,
                 account.Id,
@@ -373,47 +291,4 @@ public sealed class WorkerAvitoAdsMonitor(
         || WorkerAccountRuntime.IsMultilogin(account)
         || WorkerAccountRuntime.IsLocal(account);
 
-    private static void LogListingDiagnostic(
-        AvitoAccount account,
-        string subProfileId,
-        string subProfileName,
-        AvitoAdListingRecord record,
-        string reason,
-        DeskLinkAuditLogLevel level,
-        string eventName,
-        int? queuePosition = null,
-        int? queueLength = null,
-        int? detailLimit = null,
-        string? rawItemIdText = null,
-        string? rawLifeBarText = null,
-        Exception? exception = null)
-    {
-        var properties = new Dictionary<string, object?>
-        {
-            ["ads.event"] = eventName,
-            ["ads.reason"] = reason,
-            ["ads.accountId"] = account.Id,
-            ["ads.accountName"] = account.DisplayName,
-            ["ads.subProfileId"] = subProfileId,
-            ["ads.subProfileName"] = subProfileName,
-            ["ads.avitoItemId"] = record.AvitoItemId,
-            ["ads.listingState"] = record.State,
-            ["ads.publicationDateSource"] = record.PublicationDateSource,
-            ["ads.detailCheckedAtUtc"] = record.DetailCheckedAtUtc,
-            ["ads.lastParseError"] = record.LastParseError,
-            ["ads.queuePosition"] = queuePosition,
-            ["ads.queueLength"] = queueLength,
-            ["ads.detailLimit"] = detailLimit,
-            ["ads.rawItemIdText"] = rawItemIdText,
-            ["ads.rawLifeBarText"] = rawLifeBarText,
-            ["ads.exceptionType"] = exception?.GetType().Name,
-            ["ads.exceptionMessage"] = exception?.Message
-        };
-
-        _ = GlobalLogger.Instance.LogAsync(
-            $"Ads monitor: listing {record.AvitoItemId} ({account.DisplayName}/{subProfileName}) — {eventName}: {reason}.",
-            level,
-            errorKey: $"ads.{reason}",
-            properties: properties);
-    }
 }

@@ -9,5 +9,8 @@ public sealed class AvitoAdListCard
     public string Url { get; init; } = string.Empty;
     public string? UrlParseError { get; init; }
     public int? AgeDays { get; init; }
+    public DateTime? ExpiresAtUtc { get; init; }
+    public int? RemainingDays { get; init; }
+    public string? ExpiryParseError { get; init; }
     public string StatusText { get; init; } = string.Empty;
 }
