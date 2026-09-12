@@ -60,6 +60,32 @@ public sealed class OrbitaApiClient
         return await response.Content.ReadFromJsonAsync<WorkerConfigDto>(ct).ConfigureAwait(false);
     }
 
+    public async Task<IReadOnlyList<WorkerAvitoAdDto>> GetAvitoAdsAsync(Guid accountId, CancellationToken ct)
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"api/v1/workers/avito-ads?accountId={accountId:D}");
+        ApplyAuth(request);
+        var response = await _http.SendAsync(request, ct).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode)
+        {
+            return [];
+        }
+
+        return await response.Content.ReadFromJsonAsync<IReadOnlyList<WorkerAvitoAdDto>>(JsonReadOptions, ct)
+                   .ConfigureAwait(false)
+               ?? [];
+    }
+
+    public async Task<bool> SyncAvitoAdsAsync(WorkerAvitoAdSyncRequest syncRequest, CancellationToken ct)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Post, "api/v1/workers/avito-ads/sync");
+        ApplyAuth(request);
+        request.Content = JsonContent.Create(syncRequest);
+        var response = await _http.SendAsync(request, ct).ConfigureAwait(false);
+        return response.IsSuccessStatusCode;
+    }
+
     public async Task<bool> SyncAccountsAsync(WorkerAccountSyncRequest syncRequest, CancellationToken ct)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, "api/v1/workers/accounts/sync");

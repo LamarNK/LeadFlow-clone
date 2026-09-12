@@ -157,7 +157,7 @@ public sealed class AvitoParserBlockedTests
     }
 
     [Fact]
-    public void ParseProfilePage_ViewLinkWrapperWithoutHrefOnSameTag_StillFindsListingUrl()
+    public void ParseProfilePage_ViewLinkNotOnAnchor_DoesNotInventUrlFromOtherLinks()
     {
         const string html = """
             <div data-marker="item-snippet/8126932974">
@@ -171,9 +171,8 @@ public sealed class AvitoParserBlockedTests
 
         var ad = Assert.Single(_parser.ParseProfilePage(html).ActiveAds);
 
-        Assert.Equal(
-            "https://www.avito.ru/kudrovo/vakansii/raznorabochiy_vahta_8126932974",
-            ad.Url);
+        Assert.Equal(string.Empty, ad.ExplicitListingUrl);
+        Assert.Equal("missing_view_link", ad.UrlParseError);
     }
 
     [Fact]

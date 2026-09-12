@@ -185,6 +185,11 @@ internal static class Program
         host.Services.AddSingleton<MonitoringCycleJournalSink>();
         host.Services.AddSingleton<IMonitoringCycleJournal>(sp => sp.GetRequiredService<MonitoringCycleJournalSink>());
         host.Services.AddSingleton<IWorkerMonitoringService, WorkerMonitoringService>();
+        host.Services.AddSingleton<OrbitaAvitoAdListingCatalog>();
+        host.Services.AddSingleton<LeadFlow.Core.Services.Avito.IAvitoAdListingCatalog>(
+            sp => sp.GetRequiredService<OrbitaAvitoAdListingCatalog>());
+        host.Services.AddSingleton<WorkerAvitoAdsMonitor>();
+        host.Services.AddHostedService<WorkerAvitoAdsMonitorHost>();
 
         host.Services.AddSingleton<WorkerHubConnection>();
         host.Services.AddSingleton<IWorkerRealtimeChannel>(sp => sp.GetRequiredService<WorkerHubConnection>());

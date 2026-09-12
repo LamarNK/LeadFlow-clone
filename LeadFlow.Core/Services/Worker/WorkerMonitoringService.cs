@@ -81,11 +81,14 @@ public sealed class WorkerMonitoringService(
     private readonly ConcurrentDictionary<Guid, int> _accountQuietStreak = new();
     /// <summary>Один раз за процесс логируем восстановленную паузу аккаунта.</summary>
     private readonly ConcurrentDictionary<Guid, byte> _loggedResumeRestored = new();
+    private readonly ConcurrentDictionary<Guid, byte> _busyAccounts = new();
     private readonly SemaphoreSlim _scheduleWake = new(0, 1);
     private int _immediatePassRequested;
 
     public bool IsActive { get; private set; }
     public bool IsCaptchaHold => _captchaHold;
+
+    public bool IsAccountBusy(Guid accountId) => _busyAccounts.ContainsKey(accountId);
 
     public void RequestImmediatePass()
     {
@@ -693,12 +696,14 @@ public sealed class WorkerMonitoringService(
                 .ConfigureAwait(false);
         }
 
+        _busyAccounts[account.Id] = 1;
         try
         {
             return await ProcessAccountAsync(account, settings, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
+            _busyAccounts.TryRemove(account.Id, out _);
             activityReporter.ReportAccountFinished(account.Id);
             await _telemetryPusher.PushNowAsync(cancellationToken).ConfigureAwait(false);
         }

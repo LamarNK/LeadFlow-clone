@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using LeadFlow.Core.Logging.Audit;
+using LeadFlow.Core.Models;
 using LeadFlow.Core.Services;
 using LeadFlow.Core.Services.Avito;
 using LeadFlow.Core.Services.Browser;
@@ -1597,6 +1598,323 @@ public sealed partial class AdsPowerAvitoAutomationService
         return html;
     }
 
+    private async Task<AvitoAdListCapture> CaptureActiveAdsListOnPageAsync(
+        IPage page,
+        string adsPowerUserId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (!IsOnActiveProfileItemsPage(page.Url))
+            {
+                try
+                {
+                    await page.GoToAsync(ProfileItemsPageUrl, MonitoringNavigation(page, 60_000)).ConfigureAwait(false);
+                }
+                catch (Exception ex) when (IsRecoverableNavigationError(ex))
+                {
+                    await Task.Delay(1400, cancellationToken).ConfigureAwait(false);
+                }
+            }
+
+            await WaitForProfileItemsShellAsync(page, nameof(CaptureActiveAdsListOnPageAsync), cancellationToken)
+                .ConfigureAwait(false);
+            await EnsureActiveItemsTabAsync(page, cancellationToken).ConfigureAwait(false);
+            await WaitForProfileItemsReadyAsync(page, nameof(CaptureActiveAdsListOnPageAsync), cancellationToken)
+                .ConfigureAwait(false);
+            await HumanDelay.AfterItemsRenderAsync(cancellationToken).ConfigureAwait(false);
+
+            var firstHtml = await EvaluateWithRetryAsync<string>(
+                    page,
+                    "(() => document.documentElement?.outerHTML || '')()",
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (string.IsNullOrWhiteSpace(firstHtml))
+            {
+                return new AvitoAdListCapture
+                {
+                    Success = false,
+                    Complete = false,
+                    FailureReason = "empty_active_items_html"
+                };
+            }
+
+            await ThrowIfCaptchaAsync(page, firstHtml, cancellationToken).ConfigureAwait(false);
+            var pages = new List<string> { firstHtml };
+            var complete = await ScrollActiveAdsUntilSettledAsync(
+                    page,
+                    pages,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (!await TryCaptureActiveAdsHtmlAsync(page, pages, cancellationToken).ConfigureAwait(false))
+            {
+                complete = false;
+            }
+
+            for (var pageIndex = 1; pageIndex < MonitoringTiming.AvitoAdsListMaxPages; pageIndex++)
+            {
+                var hasNext = await EvaluateWithRetryAsync<bool>(
+                        page,
+                        AvitoAdListPageScripts.HasNextPageScript,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                if (!hasNext)
+                {
+                    break;
+                }
+
+                var clicked = await EvaluateWithRetryAsync<bool>(
+                        page,
+                        AvitoAdListPageScripts.ClickNextPageScript,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                if (!clicked)
+                {
+                    complete = false;
+                    break;
+                }
+
+                await WaitForProfileItemsShellAsync(page, nameof(CaptureActiveAdsListOnPageAsync), cancellationToken)
+                    .ConfigureAwait(false);
+                await WaitForProfileItemsReadyAsync(page, nameof(CaptureActiveAdsListOnPageAsync), cancellationToken)
+                    .ConfigureAwait(false);
+                await HumanDelay.AfterItemsRenderAsync(cancellationToken).ConfigureAwait(false);
+
+                if (!await ScrollActiveAdsUntilSettledAsync(page, pages, cancellationToken).ConfigureAwait(false))
+                {
+                    complete = false;
+                }
+
+                if (!await TryCaptureActiveAdsHtmlAsync(page, pages, cancellationToken).ConfigureAwait(false))
+                {
+                    complete = false;
+                    break;
+                }
+            }
+
+            var stillHasNext = await EvaluateWithRetryAsync<bool>(
+                    page,
+                    AvitoAdListPageScripts.HasNextPageScript,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (stillHasNext)
+            {
+                complete = false;
+            }
+
+            return new AvitoAdListCapture
+            {
+                Success = true,
+                Complete = complete,
+                PageHtml = pages
+            };
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            return new AvitoAdListCapture
+            {
+                Success = false,
+                Complete = false,
+                FailureReason = ex.Message
+            };
+        }
+    }
+
+    private async Task EnsureActiveItemsTabAsync(IPage page, CancellationToken cancellationToken)
+    {
+        const string clickActive = """
+            (() => {
+                const tab = document.querySelector('[data-marker="profile-items-tab/tab(active)"]');
+                if (!tab) return false;
+                const selected = tab.getAttribute('aria-selected');
+                if (selected === 'true') return false;
+                tab.click();
+                return true;
+            })()
+            """;
+
+        var clicked = await EvaluateWithRetryAsync<bool>(page, clickActive, cancellationToken).ConfigureAwait(false);
+        if (!clicked)
+        {
+            return;
+        }
+
+        await WaitForProfileItemsReadyAsync(page, nameof(EnsureActiveItemsTabAsync), cancellationToken)
+            .ConfigureAwait(false);
+        await HumanDelay.AfterItemsRenderAsync(cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<bool> ScrollActiveAdsUntilSettledAsync(
+        IPage page,
+        List<string> pages,
+        CancellationToken cancellationToken)
+    {
+        var initial = await ProbeActiveAdsScrollAsync(page, AvitoAdListPageScripts.ProbeScript, cancellationToken)
+            .ConfigureAwait(false);
+        if (initial.Count == 0)
+        {
+            return true;
+        }
+
+        var lastCount = initial.Count;
+        var previousFirst = initial.FirstMarker;
+        var stableRounds = 0;
+        var last = initial;
+
+        for (var round = 0; round < MonitoringTiming.AvitoAdsListMaxScrollRounds; round++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var step = await ProbeActiveAdsScrollAsync(page, AvitoAdListPageScripts.ScrollStepScript, cancellationToken)
+                .ConfigureAwait(false);
+            await HumanDelay.AfterListScrollAsync(cancellationToken).ConfigureAwait(false);
+            await WaitForProfileItemsReadyAsync(page, nameof(ScrollActiveAdsUntilSettledAsync), cancellationToken)
+                .ConfigureAwait(false);
+
+            last = await ProbeActiveAdsScrollAsync(page, AvitoAdListPageScripts.ProbeScript, cancellationToken)
+                .ConfigureAwait(false);
+            if (last.FirstWindowMoved(previousFirst))
+            {
+                _ = await TryCaptureActiveAdsHtmlAsync(page, pages, cancellationToken).ConfigureAwait(false);
+            }
+
+            previousFirst = string.IsNullOrEmpty(last.FirstMarker) ? previousFirst : last.FirstMarker;
+            if (last.Count > lastCount)
+            {
+                lastCount = last.Count;
+                stableRounds = 0;
+                continue;
+            }
+
+            if (last.Loader)
+            {
+                stableRounds = 0;
+                continue;
+            }
+
+            if (last.AtEnd || step.ScrollIdle)
+            {
+                stableRounds++;
+                if (stableRounds >= MonitoringTiming.AvitoAdsListStableScrollRounds)
+                {
+                    return true;
+                }
+
+                continue;
+            }
+
+            stableRounds = 0;
+        }
+
+        return last.AtEnd || last.Count == 0;
+    }
+
+    private async Task<AvitoAdListScrollProbe> ProbeActiveAdsScrollAsync(
+        IPage page,
+        string script,
+        CancellationToken cancellationToken)
+    {
+        var raw = await EvaluateWithRetryAsync<string>(page, script, cancellationToken).ConfigureAwait(false);
+        return AvitoAdListScrollProbeParser.Parse(raw);
+    }
+
+    private async Task<bool> TryCaptureActiveAdsHtmlAsync(
+        IPage page,
+        List<string> pages,
+        CancellationToken cancellationToken)
+    {
+        var html = await EvaluateWithRetryAsync<string>(
+                page,
+                "(() => document.documentElement?.outerHTML || '')()",
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(html))
+        {
+            return false;
+        }
+
+        await ThrowIfCaptchaAsync(page, html, cancellationToken).ConfigureAwait(false);
+        pages.Add(html);
+        return true;
+    }
+
+    private async Task<string> LoadItemDetailHtmlOnPageAsync(
+        IPage page,
+        string url,
+        CancellationToken cancellationToken)
+    {
+        var target = NormalizeDetailUrl(url);
+        if (string.IsNullOrWhiteSpace(target))
+        {
+            return string.Empty;
+        }
+
+        try
+        {
+            await page.GoToAsync(target, MonitoringNavigation(page, 45_000)).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (IsRecoverableNavigationError(ex))
+        {
+            await Task.Delay(1200, cancellationToken).ConfigureAwait(false);
+        }
+
+        try
+        {
+            await page.WaitForSelectorAsync(
+                    "[data-marker='item-view/item-id'], [data-marker='item-view/title-info'], [data-marker='item-lifebar']",
+                    new WaitForSelectorOptions { Timeout = 20_000 })
+                .ConfigureAwait(false);
+        }
+        catch
+        {
+            // Карточка могла не дорисоваться — снимем HTML как есть и вернёмся к списку.
+        }
+
+        await HumanDelay.AfterItemsRenderAsync(cancellationToken).ConfigureAwait(false);
+        var html = await EvaluateWithRetryAsync<string>(
+                page,
+                "(() => document.documentElement?.outerHTML || '')()",
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        try
+        {
+            await page.GoToAsync(ProfileItemsPageUrl, MonitoringNavigation(page, 45_000)).ConfigureAwait(false);
+            await WaitForProfileItemsShellAsync(page, nameof(LoadItemDetailHtmlOnPageAsync), cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex) when (IsRecoverableNavigationError(ex))
+        {
+            await Task.Delay(900, cancellationToken).ConfigureAwait(false);
+        }
+
+        return html ?? string.Empty;
+    }
+
+    private static string NormalizeDetailUrl(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url))
+        {
+            return string.Empty;
+        }
+
+        var trimmed = url.Trim();
+        if (trimmed.StartsWith("//", StringComparison.Ordinal))
+        {
+            return "https:" + trimmed;
+        }
+
+        if (trimmed.StartsWith("/", StringComparison.Ordinal))
+        {
+            return "https://www.avito.ru" + trimmed;
+        }
+
+        return trimmed;
+    }
+
     private static async Task WaitForProfileItemsShellAsync(
         IPage page,
         string callerMemberName,
@@ -1802,6 +2120,18 @@ public sealed partial class AdsPowerAvitoAutomationService
         {
             using var _ = AvitoCaptchaTaskContext.Use(captchaOptions);
             return await owner.LoadBlockedItemsHtmlOnPageAsync(page, AdsPowerUserId, cancellationToken).ConfigureAwait(false);
+        }
+
+        public async Task<AvitoAdListCapture> CaptureActiveAdsListAsync(CancellationToken cancellationToken = default)
+        {
+            using var _ = AvitoCaptchaTaskContext.Use(captchaOptions);
+            return await owner.CaptureActiveAdsListOnPageAsync(page, AdsPowerUserId, cancellationToken).ConfigureAwait(false);
+        }
+
+        public async Task<string> LoadItemDetailHtmlAsync(string url, CancellationToken cancellationToken = default)
+        {
+            using var _ = AvitoCaptchaTaskContext.Use(captchaOptions);
+            return await owner.LoadItemDetailHtmlOnPageAsync(page, url, cancellationToken).ConfigureAwait(false);
         }
 
         public async Task<AvitoMoneySidebar?> TryReadMoneySidebarAsync(CancellationToken cancellationToken = default)

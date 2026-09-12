@@ -1,5 +1,6 @@
 using LeadFlow.Core.Models;
 using System.Collections.Generic;
+using System.Net;
 using System.Text.RegularExpressions;
 
 namespace LeadFlow.Core.Services.Avito;
@@ -156,6 +157,63 @@ public class AvitoParserService
         return m.Success ? m.Groups[1].Value.Trim() : null;
     }
 
+    /// <summary>
+    /// Прямая ссылка на объявление только из <c>a[data-marker="view-link"]</c>.
+    /// Другие ссылки карточки (кандидаты, чаты) игнорируются. URL не выдумывается.
+    /// </summary>
+    public static string ExtractListingUrl(string snippetHtml, out string? parseError)
+    {
+        parseError = null;
+        if (string.IsNullOrWhiteSpace(snippetHtml))
+        {
+            parseError = "missing_view_link";
+            return string.Empty;
+        }
+
+        var match = Regex.Match(
+            snippetHtml,
+            """<a\b[^>]*data-marker\s*=\s*["']view-link["'][^>]*\bhref\s*=\s*["'](?<href>[^"']+)["']""",
+            RegexOptions.IgnoreCase);
+        if (!match.Success)
+        {
+            match = Regex.Match(
+                snippetHtml,
+                """<a\b[^>]*\bhref\s*=\s*["'](?<href>[^"']+)["'][^>]*data-marker\s*=\s*["']view-link["']""",
+                RegexOptions.IgnoreCase);
+        }
+
+        if (!match.Success)
+        {
+            parseError = "missing_view_link";
+            return string.Empty;
+        }
+
+        var href = WebUtility.HtmlDecode(match.Groups["href"].Value).Trim();
+        if (string.IsNullOrWhiteSpace(href))
+        {
+            parseError = "empty_view_link_href";
+            return string.Empty;
+        }
+
+        if (href.StartsWith("//", StringComparison.Ordinal))
+        {
+            href = "https:" + href;
+        }
+
+        if (Uri.TryCreate(href, UriKind.Absolute, out var absoluteUrl))
+        {
+            return absoluteUrl.ToString();
+        }
+
+        if (Uri.TryCreate(new Uri("https://www.avito.ru"), href, out var resolvedUrl))
+        {
+            return resolvedUrl.ToString();
+        }
+
+        parseError = "invalid_view_link_href";
+        return string.Empty;
+    }
+
     private static string ExtractItemListingHref(string snippetHtml, string itemId)
     {
         var viewLinkHrefs = CollectViewLinkHrefs(snippetHtml);
@@ -211,12 +269,60 @@ public class AvitoParserService
     private static string ExtractCity(string snippetHtml)
     {
         var city = ExtractSingle(snippetHtml, @"geo-root-[A-Za-z0-9_-]+[^>]*>[\s\S]*?<span[^>]*>([^<]+)</span>");
-        if (!string.IsNullOrEmpty(city))
+        if (!string.IsNullOrEmpty(city) && !LooksLikeStreetAddress(city))
         {
             return city;
         }
 
-        return ExtractSingle(snippetHtml, @"class=""styles-address-[A-Za-z0-9_-]+""[^>]*>([^<]+)");
+        var fromAddressClass = ExtractSingle(snippetHtml, @"class=""styles-address-[A-Za-z0-9_-]+""[^>]*>([^<]+)");
+        if (!string.IsNullOrEmpty(fromAddressClass) && !LooksLikeStreetAddress(fromAddressClass))
+        {
+            return fromAddressClass;
+        }
+
+        return string.Empty;
+    }
+
+    private static string ExtractAddressText(string snippetHtml)
+    {
+        var address = ExtractSingle(snippetHtml, @"class=""styles-address-[A-Za-z0-9_-]+""[^>]*>([^<]+)");
+        return LooksLikeStreetAddress(address) ? address : string.Empty;
+    }
+
+    private static string ExtractDistrictText(string snippetHtml)
+    {
+        foreach (Match leaf in Regex.Matches(
+                     snippetHtml,
+                     @"<(?:span|div)[^>]*>(?<text>[^<]+)</(?:span|div)>",
+                     RegexOptions.IgnoreCase))
+        {
+            var text = NormalizeSpaces(leaf.Groups["text"].Value);
+            if (Regex.IsMatch(text, @"^р-н\s+\S", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
+            {
+                return text;
+            }
+        }
+
+        return string.Empty;
+    }
+
+    private static bool LooksLikeStreetAddress(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return false;
+        }
+
+        return Regex.IsMatch(
+            text.Trim(),
+            @"^(?:ул\.|улица\b|пр\.|пр-т\b|проспект\b|пер\.|переулок\b|ш\.|шоссе\b|наб\.|бул\.|пл\.|мкр\.?|проезд\b|тупик\b|линия\b|д\.\s*\d)",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+    }
+
+    private static string NormalizeSpaces(string text)
+    {
+        text = WebUtility.HtmlDecode(text ?? string.Empty);
+        return Regex.Replace(text, @"\s+", " ").Trim();
     }
 
     private static int ExtractCounterAfterIcon(string snippetHtml, params string[] iconNames)
@@ -277,6 +383,122 @@ public class AvitoParserService
         ad.Favorites = favorites;
     }
 
+    private static void FillAgeAndStatus(AvitoAdStatus ad, string snippetHtml)
+    {
+        var publishedText = ExtractRoleMarkerInnerText(snippetHtml, "offer/days-published");
+        var age = TryParseAgeDays(publishedText) ?? TryParseAgeDays(snippetHtml);
+        if (age is int days)
+        {
+            ad.DaysOnAvito = days;
+            ad.HasDaysOnAvito = true;
+        }
+
+        var status = ExtractVisibleStatusText(snippetHtml);
+        if (!string.IsNullOrWhiteSpace(status))
+        {
+            ad.Status = status;
+        }
+    }
+
+    private static string ExtractRoleMarkerInnerText(string html, string roleMarker)
+    {
+        var match = Regex.Match(
+            html,
+            $@"role-marker=""{Regex.Escape(roleMarker)}""[^>]*>([\s\S]*?)</(?:div|span)>",
+            RegexOptions.IgnoreCase);
+        if (!match.Success)
+        {
+            return string.Empty;
+        }
+
+        var inner = Regex.Replace(match.Groups[1].Value, "<[^>]+>", " ");
+        return NormalizeSpaces(inner);
+    }
+
+    internal static string ExtractVisibleStatusText(string snippetHtml)
+    {
+        if (string.IsNullOrWhiteSpace(snippetHtml))
+        {
+            return string.Empty;
+        }
+
+        foreach (Match leaf in Regex.Matches(
+                     snippetHtml,
+                     @"<(?:span|div)[^>]*>(?<text>[^<]+)</(?:span|div)>",
+                     RegexOptions.IgnoreCase))
+        {
+            if (TryMatchListingStatus(leaf.Groups["text"].Value, out var status))
+            {
+                return status;
+            }
+        }
+
+        var flattened = Regex.Replace(snippetHtml, "<script[\\s\\S]*?</script>", " ", RegexOptions.IgnoreCase);
+        flattened = Regex.Replace(flattened, "<style[\\s\\S]*?</style>", " ", RegexOptions.IgnoreCase);
+        flattened = Regex.Replace(flattened, "<[^>]+>", " ");
+        return TryMatchListingStatus(flattened, out var fallback) ? fallback : string.Empty;
+    }
+
+    private static bool TryMatchListingStatus(string raw, out string status)
+    {
+        status = string.Empty;
+        var text = NormalizeSpaces(raw);
+        if (text.Length == 0)
+        {
+            return false;
+        }
+
+        if (!Regex.IsMatch(
+                text,
+                @"^(?:Скрыто\s*:|Остановлено\s*:|Заблокировано\b|На модерации\b|Отклонено\b|Снято с публикации\b)",
+                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
+        {
+            return false;
+        }
+
+        status = ClipListingStatus(text);
+        return !string.IsNullOrWhiteSpace(status);
+    }
+
+    private static string ClipListingStatus(string text)
+    {
+        var stop = Regex.Match(
+            text,
+            @"\s+(?:\d+\s+(?:день|дня|дней)\s+на\s+Авито|нет новых чатов|Редактировать|Снять с публикации|Поднять просмотры|Запустить рассылку|Продвинуть)\b",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        if (stop.Success)
+        {
+            text = text[..stop.Index];
+        }
+
+        text = text.Trim().TrimEnd(',', ';');
+        if (text.Length > 120)
+        {
+            text = text[..120].Trim();
+        }
+
+        return text;
+    }
+
+    private static bool IsRejectedActiveListing(string status) =>
+        status.StartsWith("Заблокировано", StringComparison.OrdinalIgnoreCase)
+        || status.StartsWith("Отклонено", StringComparison.OrdinalIgnoreCase);
+
+    private static string ExtractMarkerInnerText(string html, string marker)
+    {
+        var match = Regex.Match(
+            html,
+            $@"data-marker=""{Regex.Escape(marker)}""[^>]*>([\s\S]*?)</(?:span|div|h1)>",
+            RegexOptions.IgnoreCase);
+        if (!match.Success)
+        {
+            return string.Empty;
+        }
+
+        var inner = Regex.Replace(match.Groups[1].Value, "<[^>]+>", " ");
+        return WebUtility.HtmlDecode(inner).Trim();
+    }
+
     /// <summary>
     /// Парсит «Активные» вкладку: счётчики всех вкладок + список активных вакансий.
     /// Заблокированные карточки пропускаем — их парсит <see cref="ParseBlockedTabPage"/> на вкладке «С ошибками».
@@ -284,7 +506,24 @@ public class AvitoParserService
     public ProfileResult ParseProfilePage(string html, Guid? accountId = null)
     {
         var result = new ProfileResult();
-        if (string.IsNullOrEmpty(html)) return result;
+        if (string.IsNullOrEmpty(html))
+        {
+            result.ParseSuccess = false;
+            result.ParseFailureReason = "empty_html";
+            result.LayoutKind = AvitoProVacancyLayout.NotApplicable;
+            return result;
+        }
+
+        result.LayoutKind = AvitoProVacancyLayout.Classify(html);
+        if (!AvitoProVacancyLayout.IsSupported(result.LayoutKind))
+        {
+            result.ParseSuccess = false;
+            result.ParseFailureReason = result.LayoutKind;
+            return result;
+        }
+
+        result.ParseSuccess = true;
+        result.PageLoadedSuccessfully = true;
 
         // 1️⃣ Счётчики из вкладок (только цифры). Для «Активных» фиксируем, найден ли счётчик в HTML — иначе 0 ненадёжен.
         var (activeTabOk, activeCount) = TryExtractCounter(html, "tab(active)");
@@ -296,14 +535,15 @@ public class AvitoParserService
         // 2️⃣ Парсинг активных объявлений (только вакансии / раздел «Работа» на Авито)
         foreach (var (id, snippetHtml) in EnumerateItemSnippets(html))
         {
-            var listingHref = ExtractItemListingHref(snippetHtml, id);
-            if (!IsJobSectionListing(listingHref))
+            result.ItemSnippetMarkersFound++;
+            var listingUrl = ExtractListingUrl(snippetHtml, out var urlError);
+            if (!string.IsNullOrEmpty(listingUrl) && !IsJobSectionListing(listingUrl))
             {
                 continue;
             }
 
-            // Заблокированные снимки на этой вкладке игнорируем — их везде по пути «С ошибками».
-            if (snippetHtml.Contains("styles-status-name_red-", StringComparison.Ordinal))
+            var status = ExtractVisibleStatusText(snippetHtml);
+            if (IsRejectedActiveListing(status))
             {
                 continue;
             }
@@ -311,8 +551,17 @@ public class AvitoParserService
             var ad = new AvitoAdStatus { Id = id, AccountId = accountId ?? Guid.Empty };
             ad.Title = ExtractTitle(snippetHtml);
             ad.City = ExtractCity(snippetHtml);
-            ad.Url = NormalizeAvitoHref(listingHref);
+            ad.AddressText = ExtractAddressText(snippetHtml);
+            ad.DistrictText = ExtractDistrictText(snippetHtml);
+            ad.Url = listingUrl;
+            ad.UrlParseError = urlError;
             FillViewsContactsFavorites(ad, snippetHtml);
+            FillAgeAndStatus(ad, snippetHtml);
+            if (!string.IsNullOrWhiteSpace(status))
+            {
+                ad.Status = status;
+            }
+
             result.ActiveAds.Add(ad);
         }
 
@@ -329,8 +578,13 @@ public class AvitoParserService
 
         foreach (var (id, snippetHtml) in EnumerateItemSnippets(html))
         {
-            var listingHref = ExtractItemListingHref(snippetHtml, id);
-            if (!IsJobSectionListing(listingHref))
+            var listingUrl = ExtractListingUrl(snippetHtml, out var urlError);
+            if (string.IsNullOrEmpty(listingUrl))
+            {
+                listingUrl = NormalizeAvitoHref(ExtractItemListingHref(snippetHtml, id));
+            }
+
+            if (!IsJobSectionListing(listingUrl))
             {
                 continue;
             }
@@ -338,14 +592,118 @@ public class AvitoParserService
             var ad = new AvitoAdStatus { Id = id, AccountId = accountId ?? Guid.Empty };
             ad.Title = ExtractTitle(snippetHtml);
             ad.City = ExtractCity(snippetHtml);
-            ad.Url = NormalizeAvitoHref(listingHref);
+            ad.AddressText = ExtractAddressText(snippetHtml);
+            ad.DistrictText = ExtractDistrictText(snippetHtml);
+            ad.Url = listingUrl;
+            ad.UrlParseError = urlError;
             ad.Status = ExtractBlockedStatusName(snippetHtml);
             ad.DeleteDate = ExtractBlockedDeleteDate(snippetHtml);
             FillViewsContactsFavorites(ad, snippetHtml);
+            FillAgeAndStatus(ad, snippetHtml);
+            if (string.IsNullOrWhiteSpace(ad.Status) || ad.Status == "Активно")
+            {
+                ad.Status = ExtractBlockedStatusName(snippetHtml);
+            }
+
             result.Add(ad);
         }
 
         return result;
+    }
+
+    public IReadOnlyList<AvitoAdListCard> ToListCards(ProfileResult profile)
+    {
+        if (profile.ActiveAds.Count == 0)
+        {
+            return [];
+        }
+
+        return profile.ActiveAds
+            .Where(static ad => !string.IsNullOrWhiteSpace(ad.Id))
+            .Select(ad => new AvitoAdListCard
+            {
+                AvitoItemId = ad.Id,
+                Title = ad.Title,
+                Href = ad.ExplicitListingUrl,
+                Url = ad.ExplicitListingUrl,
+                UrlParseError = ad.UrlParseError,
+                AgeDays = ad.HasDaysOnAvito ? ad.DaysOnAvito : null,
+                StatusText = string.Equals(ad.Status, "Активно", StringComparison.Ordinal) ? string.Empty : ad.Status
+            })
+            .ToList();
+    }
+
+    public AvitoAdDetailParseResult ParseItemDetailPage(string html, DateTime capturedAtUtc)
+    {
+        if (string.IsNullOrWhiteSpace(html))
+        {
+            return AvitoAdPublicationDateParser.ToFailed("empty_detail_html");
+        }
+
+        var title = ExtractSingle(html, @"data-marker=""item-view/title-info""[^>]*>([^<]+)");
+        var itemIdText = ExtractMarkerInnerText(html, "item-view/item-id");
+        var lifeBarText = ExtractMarkerInnerText(html, "item-lifebar");
+        var remainingDays = TryParseRemainingDays(lifeBarText);
+
+        if (!AvitoAdPublicationDateParser.TryParseItemIdLine(
+                itemIdText,
+                capturedAtUtc,
+                out var itemId,
+                out var publishedAtUtc,
+                out var error))
+        {
+            return new AvitoAdDetailParseResult
+            {
+                Success = false,
+                FailureReason = error ?? "publication_date_unparsed",
+                AvitoItemId = itemId,
+                Title = title,
+                RemainingDays = remainingDays,
+                PublicationDateSource = AvitoAdPublicationDateSources.Unknown,
+                RawItemIdText = itemIdText,
+                RawLifeBarText = lifeBarText
+            };
+        }
+
+        return new AvitoAdDetailParseResult
+        {
+            Success = true,
+            AvitoItemId = itemId,
+            Title = title,
+            PublishedAtUtc = publishedAtUtc,
+            PublicationDateSource = AvitoAdPublicationDateSources.Exact,
+            RemainingDays = remainingDays,
+            RawItemIdText = itemIdText,
+            RawLifeBarText = lifeBarText
+        };
+    }
+
+    public static int? TryParseAgeDays(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return null;
+        }
+
+        var match = Regex.Match(
+            text,
+            @"(?<days>\d+)\s*(?:день|дня|дней)\s+на\s+Авито",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        return match.Success && int.TryParse(match.Groups["days"].Value, out var days) ? days : null;
+    }
+
+    public static int? TryParseRemainingDays(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return null;
+        }
+
+        var match = Regex.Match(
+            text,
+            @"Остал(?:ось|ся|ись)\s+(?<days>\d+)\s*(?:день|дня|дней)",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        return match.Success && int.TryParse(match.Groups["days"].Value, out var days) ? days : null;
     }
 
     /// <summary>
@@ -394,6 +752,14 @@ public class AvitoParserService
     /// </summary>
     private static string ExtractBlockedStatusName(string snippetHtml)
     {
+        var status = ExtractVisibleStatusText(snippetHtml);
+        if (!string.IsNullOrWhiteSpace(status))
+        {
+            return status.StartsWith("Заблокировано", StringComparison.OrdinalIgnoreCase)
+                ? "Заблокировано"
+                : status;
+        }
+
         var match = Regex.Match(
             snippetHtml,
             @"<span[^>]*\bstyles-status-name_red-[^""]*""[^>]*>([^<]+)</span>",

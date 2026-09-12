@@ -94,6 +94,30 @@ public static class MonitoringTiming
     /// <summary>Собирать статистику объявлений в проходе Orbita.Worker (отклики + объявления). Пока выключено.</summary>
     public const bool CollectActiveAdsInWorkerPass = false;
 
+    /// <summary>Отдельный мониторинг объявлений: интервал полного обхода списка активных.</summary>
+    public const int AvitoAdsListCheckIntervalHours = 12;
+
+    /// <summary>Максимум детальных страниц на один субпрофиль за запуск мониторинга объявлений.</summary>
+    public const int AvitoAdsMaxDetailPagesPerRun = 4;
+
+    /// <summary>Сколько аккаунтов проверять за один тик фонового цикла объявлений.</summary>
+    public const int AvitoAdsMaxAccountsPerLoop = 1;
+
+    /// <summary>Объявления младше этого возраста не открываем повторно без причины.</summary>
+    public const int AvitoAdsFreshAgeDays = 20;
+
+    /// <summary>Пауза фонового цикла объявлений, если нечего проверять.</summary>
+    public const int AvitoAdsLoopIdleSeconds = 45;
+
+    /// <summary>Максимум шагов прокрутки вниз на одной странице «Активные», пока подгружаются карточки.</summary>
+    public const int AvitoAdsListMaxScrollRounds = 60;
+
+    /// <summary>Сколько подряд шагов без новых карточек считаем концом бесконечного списка.</summary>
+    public const int AvitoAdsListStableScrollRounds = 3;
+
+    /// <summary>Максимум страниц pagination-next после прокрутки текущей выдачи.</summary>
+    public const int AvitoAdsListMaxPages = 20;
+
     /// <summary>Как часто воркер перечитывает модалку «Выбор профиля» Avito Pro (часы).</summary>
     public const int SubProfilesRefreshIntervalHours = 24;
 

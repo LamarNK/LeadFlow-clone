@@ -16,6 +16,12 @@ public sealed class ProfileResult
     public string? ParseFailureReason { get; set; }
 
     /// <summary>
+    /// <see cref="AvitoProVacancyLayout.Supported"/>, <see cref="AvitoProVacancyLayout.UnsupportedProfileLayout"/>
+    /// или <see cref="AvitoProVacancyLayout.NotApplicable"/>.
+    /// </summary>
+    public string LayoutKind { get; set; } = AvitoProVacancyLayout.Supported;
+
+    /// <summary>
     /// Сколько раз в сыром HTML активной вкладки встретился маркер <c>data-marker="item-snippet/{id}"</c>.
     /// Нужен для защиты от преждевременного снятия DOM (спиннер): вкладка показывает ненулевой счётчик, а карточек ещё нет.
     /// При агрегации нескольких суб-профилей суммируется.

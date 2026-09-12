@@ -6,6 +6,8 @@ public class AvitoAdStatus
     public string Id { get; set; } = "";
     public string Title { get; set; } = "";
     public string City { get; set; } = "";
+    public string AddressText { get; set; } = "";
+    public string DistrictText { get; set; } = "";
     public string Salary { get; set; } = "";
     public int Views { get; set; }
     public int Contacts { get; set; }
@@ -25,5 +27,13 @@ public class AvitoAdStatus
         set => _url = value;
     }
 
+    /// <summary>Href из <c>a[data-marker="view-link"]</c> без fallback на <c>/item/{id}</c>.</summary>
+    public string ExplicitListingUrl => _url ?? string.Empty;
+
+    public string? UrlParseError { get; set; }
+
     public int DaysOnAvito { get; set; }
+
+    /// <summary>True, если «N день/дня/дней на Авито» удалось прочитать из карточки.</summary>
+    public bool HasDaysOnAvito { get; set; }
 }
