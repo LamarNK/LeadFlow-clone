@@ -44,6 +44,10 @@ public interface IAdsPowerAccountSession : IAsyncDisposable
     /// <summary>Читает «Кошелёк» и «Аванс» из сайдбара Avito Pro на странице кабинета (не на откликах).</summary>
     Task<AvitoMoneySidebar?> TryReadMoneySidebarAsync(CancellationToken cancellationToken = default);
 
+    /// <summary>Загружает HTML страницы «Кошелёк → История операций».</summary>
+    Task<string> LoadWalletHistoryHtmlAsync(CancellationToken cancellationToken = default) =>
+        Task.FromResult(string.Empty);
+
     /// <summary>
     /// Выполняет ручное пополнение аванса: переход на <c>/account/advance</c>, ввод суммы,
     /// выбор СБП, переход к оплате и снятие QR-изображения. Оплату не выполняет.

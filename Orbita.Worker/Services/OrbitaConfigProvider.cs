@@ -41,6 +41,7 @@ public sealed class OrbitaConfigProvider(
 
         return new WorkerMonitoringConfig
         {
+            WorkerId = _cached.WorkerId,
             MaxConcurrentAccounts = _cached.MaxConcurrentAccounts,
             Accounts = accounts,
             ResponseFilters = _cached.ResponseFilters,
@@ -57,7 +58,8 @@ public sealed class OrbitaConfigProvider(
                 : _cached.RuCaptchaApiKey.Trim(),
             AdsPowerEnabled = _cached.AdsPowerEnabled,
             MultiloginEnabled = _cached.MultiloginEnabled,
-            LocalChromeEnabled = _cached.LocalChromeEnabled
+            LocalChromeEnabled = _cached.LocalChromeEnabled,
+            PendingTopUpHistoryChecks = _cached.PendingTopUpHistoryChecks ?? []
         };
     }
 

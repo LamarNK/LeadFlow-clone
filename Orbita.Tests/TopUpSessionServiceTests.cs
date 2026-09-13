@@ -494,6 +494,168 @@ public sealed class TopUpSessionServiceTests
     }
 
     [Fact]
+    public async Task ConfirmPaymentFromHistoryAsync_MovesQrReadyToAwaitingBalance_WhenAdvanceIsStale()
+    {
+        await using var db = CreateDb();
+        var officeId = Guid.NewGuid();
+        var workerId = Guid.NewGuid();
+        var accountId = Guid.NewGuid();
+        SeedWorker(
+            db,
+            officeId,
+            workerId,
+            accountId,
+            balance: 54m,
+            subProfilesJson: """[{"Id":"standard","Name":"Стандарт","Balance":54}]""");
+
+        var service = CreateService(db);
+        var principal = TestPrincipalFactory.Operator("op1", "Operator 1", officeId);
+        var (session, _) = await service.CreateAsync(workerId, accountId, principal, subProfileId: "standard");
+        Assert.NotNull(session);
+        await AdvanceToQrReadyAsync(service, workerId, session!.Id);
+
+        var checks = await service.GetPendingHistoryChecksForWorkerAsync(workerId);
+        Assert.Single(checks);
+        Assert.Equal(session.Id, checks[0].SessionId);
+
+        var result = await service.ConfirmPaymentFromHistoryAsync(
+            workerId,
+            new ConfirmTopUpHistoryRequest(
+                accountId,
+                "standard",
+                Now.AddMinutes(3).UtcDateTime,
+                [new TopUpHistoryOperationDto(session.RequestedAmount, Now.AddMinutes(2).UtcDateTime)]));
+
+        Assert.Null(result.Error);
+        Assert.Equal(1, result.ConfirmedCount);
+
+        var stored = await db.TopUpSessions.AsNoTracking().SingleAsync(x => x.Id == session.Id);
+        Assert.Equal(TopUpSessionStatuses.AwaitingBalance, stored.Status);
+        Assert.NotNull(stored.AwaitingBalanceAtUtc);
+        Assert.NotNull(stored.HistoryConfirmedAtUtc);
+        Assert.Equal(Now.AddMinutes(2).UtcDateTime, stored.HistoryOperationAtUtc);
+        Assert.Null(stored.BalanceAfter);
+        Assert.Contains("истории операций", stored.ProgressMessage, StringComparison.OrdinalIgnoreCase);
+
+        var (duplicate, conflict) = await service.CreateAsync(
+            workerId,
+            accountId,
+            principal,
+            subProfileId: "standard");
+        Assert.Null(duplicate);
+        Assert.NotNull(conflict);
+        Assert.Equal(session.Id, conflict.ActiveSessionId);
+    }
+
+    [Fact]
+    public async Task ConfirmPaymentFromHistoryAsync_IgnoresOldOrWrongAmountOperation()
+    {
+        await using var db = CreateDb();
+        var officeId = Guid.NewGuid();
+        var workerId = Guid.NewGuid();
+        var accountId = Guid.NewGuid();
+        SeedWorker(
+            db,
+            officeId,
+            workerId,
+            accountId,
+            balance: 54m,
+            subProfilesJson: """[{"Id":"standard","Name":"Стандарт","Balance":54}]""");
+
+        var service = CreateService(db);
+        var principal = TestPrincipalFactory.Operator("op1", "Operator 1", officeId);
+        var (session, _) = await service.CreateAsync(workerId, accountId, principal, subProfileId: "standard");
+        Assert.NotNull(session);
+        await AdvanceToQrReadyAsync(service, workerId, session!.Id);
+
+        var result = await service.ConfirmPaymentFromHistoryAsync(
+            workerId,
+            new ConfirmTopUpHistoryRequest(
+                accountId,
+                "standard",
+                Now.AddMinutes(3).UtcDateTime,
+                [
+                    new TopUpHistoryOperationDto(session.RequestedAmount, Now.AddHours(-1).UtcDateTime),
+                    new TopUpHistoryOperationDto(session.RequestedAmount + 100m, Now.AddMinutes(2).UtcDateTime)
+                ]));
+
+        Assert.Equal(0, result.ConfirmedCount);
+        Assert.Equal(
+            TopUpSessionStatuses.QrReady,
+            (await db.TopUpSessions.AsNoTracking().SingleAsync(x => x.Id == session.Id)).Status);
+    }
+
+    [Fact]
+    public async Task ConfirmPaymentFromHistoryAsync_IsIdempotent_AfterHistoryWasMatched()
+    {
+        await using var db = CreateDb();
+        var officeId = Guid.NewGuid();
+        var workerId = Guid.NewGuid();
+        var accountId = Guid.NewGuid();
+        SeedWorker(
+            db,
+            officeId,
+            workerId,
+            accountId,
+            balance: 54m,
+            subProfilesJson: """[{"Id":"standard","Name":"Стандарт","Balance":54}]""");
+
+        var service = CreateService(db);
+        var principal = TestPrincipalFactory.Operator("op1", "Operator 1", officeId);
+        var (session, _) = await service.CreateAsync(workerId, accountId, principal, subProfileId: "standard");
+        await AdvanceToQrReadyAsync(service, workerId, session!.Id);
+        var request = new ConfirmTopUpHistoryRequest(
+            accountId,
+            "standard",
+            Now.AddMinutes(3).UtcDateTime,
+            [new TopUpHistoryOperationDto(session.RequestedAmount, Now.AddMinutes(2).UtcDateTime)]);
+
+        Assert.Equal(1, (await service.ConfirmPaymentFromHistoryAsync(workerId, request)).ConfirmedCount);
+        Assert.Equal(0, (await service.ConfirmPaymentFromHistoryAsync(workerId, request)).ConfirmedCount);
+        Assert.Empty(await service.GetPendingHistoryChecksForWorkerAsync(workerId));
+    }
+
+    [Fact]
+    public async Task MarkPaidAsync_NextPassStillChecksHistoryBeforeWaitingForAdvance()
+    {
+        await using var db = CreateDb();
+        var officeId = Guid.NewGuid();
+        var workerId = Guid.NewGuid();
+        var accountId = Guid.NewGuid();
+        SeedWorker(
+            db,
+            officeId,
+            workerId,
+            accountId,
+            balance: 54m,
+            subProfilesJson: """[{"Id":"standard","Name":"Стандарт","Balance":54}]""");
+
+        var service = CreateService(db);
+        var principal = TestPrincipalFactory.Operator("op1", "Operator 1", officeId);
+        var (session, _) = await service.CreateAsync(workerId, accountId, principal, subProfileId: "standard");
+        await AdvanceToQrReadyAsync(service, workerId, session!.Id);
+        Assert.True((await service.MarkPaidAsync(session.Id, principal)).Success);
+
+        var checks = await service.GetPendingHistoryChecksForWorkerAsync(workerId);
+        Assert.Single(checks);
+        Assert.Equal(session.Id, checks[0].SessionId);
+
+        var result = await service.ConfirmPaymentFromHistoryAsync(
+            workerId,
+            new ConfirmTopUpHistoryRequest(
+                accountId,
+                "standard",
+                Now.AddMinutes(3).UtcDateTime,
+                [new TopUpHistoryOperationDto(session.RequestedAmount, Now.AddMinutes(2).UtcDateTime)]));
+
+        Assert.Equal(1, result.ConfirmedCount);
+        var stored = await db.TopUpSessions.AsNoTracking().SingleAsync(x => x.Id == session.Id);
+        Assert.Equal(TopUpSessionStatuses.AwaitingBalance, stored.Status);
+        Assert.NotNull(stored.HistoryConfirmedAtUtc);
+        Assert.Null(stored.BalanceAfter);
+    }
+
+    [Fact]
     public async Task GetOfficeAsync_History_ReturnsNewestFirst()
     {
         await using var db = CreateDb();
@@ -680,9 +842,52 @@ public sealed class TopUpSessionServiceTests
         await service.CancelAsync(session.Id, principal);
 
         var stored = await db.TopUpSessions.AsNoTracking().FirstAsync(x => x.Id == session.Id);
-        Assert.Equal(TopUpSessionStatuses.Cancelled, stored.Status);
+        Assert.Equal(TopUpSessionStatuses.VerificationRequired, stored.Status);
         Assert.Null(stored.QrImageBase64);
         Assert.Null(stored.QrImageUrl);
+    }
+
+    [Fact]
+    public async Task CancelAsync_AfterQrReady_DefersCancellationUntilHistoryWasChecked()
+    {
+        await using var db = CreateDb();
+        var officeId = Guid.NewGuid();
+        var workerId = Guid.NewGuid();
+        var accountId = Guid.NewGuid();
+        SeedWorker(
+            db,
+            officeId,
+            workerId,
+            accountId,
+            balance: 54m,
+            subProfilesJson: """[{"Id":"standard","Name":"Стандарт","Balance":54}]""");
+
+        var service = CreateService(db);
+        var principal = TestPrincipalFactory.Operator("op1", "Operator 1", officeId);
+        var (session, _) = await service.CreateAsync(workerId, accountId, principal, subProfileId: "standard");
+        await AdvanceToQrReadyAsync(service, workerId, session!.Id);
+
+        Assert.True((await service.CancelAsync(session.Id, principal)).Success);
+        Assert.Equal(
+            TopUpSessionStatuses.VerificationRequired,
+            (await db.TopUpSessions.AsNoTracking().SingleAsync(x => x.Id == session.Id)).Status);
+
+        var duplicate = await service.CreateAsync(workerId, accountId, principal, subProfileId: "standard");
+        Assert.Null(duplicate.Session);
+        Assert.NotNull(duplicate.Conflict);
+
+        var result = await service.ConfirmPaymentFromHistoryAsync(
+            workerId,
+            new ConfirmTopUpHistoryRequest(
+                accountId,
+                "standard",
+                Now.AddMinutes(5).UtcDateTime,
+                []));
+
+        Assert.Equal(0, result.ConfirmedCount);
+        Assert.Equal(
+            TopUpSessionStatuses.Cancelled,
+            (await db.TopUpSessions.AsNoTracking().SingleAsync(x => x.Id == session.Id)).Status);
     }
 
     [Fact]

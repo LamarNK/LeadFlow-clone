@@ -182,6 +182,7 @@ internal static class Program
         host.Services.AddSingleton<IOutboundChatDispatch, OrbitaOutboundChatDispatch>();
         host.Services.AddSingleton<WorkerActivityReporter>();
         host.Services.AddSingleton<IWorkerActivityReporter>(sp => sp.GetRequiredService<WorkerActivityReporter>());
+        host.Services.AddSingleton<IWorkerTopUpHistoryConfirmation, OrbitaTopUpHistoryConfirmation>();
         host.Services.AddSingleton<MonitoringCycleJournalSink>();
         host.Services.AddSingleton<IMonitoringCycleJournal>(sp => sp.GetRequiredService<MonitoringCycleJournalSink>());
         host.Services.AddSingleton<IWorkerMonitoringService, WorkerMonitoringService>();

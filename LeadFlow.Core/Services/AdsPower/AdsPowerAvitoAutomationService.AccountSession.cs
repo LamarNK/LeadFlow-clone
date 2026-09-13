@@ -1058,6 +1058,60 @@ public sealed partial class AdsPowerAvitoAutomationService
         return money;
     }
 
+    private async Task<string> LoadWalletHistoryHtmlOnPageAsync(
+        IPage page,
+        string adsPowerUserId,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            try
+            {
+                await page.GoToAsync(
+                        WalletHistoryPageUrl,
+                        MonitoringNavigation(page, 45_000))
+                    .ConfigureAwait(false);
+            }
+            catch (Exception ex) when (IsRecoverableNavigationError(ex))
+            {
+                await Task.Delay(1400, cancellationToken).ConfigureAwait(false);
+                await page.GoToAsync(
+                        WalletHistoryPageUrl,
+                        MonitoringNavigation(page, 45_000))
+                    .ConfigureAwait(false);
+            }
+
+            await page.WaitForSelectorAsync(
+                    "[data-marker='operation']",
+                    new WaitForSelectorOptions { Timeout = 15_000 })
+                .ConfigureAwait(false);
+        }
+        catch (WaitTaskTimeoutException)
+        {
+            // История может быть пустой или отрисоваться без операций — всё равно
+            // возвращаем HTML для диагностики/парсинга.
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        try
+        {
+            return await page.GetContentAsync().ConfigureAwait(false) ?? string.Empty;
+        }
+        catch (Exception ex)
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                $"AdsPower wallet history: HTML read failed for user {adsPowerUserId}: {ex.Message}",
+                DeskLinkAuditLogLevel.Warning,
+                memberName: nameof(LoadWalletHistoryHtmlOnPageAsync),
+                properties: new Dictionary<string, object?>
+                {
+                    ["adsPower.userId"] = adsPowerUserId,
+                    ["page.url"] = page.Url
+                });
+            return string.Empty;
+        }
+    }
+
     /// <summary>
     /// Ручное пополнение аванса Avito: переход на /account/advance, ввод суммы, выбор СБП,
     /// переход к оплате и снятие QR. Оплату не выполняет и не сообщает об оплате.
@@ -2138,6 +2192,13 @@ public sealed partial class AdsPowerAvitoAutomationService
         {
             using var _ = AvitoCaptchaTaskContext.Use(captchaOptions);
             return await owner.TryReadMoneySidebarOnPageAsync(page, AdsPowerUserId, cancellationToken).ConfigureAwait(false);
+        }
+
+        public async Task<string> LoadWalletHistoryHtmlAsync(CancellationToken cancellationToken = default)
+        {
+            using var _ = AvitoCaptchaTaskContext.Use(captchaOptions);
+            return await owner.LoadWalletHistoryHtmlOnPageAsync(page, AdsPowerUserId, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         public async Task<AvitoAdvanceTopUpResult> RunAdvanceTopUpAsync(

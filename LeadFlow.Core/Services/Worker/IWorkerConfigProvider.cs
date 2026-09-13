@@ -15,6 +15,7 @@ public interface IWorkerConfigProvider
 
 public sealed class WorkerMonitoringConfig
 {
+    public Guid WorkerId { get; init; }
     public DuplicateScope DuplicateScope { get; init; } = DuplicateScope.GlobalAcrossAllAccounts;
     public int MaxConcurrentAccounts { get; init; } = 1;
     public bool DemoModeEnabled { get; init; }
@@ -32,4 +33,5 @@ public sealed class WorkerMonitoringConfig
     public bool MultiloginEnabled { get; init; } = true;
 
     public bool LocalChromeEnabled { get; init; } = true;
+    public IReadOnlyList<WorkerPendingTopUpHistoryCheckDto> PendingTopUpHistoryChecks { get; init; } = [];
 }

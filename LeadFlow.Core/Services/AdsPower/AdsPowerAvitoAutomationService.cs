@@ -47,6 +47,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
     private const string ProfileItemsPageUrl = "https://www.avito.ru/profile/pro/items";
     private const string ProfileBlockedItemsPageUrl = "https://www.avito.ru/profile/pro/items?filters=%7B%22tabs%22%3A%22rejected%22%7D";
     private const string ProfileDashboardPageUrl = "https://www.avito.ru/profile/dashboard";
+    private const string WalletHistoryPageUrl = "https://www.avito.ru/account/history";
     /// <summary>Модалка «Выбор профиля» через дашборд — надёжнее, чем с <c>/profile/pro/items</c>.</summary>
     private const string ProfileSwitchPageUrl = "https://www.avito.ru/profile/dashboard#profile/switch?withEntities=true";
     /// <summary>Мини-чат Avito не открывается в углу при узком viewport — расширяем перед сбором переписки.</summary>

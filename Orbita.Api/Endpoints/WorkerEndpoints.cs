@@ -228,6 +228,21 @@ public static class WorkerEndpoints
                 : Results.Conflict(result);
         }).RequireAuthorization("Worker");
 
+        workers.MapPost("/top-up-sessions/confirm-history", async (
+            ConfirmTopUpHistoryRequest request,
+            TopUpSessionService topUpSessions,
+            ClaimsPrincipal user,
+            CancellationToken ct) =>
+        {
+            if (!TryGetWorkerId(user, out var workerId))
+            {
+                return Results.Forbid();
+            }
+
+            var result = await topUpSessions.ConfirmPaymentFromHistoryAsync(workerId, request, ct);
+            return result.Error is null ? Results.Ok(result) : Results.BadRequest(result);
+        }).RequireAuthorization("Worker");
+
         workers.MapGet("/top-up-sessions/{id:guid}", async (
             Guid id,
             TopUpSessionService topUpSessions,

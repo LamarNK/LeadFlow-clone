@@ -44,7 +44,8 @@ public sealed class WorkerMonitoringService(
     WorkerAccountSessionFactory? accountSessionFactory = null,
     LocalChromeAccountLock? localChromeAccountLock = null,
     ILocalChromeBrowserLauncher? localChromeLauncher = null,
-    IAvitoGeeTestSolver? geeTestSolver = null) : IWorkerMonitoringService
+    IAvitoGeeTestSolver? geeTestSolver = null,
+    IWorkerTopUpHistoryConfirmation? topUpHistoryConfirmation = null) : IWorkerMonitoringService
 {
     private readonly IResponsePhoneObservationStore _phoneObservationStore =
         phoneObservationStore ?? new NullResponsePhoneObservationStore();
@@ -60,6 +61,7 @@ public sealed class WorkerMonitoringService(
         localChromeAccountLock ?? new LocalChromeAccountLock();
     private readonly ILocalChromeBrowserLauncher? _localChromeLauncher = localChromeLauncher;
     private readonly IAvitoGeeTestSolver? _geeTestSolver = geeTestSolver;
+    private readonly IWorkerTopUpHistoryConfirmation? _topUpHistoryConfirmation = topUpHistoryConfirmation;
 
     private const int LoopRecoveryPauseMinutes = 12;
     private const int MaxLoopRecoveryFailuresBeforeStop = 10;
@@ -986,9 +988,10 @@ public sealed class WorkerMonitoringService(
         var seenKeys = new HashSet<string>(StringComparer.Ordinal);
         // Окно наблюдения (часов) после первой отправки — из конфига воркера, default 120 (5 суток).
         var phoneWatchHours = ResponsePhoneWatchRules.DefaultUnchangedHours;
+        WorkerMonitoringConfig? liveConfig = null;
         try
         {
-            var liveConfig = await configProvider.GetConfigAsync(cancellationToken).ConfigureAwait(false);
+            liveConfig = await configProvider.GetConfigAsync(cancellationToken).ConfigureAwait(false);
             phoneWatchHours = liveConfig.PhoneUnchangedHours;
         }
         catch
@@ -1756,6 +1759,53 @@ public sealed class WorkerMonitoringService(
                         }
 
                         continue;
+                    }
+
+                    if (_topUpHistoryConfirmation is not null
+                        && liveConfig?.PendingTopUpHistoryChecks.Any(x =>
+                            x.AccountId == account.Id
+                            && string.Equals(x.SubProfileId, sub.Id, StringComparison.Ordinal)) == true)
+                    {
+                        try
+                        {
+                            WorkerMonitoringLogger.SubProfileStep(
+                                account,
+                                sub,
+                                i + 1,
+                                subProfiles.Count,
+                                "проверка истории операций кошелька");
+                            var historyHtml = await session
+                                .LoadWalletHistoryHtmlAsync(cancellationToken)
+                                .ConfigureAwait(false);
+                            if (!AvitoAdvanceTopUpHistoryParser.IsHistoryPage(historyHtml))
+                            {
+                                throw new InvalidOperationException(
+                                    "Страница истории операций Avito не загрузилась.");
+                            }
+
+                            var operations = AvitoAdvanceTopUpHistoryParser
+                                .Parse(historyHtml, DateTime.UtcNow);
+                            var confirmed = await _topUpHistoryConfirmation
+                                .ConfirmAsync(
+                                    liveConfig!.WorkerId,
+                                    account.Id,
+                                    sub.Id,
+                                    operations,
+                                    cancellationToken)
+                                .ConfigureAwait(false);
+                            if (confirmed > 0)
+                            {
+                                _ = GlobalLogger.Instance.LogAsync(
+                                    $"Аккаунт «{account.DisplayName}» · «{sub.Name}» — в истории кошелька подтверждено пополнений: {confirmed}.",
+                                    DeskLinkAuditLogLevel.Info);
+                            }
+                        }
+                        catch (Exception ex) when (ex is not OperationCanceledException)
+                        {
+                            _ = GlobalLogger.Instance.LogAsync(
+                                $"Top-up history check failed for {account.DisplayName}/{sub.Name}: {ex.Message}",
+                                DeskLinkAuditLogLevel.Warning);
+                        }
                     }
 
                     if (!AvitoHumanVariation.RollPermille(MonitoringTiming.SkipBalanceChancePermille))

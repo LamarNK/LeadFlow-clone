@@ -57,7 +57,8 @@ public sealed class TopUpSessionService(
         TopUpSessionStatuses.Started,
         TopUpSessionStatuses.PaymentClaimed,
         TopUpSessionStatuses.QrReady,
-        TopUpSessionStatuses.AwaitingBalance
+        TopUpSessionStatuses.AwaitingBalance,
+        TopUpSessionStatuses.VerificationRequired
     ];
     private static readonly string[] ConfirmableStatuses =
     [
@@ -356,15 +357,42 @@ public sealed class TopUpSessionService(
         Guid sessionId,
         ClaimsPrincipal principal,
         CancellationToken ct = default) =>
-        CompleteByOperatorAsync(
-            sessionId,
-            principal,
-            TopUpSessionStatuses.Cancelled,
-            session => TopUpSessionStatuses.IsActive(session.Status)
-                ? null
-                : "Сессия уже завершена.",
-            ownerError: "Отменить может только оператор, начавший сессию.",
-            ct);
+        CancelOrDeferForHistoryCheckAsync(sessionId, principal, ct);
+
+    private async Task<(bool Success, string? Error)> CancelOrDeferForHistoryCheckAsync(
+        Guid sessionId,
+        ClaimsPrincipal principal,
+        CancellationToken ct)
+    {
+        var session = await db.TopUpSessions
+            .AsNoTracking()
+            .FirstOrDefaultAsync(x => x.Id == sessionId, ct)
+            .ConfigureAwait(false);
+        if (session?.Status == TopUpSessionStatuses.QrReady)
+        {
+            return await CompleteByOperatorAsync(
+                    sessionId,
+                    principal,
+                    TopUpSessionStatuses.VerificationRequired,
+                    current => current.Status == TopUpSessionStatuses.QrReady
+                        ? null
+                        : "Проверить историю можно только после формирования QR-кода.",
+                    ownerError: "Отменить может только оператор, начавший сессию.",
+                    ct)
+                .ConfigureAwait(false);
+        }
+
+        return await CompleteByOperatorAsync(
+                sessionId,
+                principal,
+                TopUpSessionStatuses.Cancelled,
+                current => TopUpSessionStatuses.IsActive(current.Status)
+                    ? null
+                    : "Сессия уже завершена.",
+                ownerError: "Отменить может только оператор, начавший сессию.",
+                ct)
+            .ConfigureAwait(false);
+    }
 
     /// <summary>
     /// Оператор подтвердил оплату QR. Допустимо только из <see cref="TopUpSessionStatuses.QrReady"/>.
@@ -447,11 +475,13 @@ public sealed class TopUpSessionService(
 
         session.Status = terminalStatus;
         var completedAt = timeProvider.GetUtcNow().UtcDateTime;
-        if (terminalStatus == TopUpSessionStatuses.AwaitingBalance)
+        if (terminalStatus is TopUpSessionStatuses.AwaitingBalance or TopUpSessionStatuses.VerificationRequired)
         {
             session.AwaitingBalanceAtUtc = completedAt;
             session.CompletedAtUtc = null;
-            session.ProgressMessage = "Оплата отмечена. Баланс подтвердится на следующем проходе.";
+            session.ProgressMessage = terminalStatus == TopUpSessionStatuses.AwaitingBalance
+                ? "Оплата отмечена. На следующем проходе проверим историю операций и баланс."
+                : "Перед отменой на следующем проходе проверим историю операций Avito.";
         }
         else
         {
@@ -601,7 +631,10 @@ public sealed class TopUpSessionService(
             else if (request.Status == TopUpSessionStatuses.QrReady)
             {
                 session.QrReadyAtUtc ??= now;
-                session.ExpiresAtUtc = now.Add(SessionTtl);
+                // QR оплачивается вручную, поэтому короткий технический TTL сессии
+                // не должен закрыть её раньше следующего обычного прохода воркера.
+                // На нём история кошелька будет проверена даже если аванс ещё старый.
+                session.ExpiresAtUtc = now.Add(TopUpSessionRules.BalanceConfirmationTtl);
                 session.QrImageBase64 = request.QrImageBase64;
                 session.QrImageUrl = request.QrImageUrl;
             }
@@ -610,7 +643,7 @@ public sealed class TopUpSessionService(
         {
             session.QrImageBase64 = request.QrImageBase64;
             session.QrImageUrl = request.QrImageUrl;
-            session.ExpiresAtUtc = now.Add(SessionTtl);
+            session.ExpiresAtUtc = now.Add(TopUpSessionRules.BalanceConfirmationTtl);
         }
 
         if (request.ProgressMessage is not null)
@@ -624,7 +657,8 @@ public sealed class TopUpSessionService(
             await ReleasePauseAsync(session, ct).ConfigureAwait(false);
             dispatchNext = true;
         }
-        else if (!TopUpSessionStatuses.IsActive(request.Status))
+        else if (!TopUpSessionStatuses.IsActive(request.Status)
+                 && request.Status != TopUpSessionStatuses.VerificationRequired)
         {
             session.CompletedAtUtc = now;
             session.FailureMessage = request.FailureMessage;
@@ -839,6 +873,147 @@ public sealed class TopUpSessionService(
             .FirstOrDefaultAsync(x => x.Id == sessionId && x.WorkerId == workerId, ct)
             .ConfigureAwait(false);
         return session is null ? null : ToDto(session, session.Worker.DisplayName);
+    }
+
+    public async Task<IReadOnlyList<WorkerPendingTopUpHistoryCheckDto>> GetPendingHistoryChecksForWorkerAsync(
+        Guid workerId,
+        CancellationToken ct = default)
+    {
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+        return await db.TopUpSessions
+            .AsNoTracking()
+            .Where(x =>
+                x.WorkerId == workerId
+                && x.HistoryConfirmedAtUtc == null
+                && (x.Status == TopUpSessionStatuses.QrReady
+                    || x.Status == TopUpSessionStatuses.AwaitingBalance
+                    || x.Status == TopUpSessionStatuses.VerificationRequired
+                    || (x.Status == TopUpSessionStatuses.Expired
+                        && x.QrReadyAtUtc != null
+                        && x.QrReadyAtUtc > now - TopUpSessionRules.BalanceConfirmationTtl))
+                && x.SubProfileId != "")
+            .OrderBy(x => x.CreatedAtUtc)
+            .Select(x => new WorkerPendingTopUpHistoryCheckDto(
+                x.Id,
+                x.AccountId,
+                x.SubProfileId,
+                x.SubProfileName,
+                x.RequestedAmount))
+            .ToListAsync(ct)
+            .ConfigureAwait(false);
+    }
+
+    public async Task<ConfirmTopUpHistoryResult> ConfirmPaymentFromHistoryAsync(
+        Guid workerId,
+        ConfirmTopUpHistoryRequest request,
+        CancellationToken ct = default)
+    {
+        var accountOwned = await db.WorkerAccounts
+            .AnyAsync(x => x.WorkerId == workerId && x.AccountId == request.AccountId, ct)
+            .ConfigureAwait(false);
+        if (!accountOwned)
+        {
+            return new ConfirmTopUpHistoryResult(0, "Аккаунт не принадлежит воркеру.");
+        }
+
+        var candidates = await db.TopUpSessions
+            .Where(x =>
+                x.WorkerId == workerId
+                && x.AccountId == request.AccountId
+                && x.SubProfileId == request.SubProfileId
+                && x.HistoryConfirmedAtUtc == null
+                && (x.Status == TopUpSessionStatuses.QrReady
+                    || x.Status == TopUpSessionStatuses.AwaitingBalance
+                    || x.Status == TopUpSessionStatuses.VerificationRequired
+                    || (x.Status == TopUpSessionStatuses.Expired
+                        && x.QrReadyAtUtc != null
+                        && x.QrReadyAtUtc > timeProvider.GetUtcNow().UtcDateTime - TopUpSessionRules.BalanceConfirmationTtl)))
+            .OrderBy(x => x.CreatedAtUtc)
+            .ToListAsync(ct)
+            .ConfigureAwait(false);
+
+        var now = timeProvider.GetUtcNow().UtcDateTime;
+        var matchedSessionIds = new HashSet<Guid>();
+        var confirmed = 0;
+        foreach (var operation in request.Operations.OrderBy(x => x.OccurredAtUtc))
+        {
+            var session = candidates
+                .Where(x =>
+                    x.HistoryConfirmedAtUtc == null
+                    && !matchedSessionIds.Contains(x.Id)
+                    && Math.Abs(x.RequestedAmount - operation.Amount) <= TopUpSessionRules.BalanceEpsilonRub
+                    && operation.OccurredAtUtc >= (x.PaymentClaimedAtUtc
+                        ?? x.QrReadyAtUtc
+                        ?? x.CreatedAtUtc).AddMinutes(-2)
+                    && operation.OccurredAtUtc <= request.CapturedAtUtc.AddMinutes(2))
+                .OrderByDescending(x => x.PaymentClaimedAtUtc ?? x.QrReadyAtUtc ?? x.CreatedAtUtc)
+                .FirstOrDefault();
+            if (session is null)
+            {
+                continue;
+            }
+
+            session.Status = TopUpSessionStatuses.AwaitingBalance;
+            session.AwaitingBalanceAtUtc ??= now;
+            session.HistoryConfirmedAtUtc = now;
+            session.HistoryOperationAtUtc = operation.OccurredAtUtc;
+            session.CompletedAtUtc = null;
+            session.ProgressMessage = "Оплата найдена в истории операций Avito. Баланс подтвердится на следующем проходе.";
+            session.FailureMessage = null;
+            ClearQrData(session);
+            await ReleasePauseAsync(session, ct).ConfigureAwait(false);
+            matchedSessionIds.Add(session.Id);
+            confirmed++;
+
+            _log.LogInformation(
+                "Top-up: оплата найдена в истории Avito {SessionId} → awaiting_balance worker={WorkerId} account={AccountName} subprofile={SubProfileName} amount={Amount} occurred={OccurredAtUtc}.",
+                session.Id,
+                session.WorkerId,
+                session.AccountName,
+                session.SubProfileName,
+                operation.Amount,
+                operation.OccurredAtUtc);
+        }
+
+        var cancelledAfterVerification = 0;
+        var operationsAvailableThrough = request.CapturedAtUtc.AddMinutes(1);
+        foreach (var session in candidates.Where(x =>
+                     x.Status == TopUpSessionStatuses.VerificationRequired
+                     && x.HistoryConfirmedAtUtc == null
+                     && (x.PaymentClaimedAtUtc ?? x.QrReadyAtUtc ?? x.CreatedAtUtc) <= operationsAvailableThrough))
+        {
+            session.Status = TopUpSessionStatuses.Cancelled;
+            session.CompletedAtUtc = now;
+            session.ProgressMessage = "В истории операций пополнение не найдено. Сессия отменена.";
+            session.FailureMessage = null;
+            ClearQrData(session);
+            await ReleasePauseAsync(session, ct).ConfigureAwait(false);
+            cancelledAfterVerification++;
+        }
+
+        if (confirmed == 0 && cancelledAfterVerification == 0)
+        {
+            return new ConfirmTopUpHistoryResult(0);
+        }
+
+        await db.SaveChangesAsync(ct).ConfigureAwait(false);
+        foreach (var session in candidates.Where(x => x.Status == TopUpSessionStatuses.AwaitingBalance))
+        {
+            panelRealtime.Notify(
+                [PanelChangeKind.Workers, PanelChangeKind.Accounts],
+                session.OfficeId,
+                session.WorkerId);
+        }
+
+        foreach (var session in candidates.Where(x => x.Status == TopUpSessionStatuses.Cancelled))
+        {
+            panelRealtime.Notify(
+                [PanelChangeKind.Workers, PanelChangeKind.Accounts],
+                session.OfficeId,
+                session.WorkerId);
+        }
+
+        return new ConfirmTopUpHistoryResult(confirmed);
     }
 
     public async Task<int> SweepExpiredAsync(CancellationToken ct = default)
@@ -1337,5 +1512,7 @@ public sealed class TopUpSessionService(
             session.ProgressMessage,
             session.BalanceAfter,
             session.BalanceConfirmedAtUtc,
-            session.AwaitingBalanceAtUtc);
+            session.AwaitingBalanceAtUtc,
+            session.HistoryConfirmedAtUtc,
+            session.HistoryOperationAtUtc);
 }

@@ -45,7 +45,8 @@ public static class TopUpSessionStatuses
             [Requested] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { Started, Failed, Expired },
             [Started] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { PaymentClaimed, QrReady, Failed, Expired },
             [PaymentClaimed] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { QrReady, Failed, Expired },
-            [QrReady] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { Paid, AwaitingBalance, Completed, Failed, Expired },
+            [QrReady] = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
+                { Paid, AwaitingBalance, VerificationRequired, Completed, Failed, Expired },
             [AwaitingBalance] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { Completed, Failed, Expired },
             [VerificationRequired] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { Completed, Failed },
         };
@@ -387,7 +388,9 @@ public sealed record TopUpSessionDto(
     string? ProgressMessage = null,
     decimal? BalanceAfter = null,
     DateTime? BalanceConfirmedAtUtc = null,
-    DateTime? AwaitingBalanceAtUtc = null);
+    DateTime? AwaitingBalanceAtUtc = null,
+    DateTime? HistoryConfirmedAtUtc = null,
+    DateTime? HistoryOperationAtUtc = null);
 
 /// <summary>
 /// Pending-снимок сессии для воркера (через worker config / push). Воркер уже знает
@@ -404,6 +407,32 @@ public sealed record WorkerPendingTopUpSessionDto(
     int DailyResponseCount,
     string SubProfileId = "",
     string SubProfileName = "");
+
+/// <summary>
+/// Сессия с готовым QR, для которой воркер должен проверить историю кошелька
+/// на следующем обычном проходе субпрофиля.
+/// </summary>
+public sealed record WorkerPendingTopUpHistoryCheckDto(
+    Guid SessionId,
+    Guid AccountId,
+    string SubProfileId,
+    string SubProfileName,
+    decimal RequestedAmount);
+
+public sealed record TopUpHistoryOperationDto(
+    decimal Amount,
+    DateTime OccurredAtUtc,
+    string Description = "Внесение аванса");
+
+public sealed record ConfirmTopUpHistoryRequest(
+    Guid AccountId,
+    string SubProfileId,
+    DateTime CapturedAtUtc,
+    IReadOnlyList<TopUpHistoryOperationDto> Operations);
+
+public sealed record ConfirmTopUpHistoryResult(
+    int ConfirmedCount,
+    string? Error = null);
 
 public sealed record UpdateTopUpSessionStatusRequest(
     Guid SessionId,

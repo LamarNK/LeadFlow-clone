@@ -94,6 +94,10 @@ public sealed class WorkerConfigService(
             ? null
             : await topUpSessions.GetPendingForWorkerAsync(worker.Id, ct).ConfigureAwait(false);
 
+        var pendingTopUpHistoryChecks = topUpSessions is null
+            ? []
+            : await topUpSessions.GetPendingHistoryChecksForWorkerAsync(worker.Id, ct).ConfigureAwait(false);
+
         var configuredParallelism = worker.MaxConcurrentAccounts;
         var ramBasedParallelism = WorkerParallelismRules.GetMaximumConcurrentAccounts(worker.LastRamTotalMb);
         var effectiveParallelism = ramBasedParallelism is null
@@ -140,7 +144,8 @@ public sealed class WorkerConfigService(
             ToPendingSync(worker),
             pendingLocalChromeLogin,
             pendingTopUp,
-            worker.IsMonitoringPaused);
+            worker.IsMonitoringPaused,
+            pendingTopUpHistoryChecks);
     }
 
     public async Task<bool> SyncAccountsAsync(

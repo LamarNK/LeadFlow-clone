@@ -277,6 +277,32 @@ public sealed class OrbitaApiClient
         return (false, string.IsNullOrWhiteSpace(body) ? $"HTTP {(int)response.StatusCode}" : body);
     }
 
+    public async Task<ConfirmTopUpHistoryResult?> ConfirmTopUpHistoryAsync(
+        ConfirmTopUpHistoryRequest request,
+        CancellationToken ct)
+    {
+        using var httpRequest = new HttpRequestMessage(
+            HttpMethod.Post,
+            "api/v1/workers/top-up-sessions/confirm-history");
+        ApplyAuth(httpRequest);
+        httpRequest.Content = JsonContent.Create(request);
+        var response = await _http.SendAsync(httpRequest, ct).ConfigureAwait(false);
+        var body = await response.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(body))
+        {
+            return response.IsSuccessStatusCode ? new ConfirmTopUpHistoryResult(0) : null;
+        }
+
+        try
+        {
+            return JsonSerializer.Deserialize<ConfirmTopUpHistoryResult>(body, JsonReadOptions);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
     public async Task<TopUpSessionPollResult> GetTopUpSessionAsync(Guid sessionId, CancellationToken ct)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, $"api/v1/workers/top-up-sessions/{sessionId:D}");

@@ -130,7 +130,8 @@ public sealed record WorkerConfigDto(
     /// <summary>
     /// Пауза основного мониторинга/парсинга откликов. Воркер остаётся авторизованным.
     /// </summary>
-    bool IsMonitoringPaused = false)
+    bool IsMonitoringPaused = false,
+    IReadOnlyList<WorkerPendingTopUpHistoryCheckDto>? PendingTopUpHistoryChecks = null)
 {
     public bool ShouldSyncAdsPowerCatalog => AdsPowerEnabled;
 
