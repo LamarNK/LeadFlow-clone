@@ -1761,6 +1761,7 @@ public sealed class WorkerMonitoringService(
                         continue;
                     }
 
+                    decimal? historyPageBalance = null;
                     if (_topUpHistoryConfirmation is not null
                         && liveConfig?.PendingTopUpHistoryChecks.Any(x =>
                             x.AccountId == account.Id
@@ -1785,16 +1786,27 @@ public sealed class WorkerMonitoringService(
 
                             var operations = AvitoAdvanceTopUpHistoryParser
                                 .Parse(historyHtml, DateTime.UtcNow);
+                            var advanceBalance = AvitoBalanceParser
+                                .ParseMoneySidebar(historyHtml)
+                                ?.AdvanceBalance;
                             var confirmed = await _topUpHistoryConfirmation
                                 .ConfirmAsync(
                                     liveConfig!.WorkerId,
                                     account.Id,
                                     sub.Id,
                                     operations,
+                                    advanceBalance,
                                     cancellationToken)
                                 .ConfigureAwait(false);
                             if (confirmed > 0)
                             {
+                                if (advanceBalance is decimal observed
+                                    && (sub.Balance is null || observed > sub.Balance))
+                                {
+                                    sub.Balance = observed;
+                                    historyPageBalance = observed;
+                                }
+
                                 _ = GlobalLogger.Instance.LogAsync(
                                     $"Аккаунт «{account.DisplayName}» · «{sub.Name}» — пополнение подтверждено историей операций Avito.",
                                     DeskLinkAuditLogLevel.Info);
@@ -1808,7 +1820,8 @@ public sealed class WorkerMonitoringService(
                         }
                     }
 
-                    if (!AvitoHumanVariation.RollPermille(MonitoringTiming.SkipBalanceChancePermille))
+                    if (historyPageBalance is null
+                        && !AvitoHumanVariation.RollPermille(MonitoringTiming.SkipBalanceChancePermille))
                     {
                         await TryCaptureSubProfileBalanceAsync(sub, session, cancellationToken).ConfigureAwait(false);
                         await RefreshProfileAlertsAsync(account, session, sub, cancellationToken)

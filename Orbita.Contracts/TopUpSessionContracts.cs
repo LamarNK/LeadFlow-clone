@@ -428,7 +428,8 @@ public sealed record ConfirmTopUpHistoryRequest(
     Guid AccountId,
     string SubProfileId,
     DateTime CapturedAtUtc,
-    IReadOnlyList<TopUpHistoryOperationDto> Operations);
+    IReadOnlyList<TopUpHistoryOperationDto> Operations,
+    decimal? AdvanceBalance = null);
 
 public sealed record ConfirmTopUpHistoryResult(
     int ConfirmedCount,

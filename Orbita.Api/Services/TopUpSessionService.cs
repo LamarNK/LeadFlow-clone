@@ -986,6 +986,18 @@ public sealed class TopUpSessionService(
             session.CompletedAtUtc = now;
             session.ProgressMessage = "Пополнение подтверждено историей операций Avito.";
             session.FailureMessage = null;
+            if (request.AdvanceBalance is decimal advanceBalance
+                && advanceBalance > session.CurrentBalance)
+            {
+                ApplyObservedSubProfileBalance(
+                    account,
+                    request.SubProfileId,
+                    advanceBalance,
+                    request.CapturedAtUtc);
+                session.BalanceAfter = advanceBalance;
+                session.BalanceConfirmedAtUtc = request.CapturedAtUtc;
+            }
+
             ClearQrData(session);
             await ReleasePauseAsync(session, ct).ConfigureAwait(false);
             matchedSessionIds.Add(session.Id);
@@ -1042,6 +1054,31 @@ public sealed class TopUpSessionService(
         }
 
         return new ConfirmTopUpHistoryResult(confirmed);
+    }
+
+    private static void ApplyObservedSubProfileBalance(
+        WorkerAccountEntity account,
+        string subProfileId,
+        decimal advanceBalance,
+        DateTime capturedAtUtc)
+    {
+        var profiles = SubProfileDeserializer.Deserialize(account.SubProfilesJson)?.ToList();
+        if (profiles is null || profiles.Count == 0)
+        {
+            return;
+        }
+
+        var index = profiles.FindIndex(x =>
+            string.Equals(x.Id, subProfileId, StringComparison.Ordinal));
+        if (index < 0)
+        {
+            return;
+        }
+
+        profiles[index] = profiles[index] with { Balance = advanceBalance };
+        account.SubProfilesJson = JsonSerializer.Serialize(profiles, SubProfileJsonOptions.Serialize);
+        account.TotalBalance = profiles.Sum(x => x.Balance ?? 0m);
+        account.UpdatedAtUtc = capturedAtUtc;
     }
 
     public async Task<int> SweepExpiredAsync(CancellationToken ct = default)

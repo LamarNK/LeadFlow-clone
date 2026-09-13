@@ -6,6 +6,31 @@ namespace LeadFlow.Tests;
 public sealed class AvitoBalanceParserTests
 {
     [Fact]
+    public void ParseMoneySidebar_HistoryPageSidebar_ReturnsAdvanceBalance()
+    {
+        const string html = """
+            <div data-marker="osp-sidebar/tools/money">
+              <a href="/account">
+                <article><div>
+                  <p>Кошелёк</p><h5>0,00&nbsp;₽</h5><p>Нет&nbsp;бонусов</p>
+                </div></article>
+              </a>
+              <a href="/tariff/cpa/profile">
+                <article><div>
+                  <p>Аванс</p><h5>300&nbsp;₽</h5><p>~ на 1 день</p>
+                </div></article>
+              </a>
+            </div>
+            """;
+
+        var money = AvitoBalanceParser.ParseMoneySidebar(html);
+
+        Assert.NotNull(money);
+        Assert.Equal(0m, money.WalletBalance);
+        Assert.Equal(300m, money.AdvanceBalance);
+    }
+
+    [Fact]
     public void ParseMoneySidebar_BothTiles_ReturnsWalletAndAdvance()
     {
         var html = """

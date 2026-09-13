@@ -12,6 +12,7 @@ public sealed class OrbitaTopUpHistoryConfirmation(
         Guid accountId,
         string subProfileId,
         IReadOnlyList<AvitoWalletHistoryOperation> operations,
+        decimal? advanceBalance = null,
         CancellationToken cancellationToken = default)
     {
         _ = workerId;
@@ -27,7 +28,8 @@ public sealed class OrbitaTopUpHistoryConfirmation(
                     DateTime.UtcNow,
                     operations
                         .Select(x => new TopUpHistoryOperationDto(x.Amount, x.OccurredAtUtc, x.Description))
-                        .ToList()),
+                        .ToList(),
+                    advanceBalance),
                 cancellationToken)
             .ConfigureAwait(false);
         return result?.ConfirmedCount ?? 0;

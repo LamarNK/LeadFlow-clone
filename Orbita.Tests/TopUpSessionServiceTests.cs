@@ -525,7 +525,8 @@ public sealed class TopUpSessionServiceTests
                 accountId,
                 "standard",
                 Now.AddMinutes(3).UtcDateTime,
-                [new TopUpHistoryOperationDto(session.RequestedAmount, Now.AddMinutes(2).UtcDateTime)]));
+                [new TopUpHistoryOperationDto(session.RequestedAmount, Now.AddMinutes(2).UtcDateTime)],
+                AdvanceBalance: 54m));
 
         Assert.Null(result.Error);
         Assert.Equal(1, result.ConfirmedCount);
@@ -538,6 +539,12 @@ public sealed class TopUpSessionServiceTests
         Assert.Null(stored.BalanceAfter);
         Assert.Null(stored.BalanceConfirmedAtUtc);
         Assert.Contains("подтверждено историей", stored.ProgressMessage, StringComparison.OrdinalIgnoreCase);
+        var unchangedAccount = await db.WorkerAccounts.AsNoTracking().SingleAsync(x =>
+            x.WorkerId == workerId && x.AccountId == accountId);
+        var unchangedProfiles = JsonSerializer.Deserialize<List<WorkerSubProfileDto>>(
+            unchangedAccount.SubProfilesJson,
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        Assert.Equal(54m, Assert.Single(unchangedProfiles!).Balance);
 
         var (duplicate, conflict) = await service.CreateAsync(
             workerId,
@@ -548,6 +555,55 @@ public sealed class TopUpSessionServiceTests
         Assert.NotNull(conflict);
         Assert.Null(conflict.ActiveSessionId);
         Assert.Contains("баланс", conflict.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public async Task ConfirmPaymentFromHistoryAsync_UpdatesSubProfileBalanceFromSameHistoryPage()
+    {
+        await using var db = CreateDb();
+        var officeId = Guid.NewGuid();
+        var workerId = Guid.NewGuid();
+        var accountId = Guid.NewGuid();
+        SeedWorker(
+            db,
+            officeId,
+            workerId,
+            accountId,
+            balance: 105m,
+            subProfilesJson: """[{"Id":"special-5","Name":"СпецСтрой 5","Balance":105}]""");
+
+        var service = CreateService(db);
+        var principal = TestPrincipalFactory.Operator("op1", "Operator 1", officeId);
+        var (session, _) = await service.CreateAsync(
+            workerId,
+            accountId,
+            principal,
+            subProfileId: "special-5");
+        await AdvanceToQrReadyAsync(service, workerId, session!.Id);
+        Assert.True((await service.MarkPaidAsync(session.Id, principal)).Success);
+
+        var result = await service.ConfirmPaymentFromHistoryAsync(
+            workerId,
+            new ConfirmTopUpHistoryRequest(
+                accountId,
+                "special-5",
+                Now.AddMinutes(3).UtcDateTime,
+                [new TopUpHistoryOperationDto(session.RequestedAmount, Now.AddMinutes(2).UtcDateTime)],
+                AdvanceBalance: 280m));
+
+        Assert.Equal(1, result.ConfirmedCount);
+        var account = await db.WorkerAccounts.AsNoTracking().SingleAsync(x =>
+            x.WorkerId == workerId && x.AccountId == accountId);
+        var profiles = JsonSerializer.Deserialize<List<WorkerSubProfileDto>>(
+            account.SubProfilesJson,
+            new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+        Assert.NotNull(profiles);
+        Assert.Equal(280m, Assert.Single(profiles).Balance);
+        Assert.Equal(280m, account.TotalBalance);
+
+        var stored = await db.TopUpSessions.AsNoTracking().SingleAsync(x => x.Id == session.Id);
+        Assert.Equal(280m, stored.BalanceAfter);
+        Assert.Equal(Now.AddMinutes(3).UtcDateTime, stored.BalanceConfirmedAtUtc);
     }
 
     [Fact]

@@ -9,5 +9,6 @@ public interface IWorkerTopUpHistoryConfirmation
         Guid accountId,
         string subProfileId,
         IReadOnlyList<AvitoWalletHistoryOperation> operations,
+        decimal? advanceBalance = null,
         CancellationToken cancellationToken = default);
 }
