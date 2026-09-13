@@ -186,7 +186,14 @@
                             <td data-label="Статус" data-balance-status>
                                 @if (session is null)
                                 {
-                                    <span class="balance-status balance-status--low">Низкий баланс</span>
+                                    if (row.TopUpCooldownActive)
+                                    {
+                                        <span class="balance-status balance-status--completed">Пополнено недавно</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="balance-status balance-status--low">Низкий баланс</span>
+                                    }
                                 }
                                 else
                                 {

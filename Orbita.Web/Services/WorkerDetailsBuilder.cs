@@ -228,7 +228,8 @@ internal static class WorkerDetailsBuilder
         bool adsPowerEnabled = true,
         bool multiloginEnabled = true,
         bool localChromeEnabled = true,
-        Guid? pendingLocalLoginAccountId = null)
+        Guid? pendingLocalLoginAccountId = null,
+        IReadOnlySet<string>? topUpCooldownSubProfileIds = null)
     {
         var providerEnabled = IsAccountProviderEnabled(
             account,
@@ -254,7 +255,8 @@ internal static class WorkerDetailsBuilder
             account.AccountId,
             workerIsOnline,
             null,
-            activeAccounts);
+            activeAccounts,
+            topUpCooldownSubProfileIds);
         var lastErrorMessage = AdsPowerErrorMessageNormalizer.NormalizeForDisplay(account.LastErrorMessage);
         var errors = AccountErrorMetrics.ComputeErrorCount(
             account.TodayEventErrors,
@@ -324,7 +326,8 @@ internal static class WorkerDetailsBuilder
             IsLowBalance = balance?.TotalBalance is decimal bal
                 && bal < BalanceDisplayRules.WorkerDetailsLowBalanceThresholdRub,
             CanTopUp = balance?.TotalBalance is decimal topUpBal
-                && topUpBal < TopUpSessionRules.LowBalanceThresholdRub,
+                && topUpBal < TopUpSessionRules.LowBalanceThresholdRub
+                && (topUpCooldownSubProfileIds is null || topUpCooldownSubProfileIds.Count == 0),
             BalanceText = balance is null
                 ? "—"
                 : FormatAccountBalanceText(balance),

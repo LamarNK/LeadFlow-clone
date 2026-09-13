@@ -35,6 +35,7 @@ public sealed class BalanceSubProfileRowViewModel
     public int TodayResponses { get; init; }
     public bool WorkerOnline { get; init; }
     public bool IsLowBalance { get; init; }
+    public bool TopUpCooldownActive { get; init; }
     public DateTime? LastUpdatedAtUtc { get; init; }
     public bool IsStale { get; init; }
     public TopUpSessionDto? Session { get; init; }

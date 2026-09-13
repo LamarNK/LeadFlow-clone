@@ -151,6 +151,27 @@ public sealed class TopUpSessionService(
             await ExpireSessionAsync(active, now, ct).ConfigureAwait(false);
         }
 
+        var latestCompletedAtUtc = await db.TopUpSessions
+            .AsNoTracking()
+            .Where(x =>
+                x.AccountId == accountId
+                && x.SubProfileId == (subProfileId ?? string.Empty)
+                && x.Status == TopUpSessionStatuses.Completed)
+            .MaxAsync(x => (DateTime?)x.CompletedAtUtc, ct)
+            .ConfigureAwait(false);
+        if (TopUpSessionRules.IsRepeatTopUpCooldownActive(latestCompletedAtUtc, now))
+        {
+            var availableAtUtc = latestCompletedAtUtc!.Value + TopUpSessionRules.RepeatTopUpCooldown;
+            _log.LogInformation(
+                "Top-up: отказ создания во время cooldown worker={WorkerId} account={AccountId} subprofile={SubProfileId} available={AvailableAtUtc}.",
+                workerId,
+                accountId,
+                subProfileId,
+                availableAtUtc);
+            return (null, new TopUpSessionConflictDto(
+                $"Пополнение подтверждено недавно. Повторное пополнение будет доступно после {availableAtUtc:HH:mm} UTC."));
+        }
+
         // Валидация текущего баланса и суммы на момент запроса.
         // Блокируем строку аккаунта (FOR UPDATE), чтобы баланс не мог устареть между чтением
         // и созданием сессии: конкурентная синхронизация баланса воркером не создаст
@@ -355,12 +376,17 @@ public sealed class TopUpSessionService(
 
         if (!history)
         {
-            var todayStartUtc = TopUpSessionRules.GetMoscowDayRange(timeProvider.GetUtcNow().UtcDateTime).UtcStartInclusive;
+            var nowUtc = timeProvider.GetUtcNow().UtcDateTime;
+            var todayStartUtc = TopUpSessionRules.GetMoscowDayRange(nowUtc).UtcStartInclusive;
+            var cooldownStartUtc = nowUtc - TopUpSessionRules.RepeatTopUpCooldown;
+            var completedCutoffUtc = todayStartUtc < cooldownStartUtc
+                ? todayStartUtc
+                : cooldownStartUtc;
             query = query.Where(x =>
                 ActiveStatuses.Contains(x.Status)
                 || x.Status == TopUpSessionStatuses.AwaitingBalance
                 || x.Status == TopUpSessionStatuses.VerificationRequired
-                || (x.Status == TopUpSessionStatuses.Completed && x.CompletedAtUtc >= todayStartUtc));
+                || (x.Status == TopUpSessionStatuses.Completed && x.CompletedAtUtc >= completedCutoffUtc));
         }
 
         var sessions = await (history

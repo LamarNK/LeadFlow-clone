@@ -112,7 +112,8 @@ public static class SubProfileViewModelMapper
         Guid? accountId = null,
         bool workerIsOnline = false,
         WorkerActivityDto? workerActivity = null,
-        IReadOnlyList<WorkerActiveAccountDto>? activeAccounts = null)
+        IReadOnlyList<WorkerActiveAccountDto>? activeAccounts = null,
+        IReadOnlySet<string>? topUpCooldownSubProfileIds = null)
     {
         if (subProfiles is null || subProfiles.Count == 0)
         {
@@ -171,7 +172,8 @@ public static class SubProfileViewModelMapper
                     Balance = advance,
                     CanTopUp = !string.IsNullOrWhiteSpace(sp.Id)
                                && advance is decimal balance
-                               && balance < TopUpSessionRules.LowBalanceThresholdRub,
+                               && balance < TopUpSessionRules.LowBalanceThresholdRub
+                               && topUpCooldownSubProfileIds?.Contains(id) != true,
                     RatingText = RatingDisplay.FormatSubProfile(sp.Rating, sp.ReviewsCount, sp.ReviewsText),
                     Responses = responses,
                     UniqueResponses = uniqueResponses,

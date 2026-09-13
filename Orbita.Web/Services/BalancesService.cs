@@ -45,6 +45,14 @@ public sealed class BalancesService(
             .Where(x => !string.IsNullOrWhiteSpace(x.SubProfileId) && IsOpenSession(x.Status))
             .GroupBy(x => (x.WorkerId, x.AccountId, x.SubProfileId), EqualityComparer<(Guid, Guid, string)>.Default)
             .ToDictionary(x => x.Key, x => x.OrderByDescending(s => s.CreatedAtUtc).First());
+        var nowUtc = DateTime.UtcNow;
+        var cooldownKeys = sessions
+            .Where(x =>
+                !string.IsNullOrWhiteSpace(x.SubProfileId)
+                && x.Status == TopUpSessionStatuses.Completed
+                && TopUpSessionRules.IsRepeatTopUpCooldownActive(x.CompletedAtUtc, nowUtc))
+            .Select(x => (x.WorkerId, x.AccountId, x.SubProfileId))
+            .ToHashSet(EqualityComparer<(Guid, Guid, string)>.Default);
 
         var allRows = new List<BalanceSubProfileRowViewModel>();
         foreach (var item in scopedAccounts)
@@ -59,6 +67,8 @@ public sealed class BalancesService(
                 }
 
                 var session = byKey.GetValueOrDefault((item.WorkerId, item.AccountId, profile.Id));
+                var topUpCooldownActive = cooldownKeys.Contains(
+                    (item.WorkerId, item.AccountId, profile.Id));
                 var target = TopUpSessionRules.ResolveTargetBalance(profile.TodayResponses);
                 var row = new BalanceSubProfileRowViewModel
                 {
@@ -73,7 +83,8 @@ public sealed class BalancesService(
                     RecommendedAmount = Math.Max(0m, target - current),
                     TodayResponses = profile.TodayResponses,
                     WorkerOnline = item.WorkerIsOnline,
-                    IsLowBalance = current < TopUpSessionRules.LowBalanceThresholdRub,
+                    IsLowBalance = ShouldOfferTopUp(current, topUpCooldownActive),
+                    TopUpCooldownActive = topUpCooldownActive,
                     LastUpdatedAtUtc = item.LastMonitoringAtUtc,
                     IsStale = item.LastMonitoringAtUtc is null,
                     Session = session
@@ -128,6 +139,9 @@ public sealed class BalancesService(
 
     private static bool IsOpenSession(string? status) =>
         TopUpSessionStatuses.IsOpenOnLowBalanceTab(status);
+
+    internal static bool ShouldOfferTopUp(decimal balance, bool cooldownActive) =>
+        balance < TopUpSessionRules.LowBalanceThresholdRub && !cooldownActive;
 
     private static int CountCompletedToday(
         IReadOnlyList<TopUpSessionDto> sessions,

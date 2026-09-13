@@ -4,6 +4,21 @@ namespace Orbita.Tests;
 
 public sealed class TopUpSessionRulesTests
 {
+    [Fact]
+    public void IsRepeatTopUpCooldownActive_UsesThreeHourWindow()
+    {
+        var now = new DateTime(2026, 9, 13, 18, 0, 0, DateTimeKind.Utc);
+
+        Assert.True(TopUpSessionRules.IsRepeatTopUpCooldownActive(now.AddHours(-2), now));
+        Assert.True(TopUpSessionRules.IsRepeatTopUpCooldownActive(
+            now - TopUpSessionRules.RepeatTopUpCooldown + TimeSpan.FromSeconds(1),
+            now));
+        Assert.False(TopUpSessionRules.IsRepeatTopUpCooldownActive(
+            now - TopUpSessionRules.RepeatTopUpCooldown,
+            now));
+        Assert.False(TopUpSessionRules.IsRepeatTopUpCooldownActive(null, now));
+    }
+
     [Theory]
     [InlineData(0, 300)]
     [InlineData(1, 300)]

@@ -6,6 +6,32 @@ namespace Orbita.Tests;
 public sealed class SubProfileViewModelMapperTests
 {
     [Fact]
+    public void Map_HidesTopUpDuringCooldown()
+    {
+        var profiles = new[]
+        {
+            new WorkerSubProfileDto(
+                "special-5",
+                "СпецСтрой 5",
+                "",
+                false,
+                105m,
+                null,
+                null,
+                null)
+        };
+
+        var row = Assert.Single(SubProfileViewModelMapper.Map(
+            profiles,
+            topUpCooldownSubProfileIds: new HashSet<string>(StringComparer.Ordinal)
+            {
+                "special-5"
+            }));
+
+        Assert.False(row.CanTopUp);
+    }
+
+    [Fact]
     public void Map_UsesBalanceName_WhenSubProfileNameMissing()
     {
         var rows = SubProfileViewModelMapper.Map(

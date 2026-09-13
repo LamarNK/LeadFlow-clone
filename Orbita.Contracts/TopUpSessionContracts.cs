@@ -112,6 +112,12 @@ public static class TopUpSessionRules
     /// </summary>
     public static readonly TimeSpan BalanceConfirmationTtl = TimeSpan.FromHours(24);
 
+    /// <summary>
+    /// После подтверждённого пополнения временно не предлагаем и не разрешаем
+    /// новое пополнение, даже если интерфейс Avito ещё показывает низкий баланс.
+    /// </summary>
+    public static readonly TimeSpan RepeatTopUpCooldown = TimeSpan.FromHours(3);
+
     /// <summary>Допуск при сверке нового баланса с ожидаемой суммой пополнения.</summary>
     public const decimal BalanceEpsilonRub = 1m;
 
@@ -134,6 +140,13 @@ public static class TopUpSessionRules
 
     public static bool IsEligible(decimal currentBalance) =>
         currentBalance < LowBalanceThresholdRub;
+
+    public static bool IsRepeatTopUpCooldownActive(
+        DateTime? completedAtUtc,
+        DateTime nowUtc) =>
+        completedAtUtc is DateTime completed
+        && completed <= nowUtc
+        && completed > nowUtc - RepeatTopUpCooldown;
 
     public static decimal ResolveRequestedAmount(decimal currentBalance, int dailyResponses) =>
         Math.Max(0m, ResolveTargetBalance(dailyResponses) - currentBalance);

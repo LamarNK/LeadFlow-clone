@@ -123,12 +123,32 @@ public sealed class WorkersService(
         var accountsTask = api.GetWorkerAccountsAsync(id, ct);
         var eventsTask = api.GetEventsAsync(workerId: id, limit: 10, ct: ct);
         var templatesTask = api.GetWorkerSettingsTemplatesAsync(id, ct);
-        await Task.WhenAll(workerTask, accountsTask, eventsTask, templatesTask, monitoringCyclesTask);
+        var topUpSessionsTask = api.GetTopUpSessionsAsync(history: false, ct);
+        await Task.WhenAll(
+            workerTask,
+            accountsTask,
+            eventsTask,
+            templatesTask,
+            topUpSessionsTask,
+            monitoringCyclesTask);
 
         var apiWorker = await workerTask;
         if (apiWorker is null) return null;
 
         var accounts = await accountsTask ?? [];
+        var nowUtc = DateTime.UtcNow;
+        var cooldownByAccount = (await topUpSessionsTask)
+            .Where(x =>
+                x.WorkerId == id
+                && x.Status == TopUpSessionStatuses.Completed
+                && TopUpSessionRules.IsRepeatTopUpCooldownActive(x.CompletedAtUtc, nowUtc)
+                && !string.IsNullOrWhiteSpace(x.SubProfileId))
+            .GroupBy(x => x.AccountId)
+            .ToDictionary(
+                x => x.Key,
+                x => (IReadOnlySet<string>)x
+                    .Select(session => session.SubProfileId)
+                    .ToHashSet(StringComparer.Ordinal));
         var events = await eventsTask ?? [];
         var workerEvents = events
             .Where(e => e.WorkerId == id)
@@ -150,7 +170,8 @@ public sealed class WorkersService(
                     apiWorker.AdsPowerEnabled,
                     apiWorker.MultiloginEnabled,
                     apiWorker.LocalChromeEnabled,
-                    apiWorker.PendingLocalChromeLoginAccountId);
+                    apiWorker.PendingLocalChromeLoginAccountId,
+                    cooldownByAccount.GetValueOrDefault(a.AccountId));
             }),
             tableSort).ToList();
 

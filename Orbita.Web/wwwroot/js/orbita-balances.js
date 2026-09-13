@@ -333,10 +333,18 @@
                     var shouldReload = false;
                     page.querySelectorAll('[data-balance-row]').forEach(function (rowEl) {
                         var next = byKey[rowKey(rowEl.dataset.workerId, rowEl.dataset.accountId, rowEl.dataset.subprofileId)];
+                        if (!next) {
+                            if (tab !== 'all') shouldReload = true;
+                            return;
+                        }
                         var previous = rowEl.dataset.sessionStatus || '';
                         var session = next && (next.session || next.Session);
                         var nextStatus = sessionField(session, 'status', 'Status');
                         if (previous && nextStatus && previous !== nextStatus && !belongsToTab(tab, nextStatus)) {
+                            shouldReload = true;
+                        }
+                        var cooldownActive = !!(next.topUpCooldownActive || next.TopUpCooldownActive);
+                        if (previous && !nextStatus && cooldownActive) {
                             shouldReload = true;
                         }
                         var sessionId = sessionField(session, 'id', 'Id');
