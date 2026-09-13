@@ -91,7 +91,7 @@ internal static class BalanceSnapshotHelper
 
         return balance.SubProfiles.Count(subProfile =>
             subProfile.Balance is decimal current
-            && current < BalanceDisplayRules.WorkerDetailsLowBalanceThresholdRub
+            && current <= BalanceDisplayRules.WorkerDetailsLowBalanceThresholdRub
             && isExcluded?.Invoke(subProfile) != true);
     }
 

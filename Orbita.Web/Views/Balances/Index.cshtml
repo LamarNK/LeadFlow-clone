@@ -182,7 +182,7 @@
                                     · @(row.IsStale ? "данные устарели" : row.WorkerOnline ? "воркер онлайн" : "воркер офлайн")
                                 </small>
                             </td>
-                            <td data-label="Рекомендуемое пополнение"><strong>@row.RecommendedAmount.ToString("N0") ₽</strong><small>до @row.RecommendedTarget.ToString("N0") ₽ · @row.TodayResponses откликов</small></td>
+                            <td data-label="Рекомендуемое пополнение"><strong>+@row.RecommendedAmount.ToString("N0") ₽</strong><small>станет ~@row.RecommendedTarget.ToString("N0") ₽ · @row.TodayResponses откликов</small></td>
                             <td data-label="Статус" data-balance-status>
                                 @if (session is null)
                                 {

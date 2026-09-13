@@ -21,66 +21,59 @@ public sealed class TopUpSessionRulesTests
 
     [Theory]
     [InlineData(0, 300)]
-    [InlineData(1, 300)]
-    [InlineData(5, 300)]
-    [InlineData(6, 900)]
-    [InlineData(10, 900)]
-    [InlineData(11, 2000)]
-    [InlineData(50, 2000)]
-    public void ResolveTargetBalance_ByDailyResponses(int responses, decimal expected)
+    [InlineData(3, 300)]
+    [InlineData(4, 550)]
+    [InlineData(5, 550)]
+    [InlineData(6, 750)]
+    [InlineData(9, 750)]
+    [InlineData(10, 1500)]
+    [InlineData(50, 1500)]
+    public void ResolveFixedTopUpAmount_ByDailyResponses(int responses, decimal expected)
     {
-        Assert.Equal(expected, TopUpSessionRules.ResolveTargetBalance(responses));
+        Assert.Equal(expected, TopUpSessionRules.ResolveFixedTopUpAmount(responses));
     }
 
     [Theory]
     [InlineData(0, 0, 300)]
-    [InlineData(0, 299.99, 300)]
-    [InlineData(0, 300, 900)]
-    [InlineData(0, 899.99, 900)]
-    [InlineData(0, 900, 2000)]
-    [InlineData(6, 0, 900)]
-    [InlineData(11, 0, 2000)]
-    public void ResolveTargetBalance_UsesTheHigherOfDailyVolumeAndHourlySpend(
+    [InlineData(100, 3, 400)]
+    [InlineData(100, 4, 650)]
+    [InlineData(250, 6, 1000)]
+    [InlineData(50, 10, 1550)]
+    public void ResolveTargetBalance_AddsFixedAmount(
+        decimal currentBalance,
         int responses,
-        decimal spentLastHour,
         decimal expected)
     {
-        Assert.Equal(expected, TopUpSessionRules.ResolveTargetBalance(responses, spentLastHour));
+        Assert.Equal(expected, TopUpSessionRules.ResolveTargetBalance(currentBalance, responses));
     }
 
     [Theory]
-    [InlineData(0, 300)]
-    [InlineData(149.99, 300)]
-    [InlineData(149, 300)]
-    public void IsEligible_BelowThreshold(decimal balance, decimal _)
+    [InlineData(0)]
+    [InlineData(249.99)]
+    [InlineData(250)]
+    public void IsEligible_AtOrBelowThreshold(decimal balance)
     {
         Assert.True(TopUpSessionRules.IsEligible(balance));
     }
 
     [Theory]
-    [InlineData(150)]
-    [InlineData(150.01)]
+    [InlineData(250.01)]
+    [InlineData(251)]
     [InlineData(5000)]
-    public void IsEligible_AtOrAboveThreshold_ReturnsFalse(decimal balance)
+    public void IsEligible_AboveThreshold_ReturnsFalse(decimal balance)
     {
         Assert.False(TopUpSessionRules.IsEligible(balance));
     }
 
     [Theory]
     [InlineData(0, 0, 300)]
-    [InlineData(100, 0, 200)]
-    [InlineData(100, 6, 800)]
-    [InlineData(100, 11, 1900)]
-    [InlineData(0, 11, 2000)]
-    public void ResolveRequestedAmount_TargetMinusCurrent(decimal balance, int responses, decimal expected)
+    [InlineData(100, 3, 300)]
+    [InlineData(100, 4, 550)]
+    [InlineData(250, 6, 750)]
+    [InlineData(250, 10, 1500)]
+    public void ResolveRequestedAmount_IsFixed(decimal balance, int responses, decimal expected)
     {
         Assert.Equal(expected, TopUpSessionRules.ResolveRequestedAmount(balance, responses));
-    }
-
-    [Fact]
-    public void ResolveRequestedAmount_AboveTarget_ClampsToZero()
-    {
-        Assert.Equal(0m, TopUpSessionRules.ResolveRequestedAmount(500m, 0));
     }
 
     [Fact]

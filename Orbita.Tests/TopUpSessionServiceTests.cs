@@ -37,8 +37,8 @@ public sealed class TopUpSessionServiceTests
         Assert.Equal(TopUpSessionStatuses.Requested, session!.Status);
         Assert.False(string.IsNullOrWhiteSpace(session.ProgressMessage));
         Assert.Equal(100m, session.CurrentBalance);
-        Assert.Equal(300m, session.TargetBalance);
-        Assert.Equal(200m, session.RequestedAmount);
+        Assert.Equal(400m, session.TargetBalance);
+        Assert.Equal(300m, session.RequestedAmount);
         Assert.Equal(0, session.DailyResponseCount);
         Assert.Equal(Now.UtcDateTime.Add(TopUpSessionRules.QueueTtl), session.ExpiresAtUtc);
 
@@ -92,13 +92,13 @@ public sealed class TopUpSessionServiceTests
     }
 
     [Fact]
-    public async Task CreateAsync_BalanceAtOrAboveThreshold_ReturnsConflict()
+    public async Task CreateAsync_BalanceAboveThreshold_ReturnsConflict()
     {
         await using var db = CreateDb();
         var officeId = Guid.NewGuid();
         var workerId = Guid.NewGuid();
         var accountId = Guid.NewGuid();
-        SeedWorker(db, officeId, workerId, accountId, balance: 150m);
+        SeedWorker(db, officeId, workerId, accountId, balance: 250.01m);
 
         var service = CreateService(db);
         var principal = TestPrincipalFactory.Operator("op1", "Operator 1", officeId);
@@ -110,6 +110,64 @@ public sealed class TopUpSessionServiceTests
     }
 
     [Fact]
+    public async Task CreateAsync_BalanceExactly250_IsEligibleForFixedTopUp()
+    {
+        await using var db = CreateDb();
+        var officeId = Guid.NewGuid();
+        var workerId = Guid.NewGuid();
+        var accountId = Guid.NewGuid();
+        SeedWorker(db, officeId, workerId, accountId, balance: 250m);
+
+        var service = CreateService(db);
+        var principal = TestPrincipalFactory.Operator("op1", "Operator 1", officeId);
+
+        var (session, conflict) = await service.CreateAsync(workerId, accountId, principal);
+
+        Assert.Null(conflict);
+        Assert.NotNull(session);
+        Assert.Equal(300m, session!.RequestedAmount);
+        Assert.Equal(550m, session.TargetBalance);
+    }
+
+    [Theory]
+    [InlineData(0, 300)]
+    [InlineData(3, 300)]
+    [InlineData(4, 550)]
+    [InlineData(5, 550)]
+    [InlineData(6, 750)]
+    [InlineData(9, 750)]
+    [InlineData(10, 1500)]
+    public async Task CreateAsync_UsesFixedAmountForEveryResponseTier(int responses, decimal expectedAmount)
+    {
+        await using var db = CreateDb();
+        var officeId = Guid.NewGuid();
+        var workerId = Guid.NewGuid();
+        var accountId = Guid.NewGuid();
+        SeedWorker(db, officeId, workerId, accountId, balance: 250m);
+        for (var i = 0; i < responses; i++)
+        {
+            db.CandidateResponses.Add(new CandidateResponseEntity
+            {
+                Id = Guid.NewGuid(),
+                WorkerId = workerId,
+                AccountId = accountId,
+                CollectedAt = Now.UtcDateTime.AddMinutes(-1),
+                CreatedAt = Now.UtcDateTime.AddMinutes(-1),
+                SourceResponseId = $"tier-{i}"
+            });
+        }
+        await db.SaveChangesAsync();
+
+        var principal = TestPrincipalFactory.Operator("op1", "Operator 1", officeId);
+        var (session, conflict) = await CreateService(db).CreateAsync(workerId, accountId, principal);
+
+        Assert.Null(conflict);
+        Assert.NotNull(session);
+        Assert.Equal(expectedAmount, session.RequestedAmount);
+        Assert.Equal(250m + expectedAmount, session.TargetBalance);
+    }
+
+    [Fact]
     public async Task CreateAsync_CountsDailyResponses_FromCollectedAt()
     {
         await using var db = CreateDb();
@@ -118,7 +176,7 @@ public sealed class TopUpSessionServiceTests
         var accountId = Guid.NewGuid();
         SeedWorker(db, officeId, workerId, accountId, balance: 100m);
 
-        // 7 responses collected today (Moscow day) → target 900.
+        // 7 responses collected today (Moscow day) → fixed top-up 750.
         var (start, _) = TopUpSessionRules.GetMoscowDayRange(Now.UtcDateTime);
         for (var i = 0; i < 7; i++)
         {
@@ -143,8 +201,8 @@ public sealed class TopUpSessionServiceTests
         Assert.Null(conflict);
         Assert.NotNull(session);
         Assert.Equal(7, session!.DailyResponseCount);
-        Assert.Equal(900m, session.TargetBalance);
-        Assert.Equal(800m, session.RequestedAmount);
+        Assert.Equal(850m, session.TargetBalance);
+        Assert.Equal(750m, session.RequestedAmount);
     }
 
     [Fact]
@@ -199,12 +257,12 @@ public sealed class TopUpSessionServiceTests
         Assert.Equal("Целевой", session.SubProfileName);
         Assert.Equal(120m, session.CurrentBalance);
         Assert.Equal(6, session.DailyResponseCount);
-        Assert.Equal(900m, session.TargetBalance);
-        Assert.Equal(780m, session.RequestedAmount);
+        Assert.Equal(870m, session.TargetBalance);
+        Assert.Equal(750m, session.RequestedAmount);
     }
 
     [Fact]
-    public async Task CreateAsync_RapidBalanceSpendRaisesTargetAboveDailyFallback()
+    public async Task CreateAsync_RapidBalanceSpendDoesNotChangeFixedAmount()
     {
         await using var db = CreateDb();
         var officeId = Guid.NewGuid();
@@ -230,8 +288,8 @@ public sealed class TopUpSessionServiceTests
         Assert.Null(conflict);
         Assert.NotNull(session);
         Assert.Equal(0, session!.DailyResponseCount);
-        Assert.Equal(900m, session.TargetBalance);
-        Assert.Equal(800m, session.RequestedAmount);
+        Assert.Equal(400m, session.TargetBalance);
+        Assert.Equal(300m, session.RequestedAmount);
     }
 
     [Fact]
@@ -260,12 +318,12 @@ public sealed class TopUpSessionServiceTests
 
         Assert.Null(conflict);
         Assert.NotNull(session);
-        Assert.Equal(300m, session!.TargetBalance);
-        Assert.Equal(200m, session.RequestedAmount);
+        Assert.Equal(400m, session!.TargetBalance);
+        Assert.Equal(300m, session.RequestedAmount);
     }
 
     [Fact]
-    public async Task CreateAsync_RapidSpendUsesTheSelectedSubProfileOnly()
+    public async Task CreateAsync_FixedAmountIgnoresSubProfileBalanceHistory()
     {
         await using var db = CreateDb();
         var officeId = Guid.NewGuid();
@@ -300,12 +358,12 @@ public sealed class TopUpSessionServiceTests
 
         Assert.Null(conflict);
         Assert.NotNull(session);
-        Assert.Equal(900m, session!.TargetBalance);
-        Assert.Equal(800m, session.RequestedAmount);
+        Assert.Equal(400m, session!.TargetBalance);
+        Assert.Equal(300m, session.RequestedAmount);
     }
 
     [Fact]
-    public async Task CreateAsync_RapidSpendCanUseAUniqueLegacySubProfileName()
+    public async Task CreateAsync_FixedAmountIgnoresLegacyBalanceHistory()
     {
         await using var db = CreateDb();
         var officeId = Guid.NewGuid();
@@ -337,8 +395,8 @@ public sealed class TopUpSessionServiceTests
 
         Assert.Null(conflict);
         Assert.NotNull(session);
-        Assert.Equal(900m, session!.TargetBalance);
-        Assert.Equal(800m, session.RequestedAmount);
+        Assert.Equal(400m, session!.TargetBalance);
+        Assert.Equal(300m, session.RequestedAmount);
     }
 
     [Fact]
@@ -489,8 +547,8 @@ public sealed class TopUpSessionServiceTests
         Assert.NotNull(pending);
         Assert.Equal(session!.Id, pending!.SessionId);
         Assert.Equal(accountId, pending.AccountId);
-        Assert.Equal(300m, pending.TargetBalance);
-        Assert.Equal(200m, pending.RequestedAmount);
+        Assert.Equal(400m, pending.TargetBalance);
+        Assert.Equal(300m, pending.RequestedAmount);
     }
 
     [Fact]
@@ -945,7 +1003,7 @@ public sealed class TopUpSessionServiceTests
         Assert.True((await service.MarkPaidAsync(session.Id, principal)).Success);
         await service.ConfirmBalancesAsync(
             workerId,
-            [new WorkerBalanceDto(accountId, "Acc1", 300m, [])],
+            [new WorkerBalanceDto(accountId, "Acc1", 400m, [])],
             Now.UtcDateTime);
 
         var live = await service.GetOfficeAsync(principal, history: false);
@@ -1766,13 +1824,13 @@ public sealed class TopUpSessionServiceTests
         var capturedAt = Now.AddMinutes(2).UtcDateTime;
         var completed = await service.ConfirmBalancesAsync(
             workerId,
-            [new WorkerBalanceDto(accountId, "Acc1", 300m, [])],
+            [new WorkerBalanceDto(accountId, "Acc1", 400m, [])],
             capturedAt);
 
         Assert.Equal(1, completed);
         var stored = await db.TopUpSessions.AsNoTracking().SingleAsync(x => x.Id == session.Id);
         Assert.Equal(TopUpSessionStatuses.Completed, stored.Status);
-        Assert.Equal(300m, stored.BalanceAfter);
+        Assert.Equal(400m, stored.BalanceAfter);
         Assert.Equal(capturedAt, stored.BalanceConfirmedAtUtc);
     }
 
@@ -2244,7 +2302,7 @@ public sealed class TopUpSessionServiceTests
 
         var completed = await service.ConfirmBalancesAsync(
             workerId,
-            [new WorkerBalanceDto(accountId, "Acc1", 300m, [])],
+            [new WorkerBalanceDto(accountId, "Acc1", 400m, [])],
             Now.AddMinutes(2).UtcDateTime);
 
         Assert.Equal(1, completed);
@@ -2273,7 +2331,7 @@ public sealed class TopUpSessionServiceTests
 
         var completed = await later.ConfirmBalancesAsync(
             workerId,
-            [new WorkerBalanceDto(accountId, "Acc1", 300m, [])],
+            [new WorkerBalanceDto(accountId, "Acc1", 400m, [])],
             Now.AddHours(6).UtcDateTime);
 
         Assert.Equal(1, completed);
@@ -2295,7 +2353,7 @@ public sealed class TopUpSessionServiceTests
         await AdvanceToQrReadyAsync(service, workerId, session!.Id);
         await service.ConfirmBalancesAsync(
             workerId,
-            [new WorkerBalanceDto(accountId, "Acc1", 300m, [])],
+            [new WorkerBalanceDto(accountId, "Acc1", 400m, [])],
             Now.AddMinutes(2).UtcDateTime);
 
         var (paid, error) = await service.MarkPaidAsync(session.Id, principal);

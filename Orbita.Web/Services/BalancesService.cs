@@ -69,7 +69,8 @@ public sealed class BalancesService(
                 var session = byKey.GetValueOrDefault((item.WorkerId, item.AccountId, profile.Id));
                 var topUpCooldownActive = cooldownKeys.Contains(
                     (item.WorkerId, item.AccountId, profile.Id));
-                var target = TopUpSessionRules.ResolveTargetBalance(profile.TodayResponses);
+                var amount = TopUpSessionRules.ResolveFixedTopUpAmount(profile.TodayResponses);
+                var target = TopUpSessionRules.ResolveTargetBalance(current, profile.TodayResponses);
                 var row = new BalanceSubProfileRowViewModel
                 {
                     WorkerId = item.WorkerId,
@@ -80,7 +81,7 @@ public sealed class BalancesService(
                     SubProfileName = profile.Name,
                     Balance = current,
                     RecommendedTarget = target,
-                    RecommendedAmount = Math.Max(0m, target - current),
+                    RecommendedAmount = amount,
                     TodayResponses = profile.TodayResponses,
                     WorkerOnline = item.WorkerIsOnline,
                     IsLowBalance = ShouldOfferTopUp(current, topUpCooldownActive),
@@ -141,7 +142,7 @@ public sealed class BalancesService(
         TopUpSessionStatuses.IsOpenOnLowBalanceTab(status);
 
     internal static bool ShouldOfferTopUp(decimal balance, bool cooldownActive) =>
-        balance < TopUpSessionRules.LowBalanceThresholdRub && !cooldownActive;
+        balance <= TopUpSessionRules.LowBalanceThresholdRub && !cooldownActive;
 
     private static int CountCompletedToday(
         IReadOnlyList<TopUpSessionDto> sessions,
@@ -197,7 +198,7 @@ public sealed class BalancesService(
                 Label = "Низкий баланс",
                 Value = lowBalanceCount.ToString(),
                 CountValue = lowBalanceCount,
-                Delta = "ниже 150 ₽",
+                Delta = "250 ₽ и ниже",
                 DeltaTone = lowBalanceCount > 0 ? "bad" : "good",
                 IconClass = "fa-solid fa-triangle-exclamation",
                 IconTone = "orange"

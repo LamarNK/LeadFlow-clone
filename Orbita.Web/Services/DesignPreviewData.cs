@@ -2926,7 +2926,7 @@ internal static class DesignPreviewData
                 return (null, "Демо-субпрофиль не найден.", null);
             }
 
-            var target = TopUpSessionRules.ResolveTargetBalance(profile.TodayResponses);
+            var target = TopUpSessionRules.ResolveTargetBalance(balance, profile.TodayResponses);
             var now = DateTime.UtcNow;
             var session = new TopUpSessionDto(
                 Guid.NewGuid(),
@@ -2940,7 +2940,7 @@ internal static class DesignPreviewData
                 TopUpSessionStatuses.QrReady,
                 balance,
                 target,
-                Math.Max(0m, target - balance),
+                TopUpSessionRules.ResolveFixedTopUpAmount(profile.TodayResponses),
                 profile.TodayResponses,
                 now,
                 now.AddMinutes(10),
@@ -3041,7 +3041,7 @@ internal static class DesignPreviewData
         DateTime createdAt)
     {
         var current = profile.Balance ?? 0m;
-        var target = TopUpSessionRules.ResolveTargetBalance(profile.TodayResponses);
+        var target = TopUpSessionRules.ResolveTargetBalance(current, profile.TodayResponses);
         return new TopUpSessionDto(
             Guid.NewGuid(),
             account.WorkerId,
@@ -3054,7 +3054,7 @@ internal static class DesignPreviewData
             status,
             current,
             target,
-            Math.Max(0m, target - current),
+            TopUpSessionRules.ResolveFixedTopUpAmount(profile.TodayResponses),
             profile.TodayResponses,
             createdAt,
             createdAt.AddMinutes(10),

@@ -504,10 +504,11 @@ public sealed class DashboardQueryServiceWorkersPageTests
         SeedOffice(db, now);
         var worker = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbb41");
         SeedWorker(db, worker, "worker", now.AddMinutes(-1));
-        // Threshold is 150 ₽; 149 and 100 are low, 150 and 500 are not.
+        // Threshold is inclusive: 100, 249.99 and 250 are low; 250.01 and 500 are not.
         SeedAccount(db, worker, "low-1", totalBalance: 100m, subProfilesJson: """[{"Id":"one","Name":"One","Balance":100}]""");
-        SeedAccount(db, worker, "low-2", totalBalance: 149.99m, subProfilesJson: """[{"Id":"two","Name":"Two","Balance":149.99}]""");
-        SeedAccount(db, worker, "border", totalBalance: 150m, subProfilesJson: """[{"Id":"three","Name":"Three","Balance":150}]""");
+        SeedAccount(db, worker, "low-2", totalBalance: 249.99m, subProfilesJson: """[{"Id":"two","Name":"Two","Balance":249.99}]""");
+        SeedAccount(db, worker, "border", totalBalance: 250m, subProfilesJson: """[{"Id":"three","Name":"Three","Balance":250}]""");
+        SeedAccount(db, worker, "above", totalBalance: 250.01m, subProfilesJson: """[{"Id":"five","Name":"Five","Balance":250.01}]""");
         SeedAccount(db, worker, "ok", totalBalance: 500m, subProfilesJson: """[{"Id":"four","Name":"Four","Balance":500}]""");
         await db.SaveChangesAsync();
 
@@ -515,7 +516,7 @@ public sealed class DashboardQueryServiceWorkersPageTests
             OfficeScope.ForOffice(OfficeId), OfficeId, page: 1, pageSize: 25);
 
         var item = Assert.Single(page.Items);
-        Assert.Equal(2, item.LowBalanceAccountCount);
+        Assert.Equal(3, item.LowBalanceAccountCount);
     }
 
     [Fact]

@@ -324,9 +324,9 @@ internal static class WorkerDetailsBuilder
                 : "Открыть браузер",
             Balance = balance?.TotalBalance,
             IsLowBalance = balance?.TotalBalance is decimal bal
-                && bal < BalanceDisplayRules.WorkerDetailsLowBalanceThresholdRub,
+                && bal <= BalanceDisplayRules.WorkerDetailsLowBalanceThresholdRub,
             CanTopUp = balance?.TotalBalance is decimal topUpBal
-                && topUpBal < TopUpSessionRules.LowBalanceThresholdRub
+                && topUpBal <= TopUpSessionRules.LowBalanceThresholdRub
                 && (topUpCooldownSubProfileIds is null || topUpCooldownSubProfileIds.Count == 0),
             BalanceText = balance is null
                 ? "—"

@@ -367,8 +367,8 @@ public sealed class DashboardMarkupTests
             Assert.Contains("title=\"Мониторинг приостановлен\"", dom);
             Assert.Contains("aria-label=\"Предупреждение: мониторинг приостановлен\"", dom);
             Assert.Contains("dashboard-low-balance-tooltip", dom);
-            Assert.Contains("title=\"Аккаунтов с балансом ниже 150 ₽: 2\"", dom);
-            Assert.Contains("aria-label=\"Предупреждение: 2 аккаунтов с низким балансом\"", dom);
+            Assert.Contains("title=\"Субпрофилей с балансом 250 ₽ и ниже без текущей операции: 2\"", dom);
+            Assert.Contains("aria-label=\"Предупреждение: 2 субпрофилей требуют пополнения\"", dom);
             Assert.Equal("2", ExtractAttribute(dom, "data-dashboard-test-paused-low-warning-icon-count"));
             Assert.Equal("false", ExtractAttribute(dom, "data-dashboard-test-warning-icons-overlap"));
             Assert.Equal("rgb(255, 250, 235)", ExtractAttribute(dom, "data-dashboard-test-paused-background"));

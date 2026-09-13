@@ -78,24 +78,17 @@ public static class TopUpSessionStatuses
 /// </summary>
 public static class TopUpSessionRules
 {
-    /// <summary>Порог «низкого» баланса: пополнение доступно только ниже него.</summary>
-    public const decimal LowBalanceThresholdRub = 150m;
+    /// <summary>Пополнение доступно при балансе меньше или равном порогу.</summary>
+    public const decimal LowBalanceThresholdRub = 250m;
 
-    public const decimal TierLowTargetRub = 300m;
-    public const decimal TierMidTargetRub = 900m;
-    public const decimal TierHighTargetRub = 2000m;
+    public const decimal TierZeroToThreeAmountRub = 300m;
+    public const decimal TierFourToFiveAmountRub = 550m;
+    public const decimal TierSixToNineAmountRub = 750m;
+    public const decimal TierTenPlusAmountRub = 1500m;
 
-    /// <summary>0–5 откликов → 300.</summary>
-    public const int TierLowMaxResponses = 5;
-
-    /// <summary>6–10 откликов → 900 (11+ → 2000).</summary>
-    public const int TierMidMaxResponses = 10;
-
-    /// <summary>Расход 300 ₽ за последний час поднимает цель как минимум до 900 ₽.</summary>
-    public const decimal RapidSpendMidThresholdRub = 300m;
-
-    /// <summary>Расход 900 ₽ за последний час поднимает цель до 2 000 ₽.</summary>
-    public const decimal RapidSpendHighThresholdRub = 900m;
+    public const int TierZeroToThreeMaxResponses = 3;
+    public const int TierFourToFiveMaxResponses = 5;
+    public const int TierSixToNineMaxResponses = 9;
 
     /// <summary>
     /// Срок автоматизации и оплаты QR: от <c>started</c> до готового QR и от
@@ -123,23 +116,20 @@ public static class TopUpSessionRules
 
     public static TimeZoneInfo MoscowTimeZone { get; } = ResolveMoscow();
 
-    public static decimal ResolveTargetBalance(int dailyResponses) =>
-        dailyResponses <= TierLowMaxResponses
-            ? TierLowTargetRub
-            : dailyResponses <= TierMidMaxResponses
-                ? TierMidTargetRub
-                : TierHighTargetRub;
+    public static decimal ResolveFixedTopUpAmount(int dailyResponses) =>
+        dailyResponses <= TierZeroToThreeMaxResponses
+            ? TierZeroToThreeAmountRub
+            : dailyResponses <= TierFourToFiveMaxResponses
+                ? TierFourToFiveAmountRub
+                : dailyResponses <= TierSixToNineMaxResponses
+                    ? TierSixToNineAmountRub
+                    : TierTenPlusAmountRub;
 
-    /// <summary>
-    /// Целевой баланс с учётом темпа сгорания аванса за последний час.
-    /// Базовый уровень определяют отклики за текущий московский день; быстрый расход
-    /// может только повысить этот уровень.
-    /// </summary>
-    public static decimal ResolveTargetBalance(int dailyResponses, decimal spentLastHour) =>
-        Math.Max(ResolveTargetBalance(dailyResponses), ResolveTargetBalanceByHourlySpend(spentLastHour));
+    public static decimal ResolveTargetBalance(decimal currentBalance, int dailyResponses) =>
+        currentBalance + ResolveFixedTopUpAmount(dailyResponses);
 
     public static bool IsEligible(decimal currentBalance) =>
-        currentBalance < LowBalanceThresholdRub;
+        currentBalance <= LowBalanceThresholdRub;
 
     public static bool IsRepeatTopUpCooldownActive(
         DateTime? completedAtUtc,
@@ -149,10 +139,7 @@ public static class TopUpSessionRules
         && completed > nowUtc - RepeatTopUpCooldown;
 
     public static decimal ResolveRequestedAmount(decimal currentBalance, int dailyResponses) =>
-        Math.Max(0m, ResolveTargetBalance(dailyResponses) - currentBalance);
-
-    public static decimal ResolveRequestedAmount(decimal currentBalance, int dailyResponses, decimal spentLastHour) =>
-        Math.Max(0m, ResolveTargetBalance(dailyResponses, spentLastHour) - currentBalance);
+        ResolveFixedTopUpAmount(dailyResponses);
 
     /// <summary>
     /// Снимок подтверждает пополнение, если баланс вырос и достиг ожидаемой суммы
@@ -175,13 +162,6 @@ public static class TopUpSessionRules
             : targetBalance;
         return actualBalance + BalanceEpsilonRub >= expected;
     }
-
-    private static decimal ResolveTargetBalanceByHourlySpend(decimal spentLastHour) =>
-        spentLastHour >= RapidSpendHighThresholdRub
-            ? TierHighTargetRub
-            : spentLastHour >= RapidSpendMidThresholdRub
-                ? TierMidTargetRub
-                : TierLowTargetRub;
 
     /// <summary>
     /// Границы текущего московского календарного дня в UTC (включительно/исключительно).

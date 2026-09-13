@@ -1903,7 +1903,7 @@
             if (targetBalanceEl) targetBalanceEl.textContent = formatBalance(session.targetBalance);
             if (requestedAmountEl) requestedAmountEl.textContent = formatBalance(session.requestedAmount);
             if (dailyResponsesEl) dailyResponsesEl.textContent = session.dailyResponseCount || '0';
-            if (tierLabelEl) tierLabelEl.textContent = getTierLabel(session.dailyResponseCount, session.targetBalance);
+            if (tierLabelEl) tierLabelEl.textContent = getTierLabel(session.dailyResponseCount, session.requestedAmount);
 
             updateStatus(session);
             updateQr(session);
@@ -2345,16 +2345,15 @@
             return '';
         }
 
-        function getTierLabel(count, targetBalance) {
-            if (count <= 5 && Number(targetBalance) === 900) {
-                return 'Быстрый расход за последний час → 900 ₽';
-            }
-            if (count <= 10 && Number(targetBalance) === 2000) {
-                return 'Быстрый расход за последний час → 2 000 ₽';
-            }
-            if (count <= 5) return '0–5 откликов → 300 ₽';
-            if (count <= 10) return '6–10 откликов → 900 ₽';
-            return '11+ откликов → 2000 ₽';
+        function getTierLabel(count, requestedAmount) {
+            var range = count <= 3
+                ? '0–3 отклика'
+                : count <= 5
+                    ? '4–5 откликов'
+                    : count <= 9
+                        ? '6–9 откликов'
+                        : '10+ откликов';
+            return range + ' → +' + formatBalance(requestedAmount) + ' ₽';
         }
 
         function formatBalance(value) {
