@@ -2980,7 +2980,7 @@ internal static class DesignPreviewData
                 Status = TopUpSessionStatuses.AwaitingBalance,
                 AwaitingBalanceAtUtc = DateTime.UtcNow,
                 QrImageUrl = null,
-                ProgressMessage = "Оплата отмечена. Демо ожидает следующий снимок баланса."
+                ProgressMessage = "Оплата отмечена. На следующем проходе проверим историю операций Avito."
             };
             return (true, null);
         }
@@ -3070,7 +3070,7 @@ internal static class DesignPreviewData
             profile.Id,
             profile.Name,
             status == TopUpSessionStatuses.AwaitingBalance
-                ? "Оплата отмечена. Ожидаем новый баланс."
+                ? "Оплата отмечена. На следующем проходе проверим историю операций Avito."
                 : "Демо-состояние операции.",
             AwaitingBalanceAtUtc: status == TopUpSessionStatuses.AwaitingBalance ? createdAt.AddMinutes(1) : null);
     }

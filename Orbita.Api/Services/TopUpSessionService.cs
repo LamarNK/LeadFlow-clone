@@ -175,6 +175,26 @@ public sealed class TopUpSessionService(
         }
 
         var currentBalance = subProfile?.Balance ?? lockedAccount.TotalBalance;
+        var unresolvedHistoryCutoff = now - TopUpSessionRules.BalanceConfirmationTtl;
+        var unresolvedHistoryConfirmations = await db.TopUpSessions
+            .AsNoTracking()
+            .Where(x =>
+                x.AccountId == accountId
+                && x.SubProfileId == (subProfileId ?? string.Empty)
+                && x.Status == TopUpSessionStatuses.Completed
+                && x.HistoryConfirmedAtUtc != null
+                && x.HistoryConfirmedAtUtc >= unresolvedHistoryCutoff
+                && x.BalanceConfirmedAtUtc == null)
+            .Select(x => new { x.CurrentBalance, x.RequestedAmount, x.TargetBalance })
+            .ToListAsync(ct)
+            .ConfigureAwait(false);
+        if (unresolvedHistoryConfirmations.Count > 0)
+        {
+            var confirmedFloor = unresolvedHistoryConfirmations.Max(x =>
+                Math.Min(x.CurrentBalance + x.RequestedAmount, x.TargetBalance));
+            currentBalance = Math.Max(currentBalance, confirmedFloor);
+        }
+
         if (!TopUpSessionRules.IsEligible(currentBalance))
         {
             _log.LogInformation(
@@ -480,7 +500,7 @@ public sealed class TopUpSessionService(
             session.AwaitingBalanceAtUtc = completedAt;
             session.CompletedAtUtc = null;
             session.ProgressMessage = terminalStatus == TopUpSessionStatuses.AwaitingBalance
-                ? "Оплата отмечена. На следующем проходе проверим историю операций и баланс."
+                ? "Оплата отмечена. На следующем проходе проверим историю операций."
                 : "Перед отменой на следующем проходе проверим историю операций Avito.";
         }
         else
@@ -885,12 +905,8 @@ public sealed class TopUpSessionService(
             .Where(x =>
                 x.WorkerId == workerId
                 && x.HistoryConfirmedAtUtc == null
-                && (x.Status == TopUpSessionStatuses.QrReady
-                    || x.Status == TopUpSessionStatuses.AwaitingBalance
-                    || x.Status == TopUpSessionStatuses.VerificationRequired
-                    || (x.Status == TopUpSessionStatuses.Expired
-                        && x.QrReadyAtUtc != null
-                        && x.QrReadyAtUtc > now - TopUpSessionRules.BalanceConfirmationTtl))
+                && (x.Status == TopUpSessionStatuses.AwaitingBalance
+                    || x.Status == TopUpSessionStatuses.VerificationRequired)
                 && x.SubProfileId != "")
             .OrderBy(x => x.CreatedAtUtc)
             .Select(x => new WorkerPendingTopUpHistoryCheckDto(
@@ -908,29 +924,39 @@ public sealed class TopUpSessionService(
         ConfirmTopUpHistoryRequest request,
         CancellationToken ct = default)
     {
-        var accountOwned = await db.WorkerAccounts
-            .AnyAsync(x => x.WorkerId == workerId && x.AccountId == request.AccountId, ct)
-            .ConfigureAwait(false);
-        if (!accountOwned)
+        await using var transaction = await db.Database.BeginTransactionAsync(ct).ConfigureAwait(false);
+        var account = await ReadAccountWithLockAsync(workerId, request.AccountId, ct).ConfigureAwait(false);
+        if (account is null)
         {
+            await transaction.RollbackAsync(ct).ConfigureAwait(false);
             return new ConfirmTopUpHistoryResult(0, "Аккаунт не принадлежит воркеру.");
         }
 
-        var candidates = await db.TopUpSessions
+        var candidateIds = await db.TopUpSessions
+            .AsNoTracking()
             .Where(x =>
                 x.WorkerId == workerId
                 && x.AccountId == request.AccountId
                 && x.SubProfileId == request.SubProfileId
                 && x.HistoryConfirmedAtUtc == null
-                && (x.Status == TopUpSessionStatuses.QrReady
-                    || x.Status == TopUpSessionStatuses.AwaitingBalance
-                    || x.Status == TopUpSessionStatuses.VerificationRequired
-                    || (x.Status == TopUpSessionStatuses.Expired
-                        && x.QrReadyAtUtc != null
-                        && x.QrReadyAtUtc > timeProvider.GetUtcNow().UtcDateTime - TopUpSessionRules.BalanceConfirmationTtl)))
+                && (x.Status == TopUpSessionStatuses.AwaitingBalance
+                    || x.Status == TopUpSessionStatuses.VerificationRequired))
             .OrderBy(x => x.CreatedAtUtc)
+            .Select(x => x.Id)
             .ToListAsync(ct)
             .ConfigureAwait(false);
+        var candidates = new List<TopUpSessionEntity>(candidateIds.Count);
+        foreach (var candidateId in candidateIds)
+        {
+            var candidate = await LockTopUpSessionRowAsync(candidateId, workerId, ct).ConfigureAwait(false);
+            if (candidate is not null
+                && candidate.HistoryConfirmedAtUtc is null
+                && candidate.Status is TopUpSessionStatuses.AwaitingBalance
+                    or TopUpSessionStatuses.VerificationRequired)
+            {
+                candidates.Add(candidate);
+            }
+        }
 
         var now = timeProvider.GetUtcNow().UtcDateTime;
         var matchedSessionIds = new HashSet<Guid>();
@@ -953,12 +979,12 @@ public sealed class TopUpSessionService(
                 continue;
             }
 
-            session.Status = TopUpSessionStatuses.AwaitingBalance;
-            session.AwaitingBalanceAtUtc ??= now;
+            session.Status = TopUpSessionStatuses.Completed;
+            session.AwaitingBalanceAtUtc = null;
             session.HistoryConfirmedAtUtc = now;
             session.HistoryOperationAtUtc = operation.OccurredAtUtc;
-            session.CompletedAtUtc = null;
-            session.ProgressMessage = "Оплата найдена в истории операций Avito. Баланс подтвердится на следующем проходе.";
+            session.CompletedAtUtc = now;
+            session.ProgressMessage = "Пополнение подтверждено историей операций Avito.";
             session.FailureMessage = null;
             ClearQrData(session);
             await ReleasePauseAsync(session, ct).ConfigureAwait(false);
@@ -966,7 +992,7 @@ public sealed class TopUpSessionService(
             confirmed++;
 
             _log.LogInformation(
-                "Top-up: оплата найдена в истории Avito {SessionId} → awaiting_balance worker={WorkerId} account={AccountName} subprofile={SubProfileName} amount={Amount} occurred={OccurredAtUtc}.",
+                "Top-up: оплата найдена в истории Avito {SessionId} → completed worker={WorkerId} account={AccountName} subprofile={SubProfileName} amount={Amount} occurred={OccurredAtUtc}.",
                 session.Id,
                 session.WorkerId,
                 session.AccountName,
@@ -993,11 +1019,13 @@ public sealed class TopUpSessionService(
 
         if (confirmed == 0 && cancelledAfterVerification == 0)
         {
+            await transaction.RollbackAsync(ct).ConfigureAwait(false);
             return new ConfirmTopUpHistoryResult(0);
         }
 
         await db.SaveChangesAsync(ct).ConfigureAwait(false);
-        foreach (var session in candidates.Where(x => x.Status == TopUpSessionStatuses.AwaitingBalance))
+        await transaction.CommitAsync(ct).ConfigureAwait(false);
+        foreach (var session in candidates.Where(x => x.Status == TopUpSessionStatuses.Completed))
         {
             panelRealtime.Notify(
                 [PanelChangeKind.Workers, PanelChangeKind.Accounts],
@@ -1084,13 +1112,23 @@ public sealed class TopUpSessionService(
         DateTime capturedAtUtc,
         CancellationToken ct = default)
     {
+        var reconciledHistory = await ReconcileHistoryConfirmedBalancesAsync(
+                workerId,
+                balances,
+                capturedAtUtc,
+                ct)
+            .ConfigureAwait(false);
+
         var candidates = await db.TopUpSessions
-            .Where(x => x.WorkerId == workerId && ConfirmableStatuses.Contains(x.Status))
+            .Where(x =>
+                x.WorkerId == workerId
+                && x.SubProfileId == ""
+                && ConfirmableStatuses.Contains(x.Status))
             .ToListAsync(ct)
             .ConfigureAwait(false);
         if (candidates.Count == 0)
         {
-            return 0;
+            return reconciledHistory;
         }
 
         var conflicts = await db.TopUpSessions.AsNoTracking()
@@ -1206,7 +1244,58 @@ public sealed class TopUpSessionService(
             await PushNextPendingAsync(workerId, ct).ConfigureAwait(false);
         }
 
-        return completed;
+        return completed + reconciledHistory;
+    }
+
+    private async Task<int> ReconcileHistoryConfirmedBalancesAsync(
+        Guid workerId,
+        IReadOnlyList<WorkerBalanceDto> balances,
+        DateTime capturedAtUtc,
+        CancellationToken ct)
+    {
+        var candidates = await db.TopUpSessions
+            .Where(x =>
+                x.WorkerId == workerId
+                && x.Status == TopUpSessionStatuses.Completed
+                && x.HistoryConfirmedAtUtc != null
+                && x.BalanceConfirmedAtUtc == null)
+            .ToListAsync(ct)
+            .ConfigureAwait(false);
+        var reconciled = 0;
+        foreach (var session in candidates)
+        {
+            var account = balances.FirstOrDefault(x => x.AccountId == session.AccountId);
+            var balanceAfter = account is null
+                ? null
+                : TryGetAccountBalance(account, session.SubProfileId, session.SubProfileName);
+            if (balanceAfter is not decimal actual
+                || !TopUpSessionRules.IsExpectedBalanceIncrease(
+                    session.CurrentBalance,
+                    session.RequestedAmount,
+                    session.TargetBalance,
+                    actual))
+            {
+                continue;
+            }
+
+            session.BalanceAfter = actual;
+            session.BalanceConfirmedAtUtc = capturedAtUtc;
+            reconciled++;
+            _log.LogInformation(
+                "Top-up: аванс догнал подтверждённую историей оплату {SessionId} balance={Actual} worker={WorkerId} account={AccountName} subprofile={SubProfileName}.",
+                session.Id,
+                actual,
+                session.WorkerId,
+                session.AccountName,
+                session.SubProfileName);
+        }
+
+        if (reconciled > 0)
+        {
+            await db.SaveChangesAsync(ct).ConfigureAwait(false);
+        }
+
+        return reconciled;
     }
 
     /// <summary>

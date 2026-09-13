@@ -32,9 +32,9 @@
         TopUpSessionStatuses.Started => "В работе",
         TopUpSessionStatuses.PaymentClaimed => "В работе",
         TopUpSessionStatuses.QrReady => "QR готов",
-        TopUpSessionStatuses.AwaitingBalance => "Ожидает баланс",
+        TopUpSessionStatuses.AwaitingBalance => "Проверка оплаты",
         TopUpSessionStatuses.Completed => "Подтверждено",
-        TopUpSessionStatuses.VerificationRequired => "Ожидает баланс",
+        TopUpSessionStatuses.VerificationRequired => "Проверка оплаты",
         TopUpSessionStatuses.Failed => "Ошибка",
         TopUpSessionStatuses.Expired => "Истекло",
         TopUpSessionStatuses.Cancelled => "Отменено",
@@ -62,7 +62,7 @@
         <a class="balances-tab @(activeTab == "low" ? "balances-tab--active" : "")" href="@BalancesUrl("low", page: 1)" aria-current="@(activeTab == "low" ? "page" : null)">Требуют пополнения</a>
         <a class="balances-tab @(activeTab == "queue" ? "balances-tab--active" : "")" href="@BalancesUrl("queue", page: 1)" aria-current="@(activeTab == "queue" ? "page" : null)">В очереди</a>
         <a class="balances-tab @(activeTab == "working" ? "balances-tab--active" : "")" href="@BalancesUrl("working", page: 1)" aria-current="@(activeTab == "working" ? "page" : null)">В работе</a>
-        <a class="balances-tab @(activeTab == "awaiting" ? "balances-tab--active" : "")" href="@BalancesUrl("awaiting", page: 1)" aria-current="@(activeTab == "awaiting" ? "page" : null)">Ожидают баланс</a>
+        <a class="balances-tab @(activeTab == "awaiting" ? "balances-tab--active" : "")" href="@BalancesUrl("awaiting", page: 1)" aria-current="@(activeTab == "awaiting" ? "page" : null)">Проверка оплаты</a>
         <a class="balances-tab @(activeTab == "history" ? "balances-tab--active" : "")" href="@BalancesUrl("history", true, 1)" aria-current="@(activeTab == "history" ? "page" : null)">История</a>
     </nav>
 
@@ -146,7 +146,16 @@
                     {
                         var session = row.Session;
                         var canSelect = row.IsLowBalance && row.WorkerOnline && session is null;
-                        var statusDetail = session?.ProgressMessage ?? session?.FailureMessage;
+                        var statusDetail = session?.Status switch
+                        {
+                            TopUpSessionStatuses.AwaitingBalance =>
+                                "Оплата отмечена. На следующем проходе проверим историю операций Avito.",
+                            TopUpSessionStatuses.VerificationRequired =>
+                                "Проверяем историю операций Avito перед отменой.",
+                            TopUpSessionStatuses.Completed when session.HistoryConfirmedAtUtc is not null =>
+                                "Пополнение подтверждено историей операций Avito.",
+                            _ => session?.ProgressMessage ?? session?.FailureMessage
+                        };
                         var workerUrl = Url.Action("Details", "Workers", new { id = row.WorkerId });
                         var accountUrl = Url.Action("Index", "Accounts", new { q = row.AccountName });
                         <tr class="@(row.IsLowBalance ? "is-low" : "")" data-balance-row data-worker-id="@row.WorkerId" data-account-id="@row.AccountId" data-subprofile-id="@row.SubProfileId" data-account-name="@row.AccountName" data-subprofile-name="@row.SubProfileName" data-session-id="@(session?.Id.ToString() ?? "")" data-session-status="@(session?.Status ?? "")">

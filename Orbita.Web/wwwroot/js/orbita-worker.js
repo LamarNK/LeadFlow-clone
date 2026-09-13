@@ -2023,10 +2023,12 @@
                 } else if (session.status === 'cancelled') {
                     message = 'Сессия закрыта, пауза мониторинга снята.';
                 } else if (session.status === 'paid') {
-                    message = 'Оплата отмечена. Пауза мониторинга снята. Обновите страницу, чтобы увидеть актуальный баланс.';
+                    message = 'Оплата отмечена. На следующем проходе проверим историю операций Avito.';
+                } else if (session.status === 'completed') {
+                    message = session.progressMessage || 'Пополнение подтверждено.';
                 }
 
-                terminalMessageEl.classList.toggle('is-success', session.status === 'paid');
+                terminalMessageEl.classList.toggle('is-success', session.status === 'paid' || session.status === 'completed');
                 if (message) {
                     terminalMessageEl.textContent = message;
                     terminalMessageEl.removeAttribute('hidden');
@@ -2322,9 +2324,9 @@
                 'failed': 'Не удалось пополнить',
                 'cancelled': 'Сессия закрыта',
                 'paid': 'Оплачено',
-                'awaiting_balance': 'Ожидаем обновление баланса',
+                'awaiting_balance': 'Проверяем оплату',
                 'completed': 'Пополнение подтверждено',
-                'verification_required': 'Ожидает баланс'
+                'verification_required': 'Проверяем оплату'
             };
             return labels[status] || 'Неизвестно';
         }

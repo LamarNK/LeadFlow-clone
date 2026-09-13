@@ -85,7 +85,9 @@ public sealed class BalancesController(
     public async Task<IActionResult> MarkPaid(Guid sessionId, CancellationToken ct)
     {
         var result = await workers.MarkTopUpSessionPaidAsync(sessionId, ct);
-        return result.Success ? Ok(new { message = "Оплата отмечена. Ожидаем новый баланс." }) : BadRequest(new { error = result.Error });
+        return result.Success
+            ? Ok(new { message = "Оплата отмечена. На следующем проходе проверим историю операций Avito." })
+            : BadRequest(new { error = result.Error });
     }
 
     [HttpPost]

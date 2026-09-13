@@ -1796,7 +1796,7 @@ public sealed class WorkerMonitoringService(
                             if (confirmed > 0)
                             {
                                 _ = GlobalLogger.Instance.LogAsync(
-                                    $"Аккаунт «{account.DisplayName}» · «{sub.Name}» — в истории кошелька подтверждено пополнений: {confirmed}.",
+                                    $"Аккаунт «{account.DisplayName}» · «{sub.Name}» — пополнение подтверждено историей операций Avito.",
                                     DeskLinkAuditLogLevel.Info);
                             }
                         }

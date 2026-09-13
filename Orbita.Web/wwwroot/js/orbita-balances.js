@@ -112,9 +112,9 @@
             started: 'В работе',
             payment_claimed: 'В работе',
             qr_ready: 'QR готов',
-            awaiting_balance: 'Ожидает баланс',
+            awaiting_balance: 'Проверка оплаты',
             completed: 'Подтверждено',
-            verification_required: 'Ожидает баланс',
+            verification_required: 'Проверка оплаты',
             failed: 'Ошибка',
             expired: 'Истекло',
             cancelled: 'Отменено'

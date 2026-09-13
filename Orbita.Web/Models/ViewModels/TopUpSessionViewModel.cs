@@ -44,9 +44,9 @@ public sealed class TopUpSessionViewModel
         "failed" => "Ошибка",
         "cancelled" => "Отменено",
         "paid" => "Оплачено",
-        "awaiting_balance" => "Ожидает обновления баланса",
+        "awaiting_balance" => "Проверяем оплату",
         "completed" => "Подтверждено",
-        "verification_required" => "Ожидает баланс",
+        "verification_required" => "Проверяем оплату",
         _ => "Неизвестно"
     };
 
