@@ -64,6 +64,42 @@ public sealed class ListingsIndexBuilderTests
         Assert.Contains(workerFiltered.ActiveFilterChips, chip => chip.Label.StartsWith("Воркер:", StringComparison.Ordinal));
     }
 
+    [Fact]
+    public void Build_WithServerPagedItems_UsesFullSummaryAndTotal()
+    {
+        var now = DateTime.UtcNow;
+        var currentPage = new List<AvitoAdListingListItem>
+        {
+            Item("101", AvitoAdListingStates.Active, true, now.AddDays(10)),
+            Item("102", AvitoAdListingStates.ApproachingExpiry, true, now.AddDays(2))
+        };
+        var summary = new AvitoAdListingSummary(23_738, 569, 4_181, 0, 0);
+
+        var model = ListingsIndexBuilder.Build(
+            currentPage,
+            summary,
+            searchQuery: null,
+            tab: "active",
+            page: 2,
+            pageSize: 2,
+            sort: "expires",
+            sortDir: "asc",
+            workerIds: null,
+            accountIds: null,
+            subProfileIds: null,
+            workers: [],
+            accounts: [],
+            subProfiles: [],
+            totalItems: 23_738,
+            itemsArePaged: true);
+
+        Assert.Equal(2, model.Rows.Count);
+        Assert.Equal(23_738, model.Pagination.TotalItems);
+        Assert.Equal(23_738, model.KpiCards.Single(x => x.Key == "active").CountValue);
+        Assert.Equal(569, model.KpiCards.Single(x => x.Key == "unknown").CountValue);
+        Assert.Equal(4_181, model.KpiCards.Single(x => x.Key == "expiring").CountValue);
+    }
+
     private static AvitoAdListingListItem Item(string id, string state, bool active, DateTime? expires) =>
         new(
             Guid.NewGuid(),

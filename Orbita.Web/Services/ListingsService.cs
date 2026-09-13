@@ -23,6 +23,7 @@ public sealed class ListingsService(
         CancellationToken ct = default)
     {
         pageSize = ListPageSizeDefaults.Normalize(pageSize, ListPageSizeDefaults.Listings);
+        var normalizedTab = ListingsIndexBuilder.NormalizeTab(tab);
         var selectedWorkers = ResponseCatalogFilterValues.MergeIds(workerIds, null);
         var selectedAccounts = ResponseCatalogFilterValues.MergeIds(accountIds, null);
         var selectedSubProfiles = ResponseCatalogFilterValues.MergeValues(subProfileIds, null);
@@ -31,7 +32,7 @@ public sealed class ListingsService(
         {
             return DesignPreviewData.BuildListingsIndexViewModel(
                 searchQuery,
-                tab,
+                normalizedTab,
                 page,
                 pageSize.Value,
                 sort,
@@ -47,7 +48,12 @@ public sealed class ListingsService(
             ct,
             selectedWorkers,
             selectedAccounts,
-            selectedSubProfiles);
+            selectedSubProfiles,
+            normalizedTab,
+            page,
+            pageSize.Value,
+            sort,
+            sortDir);
         var accountsTask = api.GetOfficeAccountsAsync(workerId: null, ct);
         await Task.WhenAll(workersTask, listingsTask, accountsTask);
 
@@ -64,14 +70,18 @@ public sealed class ListingsService(
             })
             .ToList();
 
-        var subOptions = listings.Items
-            .GroupBy(x => x.AvitoSubProfileId)
-            .Where(g => !string.IsNullOrWhiteSpace(g.Key))
-            .OrderBy(g => g.First().SubProfileName)
-            .Select(g => new EventFilterOptionViewModel
+        var subOptions = officeAccounts
+            .Where(x => selectedWorkers.Count == 0 || selectedWorkers.Contains(x.WorkerId))
+            .Where(x => selectedAccounts.Count == 0 || selectedAccounts.Contains(x.Account.AccountId))
+            .SelectMany(x => x.Account.SubProfiles ?? [])
+            .Where(x => !string.IsNullOrWhiteSpace(x.Id))
+            .GroupBy(x => x.Id, StringComparer.Ordinal)
+            .Select(g => g.First())
+            .OrderBy(x => x.Name)
+            .Select(x => new EventFilterOptionViewModel
             {
-                Value = g.Key,
-                Label = string.IsNullOrWhiteSpace(g.First().SubProfileName) ? g.Key : g.First().SubProfileName
+                Value = x.Id,
+                Label = string.IsNullOrWhiteSpace(x.Name) ? x.Id : x.Name
             })
             .ToList();
 
@@ -79,7 +89,7 @@ public sealed class ListingsService(
             listings.Items,
             listings.Summary,
             searchQuery,
-            tab,
+            normalizedTab,
             page,
             pageSize.Value,
             sort,
@@ -90,6 +100,8 @@ public sealed class ListingsService(
             workers,
             accountOptions,
             subOptions,
-            officeContext);
+            officeContext,
+            totalItems: listings.Total,
+            itemsArePaged: true);
     }
 }

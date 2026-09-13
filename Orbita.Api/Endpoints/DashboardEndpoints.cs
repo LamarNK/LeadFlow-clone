@@ -188,6 +188,11 @@ public static class DashboardEndpoints
             string? state,
             bool? isActive,
             string? q,
+            string? tab,
+            int? page,
+            int? pageSize,
+            string? sort,
+            string? dir,
             AvitoAdsQueryService listings,
             OfficeScopeService officeScope,
             ClaimsPrincipal principal,
@@ -210,7 +215,12 @@ public static class DashboardEndpoints
                 ct,
                 workerIds,
                 accountIds,
-                subProfileIds));
+                subProfileIds,
+                tab,
+                page ?? 1,
+                pageSize ?? 100,
+                sort,
+                dir));
         });
         accountRead.MapGet("/workers/{id:guid}/accounts", async (
             Guid id,

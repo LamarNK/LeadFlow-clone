@@ -203,7 +203,12 @@ public sealed class OrbitaApiClient(
         CancellationToken ct = default,
         IReadOnlyList<Guid>? workerIds = null,
         IReadOnlyList<Guid>? accountIds = null,
-        IReadOnlyList<string>? subProfileIds = null)
+        IReadOnlyList<string>? subProfileIds = null,
+        string? tab = null,
+        int page = 1,
+        int pageSize = 100,
+        string? sort = null,
+        string? sortDir = null)
     {
         if (_preview.Enabled)
         {
@@ -230,6 +235,12 @@ public sealed class OrbitaApiClient(
         {
             path = AppendQuery(path, "q", q);
         }
+
+        path = AppendQuery(path, "tab", tab);
+        path = AppendQuery(path, "page", page.ToString());
+        path = AppendQuery(path, "pageSize", pageSize.ToString());
+        path = AppendQuery(path, "sort", sort);
+        path = AppendQuery(path, "dir", sortDir);
 
         return GetAsync<AvitoAdListingListResponse>(path, ct);
     }

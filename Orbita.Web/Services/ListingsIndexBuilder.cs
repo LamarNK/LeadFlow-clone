@@ -39,7 +39,9 @@ internal static class ListingsIndexBuilder
         IReadOnlyList<EventFilterOptionViewModel> workers,
         IReadOnlyList<EventFilterOptionViewModel> accounts,
         IReadOnlyList<EventFilterOptionViewModel> subProfiles,
-        IOfficeContext? officeContext = null)
+        IOfficeContext? officeContext = null,
+        int? totalItems = null,
+        bool itemsArePaged = false)
     {
         page = Math.Max(1, page);
         tab = NormalizeTab(tab);
@@ -47,17 +49,27 @@ internal static class ListingsIndexBuilder
         var selectedAccounts = accountIds ?? [];
         var selectedSubProfiles = subProfileIds ?? [];
         var tableSort = TableSort.Parse(sort, sortDir, TableSortState.Create("expires", descending: false), SortColumns);
-        var filtered = items
-            .Where(x => selectedWorkers.Count == 0 || selectedWorkers.Contains(x.WorkerId))
-            .Where(x => selectedAccounts.Count == 0 || selectedAccounts.Contains(x.AccountId))
-            .Where(x => selectedSubProfiles.Count == 0
-                        || selectedSubProfiles.Contains(x.AvitoSubProfileId, StringComparer.Ordinal))
-            .Where(x => MatchesTab(x, tab))
-            .Select(MapRow)
-            .ToList();
-        var sorted = ApplySort(filtered, tableSort).ToList();
-        var total = sorted.Count;
-        var paged = sorted.Skip((page - 1) * pageSize).Take(pageSize).ToList();
+        IReadOnlyList<ListingRowViewModel> paged;
+        int total;
+        if (itemsArePaged)
+        {
+            paged = items.Select(MapRow).ToList();
+            total = totalItems ?? paged.Count;
+        }
+        else
+        {
+            var filtered = items
+                .Where(x => selectedWorkers.Count == 0 || selectedWorkers.Contains(x.WorkerId))
+                .Where(x => selectedAccounts.Count == 0 || selectedAccounts.Contains(x.AccountId))
+                .Where(x => selectedSubProfiles.Count == 0
+                            || selectedSubProfiles.Contains(x.AvitoSubProfileId, StringComparer.Ordinal))
+                .Where(x => MatchesTab(x, tab))
+                .Select(MapRow)
+                .ToList();
+            var sorted = ApplySort(filtered, tableSort).ToList();
+            total = sorted.Count;
+            paged = sorted.Skip((page - 1) * pageSize).Take(pageSize).ToList();
+        }
 
         var header = PageHeaderBuilder.Create("Объявления", "Контроль срока размещения объявлений Avito");
         if (officeContext is not null)
