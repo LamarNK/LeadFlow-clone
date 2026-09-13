@@ -97,14 +97,8 @@ public static class MonitoringTiming
     /// <summary>Отдельный мониторинг объявлений: интервал полного обхода списка активных.</summary>
     public const int AvitoAdsListCheckIntervalHours = 12;
 
-    /// <summary>Максимум детальных страниц на один субпрофиль за запуск мониторинга объявлений.</summary>
-    public const int AvitoAdsMaxDetailPagesPerRun = 4;
-
     /// <summary>Сколько аккаунтов проверять за один тик фонового цикла объявлений.</summary>
     public const int AvitoAdsMaxAccountsPerLoop = 1;
-
-    /// <summary>Объявления младше этого возраста не открываем повторно без причины.</summary>
-    public const int AvitoAdsFreshAgeDays = 20;
 
     /// <summary>Пауза фонового цикла объявлений, если нечего проверять.</summary>
     public const int AvitoAdsLoopIdleSeconds = 45;

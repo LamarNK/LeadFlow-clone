@@ -114,6 +114,60 @@ public sealed class AvitoAdsSyncServiceTests
         Assert.Equal(next, schedule.NextCheckAtUtc);
     }
 
+    [Fact]
+    public async Task IncompleteSync_DoesNotAdvancePersistedSchedule()
+    {
+        await using var db = await CreateDbAsync();
+        var notifier = new FakeNotifier();
+        var service = new AvitoAdsSyncService(db, notifier);
+        var workerId = Guid.NewGuid();
+        var accountId = Guid.NewGuid();
+        var officeId = Guid.NewGuid();
+        var previousNext = new DateTime(2026, 9, 13, 8, 0, 0, DateTimeKind.Utc);
+        var now = new DateTime(2026, 9, 13, 9, 0, 0, DateTimeKind.Utc);
+        db.Offices.Add(new OfficeEntity
+        {
+            Id = officeId,
+            Name = "Office",
+            RegistrationSecretHash = "h",
+            IsEnabled = true
+        });
+        db.Workers.Add(new WorkerEntity
+        {
+            Id = workerId,
+            OfficeId = officeId,
+            DisplayName = "W",
+            MachineName = "m",
+            ApiKeyHash = "k"
+        });
+        db.WorkerAvitoAdListSchedules.Add(new WorkerAvitoAdListScheduleEntity
+        {
+            Id = Guid.NewGuid(),
+            WorkerId = workerId,
+            AccountId = accountId,
+            AvitoSubProfileId = "sp-1",
+            LastSuccessfulCheckAtUtc = now.AddHours(-12),
+            NextCheckAtUtc = previousNext,
+            UpdatedAtUtc = now.AddHours(-12)
+        });
+        await db.SaveChangesAsync();
+
+        var request = new WorkerAvitoAdSyncRequest(
+            workerId,
+            accountId,
+            "sp-1",
+            false,
+            now,
+            [],
+            now.AddHours(12));
+
+        await service.SaveSubProfileSyncAsync(workerId, request, CancellationToken.None);
+        var schedule = Assert.Single(await service.GetAccountSchedulesAsync(workerId, accountId, CancellationToken.None));
+
+        Assert.Equal(previousNext, schedule.NextCheckAtUtc);
+        Assert.Equal(now.AddHours(-12), schedule.LastSuccessfulCheckAtUtc);
+    }
+
     private static async Task<OrbitaDbContext> CreateDbAsync()
     {
         var connection = new SqliteConnection("Data Source=:memory:");

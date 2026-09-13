@@ -1,6 +1,7 @@
 using LeadFlow.Core.Models;
 using LeadFlow.Core.Services.Avito;
 using LeadFlow.Core.Services.Worker;
+using LeadFlow.Tests.Support;
 using WorkerAvitoAdListScheduleDto = Orbita.Contracts.WorkerAvitoAdListScheduleDto;
 using Xunit;
 
@@ -8,24 +9,6 @@ namespace LeadFlow.Tests;
 
 public sealed class AvitoAdListingSchedulerTests
 {
-    private static readonly AvitoAdListingScheduleOptions Options = new()
-    {
-        ListCheckInterval = TimeSpan.FromHours(12),
-        MaxDetailPagesPerRun = 2,
-        FreshAgeDays = 20,
-        ApproachingDays = 7,
-        UnknownDateRecheckAfter = TimeSpan.FromHours(6),
-        ApproachingRecheckAfter = TimeSpan.FromHours(12),
-        StaleDetailRecheckAfter = TimeSpan.FromHours(72)
-    };
-
-    [Fact]
-    public void NewCard_OpensDetail()
-    {
-        var card = new AvitoAdListCard { AvitoItemId = "1", Title = "A", Url = "/x", AgeDays = 1 };
-        Assert.True(AvitoAdListingScheduler.ShouldOpenDetail(null, card, DateTime.UtcNow, Options));
-    }
-
     [Fact]
     public void PersistedFutureNextCheck_DoesNotRunAfterWorkerRestart()
     {
@@ -64,59 +47,6 @@ public sealed class AvitoAdListingSchedulerTests
                 now.AddHours(-12))
         ];
         Assert.True(WorkerAvitoAdsMonitor.IsListDue(elapsed, subProfiles, now));
-    }
-
-    [Fact]
-    public void FreshKnownCard_DoesNotOpenDetail()
-    {
-        var now = DateTime.UtcNow;
-        var published = now.AddDays(-3);
-        var existing = new AvitoAdListingRecord
-        {
-            AvitoItemId = "1",
-            PublishedAtUtc = published,
-            PublicationDateSource = AvitoAdPublicationDateSources.Exact,
-            ExpiresAtUtc = AvitoAdExpiryCalculator.ComputeExpiresAtUtc(published),
-            DetailCheckedAtUtc = now.AddHours(-1),
-            AgeDays = 3,
-            StatusText = "",
-            IsActive = true
-        };
-        var card = new AvitoAdListCard { AvitoItemId = "1", AgeDays = 3, StatusText = "" };
-        Assert.False(AvitoAdListingScheduler.ShouldOpenDetail(existing, card, now, Options));
-    }
-
-    [Fact]
-    public void ApproachingExpiry_GetsPriority()
-    {
-        var now = DateTime.UtcNow;
-        var published = now.AddDays(-25);
-        var approaching = new AvitoAdListingRecord
-        {
-            AvitoItemId = "soon",
-            PublishedAtUtc = published,
-            PublicationDateSource = AvitoAdPublicationDateSources.Exact,
-            ExpiresAtUtc = now.AddDays(3),
-            DetailCheckedAtUtc = now.AddDays(-2),
-            IsActive = true,
-            State = AvitoAdListingStates.ApproachingExpiry
-        };
-        var unknown = new AvitoAdListingRecord
-        {
-            AvitoItemId = "unknown",
-            IsActive = true,
-            PublicationDateSource = AvitoAdPublicationDateSources.Unknown,
-            State = AvitoAdListingStates.UnknownPublicationDate
-        };
-        var cards = new Dictionary<string, AvitoAdListCard>
-        {
-            ["soon"] = new() { AvitoItemId = "soon", AgeDays = 25 },
-            ["unknown"] = new() { AvitoItemId = "unknown" }
-        };
-
-        var plan = AvitoAdListingScheduler.PlanDetailChecks([approaching, unknown], cards, now, Options);
-        Assert.Equal("unknown", plan[0].AvitoItemId);
-        Assert.Contains(plan, x => x.AvitoItemId == "soon");
     }
 
     [Fact]
@@ -229,5 +159,36 @@ public sealed class AvitoAdListingSchedulerTests
         Assert.Equal(13, record.RemainingDays);
         Assert.Equal(AvitoAdListingStates.Active, record.State);
         Assert.Null(record.DetailCheckedAtUtc);
+    }
+
+    [Fact]
+    public async Task ListExpiryFailure_WritesStructuredDiagnosticWithCardSample()
+    {
+        var account = new AvitoAccount { DisplayName = "Avito 103" };
+        var card = new AvitoAdListCard
+        {
+            AvitoItemId = "8312560791",
+            ExpiryParseError = "list_expiry_unparsed"
+        };
+        const string snippet = """
+            data-marker="item-snippet/8312560791">
+            <span>Активно ещё 18 дней — до 1 окт, 17:33</span>
+            """;
+
+        using var capture = GlobalLogCapture.Start();
+        await WorkerAvitoAdsMonitor.LogListExpiryParseFailureAsync(
+            account,
+            "445109158",
+            "Кадровый отдел Тюмень 6",
+            card,
+            snippet);
+
+        var entry = Assert.Single(capture.Entries, x => x.Message.Contains("8312560791", StringComparison.Ordinal));
+        Assert.Equal("ads.list_expiry_unparsed", entry.ErrorKey);
+        Assert.Equal("list_expiry_parse_failed", entry.Properties["ads.event"]);
+        Assert.Equal("8312560791", entry.Properties["ads.avitoItemId"]);
+        Assert.Equal("445109158", entry.Properties["ads.subProfileId"]);
+        Assert.Equal("list_expiry_unparsed", entry.Properties["ads.reason"]);
+        Assert.Equal(snippet, entry.Properties["ads.cardHtml"]);
     }
 }

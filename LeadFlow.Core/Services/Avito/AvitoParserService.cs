@@ -751,6 +751,7 @@ public class AvitoParserService
         var plain = Regex.Replace(htmlOrText, "<script[\\s\\S]*?</script>", " ", RegexOptions.IgnoreCase);
         plain = Regex.Replace(plain, "<style[\\s\\S]*?</style>", " ", RegexOptions.IgnoreCase);
         plain = Regex.Replace(plain, "<[^>]+>", " ");
+        plain = WebUtility.HtmlDecode(plain);
         plain = NormalizeSpaces(plain);
 
         var match = Regex.Match(
@@ -820,6 +821,70 @@ public class AvitoParserService
             error = "list_expiry_invalid_calendar_date";
             return false;
         }
+    }
+
+    public static string ExtractItemSnippetHtml(string html, string itemId, int maxLength = 6000)
+    {
+        if (string.IsNullOrWhiteSpace(html) || string.IsNullOrWhiteSpace(itemId) || maxLength <= 0)
+        {
+            return string.Empty;
+        }
+
+        foreach (var (id, snippetHtml) in EnumerateItemSnippets(html))
+        {
+            if (!string.Equals(id, itemId, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            return snippetHtml.Length <= maxLength
+                ? snippetHtml
+                : snippetHtml[..maxLength] + "\n<!-- truncated -->";
+        }
+
+        return string.Empty;
+    }
+
+    public static string ExtractActiveListStatusLine(string? htmlOrText)
+    {
+        if (string.IsNullOrWhiteSpace(htmlOrText))
+        {
+            return string.Empty;
+        }
+
+        var plain = Regex.Replace(htmlOrText, "<script[\\s\\S]*?</script>", " ", RegexOptions.IgnoreCase);
+        plain = Regex.Replace(plain, "<style[\\s\\S]*?</style>", " ", RegexOptions.IgnoreCase);
+        plain = Regex.Replace(plain, "<[^>]+>", " ");
+        plain = WebUtility.HtmlDecode(plain);
+        plain = NormalizeSpaces(plain);
+
+        var match = Regex.Match(
+            plain,
+            @"(?<status>(?:Активно|Скрыто\s*:|Остановлено\s*:|Заблокировано\b|На модерации\b|Отклонено\b|Снято с публикации\b)[\s\S]{0,180}?)(?=\s+\d+\s+(?:день|дня|дней)\s+на\s+Авито|\s+нет новых чатов|\s+Редактировать|\s+Снять с публикации|\s+Продвинуть|$)",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+        return match.Success ? match.Groups["status"].Value.Trim() : string.Empty;
+    }
+
+    public static string ExtractActiveListExpiryText(string? htmlOrText)
+    {
+        if (string.IsNullOrWhiteSpace(htmlOrText))
+        {
+            return string.Empty;
+        }
+
+        var plain = Regex.Replace(htmlOrText, "<script[\\s\\S]*?</script>", " ", RegexOptions.IgnoreCase);
+        plain = Regex.Replace(plain, "<style[\\s\\S]*?</style>", " ", RegexOptions.IgnoreCase);
+        plain = Regex.Replace(plain, "<[^>]+>", " ");
+        plain = WebUtility.HtmlDecode(plain);
+        plain = NormalizeSpaces(plain);
+
+        var match = Regex.Match(
+            plain,
+            @"(?:ещё\s+)?\d+\s*(?:день|дня|дней)\s*[—–-]\s*до\s*\d{1,2}\s+[А-Яа-яЁё.]+\s*,?\s*\d{1,2}:\d{2}",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+        return match.Success ? match.Value.Trim() : string.Empty;
     }
 
     /// <summary>

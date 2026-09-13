@@ -74,6 +74,103 @@ public sealed class AvitoAdListingParserTests
     }
 
     [Fact]
+    public void ParseProfilePage_ReadsOctoberExpiryFromCapturedAvitoCard()
+    {
+        const string html = """
+            <div data-marker="item-snippet/8312560791">
+              <a data-marker="view-link" href="https://www.avito.ru/novoiivanovskoe/vakansii/mehanik_8312560791">
+                <span>Механик вахта в Воронеж с проживанием</span>
+              </a>
+              <span class="styles-status-name-zJgof">Активно</span>&nbsp;ещё 18 дней — до 1 окт, 17:33
+              <div role-marker="offer/days-published">13 дней на Авито</div>
+            </div>
+            """;
+        var captured = new DateTime(2026, 9, 13, 1, 5, 54, DateTimeKind.Utc);
+
+        var card = Assert.Single(_parser.ToListCards(_parser.ParseProfilePage(html, capturedAtUtc: captured)));
+        var expiresLocal = Assert.IsType<DateTime>(card.ExpiresAtUtc);
+        expiresLocal = AvitoAdBusinessTime.ToLocal(expiresLocal);
+
+        Assert.Equal(2026, expiresLocal.Year);
+        Assert.Equal(10, expiresLocal.Month);
+        Assert.Equal(1, expiresLocal.Day);
+        Assert.Equal(17, expiresLocal.Hour);
+        Assert.Equal(33, expiresLocal.Minute);
+        Assert.Equal(18, card.RemainingDays);
+        Assert.Null(card.ExpiryParseError);
+    }
+
+    [Theory]
+    [InlineData("до 1 янв, 10:00", 1)]
+    [InlineData("до 1 фев, 10:00", 2)]
+    [InlineData("до 1 мар, 10:00", 3)]
+    [InlineData("до 1 апр, 10:00", 4)]
+    [InlineData("до 1 мая, 10:00", 5)]
+    [InlineData("до 1 июн, 10:00", 6)]
+    [InlineData("до 1 июл, 10:00", 7)]
+    [InlineData("до 1 авг, 10:00", 8)]
+    [InlineData("до 1 сен, 10:00", 9)]
+    [InlineData("до 1 окт, 10:00", 10)]
+    [InlineData("до 1 ноя, 10:00", 11)]
+    [InlineData("до 1 дек, 10:00", 12)]
+    public void TryParseActiveListExpiry_ReadsAllRussianShortMonths(string text, int expectedMonth)
+    {
+        var captured = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc);
+
+        var ok = AvitoParserService.TryParseActiveListExpiry(
+            $"Активно ещё 13 дней — {text}",
+            captured,
+            out var expiresAtUtc,
+            out var remainingDays,
+            out var error);
+
+        Assert.True(ok);
+        Assert.Equal(expectedMonth, AvitoAdBusinessTime.ToLocal(expiresAtUtc).Month);
+        Assert.Equal(13, remainingDays);
+        Assert.Null(error);
+    }
+
+    [Fact]
+    public void TryParseActiveListExpiry_DecodesNbspAndAcceptsEnDash()
+    {
+        var captured = new DateTime(2026, 9, 13, 0, 0, 0, DateTimeKind.Utc);
+
+        var ok = AvitoParserService.TryParseActiveListExpiry(
+            "Активно&nbsp;ещё&nbsp;18&nbsp;дней&nbsp;–&nbsp;до&nbsp;1&nbsp;октября,&nbsp;17:33",
+            captured,
+            out var expiresAtUtc,
+            out var remainingDays,
+            out var error);
+
+        var expiresLocal = AvitoAdBusinessTime.ToLocal(expiresAtUtc);
+        Assert.True(ok);
+        Assert.Equal(new DateTime(2026, 10, 1, 17, 33, 0), expiresLocal);
+        Assert.Equal(18, remainingDays);
+        Assert.Null(error);
+    }
+
+    [Fact]
+    public void ExtractItemSnippetHtml_ReturnsLimitedCardFragment()
+    {
+        const string html = """
+            <div data-marker="item-snippet/8312560791">
+              <span>Активно ещё 18 дней — до 1 окт, 17:33</span>
+            </div>
+            """;
+
+        var fragment = AvitoParserService.ExtractItemSnippetHtml(html, "8312560791", maxLength: 40);
+
+        Assert.Contains("item-snippet/8312560791", fragment);
+        Assert.Contains("truncated", fragment);
+        Assert.Equal(
+            "Активно ещё 18 дней — до 1 окт, 17:33",
+            AvitoParserService.ExtractActiveListStatusLine(html));
+        Assert.Equal(
+            "ещё 18 дней — до 1 окт, 17:33",
+            AvitoParserService.ExtractActiveListExpiryText(html));
+    }
+
+    [Fact]
     public void ExtractListingUrl_UsesViewLinkEvenWhenCandidateAndChatLinksExist()
     {
         const string html = """

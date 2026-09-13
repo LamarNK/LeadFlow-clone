@@ -19,12 +19,8 @@ public sealed class WorkerAvitoAdsMonitor(
     IWorkerActivityReporter activityReporter,
     LocalChromeAccountLock localChromeLock)
 {
-    public static AvitoAdListingScheduleOptions DefaultSchedule { get; } = new()
-    {
-        ListCheckInterval = TimeSpan.FromHours(MonitoringTiming.AvitoAdsListCheckIntervalHours),
-        MaxDetailPagesPerRun = MonitoringTiming.AvitoAdsMaxDetailPagesPerRun,
-        FreshAgeDays = MonitoringTiming.AvitoAdsFreshAgeDays
-    };
+    private static TimeSpan ListCheckInterval =>
+        TimeSpan.FromHours(MonitoringTiming.AvitoAdsListCheckIntervalHours);
 
     public async Task<int> RunDueAsync(Guid workerId, CancellationToken cancellationToken)
     {
@@ -243,7 +239,20 @@ public sealed class WorkerAvitoAdsMonitor(
             }
 
             sawSupportedLayout = true;
-            cards.AddRange(avitoParser.ToListCards(parsed));
+            var parsedCards = avitoParser.ToListCards(parsed);
+            cards.AddRange(parsedCards);
+
+            foreach (var card in parsedCards.Where(static x => x.ExpiresAtUtc is null))
+            {
+                var snippetHtml = AvitoParserService.ExtractItemSnippetHtml(html, card.AvitoItemId);
+                await LogListExpiryParseFailureAsync(
+                        account,
+                        subProfileId,
+                        subProfileName,
+                        card,
+                        snippetHtml)
+                    .ConfigureAwait(false);
+            }
         }
 
         if (!sawSupportedLayout)
@@ -252,7 +261,7 @@ public sealed class WorkerAvitoAdsMonitor(
         }
 
         var utcNow = DateTime.UtcNow;
-        var nextListCheckAtUtc = utcNow.Add(DefaultSchedule.ListCheckInterval);
+        var nextListCheckAtUtc = utcNow.Add(ListCheckInterval);
         var merged = AvitoAdListingSyncApplier
             .ApplyListSnapshot(
                 existing,
@@ -286,5 +295,34 @@ public sealed class WorkerAvitoAdsMonitor(
         WorkerAccountRuntime.IsAdsPower(account)
         || WorkerAccountRuntime.IsMultilogin(account)
         || WorkerAccountRuntime.IsLocal(account);
+
+    internal static Task LogListExpiryParseFailureAsync(
+        AvitoAccount account,
+        string subProfileId,
+        string subProfileName,
+        AvitoAdListCard card,
+        string snippetHtml)
+    {
+        var reason = card.ExpiryParseError ?? "list_expiry_missing";
+        var statusLine = AvitoParserService.ExtractActiveListStatusLine(snippetHtml);
+        return GlobalLogger.Instance.LogAsync(
+            $"Ads monitor: listing {card.AvitoItemId} ({account.DisplayName}/{subProfileName}) — list expiry parse failed: {reason}.",
+            DeskLinkAuditLogLevel.Warning,
+            errorKey: $"ads.{reason}",
+            properties: new Dictionary<string, object?>
+            {
+                ["ads.event"] = "list_expiry_parse_failed",
+                ["ads.reason"] = reason,
+                ["ads.accountId"] = account.Id,
+                ["ads.accountName"] = account.DisplayName,
+                ["ads.subProfileId"] = subProfileId,
+                ["ads.subProfileName"] = subProfileName,
+                ["ads.avitoItemId"] = card.AvitoItemId,
+                ["ads.statusText"] = card.StatusText,
+                ["ads.statusLine"] = statusLine,
+                ["ads.expiryText"] = AvitoParserService.ExtractActiveListExpiryText(snippetHtml),
+                ["ads.cardHtml"] = snippetHtml
+            });
+    }
 
 }
