@@ -35,22 +35,42 @@
         return '<a class="listings-title-link" href="' + escapeHtml(url) + '" target="_blank" rel="noopener noreferrer">' + title + '</a>';
     }
 
+    function renderLocation(row) {
+        return '<div class="listing-location__primary">' +
+            renderInternalLink(row.workerUrl, row.workerName) +
+            '<span aria-hidden="true">/</span>' +
+            renderInternalLink(row.accountUrl, row.accountName) +
+            '</div><div class="listing-location__subprofile">' +
+            escapeHtml(row.subProfileName) +
+            '</div>';
+    }
+
+    function renderAd(row) {
+        return renderTitle(row) +
+            '<code class="listing-ad__id">ID ' + escapeHtml(row.avitoItemId) + '</code>';
+    }
+
+    function renderStatus(row) {
+        return '<span class="listing-status__avito">' + escapeHtml(row.statusText) + '</span>' +
+            '<span class="listing-state listing-state--' + escapeHtml(row.stateTone || 'ok') + '">' +
+            escapeHtml(row.stateLabel) +
+            '</span>';
+    }
+
+    function renderDeadline(row) {
+        var remaining = row.remainingDays == null
+            ? ''
+            : '<span class="listing-deadline__remaining">Осталось: ' + escapeHtml(row.remainingDays) + ' дн.</span>';
+        return formatUtc(toIso(row.expiresAtUtc), 'datetime') + remaining;
+    }
+
     function renderRow(row) {
         return '<tr class="listings-row listings-row--' + escapeHtml(row.stateTone || 'ok') + '" data-listing-id="' + escapeHtml(row.id) + '">' +
-            '<td data-label="Воркер" class="cell-link">' + renderInternalLink(row.workerUrl, row.workerName) + '</td>' +
-            '<td data-label="Аккаунт" class="cell-link">' + renderInternalLink(row.accountUrl, row.accountName) + '</td>' +
-            '<td data-label="Субпрофиль">' + escapeHtml(row.subProfileName) + '</td>' +
-            '<td data-label="Название">' + renderTitle(row) + '</td>' +
-            '<td data-label="ID Avito"><code>' + escapeHtml(row.avitoItemId) + '</code></td>' +
-            '<td data-label="Статус Avito">' + escapeHtml(row.statusText) + '</td>' +
-            '<td data-label="Публикация">' + formatUtc(toIso(row.publishedAtUtc), 'datetime') + '</td>' +
-            '<td data-label="Контрольный срок">' + formatUtc(toIso(row.expiresAtUtc), 'datetime') + '</td>' +
-            '<td data-label="Возраст" class="cell-num">' + (row.ageDays == null ? '—' : row.ageDays) + '</td>' +
-            '<td data-label="Осталось" class="cell-num">' + (row.remainingDays == null ? '—' : row.remainingDays) + '</td>' +
-            '<td data-label="Состояние"><span class="listing-state listing-state--' + escapeHtml(row.stateTone || 'ok') + '">' + escapeHtml(row.stateLabel) + '</span></td>' +
-            '<td data-label="Источник даты">' + escapeHtml(row.publicationDateSourceLabel) + '</td>' +
-            '<td data-label="Обнаружено">' + formatUtc(toIso(row.lastSeenAtUtc), 'short') + '</td>' +
-            '<td data-label="Детальная проверка">' + formatUtc(toIso(row.detailCheckedAtUtc), 'short') + '</td>' +
+            '<td data-label="Где" class="listing-location">' + renderLocation(row) + '</td>' +
+            '<td data-label="Объявление" class="listing-ad">' + renderAd(row) + '</td>' +
+            '<td data-label="Статус" class="listing-status">' + renderStatus(row) + '</td>' +
+            '<td data-label="Срок" class="listing-deadline">' + renderDeadline(row) + '</td>' +
+            '<td data-label="Последняя проверка" class="listing-last-check">' + formatUtc(toIso(row.lastSeenAtUtc), 'short') + '</td>' +
             '</tr>';
     }
 

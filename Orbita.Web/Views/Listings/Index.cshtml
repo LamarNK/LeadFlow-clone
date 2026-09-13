@@ -105,34 +105,26 @@
                 <table class="data-table data-table--cards listings-table">
                     <thead>
                         <tr>
-                            <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Воркер", Column = "worker", Sort = Model.Sort, Controller = "Listings", Action = "Index", RouteValues = listingsSortRoute })" />
-                            <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Аккаунт", Column = "account", Sort = Model.Sort, Controller = "Listings", Action = "Index", RouteValues = listingsSortRoute })" />
-                            <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Субпрофиль", Column = "subprofile", Sort = Model.Sort, Controller = "Listings", Action = "Index", RouteValues = listingsSortRoute })" />
-                            <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Название", Column = "title", Sort = Model.Sort, Controller = "Listings", Action = "Index", RouteValues = listingsSortRoute })" />
-                            <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "ID Avito", Column = "id", Sort = Model.Sort, Controller = "Listings", Action = "Index", RouteValues = listingsSortRoute })" />
-                            <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Статус Avito", Column = "status", Sort = Model.Sort, Controller = "Listings", Action = "Index", RouteValues = listingsSortRoute })" />
-                            <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Публикация", Column = "published", Sort = Model.Sort, Controller = "Listings", Action = "Index", RouteValues = listingsSortRoute })" />
-                            <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Контрольный срок", Column = "expires", Sort = Model.Sort, Controller = "Listings", Action = "Index", RouteValues = listingsSortRoute })" />
-                            <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Возраст", Column = "age", Sort = Model.Sort, Controller = "Listings", Action = "Index", RouteValues = listingsSortRoute, Numeric = true })" />
-                            <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Осталось", Column = "remaining", Sort = Model.Sort, Controller = "Listings", Action = "Index", RouteValues = listingsSortRoute, Numeric = true })" />
-                            <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Состояние", Column = "state", Sort = Model.Sort, Controller = "Listings", Action = "Index", RouteValues = listingsSortRoute })" />
-                            <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Источник даты", Column = "source", Sort = Model.Sort, Controller = "Listings", Action = "Index", RouteValues = listingsSortRoute })" />
-                            <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Обнаружено", Column = "seen", Sort = Model.Sort, Controller = "Listings", Action = "Index", RouteValues = listingsSortRoute })" />
-                            <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Детальная проверка", Column = "detail", Sort = Model.Sort, Controller = "Listings", Action = "Index", RouteValues = listingsSortRoute })" />
+                            <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Где", Column = "worker", Sort = Model.Sort, Controller = "Listings", Action = "Index", RouteValues = listingsSortRoute })" />
+                            <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Объявление", Column = "title", Sort = Model.Sort, Controller = "Listings", Action = "Index", RouteValues = listingsSortRoute })" />
+                            <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Статус", Column = "state", Sort = Model.Sort, Controller = "Listings", Action = "Index", RouteValues = listingsSortRoute })" />
+                            <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Срок", Column = "expires", Sort = Model.Sort, Controller = "Listings", Action = "Index", RouteValues = listingsSortRoute })" />
+                            <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Последняя проверка", Column = "seen", Sort = Model.Sort, Controller = "Listings", Action = "Index", RouteValues = listingsSortRoute })" />
                         </tr>
                     </thead>
                     <tbody data-orbita-live-body="listings">
                     @foreach (var row in Model.Rows)
                     {
                         <tr class="listings-row listings-row--@row.StateTone" data-listing-id="@row.Id">
-                            <td data-label="Воркер" class="cell-link">
-                                <a href="@row.WorkerUrl">@row.WorkerName</a>
+                            <td data-label="Где" class="listing-location">
+                                <div class="listing-location__primary">
+                                    <a href="@row.WorkerUrl">@row.WorkerName</a>
+                                    <span aria-hidden="true">/</span>
+                                    <a href="@row.AccountUrl">@row.AccountName</a>
+                                </div>
+                                <div class="listing-location__subprofile">@row.SubProfileName</div>
                             </td>
-                            <td data-label="Аккаунт" class="cell-link">
-                                <a href="@row.AccountUrl">@row.AccountName</a>
-                            </td>
-                            <td data-label="Субпрофиль">@row.SubProfileName</td>
-                            <td data-label="Название">
+                            <td data-label="Объявление" class="listing-ad">
                                 @if (!string.IsNullOrWhiteSpace(row.Url))
                                 {
                                     <a class="listings-title-link" href="@row.Url" target="_blank" rel="noopener noreferrer">@row.Title</a>
@@ -141,17 +133,22 @@
                                 {
                                     <strong>@row.Title</strong>
                                 }
+                                <code class="listing-ad__id">ID @row.AvitoItemId</code>
                             </td>
-                            <td data-label="ID Avito"><code>@row.AvitoItemId</code></td>
-                            <td data-label="Статус Avito">@row.StatusText</td>
-                            <td data-label="Публикация"><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(row.PublishedAtUtc, "datetime"))" /></td>
-                            <td data-label="Контрольный срок"><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(row.ExpiresAtUtc, "datetime"))" /></td>
-                            <td data-label="Возраст" class="cell-num">@(row.AgeDays?.ToString() ?? "—")</td>
-                            <td data-label="Осталось" class="cell-num">@(row.RemainingDays?.ToString() ?? "—")</td>
-                            <td data-label="Состояние"><span class="listing-state listing-state--@row.StateTone">@row.StateLabel</span></td>
-                            <td data-label="Источник даты">@row.PublicationDateSourceLabel</td>
-                            <td data-label="Обнаружено"><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(row.LastSeenAtUtc, "short"))" /></td>
-                            <td data-label="Детальная проверка"><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(row.DetailCheckedAtUtc, "short"))" /></td>
+                            <td data-label="Статус" class="listing-status">
+                                <span class="listing-status__avito">@row.StatusText</span>
+                                <span class="listing-state listing-state--@row.StateTone">@row.StateLabel</span>
+                            </td>
+                            <td data-label="Срок" class="listing-deadline">
+                                <partial name="_UtcTime" model="@(new UtcTimeDisplayModel(row.ExpiresAtUtc, "datetime"))" />
+                                @if (row.RemainingDays is int remaining)
+                                {
+                                    <span class="listing-deadline__remaining">Осталось: @remaining дн.</span>
+                                }
+                            </td>
+                            <td data-label="Последняя проверка" class="listing-last-check">
+                                <partial name="_UtcTime" model="@(new UtcTimeDisplayModel(row.LastSeenAtUtc, "short"))" />
+                            </td>
                         </tr>
                     }
                     </tbody>
