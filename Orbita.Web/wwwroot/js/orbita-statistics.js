@@ -86,6 +86,14 @@
         return sum;
     }
 
+    function sumNumbersSlice(values, start, end) {
+        var sum = 0;
+        for (var i = start; i < end; i++) {
+            sum += Number(values[i]) || 0;
+        }
+        return sum;
+    }
+
     function normalizeDailyTrend(trend) {
         if (!trend) return null;
         var labels = trend.labels || [];
@@ -97,6 +105,7 @@
         var duplicates = (trend.duplicates || []).slice();
         var errors = (trend.errors || []).slice();
         var totals = Array.isArray(trend.totals) ? trend.totals.slice() : [];
+        var elapsedHours = Array.isArray(trend.elapsedHours) ? trend.elapsedHours.slice() : [];
 
         if (!totals.length || totals.every(function (v) { return !(v || 0); })) {
             totals = labels.map(function (_, index) {
@@ -107,10 +116,14 @@
                     + (errors[index] || 0);
             });
         }
+        if (elapsedHours.length !== labels.length) {
+            elapsedHours = labels.map(function () { return 24; });
+        }
 
         return {
             labels: labels,
             totals: totals,
+            elapsedHours: elapsedHours,
             sent: sent,
             inProgress: inProgress,
             actionRequired: actionRequired,
@@ -129,7 +142,8 @@
             actionRequired: [],
             duplicates: [],
             errors: [],
-            totals: []
+            totals: [],
+            elapsedHours: []
         };
 
         for (var i = 0; i < trend.labels.length; i += bucketSize) {
@@ -140,13 +154,12 @@
             }
             labels.push(label);
 
-            var bucketTotal = 0;
             TREND_SERIES.forEach(function (series) {
                 var value = sumSeriesSlice(trend, series.key, i, end);
                 aggregated[series.key].push(value);
-                bucketTotal += value;
             });
-            aggregated.totals.push(bucketTotal);
+            aggregated.totals.push(sumSeriesSlice(trend, 'totals', i, end));
+            aggregated.elapsedHours.push(sumNumbersSlice(trend.elapsedHours || [], i, end));
         }
 
         aggregated.labels = labels;
@@ -195,6 +208,36 @@
             return (num / 1000).toFixed(1).replace(/\.0$/, '') + 'k';
         }
         return String(Math.round(num * 10) / 10);
+    }
+
+    function formatTrendRate(total, elapsedHours) {
+        var hours = Math.max(1, Number(elapsedHours) || 0);
+        var rate = (Number(total) || 0) / hours;
+        return '≈ ' + rate.toLocaleString('ru-RU', {
+            minimumFractionDigits: 0,
+            maximumFractionDigits: 1
+        }) + ' откл./ч';
+    }
+
+    function trendTooltipFooter(trend, items) {
+        if (!items.length || !trend) return '';
+        var idx = items[0].dataIndex;
+        var total = (trend.totals || [])[idx] || 0;
+        var elapsedHours = (trend.elapsedHours || [])[idx] || 24;
+        return [
+            'Откликов: ' + total,
+            'Скорость: ' + formatTrendRate(total, elapsedHours)
+        ];
+    }
+
+    function trendTickLabel(trend, index) {
+        var total = (trend.totals || [])[index] || 0;
+        var elapsedHours = (trend.elapsedHours || [])[index] || 24;
+        return [
+            (trend.labels || [])[index] || '',
+            formatTrendNumber(total) + ' откл.',
+            formatTrendRate(total, elapsedHours)
+        ];
     }
 
     function updateTrendSummary(trend) {
@@ -284,10 +327,7 @@
                             return (ctx.dataset.label || 'Значение') + ': ' + (ctx.parsed.y || 0);
                         },
                         footer: function (items) {
-                            if (!items.length || !trend) return '';
-                            var idx = items[0].dataIndex;
-                            var total = (trend.totals || [])[idx] || 0;
-                            return 'Всего: ' + total;
+                            return trendTooltipFooter(trend, items);
                         }
                     }
                 }
@@ -300,6 +340,9 @@
                     ticks: {
                         color: '#667085',
                         font: { size: 11, weight: '500' },
+                        callback: function (value, index) {
+                            return trendTickLabel(trend, index);
+                        },
                         maxRotation: labels.length > 20 ? 45 : 0,
                         autoSkip: autoSkip,
                         maxTicksLimit: autoSkip ? 12 : labels.length
@@ -372,11 +415,11 @@
         chart.options.scales.x.ticks.autoSkip = chartTrend.labels.length > 14;
         chart.options.scales.x.ticks.maxTicksLimit = chartTrend.labels.length > 14 ? 12 : chartTrend.labels.length;
         chart.options.scales.x.ticks.maxRotation = chartTrend.labels.length > 20 ? 45 : 0;
+        chart.options.scales.x.ticks.callback = function (value, index) {
+            return trendTickLabel(chartTrend, index);
+        };
         chart.options.plugins.tooltip.callbacks.footer = function (items) {
-            if (!items.length) return '';
-            var idx = items[0].dataIndex;
-            var total = (chartTrend.totals || [])[idx] || 0;
-            return 'Всего: ' + total;
+            return trendTooltipFooter(chartTrend, items);
         };
         chart.options.plugins.tooltip.callbacks.title = function (items) {
             if (!items.length) return '';

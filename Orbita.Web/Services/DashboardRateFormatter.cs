@@ -21,11 +21,14 @@ internal static class DashboardRateFormatter
         DashboardPeriod period,
         DateTime aggregatedAtUtc)
     {
-        if (count <= 0)
-        {
-            return 0;
-        }
+        var elapsedHours = CalculateElapsedHours(period, aggregatedAtUtc);
+        return count <= 0 ? 0 : count / elapsedHours;
+    }
 
+    public static double CalculateElapsedHours(
+        DashboardPeriod period,
+        DateTime aggregatedAtUtc)
+    {
         var aggregatedUtc = aggregatedAtUtc.Kind switch
         {
             DateTimeKind.Utc => aggregatedAtUtc,
@@ -35,8 +38,6 @@ internal static class DashboardRateFormatter
         var effectiveEndUtc = aggregatedUtc >= period.FromUtc && aggregatedUtc < period.ToUtcExclusive
             ? aggregatedUtc
             : period.ToUtcExclusive;
-        var elapsedHours = Math.Max(1, (effectiveEndUtc - period.FromUtc).TotalHours);
-
-        return count / elapsedHours;
+        return Math.Max(1, (effectiveEndUtc - period.FromUtc).TotalHours);
     }
 }

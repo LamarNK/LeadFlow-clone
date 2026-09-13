@@ -130,6 +130,19 @@ public sealed class DashboardMarkupTests
     }
 
     [Fact]
+    public void StatisticsTrendTooltip_ShowsDailyResponseCountAndRate()
+    {
+        var js = ReadRepoFile("Orbita.Web/wwwroot/js/orbita-statistics.js");
+
+        Assert.Contains("elapsedHours", js);
+        Assert.Contains("Откликов: ", js);
+        Assert.Contains("Скорость: ", js);
+        Assert.Contains("откл./ч", js);
+        Assert.Contains("function trendTickLabel", js);
+        Assert.Contains("callback: function (value, index)", js);
+    }
+
+    [Fact]
     public void DashboardJs_InitializesWorkerControlsWhenChartLibraryIsStillLoading()
     {
         var js = ReadRepoFile("Orbita.Web/wwwroot/js/orbita-dashboard.js");

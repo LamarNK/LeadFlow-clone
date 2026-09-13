@@ -255,4 +255,5 @@ public sealed class StackedDailyChartViewModel
     public IReadOnlyList<int> Duplicates { get; init; } = [];
     public IReadOnlyList<int> Errors { get; init; } = [];
     public IReadOnlyList<int> Totals { get; init; } = [];
+    public IReadOnlyList<double> ElapsedHours { get; init; } = [];
 }

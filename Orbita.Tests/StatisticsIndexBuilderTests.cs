@@ -281,6 +281,23 @@ public sealed class StatisticsIndexBuilderTests
     }
 
     [Fact]
+    public void Build_DailyTrend_UsesElapsedHoursForTheCurrentLocalDay()
+    {
+        var date = new DateTime(2026, 9, 13);
+        var period = new DashboardPeriod(date, date, TimeZoneOffsetMinutes: -300);
+        var aggregatedAtUtc = new DateTime(2026, 9, 12, 21, 0, 0, DateTimeKind.Utc);
+        var data = CreateData(lowBalanceCount: 0) with
+        {
+            DailyTrend = [new DailyResponseBucketDto(date, 15, 10, 2, 1, 1, 1)],
+            AggregatedAtUtc = aggregatedAtUtc
+        };
+
+        var model = BuildModel(data, period, new FakeOfficeContext());
+
+        Assert.Equal(2, Assert.Single(model.Charts.DailyTrend.ElapsedHours));
+    }
+
+    [Fact]
     public void Build_MissingMonitoringCyclesFromOlderApi_ReturnsEmptyReport()
     {
         var data = CreateData(lowBalanceCount: 0) with

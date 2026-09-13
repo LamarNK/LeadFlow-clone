@@ -69,7 +69,7 @@ internal static class StatisticsIndexBuilder
             ActiveFilterChips = activeFilterChips,
             KpiCards = BuildKpiCards(data, period, filters),
             BalanceRows = balanceRows,
-            Charts = BuildCharts(data, accountStats),
+            Charts = BuildCharts(data, period, accountStats),
             AccountStats = accountStats,
             Workers = data.Workers.Items
                 .Select(w => new StatisticsWorkerRowViewModel
@@ -179,6 +179,7 @@ internal static class StatisticsIndexBuilder
 
     private static StatisticsChartsViewModel BuildCharts(
         OfficeStatisticsDto data,
+        DashboardPeriod period,
         AccountStatsViewModel accountStats)
     {
         var culture = CultureInfo.GetCultureInfo("ru-RU");
@@ -194,7 +195,12 @@ internal static class StatisticsIndexBuilder
                 ActionRequired = data.DailyTrend.Select(d => d.ActionRequired).ToList(),
                 Duplicates = data.DailyTrend.Select(d => d.Duplicates).ToList(),
                 Errors = data.DailyTrend.Select(d => d.Errors).ToList(),
-                Totals = data.DailyTrend.Select(d => d.Total).ToList()
+                Totals = data.DailyTrend.Select(d => d.Total).ToList(),
+                ElapsedHours = data.DailyTrend
+                    .Select(d => DashboardRateFormatter.CalculateElapsedHours(
+                        new DashboardPeriod(d.DateLocal, d.DateLocal, period.TimeZoneOffsetMinutes),
+                        data.AggregatedAtUtc))
+                    .ToList()
             },
             AccountStatus = new DonutChartViewModel
             {

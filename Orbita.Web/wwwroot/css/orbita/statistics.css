@@ -1144,12 +1144,12 @@
 
 .statistics-trend-chart {
     position: relative;
-    min-height: 260px;
+    min-height: 286px;
     flex: 1;
 }
 
 .statistics-trend-chart .chart-canvas-wrap--statistics-trend {
-    height: 260px;
+    height: 286px;
     width: 100%;
 }
 
@@ -1168,7 +1168,7 @@
     align-items: center;
     justify-content: center;
     gap: 10px;
-    min-height: 260px;
+    min-height: 286px;
     color: var(--text-muted);
     font-size: 14px;
 }
