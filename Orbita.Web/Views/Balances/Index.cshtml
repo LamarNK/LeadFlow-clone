@@ -111,14 +111,22 @@
             else if (activeTab == "history")
             {
                 <table class="data-table data-table--cards balances-table balances-table--history">
-                    <thead><tr><th>Дата</th><th>Аккаунт</th><th>Воркер</th><th>Баланс до</th><th>Сумма</th><th>Баланс после</th><th>Статус</th><th>Оператор</th></tr></thead>
+                    <thead><tr><th>Дата</th><th>Где</th><th>Баланс до</th><th>Сумма</th><th>Баланс после</th><th>Статус</th><th>Оператор</th></tr></thead>
                     <tbody>
                     @foreach (var session in Model.Sessions)
                     {
+                        var workerUrl = Url.Action("Details", "Workers", new { id = session.WorkerId });
+                        var accountUrl = Url.Action("Index", "Accounts", new { q = session.AccountName });
                         <tr>
                             <td data-label="Дата"><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(session.CompletedAtUtc ?? session.CreatedAtUtc, "datetime"))" /></td>
-                            <td data-label="Аккаунт"><strong>@session.AccountName</strong><small>@session.SubProfileName</small></td>
-                            <td data-label="Воркер">@session.WorkerName</td>
+                            <td data-label="Где" class="balance-location">
+                                <div class="balance-location__primary">
+                                    <a href="@workerUrl">@session.WorkerName</a>
+                                    <span aria-hidden="true">/</span>
+                                    <a href="@accountUrl">@session.AccountName</a>
+                                </div>
+                                <div class="balance-location__subprofile">@session.SubProfileName</div>
+                            </td>
                             <td data-label="Баланс до">@session.CurrentBalance.ToString("N0") ₽</td>
                             <td data-label="Сумма">@session.RequestedAmount.ToString("N0") ₽</td>
                             <td data-label="Баланс после">@(session.BalanceAfter?.ToString("N0") ?? "—")@(session.BalanceAfter.HasValue ? " ₽" : "")</td>
@@ -132,16 +140,25 @@
             else
             {
                 <table class="data-table data-table--cards balances-table balances-table--list">
-                    <thead><tr><th class="balances-check" aria-label="Выбор"></th><th>Аккаунт</th><th>Баланс</th><th>Рекомендуемое пополнение</th><th>Статус</th><th>Последняя операция</th><th class="balances-actions">Действия</th></tr></thead>
+                    <thead><tr><th class="balances-check" aria-label="Выбор"></th><th>Где</th><th>Баланс</th><th>Рекомендуемое пополнение</th><th>Статус</th><th>Последняя операция</th><th class="balances-actions">Действия</th></tr></thead>
                     <tbody>
                     @foreach (var row in Model.Rows)
                     {
                         var session = row.Session;
                         var canSelect = row.IsLowBalance && row.WorkerOnline && session is null;
                         var statusDetail = session?.ProgressMessage ?? session?.FailureMessage;
+                        var workerUrl = Url.Action("Details", "Workers", new { id = row.WorkerId });
+                        var accountUrl = Url.Action("Index", "Accounts", new { q = row.AccountName });
                         <tr class="@(row.IsLowBalance ? "is-low" : "")" data-balance-row data-worker-id="@row.WorkerId" data-account-id="@row.AccountId" data-subprofile-id="@row.SubProfileId" data-account-name="@row.AccountName" data-subprofile-name="@row.SubProfileName" data-session-id="@(session?.Id.ToString() ?? "")" data-session-status="@(session?.Status ?? "")">
                             <td class="balances-check"><input type="checkbox" data-balance-select @(canSelect ? null : "disabled") /></td>
-                            <td data-label="Аккаунт"><strong>@row.AccountName</strong><small>@row.SubProfileName · @row.WorkerName</small></td>
+                            <td data-label="Где" class="balance-location">
+                                <div class="balance-location__primary">
+                                    <a href="@workerUrl">@row.WorkerName</a>
+                                    <span aria-hidden="true">/</span>
+                                    <a href="@accountUrl">@row.AccountName</a>
+                                </div>
+                                <div class="balance-location__subprofile">@row.SubProfileName</div>
+                            </td>
                             <td data-label="Баланс">
                                 <strong>@row.Balance.ToString("N0") ₽</strong>
                                 <small>
