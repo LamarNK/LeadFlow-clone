@@ -8,6 +8,9 @@
     var segmentTotal = hasSegments ? card.Segments.Sum(s => s.Value) : 0;
     var hasSegmentData = segmentTotal > 0
         && !(card.Segments.Count == 1 && card.Segments[0].Label == "Нет данных");
+    var initialCountText = Model.RenderInitialValue
+        ? card.CountValue.ToString(CultureInfo.InvariantCulture)
+        : "0";
 }
 <header class="kpi-card-head">
     <div class="kpi-icon-box kpi-icon-box--@card.IconTone">
@@ -20,7 +23,7 @@
     <div class="kpi-card-metric">
         <span class="kpi-value"
               data-kpi-count="@card.CountValue.ToString(System.Globalization.CultureInfo.InvariantCulture)"
-              data-kpi-suffix="@(card.ValueSuffix ?? "")">0@(card.ValueSuffix)</span>
+              data-kpi-suffix="@(card.ValueSuffix ?? "")">@initialCountText@(card.ValueSuffix)</span>
         <span class="kpi-delta-pill kpi-delta-@card.DeltaTone">@card.Delta</span>
         @if (!string.IsNullOrWhiteSpace(card.Rate))
         {
@@ -54,7 +57,7 @@ else if (Model.Layout == KpiCardLayout.Stat)
 {
     <div class="kpi-card-metric kpi-card-metric--solo">
         <span class="kpi-value"
-              data-kpi-count="@card.CountValue.ToString(System.Globalization.CultureInfo.InvariantCulture)">0</span>
+              data-kpi-count="@card.CountValue.ToString(System.Globalization.CultureInfo.InvariantCulture)">@initialCountText</span>
     </div>
 }
 else if (Model.Layout == KpiCardLayout.StatStacked)
@@ -67,7 +70,7 @@ else if (Model.Layout == KpiCardLayout.StatStacked)
         else
         {
             <span class="kpi-value"
-                  data-kpi-count="@card.CountValue.ToString(System.Globalization.CultureInfo.InvariantCulture)">0</span>
+                  data-kpi-count="@card.CountValue.ToString(System.Globalization.CultureInfo.InvariantCulture)">@initialCountText</span>
         }
         @if (useCaption)
         {
@@ -90,7 +93,7 @@ else
         {
             <span class="kpi-value"
                   data-kpi-count="@card.CountValue.ToString(System.Globalization.CultureInfo.InvariantCulture)"
-                  data-kpi-suffix="@(card.ValueSuffix ?? "")">0@(card.ValueSuffix)</span>
+                  data-kpi-suffix="@(card.ValueSuffix ?? "")">@initialCountText@(card.ValueSuffix)</span>
         }
         <span class="kpi-delta-pill kpi-delta-@card.DeltaTone">@card.Delta</span>
     </div>

@@ -37,6 +37,55 @@ public sealed class DashboardMarkupTests
     }
 
     [Fact]
+    public void SharedKpiCards_RenderValuesWithoutRequiringPageScriptInitialization()
+    {
+        var model = ReadRepoFile("Orbita.Web/Models/ViewModels/SharedUiViewModels.cs");
+        var partial = ReadRepoFile("Orbita.Web/Views/Shared/_KpiCardBody.cshtml");
+        var sharedJs = ReadRepoFile("Orbita.Web/wwwroot/js/orbita-live-shared.js");
+
+        Assert.Contains("RenderInitialValue { get; init; } = true", model);
+        Assert.Contains("Model.RenderInitialValue", partial);
+        Assert.Contains("@initialCountText", partial);
+        Assert.Contains("function initializeKpiCounters(selector)", sharedJs);
+        Assert.Contains("Math.round(displayed) === Math.round(target)", sharedJs);
+    }
+
+    [Fact]
+    public void KpiPages_UseSharedCounterInitialization()
+    {
+        var scripts = new[]
+        {
+            "orbita-accounts.js",
+            "orbita-balances.js",
+            "orbita-dashboard.js",
+            "orbita-errors.js",
+            "orbita-events.js",
+            "orbita-journal.js",
+            "orbita-listings.js",
+            "orbita-responses.js",
+            "orbita-statistics.js",
+            "orbita-worker.js",
+            "orbita-workers.js"
+        };
+
+        foreach (var script in scripts)
+        {
+            var js = ReadRepoFile("Orbita.Web/wwwroot/js/" + script);
+            Assert.Contains("initializeKpiCounters", js);
+        }
+    }
+
+    [Fact]
+    public void ClientNavigation_VersionsDynamicallyLoadedPageScripts()
+    {
+        var navigationJs = ReadRepoFile("Orbita.Web/wwwroot/js/orbita/navigation.js");
+
+        Assert.Contains("function versionPageScriptUrl(src)", navigationJs);
+        Assert.Contains("data-orbita-shell-version", navigationJs);
+        Assert.Contains("s.src = versionPageScriptUrl(src);", navigationJs);
+    }
+
+    [Fact]
     public void Listings_InitializesServerRenderedKpiCounters()
     {
         var js = ReadRepoFile("Orbita.Web/wwwroot/js/orbita-listings.js");

@@ -516,6 +516,10 @@
     }
 
     function initKpiCounters() {
+        if (window.OrbitaLiveShared && typeof window.OrbitaLiveShared.initializeKpiCounters === 'function') {
+            window.OrbitaLiveShared.initializeKpiCounters('.statistics-kpi-row [data-kpi-count]');
+            return;
+        }
         var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
         document.querySelectorAll('.statistics-kpi-row [data-kpi-count]').forEach(function (el, index) {

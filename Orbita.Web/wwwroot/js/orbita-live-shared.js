@@ -92,6 +92,27 @@
         requestAnimationFrame(frame);
     }
 
+    function initializeKpiCounters(selector) {
+        document.querySelectorAll(selector).forEach(function (el, index) {
+            if (el.getAttribute('data-orbita-kpi-initialized') === '1') return;
+
+            var target = parseFloat(el.getAttribute('data-kpi-count'));
+            if (isNaN(target)) return;
+            el.setAttribute('data-orbita-kpi-initialized', '1');
+
+            var suffix = el.getAttribute('data-kpi-suffix') || '';
+            var displayed = parseFloat(el.textContent);
+            if (isNaN(displayed)) displayed = target;
+
+            if (Math.round(displayed) === Math.round(target)) {
+                el.textContent = Math.round(target) + suffix;
+                return;
+            }
+
+            animateKpiValue(el, displayed, target, suffix, 720, 80 + index * 70);
+        });
+    }
+
     function updateKpiCards(kpiCards, highlightChanged) {
         (kpiCards || []).forEach(function (card, index) {
             var el = document.querySelector('[data-kpi-key="' + card.key + '"]');
@@ -750,6 +771,7 @@
         setRefreshBusy: setRefreshBusy,
         updateKpiCards: updateKpiCards,
         animateKpiValue: animateKpiValue,
+        initializeKpiCounters: initializeKpiCounters,
         getLiveRoot: getLiveRoot,
         getLivePageName: getLivePageName,
         createSnapshotFetcher: createSnapshotFetcher,

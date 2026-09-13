@@ -1,5 +1,9 @@
 (function () {
     function initKpiCounters() {
+        if (window.OrbitaLiveShared && typeof window.OrbitaLiveShared.initializeKpiCounters === 'function') {
+            window.OrbitaLiveShared.initializeKpiCounters('.listings-page [data-kpi-count]');
+            return;
+        }
         var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
         document.querySelectorAll('.listings-page [data-kpi-count]').forEach(function (el, index) {
@@ -10,6 +14,11 @@
             if (isNaN(target)) return;
 
             var suffix = el.getAttribute('data-kpi-suffix') || '';
+            var displayed = parseFloat(el.textContent);
+            if (!isNaN(displayed) && Math.round(displayed) === Math.round(target)) {
+                return;
+            }
+
             if (reduced || !window.OrbitaLiveShared
                 || typeof window.OrbitaLiveShared.animateKpiValue !== 'function') {
                 el.textContent = Math.round(target) + suffix;

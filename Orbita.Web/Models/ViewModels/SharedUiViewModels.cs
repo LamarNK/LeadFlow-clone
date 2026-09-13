@@ -39,4 +39,5 @@ public sealed class KpiCardPartialViewModel
     public int Index { get; init; }
     public KpiCardLayout Layout { get; init; } = KpiCardLayout.StatDelta;
     public string? ExtraClass { get; init; }
+    public bool RenderInitialValue { get; init; } = true;
 }

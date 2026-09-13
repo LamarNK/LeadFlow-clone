@@ -1,5 +1,9 @@
 (function () {
     function initKpiCounters() {
+        if (window.OrbitaLiveShared && typeof window.OrbitaLiveShared.initializeKpiCounters === 'function') {
+            window.OrbitaLiveShared.initializeKpiCounters('.accounts-kpi-row [data-kpi-count]');
+            return;
+        }
         var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
         document.querySelectorAll('.accounts-kpi-row [data-kpi-count]').forEach(function (el, index) {

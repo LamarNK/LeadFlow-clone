@@ -202,6 +202,14 @@
 
     var __loadedPageScripts = window.__orbitaLoadedScripts || (window.__orbitaLoadedScripts = new Set());
 
+    function versionPageScriptUrl(src) {
+        if (!src || src.indexOf('?') >= 0 || /^(?:[a-z]+:)?\/\//i.test(src)) return src;
+        var shellVersion = document.body.getAttribute('data-orbita-shell-version');
+        return shellVersion
+            ? src + '?shell=' + encodeURIComponent(shellVersion)
+            : src;
+    }
+
     runtime.loadScriptOnce = function loadScriptOnce(src) {
         if (__loadedPageScripts.has(src)) return Promise.resolve();
         // crude check if similar script tag already present
@@ -212,7 +220,7 @@
         }
         return new Promise(function (resolve, reject) {
             var s = document.createElement('script');
-            s.src = src;
+            s.src = versionPageScriptUrl(src);
             s.async = false;
             s.onload = function () { __loadedPageScripts.add(src); resolve(); };
             s.onerror = function () { reject(new Error('Failed to load ' + src)); };

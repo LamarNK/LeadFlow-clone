@@ -3,6 +3,10 @@
 
     function initKpiCounters() {
         var shared = window.OrbitaLiveShared;
+        if (shared && typeof shared.initializeKpiCounters === 'function') {
+            shared.initializeKpiCounters('.balances-kpi-row [data-kpi-count]');
+            return;
+        }
         var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
         document.querySelectorAll('.balances-kpi-row [data-kpi-count]').forEach(function (el, index) {
