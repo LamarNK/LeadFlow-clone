@@ -1,4 +1,31 @@
 (function () {
+    function initKpiCounters() {
+        var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+        document.querySelectorAll('.listings-page [data-kpi-count]').forEach(function (el, index) {
+            if (el.hasAttribute('data-listings-kpi-initialized')) return;
+            el.setAttribute('data-listings-kpi-initialized', '1');
+
+            var target = parseFloat(el.getAttribute('data-kpi-count'));
+            if (isNaN(target)) return;
+
+            var suffix = el.getAttribute('data-kpi-suffix') || '';
+            if (reduced || !window.OrbitaLiveShared
+                || typeof window.OrbitaLiveShared.animateKpiValue !== 'function') {
+                el.textContent = Math.round(target) + suffix;
+                return;
+            }
+
+            window.OrbitaLiveShared.animateKpiValue(
+                el,
+                0,
+                target,
+                suffix,
+                720,
+                80 + index * 70);
+        });
+    }
+
     function escapeHtml(text) {
         return String(text || '')
             .replace(/&/g, '&amp;')
@@ -98,6 +125,7 @@
     function init() {
         var root = document.querySelector('[data-orbita-live-page="listings"]');
         if (!root || !window.OrbitaLiveShared) return;
+        initKpiCounters();
         var fetcher = window.OrbitaLiveShared.createSnapshotFetcher('listings', applySnapshot);
         window.OrbitaLiveShared.registerLivePage('listings', fetcher);
     }

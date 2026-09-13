@@ -37,6 +37,27 @@ public sealed class DashboardMarkupTests
     }
 
     [Fact]
+    public void Listings_InitializesServerRenderedKpiCounters()
+    {
+        var js = ReadRepoFile("Orbita.Web/wwwroot/js/orbita-listings.js");
+
+        var pageInit = js.IndexOf("function init()", StringComparison.Ordinal);
+        var counterInit = js.IndexOf("initKpiCounters();", pageInit, StringComparison.Ordinal);
+        var liveRegistration = js.IndexOf(
+            "registerLivePage('listings'",
+            pageInit,
+            StringComparison.Ordinal);
+
+        Assert.Contains("function initKpiCounters()", js);
+        Assert.Contains("data-listings-kpi-initialized", js);
+        Assert.Contains("OrbitaLiveShared.animateKpiValue", js);
+        Assert.True(pageInit >= 0);
+        Assert.True(counterInit > pageInit);
+        Assert.True(liveRegistration > counterInit,
+            "Server-rendered listing KPI values must be initialized before live-page registration.");
+    }
+
+    [Fact]
     public void ResponsesStatusFilter_InitializesBeforeLivePageRegistration()
     {
         var js = ReadRepoFile("Orbita.Web/wwwroot/js/orbita-responses.js");
