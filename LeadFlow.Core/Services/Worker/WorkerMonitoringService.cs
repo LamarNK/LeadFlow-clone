@@ -350,7 +350,7 @@ public sealed class WorkerMonitoringService(
                         var slot = launchSlot++;
                         running.Add(new AccountCycleJob(
                             account,
-                            RunAccountInCycleSlotAsync(account, settings, slot, cancellationToken)));
+                            RunAccountInCycleSlotAsync(account, settings, config.WorkerId, slot, cancellationToken)));
                     }
 
                     activityReporter.ReportCycleProgress(
@@ -628,7 +628,7 @@ public sealed class WorkerMonitoringService(
                     var slot = launchSlot++;
                     running.Add(new AccountCycleJob(
                         account,
-                        RunAccountInCycleSlotAsync(account, settings, slot, cancellationToken)));
+                        RunAccountInCycleSlotAsync(account, settings, config.WorkerId, slot, cancellationToken)));
                 }
             }
 
@@ -687,6 +687,7 @@ public sealed class WorkerMonitoringService(
     private async Task<AccountCycleOutcome> RunAccountInCycleSlotAsync(
         AvitoAccount account,
         AppSettings settings,
+        Guid workerId,
         int launchSlot,
         CancellationToken cancellationToken)
     {
@@ -701,7 +702,7 @@ public sealed class WorkerMonitoringService(
         _busyAccounts[account.Id] = 1;
         try
         {
-            return await ProcessAccountAsync(account, settings, cancellationToken).ConfigureAwait(false);
+            return await ProcessAccountAsync(account, settings, workerId, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
@@ -714,8 +715,18 @@ public sealed class WorkerMonitoringService(
     private async Task<AccountCycleOutcome> ProcessAccountAsync(
         AvitoAccount account,
         AppSettings settings,
+        Guid workerId,
         CancellationToken cancellationToken)
     {
+        using var captchaRequestContext = CaptchaProviderRequestContext.Use(new CaptchaProviderRequestContextValue(
+            WorkerId: workerId,
+            AccountId: account.Id,
+            CycleRunId: null,
+            SubProfileRunId: null,
+            SubProfileId: null,
+            SubProfileName: null,
+            Stage: CaptchaProviderRequestStages.Other,
+            Reason: CaptchaProviderRequestReasons.FirewallDetected));
         if (!HasSupportedRuntime(account))
         {
             return new AccountCycleOutcome(0, false, false, "неподдерживаемый runtime профиля");
@@ -818,6 +829,7 @@ public sealed class WorkerMonitoringService(
         await repository.SaveAccountAsync(account, cancellationToken).ConfigureAwait(false);
 
         var cycleId = _cycleJournal.BeginCycle(account.Id, account.DisplayName);
+        CaptchaProviderRequestContext.SetCycle(cycleId);
         var cycleTerminal = false;
         try
         {
@@ -1712,6 +1724,8 @@ public sealed class WorkerMonitoringService(
                     sub.Name,
                     i + 1,
                     switchQueue.Count);
+                CaptchaProviderRequestContext.SetSubProfile(subRunId, sub.Id, sub.Name);
+                CaptchaProviderRequestContext.SetStage(CaptchaProviderRequestStages.SubProfileSwitch, CaptchaProviderRequestReasons.AfterSubProfileSwitch);
                 var subFoundCount = 0;
                 var subPublishedCount = 0;
                 var subCollectedCount = 0;

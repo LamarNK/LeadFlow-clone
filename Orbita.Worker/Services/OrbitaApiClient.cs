@@ -429,6 +429,29 @@ public sealed class OrbitaApiClient
         return await response.Content.ReadFromJsonAsync<WorkerDiagnosticUploadResponse>(ct).ConfigureAwait(false);
     }
 
+    public async Task<Guid?> CreateCaptchaProviderRequestAsync(CaptchaProviderRequestCreateDto request, CancellationToken ct)
+    {
+        using var message = new HttpRequestMessage(HttpMethod.Post, "api/v1/workers/captcha-provider-requests") { Content = JsonContent.Create(request) };
+        ApplyAuth(message);
+        var response = await _http.SendAsync(message, ct).ConfigureAwait(false);
+        if (!response.IsSuccessStatusCode) return null;
+        var payload = await response.Content.ReadFromJsonAsync<JsonElement>(JsonReadOptions, ct).ConfigureAwait(false);
+        return payload.TryGetProperty("id", out var id) && id.TryGetGuid(out var value) ? value : null;
+    }
+
+    public Task<bool> MarkCaptchaProviderResultAsync(CaptchaProviderRequestProviderResultDto result, CancellationToken ct) =>
+        SendCaptchaResultAsync($"api/v1/workers/captcha-provider-requests/{result.Id:D}/provider-result", result, ct);
+
+    public Task<bool> MarkCaptchaTargetResultAsync(CaptchaProviderRequestTargetResultDto result, CancellationToken ct) =>
+        SendCaptchaResultAsync($"api/v1/workers/captcha-provider-requests/{result.Id:D}/target-result", result, ct);
+
+    private async Task<bool> SendCaptchaResultAsync<T>(string path, T payload, CancellationToken ct)
+    {
+        using var message = new HttpRequestMessage(HttpMethod.Post, path) { Content = JsonContent.Create(payload) };
+        ApplyAuth(message);
+        return (await _http.SendAsync(message, ct).ConfigureAwait(false)).IsSuccessStatusCode;
+    }
+
     public async Task<int?> UploadLogsBatchAsync(WorkerLogsBatchRequest batch, CancellationToken ct)
     {
         using var request = new HttpRequestMessage(HttpMethod.Post, "api/v1/workers/logs/batch");

@@ -10,7 +10,8 @@ namespace LeadFlow.Core.Services.Captcha;
 
 public sealed class AvitoGeeTestSolver(
     IRuCaptchaClient ruCaptcha,
-    IWorkerConfigProvider configProvider) : IAvitoGeeTestSolver
+    IWorkerConfigProvider configProvider,
+    ICaptchaProviderRequestReporter? requestReporter = null) : IAvitoGeeTestSolver
 {
     private const int MaxAttempts = AvitoGeeTestSolveSupport.MaxGeeTestAttempts;
     private const int PostVerifyNavigationTimeoutMs = 20_000;
@@ -206,6 +207,7 @@ public sealed class AvitoGeeTestSolver(
                     });
 
                 GeeTestV4Solution solution;
+                var requestId = await CreateProviderRequestAsync(page, "geetest_v4", attempt, MaxAttempts, websiteUrl, cancellationToken).ConfigureAwait(false);
                 try
                 {
                     solution = await ruCaptcha
@@ -214,6 +216,8 @@ public sealed class AvitoGeeTestSolver(
                 }
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
+                    if (requestId is Guid failedRequestId)
+                        await requestReporter!.MarkProviderFailedAsync(failedRequestId, ex.Message.Contains("NO_SLOT", StringComparison.OrdinalIgnoreCase) ? "no_slot" : "error", ex.GetType().Name, cancellationToken).ConfigureAwait(false);
                     _ = GlobalLogger.Instance.LogAsync(
                         $"Captcha: RuCaptcha не решила GeeTest v4 — {ex.Message}",
                         DeskLinkAuditLogLevel.Warning,
@@ -229,6 +233,9 @@ public sealed class AvitoGeeTestSolver(
                     continue;
                 }
 
+                if (requestId is Guid acceptedRequestId)
+                    await requestReporter!.MarkProviderAcceptedAsync(acceptedRequestId, solution.ProviderTask?.Id.ToString() ?? string.Empty, cancellationToken).ConfigureAwait(false);
+
                 if (string.IsNullOrWhiteSpace(solution.CaptchaId))
                 {
                     solution = solution with { CaptchaId = captchaId };
@@ -237,6 +244,8 @@ public sealed class AvitoGeeTestSolver(
                 var verifyRaw = await EvaluateVerifyAsync(page, solution, cancellationToken).ConfigureAwait(false);
                 if (!RuCaptchaResponseParser.IsVerifyAccepted(verifyRaw))
                 {
+                    if (requestId is Guid rejectedRequestId)
+                        await requestReporter!.MarkTargetOutcomeAsync(rejectedRequestId, "rejected", cancellationToken).ConfigureAwait(false);
                     var verify = AvitoGeeTestSolveSupport.ParseVerifyResult(verifyRaw);
                     _ = GlobalLogger.Instance.LogAsync(
                         FormatTokenRejectedMessage("GeeTest v4", verify, effectiveTaskOptions),
@@ -275,6 +284,8 @@ public sealed class AvitoGeeTestSolver(
                     await ReportSolutionAsync(apiKey, solution.ProviderTask, isCorrect: true, "GeeTest v4", cancellationToken)
                         .ConfigureAwait(false);
                     AvitoCaptchaTaskContext.NoteSolved();
+                    if (requestId is Guid solvedRequestId)
+                        await requestReporter!.MarkTargetOutcomeAsync(solvedRequestId, "accepted", cancellationToken).ConfigureAwait(false);
                     return true;
                 }
 
@@ -290,6 +301,8 @@ public sealed class AvitoGeeTestSolver(
                         ["captcha.htmlReceived"] = !string.IsNullOrWhiteSpace(after),
                         ["captcha.proxyMode"] = effectiveTaskOptions.UsesSuppliedProxy ? "profile" : "proxyless"
                     });
+                if (requestId is Guid stuckRequestId)
+                    await requestReporter!.MarkTargetOutcomeAsync(stuckRequestId, "rejected", cancellationToken).ConfigureAwait(false);
                 await DelayBeforeRetryAsync(page, attempt, "страница не ушла после verify", cancellationToken)
                     .ConfigureAwait(false);
             }
@@ -305,6 +318,18 @@ public sealed class AvitoGeeTestSolver(
 
             pageGate.Release();
         }
+    }
+
+    private async Task<Guid?> CreateProviderRequestAsync(IPage page, string captchaType, int attempt, int maxAttempts, string pageUrl, CancellationToken ct)
+    {
+        var context = CaptchaProviderRequestContext.Current;
+        if (requestReporter is null || context is null) return null;
+        byte[]? screenshot = null;
+        try { screenshot = await page.ScreenshotDataAsync(new ScreenshotOptions { Type = ScreenshotType.Png, FullPage = true }).ConfigureAwait(false); } catch { }
+        return await requestReporter.CreateAsync(new CaptchaProviderRequestSubmission(
+            context.AccountId, context.CycleRunId, context.SubProfileRunId, context.SubProfileId,
+            context.SubProfileName, "rucaptcha", captchaType, context.Stage, context.Reason,
+            attempt, maxAttempts, pageUrl, DateTime.UtcNow), screenshot, ct).ConfigureAwait(false);
     }
 
     private async Task<bool> TrySolveLoginOverlayAsync(
@@ -358,6 +383,7 @@ public sealed class AvitoGeeTestSolver(
                 });
 
             ClickCaptchaSolution solution;
+            var requestId = await CreateProviderRequestAsync(page, "click", attempt, MaxAttempts, websiteUrl, cancellationToken).ConfigureAwait(false);
             try
             {
                 solution = await ruCaptcha
@@ -373,6 +399,8 @@ public sealed class AvitoGeeTestSolver(
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
+                if (requestId is Guid failedRequestId)
+                    await requestReporter!.MarkProviderFailedAsync(failedRequestId, ex.Message.Contains("NO_SLOT", StringComparison.OrdinalIgnoreCase) ? "no_slot" : "error", ex.GetType().Name, cancellationToken).ConfigureAwait(false);
                 _ = GlobalLogger.Instance.LogAsync(
                     $"Captcha: RuCaptcha не решила ClickCaptcha логина — {ex.Message}",
                     DeskLinkAuditLogLevel.Warning,
@@ -387,6 +415,9 @@ public sealed class AvitoGeeTestSolver(
                 html = null;
                 continue;
             }
+
+            if (requestId is Guid acceptedRequestId)
+                await requestReporter!.MarkProviderAcceptedAsync(acceptedRequestId, solution.ProviderTask?.Id ?? string.Empty, cancellationToken).ConfigureAwait(false);
 
             var applyResult = await ApplyLoginClickCaptchaAsync(page, capture, solution, cancellationToken).ConfigureAwait(false);
             if (applyResult == LoginClickCaptchaApplyResult.ChallengeChanged)
@@ -436,6 +467,8 @@ public sealed class AvitoGeeTestSolver(
                     });
                 await ReportSolutionAsync(apiKey, solution.ProviderTask, isCorrect: true, "ClickCaptcha логина", cancellationToken)
                     .ConfigureAwait(false);
+                if (requestId is Guid targetAcceptedRequestId)
+                    await requestReporter!.MarkTargetOutcomeAsync(targetAcceptedRequestId, "accepted", cancellationToken).ConfigureAwait(false);
                 AvitoCaptchaTaskContext.NoteSolved();
                 return true;
             }
@@ -460,6 +493,8 @@ public sealed class AvitoGeeTestSolver(
 
             if (outcome == LoginClickCaptchaOutcome.Rejected)
             {
+                if (requestId is Guid rejectedRequestId)
+                    await requestReporter!.MarkTargetOutcomeAsync(rejectedRequestId, "rejected", cancellationToken).ConfigureAwait(false);
                 await ReportSolutionAsync(apiKey, solution.ProviderTask, isCorrect: false, "ClickCaptcha логина", cancellationToken)
                     .ConfigureAwait(false);
             }
@@ -1125,6 +1160,7 @@ public sealed class AvitoGeeTestSolver(
                 });
 
             HCaptchaSolution solution;
+            var requestId = await CreateProviderRequestAsync(page, "hcaptcha", attempt, MaxAttempts, websiteUrl, cancellationToken).ConfigureAwait(false);
             try
             {
                 solution = await ruCaptcha
@@ -1133,6 +1169,8 @@ public sealed class AvitoGeeTestSolver(
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
+                if (requestId is Guid failedRequestId)
+                    await requestReporter!.MarkProviderFailedAsync(failedRequestId, ex.Message.Contains("NO_SLOT", StringComparison.OrdinalIgnoreCase) ? "no_slot" : "error", ex.GetType().Name, cancellationToken).ConfigureAwait(false);
                 _ = GlobalLogger.Instance.LogAsync(
                     $"Captcha: RuCaptcha не решила hCaptcha — {ex.Message}",
                     DeskLinkAuditLogLevel.Warning,
@@ -1147,6 +1185,9 @@ public sealed class AvitoGeeTestSolver(
                     .ConfigureAwait(false);
                 continue;
             }
+
+            if (requestId is Guid acceptedRequestId)
+                await requestReporter!.MarkProviderAcceptedAsync(acceptedRequestId, solution.ProviderTask?.Id ?? string.Empty, cancellationToken).ConfigureAwait(false);
 
             var verifyRaw = await EvaluateHCaptchaVerifyAsync(page, solution, cancellationToken).ConfigureAwait(false);
             if (!RuCaptchaResponseParser.IsVerifyAccepted(verifyRaw))
@@ -1168,6 +1209,8 @@ public sealed class AvitoGeeTestSolver(
                     });
                 await ReportSolutionAsync(apiKey, solution.ProviderTask, isCorrect: false, "hCaptcha", cancellationToken)
                     .ConfigureAwait(false);
+                if (requestId is Guid rejectedRequestId)
+                    await requestReporter!.MarkTargetOutcomeAsync(rejectedRequestId, "rejected", cancellationToken).ConfigureAwait(false);
                 await DelayBeforeRetryAsync(page, attempt, "токен hCaptcha отклонён", cancellationToken)
                     .ConfigureAwait(false);
                 continue;
@@ -1189,6 +1232,8 @@ public sealed class AvitoGeeTestSolver(
                     });
                 await ReportSolutionAsync(apiKey, solution.ProviderTask, isCorrect: true, "hCaptcha", cancellationToken)
                     .ConfigureAwait(false);
+                if (requestId is Guid targetAcceptedRequestId)
+                    await requestReporter!.MarkTargetOutcomeAsync(targetAcceptedRequestId, "accepted", cancellationToken).ConfigureAwait(false);
                 AvitoCaptchaTaskContext.NoteSolved();
                 return true;
             }
@@ -1247,6 +1292,7 @@ public sealed class AvitoGeeTestSolver(
                 });
 
             ImageCaptchaSolution solution;
+            var requestId = await CreateProviderRequestAsync(page, "image_to_text", attempt, MaxAttempts, page.Url, cancellationToken).ConfigureAwait(false);
             try
             {
                 solution = await ruCaptcha
@@ -1255,6 +1301,8 @@ public sealed class AvitoGeeTestSolver(
             }
             catch (Exception ex) when (ex is not OperationCanceledException)
             {
+                if (requestId is Guid failedRequestId)
+                    await requestReporter!.MarkProviderFailedAsync(failedRequestId, ex.Message.Contains("NO_SLOT", StringComparison.OrdinalIgnoreCase) ? "no_slot" : "error", ex.GetType().Name, cancellationToken).ConfigureAwait(false);
                 _ = GlobalLogger.Instance.LogAsync(
                     $"Captcha: RuCaptcha не решила внутреннюю картинку — {ex.Message}",
                     DeskLinkAuditLogLevel.Warning,
@@ -1268,6 +1316,9 @@ public sealed class AvitoGeeTestSolver(
                     .ConfigureAwait(false);
                 continue;
             }
+
+            if (requestId is Guid acceptedRequestId)
+                await requestReporter!.MarkProviderAcceptedAsync(acceptedRequestId, solution.ProviderTask?.Id ?? string.Empty, cancellationToken).ConfigureAwait(false);
 
             var verifyRaw = await EvaluateInternalCaptchaVerifyAsync(page, solution, cancellationToken).ConfigureAwait(false);
             if (!RuCaptchaResponseParser.IsVerifyAccepted(verifyRaw))
@@ -1287,6 +1338,8 @@ public sealed class AvitoGeeTestSolver(
                     });
                 await ReportSolutionAsync(apiKey, solution.ProviderTask, isCorrect: false, "внутренней картинки", cancellationToken)
                     .ConfigureAwait(false);
+                if (requestId is Guid rejectedRequestId)
+                    await requestReporter!.MarkTargetOutcomeAsync(rejectedRequestId, "rejected", cancellationToken).ConfigureAwait(false);
                 await DelayBeforeRetryAsync(page, attempt, "текст картинки отклонён", cancellationToken)
                     .ConfigureAwait(false);
                 continue;
@@ -1308,6 +1361,8 @@ public sealed class AvitoGeeTestSolver(
                     });
                 await ReportSolutionAsync(apiKey, solution.ProviderTask, isCorrect: true, "внутренней картинки", cancellationToken)
                     .ConfigureAwait(false);
+                if (requestId is Guid targetAcceptedRequestId)
+                    await requestReporter!.MarkTargetOutcomeAsync(targetAcceptedRequestId, "accepted", cancellationToken).ConfigureAwait(false);
                 AvitoCaptchaTaskContext.NoteSolved();
                 return true;
             }

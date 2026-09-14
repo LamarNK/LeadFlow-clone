@@ -1,3 +1,5 @@
+using Orbita.Contracts;
+
 namespace Orbita.Web.Models.ViewModels;
 
 public sealed class StatisticsViewModel
@@ -17,6 +19,7 @@ public sealed class StatisticsViewModel
     public IReadOnlyList<CrmDeliveryStatRowViewModel> CrmDeliveries { get; init; } = [];
     public HrInsightsViewModel HrInsights { get; init; } = HrInsightsViewModel.Empty;
     public MonitoringCycleReportViewModel MonitoringCycles { get; init; } = MonitoringCycleReportViewModel.Empty;
+    public CaptchaProviderStatisticsDto? CaptchaProviderRequests { get; init; }
     public StatisticsSummaryViewModel Summary { get; init; } = new();
     public string? ErrorMessage { get; init; }
     public bool ShowOfficeColumn { get; init; }
@@ -34,6 +37,7 @@ public sealed class StatisticsLiveSnapshotViewModel
     public IReadOnlyList<CrmDeliveryStatRowViewModel> CrmDeliveries { get; init; } = [];
     public HrInsightsViewModel HrInsights { get; init; } = HrInsightsViewModel.Empty;
     public StatisticsSummaryViewModel Summary { get; init; } = new();
+    public CaptchaProviderStatisticsDto? CaptchaProviderRequests { get; init; }
 }
 
 public sealed class BitrixDeliveryStatRowViewModel

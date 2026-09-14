@@ -72,6 +72,7 @@ public sealed class StatisticsController(
             CrmDeliveries = model.CrmDeliveries,
             HrInsights = model.HrInsights,
             Summary = model.Summary
+            ,CaptchaProviderRequests = model.CaptchaProviderRequests
         });
     }
 

@@ -90,6 +90,7 @@ internal static class StatisticsIndexBuilder
             CrmDeliveries = MapCrmDeliveries(data.CrmDeliveries, period, filters),
             HrInsights = MapHrInsights(data.HrInsights),
             MonitoringCycles = MapMonitoringCycles(data.MonitoringCycles),
+            CaptchaProviderRequests = data.CaptchaProviderRequests,
             Summary = summary,
             ShowOfficeColumn = officeContext.ShowOfficeColumn
         };

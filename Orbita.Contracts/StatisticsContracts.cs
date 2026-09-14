@@ -10,7 +10,8 @@ public sealed record OfficeStatisticsDto(
     IReadOnlyList<CrmDeliveryStatDto> CrmDeliveries,
     HrInsightsDto HrInsights,
     MonitoringCycleReportDto MonitoringCycles,
-    DateTime AggregatedAtUtc);
+    DateTime AggregatedAtUtc,
+    CaptchaProviderStatisticsDto? CaptchaProviderRequests = null);
 
 public sealed record BitrixDeliveryStatDto(
     Guid BitrixInstanceId,

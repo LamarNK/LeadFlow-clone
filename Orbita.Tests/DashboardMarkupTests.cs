@@ -100,6 +100,8 @@ public sealed class DashboardMarkupTests
         Assert.Contains("function updateQrListTimers()", js);
         Assert.Contains("orbita-balances-selected-qr", js);
         Assert.Contains("var selectedQr = Array.from(page.querySelectorAll('[data-qr-select]')).find", js);
+        Assert.Contains("var failed = results.filter(function (result) { return !result.success; });", js);
+        Assert.Contains("Не удалось запросить пополнение.", js);
     }
 
     [Fact]

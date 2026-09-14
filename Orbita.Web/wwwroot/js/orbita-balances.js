@@ -333,7 +333,24 @@
                     body.append('selections[' + index + '].SubProfileId', row.dataset.subprofileId);
                 });
                 batch.disabled = true;
-                post(page.dataset.batchUrl, body).then(function () { location.reload(); })
+                post(page.dataset.batchUrl, body).then(function (data) {
+                    var results = data && Array.isArray(data.results) ? data.results : [];
+                    var failed = results.filter(function (result) { return !result.success; });
+                    var created = results.length - failed.length;
+                    if (!failed.length) {
+                        location.reload();
+                        return;
+                    }
+
+                    var errors = failed.map(function (result) {
+                        return result.error || 'Не удалось создать сессию пополнения.';
+                    });
+                    var message = created
+                        ? 'Запрошено: ' + created + '. Не запрошено: ' + failed.length + '.\n\n' + errors.join('\n')
+                        : 'Не удалось запросить пополнение.\n\n' + errors.join('\n');
+                    alert(message);
+                    location.reload();
+                })
                     .catch(function (error) { alert(error.message); batch.disabled = false; });
                 return;
             }

@@ -1148,6 +1148,19 @@
     flex: 1;
 }
 
+.statistics-captcha-requests .card-header-subtitle { margin: 4px 0 0; color: var(--text-secondary); font-size: 12px; }
+.statistics-captcha-kpis { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 10px; margin-bottom: 16px; }
+.statistics-captcha-kpis span { padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; color: var(--text-secondary); font-size: 12px; }
+.statistics-captcha-kpis strong { display: block; color: var(--text-primary); font-size: 20px; font-variant-numeric: tabular-nums; }
+.statistics-captcha-worker { border-top: 1px solid var(--border); }
+.statistics-captcha-worker summary { display: flex; justify-content: space-between; gap: 12px; padding: 12px 0; cursor: pointer; font-weight: 700; }
+.statistics-captcha-worker-count { color: var(--text-secondary); font-variant-numeric: tabular-nums; }
+.statistics-captcha-details { display: grid; gap: 6px; padding: 0 0 12px 18px; }
+.statistics-captcha-request-row { display: grid; grid-template-columns: 130px minmax(130px, 1fr) 110px 150px auto; gap: 10px; align-items: center; color: var(--text-secondary); font-size: 12px; }
+.statistics-captcha-request-row time, .statistics-captcha-status { color: var(--text-primary); font-variant-numeric: tabular-nums; }
+@media (max-width: 900px) { .statistics-captcha-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); } .statistics-captcha-request-row { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 560px) { .statistics-captcha-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
 .statistics-trend-chart .chart-canvas-wrap--statistics-trend {
     height: 286px;
     width: 100%;

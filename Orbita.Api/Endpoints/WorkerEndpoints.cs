@@ -476,6 +476,41 @@ public static class WorkerEndpoints
         }).RequireAuthorization("Worker")
         .DisableAntiforgery();
 
+        workers.MapPost("/captcha-provider-requests", async (
+            CaptchaProviderRequestCreateDto request,
+            CaptchaProviderRequestService captcha,
+            ClaimsPrincipal user,
+            CancellationToken ct) =>
+        {
+            if (!TryGetWorkerId(user, out var workerId)) return Results.Forbid();
+            var id = await captcha.CreateAsync(workerId, request, ct);
+            return id is null ? Results.BadRequest(new { error = "Аккаунт не принадлежит воркеру." }) : Results.Ok(new { id });
+        }).RequireAuthorization("Worker");
+
+        workers.MapPost("/captcha-provider-requests/{id:guid}/provider-result", async (
+            Guid id,
+            CaptchaProviderRequestProviderResultDto request,
+            CaptchaProviderRequestService captcha,
+            ClaimsPrincipal user,
+            CancellationToken ct) =>
+        {
+            if (!TryGetWorkerId(user, out var workerId)) return Results.Forbid();
+            if (id != request.Id) return Results.BadRequest(new { error = "Идентификаторы запроса не совпадают." });
+            return await captcha.MarkProviderAcceptedAsync(workerId, request, ct) ? Results.Ok() : Results.NotFound();
+        }).RequireAuthorization("Worker");
+
+        workers.MapPost("/captcha-provider-requests/{id:guid}/target-result", async (
+            Guid id,
+            CaptchaProviderRequestTargetResultDto request,
+            CaptchaProviderRequestService captcha,
+            ClaimsPrincipal user,
+            CancellationToken ct) =>
+        {
+            if (!TryGetWorkerId(user, out var workerId)) return Results.Forbid();
+            if (id != request.Id) return Results.BadRequest(new { error = "Идентификаторы запроса не совпадают." });
+            return await captcha.MarkTargetOutcomeAsync(workerId, request, ct) ? Results.Ok() : Results.NotFound();
+        }).RequireAuthorization("Worker");
+
         workers.MapPost("/logs/batch", async (
             WorkerLogsBatchRequest request,
             WorkerLogArchiveService logs,

@@ -19,6 +19,7 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
     public DbSet<WorkerAvitoAdListScheduleEntity> WorkerAvitoAdListSchedules => Set<WorkerAvitoAdListScheduleEntity>();
     public DbSet<WorkerEventEntity> WorkerEvents => Set<WorkerEventEntity>();
     public DbSet<WorkerDiagnosticAttachmentEntity> WorkerDiagnosticAttachments => Set<WorkerDiagnosticAttachmentEntity>();
+    public DbSet<CaptchaProviderRequestEntity> CaptchaProviderRequests => Set<CaptchaProviderRequestEntity>();
     public DbSet<MonitoringCycleRunEntity> MonitoringCycleRuns => Set<MonitoringCycleRunEntity>();
     public DbSet<MonitoringSubProfileRunEntity> MonitoringSubProfileRuns => Set<MonitoringSubProfileRunEntity>();
     public DbSet<PanelAuditLogEntity> PanelAuditLogs => Set<PanelAuditLogEntity>();
@@ -928,6 +929,27 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
             entity.Property(x => x.Kind).HasMaxLength(64);
             entity.Property(x => x.PageUrl).HasMaxLength(2048);
             entity.Property(x => x.RelativePath).HasMaxLength(512);
+            entity.HasOne(x => x.Worker).WithMany().HasForeignKey(x => x.WorkerId);
+        });
+
+        modelBuilder.Entity<CaptchaProviderRequestEntity>(entity =>
+        {
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => x.SubmittedAtUtc);
+            entity.HasIndex(x => new { x.WorkerId, x.AccountId, x.SubmittedAtUtc });
+            entity.HasIndex(x => new { x.Stage, x.ProviderStatus, x.TargetStatus });
+            entity.HasIndex(x => x.ProviderTaskId);
+            entity.Property(x => x.SubProfileId).HasMaxLength(128);
+            entity.Property(x => x.SubProfileName).HasMaxLength(200);
+            entity.Property(x => x.Provider).HasMaxLength(64);
+            entity.Property(x => x.CaptchaType).HasMaxLength(64);
+            entity.Property(x => x.Stage).HasMaxLength(64);
+            entity.Property(x => x.Reason).HasMaxLength(96);
+            entity.Property(x => x.ProviderStatus).HasMaxLength(32);
+            entity.Property(x => x.TargetStatus).HasMaxLength(32);
+            entity.Property(x => x.ProviderTaskId).HasMaxLength(128);
+            entity.Property(x => x.ErrorCode).HasMaxLength(128);
+            entity.Property(x => x.PageUrl).HasMaxLength(2048);
             entity.HasOne(x => x.Worker).WithMany().HasForeignKey(x => x.WorkerId);
         });
 

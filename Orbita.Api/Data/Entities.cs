@@ -472,6 +472,34 @@ public sealed class WorkerDiagnosticAttachmentEntity
     public WorkerEntity Worker { get; set; } = null!;
 }
 
+/// <summary>Одна фактическая отправка задачи в провайдера капчи.</summary>
+public sealed class CaptchaProviderRequestEntity
+{
+    public Guid Id { get; set; }
+    public Guid WorkerId { get; set; }
+    public Guid AccountId { get; set; }
+    public Guid? CycleRunId { get; set; }
+    public Guid? SubProfileRunId { get; set; }
+    public string? SubProfileId { get; set; }
+    public string? SubProfileName { get; set; }
+    public string Provider { get; set; } = string.Empty;
+    public string CaptchaType { get; set; } = string.Empty;
+    public string Stage { get; set; } = string.Empty;
+    public string Reason { get; set; } = string.Empty;
+    public int Attempt { get; set; }
+    public int MaxAttempts { get; set; }
+    public string ProviderStatus { get; set; } = string.Empty;
+    public string TargetStatus { get; set; } = string.Empty;
+    public string? ProviderTaskId { get; set; }
+    public string? ErrorCode { get; set; }
+    public string? PageUrl { get; set; }
+    public Guid? DiagnosticAttachmentId { get; set; }
+    public DateTime SubmittedAtUtc { get; set; }
+    public DateTime UpdatedAtUtc { get; set; }
+
+    public WorkerEntity Worker { get; set; } = null!;
+}
+
 /// <summary>Один проход аккаунта (цикл субпрофилей) — типизированный журнал вместо разбора логов.</summary>
 public sealed class MonitoringCycleRunEntity
 {

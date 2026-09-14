@@ -126,6 +126,7 @@ internal static class Program
         host.Services.AddSingleton<IWorkerTelemetrySink>(sp => sp.GetRequiredService<OrbitaTelemetrySink>());
         host.Services.AddSingleton<DiagnosticsUploadService>();
         host.Services.AddSingleton<IWorkerDiagnosticsUploader>(sp => sp.GetRequiredService<DiagnosticsUploadService>());
+        host.Services.AddSingleton<ICaptchaProviderRequestReporter, CaptchaProviderRequestReporter>();
         host.Services.AddSingleton<WorkerLogSyncState>();
         host.Services.AddSingleton<WorkerLogUploadService>();
         host.Services.AddSingleton<IWorkerLogsUploader>(sp => sp.GetRequiredService<WorkerLogUploadService>());

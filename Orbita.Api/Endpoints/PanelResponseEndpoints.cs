@@ -130,6 +130,7 @@ public static class PanelResponseEndpoints
 
         statistics.MapGet("/statistics", async (
             OfficeStatisticsQueryService statistics,
+            CaptchaProviderRequestService captcha,
             OfficeScopeService officeScope,
             ClaimsPrincipal principal,
             Guid? officeId,
@@ -147,7 +148,7 @@ public static class PanelResponseEndpoints
                 return Results.Forbid();
             }
 
-            return Results.Ok(await statistics.GetStatisticsAsync(
+            var result = await statistics.GetStatisticsAsync(
                 scope,
                 officeId,
                 from,
@@ -156,7 +157,25 @@ public static class PanelResponseEndpoints
                 accountIds,
                 vacancy,
                 timeZoneOffsetMinutes: tz,
-                ct));
+                ct);
+            var captchaStats = await captcha.GetStatisticsAsync(scope, from, to, workerIds, accountIds, tz, ct);
+            return Results.Ok(result with { CaptchaProviderRequests = captchaStats });
+        });
+
+        statistics.MapGet("/statistics/captcha-provider-requests", async (
+            CaptchaProviderRequestService captcha,
+            OfficeScopeService officeScope,
+            ClaimsPrincipal principal,
+            DateTime? from,
+            DateTime? to,
+            Guid[]? workerIds,
+            Guid[]? accountIds,
+            int? tz,
+            CancellationToken ct) =>
+        {
+            var scope = await officeScope.ResolveAsync(principal, ct);
+            if (!scope.HasAccess) return Results.Forbid();
+            return Results.Ok(await captcha.GetStatisticsAsync(scope, from, to, workerIds, accountIds, tz, ct));
         });
 
         responses.MapGet("/responses/filters/accounts", async (

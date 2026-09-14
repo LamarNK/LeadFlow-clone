@@ -312,6 +312,7 @@ public static class OrbitaApiStartupExtensions
         builder.Services.AddScoped<AvitoAdsSyncService>();
         builder.Services.AddScoped<AvitoAdsQueryService>();
         builder.Services.AddScoped<OfficeStatisticsQueryService>();
+        builder.Services.AddScoped<CaptchaProviderRequestService>();
         builder.Services.AddScoped<PanelAuditService>();
         builder.Services.AddScoped<AccessProfileService>();
         builder.Services.AddScoped<PanelUserService>();

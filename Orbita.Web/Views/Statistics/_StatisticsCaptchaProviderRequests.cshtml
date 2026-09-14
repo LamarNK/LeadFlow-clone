@@ -1,0 +1,58 @@
+@model StatisticsViewModel
+@using Orbita.Contracts
+@{
+    var stats = Model.CaptchaProviderRequests;
+}
+<section class="card statistics-captcha-requests" data-statistics-captcha-requests>
+    <div class="card-header">
+        <div>
+            <h2>Запросы капчи</h2>
+            <p class="card-header-subtitle">Фактические обращения воркеров к RuCaptcha за выбранный период</p>
+        </div>
+        <span class="card-header-meta" data-captcha-stat="submitted">@(stats?.SubmittedCount ?? 0) отправлено</span>
+    </div>
+    <div class="card-body">
+        @if (stats is null || stats.Workers.Count == 0)
+        {
+            <div class="table-empty-state"><i class="fa-solid fa-shield-halved" aria-hidden="true"></i><span>Запросов капчи нет</span></div>
+        }
+        else
+        {
+            <div class="statistics-captcha-kpis">
+                <span><strong>@stats.SubmittedCount</strong> отправлено</span>
+                <span><strong>@stats.ProviderAcceptedCount</strong> принято провайдером</span>
+                <span><strong>@stats.NoSlotCount</strong> нет слота</span>
+                <span><strong>@stats.ProviderErrorCount</strong> ошибка провайдера</span>
+                <span><strong>@stats.TargetAcceptedCount</strong> принял Avito</span>
+                <span><strong>@stats.TargetRejectedCount</strong> отклонил Avito</span>
+            </div>
+            <div class="statistics-captcha-workers">
+                @foreach (var worker in stats.Workers)
+                {
+                    <details class="statistics-captcha-worker">
+                        <summary><span>@worker.WorkerName · @worker.AccountName</span><span class="statistics-captcha-worker-count">@worker.SubmittedCount / @worker.TargetAcceptedCount Avito</span></summary>
+                        <div class="statistics-captcha-details">
+                            @foreach (var request in worker.Requests)
+                            {
+                                <div class="statistics-captcha-request-row">
+                                    <time datetime="@request.SubmittedAtUtc.ToString("O")">@request.SubmittedAtUtc.ToLocalTime().ToString("dd.MM HH:mm:ss")</time>
+                                    <span>@request.CaptchaType · @request.Stage</span>
+                                    <span>попытка @request.Attempt/@request.MaxAttempts</span>
+                                    <span class="statistics-captcha-status">@request.ProviderStatus / @request.TargetStatus</span>
+                                    @if (request.DiagnosticAttachmentId is Guid attachmentId)
+                                    {
+                                        <a href="/Diagnostics/Image/@attachmentId" target="_blank" rel="noopener">Скриншот</a>
+                                    }
+                                    else
+                                    {
+                                        <span class="muted">Скриншот удалён по сроку хранения</span>
+                                    }
+                                </div>
+                            }
+                        </div>
+                    </details>
+                }
+            </div>
+        }
+    </div>
+</section>
