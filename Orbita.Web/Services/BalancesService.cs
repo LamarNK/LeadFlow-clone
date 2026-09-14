@@ -106,6 +106,7 @@ public sealed class BalancesService(
 
         var todayRange = TopUpSessionRules.GetMoscowDayRange(DateTime.UtcNow);
         var historySessions = sessions
+            .Where(x => !TopUpSessionStatuses.IsOpenOnLowBalanceTab(x.Status))
             .OrderByDescending(x => x.CompletedAtUtc ?? x.CreatedAtUtc)
             .ThenByDescending(x => x.CreatedAtUtc)
             .ToArray();
@@ -125,7 +126,7 @@ public sealed class BalancesService(
             {
                 Page = page,
                 PageSize = pageSize,
-                TotalItems = history ? sessions.Count : filteredRows.Count
+                TotalItems = history ? historySessions.Length : filteredRows.Count
             },
             TotalSubProfiles = allRows.Count,
             LowBalanceCount = allRows.Count(x => x.IsLowBalance && x.Session is null),
@@ -261,6 +262,7 @@ public sealed class BalancesService(
             "queue" => row.Session is not null && row.Session.Status is TopUpSessionStatuses.Requested or TopUpSessionStatuses.Started,
             "working" => row.Session is not null && row.Session.Status is TopUpSessionStatuses.PaymentClaimed or TopUpSessionStatuses.QrReady,
             "awaiting" => row.Session is not null && row.Session.Status is TopUpSessionStatuses.AwaitingBalance or TopUpSessionStatuses.VerificationRequired,
+            "requested" => row.Session is not null && TopUpSessionStatuses.IsActive(row.Session.Status),
             "history" or _ when history => row.Session is not null,
             "low" or null or "" => row.IsLowBalance && row.Session is null,
             _ => row.IsLowBalance

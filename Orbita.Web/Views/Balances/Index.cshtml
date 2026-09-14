@@ -7,6 +7,8 @@
     var excludedWorkerIds = Model.ExcludedWorkerIds;
     var pagination = Model.Pagination;
     var balancesFormAction = Url.Action("Index", "Balances");
+    var isHistoryTab = activeTab == "history";
+    var isRequestedTopUpsTab = activeTab == "requested";
 
     string BalancesUrl(string tab, bool history = false, int? page = null, bool includeQuery = true)
     {
@@ -63,7 +65,8 @@
         <a class="balances-tab @(activeTab == "queue" ? "balances-tab--active" : "")" href="@BalancesUrl("queue", page: 1)" aria-current="@(activeTab == "queue" ? "page" : null)">В очереди</a>
         <a class="balances-tab @(activeTab == "working" ? "balances-tab--active" : "")" href="@BalancesUrl("working", page: 1)" aria-current="@(activeTab == "working" ? "page" : null)">В работе</a>
         <a class="balances-tab @(activeTab == "awaiting" ? "balances-tab--active" : "")" href="@BalancesUrl("awaiting", page: 1)" aria-current="@(activeTab == "awaiting" ? "page" : null)">Проверка оплаты</a>
-        <a class="balances-tab @(activeTab == "history" ? "balances-tab--active" : "")" href="@BalancesUrl("history", true, 1)" aria-current="@(activeTab == "history" ? "page" : null)">История</a>
+        <a class="balances-tab @(isRequestedTopUpsTab ? "balances-tab--active" : "")" href="@BalancesUrl("requested", page: 1)" aria-current="@(isRequestedTopUpsTab ? "page" : null)">Запрошенные пополнения</a>
+        <a class="balances-tab @(isHistoryTab ? "balances-tab--active" : "")" href="@BalancesUrl("history", true, 1)" aria-current="@(isHistoryTab ? "page" : null)">История</a>
     </nav>
 
     @{
@@ -78,15 +81,15 @@
             FilterToggleClass = "orbita-filters-toggle balances-filter-btn",
             HasActiveFilters = excludedWorkerIds.Count > 0,
             ActiveFilterCount = excludedWorkerIds.Count,
-            ResetUrl = Url.Action("Index", "Balances", new { tab = activeTab, history = activeTab == "history" })!,
+            ResetUrl = Url.Action("Index", "Balances", new { tab = activeTab, history = isHistoryTab })!,
             FilterFieldsPartialName = "_BalancesFilterFields",
             FilterFieldsModel = Model,
-            ExtraFormContent = $"<input type=\"hidden\" name=\"tab\" value=\"{activeTab}\" /><input type=\"hidden\" name=\"history\" value=\"{(activeTab == "history" ? "true" : "false")}\" />"
+            ExtraFormContent = $"<input type=\"hidden\" name=\"tab\" value=\"{activeTab}\" /><input type=\"hidden\" name=\"history\" value=\"{(isHistoryTab ? "true" : "false")}\" />"
         };
     }
     <partial name="_ListFiltersBar" model="balancesFilterBar" />
 
-    @if (activeTab != "history")
+    @if (!isHistoryTab && !isRequestedTopUpsTab)
     {
         <div class="balances-bulkbar" data-balances-bulkbar>
             <label><input type="checkbox" data-balances-select-all /> Выбрать доступные (@Model.SelectableCount)</label>
@@ -95,20 +98,22 @@
         </div>
     }
 
+    @if (!isRequestedTopUpsTab)
+    {
     <div class="card card--balances-table">
         <div class="card-body card-body-table balances-table-wrap">
-            @if ((activeTab == "history" && Model.Sessions.Count == 0) || (activeTab != "history" && Model.Rows.Count == 0))
+            @if ((isHistoryTab && Model.Sessions.Count == 0) || (!isHistoryTab && Model.Rows.Count == 0))
             {
                 <partial name="_TableEmptyState" model="@(new TableEmptyStateViewModel
                 {
                     IconClass = "fa-solid fa-wallet",
                     Title = "Нет записей",
-                    Description = activeTab == "history" ? "История пополнений пуста." : "Нет субпрофилей, соответствующих текущему фильтру.",
+                    Description = isHistoryTab ? "История пополнений пуста." : "Нет субпрофилей, соответствующих текущему фильтру.",
                     CtaLabel = "Показать все",
                     CtaUrl = BalancesUrl("all", includeQuery: false)
                 })" />
             }
-            else if (activeTab == "history")
+            else if (isHistoryTab)
             {
                 <table class="data-table data-table--cards balances-table balances-table--history">
                     <thead><tr><th>Дата</th><th>Где</th><th>Баланс до</th><th>Сумма</th><th>Баланс после</th><th>Статус</th><th>Оператор</th></tr></thead>
@@ -233,11 +238,12 @@
                 Pagination = Model.Pagination,
                 Controller = "Balances",
                 Action = "Index",
-                RouteValues = new { tab = activeTab, q = query, history = activeTab == "history", excludedWorkerIds },
+                RouteValues = new { tab = activeTab, q = query, history = isHistoryTab, excludedWorkerIds },
                 ExtraClass = "balances-pagination"
             })" />
         </div>
     </div>
+    }
 
     @{
         var activeTopUpSessions = Model.Sessions
@@ -255,7 +261,7 @@
                 .Select(x => $"{x.Id:N}:{x.Status}".ToLowerInvariant())
                 .OrderBy(x => x, StringComparer.Ordinal));
     }
-    @if (activeTopUpSessions.Count > 0)
+    @if (isRequestedTopUpsTab && activeTopUpSessions.Count > 0)
     {
         <section class="balances-workspace"
                  aria-labelledby="balancesQrTitle"
@@ -317,6 +323,21 @@
                 </div>
             </div>
         </section>
+    }
+    else if (isRequestedTopUpsTab)
+    {
+        <div class="card card--balances-table">
+            <div class="card-body">
+                <partial name="_TableEmptyState" model="@(new TableEmptyStateViewModel
+                {
+                    IconClass = "fa-solid fa-wallet",
+                    Title = "Нет запрошенных пополнений",
+                    Description = "Активные заявки и готовые QR-коды появятся здесь.",
+                    CtaLabel = "Требуют пополнения",
+                    CtaUrl = BalancesUrl("low", includeQuery: false)
+                })" />
+            </div>
+        </div>
     }
 </main>
 

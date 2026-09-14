@@ -103,6 +103,19 @@ public sealed class DashboardMarkupTests
     }
 
     [Fact]
+    public void Balances_SeparatesRequestedTopUpsFromHistory()
+    {
+        var view = ReadRepoFile("Orbita.Web/Views/Balances/Index.cshtml");
+        var service = ReadRepoFile("Orbita.Web/Services/BalancesService.cs");
+
+        Assert.Contains("Запрошенные пополнения", view);
+        Assert.Contains("var isRequestedTopUpsTab = activeTab == \"requested\";", view);
+        Assert.Contains("@if (isRequestedTopUpsTab && activeTopUpSessions.Count > 0)", view);
+        Assert.Contains("!TopUpSessionStatuses.IsOpenOnLowBalanceTab(x.Status)", service);
+        Assert.Contains("\"requested\" => row.Session is not null && TopUpSessionStatuses.IsActive(row.Session.Status)", service);
+    }
+
+    [Fact]
     public void ClientNavigation_VersionsDynamicallyLoadedPageScripts()
     {
         var navigationJs = ReadRepoFile("Orbita.Web/wwwroot/js/orbita/navigation.js");
