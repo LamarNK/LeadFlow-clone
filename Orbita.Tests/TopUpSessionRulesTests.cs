@@ -109,6 +109,7 @@ public sealed class TopUpSessionRulesTests
     [InlineData(TopUpSessionStatuses.QrReady, TopUpSessionStatuses.Paid, true)]
     [InlineData(TopUpSessionStatuses.QrReady, TopUpSessionStatuses.Completed, true)]
     [InlineData(TopUpSessionStatuses.QrReady, TopUpSessionStatuses.VerificationRequired, true)]
+    [InlineData(TopUpSessionStatuses.QrReady, TopUpSessionStatuses.Cancelled, true)]
     [InlineData(TopUpSessionStatuses.AwaitingBalance, TopUpSessionStatuses.Completed, true)]
     [InlineData(TopUpSessionStatuses.AwaitingBalance, TopUpSessionStatuses.Failed, true)]
     [InlineData(TopUpSessionStatuses.AwaitingBalance, TopUpSessionStatuses.VerificationRequired, false)]
@@ -130,6 +131,12 @@ public sealed class TopUpSessionRulesTests
     public void PauseLeaseTtl_IsTenMinutes()
     {
         Assert.Equal(TimeSpan.FromMinutes(10), TopUpSessionRules.PauseLeaseTtl);
+    }
+
+    [Fact]
+    public void QrPaymentTtl_IsTenMinutes()
+    {
+        Assert.Equal(TimeSpan.FromMinutes(10), TopUpSessionRules.QrPaymentTtl);
     }
 
     [Fact]

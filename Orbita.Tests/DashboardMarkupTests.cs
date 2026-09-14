@@ -76,6 +76,31 @@ public sealed class DashboardMarkupTests
     }
 
     [Fact]
+    public void BalancesQrWorkspace_OffersCancellationForTheSelectedQrSession()
+    {
+        var view = ReadRepoFile("Orbita.Web/Views/Balances/Index.cshtml");
+        var js = ReadRepoFile("Orbita.Web/wwwroot/js/orbita-balances.js");
+
+        Assert.Contains("data-qr-cancel", view);
+        Assert.Contains("data-qr-expires-at", view);
+        Assert.Contains("data-qr-timer", view);
+        Assert.Contains("data-qr-list-timer", view);
+        Assert.Contains("data-topup-workspace", view);
+        Assert.Contains("Запрошенные пополнения", view);
+        Assert.Contains("Запрошено", view);
+        Assert.Contains("fa-spinner", view);
+        Assert.Contains("Отменить", view);
+        Assert.Contains("cancel.dataset.sessionId = button.dataset.qrSelect;", js);
+        Assert.Contains("event.target.closest('[data-qr-cancel]')", js);
+        Assert.Contains("page.dataset.cancelUrl", js);
+        Assert.Contains("Осталось на оплату:", js);
+        Assert.Contains("Осталось: ", js);
+        Assert.Contains("Сессия отменяется автоматически.", js);
+        Assert.Contains("function topUpWorkspaceSignature", js);
+        Assert.Contains("function updateQrListTimers()", js);
+    }
+
+    [Fact]
     public void ClientNavigation_VersionsDynamicallyLoadedPageScripts()
     {
         var navigationJs = ReadRepoFile("Orbita.Web/wwwroot/js/orbita/navigation.js");

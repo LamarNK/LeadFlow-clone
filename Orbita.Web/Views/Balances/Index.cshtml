@@ -240,28 +240,81 @@
     </div>
 
     @{
-        var qrSessions = Model.Sessions.Where(x => x.Status == TopUpSessionStatuses.QrReady).ToList();
+        var activeTopUpSessions = Model.Sessions
+            .Where(x => TopUpSessionStatuses.IsActive(x.Status))
+            .OrderByDescending(x => x.Status == TopUpSessionStatuses.QrReady)
+            .ThenBy(x => x.CreatedAtUtc)
+            .ToList();
+        var qrSessions = activeTopUpSessions
+            .Where(x => x.Status == TopUpSessionStatuses.QrReady)
+            .ToList();
+        var preparingTopUpCount = activeTopUpSessions.Count - qrSessions.Count;
+        var workspaceSignature = string.Join(
+            '|',
+            activeTopUpSessions
+                .Select(x => $"{x.Id:N}:{x.Status}".ToLowerInvariant())
+                .OrderBy(x => x, StringComparer.Ordinal));
     }
-    @if (qrSessions.Count > 0)
+    @if (activeTopUpSessions.Count > 0)
     {
-        <section class="balances-workspace" aria-labelledby="balancesQrTitle">
+        <section class="balances-workspace"
+                 aria-labelledby="balancesQrTitle"
+                 data-topup-workspace
+                 data-topup-workspace-signature="@workspaceSignature">
             <div class="balances-workspace__queue">
-                <h2 id="balancesQrTitle">QR готовы к оплате</h2>
-                @foreach (var session in qrSessions)
+                <div class="balances-workspace__queue-heading">
+                    <h2 id="balancesQrTitle">Запрошенные пополнения</h2>
+                    <p>@activeTopUpSessions.Count всего · @qrSessions.Count QR готовы · @preparingTopUpCount готовятся</p>
+                </div>
+                @foreach (var session in activeTopUpSessions)
                 {
-                    <button type="button" data-qr-select="@session.Id" data-qr-src="@(!string.IsNullOrWhiteSpace(session.QrImageBase64) ? $"data:image/png;base64,{session.QrImageBase64}" : session.QrImageUrl)" data-qr-account="@session.AccountName" data-qr-profile="@session.SubProfileName" data-qr-amount="@session.RequestedAmount.ToString("N0") ₽">
-                        <strong>@session.AccountName</strong><span>@session.SubProfileName · @session.RequestedAmount.ToString("N0") ₽</span>
-                    </button>
+                    var isQrReady = session.Status == TopUpSessionStatuses.QrReady;
+                    var pendingLabel = session.Status switch
+                    {
+                        TopUpSessionStatuses.Requested => "В очереди",
+                        TopUpSessionStatuses.Started => "Формируем QR",
+                        TopUpSessionStatuses.PaymentClaimed => "Формируем QR",
+                        _ => statusLabel(session.Status)
+                    };
+                    @if (isQrReady)
+                    {
+                        <button type="button" class="balances-workspace__queue-item balances-workspace__queue-item--ready" data-qr-select="@session.Id" data-qr-src="@(!string.IsNullOrWhiteSpace(session.QrImageBase64) ? $"data:image/png;base64,{session.QrImageBase64}" : session.QrImageUrl)" data-qr-account="@session.AccountName" data-qr-profile="@session.SubProfileName" data-qr-amount="@session.RequestedAmount.ToString("N0") ₽" data-qr-expires-at="@session.ExpiresAtUtc.ToUniversalTime().ToString("O")">
+                            <strong>@session.AccountName</strong>
+                            <span>@session.SubProfileName · @session.RequestedAmount.ToString("N0") ₽</span>
+                            <span class="balances-workspace__queue-meta">
+                                <span class="balances-workspace__queue-state balances-workspace__queue-state--ready"><i class="fa-solid fa-qrcode" aria-hidden="true"></i> QR готов</span>
+                                <span class="balances-workspace__queue-timer" data-qr-list-timer data-qr-list-expires-at="@session.ExpiresAtUtc.ToUniversalTime().ToString("O")" aria-live="polite"></span>
+                                <span>Запрошено <partial name="_UtcTime" model="@(new UtcTimeDisplayModel(session.CreatedAtUtc, "datetime"))" /></span>
+                            </span>
+                        </button>
+                    }
+                    else
+                    {
+                        <div class="balances-workspace__queue-item balances-workspace__queue-item--pending" data-topup-workspace-item data-topup-session-id="@session.Id" data-topup-session-status="@session.Status">
+                            <strong>@session.AccountName</strong>
+                            <span>@session.SubProfileName · @session.RequestedAmount.ToString("N0") ₽</span>
+                            <span class="balances-workspace__queue-meta">
+                                <span class="balances-workspace__queue-state"><i class="fa-solid fa-spinner" aria-hidden="true"></i> @pendingLabel</span>
+                                <span>Запрошено <partial name="_UtcTime" model="@(new UtcTimeDisplayModel(session.CreatedAtUtc, "datetime"))" /></span>
+                            </span>
+                        </div>
+                    }
                 }
             </div>
             <div class="balances-workspace__qr">
-                <div><span data-qr-account-label>Выберите QR</span><strong data-qr-amount-label></strong></div>
+                <div><span data-qr-account-label>@(qrSessions.Count > 0 ? "Выберите QR" : "QR ещё готовятся")</span><strong data-qr-amount-label></strong></div>
                 @if (qrSessions.Any(x => !string.IsNullOrWhiteSpace(x.QrImageBase64) || !string.IsNullOrWhiteSpace(x.QrImageUrl)))
                 {
                     <img data-qr-image src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" alt="QR-код для оплаты" hidden />
                 }
-                <p data-qr-profile-label>Готовые QR остаются на одной странице — переключайтесь без возврата к воркерам.</p>
-                <button type="button" class="balances-primary" data-qr-paid disabled>Оплачено</button>
+                <p data-qr-profile-label>@(qrSessions.Count > 0
+                    ? "Готовые QR остаются на одной странице — переключайтесь без возврата к воркерам."
+                    : "Следим за подготовкой QR-кодов. Список обновится автоматически.")</p>
+                <p class="balances-workspace__timer" data-qr-timer aria-live="polite" hidden></p>
+                <div class="balances-workspace__actions">
+                    <button type="button" class="balances-primary" data-qr-paid disabled>Оплачено</button>
+                    <button type="button" class="balances-link balances-link--danger" data-qr-cancel disabled>Отменить</button>
+                </div>
             </div>
         </section>
     }

@@ -46,7 +46,7 @@ public static class TopUpSessionStatuses
             [Started] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { PaymentClaimed, QrReady, Failed, Expired },
             [PaymentClaimed] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { QrReady, Failed, Expired },
             [QrReady] = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-                { Paid, AwaitingBalance, VerificationRequired, Completed, Failed, Expired },
+                { Paid, AwaitingBalance, VerificationRequired, Completed, Failed, Expired, Cancelled },
             [AwaitingBalance] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { Completed, Failed, Expired },
             [VerificationRequired] = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { Completed, Failed },
         };
@@ -98,6 +98,12 @@ public static class TopUpSessionRules
 
     /// <summary>Срок жизни сессии в очереди воркера, пока её не взяли в работу.</summary>
     public static readonly TimeSpan QueueTtl = TimeSpan.FromHours(2);
+
+    /// <summary>
+    /// Время, доступное оператору на оплату сформированного QR-кода.
+    /// По истечении сессия отменяется автоматически.
+    /// </summary>
+    public static readonly TimeSpan QrPaymentTtl = TimeSpan.FromMinutes(10);
 
     /// <summary>
     /// После «Оплачено» ждём обычный снимок баланса со следующего прохода.

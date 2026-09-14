@@ -1256,6 +1256,65 @@ public sealed class TopUpSessionServiceTests
     }
 
     [Fact]
+    public async Task SweepExpiredAsync_AutomaticallyCancelsQrWhenPaymentTimeRunsOut()
+    {
+        await using var db = CreateDb();
+        var officeId = Guid.NewGuid();
+        var workerId = Guid.NewGuid();
+        var accountId = Guid.NewGuid();
+        SeedWorker(db, officeId, workerId, accountId, balance: 100m);
+
+        var service = CreateService(db);
+        var principal = TestPrincipalFactory.Operator("op1", "Operator 1", officeId);
+        var (session, _) = await service.CreateAsync(workerId, accountId, principal);
+        Assert.NotNull(session);
+        await AdvanceToQrReadyAsync(service, workerId, session!.Id);
+
+        var stored = await db.TopUpSessions.AsNoTracking().SingleAsync(x => x.Id == session.Id);
+        Assert.Equal(Now.UtcDateTime.Add(TopUpSessionRules.QrPaymentTtl), stored.ExpiresAtUtc);
+
+        // QR, созданные до введения десятиминутного срока, могли хранить старый 24-часовой TTL.
+        // Срок всё равно считается от QrReadyAtUtc.
+        var legacyStored = await db.TopUpSessions.SingleAsync(x => x.Id == session.Id);
+        legacyStored.ExpiresAtUtc = Now.Add(TopUpSessionRules.BalanceConfirmationTtl).UtcDateTime;
+        await db.SaveChangesAsync();
+
+        var timedOutService = CreateService(db, Now.Add(TopUpSessionRules.QrPaymentTtl).AddSeconds(1));
+        Assert.Equal(1, await timedOutService.SweepExpiredAsync());
+
+        stored = await db.TopUpSessions.AsNoTracking().SingleAsync(x => x.Id == session.Id);
+        Assert.Equal(TopUpSessionStatuses.Cancelled, stored.Status);
+        Assert.Contains("оплату QR-кода", stored.FailureMessage, StringComparison.OrdinalIgnoreCase);
+        Assert.Null(stored.QrImageBase64);
+        Assert.NotNull(stored.CompletedAtUtc);
+    }
+
+    [Fact]
+    public async Task MarkPaidAsync_AfterQrPaymentDeadline_CancelsSessionAndRejectsPayment()
+    {
+        await using var db = CreateDb();
+        var officeId = Guid.NewGuid();
+        var workerId = Guid.NewGuid();
+        var accountId = Guid.NewGuid();
+        SeedWorker(db, officeId, workerId, accountId, balance: 100m);
+
+        var service = CreateService(db);
+        var principal = TestPrincipalFactory.Operator("op1", "Operator 1", officeId);
+        var (session, _) = await service.CreateAsync(workerId, accountId, principal);
+        Assert.NotNull(session);
+        await AdvanceToQrReadyAsync(service, workerId, session!.Id);
+
+        var timedOutService = CreateService(db, Now.Add(TopUpSessionRules.QrPaymentTtl).AddSeconds(1));
+        var (markedPaid, error) = await timedOutService.MarkPaidAsync(session.Id, principal);
+
+        Assert.False(markedPaid);
+        Assert.Contains("истёк", error, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(
+            TopUpSessionStatuses.Cancelled,
+            (await db.TopUpSessions.AsNoTracking().SingleAsync(x => x.Id == session.Id)).Status);
+    }
+
+    [Fact]
     public async Task PurgeQrDataAsync_RemovesStaleQrAfterRetention()
     {
         await using var db = CreateDb();

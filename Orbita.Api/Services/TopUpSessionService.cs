@@ -131,7 +131,7 @@ public sealed class TopUpSessionService(
             .ConfigureAwait(false);
         if (active is not null)
         {
-            if (active.ExpiresAtUtc > now)
+            if (!IsSessionExpired(active, now))
             {
                 _log.LogInformation(
                     "Top-up: отказ создания, уже есть сессия {ExistingSessionId} ({Status}) worker={WorkerId} account={AccountId} subprofile={SubProfileId}.",
@@ -406,6 +406,21 @@ public sealed class TopUpSessionService(
             .ConfigureAwait(false);
         if (session?.Status == TopUpSessionStatuses.QrReady)
         {
+            if (IsSessionExpired(session, timeProvider.GetUtcNow().UtcDateTime))
+            {
+                return await CompleteByOperatorAsync(
+                        sessionId,
+                        principal,
+                        TopUpSessionStatuses.Cancelled,
+                        current => current.Status == TopUpSessionStatuses.QrReady
+                                   && IsSessionExpired(current, timeProvider.GetUtcNow().UtcDateTime)
+                            ? null
+                            : "Срок оплаты QR-кода ещё не истёк.",
+                        ownerError: "Отменить может только оператор, начавший сессию.",
+                        ct)
+                    .ConfigureAwait(false);
+            }
+
             return await CompleteByOperatorAsync(
                     sessionId,
                     principal,
@@ -494,6 +509,21 @@ public sealed class TopUpSessionService(
             return (true, null);
         }
 
+        if (terminalStatus == TopUpSessionStatuses.AwaitingBalance
+            && session.Status == TopUpSessionStatuses.QrReady
+            && IsSessionExpired(session, timeProvider.GetUtcNow().UtcDateTime))
+        {
+            await ExpireSessionAsync(session, timeProvider.GetUtcNow().UtcDateTime, ct).ConfigureAwait(false);
+            await db.SaveChangesAsync(ct).ConfigureAwait(false);
+            await transaction.CommitAsync(ct).ConfigureAwait(false);
+            panelRealtime.Notify(
+                [PanelChangeKind.Workers, PanelChangeKind.Accounts],
+                session.OfficeId,
+                session.WorkerId);
+            await PushNextPendingAsync(session.WorkerId, ct).ConfigureAwait(false);
+            return (false, "Срок оплаты QR-кода истёк. Сессия отменена автоматически.");
+        }
+
         var validationError = validate(session);
         if (validationError is not null)
         {
@@ -515,6 +545,7 @@ public sealed class TopUpSessionService(
         {
             session.AwaitingBalanceAtUtc = completedAt;
             session.CompletedAtUtc = null;
+            session.ExpiresAtUtc = completedAt.Add(TopUpSessionRules.BalanceConfirmationTtl);
             session.ProgressMessage = terminalStatus == TopUpSessionStatuses.AwaitingBalance
                 ? "Оплата отмечена. На следующем проходе проверим историю операций."
                 : "Перед отменой на следующем проходе проверим историю операций Avito.";
@@ -615,7 +646,7 @@ public sealed class TopUpSessionService(
         }
 
         var now = timeProvider.GetUtcNow().UtcDateTime;
-        if (session.ExpiresAtUtc <= now)
+        if (IsSessionExpired(session, now))
         {
             await ExpireSessionAsync(session, now, ct).ConfigureAwait(false);
             await db.SaveChangesAsync(ct).ConfigureAwait(false);
@@ -667,10 +698,9 @@ public sealed class TopUpSessionService(
             else if (request.Status == TopUpSessionStatuses.QrReady)
             {
                 session.QrReadyAtUtc ??= now;
-                // QR оплачивается вручную, поэтому короткий технический TTL сессии
-                // не должен закрыть её раньше следующего обычного прохода воркера.
-                // На нём история кошелька будет проверена даже если аванс ещё старый.
-                session.ExpiresAtUtc = now.Add(TopUpSessionRules.BalanceConfirmationTtl);
+                // QR должен быть оплачен за ограниченное время. После дедлайна
+                // sweeper отменит сессию и очистит QR-данные.
+                session.ExpiresAtUtc = now.Add(TopUpSessionRules.QrPaymentTtl);
                 session.QrImageBase64 = request.QrImageBase64;
                 session.QrImageUrl = request.QrImageUrl;
             }
@@ -679,7 +709,7 @@ public sealed class TopUpSessionService(
         {
             session.QrImageBase64 = request.QrImageBase64;
             session.QrImageUrl = request.QrImageUrl;
-            session.ExpiresAtUtc = now.Add(TopUpSessionRules.BalanceConfirmationTtl);
+            session.ExpiresAtUtc = (session.QrReadyAtUtc ?? now).Add(TopUpSessionRules.QrPaymentTtl);
         }
 
         if (request.ProgressMessage is not null)
@@ -789,7 +819,7 @@ public sealed class TopUpSessionService(
                     $"Сессия уже завершена статусом '{session.Status}'.");
             }
 
-            if (session.ExpiresAtUtc <= now)
+            if (IsSessionExpired(session, now))
             {
                 await ExpireSessionAsync(session, now, ct).ConfigureAwait(false);
                 await db.SaveChangesAsync(ct).ConfigureAwait(false);
@@ -1100,9 +1130,16 @@ public sealed class TopUpSessionService(
     public async Task<int> SweepExpiredAsync(CancellationToken ct = default)
     {
         var now = timeProvider.GetUtcNow().UtcDateTime;
+        var qrPaymentDeadlineCutoff = now - TopUpSessionRules.QrPaymentTtl;
         var expired = await db.TopUpSessions
             .Include(x => x.Worker)
-            .Where(x => ActiveStatuses.Contains(x.Status) && x.ExpiresAtUtc <= now)
+            .Where(x =>
+                ActiveStatuses.Contains(x.Status)
+                && (x.Status == TopUpSessionStatuses.QrReady
+                    ? (x.QrReadyAtUtc != null
+                        ? x.QrReadyAtUtc <= qrPaymentDeadlineCutoff
+                        : x.ExpiresAtUtc <= now)
+                    : x.ExpiresAtUtc <= now))
             .ToListAsync(ct)
             .ConfigureAwait(false);
 
@@ -1381,19 +1418,37 @@ public sealed class TopUpSessionService(
 
     private async Task ExpireSessionAsync(TopUpSessionEntity session, DateTime now, CancellationToken ct)
     {
+        var qrPaymentTimedOut = session.Status == TopUpSessionStatuses.QrReady;
+        var finalStatus = qrPaymentTimedOut
+            ? TopUpSessionStatuses.Cancelled
+            : TopUpSessionStatuses.Expired;
+        var message = qrPaymentTimedOut
+            ? "Время на оплату QR-кода истекло. Сессия отменена автоматически."
+            : "Истекло время сессии.";
+
         _log.LogInformation(
-            "Top-up: сессия {SessionId} истекла (была {Status}) worker={WorkerId} account={AccountName} subprofile={SubProfileName}.",
+            "Top-up: сессия {SessionId} завершена по таймауту оплаты (была {Status}, стала {FinalStatus}) worker={WorkerId} account={AccountName} subprofile={SubProfileName}.",
             session.Id,
             session.Status,
+            finalStatus,
             session.WorkerId,
             session.AccountName,
             session.SubProfileName);
-        session.Status = TopUpSessionStatuses.Expired;
+        session.Status = finalStatus;
         session.CompletedAtUtc = now;
-        session.FailureMessage = "Истекло время сессии.";
+        session.FailureMessage = message;
+        session.ProgressMessage = message;
         ClearQrData(session);
         await ReleasePauseAsync(session, ct).ConfigureAwait(false);
     }
+
+    private static bool IsSessionExpired(TopUpSessionEntity session, DateTime now) =>
+        GetEffectiveExpiration(session) <= now;
+
+    private static DateTime GetEffectiveExpiration(TopUpSessionEntity session) =>
+        session.Status == TopUpSessionStatuses.QrReady && session.QrReadyAtUtc is not null
+            ? session.QrReadyAtUtc.Value.Add(TopUpSessionRules.QrPaymentTtl)
+            : session.ExpiresAtUtc;
 
     private static void ClearQrData(TopUpSessionEntity session)
     {
@@ -1572,7 +1627,7 @@ public sealed class TopUpSessionService(
             session.RequestedAmount,
             session.DailyResponseCount,
             session.CreatedAtUtc,
-            session.ExpiresAtUtc,
+            GetEffectiveExpiration(session),
             session.CompletedAtUtc,
             session.StartedAtUtc,
             session.PaymentClaimedAtUtc,

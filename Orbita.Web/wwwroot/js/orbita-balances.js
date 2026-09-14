@@ -109,6 +109,8 @@
     }
 
     var pollTimer = null;
+    var qrCountdownTimer = null;
+    var qrListCountdownTimer = null;
 
     function statusLabel(status) {
         return ({
@@ -149,6 +151,27 @@
         }
     }
 
+    function stopQrCountdown() {
+        if (qrCountdownTimer) {
+            window.clearInterval(qrCountdownTimer);
+            qrCountdownTimer = null;
+        }
+    }
+
+    function stopQrListCountdown() {
+        if (qrListCountdownTimer) {
+            window.clearInterval(qrListCountdownTimer);
+            qrListCountdownTimer = null;
+        }
+    }
+
+    function formatRemainingTime(milliseconds) {
+        var totalSeconds = Math.max(0, Math.ceil(milliseconds / 1000));
+        var minutes = Math.floor(totalSeconds / 60);
+        var seconds = totalSeconds % 60;
+        return String(minutes).padStart(2, '0') + ':' + String(seconds).padStart(2, '0');
+    }
+
     function token() {
         var meta = document.querySelector('meta[name="orbita-antiforgery-token"]');
         return meta ? meta.content : '';
@@ -182,6 +205,29 @@
             return;
         }
         page.setAttribute('data-balances-bound', '1');
+        function updateQrListTimers() {
+            var hasTimers = false;
+            page.querySelectorAll('[data-qr-list-timer]').forEach(function (timer) {
+                hasTimers = true;
+                var expiresAt = Date.parse(timer.dataset.qrListExpiresAt || '');
+                if (Number.isNaN(expiresAt)) {
+                    timer.textContent = '';
+                    return;
+                }
+
+                var remaining = expiresAt - Date.now();
+                timer.textContent = remaining > 0
+                    ? 'Осталось: ' + formatRemainingTime(remaining)
+                    : 'Время оплаты истекло';
+                timer.classList.toggle('is-expired', remaining <= 0);
+            });
+            return hasTimers;
+        }
+
+        stopQrListCountdown();
+        if (updateQrListTimers()) {
+            qrListCountdownTimer = window.setInterval(updateQrListTimers, 1000);
+        }
 
         function selected() {
             return Array.from(page.querySelectorAll('[data-balance-select]:checked'));
@@ -210,6 +256,37 @@
             var paid = page.querySelector('[data-qr-paid]');
             paid.dataset.sessionId = button.dataset.qrSelect;
             paid.disabled = false;
+            var cancel = page.querySelector('[data-qr-cancel]');
+            cancel.dataset.sessionId = button.dataset.qrSelect;
+            cancel.disabled = false;
+            var timer = page.querySelector('[data-qr-timer]');
+            var expiresAt = Date.parse(button.dataset.qrExpiresAt || '');
+
+            stopQrCountdown();
+            if (!timer || Number.isNaN(expiresAt)) return;
+
+            function updateQrCountdown() {
+                var remaining = expiresAt - Date.now();
+                if (remaining <= 0) {
+                    timer.textContent = 'Время оплаты истекло. Сессия отменяется автоматически.';
+                    timer.classList.add('is-expired');
+                    timer.hidden = false;
+                    paid.disabled = true;
+                    cancel.disabled = true;
+                    stopQrCountdown();
+                    post(page.dataset.cancelUrl + '?sessionId=' + encodeURIComponent(button.dataset.qrSelect), new URLSearchParams())
+                        .then(function () { location.reload(); })
+                        .catch(function () { window.setTimeout(function () { location.reload(); }, 3000); });
+                    return;
+                }
+
+                timer.textContent = 'Осталось на оплату: ' + formatRemainingTime(remaining);
+                timer.classList.remove('is-expired');
+                timer.hidden = false;
+            }
+
+            updateQrCountdown();
+            qrCountdownTimer = window.setInterval(updateQrCountdown, 1000);
         }
         page.addEventListener('change', function (event) {
             if (event.target.matches('[data-balances-select-all]')) {
@@ -251,7 +328,7 @@
                 return;
             }
             var cancel = event.target.closest('[data-topup-cancel]');
-            if (cancel && window.confirm('Отменить сессию пополнения?')) {
+            if (cancel && window.confirm('Отменить сессию пополнения? Перед отменой проверим историю операций Avito.')) {
                 post(page.dataset.cancelUrl + '?sessionId=' + encodeURIComponent(cancel.dataset.topupCancel), new URLSearchParams())
                     .then(function () { location.reload(); }).catch(function (error) { alert(error.message); });
                 return;
@@ -261,6 +338,12 @@
             var qrPaid = event.target.closest('[data-qr-paid]');
             if (qrPaid && qrPaid.dataset.sessionId) {
                 post(page.dataset.markPaidUrl + '?sessionId=' + encodeURIComponent(qrPaid.dataset.sessionId), new URLSearchParams())
+                    .then(function () { location.reload(); }).catch(function (error) { alert(error.message); });
+                return;
+            }
+            var qrCancel = event.target.closest('[data-qr-cancel]');
+            if (qrCancel && qrCancel.dataset.sessionId && window.confirm('Отменить сессию пополнения? Перед отменой проверим историю операций Avito.')) {
+                post(page.dataset.cancelUrl + '?sessionId=' + encodeURIComponent(qrCancel.dataset.sessionId), new URLSearchParams())
                     .then(function () { location.reload(); }).catch(function (error) { alert(error.message); });
                 return;
             }
@@ -287,6 +370,23 @@
         return session[camel] || session[pascal] || '';
     }
 
+    function topUpWorkspaceSignature(sessions) {
+        return (sessions || [])
+            .filter(function (session) {
+                var status = sessionField(session, 'status', 'Status');
+                return status === 'requested'
+                    || status === 'started'
+                    || status === 'payment_claimed'
+                    || status === 'qr_ready';
+            })
+            .map(function (session) {
+                return String(sessionField(session, 'id', 'Id')).replace(/-/g, '').toLowerCase()
+                    + ':' + String(sessionField(session, 'status', 'Status')).toLowerCase();
+            })
+            .sort()
+            .join('|');
+    }
+
     function applyStatus(rowEl, session) {
         var badge = rowEl.querySelector('[data-balance-status] .balance-status');
         var detail = rowEl.querySelector('[data-balance-status-detail]');
@@ -310,9 +410,10 @@
         stopStatusPoll();
         var snapshotUrl = page.dataset.snapshotUrl;
         if (!snapshotUrl) return;
+        var workspace = page.querySelector('[data-topup-workspace]');
         var hasLive = Array.from(page.querySelectorAll('[data-session-status]')).some(function (row) {
             return isLiveStatus(row.dataset.sessionStatus);
-        });
+        }) || !!workspace;
         if (!hasLive) return;
 
         pollTimer = window.setInterval(function () {
@@ -326,6 +427,7 @@
                     var rows = data.rows || data.Rows;
                     if (!data || !Array.isArray(rows)) return;
                     var tab = page.dataset.balancesTab || 'low';
+                    var sessions = data.sessions || data.Sessions || [];
                     var byKey = {};
                     rows.forEach(function (row) {
                         byKey[rowKey(row.workerId || row.WorkerId, row.accountId || row.AccountId, row.subProfileId || row.SubProfileId)] = row;
@@ -353,6 +455,11 @@
                         }
                         applyStatus(rowEl, session);
                     });
+                    if (workspace
+                        && Array.isArray(sessions)
+                        && workspace.dataset.topupWorkspaceSignature !== topUpWorkspaceSignature(sessions)) {
+                        shouldReload = true;
+                    }
                     if (shouldReload) {
                         stopStatusPoll();
                         location.reload();
@@ -365,6 +472,8 @@
     initPage();
     document.addEventListener('orbita:content-updated', function () {
         stopStatusPoll();
+        stopQrCountdown();
+        stopQrListCountdown();
         initPage();
     });
 })();
