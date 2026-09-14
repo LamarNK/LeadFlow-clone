@@ -107,9 +107,16 @@ public sealed class BalancesService(
         var todayRange = TopUpSessionRules.GetMoscowDayRange(DateTime.UtcNow);
         var historySessions = sessions
             .Where(x => !TopUpSessionStatuses.IsOpenOnLowBalanceTab(x.Status))
+            .Where(x => Matches(x, query))
             .OrderByDescending(x => x.CompletedAtUtc ?? x.CreatedAtUtc)
             .ThenByDescending(x => x.CreatedAtUtc)
             .ToArray();
+        var requestedSessions = tab == "requested"
+            ? sessions
+                .Where(x => TopUpSessionStatuses.IsActive(x.Status))
+                .Where(x => Matches(x, query))
+                .ToArray()
+            : sessions;
         return new BalancesIndexViewModel
         {
             Header = PageHeaderBuilder.WithOfficeScope(
@@ -119,14 +126,18 @@ public sealed class BalancesService(
             Rows = rows,
             Sessions = history
                 ? historySessions.Skip((page - 1) * pageSize).Take(pageSize).ToArray()
-                : sessions,
+                : requestedSessions,
             Workers = workerOptions,
             ExcludedWorkerIds = excludedIds,
             Pagination = new PaginationViewModel
             {
                 Page = page,
                 PageSize = pageSize,
-                TotalItems = history ? historySessions.Length : filteredRows.Count
+                TotalItems = history
+                    ? historySessions.Length
+                    : tab == "requested"
+                        ? requestedSessions.Count
+                        : filteredRows.Count
             },
             TotalSubProfiles = allRows.Count,
             LowBalanceCount = allRows.Count(x => x.IsLowBalance && x.Session is null),
@@ -268,4 +279,9 @@ public sealed class BalancesService(
             _ => row.IsLowBalance
         };
     }
+
+    private static bool Matches(TopUpSessionDto session, string? query) =>
+        string.IsNullOrWhiteSpace(query)
+        || string.Join(' ', session.WorkerName, session.AccountName, session.SubProfileName)
+            .Contains(query.Trim(), StringComparison.OrdinalIgnoreCase);
 }
