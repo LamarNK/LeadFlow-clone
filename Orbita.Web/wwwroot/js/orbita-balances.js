@@ -111,6 +111,7 @@
     var pollTimer = null;
     var qrCountdownTimer = null;
     var qrListCountdownTimer = null;
+    var selectedQrStorageKey = 'orbita-balances-selected-qr';
 
     function statusLabel(status) {
         return ({
@@ -170,6 +171,20 @@
         var minutes = Math.floor(totalSeconds / 60);
         var seconds = totalSeconds % 60;
         return String(minutes).padStart(2, '0') + ':' + String(seconds).padStart(2, '0');
+    }
+
+    function getSelectedQrId() {
+        try {
+            return window.sessionStorage.getItem(selectedQrStorageKey) || '';
+        } catch (_) {
+            return '';
+        }
+    }
+
+    function saveSelectedQrId(sessionId) {
+        try {
+            window.sessionStorage.setItem(selectedQrStorageKey, sessionId);
+        } catch (_) { }
     }
 
     function token() {
@@ -245,6 +260,7 @@
         }
         function selectQr(button) {
             page.querySelectorAll('[data-qr-select]').forEach(function (item) { item.classList.toggle('is-active', item === button); });
+            saveSelectedQrId(button.dataset.qrSelect || '');
             var image = page.querySelector('[data-qr-image]');
             if (image) {
                 image.src = button.dataset.qrSrc || '';
@@ -354,7 +370,11 @@
             box.checked = !box.checked;
             updateBulk();
         });
-        var firstQr = page.querySelector('[data-qr-select]');
+        var selectedQrId = getSelectedQrId();
+        var selectedQr = Array.from(page.querySelectorAll('[data-qr-select]')).find(function (item) {
+            return item.dataset.qrSelect === selectedQrId;
+        });
+        var firstQr = selectedQr || page.querySelector('[data-qr-select]');
         if (firstQr) selectQr(firstQr);
         initWorkerFilter();
         updateBulk();

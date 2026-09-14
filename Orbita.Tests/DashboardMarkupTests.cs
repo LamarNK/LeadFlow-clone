@@ -98,6 +98,8 @@ public sealed class DashboardMarkupTests
         Assert.Contains("Сессия отменяется автоматически.", js);
         Assert.Contains("function topUpWorkspaceSignature", js);
         Assert.Contains("function updateQrListTimers()", js);
+        Assert.Contains("orbita-balances-selected-qr", js);
+        Assert.Contains("var selectedQr = Array.from(page.querySelectorAll('[data-qr-select]')).find", js);
     }
 
     [Fact]
