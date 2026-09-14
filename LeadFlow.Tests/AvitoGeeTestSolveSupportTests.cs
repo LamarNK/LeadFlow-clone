@@ -334,6 +334,34 @@ public sealed class AvitoGeeTestSolveSupportTests
     }
 
     [Fact]
+    public void LoginClickCaptcha_CapturesIsolatedSourceAssetsInsteadOfAnimatedGeeTestNodes()
+    {
+        var source = File.ReadAllText(
+            Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "LeadFlow.Core", "Services", "Captcha", "AvitoGeeTestSolver.cs"));
+
+        Assert.Contains("BuildPrepareLoginClickCaptchaCaptureScript", source, StringComparison.Ordinal);
+        Assert.Contains("LoginClickCaptchaPreparedImageSelector", source, StringComparison.Ordinal);
+        Assert.Contains("LoginClickCaptchaPreparedHintSelector", source, StringComparison.Ordinal);
+        Assert.Contains("mainImage.naturalWidth", source, StringComparison.Ordinal);
+        Assert.Contains("hintImages.length", source, StringComparison.Ordinal);
+        Assert.Contains("requiredClicks", source, StringComparison.Ordinal);
+        Assert.Contains("maxWidth: '400px'", source, StringComparison.Ordinal);
+        Assert.Contains("maxHeight: '150px'", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("var imageBody = await image.ScreenshotBase64Async()", source, StringComparison.Ordinal);
+        Assert.DoesNotContain("var hintImageBody = await hint.ScreenshotBase64Async()", source, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildReadLoginClickCaptchaStateScript_FingerprintsAllOrderedHintImages()
+    {
+        var script = AvitoGeeTestSolveSupport.BuildReadLoginClickCaptchaStateScript();
+
+        Assert.Contains("querySelectorAll", script, StringComparison.Ordinal);
+        Assert.Contains("hintParts.join('|')", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("const hint = root.querySelector", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void IsLoginGeeTestOverlay_FirewallWidget_False()
     {
         const string html = """

@@ -450,8 +450,12 @@ public static class AvitoGeeTestSolveSupport
             try { background = window.getComputedStyle(el).backgroundImage || ''; } catch {}
             return `${el.style && el.style.backgroundImage || ''}|${background}`;
           });
-          const hint = root.querySelector('.geetest_ques_tips img, [class*="geetest_ques_tips"] img');
-          const fingerprint = `${imageParts.join('||')}::${hint && hint.src || ''}`;
+          const hintParts = Array.from(root.querySelectorAll(
+              '.geetest_ques_tips img, [class*="geetest_ques_tips"] img'))
+            .filter(isVisible)
+            .map((image) => image.currentSrc || image.src || image.getAttribute('src') || '')
+            .filter(Boolean);
+          const fingerprint = `${imageParts.join('||')}::${hintParts.join('|')}`;
           return JSON.stringify({ overlayVisible: true, explicitAccepted, explicitRejected, fingerprint });
         })()
         """;

@@ -32,6 +32,7 @@ public interface IRuCaptchaClient
         string imageBody,
         string hintImageBody,
         string? hintText,
+        int requiredClicks,
         string language,
         CancellationToken cancellationToken = default);
 

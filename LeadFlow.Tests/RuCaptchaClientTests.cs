@@ -53,6 +53,8 @@ public sealed class RuCaptchaClientTests
                 Assert.Contains("body=aW1hZ2U%3D", body, StringComparison.Ordinal);
                 Assert.Contains("imginstructions=aGludA%3D%3D", body, StringComparison.Ordinal);
                 Assert.Contains("textinstructions=Click+the+symbols+in+order", body, StringComparison.Ordinal);
+                Assert.Contains("min_clicks=2", body, StringComparison.Ordinal);
+                Assert.Contains("max_clicks=2", body, StringComparison.Ordinal);
                 Assert.Contains("lang=ru", body, StringComparison.Ordinal);
                 return Task.FromResult(StubHttpMessageHandler.Ok("OK|81"));
             }
@@ -70,6 +72,7 @@ public sealed class RuCaptchaClientTests
             "data:image/png;base64,aW1hZ2U=",
             "data:image/png;base64,aGludA==",
             "Click the symbols in order",
+            2,
             "ru");
 
         Assert.Collection(

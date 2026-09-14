@@ -139,6 +139,7 @@ public sealed class RuCaptchaClient(HttpClient http) : IRuCaptchaClient
         string imageBody,
         string hintImageBody,
         string? hintText,
+        int requiredClicks,
         string language,
         CancellationToken cancellationToken = default)
     {
@@ -161,13 +162,17 @@ public sealed class RuCaptchaClient(HttpClient http) : IRuCaptchaClient
             ? "Нажмите на элементы на изображении в указанном порядке."
             : hintText.Trim());
         captcha.SetLang(string.IsNullOrWhiteSpace(language) ? "ru" : language.Trim());
+        if (requiredClicks is < 1 or > 9)
+        {
+            throw new RuCaptchaException("Некорректное количество обязательных кликов ClickCaptcha Avito.");
+        }
 
         var solver = new TwoCaptchaClient(apiKey.Trim())
         {
             DefaultTimeout = Math.Max(1, (int)Math.Ceiling(SolveTimeout.TotalSeconds)),
             PollingInterval = Math.Max(1, (int)Math.Ceiling(PollInterval.TotalSeconds))
         };
-        solver.SetApiClient(new RuCaptchaV1ApiClient(http));
+        solver.SetApiClient(new RuCaptchaV1ApiClient(http, requiredClicks));
 
         try
         {
@@ -450,12 +455,18 @@ public sealed class RuCaptchaClient(HttpClient http) : IRuCaptchaClient
         return credentials + proxy.Address + ":" + proxy.Port;
     }
 
-    private sealed class RuCaptchaV1ApiClient(HttpClient client) : TwoCaptchaApiClient
+    private sealed class RuCaptchaV1ApiClient(HttpClient client, int? requiredClicks = null) : TwoCaptchaApiClient
     {
         public override async Task<string> In(
             Dictionary<string, string> parameters,
             Dictionary<string, FileInfo> files)
         {
+            if (requiredClicks is > 0 && parameters.ContainsKey("coordinatescaptcha"))
+            {
+                parameters["min_clicks"] = requiredClicks.Value.ToString();
+                parameters["max_clicks"] = requiredClicks.Value.ToString();
+            }
+
             using var content = new FormUrlEncodedContent(parameters);
             using var response = await client.PostAsync("https://rucaptcha.com/in.php", content).ConfigureAwait(false);
             var body = await response.Content.ReadAsStringAsync().ConfigureAwait(false);

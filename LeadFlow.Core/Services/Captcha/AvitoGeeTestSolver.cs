@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using System.Text.Json;
 using LeadFlow.Core.Logging.Audit;
 using LeadFlow.Core.Services.Avito;
 using LeadFlow.Core.Services.Worker;
@@ -19,6 +20,9 @@ public sealed class AvitoGeeTestSolver(
     private const int LoginClickCaptchaOutcomePollMs = 500;
     private const string LoginClickCaptchaImageSelector = ".geetest_click .geetest_bg, [class*='geetest_click'] [class*='geetest_bg']";
     private const string LoginNineGridCaptchaImageSelector = ".geetest_nine, [class*='geetest_nine']";
+    private const string LoginClickCaptchaPreparedHostId = "leadflow-geetest-capture";
+    private const string LoginClickCaptchaPreparedImageSelector = "#leadflow-geetest-capture-image";
+    private const string LoginClickCaptchaPreparedHintSelector = "#leadflow-geetest-capture-hint";
     private static readonly SemaphoreSlim Gate = new(
         AvitoGeeTestSolveSupport.MaxConcurrentGeeTestSolves,
         AvitoGeeTestSolveSupport.MaxConcurrentGeeTestSolves);
@@ -363,6 +367,7 @@ public sealed class AvitoGeeTestSolver(
                         capture.ImageBody,
                         capture.HintImageBody,
                         capture.HintText,
+                        capture.RequiredClicks,
                         "ru",
                         cancellationToken)
                     .ConfigureAwait(false);
@@ -548,25 +553,33 @@ public sealed class AvitoGeeTestSolver(
         {
             cancellationToken.ThrowIfCancellationRequested();
             var stateBeforeCapture = await ReadLoginClickCaptchaStateAsync(page, cancellationToken).ConfigureAwait(false);
-            var image = await FindVisibleElementAsync(page, LoginClickCaptchaImageSelector, cancellationToken).ConfigureAwait(false);
-            var isNineGrid = image is null;
-            image ??= await FindVisibleElementAsync(page, LoginNineGridCaptchaImageSelector, cancellationToken).ConfigureAwait(false);
-            var hint = await FindVisibleElementAsync(
-                    page,
-                    ".geetest_ques_tips, [class*='geetest_ques_tips']",
-                    cancellationToken)
+            var preparedRaw = await page
+                .EvaluateExpressionAsync<string>(BuildPrepareLoginClickCaptchaCaptureScript())
                 .ConfigureAwait(false);
-            if (image is null || hint is null)
+            var prepared = ParsePreparedLoginClickCaptchaCapture(preparedRaw);
+            if (prepared is null)
             {
                 return null;
             }
 
-            var imageBody = await image.ScreenshotBase64Async().ConfigureAwait(false);
-            var hintImageBody = await hint.ScreenshotBase64Async().ConfigureAwait(false);
-            var (width, height) = ReadPngDimensions(imageBody);
-            var hintText = await page.EvaluateExpressionAsync<string>(
-                    "(() => document.querySelector('.geetest_text_tips, [class*=\"geetest_text_tips\"]')?.textContent || '')()")
+            var preparedImage = await FindVisibleElementAsync(
+                    page,
+                    LoginClickCaptchaPreparedImageSelector,
+                    cancellationToken)
                 .ConfigureAwait(false);
+            var preparedHint = await FindVisibleElementAsync(
+                    page,
+                    LoginClickCaptchaPreparedHintSelector,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (preparedImage is null || preparedHint is null)
+            {
+                return null;
+            }
+
+            var imageBody = await preparedImage.ScreenshotBase64Async().ConfigureAwait(false);
+            var hintImageBody = await preparedHint.ScreenshotBase64Async().ConfigureAwait(false);
+            var (width, height) = ReadPngDimensions(imageBody);
             var state = await ReadLoginClickCaptchaStateAsync(page, cancellationToken).ConfigureAwait(false);
             if (stateBeforeCapture.Readable
                 && state.Readable
@@ -578,7 +591,15 @@ public sealed class AvitoGeeTestSolver(
             }
 
             return width > 0 && height > 0 && !string.IsNullOrWhiteSpace(imageBody) && !string.IsNullOrWhiteSpace(hintImageBody)
-                ? new LoginClickCaptchaCapture(imageBody, hintImageBody, hintText, width, height, isNineGrid, state.Fingerprint)
+                ? new LoginClickCaptchaCapture(
+                    imageBody,
+                    hintImageBody,
+                    prepared.HintText,
+                    width,
+                    height,
+                    prepared.IsNineGrid,
+                    prepared.RequiredClicks,
+                    state.Fingerprint)
                 : null;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -588,6 +609,235 @@ public sealed class AvitoGeeTestSolver(
                 DeskLinkAuditLogLevel.Warning,
                 properties: new Dictionary<string, object?> { ["step"] = "captcha_login_click_capture_failed" });
             return null;
+        }
+        finally
+        {
+            await RemovePreparedLoginClickCaptchaCaptureAsync(page).ConfigureAwait(false);
+        }
+    }
+
+    private static string BuildPrepareLoginClickCaptchaCaptureScript() =>
+        $$"""
+        (async () => {
+          const hostId = '{{LoginClickCaptchaPreparedHostId}}';
+          const imageId = '{{LoginClickCaptchaPreparedImageSelector[1..]}}';
+          const hintId = '{{LoginClickCaptchaPreparedHintSelector[1..]}}';
+          document.getElementById(hostId)?.remove();
+
+          const isVisible = (el) => {
+            if (!el) return false;
+            for (let node = el; node && node.nodeType === Node.ELEMENT_NODE; node = node.parentElement) {
+              const style = window.getComputedStyle(node);
+              if (style.display === 'none' || style.visibility === 'hidden' || Number(style.opacity) === 0) return false;
+            }
+            const rect = el.getBoundingClientRect();
+            return rect.width > 0 && rect.height > 0;
+          };
+          const readBackgroundUrl = (el) => {
+            if (!el) return '';
+            let value = '';
+            try { value = window.getComputedStyle(el).backgroundImage || el.style.backgroundImage || ''; } catch {}
+            const match = /^url\((['"]?)(.*?)\1\)$/.exec(String(value).trim());
+            return match ? match[2] : '';
+          };
+          const loadImage = (source) => new Promise((resolve, reject) => {
+            const image = document.createElement('img');
+            image.decoding = 'sync';
+            image.draggable = false;
+            image.onload = () => resolve(image);
+            image.onerror = () => reject(new Error(`image-load-failed:${source}`));
+            image.src = source;
+          });
+
+          const exactRoots = Array.from(document.querySelectorAll('.geetest_box'));
+          const roots = exactRoots.length > 0
+            ? exactRoots
+            : Array.from(document.querySelectorAll('[class*="geetest_box"]'));
+          const root = roots.find((candidate) => isVisible(candidate)
+            && candidate.querySelector('.geetest_ques_tips img, [class*="geetest_ques_tips"] img'));
+          if (!root) return JSON.stringify({ ok: false, error: 'root-not-found' });
+
+          const clickImage = Array.from(root.querySelectorAll(
+              '.geetest_click .geetest_bg, [class*="geetest_click"] [class*="geetest_bg"]'))
+            .find(isVisible);
+          const nineGrid = Array.from(root.querySelectorAll('.geetest_nine, [class*="geetest_nine"]'))
+            .find(isVisible);
+          const isNineGrid = !clickImage && !!nineGrid;
+          const sourceNode = clickImage
+            || (nineGrid && Array.from(nineGrid.querySelectorAll(
+                '.geetest_item_img, [class*="geetest_item_img"]')).find(isVisible));
+          const imageUrl = readBackgroundUrl(sourceNode);
+          const hintUrls = Array.from(root.querySelectorAll(
+              '.geetest_ques_tips img, [class*="geetest_ques_tips"] img'))
+            .filter(isVisible)
+            .map((image) => image.currentSrc || image.src || image.getAttribute('src') || '')
+            .filter(Boolean);
+          if (!imageUrl || hintUrls.length === 0) {
+            return JSON.stringify({ ok: false, error: 'source-assets-not-found' });
+          }
+
+          const host = document.createElement('div');
+          host.id = hostId;
+          Object.assign(host.style, {
+            position: 'fixed',
+            zIndex: '2147483647',
+            left: '0',
+            top: '0',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'flex-start',
+            gap: '8px',
+            padding: '0',
+            margin: '0',
+            border: '0',
+            background: '#fff',
+            pointerEvents: 'none',
+            transform: 'none',
+            animation: 'none',
+            transition: 'none'
+          });
+          document.documentElement.appendChild(host);
+
+          try {
+            const mainImage = await loadImage(imageUrl);
+            mainImage.id = imageId;
+            Object.assign(mainImage.style, {
+              display: 'block',
+              width: `${mainImage.naturalWidth}px`,
+              height: `${mainImage.naturalHeight}px`,
+              maxWidth: 'none',
+              maxHeight: 'none',
+              padding: '0',
+              margin: '0',
+              border: '0',
+              borderRadius: '0',
+              objectFit: 'fill',
+              transform: 'none',
+              animation: 'none',
+              transition: 'none'
+            });
+            host.appendChild(mainImage);
+
+            const hint = document.createElement('div');
+            hint.id = hintId;
+            Object.assign(hint.style, {
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'flex-start',
+              gap: '8px',
+              width: 'fit-content',
+              height: 'fit-content',
+              maxWidth: '400px',
+              maxHeight: '150px',
+              padding: '0',
+              margin: '0',
+              border: '0',
+              background: '#fff',
+              overflow: 'hidden',
+              transform: 'none',
+              animation: 'none',
+              transition: 'none'
+            });
+            host.appendChild(hint);
+
+            const hintImages = [];
+            for (const source of hintUrls) {
+              const image = await loadImage(source);
+              hintImages.push(image);
+            }
+            const gapWidth = Math.max(0, hintImages.length - 1) * 8;
+            const naturalWidth = hintImages.reduce((sum, image) => sum + image.naturalWidth, 0);
+            const naturalHeight = Math.max(...hintImages.map((image) => image.naturalHeight));
+            const scale = Math.min(
+              1,
+              naturalWidth > 0 ? (400 - gapWidth) / naturalWidth : 1,
+              naturalHeight > 0 ? 150 / naturalHeight : 1);
+            for (const image of hintImages) {
+              Object.assign(image.style, {
+                display: 'block',
+                width: `${Math.max(1, Math.round(image.naturalWidth * scale))}px`,
+                height: `${Math.max(1, Math.round(image.naturalHeight * scale))}px`,
+                maxWidth: 'none',
+                maxHeight: 'none',
+                padding: '0',
+                margin: '0',
+                border: '0',
+                borderRadius: '0',
+                objectFit: 'contain',
+                transform: 'none',
+                animation: 'none',
+                transition: 'none'
+              });
+              hint.appendChild(image);
+            }
+
+            const hintText = String(
+              root.querySelector('.geetest_text_tips, [class*="geetest_text_tips"]')?.textContent || '').trim();
+            const requestedGridClicks = Number((hintText.match(/\b(\d+)\b/) || [])[1]);
+            const requiredClicks = isNineGrid
+              ? (Number.isInteger(requestedGridClicks) && requestedGridClicks > 0
+                  ? requestedGridClicks
+                  : hintUrls.length)
+              : hintUrls.length;
+            return JSON.stringify({
+              ok: true,
+              isNineGrid,
+              hintText,
+              requiredClicks
+            });
+          } catch (error) {
+            host.remove();
+            return JSON.stringify({
+              ok: false,
+              error: String(error && error.message ? error.message : error)
+            });
+          }
+        })()
+        """;
+
+    private static PreparedLoginClickCaptchaCapture? ParsePreparedLoginClickCaptchaCapture(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var document = JsonDocument.Parse(raw);
+            var root = document.RootElement;
+            if (!root.TryGetProperty("ok", out var ok) || ok.ValueKind != JsonValueKind.True)
+            {
+                return null;
+            }
+
+            return new PreparedLoginClickCaptchaCapture(
+                root.TryGetProperty("isNineGrid", out var isNineGrid)
+                && isNineGrid.ValueKind == JsonValueKind.True,
+                root.TryGetProperty("hintText", out var hintText) ? hintText.GetString() : null,
+                root.TryGetProperty("requiredClicks", out var requiredClicks)
+                && requiredClicks.TryGetInt32(out var parsedClicks)
+                    ? parsedClicks
+                    : 0);
+        }
+        catch (JsonException)
+        {
+            return null;
+        }
+    }
+
+    private static async Task RemovePreparedLoginClickCaptchaCaptureAsync(IPage page)
+    {
+        try
+        {
+            await page
+                .EvaluateExpressionAsync(
+                    $"document.getElementById('{LoginClickCaptchaPreparedHostId}')?.remove()")
+                .ConfigureAwait(false);
+        }
+        catch
+        {
+            // Страница могла закрыться или перейти дальше во время очистки.
         }
     }
 
@@ -756,7 +1006,13 @@ public sealed class AvitoGeeTestSolver(
         decimal ImageWidth,
         decimal ImageHeight,
         bool IsNineGrid,
+        int RequiredClicks,
         string? Fingerprint);
+
+    private sealed record PreparedLoginClickCaptchaCapture(
+        bool IsNineGrid,
+        string? HintText,
+        int RequiredClicks);
 
     private enum LoginClickCaptchaApplyResult
     {
