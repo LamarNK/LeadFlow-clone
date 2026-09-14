@@ -869,7 +869,7 @@ public sealed class TopUpSessionServiceTests
     }
 
     [Fact]
-    public async Task CreateAsync_UnresolvedHistoryBarrierExpiresAfterOneDay()
+    public async Task CreateAsync_HistoryConfirmedWithoutBalance_AllowsRetryAfterThreeHours()
     {
         await using var db = CreateDb();
         var officeId = Guid.NewGuid();
@@ -899,12 +899,12 @@ public sealed class TopUpSessionServiceTests
                     [new TopUpHistoryOperationDto(session.RequestedAmount, Now.AddMinutes(2).UtcDateTime)])))
             .ConfirmedCount);
 
-        var afterTtl = Now.Add(TopUpSessionRules.BalanceConfirmationTtl).AddMinutes(1);
+        var afterCooldown = Now.Add(TopUpSessionRules.RepeatTopUpCooldown).AddMinutes(1);
         var worker = await db.Workers.SingleAsync(x => x.Id == workerId);
-        worker.LastSeenAtUtc = afterTtl.UtcDateTime;
+        worker.LastSeenAtUtc = afterCooldown.UtcDateTime;
         await db.SaveChangesAsync();
 
-        var result = await CreateService(db, afterTtl)
+        var result = await CreateService(db, afterCooldown)
             .CreateAsync(workerId, accountId, principal, subProfileId: "standard");
 
         Assert.NotNull(result.Session);

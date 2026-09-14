@@ -195,25 +195,6 @@ public sealed class TopUpSessionService(
         }
 
         var currentBalance = subProfile?.Balance ?? lockedAccount.TotalBalance;
-        var unresolvedHistoryCutoff = now - TopUpSessionRules.BalanceConfirmationTtl;
-        var unresolvedHistoryConfirmations = await db.TopUpSessions
-            .AsNoTracking()
-            .Where(x =>
-                x.AccountId == accountId
-                && x.SubProfileId == (subProfileId ?? string.Empty)
-                && x.Status == TopUpSessionStatuses.Completed
-                && x.HistoryConfirmedAtUtc != null
-                && x.HistoryConfirmedAtUtc >= unresolvedHistoryCutoff
-                && x.BalanceConfirmedAtUtc == null)
-            .Select(x => new { x.CurrentBalance, x.RequestedAmount, x.TargetBalance })
-            .ToListAsync(ct)
-            .ConfigureAwait(false);
-        if (unresolvedHistoryConfirmations.Count > 0)
-        {
-            var confirmedFloor = unresolvedHistoryConfirmations.Max(x =>
-                Math.Min(x.CurrentBalance + x.RequestedAmount, x.TargetBalance));
-            currentBalance = Math.Max(currentBalance, confirmedFloor);
-        }
 
         if (!TopUpSessionRules.IsEligible(currentBalance))
         {
