@@ -415,6 +415,12 @@ public sealed class SettingsService(
             ? Task.FromResult<(bool, string?)>((true, null))
             : api.LockPanelUserAsync(userId, ct);
 
+    public Task<(bool Success, string? Error)> UpdateUserCardDeletionAsync(
+        string userId, bool enabled, CancellationToken ct = default) =>
+        previewOptions.Value.Enabled
+            ? Task.FromResult<(bool, string?)>((true, null))
+            : api.UpdatePanelUserCardDeletionAsync(userId, enabled, ct);
+
     public Task<(bool Success, string? Error)> UnlockUserAsync(string userId, CancellationToken ct = default) =>
         previewOptions.Value.Enabled
             ? Task.FromResult<(bool, string?)>((true, null))

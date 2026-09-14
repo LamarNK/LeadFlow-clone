@@ -207,6 +207,21 @@ public static class AdminEndpoints
                 : Results.BadRequest(new { error });
         });
 
+        admin.MapPut("/users/{id}/card-deletion", async (
+            string id,
+            UpdatePanelUserCardDeletionRequest request,
+            PanelUserService panelUsers,
+            ClaimsPrincipal principal,
+            HttpContext http,
+            CancellationToken ct) =>
+        {
+            var (user, error) = await panelUsers.SetCardDeletionPermissionAsync(
+                id, request.CanDeleteCrmCards, GetActor(principal, http), ct);
+            if (error is null) return Results.Ok(user);
+            return error.Contains("не найден", StringComparison.OrdinalIgnoreCase)
+                ? Results.NotFound(new { error }) : Results.BadRequest(new { error });
+        }).RequireAuthorization(policy => policy.RequireRole(PanelRoles.Admin));
+
         admin.MapPost("/users/{id}/lock", async (
             string id,
             PanelUserService panelUsers,

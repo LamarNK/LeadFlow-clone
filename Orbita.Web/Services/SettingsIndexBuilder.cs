@@ -409,6 +409,7 @@ internal static class SettingsIndexBuilder
             IsCurrentUser = string.Equals(user.Id, currentUserId, StringComparison.Ordinal),
             IsLocked = user.IsLocked,
             HasPermissionOverride = user.PermissionOverride is not null,
+            CanDeleteCrmCards = user.CanDeleteCrmCards,
             LastSeenAtUtc = user.LastSeenAtUtc,
             IsOnline = user.IsOnline,
             EffectivePermissions = user.PermissionOverride ?? profilePermissions,

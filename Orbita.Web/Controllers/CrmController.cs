@@ -471,11 +471,7 @@ public sealed class CrmController(
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> DeleteCard(Guid id, string? stage, CancellationToken ct = default)
     {
-        if (!User.IsInRole(PanelRoles.Admin))
-        {
-            return Forbid();
-        }
-
+        // API checks the current per-user grant and card/office scope on every request.
         var (success, error) = await api.DeleteCrmCardAsync(id, ct);
         if (!success)
         {

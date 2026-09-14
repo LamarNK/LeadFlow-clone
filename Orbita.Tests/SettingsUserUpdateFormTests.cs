@@ -1,7 +1,13 @@
 using System.Net;
+using System.Security.Claims;
 using System.Text.RegularExpressions;
+using Microsoft.AspNetCore.Authentication;
+using Microsoft.AspNetCore.Authentication.Cookies;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
+using Orbita.Contracts;
 using Orbita.Web;
 
 namespace Orbita.Tests;
@@ -51,6 +57,10 @@ public sealed class SettingsUserUpdateFormTests : IClassFixture<WebApplicationFa
         Assert.Contains("method=\"post\"", updateFormTag.Value);
         Assert.DoesNotMatch("id=\"resetPasswordForm\"", usersHtml);
         Assert.Contains("data-settings-user-presence", usersHtml);
+        Assert.Contains("data-user-can-delete-crm-cards=\"false\"", usersHtml);
+        Assert.Contains("id=\"editUserCanDeleteCrmCards\"", usersHtml);
+        Assert.Contains("id=\"editUserCanDeleteCrmCardsFalse\"", usersHtml);
+        Assert.Contains("Разрешить удаление карточек CRM", usersHtml);
         Assert.Contains("Пик обычно", usersHtml);
 
         var updateToken = Regex.Match(
@@ -67,5 +77,53 @@ public sealed class SettingsUserUpdateFormTests : IClassFixture<WebApplicationFa
 
         Assert.Equal(HttpStatusCode.Redirect, update.StatusCode);
         Assert.Equal("/Settings?tab=users", update.Headers.Location?.OriginalString);
+    }
+
+    [Theory]
+    [InlineData(PanelRoles.Manager, "true")]
+    [InlineData(PanelRoles.SeniorManager, "true")]
+    [InlineData(PanelRoles.OfficeLead, "false")]
+    public async Task NonAdministrator_WithSettingsAccess_CannotSeeOrSubmitDeletionGrant(string role, string value)
+    {
+        using var app = factory.WithWebHostBuilder(builder => builder.UseEnvironment("Development"));
+        var authentication = app.Services
+            .GetRequiredService<IOptionsMonitor<CookieAuthenticationOptions>>()
+            .Get(CookieAuthenticationDefaults.AuthenticationScheme);
+        var ticket = authentication.TicketDataFormat.Protect(new AuthenticationTicket(
+            new ClaimsPrincipal(new ClaimsIdentity(
+            [
+                new Claim(ClaimTypes.NameIdentifier, "settings-only-user"),
+                new Claim(ClaimTypes.Name, "settings-only@example.test"),
+                new Claim(ClaimTypes.Role, role),
+                new Claim(PanelPermissions.ClaimType, PanelPermissions.Administration)
+            ], CookieAuthenticationDefaults.AuthenticationScheme)),
+            CookieAuthenticationDefaults.AuthenticationScheme));
+        using var client = app.CreateClient(new WebApplicationFactoryClientOptions
+        {
+            AllowAutoRedirect = false,
+            HandleCookies = true
+        });
+        client.DefaultRequestHeaders.Add("Cookie", $"{authentication.Cookie.Name}={ticket}");
+
+        var page = await client.GetAsync("/Settings?tab=users");
+        Assert.Equal(HttpStatusCode.OK, page.StatusCode);
+        var html = await page.Content.ReadAsStringAsync();
+        Assert.DoesNotContain("id=\"editUserCanDeleteCrmCards\"", html);
+        Assert.DoesNotContain("id=\"editUserCanDeleteCrmCardsFalse\"", html);
+        var token = Regex.Match(html,
+            "name=\"__RequestVerificationToken\" type=\"hidden\" value=\"(?<token>[^\"]+)\"")
+            .Groups["token"].Value;
+        Assert.NotEmpty(token);
+        using var form = new FormUrlEncodedContent(
+        [
+            new KeyValuePair<string, string>("__RequestVerificationToken", WebUtility.HtmlDecode(token)),
+            new KeyValuePair<string, string>("UserId", "target-user"),
+            new KeyValuePair<string, string>("FullName", "Тестовый сотрудник"),
+            new KeyValuePair<string, string>("CanDeleteCrmCards", value)
+        ]);
+
+        var update = await client.PostAsync("/Settings/UpdateUser", form);
+        Assert.Equal(HttpStatusCode.Redirect, update.StatusCode);
+        Assert.Equal("/Account/AccessDenied", update.Headers.Location?.AbsolutePath);
     }
 }

@@ -913,6 +913,18 @@ public sealed class OrbitaApiClient(
         return (false, await ReadApiErrorAsync(response, ct));
     }
 
+    public async Task<(bool Success, string? Error)> UpdatePanelUserCardDeletionAsync(
+        string userId, bool enabled, CancellationToken ct = default)
+    {
+        using var request = new HttpRequestMessage(HttpMethod.Put,
+            $"/api/v1/admin/users/{Uri.EscapeDataString(userId)}/card-deletion");
+        request.Content = JsonContent.Create(new UpdatePanelUserCardDeletionRequest(enabled));
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null) return (false, InvalidApiSessionError);
+        return response.IsSuccessStatusCode
+            ? (true, null) : (false, await ReadApiErrorAsync(response, ct));
+    }
+
     public async Task<(bool Success, string? Error)> UpdatePanelUserPermissionsAsync(
         string userId,
         bool useProfilePermissions,

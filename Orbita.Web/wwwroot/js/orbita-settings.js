@@ -232,6 +232,9 @@
             const passwordField = document.getElementById('editUserPasswordField');
             const useProfilePermissionsInput = document.getElementById('editUserUseProfilePermissions');
             const permissionInputs = document.querySelectorAll('[data-user-permission-checkbox]');
+            const cardDeletionField = document.getElementById('editUserCardDeletionField');
+            const cardDeletionInput = document.getElementById('editUserCanDeleteCrmCards');
+            const cardDeletionFalseInput = document.getElementById('editUserCanDeleteCrmCardsFalse');
 
             const updateOfficeState = () => {
                 if (!form || !roleInput || !officeInput || !officeField) return;
@@ -239,6 +242,9 @@
                 const isAdmin = roleInput.value === 'Admin';
                 officeField.hidden = isCurrentUser || isAdmin;
                 officeInput.disabled = isCurrentUser || isAdmin;
+                if (cardDeletionField) cardDeletionField.hidden = isCurrentUser || isAdmin;
+                if (cardDeletionInput) cardDeletionInput.disabled = isCurrentUser || isAdmin;
+                if (cardDeletionFalseInput) cardDeletionFalseInput.disabled = isCurrentUser || isAdmin;
 
                 if (useProfilePermissionsInput) {
                     useProfilePermissionsInput.disabled = isCurrentUser;
@@ -295,6 +301,7 @@
                         submitError.textContent = '';
                     }
                     useProfilePermissionsInput.checked = !hasPermissionOverride;
+                    if (cardDeletionInput) cardDeletionInput.checked = button.getAttribute('data-user-can-delete-crm-cards') === 'true';
                     permissionInputs.forEach((input) => {
                         input.checked = permissions.has(input.value);
                     });

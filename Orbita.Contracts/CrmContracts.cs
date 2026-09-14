@@ -709,7 +709,8 @@ public sealed record CrmCandidateDetailDto(
     IReadOnlyList<CrmTaskCommentDto>? TaskComments = null,
     CrmClientTimeDto? ClientTime = null,
     IReadOnlyList<CrmSuccessDocumentDto>? SuccessDocuments = null,
-    string? SuccessContractMissingReason = null);
+    string? SuccessContractMissingReason = null,
+    bool CanDelete = false);
 
 public sealed record CrmClientTimeDto(
     int UtcOffsetMinutes,

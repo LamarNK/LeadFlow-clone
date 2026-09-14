@@ -408,20 +408,16 @@ public static class CrmEndpoints
             HttpContext http,
             CancellationToken ct) =>
         {
-            if (!principal.IsInRole(PanelRoles.Admin))
-            {
-                return Results.Forbid();
-            }
-
             var userId = principal.FindFirstValue(ClaimTypes.NameIdentifier);
             if (string.IsNullOrWhiteSpace(userId))
             {
                 return Results.Forbid();
             }
 
-            var (ok, error, cardName) = await workspace.DeleteCardAsync(cardId, isAdministrator: true, ct);
+            var (ok, error, cardName) = await workspace.DeleteCardAsync(cardId, userId, ct);
             if (!ok)
             {
+                if (error == CrmCardDeletionPermission.DeniedMessage) return Results.Forbid();
                 return string.Equals(error, "Карточка не найдена.", StringComparison.Ordinal)
                     ? Results.NotFound()
                     : Results.BadRequest(new { error = error ?? "Не удалось удалить карточку." });

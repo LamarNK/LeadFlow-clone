@@ -421,6 +421,7 @@
                                                                         data-user-office-id="@(user.OfficeId?.ToString() ?? string.Empty)"
                                                                         data-user-permissions="@string.Join(',', user.EffectivePermissions)"
                                                                         data-user-has-permission-override="@user.HasPermissionOverride.ToString().ToLowerInvariant()"
+                                                                        data-user-can-delete-crm-cards="@user.CanDeleteCrmCards.ToString().ToLowerInvariant()"
                                                                         data-user-is-current="@user.IsCurrentUser.ToString().ToLowerInvariant()">
                                                                     Редактировать
                                                                 </button>
@@ -1135,6 +1136,17 @@
                         </div>
                         <span class="settings-user-dialog__hint">Снимите «Как у профиля», чтобы назначить персональные права.</span>
                     </div>
+                    @if (User.IsInRole(PanelRoles.Admin))
+                    {
+                        <div class="settings-field" id="editUserCardDeletionField">
+                            <label class="settings-profile-permission">
+                                <input type="checkbox" name="CanDeleteCrmCards" value="true" id="editUserCanDeleteCrmCards" />
+                                <span>Разрешить удаление карточек CRM</span>
+                            </label>
+                            <input type="hidden" name="CanDeleteCrmCards" value="false" id="editUserCanDeleteCrmCardsFalse" />
+                            <span class="settings-user-dialog__hint">Персональное право, независимо от «Как у профиля». Только доступные сотруднику карточки своего офиса. Удаление необратимо. Выдать и отозвать право может только администратор.</span>
+                        </div>
+                    }
                 </section>
                 <section class="settings-field settings-user-dialog__section settings-user-dialog__section--password" id="editUserPasswordField">
                     <header class="settings-user-dialog__section-head"><h3>Пароль</h3><p>Необязательное изменение.</p></header>

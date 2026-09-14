@@ -23,14 +23,15 @@ public sealed partial class CrmWorkspaceServiceTests
         await using var harness = await Harness.CreateAsync();
         SeedOffice(harness.Db, crmEnabled: true);
         var response = await SeedResponseAsync(harness.Db, "delete-denied");
-        var card = NewCard(response.Id);
+        var manager = await harness.CreateManagerAsync("delete-denied@test.local", 5, true);
+        var card = NewCard(response.Id, manager.Id);
         harness.Db.CrmCandidateCards.Add(card);
         await harness.Db.SaveChangesAsync();
 
-        var (ok, error, cardName) = await harness.Sut.DeleteCardAsync(card.Id, isAdministrator: false);
+        var (ok, error, cardName) = await harness.Sut.DeleteCardAsync(card.Id, manager.Id);
 
         Assert.False(ok);
-        Assert.Contains("только администратор", error, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(CrmCardDeletionPermission.DeniedMessage, error);
         Assert.Null(cardName);
         Assert.True(await harness.Db.CrmCandidateCards.AnyAsync(x => x.Id == card.Id));
         Assert.True(await harness.Db.CandidateResponses.AnyAsync(x => x.Id == response.Id));
@@ -42,6 +43,7 @@ public sealed partial class CrmWorkspaceServiceTests
         await using var harness = await Harness.CreateAsync();
         SeedOffice(harness.Db, crmEnabled: true);
         var response = await SeedResponseAsync(harness.Db, "delete-admin");
+        var admin = await harness.CreateDeskUserAsync("delete-admin@test.local", 5, false, PanelRoles.Admin);
         var card = NewCard(response.Id);
         var task = new CrmTaskEntity
         {
@@ -171,7 +173,7 @@ public sealed partial class CrmWorkspaceServiceTests
         harness.Db.CrmDeskAlerts.Add(alert);
         await harness.Db.SaveChangesAsync();
 
-        var (ok, error, cardName) = await harness.Sut.DeleteCardAsync(card.Id, isAdministrator: true);
+        var (ok, error, cardName) = await harness.Sut.DeleteCardAsync(card.Id, admin.Id);
 
         Assert.True(ok, error);
         Assert.Equal(response.FullName, cardName);
@@ -2915,7 +2917,7 @@ public sealed partial class CrmWorkspaceServiceTests
             await db.Database.EnsureCreatedAsync();
 
             var roleManager = sp.GetRequiredService<RoleManager<IdentityRole>>();
-            foreach (var role in PanelRoles.CrmDeskRoles)
+            foreach (var role in PanelRoles.All)
             {
                 if (!await roleManager.RoleExistsAsync(role))
                 {
@@ -2965,7 +2967,8 @@ public sealed partial class CrmWorkspaceServiceTests
             var user = new IdentityUser { UserName = email, Email = email, EmailConfirmed = true };
             var result = await Users.CreateAsync(user, "Password1!");
             Assert.True(result.Succeeded, string.Join("; ", result.Errors.Select(e => e.Description)));
-            await Users.AddToRoleAsync(user, role);
+            var roleResult = await Users.AddToRoleAsync(user, role);
+            Assert.True(roleResult.Succeeded, string.Join("; ", roleResult.Errors.Select(e => e.Description)));
             Db.PanelUserProfiles.Add(new PanelUserProfileEntity
             {
                 UserId = user.Id,

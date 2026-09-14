@@ -600,6 +600,39 @@ public sealed class PanelUserService(
         return (await MapAsync(user, ct), null);
     }
 
+    public async Task<(PanelUserDto? User, string? Error)> SetCardDeletionPermissionAsync(
+        string id, bool enabled, AuditActor actor, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(actor.UserId)
+            || !await CrmCardDeletionAccess.IsAdministratorAsync(db, actor.UserId, ct))
+            return (null, "Изменять право удаления карточек может только администратор.");
+
+        var user = await users.FindByIdAsync(id);
+        if (user is null) return (null, "Пользователь не найден.");
+
+        var grants = await db.UserClaims.Where(claim => claim.UserId == id
+            && claim.ClaimType == CrmCardDeletionPermission.ClaimType).ToListAsync(ct);
+        if ((!enabled && grants.Count == 0)
+            || (enabled && grants.Count == 1 && grants[0].ClaimValue == CrmCardDeletionPermission.GrantedValue))
+            return (await MapAsync(user, ct), null);
+
+        db.UserClaims.RemoveRange(grants);
+        if (enabled)
+            db.UserClaims.Add(new IdentityUserClaim<string>
+            {
+                UserId = id,
+                ClaimType = CrmCardDeletionPermission.ClaimType,
+                ClaimValue = CrmCardDeletionPermission.GrantedValue
+            });
+
+        // Audit service saves grant changes and their audit entry together.
+        // No relogin is needed: every card GET/DELETE reads this grant from the DB.
+        await audit.LogAsync(actor.UserId, actor.Email,
+            PanelAuditActions.UserCardDeletionPermissionUpdated, "user", id,
+            enabled ? "enabled" : "disabled", actor.IpAddress, ct);
+        return (await MapAsync(user, ct), null);
+    }
+
     public async Task<IReadOnlyList<string>?> GetPermissionOverrideAsync(IdentityUser user)
     {
         var claims = await users.GetClaimsAsync(user);
@@ -920,7 +953,8 @@ public sealed class PanelUserService(
             fullName,
             permissionOverride,
             lastSeenAtUtc,
-            PanelUserPresenceRules.IsOnline(lastSeenAtUtc, DateTime.UtcNow));
+            PanelUserPresenceRules.IsOnline(lastSeenAtUtc, DateTime.UtcNow),
+            CanDeleteCrmCards: await CrmCardDeletionAccess.HasExplicitGrantAsync(db, user.Id, ct));
     }
 
     private async Task<(Guid? OfficeId, string? OfficeName, string? FullName, DateTime? LastSeenAtUtc)> GetProfileInfoAsync(

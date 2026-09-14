@@ -119,6 +119,7 @@ public sealed class PanelUserRowViewModel
     public bool IsCurrentUser { get; init; }
     public bool IsLocked { get; init; }
     public bool HasPermissionOverride { get; init; }
+    public bool CanDeleteCrmCards { get; init; }
     public DateTime? LastSeenAtUtc { get; init; }
     public bool IsOnline { get; init; }
     public IReadOnlyList<string> EffectivePermissions { get; init; } = [];
@@ -366,6 +367,7 @@ public sealed class UpdatePanelUserFormModel
     public bool OriginalUseProfilePermissions { get; set; }
     public string? OriginalPermissionKeys { get; set; }
     public List<string> Permissions { get; set; } = [];
+    public bool? CanDeleteCrmCards { get; set; }
 }
 
 public sealed class UpdateAccessProfileFormModel

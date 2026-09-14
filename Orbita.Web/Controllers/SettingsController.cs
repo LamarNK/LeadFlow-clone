@@ -65,6 +65,9 @@ public sealed class SettingsController(
     [ValidateAntiForgeryToken]
     public async Task<IActionResult> UpdateUser(UpdatePanelUserFormModel model, CancellationToken ct = default)
     {
+        if (model.CanDeleteCrmCards.HasValue && !User.IsInRole(PanelRoles.Admin))
+            return Forbid();
+
         if (string.IsNullOrWhiteSpace(model.FullName))
         {
             TempData["SettingsError"] = "Укажите ФИО пользователя.";
@@ -121,6 +124,9 @@ public sealed class SettingsController(
         {
             changes.Add(() => settings.ResetUserPasswordAsync(model.UserId, model.Password, ct));
         }
+
+        if (canEditAccess && targetRole != PanelRoles.Admin && model.CanDeleteCrmCards is bool canDeleteCards)
+            changes.Add(() => settings.UpdateUserCardDeletionAsync(model.UserId, canDeleteCards, ct));
 
         foreach (var change in changes)
         {

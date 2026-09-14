@@ -104,6 +104,9 @@ public interface ISettingsService
 
     Task<(bool Success, string? Error)> LockUserAsync(string userId, CancellationToken ct = default);
 
+    Task<(bool Success, string? Error)> UpdateUserCardDeletionAsync(
+        string userId, bool enabled, CancellationToken ct = default);
+
     Task<(bool Success, string? Error)> UnlockUserAsync(string userId, CancellationToken ct = default);
 
     Task<(bool Success, string? Error)> RevokeUserSessionsAsync(string userId, CancellationToken ct = default);

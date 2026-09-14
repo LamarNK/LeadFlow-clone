@@ -995,7 +995,8 @@ public sealed class CrmWorkspaceService(
             }).ToList(),
             CrmClientTimeResolver.Resolve(card.Response.City, now),
             successReport,
-            card.SuccessContractMissingReason);
+            card.SuccessContractMissingReason,
+            CanDelete: await CrmCardDeletionAccess.CanDeleteAsync(db, card.OfficeId, card.ManagerUserId, userId, ct));
     }
 
     public async Task<ResponseAvatarFile?> GetCardAvatarAsync(
@@ -1032,20 +1033,20 @@ public sealed class CrmWorkspaceService(
 
     public async Task<(bool Ok, string? Error, string? CardName)> DeleteCardAsync(
         Guid cardId,
-        bool isAdministrator,
+        string actorUserId,
         CancellationToken ct = default)
     {
-        if (!isAdministrator)
-        {
-            return (false, "Удалить карточку может только администратор.", null);
-        }
-
         var card = await db.CrmCandidateCards
             .Include(x => x.Response)
             .FirstOrDefaultAsync(x => x.Id == cardId, ct);
         if (card is null)
         {
             return (false, "Карточка не найдена.", null);
+        }
+
+        if (!await CrmCardDeletionAccess.CanDeleteAsync(db, card.OfficeId, card.ManagerUserId, actorUserId, ct))
+        {
+            return (false, CrmCardDeletionPermission.DeniedMessage, null);
         }
 
         var tasks = await db.CrmTasks.Where(x => x.CardId == cardId).ToListAsync(ct);

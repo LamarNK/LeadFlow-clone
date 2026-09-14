@@ -340,7 +340,7 @@
                             <button class="settings-primary-btn" type="submit">Вернуть в работу</button>
                         </form>
                     }
-                    @if (User.IsInRole(PanelRoles.Admin))
+                    @if (Model.CanDelete)
                     {
                         <form asp-action="DeleteCard" method="post" class="crm-side-form" onsubmit="return confirm('Удалить карточку без возможности восстановления? Связанные задачи, комментарии и история также будут удалены.');">
                             <input type="hidden" name="id" value="@card.Id" />

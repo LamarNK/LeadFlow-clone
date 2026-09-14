@@ -22,7 +22,8 @@ public sealed record PanelUserDto(
     string? FullName = null,
     IReadOnlyList<string>? PermissionOverride = null,
     DateTime? LastSeenAtUtc = null,
-    bool IsOnline = false);
+    bool IsOnline = false,
+    bool CanDeleteCrmCards = false);
 
 public sealed record CreatePanelUserRequest(
     string Email,
@@ -38,6 +39,8 @@ public sealed record UpdatePanelUserFullNameRequest(string FullName);
 public sealed record ResetPanelUserPasswordRequest(string Password);
 
 public sealed record UpdatePanelUserRoleRequest(string Role);
+
+public sealed record UpdatePanelUserCardDeletionRequest(bool CanDeleteCrmCards);
 
 public sealed record UpdatePanelUserPermissionsRequest(
     bool UseProfilePermissions,
@@ -130,6 +133,7 @@ public static class PanelAuditActions
     public const string UserDeleted = "user.deleted";
     public const string UserRoleUpdated = "user.role_updated";
     public const string UserPermissionsUpdated = "user.permissions_updated";
+    public const string UserCardDeletionPermissionUpdated = "user.crm_card_deletion_updated";
     public const string UserFullNameUpdated = "user.full_name_updated";
     public const string UserPasswordReset = "user.password_reset";
     public const string UserPasswordChanged = "user.password_changed";
