@@ -966,6 +966,65 @@ public sealed class TopUpSessionServiceTests
     }
 
     [Fact]
+    public async Task GetOfficeAsync_WithoutHistory_PrioritizesActiveSessionsOverOldCompletedSessions()
+    {
+        await using var db = CreateDb();
+        var officeId = Guid.NewGuid();
+        var workerId = Guid.NewGuid();
+        var accountId = Guid.NewGuid();
+        SeedWorker(db, officeId, workerId, accountId, balance: 100m);
+
+        var completedAt = Now.UtcDateTime.AddMinutes(-1);
+        for (var i = 0; i < 201; i++)
+        {
+            db.TopUpSessions.Add(new TopUpSessionEntity
+            {
+                Id = Guid.NewGuid(),
+                WorkerId = workerId,
+                AccountId = Guid.NewGuid(),
+                AccountName = $"Completed {i}",
+                OfficeId = officeId,
+                OperatorUserId = "op1",
+                OperatorDisplayName = "Operator 1",
+                Status = TopUpSessionStatuses.Completed,
+                CurrentBalance = 100m,
+                TargetBalance = 400m,
+                RequestedAmount = 300m,
+                CreatedAtUtc = Now.UtcDateTime.AddMinutes(-201 + i),
+                CompletedAtUtc = completedAt,
+                ExpiresAtUtc = Now.UtcDateTime
+            });
+        }
+
+        var activeId = Guid.NewGuid();
+        db.TopUpSessions.Add(new TopUpSessionEntity
+        {
+            Id = activeId,
+            WorkerId = workerId,
+            AccountId = accountId,
+            AccountName = "Active account",
+            SubProfileId = "active",
+            SubProfileName = "Active",
+            OfficeId = officeId,
+            OperatorUserId = "op1",
+            OperatorDisplayName = "Operator 1",
+            Status = TopUpSessionStatuses.AwaitingBalance,
+            CurrentBalance = 100m,
+            TargetBalance = 400m,
+            RequestedAmount = 300m,
+            CreatedAtUtc = Now.UtcDateTime,
+            AwaitingBalanceAtUtc = Now.UtcDateTime,
+            ExpiresAtUtc = Now.UtcDateTime.AddHours(24)
+        });
+        await db.SaveChangesAsync();
+
+        var principal = TestPrincipalFactory.Operator("op1", "Operator 1", officeId);
+        var sessions = await CreateService(db).GetOfficeAsync(principal, history: false);
+
+        Assert.Contains(sessions, x => x.Id == activeId);
+    }
+
+    [Fact]
     public async Task GetOfficeAsync_History_ReturnsNewestFirst()
     {
         await using var db = CreateDb();

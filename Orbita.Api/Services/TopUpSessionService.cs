@@ -379,9 +379,18 @@ public sealed class TopUpSessionService(
                 || (x.Status == TopUpSessionStatuses.Completed && x.CompletedAtUtc >= completedCutoffUtc));
         }
 
+        // The non-history response feeds the low-balance page, where every open session
+        // is needed to hide its row and prevent a duplicate request. Prioritize open
+        // sessions before applying the safety limit so older completed history cannot
+        // push a live session out of the response.
         var sessions = await (history
                 ? query.OrderByDescending(x => x.CompletedAtUtc ?? x.CreatedAtUtc)
-                : query.OrderBy(x => x.CreatedAtUtc))
+                : query
+                    .OrderByDescending(x =>
+                        ActiveStatuses.Contains(x.Status)
+                        || x.Status == TopUpSessionStatuses.AwaitingBalance
+                        || x.Status == TopUpSessionStatuses.VerificationRequired)
+                    .ThenByDescending(x => x.CreatedAtUtc))
             .Take(history ? 500 : 200)
             .ToListAsync(ct)
             .ConfigureAwait(false);
