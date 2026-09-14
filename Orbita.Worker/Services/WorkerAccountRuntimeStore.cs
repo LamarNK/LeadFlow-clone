@@ -120,6 +120,7 @@ public sealed class WorkerAccountRuntimeStore
             LocalChromeExecutablePath = source.LocalChromeExecutablePath,
             AvitoLogin = source.AvitoLogin,
             AvitoPassword = source.AvitoPassword,
+            AvitoCredentialsError = source.AvitoCredentialsError,
             LocalTrafficMode = source.LocalTrafficMode,
             LocalBlockMedia = source.LocalBlockMedia,
             LocalBlockAnalytics = source.LocalBlockAnalytics,

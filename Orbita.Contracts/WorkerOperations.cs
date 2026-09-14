@@ -52,7 +52,16 @@ public sealed record WorkerAccountConfigDto(
     bool LocalBlockImages = false,
     bool LocalBlockFonts = false,
     bool LocalBlockPrefetch = false,
-    int LocalNavigationTimeoutSeconds = 60);
+    int LocalNavigationTimeoutSeconds = 60,
+    /// <summary>
+    /// Безопасный код ошибки credentials. Пароль и детали криптографического исключения сюда не попадают.
+    /// </summary>
+    string? AvitoCredentialsError = null);
+
+public static class WorkerAccountCredentialErrors
+{
+    public const string PasswordDecryptionFailed = "password_decryption_failed";
+}
 
 public sealed record UpdateWorkerSubProfileRequest(bool IsEnabledInPanel);
 

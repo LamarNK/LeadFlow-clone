@@ -721,6 +721,29 @@ public sealed class WorkerMonitoringService(
             return new AccountCycleOutcome(0, false, false, "неподдерживаемый runtime профиля");
         }
 
+        if (string.Equals(
+                account.AvitoCredentialsError,
+                WorkerAccountCredentialErrors.PasswordDecryptionFailed,
+                StringComparison.Ordinal))
+        {
+            const string credentialsError =
+                "Пароль Avito есть в БД, но API не смог расшифровать его текущим Data Protection key ring. " +
+                "Перенесите volume с ключами со старого сервера или сохраните пароль Avito заново.";
+            WorkerMonitoringLogger.AccountSkipped(account, credentialsError);
+            activityReporter.ReportSkipped(
+                account.Id,
+                account.DisplayName,
+                "Пропущен: ошибка расшифровки пароля Avito");
+            await repository.AddLogAsync(new ProcessingLogItem
+            {
+                AccountId = account.Id,
+                Level = "Error",
+                Message = "Не удалось расшифровать пароль Avito",
+                Details = credentialsError
+            }, cancellationToken).ConfigureAwait(false);
+            return new AccountCycleOutcome(0, false, false, credentialsError);
+        }
+
         var accountSw = Stopwatch.StartNew();
         var staleStateCleared = AccountIssueTracker.TryClearStaleBlockingState(account);
         var staleErrorCleared = AccountIssueTracker.TryClearStaleAccountErrorMessage(account);

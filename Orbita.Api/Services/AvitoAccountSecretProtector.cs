@@ -13,29 +13,48 @@ public sealed class AvitoAccountSecretProtector(IDataProtectionProvider provider
     public string Unprotect(string protectedValue) => _avito.Unprotect(protectedValue);
 
     public bool TryUnprotect(string? protectedValue, out string? plaintext) =>
-        TryUnprotect(_avito, protectedValue, out plaintext);
+        TryUnprotectDetailed(protectedValue, out plaintext) == SecretUnprotectStatus.Success;
+
+    public SecretUnprotectStatus TryUnprotectDetailed(string? protectedValue, out string? plaintext) =>
+        TryUnprotectDetailed(_avito, protectedValue, out plaintext);
 
     public string ProtectProxyPassword(string plaintext) => _proxy.Protect(plaintext);
 
     public bool TryUnprotectProxyPassword(string? protectedValue, out string? plaintext) =>
         TryUnprotect(_proxy, protectedValue, out plaintext);
 
-    private static bool TryUnprotect(IDataProtector protector, string? protectedValue, out string? plaintext)
+    private static bool TryUnprotect(IDataProtector protector, string? protectedValue, out string? plaintext) =>
+        TryUnprotectDetailed(protector, protectedValue, out plaintext) == SecretUnprotectStatus.Success;
+
+    private static SecretUnprotectStatus TryUnprotectDetailed(
+        IDataProtector protector,
+        string? protectedValue,
+        out string? plaintext)
     {
         plaintext = null;
         if (string.IsNullOrWhiteSpace(protectedValue))
         {
-            return false;
+            return SecretUnprotectStatus.Missing;
         }
 
         try
         {
             plaintext = protector.Unprotect(protectedValue);
-            return !string.IsNullOrEmpty(plaintext);
+            return string.IsNullOrEmpty(plaintext)
+                ? SecretUnprotectStatus.InvalidPlaintext
+                : SecretUnprotectStatus.Success;
         }
         catch
         {
-            return false;
+            return SecretUnprotectStatus.DecryptionFailed;
         }
     }
+}
+
+public enum SecretUnprotectStatus
+{
+    Success,
+    Missing,
+    InvalidPlaintext,
+    DecryptionFailed
 }

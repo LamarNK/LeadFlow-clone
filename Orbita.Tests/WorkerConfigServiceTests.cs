@@ -147,6 +147,33 @@ public sealed class WorkerConfigServiceTests
         Assert.NotNull(config);
         Assert.Equal("+79991234567", config!.Accounts[0].AvitoLogin);
         Assert.Equal("secret-pass", config.Accounts[0].AvitoPassword);
+        Assert.Null(config.Accounts[0].AvitoCredentialsError);
+    }
+
+    [Fact]
+    public async Task GetConfigForWorkerAsync_FlagsPasswordDecryptionFailure_WhenKeyRingDoesNotMatch()
+    {
+        await using var db = CreateDb();
+        SeedWorkerWithAccount(db);
+
+        var originalSecrets = CreateAvitoSecrets();
+        var account = await db.WorkerAccounts.SingleAsync();
+        account.AvitoLogin = "+79991234567";
+        account.AvitoPasswordProtected = originalSecrets.Protect("secret-pass");
+        await db.SaveChangesAsync();
+
+        var serviceWithDifferentKeyRing = CreateService(db, CreateAvitoSecrets());
+
+        var config = await serviceWithDifferentKeyRing.GetConfigForWorkerAsync(
+            WorkerId,
+            OfficeScope.ForOffice(OfficeId));
+
+        var workerAccount = Assert.Single(config!.Accounts);
+        Assert.Null(workerAccount.AvitoLogin);
+        Assert.Null(workerAccount.AvitoPassword);
+        Assert.Equal(
+            WorkerAccountCredentialErrors.PasswordDecryptionFailed,
+            workerAccount.AvitoCredentialsError);
     }
 
     [Fact]

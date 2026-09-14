@@ -13,6 +13,26 @@ namespace Orbita.Tests;
 public sealed class WorkerAccountRuntimeTests
 {
     [Fact]
+    public void Mapper_CopiesAvitoCredentialDecryptionFailure()
+    {
+        var dto = new WorkerAccountConfigDto(
+            Guid.NewGuid(),
+            "profile-1",
+            "acc-1",
+            true,
+            null,
+            null,
+            AvitoCredentialsError: WorkerAccountCredentialErrors.PasswordDecryptionFailed);
+        var config = new WorkerConfigDto(Guid.NewGuid(), 1, null, null, [dto]);
+
+        var account = WorkerAccountRuntimeMapper.ToAccount(dto, config, "http://fallback");
+
+        Assert.Equal(
+            WorkerAccountCredentialErrors.PasswordDecryptionFailed,
+            account.AvitoCredentialsError);
+    }
+
+    [Fact]
     public void Resolve_AdsPowerAccount_SelectsAdsPower()
     {
         var account = AdsPowerAccount();

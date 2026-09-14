@@ -54,6 +54,12 @@ public sealed partial class AvitoAccount : ObservableObject
     [ObservableProperty] private string? proxyRotationUrl;
     [ObservableProperty] private string browserLaunchArgs = string.Empty;
 
+    /// <summary>
+    /// Безопасный код ошибки credentials, полученный от Orbita API.
+    /// Не содержит пароль или текст криптографического исключения.
+    /// </summary>
+    public string? AvitoCredentialsError { get; set; }
+
     [ObservableProperty] private string? navigatorPlatform;
     [ObservableProperty] private bool doNotTrack;
     [ObservableProperty] private string? webGlVendor;

@@ -45,7 +45,10 @@ public static class WorkerAccountRuntimeMapper
             DraftsCount = dto.DraftsCount,
             SubProfilesJson = string.IsNullOrWhiteSpace(dto.SubProfilesJson) ? "[]" : dto.SubProfilesJson,
             AvitoLogin = string.IsNullOrWhiteSpace(dto.AvitoLogin) ? null : dto.AvitoLogin.Trim(),
-            AvitoPassword = string.IsNullOrEmpty(dto.AvitoPassword) ? null : dto.AvitoPassword
+            AvitoPassword = string.IsNullOrEmpty(dto.AvitoPassword) ? null : dto.AvitoPassword,
+            AvitoCredentialsError = string.IsNullOrWhiteSpace(dto.AvitoCredentialsError)
+                ? null
+                : dto.AvitoCredentialsError.Trim()
         };
 
         if (provider == AvitoProfileProvider.Local)

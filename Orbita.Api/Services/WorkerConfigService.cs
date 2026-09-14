@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using Orbita.Api.Data;
 using Orbita.Api.Helpers;
 using Orbita.Contracts;
+using Orbita.Logging.Audit;
 
 using static Orbita.Api.Helpers.SubProfilesDisabledIdsHelper;
 
@@ -1067,13 +1068,33 @@ public sealed class WorkerConfigService(
     {
         string? avitoLogin = null;
         string? avitoPassword = null;
-        if (includeCredentials
-            && !string.IsNullOrWhiteSpace(account.AvitoLogin)
-            && avitoSecrets.TryUnprotect(account.AvitoPasswordProtected, out var password)
-            && !string.IsNullOrEmpty(password))
+        string? avitoCredentialsError = null;
+        if (includeCredentials && !string.IsNullOrWhiteSpace(account.AvitoLogin))
         {
-            avitoLogin = account.AvitoLogin.Trim();
-            avitoPassword = password;
+            var unprotectStatus = avitoSecrets.TryUnprotectDetailed(
+                account.AvitoPasswordProtected,
+                out var password);
+            if (unprotectStatus == SecretUnprotectStatus.Success && !string.IsNullOrEmpty(password))
+            {
+                avitoLogin = account.AvitoLogin.Trim();
+                avitoPassword = password;
+            }
+            else if (!string.IsNullOrWhiteSpace(account.AvitoPasswordProtected))
+            {
+                avitoCredentialsError = WorkerAccountCredentialErrors.PasswordDecryptionFailed;
+                _ = GlobalLogger.Instance.LogAsync(
+                    "Worker config: пароль Avito есть в БД, но не расшифровывается текущим Data Protection key ring.",
+                    DeskLinkAuditLogLevel.Error,
+                    errorKey: "worker.avito_credentials.decryption_failed",
+                    memberName: nameof(ToAccountConfigDto),
+                    properties: new Dictionary<string, object?>
+                    {
+                        ["workerId"] = account.WorkerId,
+                        ["accountId"] = account.AccountId,
+                        ["accountName"] = account.DisplayName,
+                        ["secret.status"] = unprotectStatus.ToString()
+                    });
+            }
         }
 
         var isLocal = IsLocalAccount(account);
@@ -1132,7 +1153,8 @@ public sealed class WorkerConfigService(
             isLocal && traffic.BlockImages,
             isLocal && traffic.BlockFonts,
             isLocal && traffic.BlockPrefetch,
-            isLocal ? traffic.NavigationTimeoutSeconds : LocalChromeTrafficRules.DefaultTimeoutSeconds);
+            isLocal ? traffic.NavigationTimeoutSeconds : LocalChromeTrafficRules.DefaultTimeoutSeconds,
+            avitoCredentialsError);
     }
 
     private static bool TryNormalizeLocalChromeExecutablePath(
