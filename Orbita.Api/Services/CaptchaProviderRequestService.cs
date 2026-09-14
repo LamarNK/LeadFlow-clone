@@ -127,10 +127,12 @@ public sealed class CaptchaProviderRequestService(OrbitaDbContext db, OfficeScop
         x.MaxAttempts, x.ProviderStatus, x.TargetStatus, x.ProviderTaskId, x.ErrorCode,
         x.PageUrl, x.DiagnosticAttachmentId, x.SubmittedAtUtc, x.UpdatedAtUtc);
 
-    private static DateTime ToUtcBoundary(DateTime? value, int? offsetMinutes, DateTime fallback)
+    internal static DateTime ToUtcBoundary(DateTime? value, int? offsetMinutes, DateTime fallback)
     {
-        if (value is null) return fallback;
+        if (value is null) return DateTime.SpecifyKind(fallback, DateTimeKind.Utc);
         var local = DateTime.SpecifyKind(value.Value, DateTimeKind.Unspecified);
-        return local.AddMinutes(-(offsetMinutes ?? 0));
+        return DateTime.SpecifyKind(
+            local.AddMinutes(-(offsetMinutes ?? 0)),
+            DateTimeKind.Utc);
     }
 }
