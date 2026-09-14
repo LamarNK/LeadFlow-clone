@@ -1,7 +1,9 @@
+using System.Collections.Concurrent;
 using LeadFlow.Core.Logging.Audit;
 using LeadFlow.Core.Models;
 using LeadFlow.Core.Services.AdsPower;
 using LeadFlow.Core.Services.Avito;
+using LeadFlow.Core.Services.Captcha;
 using LeadFlow.Core.Services.LocalChrome;
 using Orbita.Contracts;
 
@@ -19,6 +21,8 @@ public sealed class WorkerAvitoAdsMonitor(
     IWorkerActivityReporter activityReporter,
     LocalChromeAccountLock localChromeLock)
 {
+    private readonly ConcurrentDictionary<Guid, DateTime> failureRetryNotBeforeUtc = new();
+
     private static TimeSpan ListCheckInterval =>
         TimeSpan.FromHours(MonitoringTiming.AvitoAdsListCheckIntervalHours);
 
@@ -45,10 +49,22 @@ public sealed class WorkerAvitoAdsMonitor(
                 continue;
             }
 
+            var now = DateTime.UtcNow;
+            if (failureRetryNotBeforeUtc.TryGetValue(account.Id, out var retryNotBeforeUtc))
+            {
+                if (IsFailureCooldownActive(retryNotBeforeUtc, now))
+                {
+                    continue;
+                }
+
+                failureRetryNotBeforeUtc.TryRemove(account.Id, out _);
+            }
+
             try
             {
                 if (await ProcessAccountAsync(workerId, account, cancellationToken).ConfigureAwait(false))
                 {
+                    failureRetryNotBeforeUtc.TryRemove(account.Id, out _);
                     processed++;
                 }
             }
@@ -58,8 +74,10 @@ public sealed class WorkerAvitoAdsMonitor(
             }
             catch (Exception ex)
             {
+                var retryAtUtc = DateTime.UtcNow.AddMinutes(MonitoringTiming.AvitoAdsFailureRetryMinutes);
+                failureRetryNotBeforeUtc[account.Id] = retryAtUtc;
                 _ = GlobalLogger.Instance.LogAsync(
-                    $"Ads monitor: account {account.DisplayName} failed: {ex.Message}",
+                    $"Ads monitor: account {account.DisplayName} failed; retry after {retryAtUtc:O}: {ex.Message}",
                     DeskLinkAuditLogLevel.Warning);
             }
         }
@@ -76,6 +94,9 @@ public sealed class WorkerAvitoAdsMonitor(
             .Where(account => account.IsEnabled && HasSupportedRuntime(account))
             .ToList();
     }
+
+    internal static bool IsFailureCooldownActive(DateTime retryNotBeforeUtc, DateTime utcNow) =>
+        retryNotBeforeUtc > utcNow;
 
     public static bool IsListDue(
         IReadOnlyList<WorkerAvitoAdListScheduleDto> schedules,
@@ -109,6 +130,16 @@ public sealed class WorkerAvitoAdsMonitor(
 
     private async Task<bool> ProcessAccountAsync(Guid workerId, AvitoAccount account, CancellationToken cancellationToken)
     {
+        using var captchaRequestContext = CaptchaProviderRequestContext.Use(
+            CreateCaptchaProviderRequestContext(workerId, account));
+        using var captchaTaskContext = AvitoCaptchaTaskContext.Use(
+            GeeTestV4TaskOptions.FromBrowserProfile(
+                account.AssignedUserAgent,
+                account.ProxyType,
+                account.ProxyAddress,
+                account.ProxyUsername,
+                account.ProxyPassword));
+
         var existing = (await catalog
             .GetAccountListingsAsync(workerId, account.Id, cancellationToken)
             .ConfigureAwait(false))
@@ -174,6 +205,8 @@ public sealed class WorkerAvitoAdsMonitor(
                     sub.Id,
                     sub.Name,
                     "Список объявлений");
+                using var subProfileCaptchaRequestContext = CaptchaProviderRequestContext.Use(
+                    CreateCaptchaProviderRequestContext(workerId, account, sub));
                 var switched = await sessionHolder.Session
                     .SwitchSubProfileAsync(sub.Id, cancellationToken)
                     .ConfigureAwait(false);
@@ -206,6 +239,24 @@ public sealed class WorkerAvitoAdsMonitor(
             activityReporter.ReportAccountFinished(account.Id);
         }
     }
+
+    internal static CaptchaProviderRequestContextValue CreateCaptchaProviderRequestContext(
+        Guid workerId,
+        AvitoAccount account,
+        AvitoSubProfile? subProfile = null) =>
+        new(
+            WorkerId: workerId,
+            AccountId: account.Id,
+            CycleRunId: null,
+            SubProfileRunId: null,
+            SubProfileId: subProfile?.Id,
+            SubProfileName: subProfile?.Name,
+            Stage: subProfile is null
+                ? CaptchaProviderRequestStages.Other
+                : CaptchaProviderRequestStages.SubProfileSwitch,
+            Reason: subProfile is null
+                ? CaptchaProviderRequestReasons.FirewallDetected
+                : CaptchaProviderRequestReasons.AfterSubProfileSwitch);
 
     private async Task ProcessSubProfileAsync(
         Guid workerId,

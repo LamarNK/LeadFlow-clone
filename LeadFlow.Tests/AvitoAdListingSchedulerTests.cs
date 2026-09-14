@@ -1,5 +1,6 @@
 using LeadFlow.Core.Models;
 using LeadFlow.Core.Services.Avito;
+using LeadFlow.Core.Services.Captcha;
 using LeadFlow.Core.Services.Worker;
 using LeadFlow.Tests.Support;
 using WorkerAvitoAdListScheduleDto = Orbita.Contracts.WorkerAvitoAdListScheduleDto;
@@ -9,6 +10,36 @@ namespace LeadFlow.Tests;
 
 public sealed class AvitoAdListingSchedulerTests
 {
+    [Fact]
+    public void AdsMonitor_CaptchaContextIdentifiesAccountAndSubProfile()
+    {
+        var workerId = Guid.NewGuid();
+        var account = new AvitoAccount { Id = Guid.NewGuid(), DisplayName = "Avito 111" };
+        var subProfile = new AvitoSubProfile { Id = "445352151", Name = "Кадровый отдел Киров 4" };
+
+        var warmup = WorkerAvitoAdsMonitor.CreateCaptchaProviderRequestContext(workerId, account);
+        Assert.Equal(workerId, warmup.WorkerId);
+        Assert.Equal(account.Id, warmup.AccountId);
+        Assert.Equal(CaptchaProviderRequestStages.Other, warmup.Stage);
+        Assert.Equal(CaptchaProviderRequestReasons.FirewallDetected, warmup.Reason);
+
+        var switched = WorkerAvitoAdsMonitor.CreateCaptchaProviderRequestContext(workerId, account, subProfile);
+        Assert.Equal(subProfile.Id, switched.SubProfileId);
+        Assert.Equal(subProfile.Name, switched.SubProfileName);
+        Assert.Equal(CaptchaProviderRequestStages.SubProfileSwitch, switched.Stage);
+        Assert.Equal(CaptchaProviderRequestReasons.AfterSubProfileSwitch, switched.Reason);
+    }
+
+    [Fact]
+    public void AdsMonitor_FailedAccountWaitsBeforeAnotherPaidCaptchaAttempt()
+    {
+        var now = new DateTime(2026, 9, 14, 17, 30, 0, DateTimeKind.Utc);
+        var retryAt = now.AddMinutes(MonitoringTiming.AvitoAdsFailureRetryMinutes);
+
+        Assert.True(WorkerAvitoAdsMonitor.IsFailureCooldownActive(retryAt, now));
+        Assert.False(WorkerAvitoAdsMonitor.IsFailureCooldownActive(retryAt, retryAt));
+    }
+
     [Fact]
     public void PersistedFutureNextCheck_DoesNotRunAfterWorkerRestart()
     {

@@ -103,6 +103,9 @@ public static class MonitoringTiming
     /// <summary>Пауза фонового цикла объявлений, если нечего проверять.</summary>
     public const int AvitoAdsLoopIdleSeconds = 45;
 
+    /// <summary>Пауза перед повтором фонового мониторинга объявлений после сбоя.</summary>
+    public const int AvitoAdsFailureRetryMinutes = 30;
+
     /// <summary>Максимум шагов прокрутки вниз на одной странице «Активные», пока подгружаются карточки.</summary>
     public const int AvitoAdsListMaxScrollRounds = 60;
 
