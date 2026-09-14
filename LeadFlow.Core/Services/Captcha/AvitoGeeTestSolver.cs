@@ -410,14 +410,108 @@ public sealed class AvitoGeeTestSolver(
         CaptchaContextDiagnostics? diagnostics = null,
         CancellationToken ct = default)
     {
+        if (requestReporter is null)
+        {
+            LogProviderRequestDiagnostic(
+                "Captcha: статистика запроса провайдеру недоступна — reporter не настроен.",
+                "captcha_provider_request_reporter_missing",
+                captchaType,
+                attempt,
+                maxAttempts,
+                pageUrl,
+                null);
+            return null;
+        }
+
         var requestContext = CaptchaProviderRequestContext.Current;
-        if (requestReporter is null || requestContext is null) return null;
+        if (requestContext is null)
+        {
+            LogProviderRequestDiagnostic(
+                "Captcha: задача провайдеру выполняется без контекста статистики.",
+                "captcha_provider_request_context_missing",
+                captchaType,
+                attempt,
+                maxAttempts,
+                pageUrl,
+                null);
+            return null;
+        }
+
         byte[]? screenshot = null;
         try { screenshot = await page.ScreenshotDataAsync(new ScreenshotOptions { Type = ScreenshotType.Png, FullPage = true }).ConfigureAwait(false); } catch { }
-        return await requestReporter.CreateAsync(new CaptchaProviderRequestSubmission(
-            requestContext.AccountId, requestContext.CycleRunId, requestContext.SubProfileRunId, requestContext.SubProfileId,
-            requestContext.SubProfileName, "rucaptcha", captchaType, requestContext.Stage, requestContext.Reason,
-            attempt, maxAttempts, pageUrl, DateTime.UtcNow, diagnostics), screenshot, ct).ConfigureAwait(false);
+        try
+        {
+            var requestId = await requestReporter.CreateAsync(new CaptchaProviderRequestSubmission(
+                requestContext.AccountId, requestContext.CycleRunId, requestContext.SubProfileRunId, requestContext.SubProfileId,
+                requestContext.SubProfileName, "rucaptcha", captchaType, requestContext.Stage, requestContext.Reason,
+                attempt, maxAttempts, SafePageUrl(pageUrl), DateTime.UtcNow, diagnostics), screenshot, ct).ConfigureAwait(false);
+            if (requestId is null)
+            {
+                LogProviderRequestDiagnostic(
+                    "Captcha: API не создал запись статистики запроса провайдеру.",
+                    "captcha_provider_request_create_returned_null",
+                    captchaType,
+                    attempt,
+                    maxAttempts,
+                    pageUrl,
+                    null);
+            }
+
+            return requestId;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            LogProviderRequestDiagnostic(
+                "Captcha: ошибка записи статистики запроса провайдеру.",
+                "captcha_provider_request_create_failed",
+                captchaType,
+                attempt,
+                maxAttempts,
+                pageUrl,
+                ex);
+            return null;
+        }
+    }
+
+    private static void LogProviderRequestDiagnostic(
+        string message,
+        string step,
+        string captchaType,
+        int attempt,
+        int maxAttempts,
+        string? pageUrl,
+        Exception? exception)
+    {
+        _ = GlobalLogger.Instance.LogAsync(
+            message,
+            DeskLinkAuditLogLevel.Warning,
+            properties: new Dictionary<string, object?>
+            {
+                ["step"] = step,
+                ["captcha.type"] = captchaType,
+                ["captcha.attempt"] = attempt,
+                ["captcha.maxAttempts"] = maxAttempts,
+                ["page.host"] = SafePageHost(pageUrl),
+                ["error.type"] = exception?.GetType().Name
+            });
+    }
+
+    private static string? SafePageHost(string? pageUrl) =>
+        Uri.TryCreate(pageUrl, UriKind.Absolute, out var uri) ? uri.Host : null;
+
+    private static string? SafePageUrl(string? pageUrl)
+    {
+        if (!Uri.TryCreate(pageUrl, UriKind.Absolute, out var uri))
+        {
+            return null;
+        }
+
+        var builder = new UriBuilder(uri)
+        {
+            Query = string.Empty,
+            Fragment = string.Empty
+        };
+        return builder.Uri.GetLeftPart(UriPartial.Path);
     }
 
     private static async Task<GeeTestV4NetworkContextCapture?> StartContextCaptureAsync(IPage page)
@@ -862,28 +956,6 @@ public sealed class AvitoGeeTestSolver(
             });
             host.appendChild(mainImage);
 
-            const hint = document.createElement('div');
-            hint.id = hintId;
-            Object.assign(hint.style, {
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'flex-start',
-              gap: '8px',
-              width: 'fit-content',
-              height: 'fit-content',
-              maxWidth: '400px',
-              maxHeight: '150px',
-              padding: '0',
-              margin: '0',
-              border: '0',
-              background: '#fff',
-              overflow: 'hidden',
-              transform: 'none',
-              animation: 'none',
-              transition: 'none'
-            });
-            host.appendChild(hint);
-
             const hintImages = [];
             for (const source of hintUrls) {
               const image = await loadImage(source);
@@ -896,24 +968,38 @@ public sealed class AvitoGeeTestSolver(
               1,
               naturalWidth > 0 ? (400 - gapWidth) / naturalWidth : 1,
               naturalHeight > 0 ? 150 / naturalHeight : 1);
-            for (const image of hintImages) {
-              Object.assign(image.style, {
-                display: 'block',
-                width: `${Math.max(1, Math.round(image.naturalWidth * scale))}px`,
-                height: `${Math.max(1, Math.round(image.naturalHeight * scale))}px`,
-                maxWidth: 'none',
-                maxHeight: 'none',
-                padding: '0',
-                margin: '0',
-                border: '0',
-                borderRadius: '0',
-                objectFit: 'contain',
-                transform: 'none',
-                animation: 'none',
-                transition: 'none'
-              });
-              hint.appendChild(image);
-            }
+            const widths = hintImages.map((image) => Math.max(1, Math.round(image.naturalWidth * scale)));
+            const heights = hintImages.map((image) => Math.max(1, Math.round(image.naturalHeight * scale)));
+            const canvas = document.createElement('canvas');
+            canvas.id = hintId;
+            canvas.dataset.maxWidth = '400px';
+            canvas.dataset.maxHeight = '150px';
+            canvas.width = Math.max(1, widths.reduce((sum, width) => sum + width, 0) + gapWidth);
+            canvas.height = Math.max(1, Math.max(...heights));
+            Object.assign(canvas.style, {
+              display: 'block',
+              width: `${canvas.width}px`,
+              height: `${canvas.height}px`,
+              maxWidth: '400px',
+              maxHeight: '150px',
+              padding: '0',
+              margin: '0',
+              border: '0',
+              background: '#fff',
+              transform: 'none',
+              animation: 'none',
+              transition: 'none'
+            });
+            const context = canvas.getContext('2d');
+            if (!context) throw new Error('hint-canvas-context-unavailable');
+            context.fillStyle = '#fff';
+            context.fillRect(0, 0, canvas.width, canvas.height);
+            let offsetX = 0;
+            hintImages.forEach((image, index) => {
+              context.drawImage(image, offsetX, 0, widths[index], heights[index]);
+              offsetX += widths[index] + 8;
+            });
+            host.appendChild(canvas);
 
             const hintText = String(
               root.querySelector('.geetest_text_tips, [class*="geetest_text_tips"]')?.textContent || '').trim();

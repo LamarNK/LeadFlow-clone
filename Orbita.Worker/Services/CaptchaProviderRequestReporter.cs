@@ -13,21 +13,91 @@ public sealed class CaptchaProviderRequestReporter(
 {
     public async Task<Guid?> CreateAsync(CaptchaProviderRequestSubmission request, byte[]? screenshotPng, CancellationToken cancellationToken = default)
     {
-        if (credentials.WorkerId is not Guid workerId || request.AccountId == Guid.Empty) return null;
+        if (credentials.WorkerId is not Guid workerId)
+        {
+            _ = CaptchaWorkerLog.WarningAsync(
+                "Captcha: статистика запроса не записана — у воркера отсутствует WorkerId.",
+                nameof(CreateAsync),
+                new Dictionary<string, object?>
+                {
+                    ["captcha.type"] = request.CaptchaType,
+                    ["captcha.attempt"] = request.Attempt
+                });
+            return null;
+        }
+
+        if (request.AccountId == Guid.Empty)
+        {
+            _ = CaptchaWorkerLog.WarningAsync(
+                "Captcha: статистика запроса не записана — отсутствует AccountId.",
+                nameof(CreateAsync),
+                new Dictionary<string, object?>
+                {
+                    ["captcha.type"] = request.CaptchaType,
+                    ["captcha.attempt"] = request.Attempt,
+                    ["worker.id"] = workerId
+                });
+            return null;
+        }
         Guid? attachmentId = null;
         if (screenshotPng is { Length: > 0 })
-            attachmentId = await diagnostics.UploadScreenshotAsync(request.AccountId, screenshotPng, "captcha-provider-request", request.PageUrl, cancellationToken).ConfigureAwait(false);
+        {
+            try
+            {
+                attachmentId = await diagnostics.UploadScreenshotAsync(request.AccountId, screenshotPng, "captcha-provider-request", request.PageUrl, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _ = CaptchaWorkerLog.WarningAsync(
+                    "Captcha: не удалось сохранить диагностический снимок запроса провайдеру; запись будет создана без вложения.",
+                    nameof(CreateAsync),
+                    new Dictionary<string, object?>
+                    {
+                        ["captcha.type"] = request.CaptchaType,
+                        ["captcha.attempt"] = request.Attempt,
+                        ["error.type"] = ex.GetType().Name
+                    });
+            }
+        }
+
         try
         {
-            return await api.CreateCaptchaProviderRequestAsync(new CaptchaProviderRequestCreateDto(
+            var requestId = await api.CreateCaptchaProviderRequestAsync(new CaptchaProviderRequestCreateDto(
                 Guid.NewGuid(), request.AccountId, request.CycleRunId, request.SubProfileRunId, request.SubProfileId,
                 request.SubProfileName, request.Provider, request.CaptchaType, request.Stage, request.Reason,
                 request.Attempt, request.MaxAttempts, request.PageUrl, request.SubmittedAtUtc, attachmentId,
                 request.Context is null ? null : new CaptchaContextDiagnosticsDto(
                     request.Context.Source, request.Context.Fingerprint, request.Context.ChallengePresent,
                     request.Context.RiskTypePresent, request.Context.ContextAgeMs)), cancellationToken).ConfigureAwait(false);
+            if (requestId is null)
+            {
+                _ = CaptchaWorkerLog.WarningAsync(
+                    "Captcha: API не подтвердил создание записи статистики запроса провайдеру.",
+                    nameof(CreateAsync),
+                    new Dictionary<string, object?>
+                    {
+                        ["captcha.type"] = request.CaptchaType,
+                        ["captcha.attempt"] = request.Attempt,
+                        ["worker.id"] = workerId
+                    });
+            }
+
+            return requestId;
         }
-        catch { return null; }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _ = CaptchaWorkerLog.WarningAsync(
+                "Captcha: ошибка API при записи статистики запроса провайдеру.",
+                nameof(CreateAsync),
+                new Dictionary<string, object?>
+                {
+                    ["captcha.type"] = request.CaptchaType,
+                    ["captcha.attempt"] = request.Attempt,
+                    ["worker.id"] = workerId,
+                    ["error.type"] = ex.GetType().Name
+                });
+            return null;
+        }
     }
 
     public Task MarkProviderAcceptedAsync(Guid requestId, string providerTaskId, CancellationToken cancellationToken = default, int? solveDurationMs = null) =>

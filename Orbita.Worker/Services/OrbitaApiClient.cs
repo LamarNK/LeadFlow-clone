@@ -434,7 +434,22 @@ public sealed class OrbitaApiClient
         using var message = new HttpRequestMessage(HttpMethod.Post, "api/v1/workers/captcha-provider-requests") { Content = JsonContent.Create(request) };
         ApplyAuth(message);
         var response = await _http.SendAsync(message, ct).ConfigureAwait(false);
-        if (!response.IsSuccessStatusCode) return null;
+        if (!response.IsSuccessStatusCode)
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                $"Captcha provider request create failed with HTTP {(int)response.StatusCode}.",
+                DeskLinkAuditLogLevel.Warning,
+                memberName: nameof(CreateCaptchaProviderRequestAsync),
+                filePath: "OrbitaApiClient.cs",
+                properties: new Dictionary<string, object?>
+                {
+                    ["http.statusCode"] = (int)response.StatusCode,
+                    ["http.path"] = "api/v1/workers/captcha-provider-requests",
+                    ["captcha.type"] = request.CaptchaType,
+                    ["captcha.attempt"] = request.Attempt
+                });
+            return null;
+        }
         var payload = await response.Content.ReadFromJsonAsync<JsonElement>(JsonReadOptions, ct).ConfigureAwait(false);
         return payload.TryGetProperty("id", out var id) && id.TryGetGuid(out var value) ? value : null;
     }
