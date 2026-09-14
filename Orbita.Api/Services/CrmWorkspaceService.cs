@@ -2185,7 +2185,7 @@ public sealed class CrmWorkspaceService(
         if (phoneChanged && person is not null)
         {
             await SyncPrimaryContactPhoneAsync(person.Id, phoneRaw, phoneNormalized, actorUserId, now, ct);
-            await _personPhone.ApplyPhoneFromResponseAsync(
+            await _personPhone.ApplyPrimaryPhoneFromResponseAsync(
                 person,
                 phoneRaw,
                 phoneNormalized,
@@ -2265,7 +2265,7 @@ public sealed class CrmWorkspaceService(
             card.Response.PhoneNormalized = phoneNormalized;
             if (card.Response.Person is not null)
             {
-                await _personPhone.ApplyPhoneFromResponseAsync(
+                await _personPhone.ApplyPrimaryPhoneFromResponseAsync(
                     card.Response.Person,
                     phoneRaw,
                     phoneNormalized,
@@ -2386,7 +2386,7 @@ public sealed class CrmWorkspaceService(
 
         if (card.Response.Person is not null)
         {
-            await _personPhone.ApplyPhoneFromResponseAsync(
+            await _personPhone.ApplyPrimaryPhoneFromResponseAsync(
                 card.Response.Person,
                 phone.PhoneRaw,
                 phone.PhoneNormalized,

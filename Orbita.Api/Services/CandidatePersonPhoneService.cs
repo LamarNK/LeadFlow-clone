@@ -45,7 +45,7 @@ public sealed class CandidatePersonPhoneService(OrbitaDbContext db)
     /// <param name="save">
     /// When false, stages person + history only — caller owns the unit of work.
     /// </param>
-    public async Task ApplyPhoneFromResponseAsync(
+    public async Task ApplyPrimaryPhoneFromResponseAsync(
         CandidatePersonEntity person,
         string phoneRaw,
         string phoneNormalized,
@@ -98,6 +98,40 @@ public sealed class CandidatePersonPhoneService(OrbitaDbContext db)
         person.PhoneNormalized = phoneNormalized;
         person.UpdatedAtUtc = DateTime.UtcNow;
         AppendHistory(person.Id, phoneRaw, phoneNormalized, responseId);
+        if (save)
+        {
+            await db.SaveChangesAsync(ct);
+        }
+    }
+
+    public async Task RecordPhoneFromResponseAsync(
+        Guid personId,
+        string phoneRaw,
+        string phoneNormalized,
+        Guid responseId,
+        CancellationToken ct = default,
+        bool save = true)
+    {
+        if (string.IsNullOrWhiteSpace(phoneNormalized))
+        {
+            return;
+        }
+
+        var alreadyRecorded = db.CandidatePhoneHistory.Local.Any(x =>
+                x.PersonId == personId
+                && x.ResponseId == responseId
+                && x.PhoneNormalized == phoneNormalized)
+            || await db.CandidatePhoneHistory.AsNoTracking().AnyAsync(
+                x => x.PersonId == personId
+                    && x.ResponseId == responseId
+                    && x.PhoneNormalized == phoneNormalized,
+                ct);
+        if (alreadyRecorded)
+        {
+            return;
+        }
+
+        AppendHistory(personId, phoneRaw, phoneNormalized, responseId);
         if (save)
         {
             await db.SaveChangesAsync(ct);

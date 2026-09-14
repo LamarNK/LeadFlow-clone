@@ -6,6 +6,23 @@ namespace Orbita.Api.Services;
 
 public sealed class CandidatePhoneWatchService(OrbitaDbContext db)
 {
+    internal Task<CandidatePhoneWatchEntity?> FindExactAsync(
+        Guid accountId,
+        string avitoSubProfileId,
+        string fullName,
+        CancellationToken ct)
+    {
+        var subProfileId = (avitoSubProfileId ?? string.Empty).Trim();
+        var fullNameKey = CandidateNameNormalizer.Normalize(fullName).FullName;
+        return db.CandidatePhoneWatches
+            .AsNoTracking()
+            .FirstOrDefaultAsync(
+                x => x.AccountId == accountId
+                    && x.AvitoSubProfileId == subProfileId
+                    && x.FullNameKey == fullNameKey,
+                ct);
+    }
+
     public async Task<IReadOnlyList<WorkerKnownSourceResponseDto>> FindBySourceIdsAsync(
         Guid accountId,
         IReadOnlyCollection<string> sourceResponseIds,

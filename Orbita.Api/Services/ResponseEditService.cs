@@ -179,7 +179,7 @@ public sealed class ResponseEditService(
         if (phoneChanged && person is not null)
         {
             // Saves response + person changes and appends phone history.
-            await personPhone.ApplyPhoneFromResponseAsync(
+            await personPhone.ApplyPrimaryPhoneFromResponseAsync(
                 person,
                 phoneRaw,
                 phoneNormalized,

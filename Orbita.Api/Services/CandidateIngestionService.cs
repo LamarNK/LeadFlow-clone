@@ -129,60 +129,36 @@ public sealed class CandidateIngestionService(
             .FirstOrDefaultAsync(
                 x => x.AccountId == candidate.AccountId && x.SourceResponseId == candidate.SourceResponseId,
                 ct);
+        if (existing is null
+            && operationKind is WorkerCandidateOperationKinds.WatchRefresh
+                or WorkerCandidateOperationKinds.PhoneChanged)
+        {
+            var exactWatch = await phoneWatches.FindExactAsync(
+                candidate.AccountId,
+                candidate.AvitoSubProfileId,
+                candidate.FullName,
+                ct);
+            if (exactWatch is not null)
+            {
+                existing = await FindOwnedResponseAsync(exactWatch, ct);
+            }
+        }
+
         if (existing is not null)
         {
-            if (operationKind is WorkerCandidateOperationKinds.WatchRefresh
-                    or WorkerCandidateOperationKinds.PhoneChanged
-                && existing.SourceResponseId.StartsWith("phone-watch:", StringComparison.OrdinalIgnoreCase))
+            var updated = await UpdateExistingResponseAsync(worker, candidate, existing, phoneNormalized, ct);
+            if (ShouldTrackPhoneWatch(candidate))
             {
-                var existingPerson = await personMatch.FindMatchingPersonAsync(
-                    officeId: null,
-                    CandidatePersonMatchService.ToProfile(
-                        candidate.FullName,
-                        candidate.Age,
-                        candidate.City,
-                        phoneNormalized,
-                        candidate.CreatedAt),
+                await phoneWatches.UpsertAsync(
+                    worker,
+                    candidate,
+                    existing.PersonId,
+                    existing.Id,
+                    phoneNormalized,
+                    operationKind,
                     ct);
-                var canonical = existingPerson is null
-                    ? null
-                    : await FindCanonicalResponseAsync(existingPerson.Id, ct);
-                if (canonical is not null)
-                {
-                    var canonicalUpdate = await UpdateExistingResponseAsync(
-                        worker,
-                        candidate,
-                        canonical,
-                        phoneNormalized,
-                        ct);
-                    await phoneWatches.UpsertAsync(
-                        worker,
-                        candidate,
-                        canonical.PersonId,
-                        canonical.Id,
-                        phoneNormalized,
-                        operationKind,
-                        ct);
-                    return canonicalUpdate with
-                    {
-                        Id = canonical.Id,
-                        Status = canonical.Status,
-                        Outcome = operationKind == WorkerCandidateOperationKinds.PhoneChanged
-                            ? WorkerCandidateIngestionOutcomes.PhoneChanged
-                            : WorkerCandidateIngestionOutcomes.WatchUpdated
-                    };
-                }
             }
 
-            var updated = await UpdateExistingResponseAsync(worker, candidate, existing, phoneNormalized, ct);
-            await phoneWatches.UpsertAsync(
-                worker,
-                candidate,
-                existing.PersonId,
-                existing.Id,
-                phoneNormalized,
-                operationKind,
-                ct);
             return updated with
             {
                 Outcome = operationKind switch
@@ -255,44 +231,22 @@ public sealed class CandidateIngestionService(
 
         // Collection pool: global person match (no office filter).
         var matchedPerson = await personMatch.FindMatchingPersonAsync(officeId: null, profile, ct);
-        if (matchedPerson is not null
-            && operationKind is WorkerCandidateOperationKinds.WatchRefresh
-                or WorkerCandidateOperationKinds.PhoneChanged)
-        {
-            var canonical = await FindCanonicalResponseAsync(matchedPerson.Id, ct)
-                ?? throw new InvalidOperationException("Для известного кандидата не найден канонический отклик.");
-            var updated = await UpdateExistingResponseAsync(
-                worker,
-                candidate,
-                canonical,
-                phoneNormalized,
-                ct);
-            await phoneWatches.UpsertAsync(
-                worker,
-                candidate,
-                matchedPerson.Id,
-                canonical.Id,
-                phoneNormalized,
-                operationKind,
-                ct);
-            return updated with
-            {
-                Id = canonical.Id,
-                Status = canonical.Status,
-                Outcome = operationKind == WorkerCandidateOperationKinds.PhoneChanged
-                    ? WorkerCandidateIngestionOutcomes.PhoneChanged
-                    : WorkerCandidateIngestionOutcomes.WatchUpdated
-            };
-        }
 
         var phoneMetricKind = ResponsePhoneMetricKinds.Normalize(candidate.PhoneMetricKind);
+        if (operationKind == WorkerCandidateOperationKinds.PhoneChanged
+            && string.IsNullOrWhiteSpace(phoneMetricKind))
+        {
+            phoneMetricKind = ResponsePhoneMetricKinds.PhoneChanged;
+        }
         // PhoneChanged сохраняет новый отклик, но существующую CRM-карточку
         // дополняем номером вместо повторной доставки кандидата в другой офис.
         // PhoneUnchanged — метка стабильного номера; дублем её делает только совпадение кандидата.
         var alreadyInCrm = matchedPerson is not null && await db.CrmCandidateCards.AsNoTracking()
             .AnyAsync(x => x.Response.PersonId == matchedPerson.Id, ct);
         var isLocalDuplicate = matchedPerson is not null
-            && (phoneMetricKind != ResponsePhoneMetricKinds.PhoneChanged || alreadyInCrm);
+            && (ShouldTrackPhoneWatch(candidate)
+                || phoneMetricKind != ResponsePhoneMetricKinds.PhoneChanged
+                || alreadyInCrm);
 
         CandidatePersonEntity person;
         if (matchedPerson is not null)
@@ -366,7 +320,25 @@ public sealed class CandidateIngestionService(
         db.CandidateResponses.Add(entity);
         await db.SaveChangesAsync(ct);
 
-        await personPhone.ApplyPhoneFromResponseAsync(person, candidate.PhoneRaw, phoneNormalized, entity.Id, ct);
+        if (isLocalDuplicate)
+        {
+            await personPhone.RecordPhoneFromResponseAsync(
+                person.Id,
+                candidate.PhoneRaw,
+                phoneNormalized,
+                entity.Id,
+                ct);
+        }
+        else
+        {
+            await personPhone.ApplyPrimaryPhoneFromResponseAsync(
+                person,
+                candidate.PhoneRaw,
+                phoneNormalized,
+                entity.Id,
+                ct);
+        }
+
         var enrichedOffices = await personPhone.StageCrmContactAsync(person.Id, candidate.PhoneRaw, phoneNormalized, ct);
 
         entity.IsLocalDuplicate = isLocalDuplicate;
@@ -387,7 +359,22 @@ public sealed class CandidateIngestionService(
                         previousPhone: candidate.PreviousPhoneRaw ?? candidate.PreviousPhoneNormalized),
                 _ => "Локальный дубль: найден существующий кандидат по ФИО."
             };
-            await db.SaveChangesAsync(ct);
+            if (ShouldTrackPhoneWatch(candidate))
+            {
+                await phoneWatches.UpsertAsync(
+                    worker,
+                    candidate,
+                    person.Id,
+                    entity.Id,
+                    phoneNormalized,
+                    operationKind,
+                    ct);
+            }
+            else
+            {
+                await db.SaveChangesAsync(ct);
+            }
+
             foreach (var crmOfficeId in enrichedOffices) panelRealtime.Notify([PanelChangeKind.Crm], crmOfficeId);
             return new WorkerCandidateIngestionItemResultDto(
                 entity.Id,
@@ -397,17 +384,17 @@ public sealed class CandidateIngestionService(
                 WorkerCandidateIngestionOutcomes.Duplicate);
         }
 
-        var watchCanonicalResponseId = matchedPerson is null
-            ? entity.Id
-            : (await FindCanonicalResponseAsync(matchedPerson.Id, ct))?.Id ?? entity.Id;
-        await phoneWatches.UpsertAsync(
-            worker,
-            candidate,
-            person.Id,
-            watchCanonicalResponseId,
-            phoneNormalized,
-            operationKind,
-            ct);
+        if (ShouldTrackPhoneWatch(candidate))
+        {
+            await phoneWatches.UpsertAsync(
+                worker,
+                candidate,
+                person.Id,
+                entity.Id,
+                phoneNormalized,
+                operationKind,
+                ct);
+        }
 
         // Delivery (CRM and/or Bitrix) is driven by worker auto flags — not office route alone.
         await responseDelivery.ApplyAutoDeliveryAsync(entity, worker, ct);
@@ -604,13 +591,26 @@ public sealed class CandidateIngestionService(
 
             changed = true;
 
-            var person = await db.CandidatePersons.FirstAsync(x => x.Id == tracked.PersonId, ct);
-            await personPhone.ApplyPhoneFromResponseAsync(
-                person,
-                candidate.PhoneRaw,
-                phoneNormalized,
-                tracked.Id,
-                ct);
+            if (tracked.Status == ResponseStatuses.Duplicate)
+            {
+                await personPhone.RecordPhoneFromResponseAsync(
+                    tracked.PersonId,
+                    candidate.PhoneRaw,
+                    phoneNormalized,
+                    tracked.Id,
+                    ct);
+            }
+            else
+            {
+                var person = await db.CandidatePersons.FirstAsync(x => x.Id == tracked.PersonId, ct);
+                await personPhone.ApplyPrimaryPhoneFromResponseAsync(
+                    person,
+                    candidate.PhoneRaw,
+                    phoneNormalized,
+                    tracked.Id,
+                    ct);
+            }
+
             phoneChangedOffices = await personPhone.StageCrmContactAsync(tracked.PersonId, candidate.PhoneRaw, phoneNormalized, ct);
         }
 
@@ -764,15 +764,52 @@ public sealed class CandidateIngestionService(
         return BitConverter.ToInt64(hash, 0);
     }
 
-    private Task<CandidateResponseEntity?> FindCanonicalResponseAsync(Guid personId, CancellationToken ct) =>
-        db.CandidateResponses
+    private async Task<CandidateResponseEntity?> FindOwnedResponseAsync(
+        CandidatePhoneWatchEntity watch,
+        CancellationToken ct)
+    {
+        if (!string.IsNullOrWhiteSpace(watch.PublishedSourceResponseId))
+        {
+            var bySource = await db.CandidateResponses
+                .AsNoTracking()
+                .FirstOrDefaultAsync(
+                    x => x.AccountId == watch.AccountId
+                        && x.SourceResponseId == watch.PublishedSourceResponseId,
+                    ct);
+            if (bySource is not null)
+            {
+                return bySource;
+            }
+        }
+
+        if (watch.CanonicalResponseId is Guid canonicalResponseId)
+        {
+            var canonical = await db.CandidateResponses
+                .AsNoTracking()
+                .FirstOrDefaultAsync(
+                    x => x.Id == canonicalResponseId
+                        && x.AccountId == watch.AccountId
+                        && x.AvitoSubProfileId == watch.AvitoSubProfileId,
+                    ct);
+            if (canonical is not null)
+            {
+                return canonical;
+            }
+        }
+
+        return await db.CandidateResponses
             .AsNoTracking()
-            .Where(x => x.PersonId == personId
-                && x.Status != ResponseStatuses.Duplicate)
-            .OrderBy(x => x.SourceResponseId.StartsWith("phone-watch:"))
-            .ThenByDescending(x => x.CollectedAt)
+            .Where(x => x.PersonId == watch.PersonId
+                && x.AccountId == watch.AccountId
+                && x.AvitoSubProfileId == watch.AvitoSubProfileId)
+            .OrderByDescending(x => x.CollectedAt)
             .ThenByDescending(x => x.Id)
             .FirstOrDefaultAsync(ct);
+    }
+
+    private static bool ShouldTrackPhoneWatch(WorkerCandidateDto candidate) =>
+        !string.IsNullOrWhiteSpace(candidate.AvitoSubProfileId)
+        || candidate.SourceResponseId.StartsWith("phone-watch:", StringComparison.OrdinalIgnoreCase);
 
     private static bool TryApplyUnlocked(
         string current,
