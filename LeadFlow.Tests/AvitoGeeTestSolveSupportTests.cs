@@ -334,6 +334,25 @@ public sealed class AvitoGeeTestSolveSupportTests
     }
 
     [Fact]
+    public void FirewallGeeTest_TargetVerifyRejection_DoesNotReportProviderAnswerAsIncorrect()
+    {
+        var source = File.ReadAllText(
+            Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "LeadFlow.Core", "Services", "Captcha", "AvitoGeeTestSolver.cs"));
+        var rejection = source.IndexOf("[\"step\"] = \"captcha_verify_rejected\"", StringComparison.Ordinal);
+        var retry = source.IndexOf(
+            "DelayBeforeRetryAsync(page, attempt, \"токен отклонён\"",
+            rejection,
+            StringComparison.Ordinal);
+
+        Assert.True(rejection >= 0, "Не найден блок обработки отказа Avito.");
+        Assert.True(retry > rejection, "Не найден повтор после отказа Avito.");
+        Assert.DoesNotContain(
+            "ReportSolutionAsync",
+            source[rejection..retry],
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void LoginClickCaptcha_CapturesIsolatedSourceAssetsInsteadOfAnimatedGeeTestNodes()
     {
         var source = File.ReadAllText(

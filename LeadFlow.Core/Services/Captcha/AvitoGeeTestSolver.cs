@@ -250,10 +250,9 @@ public sealed class AvitoGeeTestSolver(
                             ["captcha.verify.verified"] = verify.Verified,
                             ["captcha.verify"] = verify.Summary,
                             ["captcha.proxyMode"] = effectiveTaskOptions.UsesSuppliedProxy ? "profile" : "proxyless",
-                            ["captcha.userAgentPresent"] = !string.IsNullOrWhiteSpace(effectiveTaskOptions.UserAgent)
+                            ["captcha.userAgentPresent"] = !string.IsNullOrWhiteSpace(effectiveTaskOptions.UserAgent),
+                            ["captcha.providerReport"] = "skipped_target_rejection"
                         });
-                    await ReportSolutionAsync(apiKey, solution.ProviderTask, isCorrect: false, "GeeTest v4", cancellationToken)
-                        .ConfigureAwait(false);
                     await DelayBeforeRetryAsync(page, attempt, "токен отклонён", cancellationToken)
                         .ConfigureAwait(false);
                     continue;

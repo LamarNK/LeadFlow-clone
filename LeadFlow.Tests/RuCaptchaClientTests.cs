@@ -173,6 +173,7 @@ public sealed class RuCaptchaClientTests
             {
                 Assert.Contains("proxytype=SOCKS5", body, StringComparison.Ordinal);
                 Assert.Contains("proxy=login%3Asecret%40203.0.113.10%3A1080", body, StringComparison.Ordinal);
+                Assert.Contains("userAgent=Mozilla%2F5.0+test", body, StringComparison.Ordinal);
                 return Task.FromResult(StubHttpMessageHandler.Ok("OK|77"));
             }
 
@@ -189,6 +190,38 @@ public sealed class RuCaptchaClientTests
             "Mozilla/5.0 test", "socks5", "203.0.113.10:1080", "login", "secret");
 
         await client.SolveGeeTestV4Async("key", "https://www.avito.ru/profile/candidates", "id", options);
+
+        Assert.Equal(2, handler.Calls.Count);
+    }
+
+    [Fact]
+    public async Task SolveGeeTestV4_ProxylessProfileContext_StillSendsMatchingUserAgent()
+    {
+        var handler = new StubHttpMessageHandler((request, body) =>
+        {
+            if (request.RequestUri!.AbsolutePath.Contains("/in.php", StringComparison.OrdinalIgnoreCase))
+            {
+                Assert.Contains("userAgent=Mozilla%2F5.0+BrowserProfile", body, StringComparison.Ordinal);
+                Assert.DoesNotContain("proxytype=", body, StringComparison.Ordinal);
+                Assert.DoesNotContain("proxy=", body, StringComparison.Ordinal);
+                return Task.FromResult(StubHttpMessageHandler.Ok("OK|78"));
+            }
+
+            return Task.FromResult(StubHttpMessageHandler.Ok("""
+                OK|{"captcha_id":"id","lot_number":"ln","pass_token":"pt","gen_time":"1","captcha_output":"co"}
+                """));
+        });
+        var client = new RuCaptchaClient(new HttpClient(handler) { BaseAddress = new Uri("https://api.rucaptcha.com/") })
+        {
+            PollInterval = TimeSpan.FromMilliseconds(1),
+            SolveTimeout = TimeSpan.FromSeconds(5)
+        };
+
+        await client.SolveGeeTestV4Async(
+            "key",
+            "https://www.avito.ru/",
+            "id",
+            new GeeTestV4TaskOptions("Mozilla/5.0 BrowserProfile"));
 
         Assert.Equal(2, handler.Calls.Count);
     }
