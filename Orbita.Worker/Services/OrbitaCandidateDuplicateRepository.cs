@@ -233,38 +233,21 @@ public sealed class OrbitaCandidateDuplicateRepository(
             // fallback to cache phones below
         }
 
-        var cacheResult = await dedupCache.LookupAsync(
-                accountId,
-                [],
-                phones,
-                DuplicateScope.GlobalAcrossAllAccounts,
-                cancellationToken)
+        var matched = await CandidateProfileDuplicateMatchResolver.ResolveAsync(
+                profiles,
+                apiResult,
+                async () =>
+                {
+                    var cacheResult = await dedupCache.LookupAsync(
+                            accountId,
+                            [],
+                            phones,
+                            DuplicateScope.GlobalAcrossAllAccounts,
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                    return cacheResult.Phones;
+                })
             .ConfigureAwait(false);
-
-        var matched = new HashSet<int>();
-        var existingPhones = new HashSet<string>(StringComparer.Ordinal);
-        if (apiResult is not null)
-        {
-            foreach (var index in apiResult.MatchedProfileIndexes)
-            {
-                matched.Add(index);
-            }
-
-            foreach (var phone in apiResult.ExistingPhones)
-            {
-                existingPhones.Add(phone);
-            }
-        }
-
-        existingPhones.UnionWith(cacheResult.Phones);
-        for (var i = 0; i < profiles.Count; i++)
-        {
-            var phone = profiles[i].PhoneNormalized;
-            if (!string.IsNullOrWhiteSpace(phone) && existingPhones.Contains(phone))
-            {
-                matched.Add(i);
-            }
-        }
 
         CandidateDedupLog.LogPersonProfileLookup(
             accountId,
