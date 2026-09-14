@@ -56,6 +56,22 @@
             all.checked = hiddenCount === 0;
             all.indeterminate = hiddenCount > 0 && checked.length > 0;
             triggerText.textContent = hiddenCount === 0 ? 'Все воркеры' : 'Скрыто: ' + hiddenCount;
+            values.replaceChildren();
+            options.filter(function (option) { return !option.checked; }).forEach(function (option) {
+                var input = document.createElement('input');
+                input.type = 'hidden';
+                input.name = 'excludedWorkerIds';
+                input.value = option.value;
+                values.appendChild(input);
+            });
+        }
+
+        function scheduleSubmit() {
+            if (picker.__orbitaBalanceFilterTimer) window.clearTimeout(picker.__orbitaBalanceFilterTimer);
+            picker.__orbitaBalanceFilterTimer = window.setTimeout(function () {
+                picker.__orbitaBalanceFilterTimer = null;
+                if (form) form.requestSubmit();
+            }, 300);
         }
 
         trigger.addEventListener('click', function () {
@@ -66,21 +82,15 @@
         all.addEventListener('change', function () {
             options.forEach(function (option) { option.checked = all.checked; });
             sync();
+            scheduleSubmit();
         });
         options.forEach(function (option) {
-            option.addEventListener('change', function () {
-                sync();
-            });
+                option.addEventListener('change', function () {
+                    sync();
+                    scheduleSubmit();
+                });
         });
-        apply.addEventListener('click', function () {
-            values.replaceChildren();
-            options.filter(function (option) { return !option.checked; }).forEach(function (option) {
-                var input = document.createElement('input');
-                input.type = 'hidden';
-                input.name = 'excludedWorkerIds';
-                input.value = option.value;
-                values.appendChild(input);
-            });
+        if (apply) apply.addEventListener('click', function () {
             menu.hidden = true;
             trigger.setAttribute('aria-expanded', 'false');
             form.requestSubmit();

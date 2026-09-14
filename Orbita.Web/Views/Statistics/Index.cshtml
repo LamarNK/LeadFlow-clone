@@ -57,7 +57,6 @@
                     ResetUrl = Url.Action("Index", "Statistics", new { from = Model.Header.DateFrom.ToString("yyyy-MM-dd"), to = Model.Header.DateTo.ToString("yyyy-MM-dd") })!,
                     FilterFieldsPartialName = "_StatisticsFilterFields",
                     FilterFieldsModel = Model,
-                    ShowApply = true,
                     ExtraFormContent = $"<input type=\"hidden\" name=\"from\" value=\"{Model.Header.DateFrom:yyyy-MM-dd}\" data-period-form-from /><input type=\"hidden\" name=\"to\" value=\"{Model.Header.DateTo:yyyy-MM-dd}\" data-period-form-to />"
                 };
             }

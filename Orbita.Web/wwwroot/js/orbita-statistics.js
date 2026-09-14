@@ -28,6 +28,7 @@
     };
 
     var chartsFingerprint = '';
+    var captchaFingerprint = '';
 
     function destroyChart(chart) {
         if (chart) {
@@ -577,6 +578,96 @@
                 .replace(/"/g, '&quot;');
     }
 
+    function renderCaptchaProviderRequests(stats) {
+        var section = document.querySelector('[data-statistics-captcha-requests]');
+        if (!section) return;
+
+        stats = stats || { submittedCount: 0, workers: [] };
+        var nextFingerprint = stableJson(stats);
+        if (nextFingerprint === captchaFingerprint) return;
+        captchaFingerprint = nextFingerprint;
+
+        var expandedGroups = new Set();
+        section.querySelectorAll('details[data-captcha-group-key][open]').forEach(function (details) {
+            expandedGroups.add(details.getAttribute('data-captcha-group-key'));
+        });
+
+        var submitted = Number(stats.submittedCount) || 0;
+        var meta = section.querySelector('[data-captcha-stat="submitted"]');
+        if (meta) meta.textContent = submitted + ' отправлено';
+
+        var body = section.querySelector('.card-body');
+        if (!body) return;
+
+        var workers = Array.isArray(stats.workers) ? stats.workers : [];
+        if (!workers.length) {
+            body.innerHTML = '<div class="table-empty-state">'
+                + '<i class="fa-solid fa-shield-halved" aria-hidden="true"></i>'
+                + '<span>Запросов капчи нет</span></div>';
+            return;
+        }
+
+        var kpis = [
+            [submitted, 'отправлено'],
+            [stats.providerAcceptedCount, 'RuCaptcha выдала решение'],
+            [stats.noSlotCount, 'нет слота'],
+            [stats.providerErrorCount, 'ошибка провайдера'],
+            [stats.targetAcceptedCount, 'Avito подтвердил'],
+            [stats.targetRejectedCount, 'отклонил Avito'],
+            [stats.contextDetectedCount, 'контекст определён'],
+            [stats.challengePresentCount, 'с challenge'],
+            [stats.riskTypePresentCount, 'с risk_type']
+        ].map(function (item) {
+            return '<span><strong>' + (Number(item[0]) || 0) + '</strong> ' + escapeHtml(item[1]) + '</span>';
+        }).join('');
+
+        var groups = workers.map(function (worker) {
+            var key = String(worker.workerId || '') + ':' + String(worker.accountId || '');
+            var requests = Array.isArray(worker.requests) ? worker.requests : [];
+            var requestRows = requests.map(function (request) {
+                var targetDiagnostic = request.targetReason
+                    ? '<span class="muted">' + escapeHtml(request.targetReason)
+                        + (request.targetHttpStatus != null ? ' · HTTP ' + (Number(request.targetHttpStatus) || 0) : '')
+                        + '</span>'
+                    : '';
+                var contextDiagnostic = request.contextFingerprint
+                    ? '<span class="muted">ctx ' + escapeHtml(String(request.contextFingerprint).slice(0, 10))
+                        + ' · challenge ' + (request.challengePresent === true ? 'да' : 'нет')
+                        + ' · risk ' + (request.riskTypePresent === true ? 'да' : 'нет') + '</span>'
+                    : '';
+                var attachment = request.diagnosticAttachmentId
+                    ? '<a href="/Diagnostics/Image/' + encodeURIComponent(request.diagnosticAttachmentId)
+                        + '" target="_blank" rel="noopener">Скриншот</a>'
+                    : '<span class="muted">Скриншот удалён по сроку хранения</span>';
+                var submittedAt = request.submittedAtUtc || '';
+
+                return '<div class="statistics-captcha-request-row">'
+                    + '<time datetime="' + escapeHtml(submittedAt) + '" data-orbita-utc="' + escapeHtml(submittedAt)
+                    + '" data-orbita-format="datetime-short-seconds"></time>'
+                    + '<span>' + escapeHtml(request.captchaType || '') + ' · ' + escapeHtml(request.stage || '') + '</span>'
+                    + '<span>попытка ' + (Number(request.attempt) || 0) + '/' + (Number(request.maxAttempts) || 0) + '</span>'
+                    + '<span class="statistics-captcha-status">' + escapeHtml(request.providerStatus || '')
+                    + ' / ' + escapeHtml(request.targetStatus || '') + '</span>'
+                    + targetDiagnostic + contextDiagnostic + attachment
+                    + '</div>';
+            }).join('');
+
+            return '<details class="statistics-captcha-worker" data-captcha-group-key="' + escapeHtml(key) + '"'
+                + (expandedGroups.has(key) ? ' open' : '') + '>'
+                + '<summary><span>' + escapeHtml(worker.workerName || '') + ' · ' + escapeHtml(worker.accountName || '')
+                + '</span><span class="statistics-captcha-worker-count">' + (Number(worker.submittedCount) || 0)
+                + ' / ' + (Number(worker.targetAcceptedCount) || 0) + ' Avito</span></summary>'
+                + '<div class="statistics-captcha-details">' + requestRows + '</div></details>';
+        }).join('');
+
+        body.innerHTML = '<div class="statistics-captcha-kpis">' + kpis + '</div>'
+            + '<div class="statistics-captcha-workers">' + groups + '</div>';
+
+        if (window.OrbitaTime && typeof window.OrbitaTime.localizeAll === 'function') {
+            window.OrbitaTime.localizeAll(section);
+        }
+    }
+
     function workerDetailsUrl(workerId) {
         var root = getLiveRoot();
         var template = root ? root.getAttribute('data-worker-details-url') : '';
@@ -937,6 +1028,7 @@
         renderWorkers(snapshot.workers || [], showOfficeColumn);
         updateSummaryMeta(snapshot.summary);
         renderDeliveries(snapshot.bitrixDeliveries || [], snapshot.crmDeliveries || []);
+        renderCaptchaProviderRequests(snapshot.captchaProviderRequests);
 
         if (snapshot.hrInsights) {
             renderHrTable('Города', snapshot.hrInsights.topCities);

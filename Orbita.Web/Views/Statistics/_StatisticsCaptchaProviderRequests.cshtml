@@ -32,7 +32,7 @@
             <div class="statistics-captcha-workers">
                 @foreach (var worker in stats.Workers)
                 {
-                    <details class="statistics-captcha-worker">
+                    <details class="statistics-captcha-worker" data-captcha-group-key="@($"{worker.WorkerId:D}:{worker.AccountId:D}")">
                         <summary><span>@worker.WorkerName · @worker.AccountName</span><span class="statistics-captcha-worker-count">@worker.SubmittedCount / @worker.TargetAcceptedCount Avito</span></summary>
                         <div class="statistics-captcha-details">
                             @foreach (var request in worker.Requests)

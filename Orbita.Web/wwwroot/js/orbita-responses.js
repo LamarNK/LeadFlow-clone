@@ -1447,11 +1447,33 @@
                     option.checked = selectAll.checked;
                 });
                 sync();
+                scheduleStatusSubmit();
             });
 
             options.forEach(function (option) {
-                option.addEventListener('change', sync);
+                option.addEventListener('change', function () {
+                    sync();
+                    scheduleStatusSubmit();
+                });
             });
+
+            function scheduleStatusSubmit() {
+                var form = picker.closest('form');
+                if (!form) return;
+                if (picker.__orbitaStatusSubmitTimer) {
+                    window.clearTimeout(picker.__orbitaStatusSubmitTimer);
+                }
+                picker.__orbitaStatusSubmitTimer = window.setTimeout(function () {
+                    picker.__orbitaStatusSubmitTimer = null;
+                    if (window.OrbitaRuntime && typeof window.OrbitaRuntime.submitFilterForm === 'function') {
+                        window.OrbitaRuntime.submitFilterForm(form);
+                    } else if (typeof form.requestSubmit === 'function') {
+                        form.requestSubmit();
+                    } else {
+                        form.submit();
+                    }
+                }, 300);
+            }
 
             picker.addEventListener('keydown', function (event) {
                 if (event.key !== 'Escape') return;

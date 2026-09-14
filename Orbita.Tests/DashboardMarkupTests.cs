@@ -34,6 +34,19 @@ public sealed class DashboardMarkupTests
         Assert.Contains("function initStatusPickers()", js);
         Assert.Contains("selectedValue.value", js);
         Assert.Contains("data-responses-status-all", js);
+        Assert.Contains("scheduleStatusSubmit();", js);
+    }
+
+    [Fact]
+    public void PagesWithCustomMultiSelects_KeepTheirApplyButtonVisibleOnDesktop()
+    {
+        var filterBar = ReadRepoFile("Orbita.Web/Views/Shared/_ListFiltersBar.cshtml");
+        var responsiveCss = ReadRepoFile("Orbita.Web/wwwroot/css/orbita/responsive-data-tables.css");
+
+        Assert.Contains("Model.ShowApply", filterBar);
+        Assert.Contains("class=\"orbita-filters-apply\"", filterBar);
+        var desktopRules = responsiveCss.Replace("\r\n", "\n", StringComparison.Ordinal);
+        Assert.Contains(".accounts-filter-btn,\n    .orbita-filters-apply,", desktopRules);
     }
 
     [Fact]
@@ -169,6 +182,7 @@ public sealed class DashboardMarkupTests
     {
         var view = ReadRepoFile("Orbita.Web/Views/Shared/_ResponsesFilterFields.cshtml");
         var picker = ReadRepoFile("Orbita.Web/Views/Shared/_StatisticsMultiSelect.cshtml");
+        var filtersJs = ReadRepoFile("Orbita.Web/wwwroot/js/orbita/filters.js");
 
         Assert.Contains("FieldName = \"workerIds\"", view);
         Assert.Contains("FieldName = \"accountIds\"", view);
@@ -180,6 +194,7 @@ public sealed class DashboardMarkupTests
         Assert.DoesNotContain("name=\"accountId\"", view);
         Assert.Contains("data-statistics-multiselect", picker);
         Assert.Contains("name=\"@Model.FieldName\"", picker);
+        Assert.Contains("schedulePickerSubmit(picker);", filtersJs);
     }
 
     [Fact]
@@ -188,6 +203,7 @@ public sealed class DashboardMarkupTests
         var filters = ReadRepoFile("Orbita.Web/Views/Shared/_StatisticsFilterFields.cshtml");
         var picker = ReadRepoFile("Orbita.Web/Views/Shared/_StatisticsMultiSelect.cshtml");
         var js = ReadRepoFile("Orbita.Web/wwwroot/js/orbita-statistics.js");
+        var filtersJs = ReadRepoFile("Orbita.Web/wwwroot/js/orbita/filters.js");
 
         Assert.Contains("FieldName = \"workerIds\"", filters);
         Assert.Contains("FieldName = \"accountIds\"", filters);
@@ -195,7 +211,6 @@ public sealed class DashboardMarkupTests
         Assert.Contains("data-statistics-multiselect", picker);
         Assert.Contains("name=\"@Model.FieldName\"", picker);
         Assert.Contains("function initStatisticsMultiSelects()", js);
-        var filtersJs = ReadRepoFile("Orbita.Web/wwwroot/js/orbita/filters.js");
         Assert.Contains("runtime.initStatisticsMultiSelects", filtersJs);
         Assert.Contains("value.name = fieldName", filtersJs);
         Assert.Contains("[data-statistics-multiselect-trigger]", filtersJs);
@@ -223,6 +238,18 @@ public sealed class DashboardMarkupTests
         Assert.Contains("TargetReason", view);
         Assert.Contains("ContextFingerprint", view);
         Assert.DoesNotContain("принято провайдером", view);
+    }
+
+    [Fact]
+    public void CaptchaStatistics_LiveSnapshotRefreshesNewProviderRequests()
+    {
+        var controller = ReadRepoFile("Orbita.Web/Controllers/StatisticsController.cs");
+        var js = ReadRepoFile("Orbita.Web/wwwroot/js/orbita-statistics.js");
+
+        Assert.Contains("CaptchaProviderRequests = model.CaptchaProviderRequests", controller);
+        Assert.Contains("function renderCaptchaProviderRequests", js);
+        Assert.Contains("renderCaptchaProviderRequests(snapshot.captchaProviderRequests);", js);
+        Assert.Contains("OrbitaTime.localizeAll", js);
     }
 
     [Fact]

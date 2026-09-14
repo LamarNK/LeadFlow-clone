@@ -144,6 +144,18 @@
         return Array.prototype.slice.call(picker.querySelectorAll('[data-statistics-multiselect-option]'));
     }
 
+    function schedulePickerSubmit(picker) {
+        var form = picker && picker.closest('form');
+        if (!form) return;
+        if (picker.__orbitaPickerSubmitTimer) {
+            window.clearTimeout(picker.__orbitaPickerSubmitTimer);
+        }
+        picker.__orbitaPickerSubmitTimer = window.setTimeout(function () {
+            picker.__orbitaPickerSubmitTimer = null;
+            runtime.submitFilterForm(form);
+        }, 300);
+    }
+
     function closeStatisticsPicker(picker) {
         var menu = picker.querySelector('[data-statistics-multiselect-menu]');
         var trigger = picker.querySelector('[data-statistics-multiselect-trigger]');
@@ -218,10 +230,12 @@
             if (!picker) return;
             if (event.target.closest('[data-statistics-multiselect-all]')) {
                 syncStatisticsPicker(picker, true);
+                schedulePickerSubmit(picker);
                 return;
             }
             if (event.target.closest('[data-statistics-multiselect-option]')) {
                 syncStatisticsPicker(picker, false);
+                schedulePickerSubmit(picker);
             }
         });
 

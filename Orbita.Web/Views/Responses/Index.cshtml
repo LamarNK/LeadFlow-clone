@@ -96,7 +96,6 @@
             ResetUrl = formAction,
             FilterFieldsPartialName = "_ResponsesFilterFields",
             FilterFieldsModel = Model,
-            ShowApply = true,
             ExtraFormContent = $"<input type=\"hidden\" name=\"from\" value=\"{Model.Filters.DateFrom:yyyy-MM-dd}\" data-period-form-from /><input type=\"hidden\" name=\"to\" value=\"{Model.Filters.DateTo:yyyy-MM-dd}\" data-period-form-to /><input type=\"hidden\" name=\"sort\" value=\"{Model.Sort.Column}\" /><input type=\"hidden\" name=\"dir\" value=\"{Model.Sort.Dir}\" />"
         };
     }
