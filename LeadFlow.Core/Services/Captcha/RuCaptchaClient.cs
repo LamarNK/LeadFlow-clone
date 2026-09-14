@@ -54,6 +54,16 @@ public sealed class RuCaptchaClient(HttpClient http) : IRuCaptchaClient
         var captcha = new TwoCaptchaGeeTestV4();
         captcha.SetCaptchaId(captchaId.Trim());
         captcha.SetUrl(websiteUrl.Trim());
+        if (!string.IsNullOrWhiteSpace(taskOptions?.Challenge))
+        {
+            captcha.SetChallenge(taskOptions.Challenge.Trim());
+        }
+
+        if (!string.IsNullOrWhiteSpace(taskOptions?.RiskType))
+        {
+            captcha.SetRiskType(taskOptions.RiskType.Trim());
+        }
+
         if (!string.IsNullOrWhiteSpace(taskOptions?.UserAgent))
         {
             captcha.SetUserAgent(taskOptions.UserAgent.Trim());

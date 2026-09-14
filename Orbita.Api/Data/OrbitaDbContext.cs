@@ -950,6 +950,9 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
             entity.Property(x => x.ProviderTaskId).HasMaxLength(128);
             entity.Property(x => x.ErrorCode).HasMaxLength(128);
             entity.Property(x => x.PageUrl).HasMaxLength(2048);
+            entity.Property(x => x.ContextSource).HasMaxLength(64);
+            entity.Property(x => x.ContextFingerprint).HasMaxLength(64);
+            entity.Property(x => x.TargetReason).HasMaxLength(64);
             entity.HasOne(x => x.Worker).WithMany().HasForeignKey(x => x.WorkerId);
         });
 

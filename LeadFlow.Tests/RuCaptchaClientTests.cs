@@ -227,6 +227,39 @@ public sealed class RuCaptchaClientTests
     }
 
     [Fact]
+    public async Task SolveGeeTestV4_SendsDynamicChallengeAndRiskTypeWithoutProxy()
+    {
+        var handler = new StubHttpMessageHandler((request, body) =>
+        {
+            if (request.RequestUri!.AbsolutePath.Contains("/in.php", StringComparison.OrdinalIgnoreCase))
+            {
+                Assert.Contains("challenge=current-challenge", body, StringComparison.Ordinal);
+                Assert.Contains("risk_type=slide%7Ccurrent-risk", body, StringComparison.Ordinal);
+                Assert.DoesNotContain("proxytype=", body, StringComparison.Ordinal);
+                Assert.DoesNotContain("proxy=", body, StringComparison.Ordinal);
+                return Task.FromResult(StubHttpMessageHandler.Ok("OK|79"));
+            }
+
+            return Task.FromResult(StubHttpMessageHandler.Ok("""
+                OK|{"captcha_id":"id","lot_number":"ln","pass_token":"pt","gen_time":"1","captcha_output":"co"}
+                """));
+        });
+        var client = new RuCaptchaClient(new HttpClient(handler) { BaseAddress = new Uri("https://api.rucaptcha.com/") })
+        {
+            PollInterval = TimeSpan.FromMilliseconds(1),
+            SolveTimeout = TimeSpan.FromSeconds(5)
+        };
+
+        await client.SolveGeeTestV4Async(
+            "key",
+            "https://www.avito.ru/",
+            "id",
+            new GeeTestV4TaskOptions("Mozilla/5.0", Challenge: "current-challenge", RiskType: "slide|current-risk"));
+
+        Assert.Equal(2, handler.Calls.Count);
+    }
+
+    [Fact]
     public async Task SolveHCaptcha_ProfileContext_UsesMatchingProxyAndReturnsToken()
     {
         var handler = new StubHttpMessageHandler((request, body) =>

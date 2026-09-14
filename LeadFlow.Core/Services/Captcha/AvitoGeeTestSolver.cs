@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using System.Diagnostics;
 using System.Text.Json;
 using LeadFlow.Core.Logging.Audit;
 using LeadFlow.Core.Services.Avito;
@@ -43,7 +44,9 @@ public sealed class AvitoGeeTestSolver(
         GeeTestV4TaskOptions? taskOptions,
         CancellationToken cancellationToken = default)
     {
-        var apiKey = await ResolveApiKeyAsync(cancellationToken).ConfigureAwait(false);
+        var config = await ResolveConfigAsync(cancellationToken).ConfigureAwait(false);
+        var apiKey = string.IsNullOrWhiteSpace(config?.RuCaptchaApiKey) ? null : config.RuCaptchaApiKey.Trim();
+        var dynamicContextEnabled = config?.GeeTestDynamicContextEnabled == true;
         if (string.IsNullOrWhiteSpace(apiKey))
         {
             _ = GlobalLogger.Instance.LogAsync(
@@ -115,10 +118,11 @@ public sealed class AvitoGeeTestSolver(
                     .ConfigureAwait(false);
             }
 
+            await using var contextCapture = await StartContextCaptureAsync(page).ConfigureAwait(false);
             var activation = await ActivateAndProbeCaptchaAsync(page, cancellationToken).ConfigureAwait(false);
 
-            var effectiveTaskOptions = (taskOptions ?? AvitoCaptchaTaskContext.Options ?? new GeeTestV4TaskOptions())
-                .WithUserAgent(activation.UserAgent);
+            var baseTaskOptions = taskOptions ?? AvitoCaptchaTaskContext.Options ?? new GeeTestV4TaskOptions();
+            var effectiveTaskOptions = baseTaskOptions.WithUserAgent(activation.UserAgent);
 
             if (!activation.IsGeeTest && !activation.IsHCaptcha && activation.Kind != AvitoCaptchaKind.Internal)
             {
@@ -183,10 +187,63 @@ public sealed class AvitoGeeTestSolver(
                     .ConfigureAwait(false);
             }
 
+            var contextTracker = new GeeTestV4AttemptContextTracker();
             for (var attempt = 1; attempt <= MaxAttempts; attempt++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
-                var captchaId = AvitoCaptchaDetector.ExtractGeeTestCaptchaId(html);
+                if (attempt > 1)
+                {
+                    html = await SafeGetHtmlAsync(page, cancellationToken).ConfigureAwait(false);
+                    if (AvitoCaptchaDetector.HasIpBlockChallenge(html)
+                        || AvitoCaptchaRedirectRecovery.RequiresRecovery(html)
+                        || !AvitoGeeTestSolveSupport.ShouldCreateProviderTask(html))
+                    {
+                        _ = GlobalLogger.Instance.LogAsync(
+                            "Captcha: после обновления исчезла GeeTest-сессия — новую задачу не создаём.",
+                            DeskLinkAuditLogLevel.Info,
+                            properties: new Dictionary<string, object?> { ["step"] = "captcha_retry_context_unavailable", ["captcha.attempt"] = attempt, ["page.url"] = page.Url });
+                        return false;
+                    }
+
+                    contextCapture?.Reset();
+                    activation = await ActivateAndProbeCaptchaAsync(page, cancellationToken).ConfigureAwait(false);
+                    if (!activation.IsGeeTest)
+                    {
+                        _ = GlobalLogger.Instance.LogAsync(
+                            "Captcha: после обновления Avito выбрал другой тип проверки — GeeTest-задачу не создаём.",
+                            DeskLinkAuditLogLevel.Info,
+                            properties: new Dictionary<string, object?> { ["step"] = "captcha_retry_kind_changed", ["captcha.attempt"] = attempt, ["captcha.kind"] = activation.Kind.ToLogValue() });
+                        return false;
+                    }
+
+                    effectiveTaskOptions = baseTaskOptions.WithUserAgent(activation.UserAgent);
+                }
+
+                var liveContext = contextCapture is null
+                    ? null
+                    : await contextCapture.WaitForContextAsync(TimeSpan.FromSeconds(1), cancellationToken).ConfigureAwait(false);
+                var captchaId = dynamicContextEnabled ? liveContext?.CaptchaId : null;
+                captchaId ??= AvitoCaptchaDetector.ExtractGeeTestCaptchaId(html);
+                var context = liveContext ?? new GeeTestV4SessionContext(captchaId, null, null, "fallback", DateTime.UtcNow);
+                if (string.IsNullOrWhiteSpace(context.CaptchaId))
+                {
+                    context = context with { CaptchaId = captchaId };
+                }
+
+                if (dynamicContextEnabled)
+                {
+                    effectiveTaskOptions = effectiveTaskOptions.WithSessionContext(context);
+                }
+
+                if (dynamicContextEnabled && !contextTracker.TryUse(context))
+                {
+                    _ = GlobalLogger.Instance.LogAsync(
+                        "Captcha: контекст GeeTest повторился — платную задачу не создаём.",
+                        DeskLinkAuditLogLevel.Warning,
+                        properties: new Dictionary<string, object?> { ["step"] = "captcha_duplicate_context", ["captcha.attempt"] = attempt, ["captcha.contextFingerprint"] = context.Fingerprint });
+                    return false;
+                }
+
                 var websiteUrl = string.IsNullOrWhiteSpace(pageUrl) ? page.Url : pageUrl;
                 if (string.IsNullOrWhiteSpace(websiteUrl))
                 {
@@ -203,11 +260,17 @@ public sealed class AvitoGeeTestSolver(
                         ["captcha.attempt"] = attempt,
                         ["captcha.proxyMode"] = effectiveTaskOptions.UsesSuppliedProxy ? "profile" : "proxyless",
                         ["captcha.userAgentPresent"] = !string.IsNullOrWhiteSpace(effectiveTaskOptions.UserAgent),
+                        ["captcha.contextSource"] = context.Source,
+                        ["captcha.contextFingerprint"] = context.Fingerprint,
+                        ["captcha.challengePresent"] = context.HasChallenge,
+                        ["captcha.riskTypePresent"] = context.HasRiskType,
+                        ["captcha.dynamicContextEnabled"] = dynamicContextEnabled,
                         ["captcha.concurrentLimit"] = AvitoGeeTestSolveSupport.MaxConcurrentGeeTestSolves
                     });
 
                 GeeTestV4Solution solution;
-                var requestId = await CreateProviderRequestAsync(page, "geetest_v4", attempt, MaxAttempts, websiteUrl, cancellationToken).ConfigureAwait(false);
+                var requestId = await CreateProviderRequestAsync(page, "geetest_v4", attempt, MaxAttempts, websiteUrl, context.ToDiagnostics(DateTime.UtcNow), cancellationToken).ConfigureAwait(false);
+                var solveStarted = Stopwatch.GetTimestamp();
                 try
                 {
                     solution = await ruCaptcha
@@ -217,7 +280,7 @@ public sealed class AvitoGeeTestSolver(
                 catch (Exception ex) when (ex is not OperationCanceledException)
                 {
                     if (requestId is Guid failedRequestId)
-                        await requestReporter!.MarkProviderFailedAsync(failedRequestId, ex.Message.Contains("NO_SLOT", StringComparison.OrdinalIgnoreCase) ? "no_slot" : "error", ex.GetType().Name, cancellationToken).ConfigureAwait(false);
+                        await requestReporter!.MarkProviderFailedAsync(failedRequestId, ex.Message.Contains("NO_SLOT", StringComparison.OrdinalIgnoreCase) ? "no_slot" : "error", ex.GetType().Name, cancellationToken, ElapsedMilliseconds(solveStarted)).ConfigureAwait(false);
                     _ = GlobalLogger.Instance.LogAsync(
                         $"Captcha: RuCaptcha не решила GeeTest v4 — {ex.Message}",
                         DeskLinkAuditLogLevel.Warning,
@@ -233,20 +296,38 @@ public sealed class AvitoGeeTestSolver(
                     continue;
                 }
 
+                var solveDurationMs = ElapsedMilliseconds(solveStarted);
                 if (requestId is Guid acceptedRequestId)
-                    await requestReporter!.MarkProviderAcceptedAsync(acceptedRequestId, solution.ProviderTask?.Id.ToString() ?? string.Empty, cancellationToken).ConfigureAwait(false);
+                    await requestReporter!.MarkProviderAcceptedAsync(acceptedRequestId, solution.ProviderTask?.Id.ToString() ?? string.Empty, cancellationToken, solveDurationMs).ConfigureAwait(false);
 
                 if (string.IsNullOrWhiteSpace(solution.CaptchaId))
                 {
                     solution = solution with { CaptchaId = captchaId };
                 }
 
+                var currentContext = contextCapture?.Snapshot();
+                if (dynamicContextEnabled && !GeeTestV4AttemptContextTracker.IsCurrent(context, currentContext))
+                {
+                    var observedContext = currentContext!;
+                    if (requestId is Guid changedRequestId)
+                        await requestReporter!.MarkTargetOutcomeAsync(changedRequestId, "rejected", cancellationToken, "context_changed", null, observedContext.ToDiagnostics(DateTime.UtcNow).ContextAgeMs).ConfigureAwait(false);
+                    _ = GlobalLogger.Instance.LogAsync(
+                        "Captcha: контекст GeeTest изменился до verify — устаревший токен не отправляем.",
+                        DeskLinkAuditLogLevel.Warning,
+                        properties: new Dictionary<string, object?> { ["step"] = "captcha_context_changed_before_verify", ["captcha.attempt"] = attempt, ["captcha.contextFingerprint"] = context.Fingerprint });
+                    await DelayBeforeRetryAsync(page, attempt, "контекст GeeTest изменился", cancellationToken).ConfigureAwait(false);
+                    continue;
+                }
+
                 var verifyRaw = await EvaluateVerifyAsync(page, solution, cancellationToken).ConfigureAwait(false);
+                var verify = AvitoGeeTestSolveSupport.ParseVerifyResult(verifyRaw);
                 if (!RuCaptchaResponseParser.IsVerifyAccepted(verifyRaw))
                 {
+                    var targetReason = verify.StatusCode is null or >= 400 || !string.IsNullOrWhiteSpace(verify.Error)
+                        ? "http_error"
+                        : "verified_false";
                     if (requestId is Guid rejectedRequestId)
-                        await requestReporter!.MarkTargetOutcomeAsync(rejectedRequestId, "rejected", cancellationToken).ConfigureAwait(false);
-                    var verify = AvitoGeeTestSolveSupport.ParseVerifyResult(verifyRaw);
+                        await requestReporter!.MarkTargetOutcomeAsync(rejectedRequestId, "rejected", cancellationToken, targetReason, verify.StatusCode, context.ToDiagnostics(DateTime.UtcNow).ContextAgeMs).ConfigureAwait(false);
                     _ = GlobalLogger.Instance.LogAsync(
                         FormatTokenRejectedMessage("GeeTest v4", verify, effectiveTaskOptions),
                         DeskLinkAuditLogLevel.Warning,
@@ -285,7 +366,7 @@ public sealed class AvitoGeeTestSolver(
                         .ConfigureAwait(false);
                     AvitoCaptchaTaskContext.NoteSolved();
                     if (requestId is Guid solvedRequestId)
-                        await requestReporter!.MarkTargetOutcomeAsync(solvedRequestId, "accepted", cancellationToken).ConfigureAwait(false);
+                        await requestReporter!.MarkTargetOutcomeAsync(solvedRequestId, "accepted", cancellationToken, "verified_true", verify.StatusCode, context.ToDiagnostics(DateTime.UtcNow).ContextAgeMs).ConfigureAwait(false);
                     return true;
                 }
 
@@ -302,7 +383,7 @@ public sealed class AvitoGeeTestSolver(
                         ["captcha.proxyMode"] = effectiveTaskOptions.UsesSuppliedProxy ? "profile" : "proxyless"
                     });
                 if (requestId is Guid stuckRequestId)
-                    await requestReporter!.MarkTargetOutcomeAsync(stuckRequestId, "rejected", cancellationToken).ConfigureAwait(false);
+                    await requestReporter!.MarkTargetOutcomeAsync(stuckRequestId, "rejected", cancellationToken, "left_captcha", null, context.ToDiagnostics(DateTime.UtcNow).ContextAgeMs).ConfigureAwait(false);
                 await DelayBeforeRetryAsync(page, attempt, "страница не ушла после verify", cancellationToken)
                     .ConfigureAwait(false);
             }
@@ -320,16 +401,45 @@ public sealed class AvitoGeeTestSolver(
         }
     }
 
-    private async Task<Guid?> CreateProviderRequestAsync(IPage page, string captchaType, int attempt, int maxAttempts, string pageUrl, CancellationToken ct)
+    private async Task<Guid?> CreateProviderRequestAsync(
+        IPage page,
+        string captchaType,
+        int attempt,
+        int maxAttempts,
+        string pageUrl,
+        CaptchaContextDiagnostics? diagnostics = null,
+        CancellationToken ct = default)
     {
-        var context = CaptchaProviderRequestContext.Current;
-        if (requestReporter is null || context is null) return null;
+        var requestContext = CaptchaProviderRequestContext.Current;
+        if (requestReporter is null || requestContext is null) return null;
         byte[]? screenshot = null;
         try { screenshot = await page.ScreenshotDataAsync(new ScreenshotOptions { Type = ScreenshotType.Png, FullPage = true }).ConfigureAwait(false); } catch { }
         return await requestReporter.CreateAsync(new CaptchaProviderRequestSubmission(
-            context.AccountId, context.CycleRunId, context.SubProfileRunId, context.SubProfileId,
-            context.SubProfileName, "rucaptcha", captchaType, context.Stage, context.Reason,
-            attempt, maxAttempts, pageUrl, DateTime.UtcNow), screenshot, ct).ConfigureAwait(false);
+            requestContext.AccountId, requestContext.CycleRunId, requestContext.SubProfileRunId, requestContext.SubProfileId,
+            requestContext.SubProfileName, "rucaptcha", captchaType, requestContext.Stage, requestContext.Reason,
+            attempt, maxAttempts, pageUrl, DateTime.UtcNow, diagnostics), screenshot, ct).ConfigureAwait(false);
+    }
+
+    private static async Task<GeeTestV4NetworkContextCapture?> StartContextCaptureAsync(IPage page)
+    {
+        try
+        {
+            return await GeeTestV4NetworkContextCapture.StartAsync(page).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                $"Captcha: не удалось включить CDP-сбор параметров GeeTest — {ex.Message}",
+                DeskLinkAuditLogLevel.Warning,
+                properties: new Dictionary<string, object?> { ["step"] = "captcha_context_capture_failed" });
+            return null;
+        }
+    }
+
+    private static int ElapsedMilliseconds(long startedTimestamp)
+    {
+        var elapsed = Stopwatch.GetElapsedTime(startedTimestamp).TotalMilliseconds;
+        return (int)Math.Clamp(elapsed, 0, int.MaxValue);
     }
 
     private async Task<bool> TrySolveLoginOverlayAsync(
@@ -383,7 +493,7 @@ public sealed class AvitoGeeTestSolver(
                 });
 
             ClickCaptchaSolution solution;
-            var requestId = await CreateProviderRequestAsync(page, "click", attempt, MaxAttempts, websiteUrl, cancellationToken).ConfigureAwait(false);
+            var requestId = await CreateProviderRequestAsync(page, "click", attempt, MaxAttempts, websiteUrl, ct: cancellationToken).ConfigureAwait(false);
             try
             {
                 solution = await ruCaptcha
@@ -1160,7 +1270,7 @@ public sealed class AvitoGeeTestSolver(
                 });
 
             HCaptchaSolution solution;
-            var requestId = await CreateProviderRequestAsync(page, "hcaptcha", attempt, MaxAttempts, websiteUrl, cancellationToken).ConfigureAwait(false);
+            var requestId = await CreateProviderRequestAsync(page, "hcaptcha", attempt, MaxAttempts, websiteUrl, ct: cancellationToken).ConfigureAwait(false);
             try
             {
                 solution = await ruCaptcha
@@ -1292,7 +1402,7 @@ public sealed class AvitoGeeTestSolver(
                 });
 
             ImageCaptchaSolution solution;
-            var requestId = await CreateProviderRequestAsync(page, "image_to_text", attempt, MaxAttempts, page.Url, cancellationToken).ConfigureAwait(false);
+            var requestId = await CreateProviderRequestAsync(page, "image_to_text", attempt, MaxAttempts, page.Url, ct: cancellationToken).ConfigureAwait(false);
             try
             {
                 solution = await ruCaptcha
@@ -1442,12 +1552,12 @@ public sealed class AvitoGeeTestSolver(
         return $"Captcha: Avito не принял токен {captchaKind} (HTTP {status}; {proxyMode}; {reason}).";
     }
 
-    private async Task<string?> ResolveApiKeyAsync(CancellationToken cancellationToken)
+    private async Task<WorkerMonitoringConfig?> ResolveConfigAsync(CancellationToken cancellationToken)
     {
         try
         {
             var config = await configProvider.GetConfigAsync(cancellationToken).ConfigureAwait(false);
-            return string.IsNullOrWhiteSpace(config.RuCaptchaApiKey) ? null : config.RuCaptchaApiKey.Trim();
+            return config;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

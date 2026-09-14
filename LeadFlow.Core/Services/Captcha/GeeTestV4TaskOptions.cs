@@ -4,7 +4,11 @@ namespace LeadFlow.Core.Services.Captcha;
 /// Контекст профиля, с которым должна быть решена GeeTest v4.
 /// Пароль прокси используется только в запросе к RuCaptcha и никогда не попадает в логи.
 /// </summary>
-public sealed record GeeTestV4TaskOptions(string? UserAgent = null, GeeTestV4Proxy? Proxy = null)
+public sealed record GeeTestV4TaskOptions(
+    string? UserAgent = null,
+    GeeTestV4Proxy? Proxy = null,
+    string? Challenge = null,
+    string? RiskType = null)
 {
     public bool UsesSuppliedProxy => Proxy is not null;
 
@@ -13,6 +17,13 @@ public sealed record GeeTestV4TaskOptions(string? UserAgent = null, GeeTestV4Pro
 
     public GeeTestV4TaskOptions WithProxy(GeeTestV4Proxy? proxy) =>
         this with { Proxy = proxy };
+
+    public GeeTestV4TaskOptions WithSessionContext(GeeTestV4SessionContext context) =>
+        this with
+        {
+            Challenge = string.IsNullOrWhiteSpace(context.Challenge) ? null : context.Challenge.Trim(),
+            RiskType = string.IsNullOrWhiteSpace(context.RiskType) ? null : context.RiskType.Trim()
+        };
 
     /// <summary>
     /// Подставляет прокси браузера (AdsPower-профиль), если он разобран.

@@ -101,7 +101,8 @@ public sealed record CaptchaProviderRequestSubmission(
     int Attempt,
     int MaxAttempts,
     string? PageUrl,
-    DateTime SubmittedAtUtc);
+    DateTime SubmittedAtUtc,
+    CaptchaContextDiagnostics? Context = null);
 
 public interface ICaptchaProviderRequestReporter
 {
@@ -113,18 +114,23 @@ public interface ICaptchaProviderRequestReporter
     Task MarkProviderAcceptedAsync(
         Guid requestId,
         string providerTaskId,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        int? solveDurationMs = null);
 
     Task MarkProviderFailedAsync(
         Guid requestId,
         string providerStatus,
         string? errorCode,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        int? solveDurationMs = null);
 
     Task MarkTargetOutcomeAsync(
         Guid requestId,
         string targetStatus,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        string? targetReason = null,
+        int? httpStatus = null,
+        int? contextAgeMs = null);
 }
 
 public sealed class NullCaptchaProviderRequestReporter : ICaptchaProviderRequestReporter
@@ -132,12 +138,12 @@ public sealed class NullCaptchaProviderRequestReporter : ICaptchaProviderRequest
     public Task<Guid?> CreateAsync(CaptchaProviderRequestSubmission request, byte[]? screenshotPng, CancellationToken cancellationToken = default) =>
         Task.FromResult<Guid?>(null);
 
-    public Task MarkProviderAcceptedAsync(Guid requestId, string providerTaskId, CancellationToken cancellationToken = default) =>
+    public Task MarkProviderAcceptedAsync(Guid requestId, string providerTaskId, CancellationToken cancellationToken = default, int? solveDurationMs = null) =>
         Task.CompletedTask;
 
-    public Task MarkProviderFailedAsync(Guid requestId, string providerStatus, string? errorCode, CancellationToken cancellationToken = default) =>
+    public Task MarkProviderFailedAsync(Guid requestId, string providerStatus, string? errorCode, CancellationToken cancellationToken = default, int? solveDurationMs = null) =>
         Task.CompletedTask;
 
-    public Task MarkTargetOutcomeAsync(Guid requestId, string targetStatus, CancellationToken cancellationToken = default) =>
+    public Task MarkTargetOutcomeAsync(Guid requestId, string targetStatus, CancellationToken cancellationToken = default, string? targetReason = null, int? httpStatus = null, int? contextAgeMs = null) =>
         Task.CompletedTask;
 }

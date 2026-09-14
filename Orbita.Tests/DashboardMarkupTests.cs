@@ -214,6 +214,18 @@ public sealed class DashboardMarkupTests
     }
 
     [Fact]
+    public void CaptchaStatistics_DistinguishesProviderSolutionFromAvitoVerification()
+    {
+        var view = ReadRepoFile("Orbita.Web/Views/Statistics/_StatisticsCaptchaProviderRequests.cshtml");
+
+        Assert.Contains("RuCaptcha выдала решение", view);
+        Assert.Contains("Avito подтвердил", view);
+        Assert.Contains("TargetReason", view);
+        Assert.Contains("ContextFingerprint", view);
+        Assert.DoesNotContain("принято провайдером", view);
+    }
+
+    [Fact]
     public void StatisticsPreview_ProvidesAccountOptionsForTheAccountMultiSelect()
     {
         var model = DesignPreviewData.BuildStatisticsIndexViewModel(

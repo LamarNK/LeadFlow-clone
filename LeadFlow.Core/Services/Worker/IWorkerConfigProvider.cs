@@ -28,6 +28,9 @@ public sealed class WorkerMonitoringConfig
     /// <summary>Ключ RuCaptcha / 2captcha для автопрохождения GeeTest v4. Пусто — выкл.</summary>
     public string? RuCaptchaApiKey { get; init; }
 
+    /// <summary>Передавать в RuCaptcha динамический challenge/risk_type текущей GeeTest-сессии.</summary>
+    public bool GeeTestDynamicContextEnabled { get; init; }
+
     public bool AdsPowerEnabled { get; init; } = true;
 
     public bool MultiloginEnabled { get; init; } = true;

@@ -37,6 +37,11 @@ public sealed class CaptchaProviderRequestService(OrbitaDbContext db, OfficeScop
             TargetStatus = "pending",
             PageUrl = request.PageUrl,
             DiagnosticAttachmentId = request.DiagnosticAttachmentId,
+            ContextSource = request.Context?.Source,
+            ContextFingerprint = request.Context?.Fingerprint,
+            ChallengePresent = request.Context?.ChallengePresent,
+            RiskTypePresent = request.Context?.RiskTypePresent,
+            ContextAgeAtSubmitMs = request.Context?.ContextAgeMs,
             SubmittedAtUtc = request.SubmittedAtUtc == default ? now : request.SubmittedAtUtc,
             UpdatedAtUtc = now
         };
@@ -53,6 +58,7 @@ public sealed class CaptchaProviderRequestService(OrbitaDbContext db, OfficeScop
         entity.ProviderStatus = string.IsNullOrWhiteSpace(result.ProviderStatus) ? "accepted" : result.ProviderStatus;
         entity.ProviderTaskId = result.ProviderTaskId;
         entity.ErrorCode = result.ErrorCode;
+        entity.SolveDurationMs = result.SolveDurationMs;
         entity.UpdatedAtUtc = DateTime.UtcNow;
         await db.SaveChangesAsync(ct).ConfigureAwait(false);
         return true;
@@ -63,6 +69,9 @@ public sealed class CaptchaProviderRequestService(OrbitaDbContext db, OfficeScop
         var entity = await ForWorker(workerId).FirstOrDefaultAsync(x => x.Id == result.Id, ct);
         if (entity is null) return false;
         entity.TargetStatus = result.TargetStatus;
+        entity.TargetReason = result.TargetReason;
+        entity.TargetHttpStatus = result.HttpStatus;
+        entity.ContextAgeAtVerifyMs = result.ContextAgeMs;
         entity.UpdatedAtUtc = DateTime.UtcNow;
         await db.SaveChangesAsync(ct).ConfigureAwait(false);
         return true;
@@ -115,7 +124,10 @@ public sealed class CaptchaProviderRequestService(OrbitaDbContext db, OfficeScop
             rows.Count(x => x.ProviderStatus == "error"),
             rows.Count(x => x.TargetStatus == "accepted"),
             rows.Count(x => x.TargetStatus == "rejected"),
-            grouped);
+            grouped,
+            rows.Count(x => x.ContextFingerprint != null),
+            rows.Count(x => x.ChallengePresent == true),
+            rows.Count(x => x.RiskTypePresent == true));
     }
 
     private IQueryable<CaptchaProviderRequestEntity> ForWorker(Guid workerId) =>
@@ -125,7 +137,10 @@ public sealed class CaptchaProviderRequestService(OrbitaDbContext db, OfficeScop
         x.Id, x.WorkerId, x.AccountId, x.CycleRunId, x.SubProfileRunId, x.SubProfileId,
         x.SubProfileName, x.Provider, x.CaptchaType, x.Stage, x.Reason, x.Attempt,
         x.MaxAttempts, x.ProviderStatus, x.TargetStatus, x.ProviderTaskId, x.ErrorCode,
-        x.PageUrl, x.DiagnosticAttachmentId, x.SubmittedAtUtc, x.UpdatedAtUtc);
+        x.PageUrl, x.DiagnosticAttachmentId, x.SubmittedAtUtc, x.UpdatedAtUtc,
+        x.ContextSource, x.ContextFingerprint, x.ChallengePresent, x.RiskTypePresent,
+        x.ContextAgeAtSubmitMs, x.ContextAgeAtVerifyMs, x.SolveDurationMs,
+        x.TargetReason, x.TargetHttpStatus);
 
     internal static DateTime ToUtcBoundary(DateTime? value, int? offsetMinutes, DateTime fallback)
     {

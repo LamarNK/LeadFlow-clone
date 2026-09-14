@@ -107,7 +107,7 @@ public static class AvitoGeeTestSolveSupport
           let serverKind = 'unknown';
           let siteKey = getHcaptchaSiteKey();
           let imageData = kind === 'internal' ? await getInternalImage() : null;
-          if (kind === 'unknown') {
+          if (kind === 'unknown' || kind === 'geetest') {
             for (const root of roots) {
               const button = [...root.querySelectorAll('button, [role="button"], input[type="submit"]')].find(isContinue);
               if (button) {
@@ -138,7 +138,7 @@ public static class AvitoGeeTestSolveSupport
               const resolved = fromFirewallResponse(response && response.success && response.success.result
                 ? response.success.result.captcha : null);
               serverKind = resolved.kind;
-              if (resolved.kind !== 'unknown') kind = resolved.kind;
+              if (kind === 'unknown' && resolved.kind !== 'unknown') kind = resolved.kind;
               if (!siteKey && resolved.siteKey) siteKey = resolved.siteKey;
               if (!imageData && resolved.image) imageData = await getInternalImage(resolved.image);
             } catch {}

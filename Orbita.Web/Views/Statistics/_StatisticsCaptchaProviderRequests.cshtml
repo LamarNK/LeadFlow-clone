@@ -20,11 +20,14 @@
         {
             <div class="statistics-captcha-kpis">
                 <span><strong>@stats.SubmittedCount</strong> отправлено</span>
-                <span><strong>@stats.ProviderAcceptedCount</strong> принято провайдером</span>
+                <span><strong>@stats.ProviderAcceptedCount</strong> RuCaptcha выдала решение</span>
                 <span><strong>@stats.NoSlotCount</strong> нет слота</span>
                 <span><strong>@stats.ProviderErrorCount</strong> ошибка провайдера</span>
-                <span><strong>@stats.TargetAcceptedCount</strong> принял Avito</span>
+                <span><strong>@stats.TargetAcceptedCount</strong> Avito подтвердил</span>
                 <span><strong>@stats.TargetRejectedCount</strong> отклонил Avito</span>
+                <span><strong>@stats.ContextDetectedCount</strong> контекст определён</span>
+                <span><strong>@stats.ChallengePresentCount</strong> с challenge</span>
+                <span><strong>@stats.RiskTypePresentCount</strong> с risk_type</span>
             </div>
             <div class="statistics-captcha-workers">
                 @foreach (var worker in stats.Workers)
@@ -41,6 +44,14 @@
                                     <span>@request.CaptchaType · @request.Stage</span>
                                     <span>попытка @request.Attempt/@request.MaxAttempts</span>
                                     <span class="statistics-captcha-status">@request.ProviderStatus / @request.TargetStatus</span>
+                                    @if (!string.IsNullOrWhiteSpace(request.TargetReason))
+                                    {
+                                        <span class="muted">@request.TargetReason@(request.TargetHttpStatus is int status ? $" · HTTP {status}" : string.Empty)</span>
+                                    }
+                                    @if (!string.IsNullOrWhiteSpace(request.ContextFingerprint))
+                                    {
+                                        <span class="muted">ctx @request.ContextFingerprint[..Math.Min(10, request.ContextFingerprint.Length)] · challenge @(request.ChallengePresent == true ? "да" : "нет") · risk @(request.RiskTypePresent == true ? "да" : "нет")</span>
+                                    }
                                     @if (request.DiagnosticAttachmentId is Guid attachmentId)
                                     {
                                         <a href="/Diagnostics/Image/@attachmentId" target="_blank" rel="noopener">Скриншот</a>

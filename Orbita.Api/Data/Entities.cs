@@ -494,6 +494,15 @@ public sealed class CaptchaProviderRequestEntity
     public string? ErrorCode { get; set; }
     public string? PageUrl { get; set; }
     public Guid? DiagnosticAttachmentId { get; set; }
+    public string? ContextSource { get; set; }
+    public string? ContextFingerprint { get; set; }
+    public bool? ChallengePresent { get; set; }
+    public bool? RiskTypePresent { get; set; }
+    public int? ContextAgeAtSubmitMs { get; set; }
+    public int? ContextAgeAtVerifyMs { get; set; }
+    public int? SolveDurationMs { get; set; }
+    public string? TargetReason { get; set; }
+    public int? TargetHttpStatus { get; set; }
     public DateTime SubmittedAtUtc { get; set; }
     public DateTime UpdatedAtUtc { get; set; }
 

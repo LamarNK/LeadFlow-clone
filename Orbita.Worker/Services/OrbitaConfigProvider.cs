@@ -56,6 +56,10 @@ public sealed class OrbitaConfigProvider(
             RuCaptchaApiKey = string.IsNullOrWhiteSpace(_cached.RuCaptchaApiKey)
                 ? null
                 : _cached.RuCaptchaApiKey.Trim(),
+            GeeTestDynamicContextEnabled = string.Equals(
+                Environment.GetEnvironmentVariable("LEADFLOW_GEETEST_DYNAMIC_CONTEXT_ENABLED"),
+                "true",
+                StringComparison.OrdinalIgnoreCase),
             AdsPowerEnabled = _cached.AdsPowerEnabled,
             MultiloginEnabled = _cached.MultiloginEnabled,
             LocalChromeEnabled = _cached.LocalChromeEnabled,
