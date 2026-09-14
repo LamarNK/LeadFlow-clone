@@ -35,7 +35,9 @@
                             @foreach (var request in worker.Requests)
                             {
                                 <div class="statistics-captcha-request-row">
-                                    <time datetime="@request.SubmittedAtUtc.ToString("O")">@request.SubmittedAtUtc.ToLocalTime().ToString("dd.MM HH:mm:ss")</time>
+                                    <time datetime="@request.SubmittedAtUtc.ToString("O")"
+                                          data-orbita-utc="@request.SubmittedAtUtc.ToString("O")"
+                                          data-orbita-format="datetime-short-seconds"></time>
                                     <span>@request.CaptchaType · @request.Stage</span>
                                     <span>попытка @request.Attempt/@request.MaxAttempts</span>
                                     <span class="statistics-captcha-status">@request.ProviderStatus / @request.TargetStatus</span>

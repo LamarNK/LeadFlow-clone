@@ -202,6 +202,18 @@ public sealed class DashboardMarkupTests
     }
 
     [Fact]
+    public void CaptchaStatistics_UsesBrowserLocalTimeFormatter()
+    {
+        var view = ReadRepoFile("Orbita.Web/Views/Statistics/_StatisticsCaptchaProviderRequests.cshtml");
+        var time = ReadRepoFile("Orbita.Web/wwwroot/js/orbita-time.js");
+
+        Assert.Contains("data-orbita-utc=\"@request.SubmittedAtUtc.ToString(\"O\")\"", view);
+        Assert.Contains("data-orbita-format=\"datetime-short-seconds\"", view);
+        Assert.DoesNotContain("SubmittedAtUtc.ToLocalTime()", view);
+        Assert.Contains("case 'datetime-short-seconds':", time);
+    }
+
+    [Fact]
     public void StatisticsPreview_ProvidesAccountOptionsForTheAccountMultiSelect()
     {
         var model = DesignPreviewData.BuildStatisticsIndexViewModel(
