@@ -63,7 +63,10 @@ public sealed class BalancesService(
             for (var i = 0; i < profiles.Count; i++)
             {
                 var profile = profiles[i];
-                if (profile.Balance is not decimal current)
+                // Disabled subprofiles remain in the API snapshot so the account
+                // settings page can show and re-enable them, but they must not
+                // create actionable rows in "Требуют пополнения".
+                if (!profile.IsEnabledInPanel || profile.Balance is not decimal current)
                 {
                     continue;
                 }

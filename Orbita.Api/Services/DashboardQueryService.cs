@@ -441,10 +441,9 @@ public sealed class DashboardQueryService(
                 0);
         }
 
-        // The latest telemetry snapshot is the source of truth for a balance. WorkerAccounts
-        // can lag behind it when the worker sends a balance for an account that is not in the
-        // current account catalogue. Load the ordered candidate set first, then apply the
-        // low-balance group after computing those snapshots below.
+        // Load the ordered candidate set first, then apply the low-balance group after
+        // computing operational stats. Low-balance warnings intentionally use the same
+        // persisted account data as the Balances page, including top-up suppression.
         var ordered = ApplyWorkerListSort(filtered, sortColumn, sortDescending, todayStart);
         var workers = await ordered
             .Select(w => new
@@ -1824,13 +1823,16 @@ public sealed class DashboardQueryService(
                 x.Status,
                 x.IsEnabledInPanel,
                 x.TotalBalance,
-                x.SubProfilesJson
+                x.SubProfilesJson,
+                x.SubProfilesDisabledIdsJson
             })
             .ToListAsync(ct);
 
         var accountCounts = BuildAccountCounts(
             accountRows.Select(x => (x.WorkerId, x.Status, x.IsEnabledInPanel)));
-        var openTopUps = await LoadOpenTopUpKeysAsync(workerIds, ct).ConfigureAwait(false);
+        var nowUtc = DateTime.UtcNow;
+        var topUpSuppressionKeys = await LoadTopUpSuppressionKeysAsync(workerIds, nowUtc, ct)
+            .ConfigureAwait(false);
         var lowBalanceAccountCounts = accountRows
             // Keep the dashboard warning in sync with the Balances page: accounts
             // hidden from the panel must not make their worker look like it needs
@@ -1844,7 +1846,12 @@ public sealed class DashboardQueryService(
                     Count = ResolveLowBalanceSubProfileCount(
                         x.TotalBalance,
                         x.SubProfilesJson,
-                        subProfile => HasOpenTopUp(openTopUps, x.WorkerId, x.AccountId, subProfile))
+                        subProfile => HasTopUpSuppression(
+                            topUpSuppressionKeys,
+                            x.WorkerId,
+                            x.AccountId,
+                            subProfile),
+                        x.SubProfilesDisabledIdsJson)
                 };
             })
             .GroupBy(x => x.WorkerId)
@@ -1869,7 +1876,8 @@ public sealed class DashboardQueryService(
     private static int ResolveLowBalanceSubProfileCount(
         decimal persistedTotalBalance,
         string? persistedSubProfilesJson,
-        Func<SubProfileBalanceDto, bool> isExcluded)
+        Func<SubProfileBalanceDto, bool> isExcluded,
+        string? disabledSubProfileIdsJson)
     {
         // The Balances page is backed by the persisted account snapshot. Do not
         // fall back to a telemetry snapshot here: that would highlight workers
@@ -1877,11 +1885,13 @@ public sealed class DashboardQueryService(
         return BalanceSnapshotHelper.CountLowBalancePersistedSubProfiles(
             persistedTotalBalance,
             persistedSubProfilesJson,
-            isExcluded);
+            isExcluded,
+            disabledSubProfileIdsJson);
     }
 
-    private async Task<IReadOnlyList<OpenTopUpKey>> LoadOpenTopUpKeysAsync(
+    private async Task<IReadOnlyList<TopUpSuppressionKey>> LoadTopUpSuppressionKeysAsync(
         IReadOnlyList<Guid> workerIds,
+        DateTime nowUtc,
         CancellationToken ct)
     {
         if (workerIds.Count == 0)
@@ -1889,6 +1899,7 @@ public sealed class DashboardQueryService(
             return [];
         }
 
+        var cooldownStartUtc = nowUtc - TopUpSessionRules.RepeatTopUpCooldown;
         return await db.TopUpSessions.AsNoTracking()
             .Where(x => workerIds.Contains(x.WorkerId)
                         && (x.Status == TopUpSessionStatuses.Requested
@@ -1896,19 +1907,22 @@ public sealed class DashboardQueryService(
                             || x.Status == TopUpSessionStatuses.PaymentClaimed
                             || x.Status == TopUpSessionStatuses.QrReady
                             || x.Status == TopUpSessionStatuses.AwaitingBalance
-                            || x.Status == TopUpSessionStatuses.VerificationRequired))
-            .Select(x => new OpenTopUpKey(x.WorkerId, x.AccountId, x.SubProfileId, x.SubProfileName))
+                            || x.Status == TopUpSessionStatuses.VerificationRequired
+                            || (x.Status == TopUpSessionStatuses.Completed
+                                && x.CompletedAtUtc > cooldownStartUtc
+                                && x.CompletedAtUtc <= nowUtc)))
+            .Select(x => new TopUpSuppressionKey(x.WorkerId, x.AccountId, x.SubProfileId, x.SubProfileName))
             .ToListAsync(ct)
             .ConfigureAwait(false);
     }
 
-    private static bool HasOpenTopUp(
-        IReadOnlyList<OpenTopUpKey> openTopUps,
+    private static bool HasTopUpSuppression(
+        IReadOnlyList<TopUpSuppressionKey> suppressionKeys,
         Guid workerId,
         Guid accountId,
         SubProfileBalanceDto subProfile)
     {
-        foreach (var session in openTopUps)
+        foreach (var session in suppressionKeys)
         {
             if (session.WorkerId != workerId || session.AccountId != accountId)
             {
@@ -1932,7 +1946,7 @@ public sealed class DashboardQueryService(
         return false;
     }
 
-    private readonly record struct OpenTopUpKey(
+    private readonly record struct TopUpSuppressionKey(
         Guid WorkerId,
         Guid AccountId,
         string SubProfileId,

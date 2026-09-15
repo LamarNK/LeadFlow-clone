@@ -38,9 +38,17 @@ internal static class BalanceSnapshotHelper
         return false;
     }
 
-    public static WorkerBalanceDto? FromWorkerAccount(WorkerAccountEntity account)
+    public static WorkerBalanceDto? FromWorkerAccount(
+        WorkerAccountEntity account,
+        string? disabledSubProfileIdsJson = null)
     {
-        var subProfiles = SubProfileDeserializer.Deserialize(account.SubProfilesJson);
+        var subProfiles = SubProfileDeserializer.Deserialize(
+            account.SubProfilesJson,
+            disabledSubProfileIdsJson);
+        if (disabledSubProfileIdsJson is not null)
+        {
+            subProfiles = subProfiles?.Where(static profile => profile.IsEnabledInPanel).ToList();
+        }
         if (subProfiles is null || subProfiles.Count == 0)
         {
             return account.TotalBalance > 0
@@ -101,12 +109,13 @@ internal static class BalanceSnapshotHelper
     public static int CountLowBalancePersistedSubProfiles(
         decimal totalBalance,
         string? subProfilesJson,
-        Func<SubProfileBalanceDto, bool>? isExcluded = null) =>
+        Func<SubProfileBalanceDto, bool>? isExcluded = null,
+        string? disabledSubProfileIdsJson = null) =>
         CountLowBalanceSubProfiles(FromWorkerAccount(new WorkerAccountEntity
         {
             TotalBalance = totalBalance,
             SubProfilesJson = subProfilesJson ?? "[]"
-        }), isExcluded);
+        }, disabledSubProfileIdsJson), isExcluded);
 
     public static IReadOnlyList<WorkerBalanceDto> MergeWithPersisted(
         IReadOnlyList<WorkerBalanceDto> incoming,

@@ -608,6 +608,30 @@ public sealed class DashboardQueryServiceWorkersPageTests
     }
 
     [Fact]
+    public async Task GetWorkersPageAsync_DoesNotFlagDisabledLowBalanceSubProfile()
+    {
+        DashboardQueryService.ClearCacheForTests();
+        await using var db = CreateDb();
+        var now = DateTime.UtcNow;
+        SeedOffice(db, now);
+        var worker = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbb48");
+        SeedWorker(db, worker, "worker", now.AddMinutes(-1));
+        SeedAccount(
+            db,
+            worker,
+            "account",
+            totalBalance: 40m,
+            subProfilesJson: """[{"Id":"disabled","Name":"Отключённый","Balance":40},{"Id":"enabled","Name":"Включённый","Balance":600}]""",
+            disabledSubProfileIdsJson: "[\"disabled\"]");
+        await db.SaveChangesAsync();
+
+        var page = await CreateService(db).GetWorkersPageAsync(
+            OfficeScope.ForOffice(OfficeId), OfficeId, page: 1, pageSize: 25);
+
+        Assert.Equal(0, Assert.Single(page.Items).LowBalanceAccountCount);
+    }
+
+    [Fact]
     public async Task GetWorkersPageAsync_ExcludesOpenTopUpSessionFromLowBalanceCount()
     {
         DashboardQueryService.ClearCacheForTests();
@@ -652,6 +676,48 @@ public sealed class DashboardQueryServiceWorkersPageTests
             OfficeScope.ForOffice(OfficeId), OfficeId, page: 1, pageSize: 25);
 
         Assert.Equal(1, Assert.Single(page.Items).LowBalanceAccountCount);
+    }
+
+    [Fact]
+    public async Task GetWorkersPageAsync_ExcludesRecentlyCompletedTopUpFromLowBalanceCount()
+    {
+        DashboardQueryService.ClearCacheForTests();
+        await using var db = CreateDb();
+        var now = DateTime.UtcNow;
+        SeedOffice(db, now);
+        var worker = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbb47");
+        SeedWorker(db, worker, "worker", now.AddMinutes(-1));
+        var accountId = SeedAccount(
+            db,
+            worker,
+            "recently-topped-up",
+            totalBalance: 40m,
+            subProfilesJson: """[{"Id":"sp-1","Name":"Основной","Balance":40}]""");
+        db.TopUpSessions.Add(new TopUpSessionEntity
+        {
+            Id = Guid.NewGuid(),
+            WorkerId = worker,
+            AccountId = accountId,
+            AccountName = "recently-topped-up",
+            SubProfileId = "sp-1",
+            SubProfileName = "Основной",
+            OfficeId = OfficeId,
+            OperatorUserId = "op1",
+            OperatorDisplayName = "Operator",
+            Status = TopUpSessionStatuses.Completed,
+            CurrentBalance = 40m,
+            TargetBalance = 340m,
+            RequestedAmount = 300m,
+            CreatedAtUtc = now.AddMinutes(-40),
+            CompletedAtUtc = now.AddMinutes(-30),
+            ExpiresAtUtc = now.AddHours(2)
+        });
+        await db.SaveChangesAsync();
+
+        var page = await CreateService(db).GetWorkersPageAsync(
+            OfficeScope.ForOffice(OfficeId), OfficeId, page: 1, pageSize: 25);
+
+        Assert.Equal(0, Assert.Single(page.Items).LowBalanceAccountCount);
     }
 
     [Fact]
@@ -740,7 +806,8 @@ public sealed class DashboardQueryServiceWorkersPageTests
         decimal totalBalance,
         string subProfilesJson = "[]",
         string status = "Active",
-        bool isEnabledInPanel = true)
+        bool isEnabledInPanel = true,
+        string disabledSubProfileIdsJson = "[]")
     {
         var accountId = Guid.NewGuid();
         db.WorkerAccounts.Add(new WorkerAccountEntity
@@ -752,7 +819,8 @@ public sealed class DashboardQueryServiceWorkersPageTests
             IsEnabled = true,
             IsEnabledInPanel = isEnabledInPanel,
             TotalBalance = totalBalance,
-            SubProfilesJson = subProfilesJson
+            SubProfilesJson = subProfilesJson,
+            SubProfilesDisabledIdsJson = disabledSubProfileIdsJson
         });
         return accountId;
     }

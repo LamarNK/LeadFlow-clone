@@ -85,6 +85,28 @@ public sealed class BalancesSearchTests
         }
     }
 
+    [Fact]
+    public async Task GetIndexAsync_LowTabExcludesSubprofilesDisabledInPanel()
+    {
+        var enabled = CreateAccountWithSession("Enabled profile", null, subProfileEnabledInPanel: true);
+        var disabled = CreateAccountWithSession("Disabled profile", null, subProfileEnabledInPanel: false);
+        using var handler = new StubHttpMessageHandler(request => request.RequestUri!.AbsolutePath switch
+        {
+            "/api/v1/balances/accounts" => JsonResponse<IReadOnlyList<OfficeBalanceListItem>>([enabled.Account, disabled.Account]),
+            "/api/v1/panel/top-up-sessions" => JsonResponse<IReadOnlyList<TopUpSessionDto>>([]),
+            _ => new HttpResponseMessage(HttpStatusCode.NotFound)
+        });
+        var (service, http) = CreateService(handler);
+        using (http)
+        {
+            var model = await service.GetIndexAsync("low");
+
+            var row = Assert.Single(model.Rows);
+            Assert.Equal(enabled.Account.AccountId, row.AccountId);
+            Assert.Equal(1, model.LowBalanceCount);
+        }
+    }
+
     private static TopUpSessionDto CreateSession(string accountName, string status)
     {
         var now = DateTime.UtcNow;
@@ -118,7 +140,8 @@ public sealed class BalancesSearchTests
     private static (OfficeBalanceListItem Account, TopUpSessionDto? Session) CreateAccountWithSession(
         string accountName,
         string? status,
-        bool isEnabledInPanel = true)
+        bool isEnabledInPanel = true,
+        bool subProfileEnabledInPanel = true)
     {
         var workerId = Guid.NewGuid();
         var accountId = Guid.NewGuid();
@@ -134,7 +157,16 @@ public sealed class BalancesSearchTests
             isEnabledInPanel,
             100m,
             DateTime.UtcNow,
-            [new WorkerSubProfileDto(subProfileId, accountName + " profile", "", true, 100m, null, null, null)]);
+            [new WorkerSubProfileDto(
+                subProfileId,
+                accountName + " profile",
+                "",
+                true,
+                100m,
+                null,
+                null,
+                null,
+                subProfileEnabledInPanel)]);
         if (status is null)
         {
             return (account, null);
