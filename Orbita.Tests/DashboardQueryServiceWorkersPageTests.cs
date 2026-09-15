@@ -420,6 +420,44 @@ public sealed class DashboardQueryServiceWorkersPageTests
     }
 
     [Fact]
+    public async Task GetWorkersPageAsync_PrefersPersistedSubprofileBalanceOverStaleSnapshot()
+    {
+        DashboardQueryService.ClearCacheForTests();
+        var (db, connection) = await CreateSqliteDbAsync();
+        await using var connectionScope = connection;
+        await using var dbScope = db;
+        var now = DateTime.UtcNow;
+        SeedOffice(db, now);
+        var worker = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbb46");
+        SeedWorker(db, worker, "worker", now.AddMinutes(-1));
+        var accountId = SeedAccount(
+            db,
+            worker,
+            "refreshed",
+            totalBalance: 500m,
+            subProfilesJson: """[{"Id":"sp-1","Name":"Основной","Balance":500}]""");
+        db.WorkerSnapshots.Add(new WorkerSnapshotEntity
+        {
+            Id = Guid.NewGuid(),
+            WorkerId = worker,
+            CapturedAtUtc = now,
+            StatsJson = "{}",
+            BalancesJson = JsonSerializer.Serialize<IReadOnlyList<WorkerBalanceDto>>(
+            [new WorkerBalanceDto(
+                accountId,
+                "refreshed",
+                40m,
+                [new SubProfileBalanceDto("Основной", 40m, SubProfileId: "sp-1")])])
+        });
+        await db.SaveChangesAsync();
+
+        var page = await CreateService(db).GetWorkersPageAsync(
+            OfficeScope.ForOffice(OfficeId), OfficeId, page: 1, pageSize: 25);
+
+        Assert.Equal(0, Assert.Single(page.Items).LowBalanceAccountCount);
+    }
+
+    [Fact]
     public async Task GetWorkersPageAsync_FlagsEveryLowBalanceSubProfileWhenAccountTotalIsHigh()
     {
         DashboardQueryService.ClearCacheForTests();

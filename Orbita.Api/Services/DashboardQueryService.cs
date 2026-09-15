@@ -1878,6 +1878,20 @@ public sealed class DashboardQueryService(
         string? persistedSubProfilesJson,
         Func<SubProfileBalanceDto, bool> isExcluded)
     {
+        // The Balances page is backed by the persisted account snapshot. Keep
+        // dashboard warnings aligned with it whenever that snapshot contains
+        // concrete subprofile balances; a telemetry snapshot can otherwise be
+        // older and leave a worker highlighted after the balance was refreshed.
+        var persistedBalance = BalanceSnapshotHelper.FromWorkerAccount(new WorkerAccountEntity
+        {
+            TotalBalance = persistedTotalBalance,
+            SubProfilesJson = persistedSubProfilesJson ?? "[]"
+        });
+        if (BalanceSnapshotHelper.HasKnownSubProfileAdvance(persistedBalance))
+        {
+            return BalanceSnapshotHelper.CountLowBalanceSubProfiles(persistedBalance, isExcluded);
+        }
+
         if (snapshotBalance is null)
         {
             return BalanceSnapshotHelper.CountLowBalancePersistedSubProfiles(
