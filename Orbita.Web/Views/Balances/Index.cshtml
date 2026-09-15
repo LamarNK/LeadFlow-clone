@@ -135,7 +135,13 @@
                             <td data-label="Баланс до">@session.CurrentBalance.ToString("N0") ₽</td>
                             <td data-label="Сумма">@session.RequestedAmount.ToString("N0") ₽</td>
                             <td data-label="Баланс после">@(session.BalanceAfter?.ToString("N0") ?? "—")@(session.BalanceAfter.HasValue ? " ₽" : "")</td>
-                            <td data-label="Статус"><span class="balance-status balance-status--@session.Status">@statusLabel(session.Status)</span></td>
+                            <td data-label="Статус">
+                                <span class="balance-status balance-status--@session.Status">@statusLabel(session.Status)</span>
+                                @if (session.Status == TopUpSessionStatuses.Failed && !string.IsNullOrWhiteSpace(session.FailureMessage))
+                                {
+                                    <small data-balance-status-detail title="@session.FailureMessage">@session.FailureMessage</small>
+                                }
+                            </td>
                             <td data-label="Оператор">@session.OperatorDisplayName</td>
                         </tr>
                     }
