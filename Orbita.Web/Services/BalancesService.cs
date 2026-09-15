@@ -20,7 +20,9 @@ public sealed class BalancesService(
         var sessionsTask = api.GetTopUpSessionsAsync(history, ct);
         await Task.WhenAll(accountsTask, sessionsTask);
 
-        var accounts = await accountsTask ?? [];
+        var accounts = (await accountsTask ?? [])
+            .Where(x => x.IsEnabledInPanel)
+            .ToArray();
         var workerOptions = accounts
             .GroupBy(x => x.WorkerId)
             .Select(group => new EventFilterOptionViewModel
