@@ -1900,14 +1900,17 @@ public sealed class DashboardQueryService(
         }
 
         var cooldownStartUtc = nowUtc - TopUpSessionRules.RepeatTopUpCooldown;
+        var awaitingCutoffUtc = nowUtc - TopUpSessionRules.AwaitingBalanceTtl;
         return await db.TopUpSessions.AsNoTracking()
             .Where(x => workerIds.Contains(x.WorkerId)
                         && (x.Status == TopUpSessionStatuses.Requested
                             || x.Status == TopUpSessionStatuses.Started
                             || x.Status == TopUpSessionStatuses.PaymentClaimed
                             || x.Status == TopUpSessionStatuses.QrReady
-                            || x.Status == TopUpSessionStatuses.AwaitingBalance
-                            || x.Status == TopUpSessionStatuses.VerificationRequired
+                            || ((x.Status == TopUpSessionStatuses.AwaitingBalance
+                                 || x.Status == TopUpSessionStatuses.VerificationRequired)
+                                && x.AwaitingBalanceAtUtc != null
+                                && x.AwaitingBalanceAtUtc > awaitingCutoffUtc)
                             || (x.Status == TopUpSessionStatuses.Completed
                                 && x.CompletedAtUtc > cooldownStartUtc
                                 && x.CompletedAtUtc <= nowUtc)))

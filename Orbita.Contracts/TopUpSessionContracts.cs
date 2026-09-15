@@ -106,16 +106,18 @@ public static class TopUpSessionRules
     public static readonly TimeSpan QrPaymentTtl = TimeSpan.FromMinutes(10);
 
     /// <summary>
-    /// После «Оплачено» ждём обычный снимок баланса со следующего прохода.
-    /// Если за это время баланс не вырос на сумму пополнения — сессия ошибочна.
-    /// </summary>
-    public static readonly TimeSpan BalanceConfirmationTtl = TimeSpan.FromHours(24);
-
-    /// <summary>
     /// После подтверждённого пополнения временно не предлагаем и не разрешаем
     /// новое пополнение, даже если интерфейс Avito ещё показывает низкий баланс.
     /// </summary>
     public static readonly TimeSpan RepeatTopUpCooldown = TimeSpan.FromHours(3);
+
+    /// <summary>
+    /// После «Оплачено» ждём обычный снимок баланса со следующего прохода.
+    /// Если за это время баланс не вырос на сумму пополнения — сессия ошибочна.
+    /// Срок совпадает с окном повторного пополнения: после него старая сессия
+    /// больше не скрывает субпрофиль и не блокирует новый запрос.
+    /// </summary>
+    public static readonly TimeSpan AwaitingBalanceTtl = RepeatTopUpCooldown;
 
     /// <summary>Допуск при сверке нового баланса с ожидаемой суммой пополнения.</summary>
     public const decimal BalanceEpsilonRub = 1m;

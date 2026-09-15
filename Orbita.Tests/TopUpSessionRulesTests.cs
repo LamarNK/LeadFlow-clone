@@ -146,9 +146,9 @@ public sealed class TopUpSessionRulesTests
     }
 
     [Fact]
-    public void BalanceConfirmationTtl_Is24Hours()
+    public void AwaitingBalanceTtl_IsThreeHours()
     {
-        Assert.Equal(TimeSpan.FromHours(24), TopUpSessionRules.BalanceConfirmationTtl);
+        Assert.Equal(TimeSpan.FromHours(3), TopUpSessionRules.AwaitingBalanceTtl);
     }
 
     [Theory]

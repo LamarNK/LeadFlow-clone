@@ -459,8 +459,8 @@
                 var green = parseInt(match[2], 16);
                 var blue = parseInt(match[3], 16);
                 var gradient = context.chart.ctx.createLinearGradient(0, area.top, 0, area.bottom);
-                gradient.addColorStop(0, 'rgba(' + red + ', ' + green + ', ' + blue + ', 0.16)');
-                gradient.addColorStop(0.7, 'rgba(' + red + ', ' + green + ', ' + blue + ', 0.035)');
+                gradient.addColorStop(0, 'rgba(' + red + ', ' + green + ', ' + blue + ', 0.22)');
+                gradient.addColorStop(0.55, 'rgba(' + red + ', ' + green + ', ' + blue + ', 0.07)');
                 gradient.addColorStop(1, 'rgba(' + red + ', ' + green + ', ' + blue + ', 0)');
                 return gradient;
             };

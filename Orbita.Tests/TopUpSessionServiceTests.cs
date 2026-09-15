@@ -1332,10 +1332,10 @@ public sealed class TopUpSessionServiceTests
         var stored = await db.TopUpSessions.AsNoTracking().SingleAsync(x => x.Id == session.Id);
         Assert.Equal(Now.UtcDateTime.Add(TopUpSessionRules.QrPaymentTtl), stored.ExpiresAtUtc);
 
-        // QR, созданные до введения десятиминутного срока, могли хранить старый 24-часовой TTL.
+        // QR, созданные до введения десятиминутного срока, могли хранить более длинный TTL.
         // Срок всё равно считается от QrReadyAtUtc.
         var legacyStored = await db.TopUpSessions.SingleAsync(x => x.Id == session.Id);
-        legacyStored.ExpiresAtUtc = Now.Add(TopUpSessionRules.BalanceConfirmationTtl).UtcDateTime;
+        legacyStored.ExpiresAtUtc = Now.AddHours(12).UtcDateTime;
         await db.SaveChangesAsync();
 
         var timedOutService = CreateService(db, Now.Add(TopUpSessionRules.QrPaymentTtl).AddSeconds(1));
@@ -1953,7 +1953,7 @@ public sealed class TopUpSessionServiceTests
     }
 
     [Fact]
-    public async Task SweepExpiredAsync_KeepsAwaitingBalanceUntilConfirmationTtl()
+    public async Task SweepExpiredAsync_KeepsAwaitingBalanceBeforeThreeHourTtl()
     {
         await using var db = CreateDb();
         var officeId = Guid.NewGuid();
@@ -1968,7 +1968,7 @@ public sealed class TopUpSessionServiceTests
         await AdvanceToQrReadyAsync(service, workerId, session!.Id);
         Assert.True((await service.MarkPaidAsync(session.Id, principal)).Success);
 
-        var stillWaiting = CreateService(db, Now.AddHours(23));
+        var stillWaiting = CreateService(db, Now.AddHours(2));
         Assert.Equal(0, await stillWaiting.SweepExpiredAsync());
         Assert.Equal(
             TopUpSessionStatuses.AwaitingBalance,
@@ -1976,7 +1976,7 @@ public sealed class TopUpSessionServiceTests
     }
 
     [Fact]
-    public async Task SweepExpiredAsync_FailsUnconfirmedPaymentAfter24Hours()
+    public async Task SweepExpiredAsync_FailsUnconfirmedPaymentAfterThreeHours()
     {
         await using var db = CreateDb();
         var officeId = Guid.NewGuid();
@@ -1991,13 +1991,48 @@ public sealed class TopUpSessionServiceTests
         await AdvanceToQrReadyAsync(service, workerId, session!.Id);
         Assert.True((await service.MarkPaidAsync(session.Id, principal)).Success);
 
-        var sweeper = CreateService(db, Now.Add(TopUpSessionRules.BalanceConfirmationTtl));
+        var sweeper = CreateService(db, Now.Add(TopUpSessionRules.AwaitingBalanceTtl));
         await sweeper.SweepExpiredAsync();
 
         var stored = await db.TopUpSessions.AsNoTracking().SingleAsync(x => x.Id == session.Id);
         Assert.Equal(TopUpSessionStatuses.Failed, stored.Status);
-        Assert.Contains("24 часа", stored.FailureMessage, StringComparison.Ordinal);
+        Assert.Contains("3 часа", stored.FailureMessage, StringComparison.Ordinal);
         Assert.NotNull(stored.CompletedAtUtc);
+    }
+
+    [Fact]
+    public async Task CreateAsync_AllowsRetryAfterAwaitingBalanceThreeHourWindow()
+    {
+        await using var db = CreateDb();
+        var officeId = Guid.NewGuid();
+        var workerId = Guid.NewGuid();
+        var accountId = Guid.NewGuid();
+        SeedWorker(db, officeId, workerId, accountId, balance: 100m);
+
+        var service = CreateService(db);
+        var principal = TestPrincipalFactory.Operator("op1", "Operator 1", officeId);
+        var (first, _) = await service.CreateAsync(workerId, accountId, principal);
+        Assert.NotNull(first);
+        await AdvanceToQrReadyAsync(service, workerId, first!.Id);
+        Assert.True((await service.MarkPaidAsync(first.Id, principal)).Success);
+
+        var retryAt = Now.Add(TopUpSessionRules.AwaitingBalanceTtl).AddMinutes(1);
+        var stillVisible = await CreateService(db, Now.AddHours(2)).GetOfficeAsync(principal, history: false);
+        Assert.Contains(stillVisible, x => x.Id == first.Id);
+
+        var hiddenAfterWindow = await CreateService(db, retryAt).GetOfficeAsync(principal, history: false);
+        Assert.DoesNotContain(hiddenAfterWindow, x => x.Id == first.Id);
+
+        var worker = await db.Workers.SingleAsync(x => x.Id == workerId);
+        worker.LastSeenAtUtc = retryAt.UtcDateTime;
+        await db.SaveChangesAsync();
+
+        var retry = await CreateService(db, retryAt).CreateAsync(workerId, accountId, principal);
+
+        Assert.NotNull(retry.Session);
+        Assert.Null(retry.Conflict);
+        var old = await db.TopUpSessions.AsNoTracking().SingleAsync(x => x.Id == first.Id);
+        Assert.Equal(TopUpSessionStatuses.Expired, old.Status);
     }
 
     [Fact]
@@ -2444,13 +2479,13 @@ public sealed class TopUpSessionServiceTests
         await AdvanceToQrReadyAsync(service, workerId, session!.Id);
         Assert.True((await service.MarkPaidAsync(session.Id, principal)).Success);
 
-        var later = CreateService(db, Now.AddHours(6));
+        var later = CreateService(db, Now.AddHours(2));
         Assert.Equal(0, await later.SweepExpiredAsync());
 
         var completed = await later.ConfirmBalancesAsync(
             workerId,
             [new WorkerBalanceDto(accountId, "Acc1", 400m, [])],
-            Now.AddHours(6).UtcDateTime);
+            Now.AddHours(2).UtcDateTime);
 
         Assert.Equal(1, completed);
         Assert.Equal(TopUpSessionStatuses.Completed, (await db.TopUpSessions.AsNoTracking().SingleAsync(x => x.Id == session.Id)).Status);

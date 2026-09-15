@@ -65,7 +65,7 @@ public sealed class TopUpSessionService(
         TopUpSessionStatuses.AwaitingBalance,
         TopUpSessionStatuses.VerificationRequired
     ];
-    private static readonly TimeSpan BalanceConfirmationTimeout = TopUpSessionRules.BalanceConfirmationTtl;
+    private static readonly TimeSpan AwaitingBalanceTimeout = TopUpSessionRules.AwaitingBalanceTtl;
 
     /// <summary>Срок хранения QR-данных после завершения сессии, после которого они удаляются.</summary>
     private static readonly TimeSpan QrRetention = TimeSpan.FromHours(6);
@@ -345,9 +345,10 @@ public sealed class TopUpSessionService(
             query = query.Where(x => x.OfficeId == officeId);
         }
 
+        var nowUtc = timeProvider.GetUtcNow().UtcDateTime;
+        var awaitingCutoffUtc = nowUtc - TopUpSessionRules.AwaitingBalanceTtl;
         if (!history)
         {
-            var nowUtc = timeProvider.GetUtcNow().UtcDateTime;
             var todayStartUtc = TopUpSessionRules.GetMoscowDayRange(nowUtc).UtcStartInclusive;
             var cooldownStartUtc = nowUtc - TopUpSessionRules.RepeatTopUpCooldown;
             var completedCutoffUtc = todayStartUtc < cooldownStartUtc
@@ -355,8 +356,10 @@ public sealed class TopUpSessionService(
                 : cooldownStartUtc;
             query = query.Where(x =>
                 ActiveStatuses.Contains(x.Status)
-                || x.Status == TopUpSessionStatuses.AwaitingBalance
-                || x.Status == TopUpSessionStatuses.VerificationRequired
+                || ((x.Status == TopUpSessionStatuses.AwaitingBalance
+                     || x.Status == TopUpSessionStatuses.VerificationRequired)
+                    && x.AwaitingBalanceAtUtc != null
+                    && x.AwaitingBalanceAtUtc > awaitingCutoffUtc)
                 || (x.Status == TopUpSessionStatuses.Completed && x.CompletedAtUtc >= completedCutoffUtc));
         }
 
@@ -369,8 +372,10 @@ public sealed class TopUpSessionService(
                 : query
                     .OrderByDescending(x =>
                         ActiveStatuses.Contains(x.Status)
-                        || x.Status == TopUpSessionStatuses.AwaitingBalance
-                        || x.Status == TopUpSessionStatuses.VerificationRequired)
+                        || ((x.Status == TopUpSessionStatuses.AwaitingBalance
+                             || x.Status == TopUpSessionStatuses.VerificationRequired)
+                            && x.AwaitingBalanceAtUtc != null
+                            && x.AwaitingBalanceAtUtc > awaitingCutoffUtc))
                     .ThenByDescending(x => x.CreatedAtUtc))
             .Take(history ? 500 : 200)
             .ToListAsync(ct)
@@ -535,7 +540,7 @@ public sealed class TopUpSessionService(
         {
             session.AwaitingBalanceAtUtc = completedAt;
             session.CompletedAtUtc = null;
-            session.ExpiresAtUtc = completedAt.Add(TopUpSessionRules.BalanceConfirmationTtl);
+            session.ExpiresAtUtc = completedAt.Add(TopUpSessionRules.AwaitingBalanceTtl);
             session.ProgressMessage = terminalStatus == TopUpSessionStatuses.AwaitingBalance
                 ? "Оплата отмечена. На следующем проходе проверим историю операций."
                 : "Перед отменой на следующем проходе проверим историю операций Avito.";
@@ -1150,7 +1155,7 @@ public sealed class TopUpSessionService(
             }
         }
 
-        var awaitingCutoff = now - BalanceConfirmationTimeout;
+        var awaitingCutoff = now - AwaitingBalanceTimeout;
         var unconfirmed = await db.TopUpSessions
             .Where(x =>
                 (x.Status == TopUpSessionStatuses.AwaitingBalance
@@ -1162,7 +1167,7 @@ public sealed class TopUpSessionService(
         foreach (var session in unconfirmed)
         {
             _log.LogWarning(
-                "Top-up: сессия {SessionId} не подтверждена за 24 часа worker={WorkerId} account={AccountName} subprofile={SubProfileName} current={Current} requested={Requested}.",
+                "Top-up: сессия {SessionId} не подтверждена за 3 часа worker={WorkerId} account={AccountName} subprofile={SubProfileName} current={Current} requested={Requested}.",
                 session.Id,
                 session.WorkerId,
                 session.AccountName,
@@ -1171,8 +1176,8 @@ public sealed class TopUpSessionService(
                 session.RequestedAmount);
             session.Status = TopUpSessionStatuses.Failed;
             session.CompletedAtUtc = now;
-            session.FailureMessage = "Баланс не увеличился за 24 часа.";
-            session.ProgressMessage = "Баланс не увеличился за 24 часа.";
+            session.FailureMessage = "Баланс не увеличился за 3 часа.";
+            session.ProgressMessage = "Баланс не увеличился за 3 часа.";
         }
         if (unconfirmed.Count > 0)
         {
@@ -1438,7 +1443,10 @@ public sealed class TopUpSessionService(
     private static DateTime GetEffectiveExpiration(TopUpSessionEntity session) =>
         session.Status == TopUpSessionStatuses.QrReady && session.QrReadyAtUtc is not null
             ? session.QrReadyAtUtc.Value.Add(TopUpSessionRules.QrPaymentTtl)
-            : session.ExpiresAtUtc;
+            : session.Status is TopUpSessionStatuses.AwaitingBalance or TopUpSessionStatuses.VerificationRequired
+                && session.AwaitingBalanceAtUtc is not null
+                ? session.AwaitingBalanceAtUtc.Value.Add(TopUpSessionRules.AwaitingBalanceTtl)
+                : session.ExpiresAtUtc;
 
     private static void ClearQrData(TopUpSessionEntity session)
     {
