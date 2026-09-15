@@ -2,6 +2,20 @@
 
 namespace LeadFlow.ViewModels;
 
+public enum AdsScopeKind { All, Account, SubProfile }
+
+public sealed class AdsScopeItem
+{
+    public AdsScopeItem(AdsScopeKind kind, string title, Guid? accountId = null, string? subProfileId = null, int indent = 0)
+    { Kind = kind; Title = title; AccountId = accountId; SubProfileId = subProfileId; Indent = indent; }
+    public AdsScopeKind Kind { get; }
+    public string Title { get; }
+    public Guid? AccountId { get; }
+    public string? SubProfileId { get; }
+    public int Indent { get; }
+    public string DisplayTitle => Indent > 0 ? $"   └ {Title}" : Title;
+}
+
 public enum AdsDashboardFilter
 {
     All,

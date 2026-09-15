@@ -2901,6 +2901,8 @@ public sealed class MonitoringService(
     private static AvitoAdStatus CloneAd(AvitoAdStatus ad) => new()
     {
         AccountId = ad.AccountId,
+        AvitoSubProfileId = ad.AvitoSubProfileId,
+        AvitoSubProfileName = ad.AvitoSubProfileName,
         Id = ad.Id,
         Title = ad.Title,
         City = ad.City,

@@ -138,8 +138,15 @@ public partial class DashboardViewModel : ObservableObject
     [ObservableProperty]
     private int displayedAdsCount;
 
+    [ObservableProperty]
+    private AdsScopeItem? selectedAdsScope;
+
+    [ObservableProperty]
+    private string adsScopeNotice = string.Empty;
+
     /// <summary>Все объявления из снимков; фильтр/сортировка — через <see cref="DisplayedAdsView"/>.</summary>
     public ObservableCollection<DashboardAdDisplayItem> AllAdDisplayItems { get; } = new();
+    public ObservableCollection<AdsScopeItem> AdsScopeItems { get; } = new();
 
     public ICollectionView DisplayedAdsView { get; }
 
@@ -244,6 +251,15 @@ public partial class DashboardViewModel : ObservableObject
 
     partial void OnSelectedAdsSortChanged(AdsSortOption value) => RefreshDisplayedAdsView();
 
+    partial void OnSelectedAdsScopeChanged(AdsScopeItem? value)
+    {
+        AdsScopeNotice = value?.Kind == AdsScopeKind.SubProfile &&
+            !AllAdDisplayItems.Any(item => string.Equals(item.Ad.AvitoSubProfileId, value.SubProfileId, StringComparison.Ordinal))
+            ? "Данные по объявлениям этого субпрофиля ещё собираются."
+            : string.Empty;
+        RefreshDisplayedAdsView();
+    }
+
     partial void OnSelectedChartSeriesChanged(DashboardChartSeries value)
     {
         RebuildDisplayedActivity();
@@ -311,6 +327,14 @@ public partial class DashboardViewModel : ObservableObject
         {
             return false;
         }
+
+        if (SelectedAdsScope is { Kind: AdsScopeKind.Account, AccountId: var accountId }
+            && item.Ad.AccountId != accountId)
+            return false;
+
+        if (SelectedAdsScope is { Kind: AdsScopeKind.SubProfile, SubProfileId: var subProfileId }
+            && !string.Equals(item.Ad.AvitoSubProfileId, subProfileId, StringComparison.Ordinal))
+            return false;
 
         var matchesTab = SelectedAdsFilter switch
         {
@@ -478,6 +502,8 @@ public partial class DashboardViewModel : ObservableObject
             var persistedAccounts = await _repository.GetAdSnapshotAccountsAsync(CancellationToken.None);
             _monitoringService.RestorePersistedAdSnapshots(persistedAccounts);
 
+            ApplyAdsScopeItems(await _repository.GetAccountsAsync(CancellationToken.None));
+
             var stats = await _repository.GetDashboardStatsAsync(CancellationToken.None);
             ApplyStats(stats);
 
@@ -508,6 +534,23 @@ public partial class DashboardViewModel : ObservableObject
         ApplyUnpublishedAdsSnapshot();
 
         await RefreshBalancesAsync(GetViewLifetimeToken());
+    }
+
+    private void ApplyAdsScopeItems(IReadOnlyList<AvitoAccount> accounts)
+    {
+        var previous = SelectedAdsScope;
+        AdsScopeItems.Clear();
+        AdsScopeItems.Add(new AdsScopeItem(AdsScopeKind.All, "Все"));
+        foreach (var account in accounts.OrderBy(a => a.DisplayName, StringComparer.CurrentCultureIgnoreCase))
+        {
+            AdsScopeItems.Add(new AdsScopeItem(AdsScopeKind.Account, account.DisplayName, account.Id));
+            foreach (var sub in account.SubProfiles.OrderBy(s => s.DisplayName, StringComparer.CurrentCultureIgnoreCase))
+                AdsScopeItems.Add(new AdsScopeItem(AdsScopeKind.SubProfile, sub.DisplayName, account.Id, sub.Id, 1));
+        }
+
+        SelectedAdsScope = previous is null
+            ? AdsScopeItems[0]
+            : AdsScopeItems.FirstOrDefault(i => i.Kind == previous.Kind && i.AccountId == previous.AccountId && i.SubProfileId == previous.SubProfileId) ?? AdsScopeItems[0];
     }
 
     private async Task RefreshBalancesAsync(CancellationToken ct = default)
@@ -1226,6 +1269,8 @@ public partial class DashboardViewModel : ObservableObject
     private static AvitoAdStatus CloneAd(AvitoAdStatus ad) => new()
     {
         AccountId = ad.AccountId,
+        AvitoSubProfileId = ad.AvitoSubProfileId,
+        AvitoSubProfileName = ad.AvitoSubProfileName,
         Id = ad.Id,
         Title = ad.Title,
         City = ad.City,

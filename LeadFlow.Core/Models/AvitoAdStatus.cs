@@ -7,6 +7,9 @@ public class AvitoAdStatus
     public const string UnpublishedTab = "inactive";
 
     public Guid AccountId { get; set; }
+    /// <summary>Субпрофиль Avito, из которого получена карточка.</summary>
+    public string AvitoSubProfileId { get; set; } = string.Empty;
+    public string AvitoSubProfileName { get; set; } = string.Empty;
     public string Id { get; set; } = "";
     public string Title { get; set; } = "";
     public string City { get; set; } = "";

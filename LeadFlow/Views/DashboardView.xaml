@@ -869,8 +869,50 @@
                     </Grid>
                 </Border>
 
+                <!-- Навигация по аккаунтам и субпрофилям -->
+                <Border Grid.Row="1" Grid.RowSpan="2"
+                        Width="270"
+                        Margin="14,8,0,12"
+                        HorizontalAlignment="Left"
+                        BorderBrush="{StaticResource DashBorderBrush}"
+                        BorderThickness="1"
+                        Background="{StaticResource DashCardBrush}"
+                        CornerRadius="8"
+                        Panel.ZIndex="2">
+                    <DockPanel LastChildFill="True">
+                        <TextBlock DockPanel.Dock="Top"
+                                   Margin="14,12,14,8"
+                                   FontSize="12"
+                                   FontWeight="SemiBold"
+                                   Foreground="{StaticResource DashTextPrimaryBrush}"
+                                   Text="Аккаунты и субпрофили" />
+                        <ListBox ItemsSource="{Binding AdsScopeItems}"
+                                 SelectedItem="{Binding SelectedAdsScope, Mode=TwoWay}"
+                                 BorderThickness="0"
+                                 Background="Transparent"
+                                 Padding="6,0"
+                                 ScrollViewer.VerticalScrollBarVisibility="Auto">
+                            <ListBox.ItemContainerStyle>
+                                <Style TargetType="ListBoxItem">
+                                    <Setter Property="Padding" Value="8,7" />
+                                    <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                </Style>
+                            </ListBox.ItemContainerStyle>
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <TextBlock Text="{Binding DisplayTitle}"
+                                               FontSize="12"
+                                               Foreground="{StaticResource DashTextPrimaryBrush}"
+                                               TextTrimming="CharacterEllipsis" />
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                    </DockPanel>
+                </Border>
+
                 <!-- Фильтры, поиск, сортировка -->
                 <Border Grid.Row="1"
+                        Margin="284,0,0,0"
                         Padding="14,8,14,10"
                         BorderBrush="{StaticResource DashBorderBrush}"
                         BorderThickness="0,0,0,1"
@@ -963,7 +1005,7 @@
 
                 <!-- Список объявлений (прокрутка только здесь) -->
                 <Grid Grid.Row="2"
-                      Margin="14,4,14,12"
+                      Margin="298,4,14,12"
                       HorizontalAlignment="Stretch">
                     <Grid.RowDefinitions>
                         <RowDefinition Height="Auto" />
@@ -978,6 +1020,14 @@
                                Text="Нет объявлений по выбранному фильтру и поиску. Проверьте аккаунт Avito или обновите данные."
                                TextWrapping="Wrap"
                                Visibility="{Binding ShowStandardAdsEmpty, Converter={StaticResource BooleanToVisibilityConverter}}" />
+
+                    <TextBlock Grid.Row="0"
+                               Margin="0,28,0,8"
+                               FontSize="12"
+                               Foreground="{StaticResource WarningBrush}"
+                               Text="{Binding AdsScopeNotice}"
+                               TextWrapping="Wrap"
+                               Visibility="{Binding AdsScopeNotice, Converter={StaticResource StringToVisibilityConverter}}" />
 
                     <ListBox x:Name="AdsListListBox"
                              Grid.Row="1"
