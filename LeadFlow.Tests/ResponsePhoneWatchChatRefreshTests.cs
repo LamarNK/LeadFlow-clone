@@ -105,6 +105,27 @@ public sealed class ResponsePhoneWatchChatRefreshTests
     }
 
     [Fact]
+    public void HasResponseDateRefresh_IsTrueWhenCardDatePrecedesCollection()
+    {
+        var candidate = new CandidateResponse
+        {
+            CreatedAt = new DateTime(2026, 9, 15, 6, 41, 20, DateTimeKind.Utc),
+            CollectedAt = new DateTime(2026, 9, 15, 7, 55, 23, DateTimeKind.Utc)
+        };
+
+        Assert.True(ResponsePhoneWatchChatRefresh.HasResponseDateRefresh(candidate));
+    }
+
+    [Fact]
+    public void HasResponseDateRefresh_IsFalseForCollectionFallback()
+    {
+        var collected = new DateTime(2026, 9, 15, 7, 55, 23, DateTimeKind.Utc);
+        var candidate = new CandidateResponse { CreatedAt = collected, CollectedAt = collected };
+
+        Assert.False(ResponsePhoneWatchChatRefresh.HasResponseDateRefresh(candidate));
+    }
+
+    [Fact]
     public void RestoreFromOrbita_RecreatesOpenWatchFromStoredPhoneWatch()
     {
         var now = new DateTime(2026, 8, 23, 10, 0, 0, DateTimeKind.Utc);

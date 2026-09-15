@@ -19,6 +19,22 @@ public static class ResponsePhoneWatchChatRefresh
             || !string.IsNullOrWhiteSpace(candidate.Citizenship)
             || !string.IsNullOrWhiteSpace(candidate.MessengerUrl));
 
+    /// <summary>
+    /// Список откликов может дать фактическое время отклика раньше момента сбора,
+    /// даже когда мини-чат пустой. Такой backfill тоже должен пройти в Orbita.
+    /// </summary>
+    public static bool HasResponseDateRefresh(CandidateResponse? candidate)
+    {
+        if (candidate is null
+            || candidate.CreatedAt == default
+            || candidate.CollectedAt == default)
+        {
+            return false;
+        }
+
+        return candidate.CreatedAt < candidate.CollectedAt.AddMinutes(-1);
+    }
+
     public static bool HasPayloadChanged(
         CandidateResponse candidate,
         WorkerKnownSourceResponseDto? stored)
