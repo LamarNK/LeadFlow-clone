@@ -1830,7 +1830,6 @@ public sealed class DashboardQueryService(
 
         var accountCounts = BuildAccountCounts(
             accountRows.Select(x => (x.WorkerId, x.Status, x.IsEnabledInPanel)));
-        var latestSnapshotBalances = await LoadLatestSnapshotBalancesAsync(workerIds, ct).ConfigureAwait(false);
         var openTopUps = await LoadOpenTopUpKeysAsync(workerIds, ct).ConfigureAwait(false);
         var lowBalanceAccountCounts = accountRows
             // Keep the dashboard warning in sync with the Balances page: accounts
@@ -1839,15 +1838,10 @@ public sealed class DashboardQueryService(
             .Where(static x => x.IsEnabledInPanel)
             .Select(x =>
             {
-                var snapshotBalance = latestSnapshotBalances.TryGetValue(x.WorkerId, out var balances)
-                        && balances.TryGetValue(x.AccountId, out var liveSnapshotBalance)
-                    ? liveSnapshotBalance
-                    : null;
                 return new
                 {
                     x.WorkerId,
                     Count = ResolveLowBalanceSubProfileCount(
-                        snapshotBalance,
                         x.TotalBalance,
                         x.SubProfilesJson,
                         subProfile => HasOpenTopUp(openTopUps, x.WorkerId, x.AccountId, subProfile))
@@ -1873,45 +1867,17 @@ public sealed class DashboardQueryService(
     }
 
     private static int ResolveLowBalanceSubProfileCount(
-        WorkerBalanceDto? snapshotBalance,
         decimal persistedTotalBalance,
         string? persistedSubProfilesJson,
         Func<SubProfileBalanceDto, bool> isExcluded)
     {
-        // The Balances page is backed by the persisted account snapshot. Keep
-        // dashboard warnings aligned with it whenever that snapshot contains
-        // concrete subprofile balances; a telemetry snapshot can otherwise be
-        // older and leave a worker highlighted after the balance was refreshed.
-        var persistedBalance = BalanceSnapshotHelper.FromWorkerAccount(new WorkerAccountEntity
-        {
-            TotalBalance = persistedTotalBalance,
-            SubProfilesJson = persistedSubProfilesJson ?? "[]"
-        });
-        if (BalanceSnapshotHelper.HasKnownSubProfileAdvance(persistedBalance))
-        {
-            return BalanceSnapshotHelper.CountLowBalanceSubProfiles(persistedBalance, isExcluded);
-        }
-
-        if (snapshotBalance is null)
-        {
-            return BalanceSnapshotHelper.CountLowBalancePersistedSubProfiles(
-                persistedTotalBalance,
-                persistedSubProfilesJson,
-                isExcluded);
-        }
-
-        if (BalanceSnapshotHelper.HasKnownSubProfileAdvance(snapshotBalance))
-        {
-            return BalanceSnapshotHelper.CountLowBalanceSubProfiles(snapshotBalance, isExcluded);
-        }
-
-        var persistedCount = BalanceSnapshotHelper.CountLowBalancePersistedSubProfiles(
+        // The Balances page is backed by the persisted account snapshot. Do not
+        // fall back to a telemetry snapshot here: that would highlight workers
+        // that have no row in «Требуют пополнения».
+        return BalanceSnapshotHelper.CountLowBalancePersistedSubProfiles(
             persistedTotalBalance,
             persistedSubProfilesJson,
             isExcluded);
-        return persistedCount > 0
-            ? persistedCount
-            : BalanceSnapshotHelper.CountLowBalanceSubProfiles(snapshotBalance, isExcluded);
     }
 
     private async Task<IReadOnlyList<OpenTopUpKey>> LoadOpenTopUpKeysAsync(
@@ -1971,20 +1937,6 @@ public sealed class DashboardQueryService(
         Guid AccountId,
         string SubProfileId,
         string SubProfileName);
-
-    private async Task<Dictionary<Guid, Dictionary<Guid, WorkerBalanceDto>>> LoadLatestSnapshotBalancesAsync(
-        IReadOnlyList<Guid> workerIds,
-        CancellationToken ct)
-    {
-        var snapshots = await WorkerSnapshotQuery.LoadLatestAsync(db, workerIds, ct)
-            .ConfigureAwait(false);
-
-        return snapshots.ToDictionary(
-            x => x.WorkerId,
-            x => (JsonSerializer.Deserialize<List<WorkerBalanceDto>>(x.BalancesJson, JsonOptions) ?? [])
-                .GroupBy(balance => balance.AccountId)
-                .ToDictionary(group => group.Key, group => group.Last()));
-    }
 
     // Per-worker today response totals.
     private async Task<Dictionary<Guid, (int Total, int Duplicates, int Errors)>> ComputeWorkerTodayStatsAsync(

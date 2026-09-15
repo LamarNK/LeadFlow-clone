@@ -382,7 +382,7 @@ public sealed class DashboardQueryServiceWorkersPageTests
     }
 
     [Fact]
-    public async Task GetWorkersPageAsync_UsesLatestMeaningfulSnapshotForLowBalanceLiveUpdates()
+    public async Task GetWorkersPageAsync_DoesNotFlagSnapshotOnlyLowBalanceWithoutPersistedRow()
     {
         DashboardQueryService.ClearCacheForTests();
         var (db, connection) = await CreateSqliteDbAsync();
@@ -415,8 +415,8 @@ public sealed class DashboardQueryServiceWorkersPageTests
         var page = await CreateService(db).GetWorkersPageAsync(
             OfficeScope.ForOffice(OfficeId), OfficeId, page: 1, pageSize: 25);
 
-        Assert.Equal([low, normal], page.Items.Select(x => x.Id));
-        Assert.Equal(1, page.Items[0].LowBalanceAccountCount);
+        Assert.Equal([normal, low], page.Items.Select(x => x.Id));
+        Assert.Equal(0, page.Items[0].LowBalanceAccountCount);
     }
 
     [Fact]
@@ -458,7 +458,7 @@ public sealed class DashboardQueryServiceWorkersPageTests
     }
 
     [Fact]
-    public async Task GetWorkersPageAsync_FlagsEveryLowBalanceSubProfileWhenAccountTotalIsHigh()
+    public async Task GetWorkersPageAsync_DoesNotFlagSnapshotSubprofilesMissingFromBalancesPage()
     {
         DashboardQueryService.ClearCacheForTests();
         var (db, connection) = await CreateSqliteDbAsync();
@@ -494,7 +494,7 @@ public sealed class DashboardQueryServiceWorkersPageTests
             OfficeScope.ForOffice(OfficeId), OfficeId, page: 1, pageSize: 25);
 
         var item = Assert.Single(page.Items);
-        Assert.Equal(2, item.LowBalanceAccountCount);
+        Assert.Equal(0, item.LowBalanceAccountCount);
     }
 
     [Fact]
