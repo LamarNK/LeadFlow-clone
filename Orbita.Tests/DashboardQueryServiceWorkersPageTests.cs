@@ -546,6 +546,30 @@ public sealed class DashboardQueryServiceWorkersPageTests
     }
 
     [Fact]
+    public async Task GetWorkersPageAsync_DoesNotFlagDisabledLowBalanceAccount()
+    {
+        DashboardQueryService.ClearCacheForTests();
+        await using var db = CreateDb();
+        var now = DateTime.UtcNow;
+        SeedOffice(db, now);
+        var worker = Guid.Parse("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbb45");
+        SeedWorker(db, worker, "worker", now.AddMinutes(-1));
+        SeedAccount(
+            db,
+            worker,
+            "disabled-low",
+            totalBalance: 40m,
+            subProfilesJson: """[{"Id":"disabled","Name":"Отключённый","Balance":40}]""",
+            isEnabledInPanel: false);
+        await db.SaveChangesAsync();
+
+        var page = await CreateService(db).GetWorkersPageAsync(
+            OfficeScope.ForOffice(OfficeId), OfficeId, page: 1, pageSize: 25);
+
+        Assert.Equal(0, Assert.Single(page.Items).LowBalanceAccountCount);
+    }
+
+    [Fact]
     public async Task GetWorkersPageAsync_ExcludesOpenTopUpSessionFromLowBalanceCount()
     {
         DashboardQueryService.ClearCacheForTests();
@@ -677,7 +701,8 @@ public sealed class DashboardQueryServiceWorkersPageTests
         string displayName,
         decimal totalBalance,
         string subProfilesJson = "[]",
-        string status = "Active")
+        string status = "Active",
+        bool isEnabledInPanel = true)
     {
         var accountId = Guid.NewGuid();
         db.WorkerAccounts.Add(new WorkerAccountEntity
@@ -687,7 +712,7 @@ public sealed class DashboardQueryServiceWorkersPageTests
             DisplayName = displayName,
             Status = status,
             IsEnabled = true,
-            IsEnabledInPanel = true,
+            IsEnabledInPanel = isEnabledInPanel,
             TotalBalance = totalBalance,
             SubProfilesJson = subProfilesJson
         });

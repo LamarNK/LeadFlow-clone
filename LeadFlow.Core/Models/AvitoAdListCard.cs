@@ -13,4 +13,7 @@ public sealed class AvitoAdListCard
     public int? RemainingDays { get; init; }
     public string? ExpiryParseError { get; init; }
     public string StatusText { get; init; } = string.Empty;
+    public string SourceTab { get; init; } = AvitoAdStatus.ActiveTab;
+    public string ErrorReason { get; init; } = string.Empty;
+    public bool CanPublish { get; init; }
 }

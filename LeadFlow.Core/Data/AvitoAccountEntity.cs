@@ -62,6 +62,9 @@ public sealed class AvitoAccountEntity
     /// <summary>JSON-массив заблокированных / «с ошибками» объявлений.</summary>
     public string BlockedAdsSnapshotJson { get; set; } = "[]";
 
+    /// <summary>JSON-массив объявлений со вкладки «Неопубликованные».</summary>
+    public string UnpublishedAdsSnapshotJson { get; set; } = "[]";
+
     public string ProfileProvider { get; set; } = nameof(AvitoProfileProvider.Local);
     public string? AdsPowerProfileId { get; set; }
     public string? AdsPowerProfileName { get; set; }

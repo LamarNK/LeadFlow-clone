@@ -93,6 +93,9 @@ public sealed partial class AvitoAccount : ObservableObject
     /// <summary>JSON-массив последних объявлений с вкладки «С ошибками», сохранённый в БД между сеансами.</summary>
     [ObservableProperty] private string blockedAdsSnapshotJson = "[]";
 
+    /// <summary>JSON-массив последних объявлений со вкладки «Неопубликованные», сохранённый в БД между сеансами.</summary>
+    [ObservableProperty] private string unpublishedAdsSnapshotJson = "[]";
+
     [ObservableProperty] private AvitoProfileProvider profileProvider = AvitoProfileProvider.Local;
     /// <summary>Идентификатор профиля в AdsPower (поле user_id в Local API).</summary>
     [ObservableProperty] private string? adsPowerProfileId;
@@ -289,5 +292,8 @@ public sealed partial class AvitoAccount : ObservableObject
         BlockedAdsSnapshotJson = string.IsNullOrWhiteSpace(source.BlockedAdsSnapshotJson)
             ? "[]"
             : source.BlockedAdsSnapshotJson;
+        UnpublishedAdsSnapshotJson = string.IsNullOrWhiteSpace(source.UnpublishedAdsSnapshotJson)
+            ? "[]"
+            : source.UnpublishedAdsSnapshotJson;
     }
 }

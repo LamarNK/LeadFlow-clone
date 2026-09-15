@@ -2,6 +2,10 @@ namespace LeadFlow.Core.Models;
 
 public class AvitoAdStatus
 {
+    public const string ActiveTab = "active";
+    public const string ErrorTab = "rejected";
+    public const string UnpublishedTab = "inactive";
+
     public Guid AccountId { get; set; }
     public string Id { get; set; } = "";
     public string Title { get; set; } = "";
@@ -13,6 +17,12 @@ public class AvitoAdStatus
     public int Contacts { get; set; }
     public int Favorites { get; set; }
     public string Status { get; set; } = "Активно";
+    /// <summary>Вкладка Avito, из которой получена карточка.</summary>
+    public string SourceTab { get; set; } = ActiveTab;
+    /// <summary>Человекочитаемая причина, по которой объявление не опубликовано или отклонено.</summary>
+    public string ErrorReason { get; set; } = "";
+    /// <summary>Avito показывает действие «Опубликовать» для неопубликованной карточки.</summary>
+    public bool CanPublish { get; set; }
     public string DeleteDate { get; set; } = "";
 
     // Url можно либо задать парсером (точный slug-ссылка из карточки), либо оставить пустым —

@@ -43,10 +43,12 @@ public sealed class ProfileResult
     public int ActiveCount { get; set; }
     public int BlockedCount { get; set; }
     public int DraftsCount { get; set; }
+    public int UnpublishedCount { get; set; }
     public List<AvitoAdStatus> ActiveAds { get; set; } = new();
 
     /// <summary>Заблокированные/«с ошибками» вакансии — парсятся отдельным проходом по вкладке rejected.</summary>
     public List<AvitoAdStatus> BlockedAds { get; set; } = new();
+    public List<AvitoAdStatus> UnpublishedAds { get; set; } = new();
 
     /// <summary>Баланс «Аванс» из боковой панели, если удалось распарсить.</summary>
     public decimal? Balance { get; set; }

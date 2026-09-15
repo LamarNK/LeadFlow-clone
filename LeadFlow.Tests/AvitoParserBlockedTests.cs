@@ -196,4 +196,73 @@ public sealed class AvitoParserBlockedTests
         Assert.Empty(result.ActiveAds);
         Assert.Empty(result.BlockedAds);
     }
+
+    [Fact]
+    public void ParseProfilePage_ReadsInactiveCounter()
+    {
+        const string html = """
+            <button data-marker="profile-items-tab/tab(active)"><span class="styles-module-counter-prLgf">0</span></button>
+            <button data-marker="profile-items-tab/tab(inactive)"><span class="styles-module-counter-prLgf">4</span></button>
+            <button data-marker="profile-items-tab/tab(rejected)"><span class="styles-module-counter-prLgf">0</span></button>
+            """;
+
+        var result = _parser.ParseProfilePage(html);
+
+        Assert.Equal(4, result.UnpublishedCount);
+    }
+
+    [Fact]
+    public void ParseUnpublishedTabPage_ReadsPublishCapabilityAndReason()
+    {
+        const string html = """
+            <div data-marker="item-snippet/8140037674">
+              <a data-marker="view-link" href="/gubkinskiy/vakansii/test_8140037674">
+                <span class="styles-title-UJzSB">Охранник</span>
+              </a>
+              <span class="styles-status-name-zJgof">Истёк срок размещения</span>
+              <button data-marker="publish-action">Опубликовать</button>
+            </div>
+            """;
+
+        var ad = Assert.Single(_parser.ParseUnpublishedTabPage(html));
+
+        Assert.Equal("8140037674", ad.Id);
+        Assert.Equal("inactive", ad.SourceTab);
+        Assert.True(ad.CanPublish);
+        Assert.Equal("Истёк срок размещения", ad.Status);
+    }
+
+    [Fact]
+    public void ParseUnpublishedTabPage_DoesNotDropCardWhenListingUrlIsMalformed()
+    {
+        const string html = """
+            <div data-marker="item-snippet/8140037675">
+              <div data-marker="view-link"><span class="styles-title-UJzSB">Оператор</span></div>
+              <span class="styles-status-name-zJgof">Ошибки автопубликации</span>
+            </div>
+            """;
+
+        var ad = Assert.Single(_parser.ParseUnpublishedTabPage(html));
+
+        Assert.Equal("8140037675", ad.Id);
+        Assert.Equal("missing_view_link", ad.UrlParseError);
+        Assert.Equal("Ошибки автопубликации", ad.Status);
+    }
+
+    [Fact]
+    public void ParseBlockedTabPage_ExtractsExplicitErrorReason()
+    {
+        const string html = """
+            <div data-marker="item-snippet/1">
+              <a data-marker="view-link" href="/perm/vakansii/test_1"><span>Тест</span></a>
+              <div>Ошибка публикации: Не заполнено поле «График работы».</div>
+              <span class="styles-status-name-zJgof">Отклонено</span>
+            </div>
+            """;
+
+        var ad = Assert.Single(_parser.ParseBlockedTabPage(html));
+
+        Assert.Equal("rejected", ad.SourceTab);
+        Assert.Contains("Не заполнено поле", ad.ErrorReason, StringComparison.OrdinalIgnoreCase);
+    }
 }

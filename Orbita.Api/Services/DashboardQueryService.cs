@@ -1833,6 +1833,10 @@ public sealed class DashboardQueryService(
         var latestSnapshotBalances = await LoadLatestSnapshotBalancesAsync(workerIds, ct).ConfigureAwait(false);
         var openTopUps = await LoadOpenTopUpKeysAsync(workerIds, ct).ConfigureAwait(false);
         var lowBalanceAccountCounts = accountRows
+            // Keep the dashboard warning in sync with the Balances page: accounts
+            // hidden from the panel must not make their worker look like it needs
+            // a top-up.
+            .Where(static x => x.IsEnabledInPanel)
             .Select(x =>
             {
                 var snapshotBalance = latestSnapshotBalances.TryGetValue(x.WorkerId, out var balances)

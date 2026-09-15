@@ -25,9 +25,11 @@ public interface IMonitoringService
     /// Используется дашбордом, чтобы показать список и подкорректировать поведение бота.
     /// </summary>
     IReadOnlyList<AvitoAdStatus> GetBlockedAdsSnapshot();
+    IReadOnlyList<AvitoAdStatus> GetUnpublishedAdsSnapshot();
 
     /// <summary>
-    /// Восстанавливает в памяти снимки объявлений из полей <c>ActiveAdsSnapshotJson</c> / <c>BlockedAdsSnapshotJson</c>
+    /// Восстанавливает в памяти снимки объявлений из полей активных, ошибочных и неопубликованных объявлений
+    /// (<c>ActiveAdsSnapshotJson</c>, <c>BlockedAdsSnapshotJson</c>, <c>UnpublishedAdsSnapshotJson</c>)
     /// загруженных аккаунтов (например после чтения из БД при старте UI).
     /// </summary>
     void RestorePersistedAdSnapshots(IReadOnlyList<AvitoAccount> accounts);

@@ -20,7 +20,8 @@ public sealed class OrbitaMonitoringRepository(
             {
                 Id = account.Id,
                 ActiveAdsSnapshotJson = account.ActiveAdsSnapshotJson,
-                BlockedAdsSnapshotJson = account.BlockedAdsSnapshotJson
+                BlockedAdsSnapshotJson = account.BlockedAdsSnapshotJson,
+                UnpublishedAdsSnapshotJson = account.UnpublishedAdsSnapshotJson
             })
             .ToList();
         return Task.FromResult<IReadOnlyList<AvitoAccount>>(accounts);

@@ -155,6 +155,18 @@ public sealed class AvitoCandidatesPageScriptsTests
     }
 
     [Fact]
+    public void BuildExtractionScriptForPuppeteer_ExtractsResponseDateFromCardWithoutChat()
+    {
+        var script = AvitoCandidatesPageScripts.BuildExtractionScriptForPuppeteer();
+
+        Assert.Contains("const parseResponseAt", script, StringComparison.Ordinal);
+        Assert.Contains("job-application/link/to-resume", script, StringComparison.Ordinal);
+        Assert.Contains("сегодня|вчера", script, StringComparison.Ordinal);
+        Assert.Contains("calendarMatch", script, StringComparison.Ordinal);
+        Assert.Contains("responseAt", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void BuildRevealMaskedPhonesStepScript_ClicksMaskedEvenIfKnown()
     {
         var script = AvitoCandidatesPageScripts.BuildRevealMaskedPhonesStepScript();

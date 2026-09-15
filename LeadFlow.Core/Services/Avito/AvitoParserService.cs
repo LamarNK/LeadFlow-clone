@@ -549,6 +549,7 @@ public class AvitoParserService
         result.ActiveTabCounterResolved = activeTabOk;
         result.ActiveCount = activeCount;
         result.BlockedCount = ExtractCounter(html, "tab(rejected)");
+        result.UnpublishedCount = ExtractCounter(html, "tab(inactive)");
         result.DraftsCount = ExtractCounter(html, "tab(drafts)");
 
         // 2️⃣ Парсинг активных объявлений (только вакансии / раздел «Работа» на Авито)
@@ -608,7 +609,7 @@ public class AvitoParserService
                 continue;
             }
 
-            var ad = new AvitoAdStatus { Id = id, AccountId = accountId ?? Guid.Empty };
+            var ad = new AvitoAdStatus { Id = id, AccountId = accountId ?? Guid.Empty, SourceTab = AvitoAdStatus.ErrorTab };
             ad.Title = ExtractTitle(snippetHtml);
             ad.City = ExtractCity(snippetHtml);
             ad.AddressText = ExtractAddressText(snippetHtml);
@@ -616,6 +617,7 @@ public class AvitoParserService
             ad.Url = listingUrl;
             ad.UrlParseError = urlError;
             ad.Status = ExtractBlockedStatusName(snippetHtml);
+            ad.ErrorReason = ExtractErrorReason(snippetHtml, ad.Status);
             ad.DeleteDate = ExtractBlockedDeleteDate(snippetHtml);
             FillViewsContactsFavorites(ad, snippetHtml);
             FillAgeAndStatus(ad, snippetHtml, DateTime.UtcNow);
@@ -624,6 +626,58 @@ public class AvitoParserService
                 ad.Status = ExtractBlockedStatusName(snippetHtml);
             }
 
+            result.Add(ad);
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Парсит вкладку «Неопубликованные» (<c>tab(inactive)</c>). Карточка сохраняется даже
+    /// если причина отсутствует: Avito иногда отдаёт только статус «Истёк срок размещения».
+    /// Наличие <c>data-marker="publish-action"</c> используется как безопасная capability для
+    /// последующего явного продления/публикации, но само действие здесь не выполняется.
+    /// </summary>
+    public IReadOnlyList<AvitoAdStatus> ParseUnpublishedTabPage(string html, Guid? accountId = null)
+    {
+        var result = new List<AvitoAdStatus>();
+        if (string.IsNullOrWhiteSpace(html)) return result;
+
+        foreach (var (id, snippetHtml) in EnumerateItemSnippets(html))
+        {
+            var listingUrl = ExtractListingUrl(snippetHtml, out var urlError);
+            if (string.IsNullOrEmpty(listingUrl))
+            {
+                listingUrl = NormalizeAvitoHref(ExtractItemListingHref(snippetHtml, id));
+            }
+
+            // Не теряем карточку из-за неполной/новой URL-разметки: сохраняем её
+            // с диагностикой, чтобы UI и последующий ручной разбор увидели причину.
+            if (!IsJobSectionListing(listingUrl))
+            {
+                urlError ??= string.IsNullOrWhiteSpace(listingUrl)
+                    ? "listing_url_missing"
+                    : "listing_url_not_job_section";
+            }
+
+            var status = ExtractUnpublishedStatusText(snippetHtml);
+            var ad = new AvitoAdStatus
+            {
+                Id = id,
+                AccountId = accountId ?? Guid.Empty,
+                SourceTab = AvitoAdStatus.UnpublishedTab,
+                Title = ExtractTitle(snippetHtml),
+                City = ExtractCity(snippetHtml),
+                AddressText = ExtractAddressText(snippetHtml),
+                DistrictText = ExtractDistrictText(snippetHtml),
+                Url = listingUrl,
+                UrlParseError = urlError,
+                Status = string.IsNullOrWhiteSpace(status) ? "Не опубликовано" : status,
+                ErrorReason = ExtractErrorReason(snippetHtml, status),
+                CanPublish = Regex.IsMatch(snippetHtml, @"data-marker=""publish-action""", RegexOptions.IgnoreCase)
+            };
+            FillViewsContactsFavorites(ad, snippetHtml);
+            FillAgeAndStatus(ad, snippetHtml, DateTime.UtcNow);
             result.Add(ad);
         }
 
@@ -650,7 +704,10 @@ public class AvitoParserService
                 ExpiresAtUtc = ad.ExpiresAtUtc,
                 RemainingDays = ad.RemainingDays,
                 ExpiryParseError = ad.ExpiryParseError,
-                StatusText = string.Equals(ad.Status, "Активно", StringComparison.Ordinal) ? string.Empty : ad.Status
+                StatusText = string.Equals(ad.Status, "Активно", StringComparison.Ordinal) ? string.Empty : ad.Status,
+                SourceTab = ad.SourceTab,
+                ErrorReason = ad.ErrorReason,
+                CanPublish = ad.CanPublish
             })
             .ToList();
     }
@@ -726,6 +783,39 @@ public class AvitoParserService
             @"Остал(?:ось|ся|ись)\s+(?<days>\d+)\s*(?:день|дня|дней)",
             RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
         return match.Success && int.TryParse(match.Groups["days"].Value, out var days) ? days : null;
+    }
+
+    private static string ExtractErrorReason(string snippetHtml, string? status)
+    {
+        var plain = Regex.Replace(snippetHtml ?? string.Empty, "<script[\\s\\S]*?</script>|<style[\\s\\S]*?</style>", " ", RegexOptions.IgnoreCase);
+        plain = Regex.Replace(plain, "<[^>]+>", " ");
+        plain = WebUtility.HtmlDecode(plain);
+        plain = NormalizeSpaces(plain);
+
+        var match = Regex.Match(plain,
+            @"(?:причина|ошибка\s+(?:публикации|автопубликации)|не\s+удалось\s+опубликовать)\s*[:—-]?\s*(?<reason>[^.!?]{3,180})",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        if (match.Success) return match.Groups["reason"].Value.Trim();
+
+        return status is not null && (status.Contains("отклон", StringComparison.OrdinalIgnoreCase)
+            || status.Contains("ошиб", StringComparison.OrdinalIgnoreCase)
+            || status.Contains("заблок", StringComparison.OrdinalIgnoreCase))
+            ? status.Trim()
+            : string.Empty;
+    }
+
+    private static string ExtractUnpublishedStatusText(string snippetHtml)
+    {
+        var plain = Regex.Replace(snippetHtml ?? string.Empty, "<script[\\s\\S]*?</script>|<style[\\s\\S]*?</style>", " ", RegexOptions.IgnoreCase);
+        plain = Regex.Replace(plain, "<[^>]+>", " ");
+        plain = WebUtility.HtmlDecode(plain);
+        plain = NormalizeSpaces(plain);
+
+        var match = Regex.Match(
+            plain,
+            @"(?<status>Истёк\s+срок\s+размещения|Снято\s+с\s+публикации|Ошибки\s+автопубликации|Ожидает\s+публикации|На\s+проверке|Не\s+опубликовано)",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        return match.Success ? match.Groups["status"].Value.Trim() : string.Empty;
     }
 
     /// <summary>

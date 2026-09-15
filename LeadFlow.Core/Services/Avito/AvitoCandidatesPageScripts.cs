@@ -2547,6 +2547,46 @@ public static class AvitoCandidatesPageScripts
                 return extractAgeYearsFromText(rawText);
             };
 
+            // The responses list has the authoritative response date even when the
+            // mini-chat is empty.  Keep it as an ISO instant so the server does not
+            // have to guess from `DateTime.UtcNow` or parse localized Russian text.
+            const parseResponseAt = (root) => {
+                const anchor = root.querySelector("[data-marker='job-application/link/to-resume']");
+                const text = (anchor?.textContent ?? root.textContent ?? "").replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim();
+                if (!text) return "";
+
+                const timeMatch = text.match(/(?:сегодня|вчера)(?:\s*,|\s+в)?\s*(\d{1,2}):(\d{2})/i);
+                const monthNames = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"];
+                const calendarMatch = text.match(/(?:^|\s)(\d{1,2})\s+(января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)(?:\s+в)?\s+(\d{1,2}):(\d{2})/i);
+                const now = new Date();
+                let year = now.getFullYear();
+                let month = now.getMonth();
+                let day = now.getDate();
+                let hours;
+                let minutes;
+                if (timeMatch) {
+                    hours = Number(timeMatch[1]);
+                    minutes = Number(timeMatch[2]);
+                    if (/вчера/i.test(timeMatch[0])) {
+                        const yesterday = new Date(year, month, day - 1);
+                        year = yesterday.getFullYear(); month = yesterday.getMonth(); day = yesterday.getDate();
+                    }
+                } else if (calendarMatch) {
+                    day = Number(calendarMatch[1]);
+                    month = monthNames.findIndex((name) => name.localeCompare(calendarMatch[2], "ru", { sensitivity: "base" }) === 0);
+                    hours = Number(calendarMatch[3]);
+                    minutes = Number(calendarMatch[4]);
+                    if (month < 0) return "";
+                    const candidate = new Date(year, month, day, hours, minutes);
+                    if (candidate.getTime() > now.getTime() + 86400000) year--;
+                } else {
+                    return "";
+                }
+
+                const result = new Date(year, month, day, hours, minutes);
+                return Number.isNaN(result.getTime()) ? "" : result.toISOString();
+            };
+
             // A real avatar is hosted at {shard}.img.avito.st/image/… .
             // Deliberately reject Avito's generated /static/ims/ placeholders: the panel
             // falls back to candidate initials when the person did not upload a photo.
@@ -2637,6 +2677,7 @@ public static class AvitoCandidatesPageScripts
                 const messengerUrl = resolveMessengerUrl(root);
                 const avatarUrl = resolveAvatarUrl(root, name);
                 const sourceResponseId = buildSourceResponseId(name, phone, vacancy, city, vacancyUrl);
+                const responseAt = parseResponseAt(root);
 
                 return {
                     fullName: name,
@@ -2649,6 +2690,7 @@ public static class AvitoCandidatesPageScripts
                     messengerUrl,
                     avatarUrl,
                     sourceResponseId,
+                    responseAt,
                     domIndex: rootIndex,
                     rawText
                 };

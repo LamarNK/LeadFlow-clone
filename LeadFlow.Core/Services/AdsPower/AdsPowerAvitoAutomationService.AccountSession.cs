@@ -1652,6 +1652,27 @@ public sealed partial class AdsPowerAvitoAutomationService
         return html;
     }
 
+    private async Task<string> LoadUnpublishedItemsHtmlOnPageAsync(
+        IPage page,
+        string adsPowerUserId,
+        CancellationToken cancellationToken)
+    {
+        if (!page.Url.Contains("tabs%22%3A%22inactive", StringComparison.OrdinalIgnoreCase)
+            && !page.Url.Contains("tabs=inactive", StringComparison.OrdinalIgnoreCase))
+        {
+            try { await page.GoToAsync(ProfileUnpublishedItemsPageUrl, MonitoringNavigation(page, 60_000)).ConfigureAwait(false); }
+            catch (Exception ex) when (IsRecoverableNavigationError(ex)) { await Task.Delay(1400, cancellationToken).ConfigureAwait(false); }
+        }
+
+        await WaitForProfileItemsShellAsync(page, nameof(LoadUnpublishedItemsHtmlOnPageAsync), cancellationToken).ConfigureAwait(false);
+        await WaitForProfileItemsReadyAsync(page, nameof(LoadUnpublishedItemsHtmlOnPageAsync), cancellationToken).ConfigureAwait(false);
+        await HumanDelay.AfterItemsRenderAsync(cancellationToken).ConfigureAwait(false);
+        var html = await EvaluateWithRetryAsync<string>(page, "(() => document.documentElement?.outerHTML || '')()", cancellationToken).ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(html)) throw new InvalidOperationException("Браузер CDP: вкладка «Неопубликованные» вернула пустой HTML.");
+        await ThrowIfCaptchaAsync(page, html, cancellationToken).ConfigureAwait(false);
+        return html;
+    }
+
     private async Task<AvitoAdListCapture> CaptureActiveAdsListOnPageAsync(
         IPage page,
         string adsPowerUserId,
@@ -2174,6 +2195,12 @@ public sealed partial class AdsPowerAvitoAutomationService
         {
             using var _ = AvitoCaptchaTaskContext.Use(captchaOptions);
             return await owner.LoadBlockedItemsHtmlOnPageAsync(page, AdsPowerUserId, cancellationToken).ConfigureAwait(false);
+        }
+
+        public async Task<string> LoadUnpublishedItemsHtmlAsync(CancellationToken cancellationToken = default)
+        {
+            using var _ = AvitoCaptchaTaskContext.Use(captchaOptions);
+            return await owner.LoadUnpublishedItemsHtmlOnPageAsync(page, AdsPowerUserId, cancellationToken).ConfigureAwait(false);
         }
 
         public async Task<AvitoAdListCapture> CaptureActiveAdsListAsync(CancellationToken cancellationToken = default)

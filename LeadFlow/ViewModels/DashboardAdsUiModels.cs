@@ -7,6 +7,7 @@ public enum AdsDashboardFilter
     All,
     Active,
     Blocked,
+    Unpublished,
     WithMessages,
     WithoutMessages,
     Drafts,
@@ -28,13 +29,15 @@ public enum AdsSortOption
 public enum DashboardAdKind
 {
     Active,
-    Blocked
+    Blocked,
+    Unpublished
 }
 
 public enum DashboardAdBadgeKind
 {
     Active,
     Blocked,
+    Unpublished,
     Draft,
     Messages,
     NeedsAction
@@ -54,7 +57,7 @@ public sealed class AdsSortChoice(AdsSortOption option, string label)
     public override string ToString() => Label;
 }
 
-/// <summary>Элемент единой сетки объявлений на главном экране (активные / заблокированные).</summary>
+/// <summary>Элемент единой сетки объявлений на главном экране (активные / заблокированные / неопубликованные).</summary>
 public sealed class DashboardAdDisplayItem
 {
     public DashboardAdDisplayItem(DashboardAdKind kind, AvitoAdStatus ad)
@@ -71,9 +74,10 @@ public sealed class DashboardAdDisplayItem
         || Ad.Status.Contains("draft", StringComparison.CurrentCultureIgnoreCase);
 
     public bool IsBlockedPresentation => Kind == DashboardAdKind.Blocked;
+    public bool IsUnpublishedPresentation => Kind == DashboardAdKind.Unpublished;
 
     public bool NeedsActionStatusBadge =>
-        !IsBlockedPresentation
+        !IsBlockedPresentation && !IsUnpublishedPresentation
         && !IsDraftAd
         && (Ad.Status.Contains("действ", StringComparison.CurrentCultureIgnoreCase)
             || Ad.Status.Contains("модерац", StringComparison.CurrentCultureIgnoreCase)
@@ -89,6 +93,11 @@ public sealed class DashboardAdDisplayItem
             if (Kind == DashboardAdKind.Blocked)
             {
                 return DashboardAdBadgeKind.Blocked;
+            }
+
+            if (Kind == DashboardAdKind.Unpublished)
+            {
+                return DashboardAdBadgeKind.Unpublished;
             }
 
             if (IsDraftAd)
@@ -163,6 +172,11 @@ public sealed class DashboardAdDisplayItem
                 return 400;
             }
 
+            if (Kind == DashboardAdKind.Unpublished)
+            {
+                return 350;
+            }
+
             if (IsDraftAd)
             {
                 return 300;
@@ -186,6 +200,7 @@ public sealed class DashboardAdDisplayItem
     public string StatusBadgeCaption => PrimaryBadgeKind switch
     {
         DashboardAdBadgeKind.Blocked => "Заблокировано",
+        DashboardAdBadgeKind.Unpublished => "Не опубликовано",
         DashboardAdBadgeKind.Draft => "Черновик",
         DashboardAdBadgeKind.Messages => MessageCountPillText,
         DashboardAdBadgeKind.NeedsAction => "Нужны действия",

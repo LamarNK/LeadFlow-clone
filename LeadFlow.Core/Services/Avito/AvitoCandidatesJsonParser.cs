@@ -66,9 +66,10 @@ public static class AvitoCandidatesJsonParser
                 vacancyUrl,
                 messengerUrl,
                 ageText);
-            // Дата отклика из чата (platform/раннее сообщение); иначе момент сбора.
+            // Сначала дата из карточки списка (она есть даже без сообщений), затем
+            // системное/раннее сообщение мини-чата, и только потом момент сбора.
             var collectedAt = DateTime.UtcNow;
-            var createdAt = AvitoChatMessagesJson.TryGetResponseAtUtc(chatMessages) ?? collectedAt;
+            var createdAt = TryParseResponseAt(item) ?? AvitoChatMessagesJson.TryGetResponseAtUtc(chatMessages) ?? collectedAt;
 
             results.Add(new CandidateResponse
             {
@@ -96,6 +97,24 @@ public static class AvitoCandidatesJsonParser
         }
 
         return results;
+    }
+
+    private static DateTime? TryParseResponseAt(JsonElement item)
+    {
+        if (!item.TryGetProperty("responseAt", out var responseAt)
+            || responseAt.ValueKind != JsonValueKind.String
+            || string.IsNullOrWhiteSpace(responseAt.GetString()))
+        {
+            return null;
+        }
+
+        return DateTimeOffset.TryParse(
+            responseAt.GetString(),
+            System.Globalization.CultureInfo.InvariantCulture,
+            System.Globalization.DateTimeStyles.RoundtripKind,
+            out var parsed)
+            ? parsed.UtcDateTime
+            : null;
     }
 
     public static string ParseGender(string? value)

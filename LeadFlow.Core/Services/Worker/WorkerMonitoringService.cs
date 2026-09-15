@@ -1269,8 +1269,9 @@ public sealed class WorkerMonitoringService(
                         .ConfigureAwait(false);
 
                     var watchPayloadChanged = ResponsePhoneWatchChatRefresh.HasPayloadChanged(
-                        candidate,
-                        storedPhoneWatch);
+                            candidate,
+                            storedPhoneWatch)
+                        || ResponsePhoneWatchChatRefresh.HasResponseDateRefresh(candidate);
                     if (ResponsePhoneWatchChatRefresh.ShouldPublish(
                             watchingOpen,
                             decision.Action,
@@ -1973,6 +1974,7 @@ public sealed class WorkerMonitoringService(
                             statsAggregate.ParseSuccess = true;
                             statsAggregate.ActiveAds.AddRange(part.ActiveAds);
                             statsAggregate.BlockedAds.AddRange(part.BlockedAds);
+                            statsAggregate.UnpublishedAds.AddRange(part.UnpublishedAds);
                             statsAggregate.ActiveCount += part.ActiveCount;
                             statsAggregate.BlockedCount += part.BlockedCount;
                             statsAggregate.DraftsCount += part.DraftsCount;
@@ -2560,6 +2562,7 @@ public sealed class WorkerMonitoringService(
     {
         snapshot.ActiveAds ??= [];
         snapshot.BlockedAds ??= [];
+        snapshot.UnpublishedAds ??= [];
         if (!snapshot.ParseSuccess)
         {
             return;
@@ -2571,6 +2574,7 @@ public sealed class WorkerMonitoringService(
         account.AdsStatsUpdatedAt = DateTime.UtcNow;
         account.ActiveAdsSnapshotJson = AvitoAdSnapshots.Serialize(snapshot.ActiveAds);
         account.BlockedAdsSnapshotJson = AvitoAdSnapshots.Serialize(snapshot.BlockedAds);
+        account.UnpublishedAdsSnapshotJson = AvitoAdSnapshots.Serialize(snapshot.UnpublishedAds);
         await repository.SaveAccountAsync(account, ct).ConfigureAwait(false);
         _telemetryPusher.RequestDebouncedPush(ct);
     }
@@ -2601,6 +2605,21 @@ public sealed class WorkerMonitoringService(
             {
                 _ = GlobalLogger.Instance.LogAsync(
                     $"Worker: blocked tab (session) failed for {account.DisplayName}: {ex.Message}",
+                    DeskLinkAuditLogLevel.Warning);
+            }
+        }
+
+        if (part.UnpublishedCount > 0)
+        {
+            try
+            {
+                var unpublishedHtml = await session.LoadUnpublishedItemsHtmlAsync(cancellationToken).ConfigureAwait(false);
+                part.UnpublishedAds.AddRange(avitoParser.ParseUnpublishedTabPage(unpublishedHtml, account.Id));
+            }
+            catch (Exception ex)
+            {
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"Worker: unpublished tab (session) failed for {account.DisplayName}: {ex.Message}",
                     DeskLinkAuditLogLevel.Warning);
             }
         }

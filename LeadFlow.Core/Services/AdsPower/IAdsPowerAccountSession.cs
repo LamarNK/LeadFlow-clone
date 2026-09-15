@@ -23,6 +23,10 @@ public interface IAdsPowerAccountSession : IAsyncDisposable
 
     Task<string> LoadBlockedItemsHtmlAsync(CancellationToken cancellationToken = default);
 
+    /// <summary>Read-only HTML вкладки «Неопубликованные» (<c>tabs=inactive</c>).</summary>
+    Task<string> LoadUnpublishedItemsHtmlAsync(CancellationToken cancellationToken = default) =>
+        Task.FromResult(string.Empty);
+
     /// <summary>
     /// Read-only обход вкладки «Активные»: прокрутка вниз, пока подгружаются карточки,
     /// затем pagination-next. Не кликает управляющие кнопки объявления.

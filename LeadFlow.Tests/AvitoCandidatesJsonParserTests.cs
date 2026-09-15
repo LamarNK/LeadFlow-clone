@@ -396,6 +396,31 @@ public sealed class AvitoCandidatesJsonParserTests
     }
 
     [Fact]
+    public void ParseCandidates_UsesResponseAtFromCardWhenChatIsEmpty()
+    {
+        var account = new AvitoAccount { Id = Guid.NewGuid(), DisplayName = "A" };
+        using var doc = JsonDocument.Parse(
+            """
+            {
+              "candidates": [
+                {
+                  "fullName": "Важжов Александр Владимирович",
+                  "phone": "8 918 026-50-46",
+                  "sourceResponseId": "avito:8279258638:79180265046",
+                  "responseAt": "2026-09-15T06:41:00.000Z"
+                }
+              ]
+            }
+            """);
+
+        var list = AvitoCandidatesJsonParser.ParseCandidates(doc.RootElement, account);
+
+        Assert.Single(list);
+        Assert.Equal(new DateTime(2026, 9, 15, 6, 41, 0, DateTimeKind.Utc), list[0].CreatedAt);
+        Assert.Empty(list[0].ChatMessagesJson);
+    }
+
+    [Fact]
     public void ParseCandidates_ExtractsMessengerUrlAndRawText()
     {
         var account = new AvitoAccount { Id = Guid.NewGuid(), DisplayName = "A" };

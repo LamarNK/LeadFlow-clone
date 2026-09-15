@@ -208,7 +208,8 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
             {
                 Id = x.Id,
                 ActiveAdsSnapshotJson = x.ActiveAdsSnapshotJson,
-                BlockedAdsSnapshotJson = x.BlockedAdsSnapshotJson
+                BlockedAdsSnapshotJson = x.BlockedAdsSnapshotJson,
+                UnpublishedAdsSnapshotJson = x.UnpublishedAdsSnapshotJson
             })
             .ToListAsync(cancellationToken);
 
@@ -216,7 +217,8 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         {
             Id = row.Id,
             ActiveAdsSnapshotJson = string.IsNullOrWhiteSpace(row.ActiveAdsSnapshotJson) ? "[]" : row.ActiveAdsSnapshotJson,
-            BlockedAdsSnapshotJson = string.IsNullOrWhiteSpace(row.BlockedAdsSnapshotJson) ? "[]" : row.BlockedAdsSnapshotJson
+            BlockedAdsSnapshotJson = string.IsNullOrWhiteSpace(row.BlockedAdsSnapshotJson) ? "[]" : row.BlockedAdsSnapshotJson,
+            UnpublishedAdsSnapshotJson = string.IsNullOrWhiteSpace(row.UnpublishedAdsSnapshotJson) ? "[]" : row.UnpublishedAdsSnapshotJson
         }).ToList();
     }
 
@@ -1233,6 +1235,7 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         AdsStatsUpdatedAt = model.AdsStatsUpdatedAt,
         ActiveAdsSnapshotJson = string.IsNullOrWhiteSpace(model.ActiveAdsSnapshotJson) ? "[]" : model.ActiveAdsSnapshotJson,
         BlockedAdsSnapshotJson = string.IsNullOrWhiteSpace(model.BlockedAdsSnapshotJson) ? "[]" : model.BlockedAdsSnapshotJson,
+        UnpublishedAdsSnapshotJson = string.IsNullOrWhiteSpace(model.UnpublishedAdsSnapshotJson) ? "[]" : model.UnpublishedAdsSnapshotJson,
         ProfileProvider = model.ProfileProvider.ToString(),
         AdsPowerProfileId = model.AdsPowerProfileId,
         AdsPowerProfileName = model.AdsPowerProfileName,
@@ -1254,6 +1257,7 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         public Guid Id { get; init; }
         public string ActiveAdsSnapshotJson { get; init; } = "[]";
         public string BlockedAdsSnapshotJson { get; init; } = "[]";
+        public string UnpublishedAdsSnapshotJson { get; init; } = "[]";
     }
 
     private sealed record BalanceProjection
@@ -1326,6 +1330,7 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
             SubProfilesJson = string.IsNullOrWhiteSpace(SubProfilesJson) ? "[]" : SubProfilesJson,
             ActiveAdsSnapshotJson = "[]",
             BlockedAdsSnapshotJson = "[]",
+            UnpublishedAdsSnapshotJson = "[]",
             CookiesJson = string.Empty,
             StartupTabsJson = "[]",
             ProxyPresetsJson = "[]",
@@ -1388,6 +1393,7 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         AdsStatsUpdatedAt = entity.AdsStatsUpdatedAt,
         ActiveAdsSnapshotJson = string.IsNullOrWhiteSpace(entity.ActiveAdsSnapshotJson) ? "[]" : entity.ActiveAdsSnapshotJson,
         BlockedAdsSnapshotJson = string.IsNullOrWhiteSpace(entity.BlockedAdsSnapshotJson) ? "[]" : entity.BlockedAdsSnapshotJson,
+        UnpublishedAdsSnapshotJson = string.IsNullOrWhiteSpace(entity.UnpublishedAdsSnapshotJson) ? "[]" : entity.UnpublishedAdsSnapshotJson,
         ProfileProvider = Enum.TryParse<AvitoProfileProvider>(entity.ProfileProvider, out var provider)
             ? provider
             : AvitoProfileProvider.Local,
@@ -1491,6 +1497,7 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
         target.AdsStatsUpdatedAt = source.AdsStatsUpdatedAt;
         target.ActiveAdsSnapshotJson = string.IsNullOrWhiteSpace(source.ActiveAdsSnapshotJson) ? "[]" : source.ActiveAdsSnapshotJson;
         target.BlockedAdsSnapshotJson = string.IsNullOrWhiteSpace(source.BlockedAdsSnapshotJson) ? "[]" : source.BlockedAdsSnapshotJson;
+        target.UnpublishedAdsSnapshotJson = string.IsNullOrWhiteSpace(source.UnpublishedAdsSnapshotJson) ? "[]" : source.UnpublishedAdsSnapshotJson;
         target.ProfileProvider = source.ProfileProvider.ToString();
         target.AdsPowerProfileId = source.AdsPowerProfileId;
         target.AdsPowerProfileName = source.AdsPowerProfileName;
@@ -1673,7 +1680,8 @@ public sealed class AppRepository(IDbContextFactory<AppDbContext> dbContextFacto
             ["SubProfilesJson"] = "ALTER TABLE AvitoAccounts ADD COLUMN SubProfilesJson TEXT NOT NULL DEFAULT '[]';",
             ["SubProfilesRefreshedAt"] = "ALTER TABLE AvitoAccounts ADD COLUMN SubProfilesRefreshedAt TEXT NULL;",
             ["ActiveAdsSnapshotJson"] = "ALTER TABLE AvitoAccounts ADD COLUMN ActiveAdsSnapshotJson TEXT NOT NULL DEFAULT '[]';",
-            ["BlockedAdsSnapshotJson"] = "ALTER TABLE AvitoAccounts ADD COLUMN BlockedAdsSnapshotJson TEXT NOT NULL DEFAULT '[]';"
+            ["BlockedAdsSnapshotJson"] = "ALTER TABLE AvitoAccounts ADD COLUMN BlockedAdsSnapshotJson TEXT NOT NULL DEFAULT '[]';",
+            ["UnpublishedAdsSnapshotJson"] = "ALTER TABLE AvitoAccounts ADD COLUMN UnpublishedAdsSnapshotJson TEXT NOT NULL DEFAULT '[]';"
         };
 
         foreach (var (columnName, statement) in alterStatements)

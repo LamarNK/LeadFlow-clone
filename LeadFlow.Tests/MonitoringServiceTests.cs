@@ -15,6 +15,50 @@ namespace LeadFlow.Tests;
 public sealed class MonitoringServiceTests
 {
     [Fact]
+    public void RestorePersistedAdSnapshots_RestoresUnpublishedAdsAndAccountId()
+    {
+        var settings = NewSettings();
+        var account = NewAccount();
+        account.UnpublishedAdsSnapshotJson = AvitoAdSnapshots.Serialize(
+        [
+            new AvitoAdStatus
+            {
+                // Snapshot JSON may come from an older process and contain no account id.
+                AccountId = Guid.Empty,
+                Id = "unpub-42",
+                Title = "Охранник",
+                SourceTab = AvitoAdStatus.UnpublishedTab,
+                Status = "Истёк срок размещения",
+                ErrorReason = "Срок размещения истёк",
+                CanPublish = true
+            }
+        ]);
+
+        var harness = new MonitoringHarness(new FakeAvitoResponseSource(), new FakeBitrixClient(), settings);
+
+        harness.Service.RestorePersistedAdSnapshots([account]);
+
+        var restored = Assert.Single(harness.Service.GetUnpublishedAdsSnapshot());
+        Assert.Equal(account.Id, restored.AccountId);
+        Assert.Equal("unpub-42", restored.Id);
+        Assert.Equal("Срок размещения истёк", restored.ErrorReason);
+        Assert.True(restored.CanPublish);
+    }
+
+    [Fact]
+    public void RestorePersistedAdSnapshots_InvalidUnpublishedJsonReturnsEmptySnapshot()
+    {
+        var settings = NewSettings();
+        var account = NewAccount();
+        account.UnpublishedAdsSnapshotJson = "{not-json";
+        var harness = new MonitoringHarness(new FakeAvitoResponseSource(), new FakeBitrixClient(), settings);
+
+        harness.Service.RestorePersistedAdSnapshots([account]);
+
+        Assert.Empty(harness.Service.GetUnpublishedAdsSnapshot());
+    }
+
+    [Fact]
     public async Task StartAsync_ParallelMode_RespectsMaxConcurrentAccounts()
     {
         var settings = NewSettings();

@@ -1043,6 +1043,7 @@
                                                     <RowDefinition Height="Auto" />
                                                     <RowDefinition Height="Auto" />
                                                     <RowDefinition Height="Auto" />
+                                                    <RowDefinition Height="Auto" />
                                                 </Grid.RowDefinitions>
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="*" />
@@ -1081,6 +1082,9 @@
                                                                     <DataTrigger Binding="{Binding Kind}" Value="{x:Static vm:DashboardAdKind.Blocked}">
                                                                         <Setter Property="Foreground" Value="{StaticResource ErrorBrush}" />
                                                                     </DataTrigger>
+                                                                    <DataTrigger Binding="{Binding Kind}" Value="{x:Static vm:DashboardAdKind.Unpublished}">
+                                                                        <Setter Property="Foreground" Value="#B45309" />
+                                                                    </DataTrigger>
                                                                 </Style.Triggers>
                                                             </Style>
                                                         </TextBlock.Style>
@@ -1103,6 +1107,10 @@
                                                                     <DataTrigger Binding="{Binding PrimaryBadgeKind}" Value="{x:Static vm:DashboardAdBadgeKind.Blocked}">
                                                                         <Setter Property="Background" Value="#FEE2E2" />
                                                                         <Setter Property="BorderBrush" Value="#FECACA" />
+                                                                    </DataTrigger>
+                                                                    <DataTrigger Binding="{Binding PrimaryBadgeKind}" Value="{x:Static vm:DashboardAdBadgeKind.Unpublished}">
+                                                                        <Setter Property="Background" Value="#FEF3C7" />
+                                                                        <Setter Property="BorderBrush" Value="#FCD34D" />
                                                                     </DataTrigger>
                                                                     <DataTrigger Binding="{Binding PrimaryBadgeKind}" Value="{x:Static vm:DashboardAdBadgeKind.Draft}">
                                                                         <Setter Property="Background" Value="#F3F4F6" />
@@ -1128,6 +1136,9 @@
                                                                     <Style.Triggers>
                                                                         <DataTrigger Binding="{Binding PrimaryBadgeKind}" Value="{x:Static vm:DashboardAdBadgeKind.Blocked}">
                                                                             <Setter Property="Foreground" Value="#991B1B" />
+                                                                        </DataTrigger>
+                                                                        <DataTrigger Binding="{Binding PrimaryBadgeKind}" Value="{x:Static vm:DashboardAdBadgeKind.Unpublished}">
+                                                                            <Setter Property="Foreground" Value="#92400E" />
                                                                         </DataTrigger>
                                                                         <DataTrigger Binding="{Binding PrimaryBadgeKind}" Value="{x:Static vm:DashboardAdBadgeKind.Draft}">
                                                                             <Setter Property="Foreground" Value="#4B5563" />
@@ -1188,6 +1199,31 @@
                                                     </TextBlock.Style>
                                                 </TextBlock>
                                                 <TextBlock Grid.Row="4"
+                                                           Grid.ColumnSpan="2"
+                                                           Margin="0,2,0,0"
+                                                           FontSize="10"
+                                                           Foreground="#B45309"
+                                                           Text="{Binding Ad.ErrorReason}"
+                                                           TextWrapping="Wrap"
+                                                           TextTrimming="CharacterEllipsis">
+                                                    <TextBlock.Style>
+                                                        <Style TargetType="TextBlock">
+                                                            <Setter Property="Visibility" Value="Collapsed" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding Ad.ErrorReason}" Value="">
+                                                                    <Setter Property="Visibility" Value="Collapsed" />
+                                                                </DataTrigger>
+                                                                <DataTrigger Binding="{Binding Ad.SourceTab}" Value="rejected">
+                                                                    <Setter Property="Visibility" Value="Visible" />
+                                                                </DataTrigger>
+                                                                <DataTrigger Binding="{Binding Ad.SourceTab}" Value="inactive">
+                                                                    <Setter Property="Visibility" Value="Visible" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </TextBlock.Style>
+                                                </TextBlock>
+                                                <TextBlock Grid.Row="5"
                                                            Grid.ColumnSpan="2"
                                                            Margin="0,2,0,0"
                                                            FontSize="10"

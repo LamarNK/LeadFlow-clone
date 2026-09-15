@@ -43,6 +43,7 @@ public sealed class MonitoringService(
     private readonly Lock _activeAdsSync = new();
     private readonly Dictionary<Guid, IReadOnlyList<AvitoAdStatus>> _activeAdsByAccount = [];
     private readonly Dictionary<Guid, IReadOnlyList<AvitoAdStatus>> _blockedAdsByAccount = [];
+    private readonly Dictionary<Guid, IReadOnlyList<AvitoAdStatus>> _unpublishedAdsByAccount = [];
     private readonly Dictionary<Guid, string> _restoredActiveSnapshotJsonByAccount = [];
     private readonly Dictionary<Guid, string> _restoredBlockedSnapshotJsonByAccount = [];
     private int _consecutiveMonitoringLoopFailures;
@@ -89,18 +90,31 @@ public sealed class MonitoringService(
         }
     }
 
+    public IReadOnlyList<AvitoAdStatus> GetUnpublishedAdsSnapshot()
+    {
+        lock (_activeAdsSync)
+        {
+            return _unpublishedAdsByAccount.Values.SelectMany(static ads => ads).Select(CloneAd).ToList();
+        }
+    }
+
     /// <inheritdoc />
     public void RestorePersistedAdSnapshots(IReadOnlyList<AvitoAccount> accounts)
     {
         lock (_activeAdsSync)
         {
             var actualIds = accounts.Select(static account => account.Id).ToHashSet();
-            foreach (var kv in _activeAdsByAccount.Keys.ToArray())
+            foreach (var kv in _activeAdsByAccount.Keys
+                         .Concat(_blockedAdsByAccount.Keys)
+                         .Concat(_unpublishedAdsByAccount.Keys)
+                         .Distinct()
+                         .ToArray())
             {
                 if (!actualIds.Contains(kv))
                 {
                     _activeAdsByAccount.Remove(kv);
                     _blockedAdsByAccount.Remove(kv);
+                    _unpublishedAdsByAccount.Remove(kv);
                     _restoredActiveSnapshotJsonByAccount.Remove(kv);
                     _restoredBlockedSnapshotJsonByAccount.Remove(kv);
                 }
@@ -131,6 +145,11 @@ public sealed class MonitoringService(
                         .ToList();
                     _restoredBlockedSnapshotJsonByAccount[account.Id] = blockedJson;
                 }
+
+                _unpublishedAdsByAccount[account.Id] = AvitoAdSnapshots
+                    .Deserialize(NormalizeSnapshotJson(account.UnpublishedAdsSnapshotJson), account.Id)
+                    .Select(CloneAd)
+                    .ToList();
             }
         }
     }
@@ -1647,6 +1666,7 @@ public sealed class MonitoringService(
                         statsAggregate.ItemSnippetMarkersFound += part.ItemSnippetMarkersFound;
                         statsAggregate.ActiveAds.AddRange(part.ActiveAds);
                         statsAggregate.BlockedAds.AddRange(part.BlockedAds);
+                        statsAggregate.UnpublishedAds.AddRange(part.UnpublishedAds);
 
                         if (part.Balance.HasValue)
                         {
@@ -2506,6 +2526,21 @@ public sealed class MonitoringService(
             }
         }
 
+        if (part.UnpublishedCount > 0)
+        {
+            try
+            {
+                var unpublishedHtml = await adsPowerAvitoAutomationService
+                    .LoadUnpublishedItemsHtmlAsync(options, account.AdsPowerProfileId!, cancellationToken)
+                    .ConfigureAwait(false);
+                part.UnpublishedAds.AddRange(avitoParser.ParseUnpublishedTabPage(unpublishedHtml, account.Id));
+            }
+            catch (Exception ex)
+            {
+                _ = GlobalLogger.Instance.LogAsync($"Не удалось загрузить вкладку «Неопубликованные» для аккаунта {account.DisplayName}: {ex.Message}", DeskLinkAuditLogLevel.Warning);
+            }
+        }
+
         return part;
     }
 
@@ -2602,6 +2637,19 @@ public sealed class MonitoringService(
             }
         }
 
+        if (part.UnpublishedCount > 0)
+        {
+            try
+            {
+                var unpublishedHtml = await session.LoadUnpublishedItemsHtmlAsync(cancellationToken).ConfigureAwait(false);
+                part.UnpublishedAds.AddRange(avitoParser.ParseUnpublishedTabPage(unpublishedHtml, account.Id));
+            }
+            catch (Exception ex)
+            {
+                _ = GlobalLogger.Instance.LogAsync($"Не удалось загрузить вкладку «Неопубликованные» для аккаунта {account.DisplayName}: {ex.Message}", DeskLinkAuditLogLevel.Warning);
+            }
+        }
+
         return part;
     }
 
@@ -2681,6 +2729,14 @@ public sealed class MonitoringService(
         }
     }
 
+    private void UpdateUnpublishedAdsSnapshot(Guid accountId, IReadOnlyList<AvitoAdStatus> ads)
+    {
+        lock (_activeAdsSync)
+        {
+            _unpublishedAdsByAccount[accountId] = ads.Select(CloneAd).ToList();
+        }
+    }
+
     /// <summary>
     /// Истёк ли «возраст» закэшированной статистики объявлений: если да — на ближайшем переключении
     /// в суб-профиль соберём active+rejected вкладки. Иначе тратим переключение только на отклики.
@@ -2706,6 +2762,7 @@ public sealed class MonitoringService(
     {
         snapshot.ActiveAds ??= [];
         snapshot.BlockedAds ??= [];
+        snapshot.UnpublishedAds ??= [];
 
         if (!snapshot.ParseSuccess)
         {
@@ -2764,6 +2821,7 @@ public sealed class MonitoringService(
 
         UpdateActiveAdsSnapshot(account.Id, snapshot.ActiveAds, "ApplyStatsSnapshotAsync.after_update_memory", true);
         UpdateBlockedAdsSnapshot(account.Id, snapshot.BlockedAds);
+        UpdateUnpublishedAdsSnapshot(account.Id, snapshot.UnpublishedAds);
         account.ActiveAdsCount = snapshot.ActiveAds.Count;
         // Если вкладку «С ошибками» не открывали — берём счётчик из вкладки активных (он там тоже виден).
         // Если открыли — точное число распарсенных карточек.
@@ -2774,6 +2832,7 @@ public sealed class MonitoringService(
         account.AdsStatsUpdatedAt = markStatsFresh ? DateTime.UtcNow : null;
         account.ActiveAdsSnapshotJson = AvitoAdSnapshots.Serialize(snapshot.ActiveAds);
         account.BlockedAdsSnapshotJson = AvitoAdSnapshots.Serialize(snapshot.BlockedAds);
+        account.UnpublishedAdsSnapshotJson = AvitoAdSnapshots.Serialize(snapshot.UnpublishedAds);
         await repository.SaveAccountAsync(account, ct).ConfigureAwait(false);
         LogActiveAdsChange("ApplyStatsSnapshotAsync.after_save_account", account.Id, oldAdsCount, newAdsCount, true);
 
@@ -2823,6 +2882,11 @@ public sealed class MonitoringService(
                 account.BlockedAdsSnapshotJson = AvitoAdSnapshots.Serialize(blockedAds);
                 account.BlockedCount = Math.Max(account.BlockedCount, blockedAds.Count);
             }
+
+            if (_unpublishedAdsByAccount.TryGetValue(account.Id, out var unpublishedAds) && unpublishedAds.Count > 0)
+            {
+                account.UnpublishedAdsSnapshotJson = AvitoAdSnapshots.Serialize(unpublishedAds);
+            }
         }
     }
 
@@ -2840,13 +2904,23 @@ public sealed class MonitoringService(
         Id = ad.Id,
         Title = ad.Title,
         City = ad.City,
+        AddressText = ad.AddressText,
+        DistrictText = ad.DistrictText,
         Salary = ad.Salary,
         Views = ad.Views,
         Contacts = ad.Contacts,
         Favorites = ad.Favorites,
         Status = ad.Status,
+        SourceTab = ad.SourceTab,
+        ErrorReason = ad.ErrorReason,
+        CanPublish = ad.CanPublish,
         DeleteDate = ad.DeleteDate,
         DaysOnAvito = ad.DaysOnAvito,
+        HasDaysOnAvito = ad.HasDaysOnAvito,
+        ExpiresAtUtc = ad.ExpiresAtUtc,
+        RemainingDays = ad.RemainingDays,
+        ExpiryParseError = ad.ExpiryParseError,
+        UrlParseError = ad.UrlParseError,
         Url = ad.Url
     };
 }

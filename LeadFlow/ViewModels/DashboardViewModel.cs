@@ -148,6 +148,7 @@ public partial class DashboardViewModel : ObservableObject
         new AdsFilterTab(AdsDashboardFilter.All, "Все"),
         new AdsFilterTab(AdsDashboardFilter.Active, "Активные"),
         new AdsFilterTab(AdsDashboardFilter.Blocked, "Заблокированные"),
+        new AdsFilterTab(AdsDashboardFilter.Unpublished, "Неопубликованные"),
         new AdsFilterTab(AdsDashboardFilter.WithMessages, "С сообщениями"),
         new AdsFilterTab(AdsDashboardFilter.WithoutMessages, "Без сообщений"),
         new AdsFilterTab(AdsDashboardFilter.Drafts, "Черновики"),
@@ -187,6 +188,7 @@ public partial class DashboardViewModel : ObservableObject
     /// обработчике <see cref="IMonitoringService.ProfileStatsUpdated"/>, что и активные.
     /// </summary>
     public ObservableCollection<AvitoAdStatus> BlockedAds { get; } = new();
+    public ObservableCollection<AvitoAdStatus> UnpublishedAds { get; } = new();
 
     private readonly DispatcherTimer _accountPersistDebounce = new()
     {
@@ -212,6 +214,7 @@ public partial class DashboardViewModel : ObservableObject
             // плитке и список под ней не разъезжались по содержимому.
             ApplyActiveAdsSnapshot();
             ApplyBlockedAdsSnapshot();
+            ApplyUnpublishedAdsSnapshot();
         };
         repository.AccountPersisted += OnAccountPersisted;
         _accountPersistDebounce.Tick += async (_, _) =>
@@ -267,7 +270,7 @@ public partial class DashboardViewModel : ObservableObject
     /// <summary>Пересобирает источник после обновления снимков active/blocked (не при смене вкладки фильтра).</summary>
     private void RebuildAllAdDisplayItems()
     {
-        var items = new List<DashboardAdDisplayItem>(ActiveAds.Count + BlockedAds.Count);
+        var items = new List<DashboardAdDisplayItem>(ActiveAds.Count + BlockedAds.Count + UnpublishedAds.Count);
         foreach (var ad in ActiveAds)
         {
             items.Add(new DashboardAdDisplayItem(DashboardAdKind.Active, ad));
@@ -276,6 +279,10 @@ public partial class DashboardViewModel : ObservableObject
         foreach (var ad in BlockedAds)
         {
             items.Add(new DashboardAdDisplayItem(DashboardAdKind.Blocked, ad));
+        }
+        foreach (var ad in UnpublishedAds)
+        {
+            items.Add(new DashboardAdDisplayItem(DashboardAdKind.Unpublished, ad));
         }
 
         // Нельзя менять ObservableCollection внутри DeferRefresh — CollectionView падает при старте.
@@ -310,6 +317,7 @@ public partial class DashboardViewModel : ObservableObject
             AdsDashboardFilter.All => true,
             AdsDashboardFilter.Active => item.Kind == DashboardAdKind.Active,
             AdsDashboardFilter.Blocked => item.Kind == DashboardAdKind.Blocked,
+            AdsDashboardFilter.Unpublished => item.Kind == DashboardAdKind.Unpublished,
             AdsDashboardFilter.WithMessages => item.Ad.Contacts > 0,
             AdsDashboardFilter.WithoutMessages => item.Ad.Contacts == 0,
             AdsDashboardFilter.Drafts => item.Kind == DashboardAdKind.Active && IsDraftStatus(item.Ad),
@@ -497,6 +505,7 @@ public partial class DashboardViewModel : ObservableObject
 
         ApplyActiveAdsSnapshot();
         ApplyBlockedAdsSnapshot();
+        ApplyUnpublishedAdsSnapshot();
 
         await RefreshBalancesAsync(GetViewLifetimeToken());
     }
@@ -1169,18 +1178,49 @@ public partial class DashboardViewModel : ObservableObject
         return -1;
     }
 
+    private void ApplyUnpublishedAdsSnapshot()
+    {
+        var snapshot = _monitoringService.GetUnpublishedAdsSnapshot()
+            .OrderBy(static ad => ad.Status, StringComparer.CurrentCultureIgnoreCase)
+            .ThenBy(static ad => ad.Title, StringComparer.CurrentCultureIgnoreCase)
+            .ToList();
+        void Update()
+        {
+            UnpublishedAds.Clear();
+            foreach (var ad in snapshot) UnpublishedAds.Add(CloneAd(ad));
+        }
+        var dispatcher = Application.Current?.Dispatcher;
+        if (dispatcher is not null && !dispatcher.CheckAccess())
+        {
+            dispatcher.Invoke(() => { Update(); RebuildAllAdDisplayItems(); });
+            return;
+        }
+        Update();
+        RebuildAllAdDisplayItems();
+    }
+
     private static bool AreEquivalent(AvitoAdStatus left, AvitoAdStatus right) =>
         left.AccountId == right.AccountId
         && string.Equals(left.Id, right.Id, StringComparison.Ordinal)
         && string.Equals(left.Title, right.Title, StringComparison.Ordinal)
         && string.Equals(left.City, right.City, StringComparison.Ordinal)
+        && string.Equals(left.AddressText, right.AddressText, StringComparison.Ordinal)
+        && string.Equals(left.DistrictText, right.DistrictText, StringComparison.Ordinal)
         && string.Equals(left.Salary, right.Salary, StringComparison.Ordinal)
         && left.Views == right.Views
         && left.Contacts == right.Contacts
         && left.Favorites == right.Favorites
         && string.Equals(left.Status, right.Status, StringComparison.Ordinal)
+        && string.Equals(left.SourceTab, right.SourceTab, StringComparison.Ordinal)
+        && string.Equals(left.ErrorReason, right.ErrorReason, StringComparison.Ordinal)
+        && left.CanPublish == right.CanPublish
         && string.Equals(left.DeleteDate, right.DeleteDate, StringComparison.Ordinal)
         && left.DaysOnAvito == right.DaysOnAvito
+        && left.HasDaysOnAvito == right.HasDaysOnAvito
+        && left.ExpiresAtUtc == right.ExpiresAtUtc
+        && left.RemainingDays == right.RemainingDays
+        && string.Equals(left.ExpiryParseError, right.ExpiryParseError, StringComparison.Ordinal)
+        && string.Equals(left.UrlParseError, right.UrlParseError, StringComparison.Ordinal)
         && string.Equals(left.Url, right.Url, StringComparison.Ordinal);
 
     private static AvitoAdStatus CloneAd(AvitoAdStatus ad) => new()
@@ -1189,13 +1229,23 @@ public partial class DashboardViewModel : ObservableObject
         Id = ad.Id,
         Title = ad.Title,
         City = ad.City,
+        AddressText = ad.AddressText,
+        DistrictText = ad.DistrictText,
         Salary = ad.Salary,
         Views = ad.Views,
         Contacts = ad.Contacts,
         Favorites = ad.Favorites,
         Status = ad.Status,
+        SourceTab = ad.SourceTab,
+        ErrorReason = ad.ErrorReason,
+        CanPublish = ad.CanPublish,
         DeleteDate = ad.DeleteDate,
         DaysOnAvito = ad.DaysOnAvito,
+        HasDaysOnAvito = ad.HasDaysOnAvito,
+        ExpiresAtUtc = ad.ExpiresAtUtc,
+        RemainingDays = ad.RemainingDays,
+        ExpiryParseError = ad.ExpiryParseError,
+        UrlParseError = ad.UrlParseError,
         Url = ad.Url
     };
 

@@ -31,6 +31,12 @@ public interface IAdsPowerAvitoAutomationService
         string adsPowerUserId,
         CancellationToken cancellationToken = default);
 
+    Task<string> LoadUnpublishedItemsHtmlAsync(
+        AdsPowerConnectionOptions options,
+        string adsPowerUserId,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult(string.Empty);
+
     /// <summary>
     /// Открывает модалку <c>/profile/dashboard#profile/switch?withEntities=true</c> и возвращает HTML
     /// со списком всех суб-профилей Avito Pro (data-marker="component-profile-switch/profile-{id}").

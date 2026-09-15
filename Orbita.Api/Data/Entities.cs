@@ -693,7 +693,7 @@ public sealed class CandidateResponseEntity
     public string DistributionMode { get; set; } = string.Empty;
     public string ErrorMessage { get; set; } = string.Empty;
     public string RawText { get; set; } = string.Empty;
-    /// <summary>Дата отклика на Avito (из чата); при отсутствии — совпадает со сбором.</summary>
+    /// <summary>Дата отклика на Avito (из карточки/чата); при отсутствии — совпадает со сбором.</summary>
     public DateTime CreatedAt { get; set; }
     /// <summary>Момент сбора отклика воркером / записи в Орбиту.</summary>
     public DateTime CollectedAt { get; set; }
