@@ -1,5 +1,12 @@
 namespace Orbita.Contracts;
 
+public static class AvitoAdSourceTabs
+{
+    public const string Active = "active";
+    public const string Unpublished = "inactive";
+    public const string Error = "rejected";
+}
+
 public static class AvitoAdListingStates
 {
     public const string Active = "Active";
@@ -41,7 +48,7 @@ public sealed record WorkerAvitoAdDto(
     string? LastParseError,
     DateTime CreatedAtUtc,
     DateTime UpdatedAtUtc,
-    string SourceTab = "active",
+    string SourceTab = AvitoAdSourceTabs.Active,
     string ErrorReason = "",
     bool CanPublish = false,
     string ImageUrl = "",
@@ -68,7 +75,7 @@ public sealed record WorkerAvitoAdSyncItemDto(
     bool IsActive,
     string State,
     string? LastParseError,
-    string SourceTab = "active",
+    string SourceTab = AvitoAdSourceTabs.Active,
     string ErrorReason = "",
     bool CanPublish = false,
     string ImageUrl = "",
@@ -122,7 +129,7 @@ public sealed record AvitoAdListingListItem(
     DateTime? DetailCheckedAtUtc,
     bool IsActive,
     string? LastParseError,
-    string SourceTab = "active",
+    string SourceTab = AvitoAdSourceTabs.Active,
     string ErrorReason = "",
     bool CanPublish = false,
     string ImageUrl = "",
@@ -143,7 +150,16 @@ public sealed record AvitoAdListingSummary(
     int ErrorCount = 0,
     int UnpublishedCount = 0);
 
+public sealed record AvitoAdListingScopeSummary(
+    Guid WorkerId,
+    Guid AccountId,
+    string AvitoSubProfileId,
+    int ActiveCount,
+    int UnpublishedCount,
+    int ErrorCount);
+
 public sealed record AvitoAdListingListResponse(
     IReadOnlyList<AvitoAdListingListItem> Items,
     AvitoAdListingSummary Summary,
-    int Total);
+    int Total,
+    IReadOnlyList<AvitoAdListingScopeSummary> ScopeSummaries);

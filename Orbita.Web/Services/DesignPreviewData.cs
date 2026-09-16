@@ -4864,7 +4864,17 @@ internal static class DesignPreviewData
         };
 
         var summary = new AvitoAdListingSummary(2, 0, 1, 0, 0);
-        return new AvitoAdListingListResponse(items, summary, items.Count);
+        var scopeSummaries = items
+            .GroupBy(x => new { x.WorkerId, x.AccountId, x.AvitoSubProfileId })
+            .Select(group => new AvitoAdListingScopeSummary(
+                group.Key.WorkerId,
+                group.Key.AccountId,
+                group.Key.AvitoSubProfileId,
+                group.Count(x => x.SourceTab == AvitoAdSourceTabs.Active && x.IsActive),
+                group.Count(x => x.SourceTab == AvitoAdSourceTabs.Unpublished),
+                group.Count(x => x.SourceTab == AvitoAdSourceTabs.Error)))
+            .ToList();
+        return new AvitoAdListingListResponse(items, summary, items.Count, scopeSummaries);
     }
 
     public static ListingsIndexViewModel BuildListingsIndexViewModel(

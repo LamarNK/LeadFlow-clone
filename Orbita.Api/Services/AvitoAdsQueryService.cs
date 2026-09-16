@@ -39,6 +39,19 @@ public sealed class AvitoAdsQueryService(OrbitaDbContext db, OfficeScopeService 
                 SubProfilesJson = account.SubProfilesJson
             };
 
+        // Навигация слева всегда показывает полную картину офиса. Выбор аккаунта,
+        // субпрофиля, вкладки или поиск меняет выдачу справа, но не обнуляет соседние scope.
+        var scopeSummaries = await query
+            .GroupBy(x => new { x.Ad.WorkerId, x.Ad.AccountId, x.Ad.AvitoSubProfileId })
+            .Select(group => new AvitoAdListingScopeSummary(
+                group.Key.WorkerId,
+                group.Key.AccountId,
+                group.Key.AvitoSubProfileId,
+                group.Count(x => x.Ad.SourceTab == AvitoAdSourceTabs.Active && x.Ad.IsActive),
+                group.Count(x => x.Ad.SourceTab == AvitoAdSourceTabs.Unpublished),
+                group.Count(x => x.Ad.SourceTab == AvitoAdSourceTabs.Error)))
+            .ToListAsync(ct);
+
         var selectedWorkers = ResponseCatalogFilterValues.MergeIds(workerIds, workerId);
         if (selectedWorkers.Count > 0)
         {
@@ -78,8 +91,8 @@ public sealed class AvitoAdsQueryService(OrbitaDbContext db, OfficeScopeService 
                 group.Count(x => x.Ad.IsActive && x.Ad.State == AvitoAdListingStates.ApproachingExpiry),
                 group.Count(x => x.Ad.IsActive && x.Ad.State == AvitoAdListingStates.ExpiresToday),
                 group.Count(x => x.Ad.IsActive && x.Ad.State == AvitoAdListingStates.Expired),
-                group.Count(x => x.Ad.SourceTab == "rejected"),
-                group.Count(x => x.Ad.SourceTab == "inactive")))
+                group.Count(x => x.Ad.SourceTab == AvitoAdSourceTabs.Error),
+                group.Count(x => x.Ad.SourceTab == AvitoAdSourceTabs.Unpublished)))
             .SingleOrDefaultAsync(ct)
             ?? new AvitoAdListingSummary(0, 0, 0, 0, 0);
 
@@ -99,8 +112,8 @@ public sealed class AvitoAdsQueryService(OrbitaDbContext db, OfficeScopeService 
             rowsQuery = NormalizeTab(tab) switch
             {
                 "all" => rowsQuery,
-                "errors" => rowsQuery.Where(x => x.Ad.SourceTab == "rejected"),
-                "unpublished" => rowsQuery.Where(x => x.Ad.SourceTab == "inactive"),
+                "errors" => rowsQuery.Where(x => x.Ad.SourceTab == AvitoAdSourceTabs.Error),
+                "unpublished" => rowsQuery.Where(x => x.Ad.SourceTab == AvitoAdSourceTabs.Unpublished),
                 "notactive" => rowsQuery.Where(x => !x.Ad.IsActive),
                 "expiring" => rowsQuery.Where(x =>
                     x.Ad.IsActive && x.Ad.State == AvitoAdListingStates.ApproachingExpiry),
@@ -109,7 +122,7 @@ public sealed class AvitoAdsQueryService(OrbitaDbContext db, OfficeScopeService 
                 "unknown" => rowsQuery.Where(x =>
                     x.Ad.IsActive && x.Ad.State == AvitoAdListingStates.UnknownPublicationDate),
                 "parsefailed" => rowsQuery.Where(x => x.Ad.State == AvitoAdListingStates.ParseFailed),
-                _ => rowsQuery.Where(x => x.Ad.SourceTab == "active" && x.Ad.IsActive)
+                _ => rowsQuery.Where(x => x.Ad.SourceTab == AvitoAdSourceTabs.Active && x.Ad.IsActive)
             };
         }
 
@@ -156,7 +169,7 @@ public sealed class AvitoAdsQueryService(OrbitaDbContext db, OfficeScopeService 
             x.Ad.Contacts,
             x.Ad.Favorites)).ToList();
 
-        return new AvitoAdListingListResponse(items, summary, total);
+        return new AvitoAdListingListResponse(items, summary, total, scopeSummaries);
     }
 
     private static IOrderedQueryable<ListingQueryRow> ApplySort(

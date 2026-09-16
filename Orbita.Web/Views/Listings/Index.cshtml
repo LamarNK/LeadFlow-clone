@@ -89,21 +89,38 @@
 
     <div class="listings-workspace">
         <aside class="listings-scope" aria-label="Аккаунты и субпрофили">
-            <div class="listings-scope__heading">Объявления</div>
+            <div class="listings-scope__heading">
+                <span>Аккаунты</span>
+                <small>@Model.AccountScopes.Count</small>
+            </div>
+            <label class="listings-scope__search">
+                <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+                <span class="visually-hidden">Найти аккаунт или субпрофиль</span>
+                <input type="search" placeholder="Найти аккаунт" autocomplete="off" data-listings-scope-search />
+            </label>
             <a class="listings-scope__all @(Model.AccountIds.Count == 0 ? "is-active" : "")"
                href="@Url.Action("Index", new { q = Model.SearchQuery, tab = Model.ActiveTab, sort = Model.Sort.Column, dir = Model.Sort.Dir })">
                 <span><i class="fa-solid fa-layer-group" aria-hidden="true"></i> Все</span>
-                <strong>@(Model.Summary.ActiveCount + Model.Summary.ErrorCount + Model.Summary.UnpublishedCount)</strong>
+                <span class="listings-scope__metrics" data-scope-overall aria-label="@Model.OverallScopeMetrics.ActiveCount активных, @Model.OverallScopeMetrics.UnpublishedCount неопубликованных, @Model.OverallScopeMetrics.ErrorCount с ошибками">
+                    <strong class="listings-scope__metric listings-scope__metric--active" title="Активные">@Model.OverallScopeMetrics.ActiveCount</strong>
+                    <strong class="listings-scope__metric listings-scope__metric--inactive" title="Неопубликованные">@Model.OverallScopeMetrics.UnpublishedCount</strong>
+                    <strong class="listings-scope__metric listings-scope__metric--error" title="С ошибками">@Model.OverallScopeMetrics.ErrorCount</strong>
+                </span>
             </a>
-            <div class="listings-scope__accounts">
+            <div class="listings-scope__legend" aria-hidden="true"><span>Активные</span><span>Не опублик.</span><span>Ошибки</span></div>
+            <div class="listings-scope__accounts" data-listings-scope-list>
                 @foreach (var account in Model.AccountScopes)
                 {
                     var accountActive = Model.AccountIds.Count == 1 && Model.AccountIds[0] == account.AccountId && Model.SubProfileIds.Count == 0;
-                    <section class="listings-scope__account">
+                    <section class="listings-scope__account" data-scope-worker="@account.WorkerId" data-scope-account="@account.AccountId" data-scope-search-text="@account.AccountName @string.Join(" ", account.SubProfiles.Select(x => x.Name))">
                         <a class="listings-scope__account-link @(accountActive ? "is-active" : "")"
                            href="@Url.Action("Index", new { q = Model.SearchQuery, tab = Model.ActiveTab, workerId = account.WorkerId, accountId = account.AccountId, sort = Model.Sort.Column, dir = Model.Sort.Dir })">
-                            <i class="fa-regular fa-user" aria-hidden="true"></i>
-                            <span>@account.AccountName</span>
+                            <span class="listings-scope__label"><i class="fa-regular fa-user" aria-hidden="true"></i><span>@account.AccountName</span></span>
+                            <span class="listings-scope__metrics" data-scope-metrics aria-label="@account.Metrics.ActiveCount активных, @account.Metrics.UnpublishedCount неопубликованных, @account.Metrics.ErrorCount с ошибками">
+                                <strong class="listings-scope__metric listings-scope__metric--active" title="Активные">@account.Metrics.ActiveCount</strong>
+                                <strong class="listings-scope__metric listings-scope__metric--inactive" title="Неопубликованные">@account.Metrics.UnpublishedCount</strong>
+                                <strong class="listings-scope__metric listings-scope__metric--error" title="С ошибками">@account.Metrics.ErrorCount</strong>
+                            </span>
                         </a>
                         @if (account.SubProfiles.Count > 0)
                         {
@@ -112,15 +129,21 @@
                                 {
                                     var subActive = Model.AccountIds.Contains(account.AccountId) && Model.SubProfileIds.Contains(sub.Id);
                                     <a class="listings-scope__subprofile @(subActive ? "is-active" : "")"
+                                       data-scope-subprofile="@sub.Id"
                                        href="@Url.Action("Index", new { q = Model.SearchQuery, tab = Model.ActiveTab, workerId = account.WorkerId, accountId = account.AccountId, subProfileId = sub.Id, sort = Model.Sort.Column, dir = Model.Sort.Dir })">
-                                        <span class="listings-scope__branch" aria-hidden="true"></span>
-                                        <span>@sub.Name</span>
+                                        <span class="listings-scope__label"><span class="listings-scope__branch" aria-hidden="true"></span><span>@sub.Name</span></span>
+                                        <span class="listings-scope__metrics" data-scope-metrics aria-label="@sub.Metrics.ActiveCount активных, @sub.Metrics.UnpublishedCount неопубликованных, @sub.Metrics.ErrorCount с ошибками">
+                                            <strong class="listings-scope__metric listings-scope__metric--active" title="Активные">@sub.Metrics.ActiveCount</strong>
+                                            <strong class="listings-scope__metric listings-scope__metric--inactive" title="Неопубликованные">@sub.Metrics.UnpublishedCount</strong>
+                                            <strong class="listings-scope__metric listings-scope__metric--error" title="С ошибками">@sub.Metrics.ErrorCount</strong>
+                                        </span>
                                     </a>
                                 }
                             </div>
                         }
                     </section>
                 }
+                <div class="listings-scope__empty" data-listings-scope-empty hidden>Ничего не найдено</div>
             </div>
         </aside>
 

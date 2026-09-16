@@ -58,7 +58,7 @@ public sealed class ListingsService(
         await Task.WhenAll(workersTask, listingsTask, accountsTask);
 
         var workers = ResponsesIndexBuilder.BuildWorkerOptions(await workersTask ?? []);
-        var listings = await listingsTask ?? new AvitoAdListingListResponse([], new AvitoAdListingSummary(0, 0, 0, 0, 0), 0);
+        var listings = await listingsTask ?? new AvitoAdListingListResponse([], new AvitoAdListingSummary(0, 0, 0, 0, 0), 0, []);
         var officeAccounts = await accountsTask ?? [];
 
         var accountOptions = officeAccounts
@@ -85,21 +85,42 @@ public sealed class ListingsService(
             })
             .ToList();
 
+        var scopeMetrics = listings.ScopeSummaries.ToDictionary(
+            x => (x.WorkerId, x.AccountId, x.AvitoSubProfileId ?? string.Empty));
+        var accountMetrics = listings.ScopeSummaries
+            .GroupBy(x => (x.WorkerId, x.AccountId))
+            .ToDictionary(
+                group => group.Key,
+                group => new ListingStatusMetricsViewModel
+                {
+                    ActiveCount = group.Sum(x => x.ActiveCount),
+                    UnpublishedCount = group.Sum(x => x.UnpublishedCount),
+                    ErrorCount = group.Sum(x => x.ErrorCount)
+                });
         var accountScopes = officeAccounts
-            .Where(x => selectedWorkers.Count == 0 || selectedWorkers.Contains(x.WorkerId))
             .OrderBy(x => x.Account.DisplayName)
             .Select(x => new ListingAccountScopeViewModel
             {
                 WorkerId = x.WorkerId,
                 AccountId = x.Account.AccountId,
                 AccountName = x.Account.DisplayName,
+                Metrics = accountMetrics.GetValueOrDefault((x.WorkerId, x.Account.AccountId))
+                    ?? new ListingStatusMetricsViewModel(),
                 SubProfiles = (x.Account.SubProfiles ?? [])
                     .Where(sub => sub.IsEnabledInPanel)
                     .OrderBy(sub => sub.Name)
                     .Select(sub => new ListingSubProfileScopeViewModel
                     {
                         Id = sub.Id,
-                        Name = string.IsNullOrWhiteSpace(sub.Name) ? sub.Id : sub.Name
+                        Name = string.IsNullOrWhiteSpace(sub.Name) ? sub.Id : sub.Name,
+                        Metrics = scopeMetrics.TryGetValue((x.WorkerId, x.Account.AccountId, sub.Id), out var metrics)
+                            ? new ListingStatusMetricsViewModel
+                            {
+                                ActiveCount = metrics.ActiveCount,
+                                UnpublishedCount = metrics.UnpublishedCount,
+                                ErrorCount = metrics.ErrorCount
+                            }
+                            : new ListingStatusMetricsViewModel()
                     })
                     .ToList()
             })

@@ -16,6 +16,7 @@ public sealed class ListingsIndexViewModel
     public string ActiveTab { get; init; } = "active";
     public IReadOnlyList<ListingRowViewModel> Rows { get; init; } = [];
     public IReadOnlyList<ListingAccountScopeViewModel> AccountScopes { get; init; } = [];
+    public ListingStatusMetricsViewModel OverallScopeMetrics { get; init; } = new();
     public AvitoAdListingSummary Summary { get; init; } = new(0, 0, 0, 0, 0);
     public PaginationViewModel Pagination { get; init; } = new();
     public string? SearchQuery { get; init; }
@@ -78,6 +79,7 @@ public sealed class ListingAccountScopeViewModel
     public Guid WorkerId { get; init; }
     public Guid AccountId { get; init; }
     public string AccountName { get; init; } = string.Empty;
+    public ListingStatusMetricsViewModel Metrics { get; init; } = new();
     public IReadOnlyList<ListingSubProfileScopeViewModel> SubProfiles { get; init; } = [];
 }
 
@@ -85,6 +87,15 @@ public sealed class ListingSubProfileScopeViewModel
 {
     public string Id { get; init; } = string.Empty;
     public string Name { get; init; } = string.Empty;
+    public ListingStatusMetricsViewModel Metrics { get; init; } = new();
+}
+
+public sealed class ListingStatusMetricsViewModel
+{
+    public int ActiveCount { get; init; }
+    public int UnpublishedCount { get; init; }
+    public int ErrorCount { get; init; }
+    public int TotalCount => ActiveCount + UnpublishedCount + ErrorCount;
 }
 
 public sealed class ListingsLiveSnapshotViewModel
@@ -92,5 +103,6 @@ public sealed class ListingsLiveSnapshotViewModel
     public DateTime UpdatedAtUtc { get; init; }
     public IReadOnlyList<DashboardKpiCardViewModel> KpiCards { get; init; } = [];
     public IReadOnlyList<ListingRowViewModel> Rows { get; init; } = [];
+    public IReadOnlyList<ListingAccountScopeViewModel> AccountScopes { get; init; } = [];
     public PaginationViewModel Pagination { get; init; } = new();
 }

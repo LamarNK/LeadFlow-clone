@@ -71,6 +71,7 @@ public sealed class ListingsController(IListingsService listings) : Controller
             UpdatedAtUtc = model.Header.UpdatedAtUtc,
             KpiCards = model.KpiCards,
             Rows = model.Rows,
+            AccountScopes = model.AccountScopes,
             Pagination = model.Pagination
         });
     }

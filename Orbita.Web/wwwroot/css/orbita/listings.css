@@ -269,7 +269,7 @@
 
 .listings-workspace {
     display: grid;
-    grid-template-columns: minmax(220px, 258px) minmax(0, 1fr);
+    grid-template-columns: minmax(300px, 340px) minmax(0, 1fr);
     align-items: start;
     gap: 24px;
     margin-top: 18px;
@@ -278,17 +278,57 @@
 .listings-scope {
     position: sticky;
     top: 18px;
+    display: flex;
+    max-height: calc(100dvh - 36px);
     min-width: 0;
+    flex-direction: column;
     padding-right: 18px;
     border-right: 1px solid #e7ebf0;
 }
 
 .listings-scope__heading {
-    margin: 0 10px 10px;
-    color: #667085;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin: 0 10px 8px;
+    color: #344054;
+    font-size: 14px;
+    font-weight: 700;
+}
+
+.listings-scope__heading small {
+    color: #98a2b3;
     font-size: 12px;
-    font-weight: 750;
-    text-transform: uppercase;
+    font-weight: 600;
+}
+
+.listings-scope__search {
+    display: flex;
+    min-height: 38px;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 8px;
+    padding: 0 10px;
+    border: 1px solid #d0d5dd;
+    border-radius: 6px;
+    background: #fff;
+    color: #98a2b3;
+}
+
+.listings-scope__search:focus-within {
+    border-color: #84adff;
+    box-shadow: 0 0 0 3px rgba(47, 107, 255, .12);
+}
+
+.listings-scope__search input {
+    width: 100%;
+    min-width: 0;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: #101828;
+    font: inherit;
+    font-size: 13px;
 }
 
 .listings-scope a {
@@ -311,16 +351,56 @@
     font-weight: 700;
 }
 
-.listings-scope__all span,
-.listings-scope__account-link {
+.listings-scope__all > span:first-child,
+.listings-scope__label {
     display: flex;
+    min-width: 0;
     align-items: center;
     gap: 9px;
 }
 
-.listings-scope__all strong {
-    color: #667085;
-    font-size: 12px;
+.listings-scope__legend,
+.listings-scope__metrics {
+    display: grid;
+    grid-template-columns: repeat(3, 30px);
+    flex: 0 0 auto;
+    gap: 3px;
+}
+
+.listings-scope__legend {
+    justify-content: end;
+    margin: 6px 8px 2px;
+    color: #98a2b3;
+    font-size: 9px;
+    line-height: 1;
+    text-align: center;
+}
+
+.listings-scope__metric {
+    display: inline-flex;
+    min-width: 26px;
+    height: 22px;
+    align-items: center;
+    justify-content: center;
+    border-radius: 5px;
+    font-size: 11px;
+    font-weight: 750;
+    font-variant-numeric: tabular-nums;
+}
+
+.listings-scope__metric--active {
+    background: #ecfdf3;
+    color: #067647;
+}
+
+.listings-scope__metric--inactive {
+    background: #f2f4f7;
+    color: #475467;
+}
+
+.listings-scope__metric--error {
+    background: #fef3f2;
+    color: #b42318;
 }
 
 .listings-scope__account {
@@ -328,13 +408,14 @@
 }
 
 .listings-scope__account-link {
+    justify-content: space-between;
     padding: 0 10px;
     font-size: 14px;
     font-weight: 650;
 }
 
-.listings-scope__account-link span,
-.listings-scope__subprofile span:last-child {
+.listings-scope__account-link .listings-scope__label > span:last-child,
+.listings-scope__subprofile .listings-scope__label > span:last-child {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -350,6 +431,7 @@
     position: relative;
     min-height: 34px;
     padding: 0 8px 0 18px;
+    justify-content: space-between;
     color: #667085 !important;
     font-size: 13px;
 }
@@ -359,6 +441,32 @@
     left: 0;
     width: 12px;
     border-top: 1px solid #d8dee8;
+}
+
+.listings-scope__accounts {
+    min-height: 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-color: #c7cdd6 transparent;
+    scrollbar-width: thin;
+}
+
+.listings-scope__accounts::-webkit-scrollbar {
+    width: 8px;
+}
+
+.listings-scope__accounts::-webkit-scrollbar-thumb {
+    border: 2px solid transparent;
+    border-radius: 999px;
+    background: #c7cdd6;
+    background-clip: padding-box;
+}
+
+.listings-scope__empty {
+    padding: 24px 10px;
+    color: #667085;
+    font-size: 13px;
+    text-align: center;
 }
 
 .listings-scope a:hover {
@@ -598,6 +706,16 @@
     color: var(--text-primary);
 }
 
+[data-theme="dark"] .listings-scope__search {
+    border-color: var(--border);
+    background: var(--bg-card);
+}
+
+[data-theme="dark"] .listings-scope__search input,
+[data-theme="dark"] .listings-scope__heading {
+    color: var(--text-primary);
+}
+
 @media (max-width: 1180px) {
     .listing-card {
         grid-template-columns: 136px minmax(0, 1fr);
@@ -622,6 +740,8 @@
 
     .listings-scope {
         position: static;
+        display: block;
+        max-height: none;
         margin-bottom: 16px;
         padding: 0 0 12px;
         overflow-x: auto;
@@ -636,6 +756,8 @@
     .listings-scope__accounts {
         display: flex;
         gap: 6px;
+        overflow-x: hidden;
+        overflow-y: hidden;
     }
 
     .listings-scope__subprofiles {
@@ -643,7 +765,7 @@
     }
 
     .listings-scope__subprofile {
-        max-width: 210px;
+        max-width: 280px;
     }
 
     .listings-scope__account {
@@ -654,6 +776,11 @@
     .listings-scope__all,
     .listings-scope__account-link {
         white-space: nowrap;
+    }
+
+    .listings-scope__search,
+    .listings-scope__legend {
+        display: none;
     }
 
     .listing-card {

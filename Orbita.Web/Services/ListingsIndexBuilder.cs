@@ -94,6 +94,12 @@ internal static class ListingsIndexBuilder
             }).ToList(),
             Summary = summary,
             AccountScopes = accountScopes ?? [],
+            OverallScopeMetrics = new ListingStatusMetricsViewModel
+            {
+                ActiveCount = (accountScopes ?? []).Sum(x => x.Metrics.ActiveCount),
+                UnpublishedCount = (accountScopes ?? []).Sum(x => x.Metrics.UnpublishedCount),
+                ErrorCount = (accountScopes ?? []).Sum(x => x.Metrics.ErrorCount)
+            },
             KpiCards = BuildKpiCards(summary),
             Rows = paged,
             Pagination = new PaginationViewModel

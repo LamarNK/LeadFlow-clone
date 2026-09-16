@@ -127,12 +127,87 @@
         if (window.OrbitaLiveShared && typeof window.OrbitaLiveShared.updateUpdatedClock === 'function') {
             window.OrbitaLiveShared.updateUpdatedClock(payload.updatedAtUtc || payload.UpdatedAtUtc);
         }
+        updateScopeMetrics(payload.accountScopes || payload.AccountScopes || []);
+    }
+
+    function metricsOf(scope) {
+        return scope.metrics || scope.Metrics || {};
+    }
+
+    function valueOf(source, camel, pascal) {
+        var value = source[camel];
+        if (value == null) value = source[pascal];
+        return value == null ? 0 : value;
+    }
+
+    function writeMetrics(target, metrics) {
+        if (!target) return;
+        var values = [
+            valueOf(metrics, 'activeCount', 'ActiveCount'),
+            valueOf(metrics, 'unpublishedCount', 'UnpublishedCount'),
+            valueOf(metrics, 'errorCount', 'ErrorCount')
+        ];
+        target.querySelectorAll('.listings-scope__metric').forEach(function (element, index) {
+            element.textContent = values[index] == null ? '0' : values[index];
+        });
+        target.setAttribute(
+            'aria-label',
+            values[0] + ' активных, ' + values[1] + ' неопубликованных, ' + values[2] + ' с ошибками');
+    }
+
+    function updateScopeMetrics(scopes) {
+        var overall = { activeCount: 0, unpublishedCount: 0, errorCount: 0 };
+        scopes.forEach(function (account) {
+            var workerId = account.workerId || account.WorkerId;
+            var accountId = account.accountId || account.AccountId;
+            var accountElement = Array.prototype.find.call(
+                document.querySelectorAll('[data-scope-account]'),
+                function (element) {
+                    return element.getAttribute('data-scope-worker') === String(workerId)
+                        && element.getAttribute('data-scope-account') === String(accountId);
+                });
+            var accountMetrics = metricsOf(account);
+            overall.activeCount += valueOf(accountMetrics, 'activeCount', 'ActiveCount');
+            overall.unpublishedCount += valueOf(accountMetrics, 'unpublishedCount', 'UnpublishedCount');
+            overall.errorCount += valueOf(accountMetrics, 'errorCount', 'ErrorCount');
+            if (!accountElement) return;
+            writeMetrics(accountElement.querySelector('.listings-scope__account-link [data-scope-metrics]'), accountMetrics);
+            var subprofiles = account.subProfiles || account.SubProfiles || [];
+            subprofiles.forEach(function (subprofile) {
+                var id = subprofile.id || subprofile.Id;
+                var subElement = Array.prototype.find.call(
+                    accountElement.querySelectorAll('[data-scope-subprofile]'),
+                    function (element) { return element.getAttribute('data-scope-subprofile') === String(id); });
+                if (subElement) writeMetrics(subElement.querySelector('[data-scope-metrics]'), metricsOf(subprofile));
+            });
+        });
+        writeMetrics(document.querySelector('[data-scope-overall]'), overall);
+    }
+
+    function initScopeSearch() {
+        var input = document.querySelector('[data-listings-scope-search]');
+        var list = document.querySelector('[data-listings-scope-list]');
+        if (!input || !list || input.hasAttribute('data-listings-scope-search-ready')) return;
+        input.setAttribute('data-listings-scope-search-ready', '1');
+        input.addEventListener('input', function () {
+            var term = input.value.trim().toLocaleLowerCase('ru-RU');
+            var visible = 0;
+            list.querySelectorAll('[data-scope-account]').forEach(function (account) {
+                var text = (account.getAttribute('data-scope-search-text') || '').toLocaleLowerCase('ru-RU');
+                var match = !term || text.indexOf(term) >= 0;
+                account.hidden = !match;
+                if (match) visible += 1;
+            });
+            var empty = list.querySelector('[data-listings-scope-empty]');
+            if (empty) empty.hidden = visible > 0;
+        });
     }
 
     function init() {
         var root = document.querySelector('[data-orbita-live-page="listings"]');
         if (!root || !window.OrbitaLiveShared) return;
         initKpiCounters();
+        initScopeSearch();
         var fetcher = window.OrbitaLiveShared.createSnapshotFetcher('listings', applySnapshot);
         window.OrbitaLiveShared.registerLivePage('listings', fetcher);
     }
