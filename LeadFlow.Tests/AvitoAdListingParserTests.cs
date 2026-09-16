@@ -48,6 +48,55 @@ public sealed class AvitoAdListingParserTests
     }
 
     [Fact]
+    public void ParseProfilePage_LastLongCard_ReadsExpiryBeyondLegacySnippetLimit()
+    {
+        var filler = new string('x', 13_000);
+        var html = $$"""
+            <div data-marker="item-snippet/8461191164">
+                <a data-marker="view-link" href="/sochi/vakansii/beregovaya_ohrana_8461191164">
+                    <span>Береговая охрана</span>
+                </a>
+                <div>{{filler}}</div>
+                <span class="styles-status-name">Активно</span>&nbsp;ещё 21 день — до 7 окт, 12:22
+                <div>9 дней на Авито</div>
+            </div>
+            """;
+        var captured = new DateTime(2026, 9, 16, 6, 0, 0, DateTimeKind.Utc);
+
+        var card = Assert.Single(_parser.ToListCards(_parser.ParseProfilePage(html, capturedAtUtc: captured)));
+
+        Assert.Equal(21, card.RemainingDays);
+        Assert.Null(card.ExpiryParseError);
+        Assert.NotNull(card.ExpiresAtUtc);
+    }
+
+    [Fact]
+    public void ParseProfilePage_ReadsPresentationFieldsForListingsUi()
+    {
+        var html = """
+            <div data-marker="item-snippet/8285468940">
+                <div style="background-image: url(&quot;//60.img.avito.st/image/test&quot;);"></div>
+                <a data-marker="view-link" href="/volginskiy/vakansii/mehanik_8285468940"><span>Механик</span></a>
+                <span>от 230 000 ₽</span><span class="styles-address">пос. Вольгинский</span>
+                <div role-marker="views"><span>42</span></div>
+                <div role-marker="contacts"><span>7</span></div>
+                <div role-marker="favorites"><span>3</span></div>
+                <span>Активно</span> ещё 21 день — до 7 окт, 12:22
+            </div>
+            """;
+
+        var card = Assert.Single(_parser.ToListCards(_parser.ParseProfilePage(
+            html,
+            capturedAtUtc: new DateTime(2026, 9, 16, 6, 0, 0, DateTimeKind.Utc))));
+
+        Assert.Equal("https://60.img.avito.st/image/test", card.ImageUrl);
+        Assert.Equal("от 230 000 ₽", card.Salary);
+        Assert.Equal(42, card.Views);
+        Assert.Equal(7, card.Contacts);
+        Assert.Equal(3, card.Favorites);
+    }
+
+    [Fact]
     public void ParseProfilePage_ReadsExactExpiryFromActiveCard_WithoutOpeningDetailPage()
     {
         const string html = """

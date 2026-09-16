@@ -383,6 +383,31 @@ public class AvitoParserService
         ad.Favorites = favorites;
     }
 
+    private static void FillPresentationFields(AvitoAdStatus ad, string snippetHtml)
+    {
+        var image = Regex.Match(
+            snippetHtml,
+            @"background-image\s*:\s*url\([^\r\n]*?(?<url>(?://|https?:)[^&""')]+)",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        if (image.Success)
+        {
+            var imageUrl = WebUtility.HtmlDecode(image.Groups["url"].Value).Trim(' ', '\'', '"');
+            ad.ImageUrl = imageUrl.StartsWith("//", StringComparison.Ordinal) ? "https:" + imageUrl : imageUrl;
+        }
+
+        var plain = Regex.Replace(snippetHtml, "<script[\\s\\S]*?</script>|<style[\\s\\S]*?</style>", " ", RegexOptions.IgnoreCase);
+        plain = Regex.Replace(plain, "<[^>]+>", " ");
+        plain = NormalizeSpaces(plain);
+        var salary = Regex.Match(
+            plain,
+            @"(?<salary>(?:от\s*)?[\d\s\u00A0\u202F]{2,}(?:[–—-]\s*[\d\s\u00A0\u202F]+)?\s*₽(?:\s*(?:за\s+месяц|в\s+месяц))?)",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+        if (salary.Success)
+        {
+            ad.Salary = NormalizeSpaces(salary.Groups["salary"].Value);
+        }
+    }
+
     private static void FillAgeAndStatus(AvitoAdStatus ad, string snippetHtml, DateTime capturedAtUtc)
     {
         var publishedText = ExtractRoleMarkerInnerText(snippetHtml, "offer/days-published");
@@ -576,6 +601,7 @@ public class AvitoParserService
             ad.Url = listingUrl;
             ad.UrlParseError = urlError;
             FillViewsContactsFavorites(ad, snippetHtml);
+            FillPresentationFields(ad, snippetHtml);
             FillAgeAndStatus(ad, snippetHtml, capturedAt);
             if (!string.IsNullOrWhiteSpace(status))
             {
@@ -620,6 +646,7 @@ public class AvitoParserService
             ad.ErrorReason = ExtractErrorReason(snippetHtml, ad.Status);
             ad.DeleteDate = ExtractBlockedDeleteDate(snippetHtml);
             FillViewsContactsFavorites(ad, snippetHtml);
+            FillPresentationFields(ad, snippetHtml);
             FillAgeAndStatus(ad, snippetHtml, DateTime.UtcNow);
             if (string.IsNullOrWhiteSpace(ad.Status) || ad.Status == "Активно")
             {
@@ -677,6 +704,7 @@ public class AvitoParserService
                 CanPublish = Regex.IsMatch(snippetHtml, @"data-marker=""publish-action""", RegexOptions.IgnoreCase)
             };
             FillViewsContactsFavorites(ad, snippetHtml);
+            FillPresentationFields(ad, snippetHtml);
             FillAgeAndStatus(ad, snippetHtml, DateTime.UtcNow);
             result.Add(ad);
         }
@@ -691,7 +719,12 @@ public class AvitoParserService
             return [];
         }
 
-        return profile.ActiveAds
+        return ToListCards(profile.ActiveAds);
+    }
+
+    public IReadOnlyList<AvitoAdListCard> ToListCards(IEnumerable<AvitoAdStatus> ads)
+    {
+        return ads
             .Where(static ad => !string.IsNullOrWhiteSpace(ad.Id))
             .Select(ad => new AvitoAdListCard
             {
@@ -707,7 +740,15 @@ public class AvitoParserService
                 StatusText = string.Equals(ad.Status, "Активно", StringComparison.Ordinal) ? string.Empty : ad.Status,
                 SourceTab = ad.SourceTab,
                 ErrorReason = ad.ErrorReason,
-                CanPublish = ad.CanPublish
+                CanPublish = ad.CanPublish,
+                ImageUrl = ad.ImageUrl,
+                Salary = ad.Salary,
+                City = ad.City,
+                AddressText = ad.AddressText,
+                DistrictText = ad.DistrictText,
+                Views = ad.Views,
+                Contacts = ad.Contacts,
+                Favorites = ad.Favorites
             })
             .ToList();
     }
@@ -1011,7 +1052,7 @@ public class AvitoParserService
             var startIndex = match.Index;
             var endIndex = i + 1 < snippetMatches.Count
                 ? snippetMatches[i + 1].Index
-                : Math.Min(startIndex + 12000, html.Length);
+                : html.Length;
 
             yield return (id, html.Substring(startIndex, endIndex - startIndex));
         }

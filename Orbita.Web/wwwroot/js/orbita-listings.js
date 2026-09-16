@@ -71,43 +71,41 @@
         return '<a class="listings-title-link" href="' + escapeHtml(url) + '" target="_blank" rel="noopener noreferrer">' + title + '</a>';
     }
 
-    function renderLocation(row) {
-        return '<div class="listing-location__primary">' +
-            renderInternalLink(row.workerUrl, row.workerName) +
-            '<span aria-hidden="true">/</span>' +
-            renderInternalLink(row.accountUrl, row.accountName) +
-            '</div><div class="listing-location__subprofile">' +
-            escapeHtml(row.subProfileName) +
-            '</div>';
-    }
-
-    function renderAd(row) {
-        return renderTitle(row) +
-            '<code class="listing-ad__id">ID ' + escapeHtml(row.avitoItemId) + '</code>';
-    }
-
-    function renderStatus(row) {
-        return '<span class="listing-status__avito">' + escapeHtml(row.statusText) + '</span>' +
-            '<span class="listing-state listing-state--' + escapeHtml(row.stateTone || 'ok') + '">' +
-            escapeHtml(row.stateLabel) +
-            '</span>';
-    }
-
-    function renderDeadline(row) {
-        var remaining = row.remainingDays == null
-            ? ''
-            : '<span class="listing-deadline__remaining">Осталось: ' + escapeHtml(row.remainingDays) + ' дн.</span>';
-        return formatUtc(toIso(row.expiresAtUtc), 'datetime') + remaining;
-    }
-
     function renderRow(row) {
-        return '<tr class="listings-row listings-row--' + escapeHtml(row.stateTone || 'ok') + '" data-listing-id="' + escapeHtml(row.id) + '">' +
-            '<td data-label="Где" class="listing-location">' + renderLocation(row) + '</td>' +
-            '<td data-label="Объявление" class="listing-ad">' + renderAd(row) + '</td>' +
-            '<td data-label="Статус" class="listing-status">' + renderStatus(row) + '</td>' +
-            '<td data-label="Срок" class="listing-deadline">' + renderDeadline(row) + '</td>' +
-            '<td data-label="Последняя проверка" class="listing-last-check">' + formatUtc(toIso(row.lastSeenAtUtc), 'short') + '</td>' +
-            '</tr>';
+        var tone = escapeHtml(row.stateTone || 'ok');
+        var image = row.imageUrl
+            ? '<img src="' + escapeHtml(row.imageUrl) + '" alt="" loading="lazy">'
+            : '<i class="fa-regular fa-image" aria-hidden="true"></i>';
+        var geo = [row.city, row.addressText, row.districtText].filter(Boolean).filter(function (value, index, values) {
+            return values.indexOf(value) === index;
+        }).join(', ');
+        var salary = row.salary ? '<div class="listing-card__salary">' + escapeHtml(row.salary) + '</div>' : '';
+        var error = row.errorReason
+            ? '<div class="listing-card__error"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i><div><strong>Причина</strong><span>' + escapeHtml(row.errorReason) + '</span></div></div>'
+            : '';
+        var renewal = row.canPublish
+            ? '<div class="listing-card__renewal"><i class="fa-solid fa-rotate" aria-hidden="true"></i> Можно продлить через воркер</div>'
+            : '';
+        var conversion = row.views > 0
+            ? '<div class="listing-card__conversion">Конверсия <strong>' + escapeHtml(Math.round((row.contacts * 100 / row.views) * 10) / 10) + '%</strong></div>'
+            : '';
+        var remaining = row.remainingDays == null ? '' : '<small>Осталось ' + escapeHtml(row.remainingDays) + ' дн.</small>';
+        var age = row.ageDays == null ? escapeHtml(row.statusText) : escapeHtml(row.ageDays) + ' дн. на Авито';
+
+        return '<article class="listing-card listing-card--' + tone + '" data-listing-id="' + escapeHtml(row.id) + '">' +
+            '<div class="listing-card__media">' + image + '</div>' +
+            '<div class="listing-card__main"><div class="listing-card__heading">' + renderTitle(row) +
+            '<span class="listing-state listing-state--' + tone + '">' + escapeHtml(row.stateLabel) + '</span></div>' +
+            salary +
+            (geo ? '<div class="listing-card__geo"><i class="fa-solid fa-location-dot" aria-hidden="true"></i><span>' + escapeHtml(geo) + '</span></div>' : '') +
+            '<div class="listing-card__source">' + escapeHtml(row.accountName) + ' <span>/</span> ' + escapeHtml(row.subProfileName) + ' <span>·</span> ID ' + escapeHtml(row.avitoItemId) + '</div>' +
+            error + renewal + '</div>' +
+            '<div class="listing-card__aside"><div class="listing-metrics">' +
+            '<span title="Просмотры"><i class="fa-regular fa-eye"></i><strong>' + escapeHtml(row.views) + '</strong></span>' +
+            '<span title="Контакты"><i class="fa-regular fa-user"></i><strong>' + escapeHtml(row.contacts) + '</strong></span>' +
+            '<span title="В избранном"><i class="fa-regular fa-heart"></i><strong>' + escapeHtml(row.favorites) + '</strong></span></div>' +
+            conversion + '<div class="listing-card__deadline"><span>Срок размещения</span><strong>' + formatUtc(toIso(row.expiresAtUtc), 'datetime') + '</strong>' + remaining + '</div>' +
+            '<div class="listing-card__age">' + age + '</div><div class="listing-card__checked">Проверено ' + formatUtc(toIso(row.lastSeenAtUtc), 'short') + '</div></div></article>';
     }
 
     function applySnapshot(payload) {

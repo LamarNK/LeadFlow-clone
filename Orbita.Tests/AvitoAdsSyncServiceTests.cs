@@ -54,7 +54,18 @@ public sealed class AvitoAdsSyncServiceTests
                     DateTime.UtcNow,
                     true,
                     AvitoAdListingStates.Active,
-                    null)
+                    null,
+                    "inactive",
+                    "Истёк срок размещения",
+                    true,
+                    "https://img.example/ad.jpg",
+                    "от 90 000 ₽",
+                    "Пермь",
+                    "ул. Ленина, 1",
+                    "Центр",
+                    18,
+                    4,
+                    2)
             ]);
 
         var first = await service.SaveSubProfileSyncAsync(workerId, request, CancellationToken.None);
@@ -66,6 +77,10 @@ public sealed class AvitoAdsSyncServiceTests
         var stored = await db.WorkerAvitoAds.SingleAsync();
         Assert.Equal("8302808573", stored.AvitoItemId);
         Assert.Equal("sp-1", stored.AvitoSubProfileId);
+        Assert.Equal("inactive", stored.SourceTab);
+        Assert.Equal("Истёк срок размещения", stored.ErrorReason);
+        Assert.True(stored.CanPublish);
+        Assert.Equal(18, stored.Views);
         Assert.Contains(PanelChangeKind.Listings, notifier.Kinds);
     }
 

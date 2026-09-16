@@ -40,7 +40,18 @@ public sealed record WorkerAvitoAdDto(
     string State,
     string? LastParseError,
     DateTime CreatedAtUtc,
-    DateTime UpdatedAtUtc);
+    DateTime UpdatedAtUtc,
+    string SourceTab = "active",
+    string ErrorReason = "",
+    bool CanPublish = false,
+    string ImageUrl = "",
+    string Salary = "",
+    string City = "",
+    string AddressText = "",
+    string DistrictText = "",
+    int Views = 0,
+    int Contacts = 0,
+    int Favorites = 0);
 
 public sealed record WorkerAvitoAdSyncItemDto(
     string AvitoItemId,
@@ -56,7 +67,18 @@ public sealed record WorkerAvitoAdSyncItemDto(
     DateTime? DetailCheckedAtUtc,
     bool IsActive,
     string State,
-    string? LastParseError);
+    string? LastParseError,
+    string SourceTab = "active",
+    string ErrorReason = "",
+    bool CanPublish = false,
+    string ImageUrl = "",
+    string Salary = "",
+    string City = "",
+    string AddressText = "",
+    string DistrictText = "",
+    int Views = 0,
+    int Contacts = 0,
+    int Favorites = 0);
 
 public sealed record WorkerAvitoAdSyncRequest(
     Guid WorkerId,
@@ -99,14 +121,27 @@ public sealed record AvitoAdListingListItem(
     DateTime? LastSeenAtUtc,
     DateTime? DetailCheckedAtUtc,
     bool IsActive,
-    string? LastParseError);
+    string? LastParseError,
+    string SourceTab = "active",
+    string ErrorReason = "",
+    bool CanPublish = false,
+    string ImageUrl = "",
+    string Salary = "",
+    string City = "",
+    string AddressText = "",
+    string DistrictText = "",
+    int Views = 0,
+    int Contacts = 0,
+    int Favorites = 0);
 
 public sealed record AvitoAdListingSummary(
     int ActiveCount,
     int UnknownDateCount,
     int ExpiringIn7DaysCount,
     int ExpiresTodayCount,
-    int ExpiredCount);
+    int ExpiredCount,
+    int ErrorCount = 0,
+    int UnpublishedCount = 0);
 
 public sealed record AvitoAdListingListResponse(
     IReadOnlyList<AvitoAdListingListItem> Items,

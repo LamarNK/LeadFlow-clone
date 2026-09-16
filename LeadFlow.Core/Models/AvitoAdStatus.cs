@@ -16,6 +16,7 @@ public class AvitoAdStatus
     public string AddressText { get; set; } = "";
     public string DistrictText { get; set; } = "";
     public string Salary { get; set; } = "";
+    public string ImageUrl { get; set; } = "";
     public int Views { get; set; }
     public int Contacts { get; set; }
     public int Favorites { get; set; }

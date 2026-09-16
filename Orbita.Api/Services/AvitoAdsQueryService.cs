@@ -77,7 +77,9 @@ public sealed class AvitoAdsQueryService(OrbitaDbContext db, OfficeScopeService 
                 group.Count(x => x.Ad.IsActive && x.Ad.State == AvitoAdListingStates.UnknownPublicationDate),
                 group.Count(x => x.Ad.IsActive && x.Ad.State == AvitoAdListingStates.ApproachingExpiry),
                 group.Count(x => x.Ad.IsActive && x.Ad.State == AvitoAdListingStates.ExpiresToday),
-                group.Count(x => x.Ad.IsActive && x.Ad.State == AvitoAdListingStates.Expired)))
+                group.Count(x => x.Ad.IsActive && x.Ad.State == AvitoAdListingStates.Expired),
+                group.Count(x => x.Ad.SourceTab == "rejected"),
+                group.Count(x => x.Ad.SourceTab == "inactive")))
             .SingleOrDefaultAsync(ct)
             ?? new AvitoAdListingSummary(0, 0, 0, 0, 0);
 
@@ -97,6 +99,8 @@ public sealed class AvitoAdsQueryService(OrbitaDbContext db, OfficeScopeService 
             rowsQuery = NormalizeTab(tab) switch
             {
                 "all" => rowsQuery,
+                "errors" => rowsQuery.Where(x => x.Ad.SourceTab == "rejected"),
+                "unpublished" => rowsQuery.Where(x => x.Ad.SourceTab == "inactive"),
                 "notactive" => rowsQuery.Where(x => !x.Ad.IsActive),
                 "expiring" => rowsQuery.Where(x =>
                     x.Ad.IsActive && x.Ad.State == AvitoAdListingStates.ApproachingExpiry),
@@ -105,7 +109,7 @@ public sealed class AvitoAdsQueryService(OrbitaDbContext db, OfficeScopeService 
                 "unknown" => rowsQuery.Where(x =>
                     x.Ad.IsActive && x.Ad.State == AvitoAdListingStates.UnknownPublicationDate),
                 "parsefailed" => rowsQuery.Where(x => x.Ad.State == AvitoAdListingStates.ParseFailed),
-                _ => rowsQuery.Where(x => x.Ad.IsActive)
+                _ => rowsQuery.Where(x => x.Ad.SourceTab == "active" && x.Ad.IsActive)
             };
         }
 
@@ -139,7 +143,18 @@ public sealed class AvitoAdsQueryService(OrbitaDbContext db, OfficeScopeService 
             x.Ad.LastSeenAtUtc,
             x.Ad.DetailCheckedAtUtc,
             x.Ad.IsActive,
-            x.Ad.LastParseError)).ToList();
+            x.Ad.LastParseError,
+            x.Ad.SourceTab,
+            x.Ad.ErrorReason,
+            x.Ad.CanPublish,
+            x.Ad.ImageUrl,
+            x.Ad.Salary,
+            x.Ad.City,
+            x.Ad.AddressText,
+            x.Ad.DistrictText,
+            x.Ad.Views,
+            x.Ad.Contacts,
+            x.Ad.Favorites)).ToList();
 
         return new AvitoAdListingListResponse(items, summary, total);
     }
@@ -207,7 +222,7 @@ public sealed class AvitoAdsQueryService(OrbitaDbContext db, OfficeScopeService 
     private static string NormalizeTab(string? tab) =>
         tab?.Trim().ToLowerInvariant() switch
         {
-            "all" or "notactive" or "expiring" or "today" or "unknown" or "parsefailed" or "active"
+            "all" or "errors" or "unpublished" or "notactive" or "expiring" or "today" or "unknown" or "parsefailed" or "active"
                 => tab.Trim().ToLowerInvariant(),
             _ => "active"
         };

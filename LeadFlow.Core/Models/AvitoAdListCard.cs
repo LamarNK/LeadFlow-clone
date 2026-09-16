@@ -16,4 +16,12 @@ public sealed class AvitoAdListCard
     public string SourceTab { get; init; } = AvitoAdStatus.ActiveTab;
     public string ErrorReason { get; init; } = string.Empty;
     public bool CanPublish { get; init; }
+    public string ImageUrl { get; init; } = string.Empty;
+    public string Salary { get; init; } = string.Empty;
+    public string City { get; init; } = string.Empty;
+    public string AddressText { get; init; } = string.Empty;
+    public string DistrictText { get; init; } = string.Empty;
+    public int Views { get; init; }
+    public int Contacts { get; init; }
+    public int Favorites { get; init; }
 }

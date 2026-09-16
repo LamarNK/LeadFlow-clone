@@ -278,6 +278,9 @@ public sealed class WorkerAvitoAdsMonitor(
 
         var cards = new List<AvitoAdListCard>();
         var sawSupportedLayout = false;
+        var blockedCount = 0;
+        var unpublishedCount = 0;
+        var auxiliaryTabsComplete = true;
         foreach (var html in capture.PageHtml)
         {
             var parsed = avitoParser.ParseProfilePage(html, account.Id, DateTime.UtcNow);
@@ -290,6 +293,8 @@ public sealed class WorkerAvitoAdsMonitor(
             }
 
             sawSupportedLayout = true;
+            blockedCount = Math.Max(blockedCount, parsed.BlockedCount);
+            unpublishedCount = Math.Max(unpublishedCount, parsed.UnpublishedCount);
             var parsedCards = avitoParser.ToListCards(parsed);
             cards.AddRange(parsedCards);
 
@@ -311,6 +316,42 @@ public sealed class WorkerAvitoAdsMonitor(
             return;
         }
 
+        if (blockedCount > 0)
+        {
+            try
+            {
+                var html = await session.LoadBlockedItemsHtmlAsync(cancellationToken).ConfigureAwait(false);
+                var blocked = avitoParser.ParseBlockedTabPage(html, account.Id);
+                cards.AddRange(avitoParser.ToListCards(blocked));
+                auxiliaryTabsComplete &= blocked.Count > 0;
+            }
+            catch (Exception ex)
+            {
+                auxiliaryTabsComplete = false;
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"Ads monitor: blocked tab failed for {account.DisplayName}/{subProfileName}: {ex.Message}",
+                    DeskLinkAuditLogLevel.Warning);
+            }
+        }
+
+        if (unpublishedCount > 0)
+        {
+            try
+            {
+                var html = await session.LoadUnpublishedItemsHtmlAsync(cancellationToken).ConfigureAwait(false);
+                var unpublished = avitoParser.ParseUnpublishedTabPage(html, account.Id);
+                cards.AddRange(avitoParser.ToListCards(unpublished));
+                auxiliaryTabsComplete &= unpublished.Count > 0;
+            }
+            catch (Exception ex)
+            {
+                auxiliaryTabsComplete = false;
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"Ads monitor: unpublished tab failed for {account.DisplayName}/{subProfileName}: {ex.Message}",
+                    DeskLinkAuditLogLevel.Warning);
+            }
+        }
+
         var utcNow = DateTime.UtcNow;
         var nextListCheckAtUtc = utcNow.Add(ListCheckInterval);
         var merged = AvitoAdListingSyncApplier
@@ -321,7 +362,7 @@ public sealed class WorkerAvitoAdsMonitor(
                 subProfileId,
                 cards,
                 utcNow,
-                capture.Complete)
+                capture.Complete && auxiliaryTabsComplete)
             .ToList();
 
         await catalog.SaveSubProfileSyncAsync(
@@ -329,7 +370,7 @@ public sealed class WorkerAvitoAdsMonitor(
                 account.Id,
                 subProfileId,
                 merged,
-                capture.Complete,
+                capture.Complete && auxiliaryTabsComplete,
                 utcNow,
                 nextListCheckAtUtc,
                 cancellationToken)

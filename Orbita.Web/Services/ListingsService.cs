@@ -85,6 +85,26 @@ public sealed class ListingsService(
             })
             .ToList();
 
+        var accountScopes = officeAccounts
+            .Where(x => selectedWorkers.Count == 0 || selectedWorkers.Contains(x.WorkerId))
+            .OrderBy(x => x.Account.DisplayName)
+            .Select(x => new ListingAccountScopeViewModel
+            {
+                WorkerId = x.WorkerId,
+                AccountId = x.Account.AccountId,
+                AccountName = x.Account.DisplayName,
+                SubProfiles = (x.Account.SubProfiles ?? [])
+                    .Where(sub => sub.IsEnabledInPanel)
+                    .OrderBy(sub => sub.Name)
+                    .Select(sub => new ListingSubProfileScopeViewModel
+                    {
+                        Id = sub.Id,
+                        Name = string.IsNullOrWhiteSpace(sub.Name) ? sub.Id : sub.Name
+                    })
+                    .ToList()
+            })
+            .ToList();
+
         return ListingsIndexBuilder.Build(
             listings.Items,
             listings.Summary,
@@ -102,6 +122,7 @@ public sealed class ListingsService(
             subOptions,
             officeContext,
             totalItems: listings.Total,
-            itemsArePaged: true);
+            itemsArePaged: true,
+            accountScopes: accountScopes);
     }
 }

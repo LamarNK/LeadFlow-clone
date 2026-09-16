@@ -10,11 +10,8 @@ internal static class ListingsIndexBuilder
     public static readonly AccountTabViewModel[] TabDefinitions =
     [
         new() { Id = "active", Label = "Активные" },
-        new() { Id = "notactive", Label = "Неактивные" },
-        new() { Id = "expiring", Label = "Истекает за 7 дней" },
-        new() { Id = "today", Label = "Истекает сегодня" },
-        new() { Id = "unknown", Label = "Неизвестная дата" },
-        new() { Id = "parsefailed", Label = "Ошибка парсинга" },
+        new() { Id = "errors", Label = "С ошибками" },
+        new() { Id = "unpublished", Label = "Неопубликованные" },
         new() { Id = "all", Label = "Все" }
     ];
 
@@ -41,7 +38,8 @@ internal static class ListingsIndexBuilder
         IReadOnlyList<EventFilterOptionViewModel> subProfiles,
         IOfficeContext? officeContext = null,
         int? totalItems = null,
-        bool itemsArePaged = false)
+        bool itemsArePaged = false,
+        IReadOnlyList<ListingAccountScopeViewModel>? accountScopes = null)
     {
         page = Math.Max(1, page);
         tab = NormalizeTab(tab);
@@ -82,7 +80,20 @@ internal static class ListingsIndexBuilder
             Header = header,
             SearchQuery = searchQuery,
             ActiveTab = tab,
-            Tabs = TabDefinitions,
+            Tabs = TabDefinitions.Select(x => new AccountTabViewModel
+            {
+                Id = x.Id,
+                Label = x.Label,
+                Count = x.Id switch
+                {
+                    "active" => summary.ActiveCount,
+                    "errors" => summary.ErrorCount,
+                    "unpublished" => summary.UnpublishedCount,
+                    _ => summary.ActiveCount + summary.ErrorCount + summary.UnpublishedCount
+                }
+            }).ToList(),
+            Summary = summary,
+            AccountScopes = accountScopes ?? [],
             KpiCards = BuildKpiCards(summary),
             Rows = paged,
             Pagination = new PaginationViewModel
@@ -138,13 +149,37 @@ internal static class ListingsIndexBuilder
             AgeDays = item.AgeDays,
             RemainingDays = item.RemainingDays,
             State = item.State,
-            StateLabel = StateLabel(item.State),
-            StateTone = StateTone(item.State),
+            StateLabel = item.SourceTab switch
+            {
+                "rejected" => "С ошибками",
+                "inactive" => "Не опубликовано",
+                _ => StateLabel(item.State)
+            },
+            StateTone = item.SourceTab switch
+            {
+                "rejected" => "danger",
+                "inactive" => "muted",
+                _ => StateTone(item.State)
+            },
             PublicationDateSource = item.PublicationDateSource,
             PublicationDateSourceLabel = SourceLabel(item.PublicationDateSource),
             LastSeenAtUtc = item.LastSeenAtUtc,
             DetailCheckedAtUtc = item.DetailCheckedAtUtc,
-            IsActive = item.IsActive
+            IsActive = item.IsActive,
+            SourceTab = item.SourceTab,
+            ErrorReason = !string.IsNullOrWhiteSpace(item.ErrorReason)
+                ? item.ErrorReason
+                : ParseErrorLabel(item.LastParseError),
+            LastParseError = item.LastParseError,
+            CanPublish = item.CanPublish,
+            ImageUrl = item.ImageUrl,
+            Salary = item.Salary,
+            City = item.City,
+            AddressText = item.AddressText,
+            DistrictText = item.DistrictText,
+            Views = item.Views,
+            Contacts = item.Contacts,
+            Favorites = item.Favorites
         };
 
     public static IReadOnlyList<DashboardKpiCardViewModel> BuildKpiCards(AvitoAdListingSummary summary) =>
@@ -214,7 +249,7 @@ internal static class ListingsIndexBuilder
     public static string NormalizeTab(string? tab) =>
         tab switch
         {
-            "all" or "notactive" or "expiring" or "today" or "unknown" or "parsefailed" or "active" => tab,
+            "all" or "errors" or "unpublished" or "notactive" or "expiring" or "today" or "unknown" or "parsefailed" or "active" => tab,
             _ => "active"
         };
 
@@ -222,6 +257,8 @@ internal static class ListingsIndexBuilder
         tab switch
         {
             "all" => true,
+            "errors" => item.SourceTab == "rejected",
+            "unpublished" => item.SourceTab == "inactive",
             "notactive" => !item.IsActive,
             "expiring" => item.IsActive && item.State == AvitoAdListingStates.ApproachingExpiry,
             "today" => item.IsActive && item.State == AvitoAdListingStates.ExpiresToday,
@@ -288,4 +325,15 @@ internal static class ListingsIndexBuilder
             AvitoAdPublicationDateSources.ListExpiry => "Срок из списка",
             _ => "Неизвестно"
         };
+
+    private static string ParseErrorLabel(string? error) => error switch
+    {
+        "list_expiry_unparsed" => "Не удалось определить срок размещения по карточке Avito.",
+        "list_expiry_text_empty" => "Avito не показал срок размещения в карточке.",
+        "missing_view_link" => "В карточке отсутствует ссылка на объявление.",
+        "empty_view_link_href" => "Ссылка объявления в карточке пустая.",
+        "invalid_view_link_href" => "Avito вернул некорректную ссылку объявления.",
+        null or "" => string.Empty,
+        _ => error.Replace('_', ' ')
+    };
 }

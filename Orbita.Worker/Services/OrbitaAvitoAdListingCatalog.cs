@@ -33,6 +33,17 @@ public sealed class OrbitaAvitoAdListingCatalog(OrbitaApiClient api) : IAvitoAdL
             IsActive = dto.IsActive,
             State = dto.State,
             LastParseError = dto.LastParseError,
+            SourceTab = dto.SourceTab,
+            ErrorReason = dto.ErrorReason,
+            CanPublish = dto.CanPublish,
+            ImageUrl = dto.ImageUrl,
+            Salary = dto.Salary,
+            City = dto.City,
+            AddressText = dto.AddressText,
+            DistrictText = dto.DistrictText,
+            Views = dto.Views,
+            Contacts = dto.Contacts,
+            Favorites = dto.Favorites,
             CreatedAtUtc = dto.CreatedAtUtc,
             UpdatedAtUtc = dto.UpdatedAtUtc
         }).ToList();
@@ -71,7 +82,18 @@ public sealed class OrbitaAvitoAdListingCatalog(OrbitaApiClient api) : IAvitoAdL
                 x.DetailCheckedAtUtc,
                 x.IsActive,
                 x.State,
-                x.LastParseError))
+                x.LastParseError,
+                x.SourceTab,
+                x.ErrorReason,
+                x.CanPublish,
+                x.ImageUrl,
+                x.Salary,
+                x.City,
+                x.AddressText,
+                x.DistrictText,
+                x.Views,
+                x.Contacts,
+                x.Favorites))
             .ToList();
 
         await api.SyncAvitoAdsAsync(

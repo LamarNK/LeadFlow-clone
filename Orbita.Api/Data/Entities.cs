@@ -420,6 +420,17 @@ public sealed class WorkerAvitoAdEntity
     public bool IsActive { get; set; }
     public string State { get; set; } = AvitoAdListingStates.UnknownPublicationDate;
     public string? LastParseError { get; set; }
+    public string SourceTab { get; set; } = "active";
+    public string ErrorReason { get; set; } = string.Empty;
+    public bool CanPublish { get; set; }
+    public string ImageUrl { get; set; } = string.Empty;
+    public string Salary { get; set; } = string.Empty;
+    public string City { get; set; } = string.Empty;
+    public string AddressText { get; set; } = string.Empty;
+    public string DistrictText { get; set; } = string.Empty;
+    public int Views { get; set; }
+    public int Contacts { get; set; }
+    public int Favorites { get; set; }
     public DateTime CreatedAtUtc { get; set; }
     public DateTime UpdatedAtUtc { get; set; }
 

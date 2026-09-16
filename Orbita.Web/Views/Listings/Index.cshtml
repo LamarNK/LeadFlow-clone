@@ -61,7 +61,7 @@
             var isActive = tab.Id == Model.ActiveTab;
             <a class="accounts-tab @(isActive ? "accounts-tab--active" : "")"
                href="@Url.Action("Index", new RouteValueDictionary(listingsSortRoute) { ["tab"] = tab.Id, ["page"] = 1 })"
-               aria-current="@(isActive ? "page" : null)">@tab.Label</a>
+               aria-current="@(isActive ? "page" : null)">@tab.Label <span class="listings-tab-count">@tab.Count</span></a>
         }
     </nav>
 
@@ -87,8 +87,62 @@
     }
     <partial name="_ListFiltersBar" model="listingsFilterBar" />
 
-    <div class="card card--accounts-table">
-        <div class="card-body card-body-table accounts-table-wrap">
+    <div class="listings-workspace">
+        <aside class="listings-scope" aria-label="Аккаунты и субпрофили">
+            <div class="listings-scope__heading">Объявления</div>
+            <a class="listings-scope__all @(Model.AccountIds.Count == 0 ? "is-active" : "")"
+               href="@Url.Action("Index", new { q = Model.SearchQuery, tab = Model.ActiveTab, sort = Model.Sort.Column, dir = Model.Sort.Dir })">
+                <span><i class="fa-solid fa-layer-group" aria-hidden="true"></i> Все</span>
+                <strong>@(Model.Summary.ActiveCount + Model.Summary.ErrorCount + Model.Summary.UnpublishedCount)</strong>
+            </a>
+            <div class="listings-scope__accounts">
+                @foreach (var account in Model.AccountScopes)
+                {
+                    var accountActive = Model.AccountIds.Count == 1 && Model.AccountIds[0] == account.AccountId && Model.SubProfileIds.Count == 0;
+                    <section class="listings-scope__account">
+                        <a class="listings-scope__account-link @(accountActive ? "is-active" : "")"
+                           href="@Url.Action("Index", new { q = Model.SearchQuery, tab = Model.ActiveTab, workerId = account.WorkerId, accountId = account.AccountId, sort = Model.Sort.Column, dir = Model.Sort.Dir })">
+                            <i class="fa-regular fa-user" aria-hidden="true"></i>
+                            <span>@account.AccountName</span>
+                        </a>
+                        @if (account.SubProfiles.Count > 0)
+                        {
+                            <div class="listings-scope__subprofiles">
+                                @foreach (var sub in account.SubProfiles)
+                                {
+                                    var subActive = Model.AccountIds.Contains(account.AccountId) && Model.SubProfileIds.Contains(sub.Id);
+                                    <a class="listings-scope__subprofile @(subActive ? "is-active" : "")"
+                                       href="@Url.Action("Index", new { q = Model.SearchQuery, tab = Model.ActiveTab, workerId = account.WorkerId, accountId = account.AccountId, subProfileId = sub.Id, sort = Model.Sort.Column, dir = Model.Sort.Dir })">
+                                        <span class="listings-scope__branch" aria-hidden="true"></span>
+                                        <span>@sub.Name</span>
+                                    </a>
+                                }
+                            </div>
+                        }
+                    </section>
+                }
+            </div>
+        </aside>
+
+        <section class="listings-results" aria-label="Список объявлений">
+            <div class="listings-results__bar">
+                <div>
+                    <strong>@pagination.TotalItems</strong>
+                    <span>объявлений</span>
+                </div>
+                <form method="get" class="listings-sort">
+                    <input type="hidden" name="q" value="@Model.SearchQuery" />
+                    <input type="hidden" name="tab" value="@Model.ActiveTab" />
+                    @if (Model.AccountIds.Count == 1) { <input type="hidden" name="accountId" value="@Model.AccountIds[0]" /> }
+                    @if (Model.SubProfileIds.Count == 1) { <input type="hidden" name="subProfileId" value="@Model.SubProfileIds[0]" /> }
+                    <label for="listingsSort">Сортировка</label>
+                    <select id="listingsSort" name="sort" onchange="this.form.submit()">
+                        <option value="expires" selected="@(Model.Sort.Column == "expires")">По сроку</option>
+                        <option value="seen" selected="@(Model.Sort.Column == "seen")">По проверке</option>
+                        <option value="title" selected="@(Model.Sort.Column == "title")">По названию</option>
+                    </select>
+                </form>
+            </div>
             @if (pagination.TotalItems == 0)
             {
                 <partial name="_TableEmptyState" model="@(new TableEmptyStateViewModel
@@ -102,59 +156,64 @@
             }
             else
             {
-                <table class="data-table data-table--cards listings-table">
-                    <thead>
-                        <tr>
-                            <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Где", Column = "worker", Sort = Model.Sort, Controller = "Listings", Action = "Index", RouteValues = listingsSortRoute })" />
-                            <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Объявление", Column = "title", Sort = Model.Sort, Controller = "Listings", Action = "Index", RouteValues = listingsSortRoute })" />
-                            <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Статус", Column = "state", Sort = Model.Sort, Controller = "Listings", Action = "Index", RouteValues = listingsSortRoute })" />
-                            <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Срок", Column = "expires", Sort = Model.Sort, Controller = "Listings", Action = "Index", RouteValues = listingsSortRoute })" />
-                            <partial name="_TableSortTh" model="@(new TableSortThViewModel { Label = "Последняя проверка", Column = "seen", Sort = Model.Sort, Controller = "Listings", Action = "Index", RouteValues = listingsSortRoute })" />
-                        </tr>
-                    </thead>
-                    <tbody data-orbita-live-body="listings">
+                <div class="listings-feed" data-orbita-live-body="listings">
                     @foreach (var row in Model.Rows)
                     {
-                        <tr class="listings-row listings-row--@row.StateTone" data-listing-id="@row.Id">
-                            <td data-label="Где" class="listing-location">
-                                <div class="listing-location__primary">
-                                    <a href="@row.WorkerUrl">@row.WorkerName</a>
-                                    <span aria-hidden="true">/</span>
-                                    <a href="@row.AccountUrl">@row.AccountName</a>
-                                </div>
-                                <div class="listing-location__subprofile">@row.SubProfileName</div>
-                            </td>
-                            <td data-label="Объявление" class="listing-ad">
-                                @if (!string.IsNullOrWhiteSpace(row.Url))
+                        <article class="listing-card listing-card--@row.StateTone" data-listing-id="@row.Id">
+                            <div class="listing-card__media">
+                                @if (!string.IsNullOrWhiteSpace(row.ImageUrl))
                                 {
-                                    <a class="listings-title-link" href="@row.Url" target="_blank" rel="noopener noreferrer">@row.Title</a>
+                                    <img src="@row.ImageUrl" alt="" loading="lazy" />
                                 }
                                 else
                                 {
-                                    <strong>@row.Title</strong>
+                                    <i class="fa-regular fa-image" aria-hidden="true"></i>
                                 }
-                                <code class="listing-ad__id">ID @row.AvitoItemId</code>
-                            </td>
-                            <td data-label="Статус" class="listing-status">
-                                <span class="listing-status__avito">@row.StatusText</span>
-                                <span class="listing-state listing-state--@row.StateTone">@row.StateLabel</span>
-                            </td>
-                            <td data-label="Срок" class="listing-deadline">
-                                <partial name="_UtcTime" model="@(new UtcTimeDisplayModel(row.ExpiresAtUtc, "datetime"))" />
-                                @if (row.RemainingDays is int remaining)
+                            </div>
+                            <div class="listing-card__main">
+                                <div class="listing-card__heading">
+                                    @if (!string.IsNullOrWhiteSpace(row.Url))
+                                    {
+                                        <a href="@row.Url" target="_blank" rel="noopener noreferrer">@row.Title</a>
+                                    }
+                                    else { <strong>@row.Title</strong> }
+                                    <span class="listing-state listing-state--@row.StateTone">@row.StateLabel</span>
+                                </div>
+                                @if (!string.IsNullOrWhiteSpace(row.Salary)) { <div class="listing-card__salary">@row.Salary</div> }
+                                <div class="listing-card__geo">
+                                    <i class="fa-solid fa-location-dot" aria-hidden="true"></i>
+                                    <span>@(string.Join(", ", new[] { row.City, row.AddressText, row.DistrictText }.Where(x => !string.IsNullOrWhiteSpace(x)).Distinct()))</span>
+                                </div>
+                                <div class="listing-card__source">@row.AccountName <span>/</span> @row.SubProfileName <span>·</span> ID @row.AvitoItemId</div>
+                                @if (!string.IsNullOrWhiteSpace(row.ErrorReason))
                                 {
-                                    <span class="listing-deadline__remaining">Осталось: @remaining дн.</span>
+                                    <div class="listing-card__error"><i class="fa-solid fa-circle-exclamation" aria-hidden="true"></i><div><strong>Причина</strong><span>@row.ErrorReason</span></div></div>
                                 }
-                            </td>
-                            <td data-label="Последняя проверка" class="listing-last-check">
-                                <partial name="_UtcTime" model="@(new UtcTimeDisplayModel(row.LastSeenAtUtc, "short"))" />
-                            </td>
-                        </tr>
+                                @if (row.CanPublish)
+                                {
+                                    <div class="listing-card__renewal"><i class="fa-solid fa-rotate" aria-hidden="true"></i> Можно продлить через воркер</div>
+                                }
+                            </div>
+                            <div class="listing-card__aside">
+                                <div class="listing-metrics">
+                                    <span title="Просмотры"><i class="fa-regular fa-eye"></i><strong>@row.Views</strong></span>
+                                    <span title="Контакты"><i class="fa-regular fa-user"></i><strong>@row.Contacts</strong></span>
+                                    <span title="В избранном"><i class="fa-regular fa-heart"></i><strong>@row.Favorites</strong></span>
+                                </div>
+                                @if (row.ConversionPercent is double conversion) { <div class="listing-card__conversion">Конверсия <strong>@conversion%</strong></div> }
+                                <div class="listing-card__deadline">
+                                    <span>Срок размещения</span>
+                                    <strong><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(row.ExpiresAtUtc, "datetime"))" /></strong>
+                                    @if (row.RemainingDays is int remaining) { <small>Осталось @remaining дн.</small> }
+                                </div>
+                                <div class="listing-card__age">@(row.AgeDays is int age ? $"{age} дн. на Авито" : row.StatusText)</div>
+                                <div class="listing-card__checked">Проверено <partial name="_UtcTime" model="@(new UtcTimeDisplayModel(row.LastSeenAtUtc, "short"))" /></div>
+                            </div>
+                        </article>
                     }
-                    </tbody>
-                </table>
+                </div>
             }
-        </div>
+        </section>
     </div>
 
     <partial name="_Pagination" model="@(new PaginationPartialViewModel { Pagination = pagination, Controller = "Listings", RouteValues = listingsSortRoute })" />

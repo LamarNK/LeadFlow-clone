@@ -143,6 +143,17 @@ public sealed class AvitoAdsSyncService(OrbitaDbContext db, IPanelRealtimeNotifi
         row.IsActive = item.IsActive;
         row.State = string.IsNullOrWhiteSpace(item.State) ? row.State : item.State;
         row.LastParseError = item.LastParseError;
+        row.SourceTab = string.IsNullOrWhiteSpace(item.SourceTab) ? "active" : item.SourceTab;
+        row.ErrorReason = item.ErrorReason ?? string.Empty;
+        row.CanPublish = item.CanPublish;
+        row.ImageUrl = item.ImageUrl ?? string.Empty;
+        row.Salary = item.Salary ?? string.Empty;
+        row.City = item.City ?? string.Empty;
+        row.AddressText = item.AddressText ?? string.Empty;
+        row.DistrictText = item.DistrictText ?? string.Empty;
+        row.Views = item.Views;
+        row.Contacts = item.Contacts;
+        row.Favorites = item.Favorites;
         row.UpdatedAtUtc = now;
         if (listComplete)
         {
@@ -174,7 +185,18 @@ public sealed class AvitoAdsSyncService(OrbitaDbContext db, IPanelRealtimeNotifi
             string.IsNullOrWhiteSpace(row.State) ? AvitoAdListingStates.UnknownPublicationDate : row.State,
             row.LastParseError,
             row.CreatedAtUtc,
-            row.UpdatedAtUtc);
+            row.UpdatedAtUtc,
+            row.SourceTab,
+            row.ErrorReason,
+            row.CanPublish,
+            row.ImageUrl,
+            row.Salary,
+            row.City,
+            row.AddressText,
+            row.DistrictText,
+            row.Views,
+            row.Contacts,
+            row.Favorites);
 
     private static WorkerAvitoAdListScheduleDto ToScheduleDto(WorkerAvitoAdListScheduleEntity row) =>
         new(

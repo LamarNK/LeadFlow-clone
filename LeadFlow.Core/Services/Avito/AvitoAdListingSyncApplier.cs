@@ -62,6 +62,17 @@ public static class AvitoAdListingSyncApplier
             }
 
             record.StatusText = card.StatusText ?? string.Empty;
+            record.SourceTab = string.IsNullOrWhiteSpace(card.SourceTab) ? AvitoAdStatus.ActiveTab : card.SourceTab;
+            record.ErrorReason = card.ErrorReason ?? string.Empty;
+            record.CanPublish = card.CanPublish;
+            record.ImageUrl = card.ImageUrl ?? string.Empty;
+            record.Salary = card.Salary ?? string.Empty;
+            record.City = card.City ?? string.Empty;
+            record.AddressText = card.AddressText ?? string.Empty;
+            record.DistrictText = card.DistrictText ?? string.Empty;
+            record.Views = card.Views;
+            record.Contacts = card.Contacts;
+            record.Favorites = card.Favorites;
             if (card.AgeDays is int age)
             {
                 record.AgeDays = age;
@@ -79,7 +90,7 @@ public static class AvitoAdListingSyncApplier
                 record.LastParseError = card.ExpiryParseError;
             }
 
-            record.IsActive = true;
+            record.IsActive = string.Equals(record.SourceTab, AvitoAdStatus.ActiveTab, StringComparison.Ordinal);
             record.LastSeenAtUtc = utcNow;
             if (listComplete)
             {

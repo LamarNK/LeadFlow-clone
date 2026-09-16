@@ -30,6 +30,7 @@ public sealed class AccountTabViewModel
 {
     public string Id { get; init; } = string.Empty;
     public string Label { get; init; } = string.Empty;
+    public int? Count { get; init; }
 }
 
 public sealed class AccountRowViewModel

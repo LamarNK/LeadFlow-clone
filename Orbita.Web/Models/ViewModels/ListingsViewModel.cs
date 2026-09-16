@@ -1,3 +1,5 @@
+using Orbita.Contracts;
+
 namespace Orbita.Web.Models.ViewModels;
 
 public sealed class ListingsIndexViewModel
@@ -13,6 +15,8 @@ public sealed class ListingsIndexViewModel
     public IReadOnlyList<AccountTabViewModel> Tabs { get; init; } = [];
     public string ActiveTab { get; init; } = "active";
     public IReadOnlyList<ListingRowViewModel> Rows { get; init; } = [];
+    public IReadOnlyList<ListingAccountScopeViewModel> AccountScopes { get; init; } = [];
+    public AvitoAdListingSummary Summary { get; init; } = new(0, 0, 0, 0, 0);
     public PaginationViewModel Pagination { get; init; } = new();
     public string? SearchQuery { get; init; }
     public IReadOnlyList<Guid> WorkerIds { get; init; } = [];
@@ -54,6 +58,33 @@ public sealed class ListingRowViewModel
     public DateTime? LastSeenAtUtc { get; init; }
     public DateTime? DetailCheckedAtUtc { get; init; }
     public bool IsActive { get; init; }
+    public string SourceTab { get; init; } = "active";
+    public string ErrorReason { get; init; } = string.Empty;
+    public string? LastParseError { get; init; }
+    public bool CanPublish { get; init; }
+    public string ImageUrl { get; init; } = string.Empty;
+    public string Salary { get; init; } = string.Empty;
+    public string City { get; init; } = string.Empty;
+    public string AddressText { get; init; } = string.Empty;
+    public string DistrictText { get; init; } = string.Empty;
+    public int Views { get; init; }
+    public int Contacts { get; init; }
+    public int Favorites { get; init; }
+    public double? ConversionPercent => Views > 0 ? Math.Round(Contacts * 100d / Views, 1) : null;
+}
+
+public sealed class ListingAccountScopeViewModel
+{
+    public Guid WorkerId { get; init; }
+    public Guid AccountId { get; init; }
+    public string AccountName { get; init; } = string.Empty;
+    public IReadOnlyList<ListingSubProfileScopeViewModel> SubProfiles { get; init; } = [];
+}
+
+public sealed class ListingSubProfileScopeViewModel
+{
+    public string Id { get; init; } = string.Empty;
+    public string Name { get; init; } = string.Empty;
 }
 
 public sealed class ListingsLiveSnapshotViewModel

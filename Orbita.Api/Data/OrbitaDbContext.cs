@@ -278,6 +278,13 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
             entity.Property(x => x.PublicationDateSource).HasMaxLength(32);
             entity.Property(x => x.State).HasMaxLength(32);
             entity.Property(x => x.LastParseError).HasMaxLength(500);
+            entity.Property(x => x.SourceTab).HasMaxLength(32).HasDefaultValue("active");
+            entity.Property(x => x.ErrorReason).HasMaxLength(1000);
+            entity.Property(x => x.ImageUrl).HasMaxLength(2048);
+            entity.Property(x => x.Salary).HasMaxLength(200);
+            entity.Property(x => x.City).HasMaxLength(300);
+            entity.Property(x => x.AddressText).HasMaxLength(500);
+            entity.Property(x => x.DistrictText).HasMaxLength(300);
             entity.HasOne(x => x.Worker)
                 .WithMany()
                 .HasForeignKey(x => x.WorkerId)
