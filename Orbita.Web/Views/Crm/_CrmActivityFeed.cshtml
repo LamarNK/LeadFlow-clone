@@ -171,6 +171,9 @@
                     var storedRecordingUrl = item.CallRecordingStored && item.CallId is Guid callId
                         ? Url.Action("CallRecording", "Crm", new { callId })
                         : null;
+                    var downloadRecordingUrl = item.CallRecordingStored && item.CallId is Guid downloadCallId
+                        ? Url.Action("CallRecording", "Crm", new { callId = downloadCallId, download = true })
+                        : null;
                     var recordingUrl = !string.IsNullOrWhiteSpace(storedRecordingUrl)
                         ? storedRecordingUrl
                         : item.CallRecordingUrl;
@@ -187,9 +190,17 @@
                             <source src="@recordingUrl" />
                             Ваш браузер не поддерживает прослушивание записи.
                         </audio>
-                        <a class="crm-feed-item__call-link" href="@recordingUrl" target="_blank" rel="noopener noreferrer">
-                            <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i>Открыть запись
-                        </a>
+                        <div class="crm-feed-item__call-actions">
+                            <a class="crm-feed-item__call-link" href="@recordingUrl" target="_blank" rel="noopener noreferrer">
+                                <i class="fa-solid fa-arrow-up-right-from-square" aria-hidden="true"></i>Открыть запись
+                            </a>
+                            @if (!string.IsNullOrWhiteSpace(downloadRecordingUrl))
+                            {
+                                <a class="crm-feed-item__call-link" href="@downloadRecordingUrl" download="download">
+                                    <i class="fa-solid fa-download" aria-hidden="true"></i>Скачать
+                                </a>
+                            }
+                        </div>
                     }
                     else
                     {

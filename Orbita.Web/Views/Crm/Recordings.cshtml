@@ -4,7 +4,8 @@
     ViewData["Title"] = "Записи звонков";
     string Link(int page = 1) => Url.Action("Recordings", "Crm", new {
         from = Model.From, to = Model.To, managerUserId = Model.ManagerUserId,
-        phone = Model.Phone, direction = Model.Direction, page, tz = Model.TimeZoneOffset })!;
+        phone = Model.Phone, candidateName = Model.CandidateName,
+        direction = Model.Direction, page, tz = Model.TimeZoneOffset })!;
     string Duration(int seconds) => $"{Math.Max(0, seconds) / 60}:{Math.Max(0, seconds) % 60:00}";
 }
 <partial name="_PageHeader" model="Model.Header" />
@@ -14,6 +15,7 @@
         <label>С даты<input type="date" name="from" value="@Model.From" required /></label>
         <label>По дату включительно<input type="date" name="to" value="@Model.To" required /></label>
         <label>Телефон кандидата<input type="search" name="phone" value="@Model.Phone" maxlength="64" placeholder="Номер или от 3 цифр" /></label>
+        <label>ФИО кандидата<input type="search" name="candidateName" value="@Model.CandidateName" maxlength="160" placeholder="Фамилия, имя или отчество" /></label>
         <label class="crm-missed__manager">Ответственный сейчас
             <select name="managerUserId"><option value="">Все сотрудники</option>
                 @if (!string.IsNullOrEmpty(Model.ManagerUserId) && !(Model.Data?.Managers.Any(x => x.Id == Model.ManagerUserId) ?? false))

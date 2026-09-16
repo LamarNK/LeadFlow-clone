@@ -3100,7 +3100,7 @@ public sealed class OrbitaApiClient(
     }
 
     public Task<CrmCallRecordingsDto?> GetCrmCallRecordingsAsync(DateTime fromUtc, DateTime toUtc,
-        Guid? officeId, string? managerUserId, string? phone, string? direction, int page,
+        Guid? officeId, string? managerUserId, string? phone, string? candidateName, string? direction, int page,
         CancellationToken ct = default)
     {
         var url = WithOfficeQuery("api/v1/crm/calls/recordings", officeId);
@@ -3108,6 +3108,7 @@ public sealed class OrbitaApiClient(
         url = AppendQuery(url, "toUtc", toUtc.ToUniversalTime().ToString("O"));
         url = AppendQuery(url, "managerUserId", managerUserId);
         url = AppendQuery(url, "phone", phone);
+        url = AppendQuery(url, "candidateName", candidateName);
         url = AppendQuery(url, "direction", direction);
         url = AppendQuery(url, "page", page.ToString());
         return GetAsync<CrmCallRecordingsDto>(url, ct);

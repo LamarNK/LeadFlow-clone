@@ -10,6 +10,7 @@ public sealed class CrmCallRecordingsViewModel
     public string To { get; init; } = "";
     public string? ManagerUserId { get; init; }
     public string? Phone { get; init; }
+    public string? CandidateName { get; init; }
     public string? Direction { get; init; }
     public int TimeZoneOffset { get; init; }
 }

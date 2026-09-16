@@ -34,7 +34,7 @@ public sealed class CrmCallRecordingsWebTests : IClassFixture<WebApplicationFact
         var handler = new ArchiveHandler();
         using var app = CreateApp(handler);
         using var client = CreateClient(app, role);
-        var response = await client.GetAsync("/Crm/Recordings?from=2026-01-01&to=2026-01-01&tz=-300&phone=%2B79990001122&managerUserId=a&direction=outgoing");
+        var response = await client.GetAsync("/Crm/Recordings?from=2026-01-01&to=2026-01-01&tz=-300&phone=%2B79990001122&candidateName=%D0%98%D0%B2%D0%B0%D0%BD%20%D0%A2%D0%B5%D1%81%D1%82%D0%BE%D0%B2%D1%8B%D0%B9&managerUserId=a&direction=outgoing");
         Assert.Equal(HttpStatusCode.OK, response.StatusCode);
         var html = WebUtility.HtmlDecode(await response.Content.ReadAsStringAsync());
         Assert.Contains("Записи звонков", html); Assert.Contains("Иван Тестовый", html);
@@ -42,6 +42,8 @@ public sealed class CrmCallRecordingsWebTests : IClassFixture<WebApplicationFact
         Assert.Contains($"/Crm/Card/{CardId}", html);
         Assert.Contains("preload=\"none\"", html); Assert.Contains("download=\"download\"", html);
         Assert.Contains("download=True", html, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("name=\"candidateName\"", html);
+        Assert.Contains("value=\"Иван Тестовый\"", html);
         Assert.Contains("/css/orbita/crm-recordings.css", html);
         Assert.Contains("/js/crm-recordings.js", html);
         Assert.Contains("managerUserId=a", html); Assert.Contains("page=2", html); Assert.Contains("tz=-300", html);
@@ -51,6 +53,7 @@ public sealed class CrmCallRecordingsWebTests : IClassFixture<WebApplicationFact
         Assert.Equal(DateTimeOffset.Parse("2025-12-31T19:00:00Z"), DateTimeOffset.Parse(query["fromUtc"].ToString()));
         Assert.Equal(DateTimeOffset.Parse("2026-01-01T19:00:00Z"), DateTimeOffset.Parse(query["toUtc"].ToString()));
         Assert.Equal("+79990001122", query["phone"]);
+        Assert.Equal("Иван Тестовый", query["candidateName"]);
         if (role == PanelRoles.OfficeLead) Assert.Equal(OfficeId.ToString(), query["officeId"]);
         else Assert.False(query.ContainsKey("officeId"));
     }
@@ -95,7 +98,14 @@ public sealed class CrmCallRecordingsWebTests : IClassFixture<WebApplicationFact
         var partial = await client.SendAsync(request);
         Assert.Equal(HttpStatusCode.PartialContent, partial.StatusCode);
         Assert.Equal(ArchiveHandler.Audio[..4], await partial.Content.ReadAsByteArrayAsync());
-        Assert.All(handler.Requests, x => Assert.Equal($"/api/v1/crm/calls/recordings/{CallId}/content", x.AbsolutePath));
+        Assert.All(handler.Requests.Where(x => x.AbsolutePath.Contains("/calls/recordings/", StringComparison.Ordinal)),
+            x => Assert.Equal($"/api/v1/crm/calls/recordings/{CallId}/content", x.AbsolutePath));
+        var cardDownload = await client.GetAsync($"/Crm/CallRecording?callId={CallId}&download=true");
+        Assert.Equal(HttpStatusCode.OK, cardDownload.StatusCode);
+        Assert.Equal("attachment", cardDownload.Content.Headers.ContentDisposition?.DispositionType);
+        Assert.Equal("call-test.wav", cardDownload.Content.Headers.ContentDisposition?.FileNameStar);
+        Assert.Equal(ArchiveHandler.Audio, await cardDownload.Content.ReadAsByteArrayAsync());
+        Assert.Contains(handler.Requests, x => x.AbsolutePath == $"/api/v1/crm/calls/{CallId}/recording");
         var missing = await client.GetAsync($"/Crm/RecordingAudio?callId={Guid.NewGuid()}&download=true");
         Assert.Equal(HttpStatusCode.NotFound, missing.StatusCode);
     }
@@ -166,7 +176,8 @@ public sealed class CrmCallRecordingsWebTests : IClassFixture<WebApplicationFact
                 return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK) { Content = JsonContent.Create(
                     new CrmCallRecordingsDto(Empty ? 0 : 31, 1, 30, rows, [new("a", "Сотрудник А")])) });
             }
-            if (path == $"/api/v1/crm/calls/recordings/{CallId}/content")
+            if (path == $"/api/v1/crm/calls/recordings/{CallId}/content"
+                || path == $"/api/v1/crm/calls/{CallId}/recording")
             {
                 var content = new ByteArrayContent(Audio);
                 content.Headers.ContentType = new MediaTypeHeaderValue("audio/wav");

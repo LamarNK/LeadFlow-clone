@@ -718,6 +718,7 @@
 .crm-feed-item__call-details span { display: inline-flex; align-items: baseline; gap: 6px; }
 .crm-feed-item__call-details small { color: #98a2b3; font-size: 9px; font-weight: 750; letter-spacing: .025em; text-transform: uppercase; }
 .crm-feed-item__call-player { display: block; width: min(100%, 520px); height: 36px; margin-top: 9px; }
+.crm-feed-item__call-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; }
 .crm-feed-item__call-link { display: inline-flex; align-items: center; gap: 6px; margin-top: 7px; color: #187452; font-size: 11px; font-weight: 700; text-decoration: none; }
 .crm-feed-item__call-pending { color: #7d899c !important; font-size: 11px !important; }
 .crm-call-ai { width: min(100%, 920px); margin-top: 10px; }

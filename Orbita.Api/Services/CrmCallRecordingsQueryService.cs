@@ -10,10 +10,11 @@ public sealed class CrmCallRecordingsQueryService(OrbitaDbContext db, CrmCallRec
 {
     public async Task<CrmCallRecordingsDto?> GetAsync(Guid? officeId, ClaimsPrincipal actor,
         DateTime fromUtc, DateTime toUtc, string? managerUserId = null, string? phone = null,
-        string? direction = null, int page = 1, CancellationToken ct = default)
+        string? candidateName = null, string? direction = null, int page = 1, CancellationToken ct = default)
     {
         if (toUtc <= fromUtc || toUtc - fromUtc > TimeSpan.FromDays(366)
-            || (phone?.Length ?? 0) > 64 || (managerUserId?.Length ?? 0) > 128)
+            || (phone?.Length ?? 0) > 64 || (candidateName?.Length ?? 0) > 160
+            || (managerUserId?.Length ?? 0) > 128)
             return null;
         if (!string.IsNullOrWhiteSpace(direction)
             && direction is not CrmCallDirections.Incoming and not CrmCallDirections.Outgoing)
@@ -38,6 +39,28 @@ public sealed class CrmCallRecordingsQueryService(OrbitaDbContext db, CrmCallRec
                         // A known but unassigned card belongs to the queue, not its former caller.
                         ResponsibleId = card != null ? card.ManagerUserId : call.ManagerUserId
                     };
+        var candidateTokens = SearchQueryNormalizer.Tokenize(candidateName);
+        if (candidateTokens.Count > 0 && db.Database.ProviderName == "Npgsql.EntityFrameworkCore.PostgreSQL")
+        {
+            foreach (var token in candidateTokens)
+            {
+                var pattern = SearchQueryNormalizer.ToILikePattern(token);
+                query = query.Where(x => x.Card != null
+                    && EF.Functions.ILike(x.Card.Response.FullName, pattern));
+            }
+        }
+        else if (candidateTokens.Count > 0)
+        {
+            // SQLite cannot lower non-ASCII text reliably. Keep local/test providers
+            // semantically aligned with PostgreSQL without weakening production queries.
+            var candidates = await query.Where(x => x.Card != null)
+                .Select(x => new { CardId = x.Card!.Id, x.Card.Response.FullName })
+                .Distinct().ToListAsync(ct);
+            var matchingCardIds = candidates
+                .Where(x => SearchQueryNormalizer.MatchesTokens(candidateName, x.FullName))
+                .Select(x => x.CardId).ToArray();
+            query = query.Where(x => x.Card != null && matchingCardIds.Contains(x.Card.Id));
+        }
         var managerIds = await query.Where(x => x.ResponsibleId != null)
             .Select(x => x.ResponsibleId!).Distinct().ToArrayAsync(ct);
         var names = await db.PanelUserProfiles.AsNoTracking().Where(x => managerIds.Contains(x.UserId))

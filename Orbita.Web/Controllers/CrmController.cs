@@ -23,18 +23,19 @@ public sealed class CrmController(
     [Authorize(Policy = PanelPermissions.CrmBoard)]
     [Authorize(Roles = PanelRoles.Admin + "," + PanelRoles.OfficeLead)]
     public async Task<IActionResult> Recordings(string? from, string? to, string? managerUserId,
-        string? phone, string? direction, int page = 1, CancellationToken ct = default)
+        string? phone, string? candidateName, string? direction, int page = 1, CancellationToken ct = default)
     {
         var tz = BrowserTimeZone.Resolve(HttpContext);
         var period = string.IsNullOrWhiteSpace(from) || string.IsNullOrWhiteSpace(to)
             ? DashboardPeriod.CreateLastDays(7, tz) : DashboardPeriod.Parse(from, to, tz);
         var (fromUtc, toUtc) = LocalCalendarDateRange.ToUtcRange(period);
         var data = await api.GetCrmCallRecordingsAsync(fromUtc, toUtc, officeContext.EffectiveOfficeId,
-            managerUserId, phone, direction, page, ct);
+            managerUserId, phone, candidateName, direction, page, ct);
         return View(new CrmCallRecordingsViewModel
         {
             Data = data, From = period.From.ToString("yyyy-MM-dd"), To = period.To.ToString("yyyy-MM-dd"),
-            ManagerUserId = managerUserId, Phone = phone, Direction = direction, TimeZoneOffset = tz,
+            ManagerUserId = managerUserId, Phone = phone, CandidateName = candidateName,
+            Direction = direction, TimeZoneOffset = tz,
             Header = new() { Title = "Записи звонков", Subtitle = "Разговоры, кандидаты и ответственные", ShowRefresh = true }
         });
     }
@@ -1617,7 +1618,7 @@ public sealed class CrmController(
 
     [HttpGet]
     [Authorize(Policy = PanelPermissions.CrmBoard)]
-    public async Task<IActionResult> CallRecording(Guid callId, CancellationToken ct = default)
+    public async Task<IActionResult> CallRecording(Guid callId, bool download = false, CancellationToken ct = default)
     {
         var result = await api.OpenCrmCallRecordingAsync(callId, ct);
         if (result.Stream is null)
@@ -1627,7 +1628,8 @@ public sealed class CrmController(
 
         return new FileStreamResult(result.Stream, result.ContentType ?? "audio/wav")
         {
-            EnableRangeProcessing = true
+            EnableRangeProcessing = true,
+            FileDownloadName = download ? result.FileName ?? $"Звонок-{callId:N}.wav" : null
         };
     }
 

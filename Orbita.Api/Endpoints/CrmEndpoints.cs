@@ -34,7 +34,7 @@ public static class CrmEndpoints
         var recordings = crmBoard.MapGroup("/calls/recordings")
             .RequireAuthorization(new AuthorizeAttribute { Roles = PanelRoles.Admin + "," + PanelRoles.OfficeLead });
         recordings.MapGet("", async (Guid? officeId, DateTime fromUtc, DateTime toUtc,
-            string? managerUserId, string? phone, string? direction, int? page,
+            string? managerUserId, string? phone, string? candidateName, string? direction, int? page,
             ClaimsPrincipal principal, OfficeScopeService officeScope,
             CrmCallRecordingsQueryService calls, CancellationToken ct) =>
         {
@@ -42,9 +42,9 @@ public static class CrmEndpoints
             if (!scope.HasAccess) return Results.Forbid();
             var data = await calls.GetAsync(scope.ResolveFilter(officeId), principal,
                 DateTime.SpecifyKind(fromUtc, DateTimeKind.Utc), DateTime.SpecifyKind(toUtc, DateTimeKind.Utc),
-                managerUserId, phone, direction, page ?? 1, ct);
+                managerUserId, phone, candidateName, direction, page ?? 1, ct);
             return data is null
-                ? Results.BadRequest(new { error = "Проверьте офис, период (не более года) и телефон (не менее трёх цифр)." })
+                ? Results.BadRequest(new { error = "Проверьте офис, период (не более года), телефон (не менее трёх цифр) и ФИО кандидата." })
                 : Results.Ok(data);
         });
         recordings.MapGet("/{callId:guid}/content", async (Guid callId,

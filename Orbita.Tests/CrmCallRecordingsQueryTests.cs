@@ -115,8 +115,32 @@ public sealed class CrmCallRecordingsQueryTests
         Assert.Null(await h.Query.GetAsync(null, h.Lead, From, To, phone: "xx"));
         Assert.Null(await h.Query.GetAsync(null, h.Lead, From, To, phone: "12"));
         Assert.Null(await h.Query.GetAsync(null, h.Lead, From, To, phone: new string('7', 65)));
+        Assert.Null(await h.Query.GetAsync(null, h.Lead, From, To, candidateName: new string('я', 161)));
         Assert.Null(await h.Query.GetAsync(null, h.Lead, From, To, direction: "invalid"));
         Assert.Null(await h.Query.GetAsync(Guid.Empty, h.Admin, From, To));
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task CandidateNameSearch_IsCaseInsensitive_MatchesEveryToken_AndExcludesUnlinkedCalls(bool sqlite)
+    {
+        await using var h = await Harness.Create(sqlite);
+        var ivan = h.Call(h.Card("a", "Петров Иван Сергеевич"), "a");
+        h.Call(h.Card("b", "Сидоров Иван Петрович"), "b");
+        h.Call(null, "a");
+        await h.Db.SaveChangesAsync();
+
+        foreach (var search in new[] { "петров серг", "  СЕРГЕЕВИЧ   ИВАН  " })
+        {
+            var row = Assert.Single((await h.Query.GetAsync(
+                null, h.Lead, From, To, candidateName: search))!.Rows);
+            Assert.Equal(ivan.Id, row.Id);
+            Assert.Equal("Петров Иван Сергеевич", row.CandidateName);
+        }
+
+        Assert.Empty((await h.Query.GetAsync(
+            null, h.Lead, From, To, candidateName: "Иван отсутствует"))!.Rows);
     }
 
     [Theory]
@@ -184,11 +208,11 @@ public sealed class CrmCallRecordingsQueryTests
                 h.Db.PanelUserProfiles.Add(new PanelUserProfileEntity { UserId = id, OfficeId = h.Office, FullName = "Сотрудник " + id });
             await h.Db.SaveChangesAsync(); return h;
         }
-        public Guid Card(string? manager)
+        public Guid Card(string? manager, string? candidateName = null)
         {
             var person = TestCandidatePersonFactory.CreatePerson(Office); Db.CandidatePersons.Add(person);
             var response = TestCandidatePersonFactory.CreateResponse(Office, person.Id);
-            response.FullName = "Кандидат " + manager; Db.CandidateResponses.Add(response);
+            response.FullName = candidateName ?? "Кандидат " + manager; Db.CandidateResponses.Add(response);
             var card = new CrmCandidateCardEntity { Id = Guid.NewGuid(), OfficeId = Office, ResponseId = response.Id,
                 ManagerUserId = manager, Stage = CrmStages.Lead, CreatedAtUtc = From };
             Db.CrmCandidateCards.Add(card); return card.Id;
