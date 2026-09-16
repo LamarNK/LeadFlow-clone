@@ -83,11 +83,24 @@ public static class AvitoAdListingSyncApplier
                 record.ExpiresAtUtc = expiresAtUtc;
                 record.RemainingDays = card.RemainingDays;
                 record.PublicationDateSource = AvitoAdPublicationDateSources.ListExpiry;
-                record.LastParseError = null;
+                if (IsListExpiryParseError(record.LastParseError))
+                {
+                    record.LastParseError = null;
+                }
             }
             else if (!string.IsNullOrWhiteSpace(card.ExpiryParseError))
             {
-                record.LastParseError = card.ExpiryParseError;
+                // «Срок не прочитан» — диагностика только для записей с действительно неизвестным сроком:
+                // у истёкшей/снятой карточки Avito дату не отдаёт, и уже известный срок не должен
+                // перезатираться шумовой ошибкой (и залипшая list_expiry_* ошибка очищается).
+                if (!HasResolvedExpiry(record))
+                {
+                    record.LastParseError = card.ExpiryParseError;
+                }
+                else if (IsListExpiryParseError(record.LastParseError))
+                {
+                    record.LastParseError = null;
+                }
             }
 
             record.IsActive = string.Equals(record.SourceTab, AvitoAdStatus.ActiveTab, StringComparison.Ordinal);
@@ -159,4 +172,13 @@ public static class AvitoAdListingSyncApplier
         AvitoAdListingStateCalculator.Refresh(record, utcNow);
         return record;
     }
+
+    /// <summary>Срок размещения записи уже известен напрямую или выводится из точной даты публикации.</summary>
+    private static bool HasResolvedExpiry(AvitoAdListingRecord record) =>
+        record.ExpiresAtUtc.HasValue
+        || (record.PublishedAtUtc.HasValue
+            && string.Equals(record.PublicationDateSource, AvitoAdPublicationDateSources.Exact, StringComparison.Ordinal));
+
+    private static bool IsListExpiryParseError(string? error) =>
+        !string.IsNullOrEmpty(error) && error.StartsWith("list_expiry", StringComparison.Ordinal);
 }

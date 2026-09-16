@@ -7,6 +7,58 @@ public sealed class AvitoAdListingParserTests
 {
     private readonly AvitoParserService _parser = new();
 
+    [Fact]
+    public void ParseUnpublishedTabPage_ExpiredCardWithoutDate_HasNoListExpiryError()
+    {
+        // Истёкшая карточка: Avito рендерит только «Истёк срок размещения», даты в разметке нет.
+        const string html = """
+            <div data-marker="item-snippet/8166386785">
+              <a data-marker="view-link" href="/kapustin_yar/vakansii/slesar_vahta_s_pitaniem_i_prozhivaniem_8166386785">
+                <span class="styles-title-UJzSB">Слесарь вахта с питанием и проживанием</span>
+              </a>
+              <span class="styles-status-name-zJgof styles-status-name_grey-zkGLh">Истёк срок размещения</span>
+            </div>
+            """;
+
+        var card = Assert.Single(_parser.ToListCards(_parser.ParseUnpublishedTabPage(html)));
+
+        Assert.Null(card.ExpiresAtUtc);
+        Assert.Null(card.ExpiryParseError);
+        Assert.Equal("Истёк срок размещения", card.StatusText);
+    }
+
+    [Fact]
+    public void ParseProfilePage_ActiveCardWithoutExpiry_StillReportsParseError()
+    {
+        const string html = """
+            <div data-marker="item-snippet/8302808573">
+              <a data-marker="view-link" href="/perm/vakansii/logist_v_ofis_8302808573"><span>Логист в офис</span></a>
+            </div>
+            """;
+
+        var card = Assert.Single(_parser.ToListCards(_parser.ParseProfilePage(html)));
+
+        Assert.Null(card.ExpiresAtUtc);
+        Assert.Equal("list_expiry_unparsed", card.ExpiryParseError);
+    }
+
+    [Fact]
+    public void ParseProfilePage_InactiveStatusCardWithoutDate_HasNoListExpiryError()
+    {
+        const string html = """
+            <div data-marker="item-snippet/8302808573">
+              <a data-marker="view-link" href="/perm/vakansii/logist_v_ofis_8302808573"><span>Логист в офис</span></a>
+              <span>Снято с публикации</span>
+            </div>
+            """;
+
+        var card = Assert.Single(_parser.ToListCards(_parser.ParseProfilePage(html)));
+
+        Assert.Null(card.ExpiresAtUtc);
+        Assert.Null(card.ExpiryParseError);
+        Assert.Equal("Снято с публикации", card.StatusText);
+    }
+
     [Theory]
     [InlineData("1 день на Авито", 1)]
     [InlineData("2 дня на Авито", 2)]

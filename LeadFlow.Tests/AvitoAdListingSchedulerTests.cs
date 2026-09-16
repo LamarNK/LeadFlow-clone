@@ -193,6 +193,72 @@ public sealed class AvitoAdListingSchedulerTests
     }
 
     [Fact]
+    public void ListExpiryFailure_WithKnownExpiry_KeepsExpiryAndClearsStickyError()
+    {
+        // Карточка истёкшего объявления не содержит даты (Avito её не отдаёт),
+        // но срок уже известен из предыдущего парсинга — ошибка не пишется и залипшая очищается.
+        var now = new DateTime(2026, 9, 16, 7, 0, 0, DateTimeKind.Utc);
+        var knownExpiry = new DateTime(2026, 9, 14, 7, 21, 0, DateTimeKind.Utc);
+        var existing = new AvitoAdListingRecord
+        {
+            Id = Guid.NewGuid(),
+            WorkerId = Guid.NewGuid(),
+            AccountId = Guid.NewGuid(),
+            AvitoItemId = "8166386785",
+            IsActive = true,
+            CreatedAtUtc = now,
+            ExpiresAtUtc = knownExpiry,
+            PublicationDateSource = AvitoAdPublicationDateSources.ListExpiry,
+            LastParseError = "list_expiry_unparsed"
+        };
+
+        var merged = AvitoAdListingSyncApplier.ApplyListSnapshot(
+            [existing],
+            existing.WorkerId,
+            existing.AccountId,
+            "",
+            [new AvitoAdListCard
+            {
+                AvitoItemId = "8166386785",
+                Title = "Слесарь вахта",
+                Url = "/kapustin_yar/vakansii/slesar_8166386785",
+                SourceTab = "inactive",
+                ExpiryParseError = "list_expiry_unparsed"
+            }],
+            now,
+            listComplete: true);
+
+        var record = Assert.Single(merged);
+        Assert.Equal(knownExpiry, record.ExpiresAtUtc);
+        Assert.Null(record.LastParseError);
+    }
+
+    [Fact]
+    public void ListExpiryFailure_WithUnknownExpiry_StillWritesDiagnostic()
+    {
+        var now = DateTime.UtcNow;
+
+        var merged = AvitoAdListingSyncApplier.ApplyListSnapshot(
+            [],
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            "",
+            [new AvitoAdListCard
+            {
+                AvitoItemId = "1",
+                Title = "Тест",
+                Url = "/t",
+                ExpiryParseError = "list_expiry_unparsed"
+            }],
+            now,
+            listComplete: true);
+
+        var record = Assert.Single(merged);
+        Assert.Null(record.ExpiresAtUtc);
+        Assert.Equal("list_expiry_unparsed", record.LastParseError);
+    }
+
+    [Fact]
     public async Task ListExpiryFailure_WritesStructuredDiagnosticWithCardSample()
     {
         var account = new AvitoAccount { DisplayName = "Avito 103" };

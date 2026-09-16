@@ -175,7 +175,9 @@ internal static class ListingsIndexBuilder
             SourceTab = item.SourceTab,
             ErrorReason = !string.IsNullOrWhiteSpace(item.ErrorReason)
                 ? item.ErrorReason
-                : ParseErrorLabel(item.LastParseError),
+                : HasResolvedExpiry(item)
+                    ? string.Empty
+                    : ParseErrorLabel(item.LastParseError),
             LastParseError = item.LastParseError,
             CanPublish = item.CanPublish,
             ImageUrl = item.ImageUrl,
@@ -331,6 +333,15 @@ internal static class ListingsIndexBuilder
             AvitoAdPublicationDateSources.ListExpiry => "Срок из списка",
             _ => "Неизвестно"
         };
+
+    /// <summary>
+    /// Срок размещения записи уже известен (или выводится из точной даты публикации) —
+    /// шумовая «Причина: срок не определён» для такой записи не показывается.
+    /// </summary>
+    private static bool HasResolvedExpiry(AvitoAdListingListItem item) =>
+        item.ExpiresAtUtc.HasValue
+        || (item.PublishedAtUtc.HasValue
+            && string.Equals(item.PublicationDateSource, AvitoAdPublicationDateSources.Exact, StringComparison.Ordinal));
 
     private static string ParseErrorLabel(string? error) => error switch
     {

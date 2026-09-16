@@ -94,6 +94,61 @@ internal static class AvitoAdListPageScripts
         })()
         """;
 
+    /// <summary>Геометрия скроллера «Активных»: для расчёта дельты CDP-колеса.</summary>
+    public const string GeometryScript = $$"""
+        (() => {
+        {{FindScrollerJs}}
+            const items = collectSnippets();
+            const scroller = findScroller(items.at(-1) || document.querySelector("#personal-items-root-element"));
+            const rect = scroller.getBoundingClientRect();
+            return JSON.stringify({
+                scrollTop: scroller.scrollTop,
+                clientHeight: scroller.clientHeight,
+                scrollHeight: scroller.scrollHeight,
+                x: rect.x,
+                y: rect.y,
+                width: rect.width,
+                height: rect.height
+            });
+        })()
+        """;
+
+    /// <summary>Есть ли кликабельная кнопка «Показать ещё» (сам клик делает C# CDP-указателем).</summary>
+    public const string HasLoadMoreScript = """
+        (() => {
+            const marked = document.querySelector(
+                "[data-marker='pagination-button(more)'], [data-marker='catalog-more'], [data-marker='load-more']"
+            );
+            if (marked
+                && marked.getAttribute("aria-disabled") !== "true"
+                && !marked.hasAttribute("disabled")) {
+                return true;
+            }
+
+            const nodes = Array.from(document.querySelectorAll("button, a, [role='button']"));
+            return nodes.some((el) => {
+                const text = (el.innerText || el.textContent || "").replace(/\s+/g, " ").trim();
+                return /^(показать ещё|показать еще|загрузить ещё|загрузить еще|показать больше)$/i.test(text);
+            });
+        })()
+        """;
+
+    /// <summary>Селекторы кнопки «Показать ещё» для CDP-клика (по порядку приоритета).</summary>
+    public static readonly string[] LoadMoreSelectors =
+    [
+        "[data-marker='pagination-button(more)']",
+        "[data-marker='catalog-more']",
+        "[data-marker='load-more']"
+    ];
+
+    /// <summary>Селекторы кнопки «следующая страница» для CDP-клика.</summary>
+    public static readonly string[] NextPageSelectors =
+    [
+        "[data-marker='pagination-button(next)']",
+        "[data-marker='pagination/next']",
+        "a[rel='next']"
+    ];
+
     public const string HasNextPageScript = """
         (() => {
             const next = document.querySelector('[data-marker="pagination-button(next)"], [data-marker="pagination/next"], a[rel="next"]');

@@ -100,6 +100,51 @@ public sealed class ListingsIndexBuilderTests
         Assert.Equal(4_181, model.KpiCards.Single(x => x.Key == "expiring").CountValue);
     }
 
+    [Fact]
+    public void MapRow_HidesListExpiryNoise_WhenDeadlineAlreadyKnown()
+    {
+        var expired = Row(lastParseError: "list_expiry_unparsed", expiresAtUtc: DateTime.UtcNow.AddDays(-2));
+
+        var row = ListingsIndexBuilder.MapRow(expired);
+
+        Assert.Equal("Срок прошёл", row.StateLabel);
+        Assert.Equal(string.Empty, row.ErrorReason);
+    }
+
+    [Fact]
+    public void MapRow_ShowsListExpiryReason_WhenDeadlineUnknown()
+    {
+        var unknown = Row(lastParseError: "list_expiry_unparsed", expiresAtUtc: null);
+
+        var row = ListingsIndexBuilder.MapRow(unknown);
+
+        Assert.Equal("Не удалось определить срок размещения по карточке Avito.", row.ErrorReason);
+    }
+
+    private static AvitoAdListingListItem Row(string? lastParseError, DateTime? expiresAtUtc) =>
+        new(
+            Guid.NewGuid(),
+            Guid.NewGuid(),
+            "Worker",
+            Guid.NewGuid(),
+            "Account",
+            "sp",
+            "Sub",
+            "8166386785",
+            "Слесарь вахта с питанием и проживанием",
+            "https://www.avito.ru/kapustin_yar/vakansii/slesar_8166386785",
+            "Истёк срок размещения",
+            null,
+            expiresAtUtc,
+            33,
+            null,
+            AvitoAdListingStates.Expired,
+            AvitoAdPublicationDateSources.Unknown,
+            DateTime.UtcNow,
+            DateTime.UtcNow,
+            true,
+            lastParseError);
+
     private static AvitoAdListingListItem Item(string id, string state, bool active, DateTime? expires) =>
         new(
             Guid.NewGuid(),
