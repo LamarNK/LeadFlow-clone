@@ -31,6 +31,7 @@ public partial class DashboardViewModel : ObservableObject
     private readonly ActivityPoint[] _weeklyLocalSlots = new ActivityPoint[7];
     private readonly List<CandidateResponse> _responsesDuringDashboardRefresh = new();
     private readonly DispatcherTimer _adsSearchDebounce = new() { Interval = TimeSpan.FromMilliseconds(320) };
+    private readonly HashSet<Guid> _renewalSupportedAccountIds = [];
     private int _dashboardRefreshDepth;
     private CancellationTokenSource _viewLifetimeCts = new();
 
@@ -144,6 +145,12 @@ public partial class DashboardViewModel : ObservableObject
     [ObservableProperty]
     private string adsScopeNotice = string.Empty;
 
+    [ObservableProperty]
+    private string adsActionNotice = string.Empty;
+
+    [ObservableProperty]
+    private bool adsActionNoticeIsError;
+
     /// <summary>Все объявления из снимков; фильтр/сортировка — через <see cref="DisplayedAdsView"/>.</summary>
     public ObservableCollection<DashboardAdDisplayItem> AllAdDisplayItems { get; } = new();
     public ObservableCollection<AdsScopeItem> AdsScopeItems { get; } = new();
@@ -154,7 +161,7 @@ public partial class DashboardViewModel : ObservableObject
     [
         new AdsFilterTab(AdsDashboardFilter.All, "Все"),
         new AdsFilterTab(AdsDashboardFilter.Active, "Активные"),
-        new AdsFilterTab(AdsDashboardFilter.Blocked, "Заблокированные"),
+        new AdsFilterTab(AdsDashboardFilter.Blocked, "С ошибками"),
         new AdsFilterTab(AdsDashboardFilter.Unpublished, "Неопубликованные"),
         new AdsFilterTab(AdsDashboardFilter.WithMessages, "С сообщениями"),
         new AdsFilterTab(AdsDashboardFilter.WithoutMessages, "Без сообщений"),
@@ -289,16 +296,25 @@ public partial class DashboardViewModel : ObservableObject
         var items = new List<DashboardAdDisplayItem>(ActiveAds.Count + BlockedAds.Count + UnpublishedAds.Count);
         foreach (var ad in ActiveAds)
         {
-            items.Add(new DashboardAdDisplayItem(DashboardAdKind.Active, ad));
+            items.Add(new DashboardAdDisplayItem(
+                DashboardAdKind.Active,
+                ad,
+                _renewalSupportedAccountIds.Contains(ad.AccountId)));
         }
 
         foreach (var ad in BlockedAds)
         {
-            items.Add(new DashboardAdDisplayItem(DashboardAdKind.Blocked, ad));
+            items.Add(new DashboardAdDisplayItem(
+                DashboardAdKind.Blocked,
+                ad,
+                _renewalSupportedAccountIds.Contains(ad.AccountId)));
         }
         foreach (var ad in UnpublishedAds)
         {
-            items.Add(new DashboardAdDisplayItem(DashboardAdKind.Unpublished, ad));
+            items.Add(new DashboardAdDisplayItem(
+                DashboardAdKind.Unpublished,
+                ad,
+                _renewalSupportedAccountIds.Contains(ad.AccountId)));
         }
 
         // Нельзя менять ObservableCollection внутри DeferRefresh — CollectionView падает при старте.
@@ -539,6 +555,15 @@ public partial class DashboardViewModel : ObservableObject
     private void ApplyAdsScopeItems(IReadOnlyList<AvitoAccount> accounts)
     {
         var previous = SelectedAdsScope;
+        _renewalSupportedAccountIds.Clear();
+        foreach (var account in accounts.Where(account =>
+                     account.ProfileProvider == AvitoProfileProvider.AdsPower
+                     && !string.IsNullOrWhiteSpace(account.AdsPowerProfileId)
+                     && !string.IsNullOrWhiteSpace(account.AdsPowerApiBaseUrl)))
+        {
+            _renewalSupportedAccountIds.Add(account.Id);
+        }
+
         AdsScopeItems.Clear();
         AdsScopeItems.Add(new AdsScopeItem(AdsScopeKind.All, "Все"));
         foreach (var account in accounts.OrderBy(a => a.DisplayName, StringComparer.CurrentCultureIgnoreCase))
@@ -713,6 +738,54 @@ public partial class DashboardViewModel : ObservableObject
         }
 
         await _windowService.ShowAvitoProfileAsync(owner, account, ad.Url, CancellationToken.None);
+    }
+
+    [RelayCommand]
+    public async Task RenewAdAsync(DashboardAdDisplayItem? item)
+    {
+        if (item is null || !item.CanStartRenewal)
+        {
+            return;
+        }
+
+        var owner = Application.Current?.MainWindow;
+        var scope = string.IsNullOrWhiteSpace(item.Ad.AvitoSubProfileName)
+            ? string.Empty
+            : $"\nСубпрофиль: {item.Ad.AvitoSubProfileName}";
+        var confirmed = MessageBox.Show(
+            owner,
+            $"Опубликовать объявление «{item.Ad.Title}» на 30 дней?{scope}\n\nAvito использует доступное размещение вашего тарифа.",
+            "Публикация объявления",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Question,
+            MessageBoxResult.No);
+        if (confirmed != MessageBoxResult.Yes)
+        {
+            return;
+        }
+
+        item.SetRenewalRunning();
+        AdsActionNoticeIsError = false;
+        AdsActionNotice = $"Публикуем «{item.Ad.Title}». Не закрывайте профиль AdsPower…";
+
+        AvitoAdRenewalResult result;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(3));
+        try
+        {
+            result = await _monitoringService.RenewAdAsync(item.Ad, timeout.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            result = AvitoAdRenewalResult.Failed(
+                "renewal_timeout",
+                "Avito не подтвердил публикацию за 3 минуты. Проверьте объявление и повторите попытку.");
+        }
+
+        item.SetRenewalResult(result);
+        AdsActionNoticeIsError = !result.Success;
+        AdsActionNotice = result.Success
+            ? $"«{item.Ad.Title}»: {result.Message}"
+            : $"Не удалось опубликовать «{item.Ad.Title}»: {result.Message}";
     }
 
     private void ApplyStats(DashboardStats stats)

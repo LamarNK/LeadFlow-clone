@@ -43,4 +43,68 @@ public sealed class DashboardAdDisplayItemTests
         Assert.Equal(DashboardAdBadgeKind.Blocked, item.PrimaryBadgeKind);
         Assert.Equal("Заблокировано", item.StatusBadgeCaption);
     }
+
+    [Fact]
+    public void PublishableUnpublishedAd_ExposesRenewalActionAndStateTransitions()
+    {
+        var item = new DashboardAdDisplayItem(
+            DashboardAdKind.Unpublished,
+            new AvitoAdStatus
+            {
+                Id = "8140706797",
+                SourceTab = AvitoAdStatus.UnpublishedTab,
+                CanPublish = true
+            });
+
+        Assert.True(item.ShowRenewalAction);
+        Assert.True(item.CanStartRenewal);
+        Assert.Equal("Опубликовать на 30 дней", item.RenewalButtonCaption);
+
+        item.SetRenewalRunning();
+
+        Assert.True(item.IsRenewalRunning);
+        Assert.False(item.CanStartRenewal);
+        Assert.Equal("Публикуем…", item.RenewalButtonCaption);
+
+        item.SetRenewalResult(AvitoAdRenewalResult.Failed("test", "Avito вернул ошибку"));
+
+        Assert.True(item.IsRenewalFailed);
+        Assert.True(item.CanStartRenewal);
+        Assert.Equal("Повторить публикацию", item.RenewalButtonCaption);
+        Assert.Equal("Avito вернул ошибку", item.RenewalMessage);
+    }
+
+    [Fact]
+    public void WaitingUnpublishedAd_ShowsPendingExplanationInsteadOfAction()
+    {
+        var item = new DashboardAdDisplayItem(
+            DashboardAdKind.Unpublished,
+            new AvitoAdStatus
+            {
+                SourceTab = AvitoAdStatus.UnpublishedTab,
+                Status = "Ожидает публикации",
+                CanPublish = false
+            });
+
+        Assert.False(item.ShowRenewalAction);
+        Assert.True(item.ShowRenewalUnavailable);
+        Assert.Contains("ожидаем", item.RenewalUnavailableText, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void NonAdsPowerUnpublishedAd_ExplainsWhyAutomationIsUnavailable()
+    {
+        var item = new DashboardAdDisplayItem(
+            DashboardAdKind.Unpublished,
+            new AvitoAdStatus
+            {
+                SourceTab = AvitoAdStatus.UnpublishedTab,
+                CanPublish = true
+            },
+            supportsRenewalAutomation: false);
+
+        Assert.False(item.ShowRenewalAction);
+        Assert.True(item.ShowRenewalUnavailable);
+        Assert.Contains("AdsPower", item.RenewalUnavailableText, StringComparison.Ordinal);
+    }
 }

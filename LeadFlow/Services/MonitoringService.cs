@@ -51,6 +51,7 @@ public sealed class MonitoringService(
     private readonly Lock _statusSync = new();
     private int _accountsInFlight;
     private readonly HashSet<string> _activeAccountNames = new(StringComparer.Ordinal);
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<Guid, SemaphoreSlim> _accountOperationGates = new();
 
     public event EventHandler<MonitoringStatus>? StatusChanged;
     public event EventHandler<string>? StatusMessageChanged;
@@ -95,6 +96,129 @@ public sealed class MonitoringService(
         lock (_activeAdsSync)
         {
             return _unpublishedAdsByAccount.Values.SelectMany(static ads => ads).Select(CloneAd).ToList();
+        }
+    }
+
+    public async Task<AvitoAdRenewalResult> RenewAdAsync(
+        AvitoAdStatus ad,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(ad);
+        var plan = AvitoAdRenewalPlanner.Prepare(ad);
+        if (!plan.IsEligible)
+        {
+            return AvitoAdRenewalResult.Failed(
+                plan.Reason,
+                plan.Reason == "publish_action_not_available"
+                    ? "Avito не показывает действие «Опубликовать» для этого объявления."
+                    : "Продлить можно только объявление из вкладки «Неопубликованные».");
+        }
+
+        var account = (await repository.GetAccountsAsync(cancellationToken).ConfigureAwait(false))
+            .FirstOrDefault(candidate => candidate.Id == ad.AccountId);
+        if (account is null)
+        {
+            return AvitoAdRenewalResult.Failed("account_not_found", "Аккаунт объявления не найден.");
+        }
+
+        if (account.ProfileProvider != AvitoProfileProvider.AdsPower
+            || string.IsNullOrWhiteSpace(account.AdsPowerProfileId)
+            || string.IsNullOrWhiteSpace(account.AdsPowerApiBaseUrl))
+        {
+            return AvitoAdRenewalResult.Failed(
+                "profile_provider_not_supported",
+                "Автопродление сейчас доступно для аккаунтов AdsPower. Для этого аккаунта откройте объявление вручную.");
+        }
+
+        var gate = GetAccountOperationGate(account.Id);
+        await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        var options = new AdsPowerConnectionOptions(
+            account.AdsPowerApiBaseUrl,
+            string.IsNullOrWhiteSpace(account.AdsPowerApiKey) ? null : account.AdsPowerApiKey);
+
+        try
+        {
+            await using var session = await adsPowerAvitoAutomationService
+                .OpenAccountSessionAsync(options, account.AdsPowerProfileId, cancellationToken)
+                .ConfigureAwait(false);
+
+            if (!string.IsNullOrWhiteSpace(ad.AvitoSubProfileId))
+            {
+                var switched = await session
+                    .SwitchSubProfileAsync(ad.AvitoSubProfileId, cancellationToken)
+                    .ConfigureAwait(false);
+                if (!switched.Ok)
+                {
+                    return AvitoAdRenewalResult.Failed(
+                        "subprofile_switch_failed",
+                        "Не удалось переключиться на субпрофиль объявления. Повторите попытку после обновления аккаунта.");
+                }
+            }
+
+            var result = await session.RenewAdAsync(ad.Id, cancellationToken).ConfigureAwait(false);
+            if (!result.Success)
+            {
+                return result;
+            }
+
+            try
+            {
+                await RefreshSnapshotAfterRenewalAsync(account, ad, session, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception refreshEx) when (refreshEx is not OperationCanceledException)
+            {
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"Объявление {ad.Id} отправлено на публикацию, но снимок аккаунта {account.DisplayName} не обновлён: {refreshEx.Message}",
+                    DeskLinkAuditLogLevel.Warning,
+                    memberName: nameof(RenewAdAsync));
+                return result with
+                {
+                    Message = result.Message + " Список обновится при следующей проверке аккаунта."
+                };
+            }
+
+            return result;
+        }
+        catch (AvitoCaptchaDetectedException)
+        {
+            return AvitoAdRenewalResult.Failed(
+                "captcha_required",
+                "Avito запросил проверку. Откройте аккаунт, пройдите капчу и повторите продление.");
+        }
+        catch (AvitoLoginRequiredException)
+        {
+            return AvitoAdRenewalResult.Failed(
+                "login_required",
+                "Avito запросил повторный вход в аккаунт. Авторизуйтесь и повторите продление.");
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception ex)
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                $"Ошибка продления объявления {ad.Id} в аккаунте {account.DisplayName}: {ex.Message}",
+                DeskLinkAuditLogLevel.Warning,
+                memberName: nameof(RenewAdAsync));
+            return AvitoAdRenewalResult.Failed(
+                "renewal_failed",
+                $"Не удалось продлить объявление: {ex.Message}");
+        }
+        finally
+        {
+            try
+            {
+                await adsPowerAvitoAutomationService
+                    .CloseBrowserAsync(options, account.AdsPowerProfileId, CancellationToken.None)
+                    .ConfigureAwait(false);
+            }
+            catch
+            {
+                // Браузер мог быть закрыт пользователем или самой сессией.
+            }
+
+            gate.Release();
         }
     }
 
@@ -748,7 +872,27 @@ public sealed class MonitoringService(
     }
 
     /// <returns>Новые откликов с Авито, был ли опрос источника, есть ли необработанный «хвост» сверх лимита за цикл.</returns>
-    internal async Task<(int NewResponsesDetected, bool PolledSource, bool HasUndischargedBacklog)> ProcessAccountAsync(AvitoAccount account, AppSettings settings, CancellationToken cancellationToken)
+    internal async Task<(int NewResponsesDetected, bool PolledSource, bool HasUndischargedBacklog)> ProcessAccountAsync(
+        AvitoAccount account,
+        AppSettings settings,
+        CancellationToken cancellationToken)
+    {
+        var gate = GetAccountOperationGate(account.Id);
+        await gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            return await ProcessAccountCoreAsync(account, settings, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    private async Task<(int NewResponsesDetected, bool PolledSource, bool HasUndischargedBacklog)> ProcessAccountCoreAsync(
+        AvitoAccount account,
+        AppSettings settings,
+        CancellationToken cancellationToken)
     {
         var staleStateCleared = AccountIssueTracker.TryClearStaleBlockingState(account);
         var staleErrorCleared = AccountIssueTracker.TryClearStaleAccountErrorMessage(account);
@@ -1621,6 +1765,7 @@ public sealed class MonitoringService(
 
                         var part = await CollectProfileItemsFromSessionAsync(account, adsPowerSession, cancellationToken)
                             .ConfigureAwait(false);
+                        StampSubProfile(part, sub.Id, sub.Name);
                         await RefreshProfileAlertsAsync(account, adsPowerSession, sub, cancellationToken)
                             .ConfigureAwait(false);
                         if (!part.ParseSuccess)
@@ -2734,6 +2879,101 @@ public sealed class MonitoringService(
         lock (_activeAdsSync)
         {
             _unpublishedAdsByAccount[accountId] = ads.Select(CloneAd).ToList();
+        }
+    }
+
+    private SemaphoreSlim GetAccountOperationGate(Guid accountId) =>
+        _accountOperationGates.GetOrAdd(accountId, static _ => new SemaphoreSlim(1, 1));
+
+    private async Task RefreshSnapshotAfterRenewalAsync(
+        AvitoAccount account,
+        AvitoAdStatus renewedAd,
+        IAdsPowerAccountSession session,
+        CancellationToken cancellationToken)
+    {
+        var part = await CollectProfileItemsFromSessionAsync(account, session, cancellationToken).ConfigureAwait(false);
+        if (!part.ParseSuccess)
+        {
+            throw new InvalidOperationException(
+                $"Avito вернул неполный список объявлений ({part.ParseFailureReason ?? "parse_failed"}).");
+        }
+
+        StampSubProfile(part, renewedAd.AvitoSubProfileId, renewedAd.AvitoSubProfileName);
+        var existingActive = GetActiveAdsSnapshot().Where(item => item.AccountId == account.Id).ToList();
+        var existingBlocked = GetBlockedAdsSnapshot().Where(item => item.AccountId == account.Id).ToList();
+        var existingUnpublished = GetUnpublishedAdsSnapshot().Where(item => item.AccountId == account.Id).ToList();
+
+        var mergedActive = MergeSubProfileSnapshot(
+            existingActive,
+            part.ActiveAds,
+            renewedAd.AvitoSubProfileId,
+            renewedAd.Id);
+        var mergedBlocked = MergeSubProfileSnapshot(
+            existingBlocked,
+            part.BlockedAds,
+            renewedAd.AvitoSubProfileId,
+            renewedAd.Id);
+        var mergedUnpublished = MergeSubProfileSnapshot(
+            existingUnpublished,
+            part.UnpublishedAds,
+            renewedAd.AvitoSubProfileId,
+            renewedAd.Id);
+
+        var previousActive = account.ActiveAdsCount;
+        var previousBlocked = account.BlockedCount;
+        var previousDrafts = account.DraftsCount;
+        UpdateActiveAdsSnapshot(account.Id, mergedActive, nameof(RefreshSnapshotAfterRenewalAsync), true);
+        UpdateBlockedAdsSnapshot(account.Id, mergedBlocked);
+        UpdateUnpublishedAdsSnapshot(account.Id, mergedUnpublished);
+
+        account.ActiveAdsCount = mergedActive.Count;
+        account.BlockedCount = mergedBlocked.Count;
+        account.AdsStatsUpdatedAt = DateTime.UtcNow;
+        account.ActiveAdsSnapshotJson = AvitoAdSnapshots.Serialize(mergedActive);
+        account.BlockedAdsSnapshotJson = AvitoAdSnapshots.Serialize(mergedBlocked);
+        account.UnpublishedAdsSnapshotJson = AvitoAdSnapshots.Serialize(mergedUnpublished);
+        await repository.SaveAccountAsync(account, cancellationToken).ConfigureAwait(false);
+
+        ProfileStatsUpdated?.Invoke(this, new ProfileStatsUpdatedEventArgs
+        {
+            Account = account,
+            PreviousActiveAdsCount = previousActive,
+            PreviousBlockedCount = previousBlocked,
+            PreviousDraftsCount = previousDrafts
+        });
+    }
+
+    private static List<AvitoAdStatus> MergeSubProfileSnapshot(
+        IReadOnlyList<AvitoAdStatus> existing,
+        IReadOnlyList<AvitoAdStatus> fresh,
+        string? subProfileId,
+        string renewedItemId)
+    {
+        if (string.IsNullOrWhiteSpace(subProfileId))
+        {
+            return fresh.Select(CloneAd).ToList();
+        }
+
+        return existing
+            .Where(item => !string.Equals(item.Id, renewedItemId, StringComparison.Ordinal))
+            .Where(item => !string.Equals(item.AvitoSubProfileId, subProfileId, StringComparison.Ordinal))
+            .Concat(fresh)
+            .GroupBy(item => item.Id, StringComparer.Ordinal)
+            .Select(group => CloneAd(group.Last()))
+            .ToList();
+    }
+
+    private static void StampSubProfile(ProfileResult profile, string? subProfileId, string? subProfileName)
+    {
+        if (string.IsNullOrWhiteSpace(subProfileId))
+        {
+            return;
+        }
+
+        foreach (var ad in profile.ActiveAds.Concat(profile.BlockedAds).Concat(profile.UnpublishedAds))
+        {
+            ad.AvitoSubProfileId = subProfileId;
+            ad.AvitoSubProfileName = subProfileName ?? string.Empty;
         }
     }
 

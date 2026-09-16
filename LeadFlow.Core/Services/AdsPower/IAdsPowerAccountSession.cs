@@ -28,6 +28,17 @@ public interface IAdsPowerAccountSession : IAsyncDisposable
         Task.FromResult(string.Empty);
 
     /// <summary>
+    /// Явно публикует одно объявление из вкладки «Неопубликованные»: нажимает действие карточки,
+    /// затем подтверждает публикацию на открывшейся странице Avito.
+    /// </summary>
+    Task<AvitoAdRenewalResult> RenewAdAsync(
+        string avitoItemId,
+        CancellationToken cancellationToken = default) =>
+        Task.FromResult(AvitoAdRenewalResult.Failed(
+            "not_supported",
+            "Этот браузерный профиль пока не поддерживает публикацию объявлений."));
+
+    /// <summary>
     /// Read-only обход вкладки «Активные»: прокрутка вниз, пока подгружаются карточки,
     /// затем pagination-next. Не кликает управляющие кнопки объявления.
     /// </summary>

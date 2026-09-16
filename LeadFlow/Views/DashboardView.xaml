@@ -1012,22 +1012,55 @@
                         <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
 
-                    <TextBlock Grid.Row="0"
-                               Margin="0,0,0,12"
-                               FontSize="13"
-                               FontStyle="Italic"
-                               Foreground="{StaticResource DashTextSecondaryBrush}"
-                               Text="Нет объявлений по выбранному фильтру и поиску. Проверьте аккаунт Avito или обновите данные."
-                               TextWrapping="Wrap"
-                               Visibility="{Binding ShowStandardAdsEmpty, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                    <StackPanel Grid.Row="0">
+                        <Border Margin="0,0,0,10"
+                                Padding="10,8"
+                                CornerRadius="8"
+                                Visibility="{Binding AdsActionNotice, Converter={StaticResource StringToVisibilityConverter}}">
+                            <Border.Style>
+                                <Style TargetType="Border">
+                                    <Setter Property="Background" Value="#ECFDF5" />
+                                    <Setter Property="BorderBrush" Value="#A7F3D0" />
+                                    <Setter Property="BorderThickness" Value="1" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding AdsActionNoticeIsError}" Value="True">
+                                            <Setter Property="Background" Value="#FEF2F2" />
+                                            <Setter Property="BorderBrush" Value="#FECACA" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Border.Style>
+                            <TextBlock FontSize="12"
+                                       Text="{Binding AdsActionNotice}"
+                                       TextWrapping="Wrap">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Foreground" Value="#166534" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding AdsActionNoticeIsError}" Value="True">
+                                                <Setter Property="Foreground" Value="#991B1B" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </Border>
 
-                    <TextBlock Grid.Row="0"
-                               Margin="0,28,0,8"
-                               FontSize="12"
-                               Foreground="{StaticResource WarningBrush}"
-                               Text="{Binding AdsScopeNotice}"
-                               TextWrapping="Wrap"
-                               Visibility="{Binding AdsScopeNotice, Converter={StaticResource StringToVisibilityConverter}}" />
+                        <TextBlock Margin="0,0,0,12"
+                                   FontSize="13"
+                                   FontStyle="Italic"
+                                   Foreground="{StaticResource DashTextSecondaryBrush}"
+                                   Text="Нет объявлений по выбранному фильтру и поиску. Проверьте аккаунт Avito или обновите данные."
+                                   TextWrapping="Wrap"
+                                   Visibility="{Binding ShowStandardAdsEmpty, Converter={StaticResource BooleanToVisibilityConverter}}" />
+
+                        <TextBlock Margin="0,0,0,8"
+                                   FontSize="12"
+                                   Foreground="{StaticResource WarningBrush}"
+                                   Text="{Binding AdsScopeNotice}"
+                                   TextWrapping="Wrap"
+                                   Visibility="{Binding AdsScopeNotice, Converter={StaticResource StringToVisibilityConverter}}" />
+                    </StackPanel>
 
                     <ListBox x:Name="AdsListListBox"
                              Grid.Row="1"
@@ -1087,14 +1120,15 @@
                                                               MouseAction="LeftClick" />
                                             </Border.InputBindings>
                                             <Grid Margin="0,0,0,0">
-                                                <Grid.RowDefinitions>
-                                                    <RowDefinition Height="Auto" />
-                                                    <RowDefinition Height="Auto" />
-                                                    <RowDefinition Height="Auto" />
-                                                    <RowDefinition Height="Auto" />
-                                                    <RowDefinition Height="Auto" />
-                                                    <RowDefinition Height="Auto" />
-                                                </Grid.RowDefinitions>
+                                                 <Grid.RowDefinitions>
+                                                     <RowDefinition Height="Auto" />
+                                                     <RowDefinition Height="Auto" />
+                                                     <RowDefinition Height="Auto" />
+                                                     <RowDefinition Height="Auto" />
+                                                     <RowDefinition Height="Auto" />
+                                                     <RowDefinition Height="Auto" />
+                                                     <RowDefinition Height="Auto" />
+                                                 </Grid.RowDefinitions>
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="*" />
                                                     <ColumnDefinition Width="Auto" />
@@ -1273,7 +1307,7 @@
                                                         </Style>
                                                     </TextBlock.Style>
                                                 </TextBlock>
-                                                <TextBlock Grid.Row="5"
+                                                 <TextBlock Grid.Row="5"
                                                            Grid.ColumnSpan="2"
                                                            Margin="0,2,0,0"
                                                            FontSize="10"
@@ -1294,9 +1328,47 @@
                                                     <Hyperlink Command="{Binding DataContext.OpenStatisticsHistoryCommand, RelativeSource={RelativeSource AncestorType=Window}}"
                                                                CommandParameter="{Binding RelativeSource={RelativeSource AncestorType=Window}}">
                                                         <Run Text="Статистика" />
-                                                    </Hyperlink>
-                                                </TextBlock>
-                                            </Grid>
+                                                     </Hyperlink>
+                                                 </TextBlock>
+                                                 <StackPanel Grid.Row="6"
+                                                             Grid.ColumnSpan="2"
+                                                             Margin="0,8,0,0">
+                                                     <Button Padding="10,5"
+                                                             HorizontalAlignment="Left"
+                                                             Margin="0"
+                                                             Style="{StaticResource MonitoringCompactActionButtonStyle}"
+                                                             Command="{Binding DataContext.RenewAdCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                             CommandParameter="{Binding}"
+                                                             Content="{Binding RenewalButtonCaption}"
+                                                             IsEnabled="{Binding CanStartRenewal}"
+                                                             Visibility="{Binding ShowRenewalAction, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                                     <TextBlock Margin="0,5,0,0"
+                                                                FontSize="10"
+                                                                Text="{Binding RenewalMessage}"
+                                                                TextWrapping="Wrap"
+                                                                Visibility="{Binding RenewalMessage, Converter={StaticResource StringToVisibilityConverter}}">
+                                                         <TextBlock.Style>
+                                                             <Style TargetType="TextBlock">
+                                                                 <Setter Property="Foreground" Value="#64748B" />
+                                                                 <Style.Triggers>
+                                                                     <DataTrigger Binding="{Binding IsRenewalSucceeded}" Value="True">
+                                                                         <Setter Property="Foreground" Value="#166534" />
+                                                                     </DataTrigger>
+                                                                     <DataTrigger Binding="{Binding IsRenewalFailed}" Value="True">
+                                                                         <Setter Property="Foreground" Value="#991B1B" />
+                                                                     </DataTrigger>
+                                                                 </Style.Triggers>
+                                                             </Style>
+                                                         </TextBlock.Style>
+                                                     </TextBlock>
+                                                     <TextBlock Margin="0,3,0,0"
+                                                                FontSize="10"
+                                                                Foreground="#92400E"
+                                                                Text="{Binding RenewalUnavailableText}"
+                                                                TextWrapping="Wrap"
+                                                                Visibility="{Binding ShowRenewalUnavailable, Converter={StaticResource BooleanToVisibilityConverter}}" />
+                                                 </StackPanel>
+                                             </Grid>
                                         </Border>
                                     </Grid>
                                 </DataTemplate>

@@ -1673,6 +1673,172 @@ public sealed partial class AdsPowerAvitoAutomationService
         return html;
     }
 
+    private async Task<AvitoAdRenewalResult> RenewAdOnPageAsync(
+        IPage page,
+        string avitoItemId,
+        CancellationToken cancellationToken)
+    {
+        if (string.IsNullOrWhiteSpace(avitoItemId)
+            || avitoItemId.Any(static ch => !char.IsAsciiDigit(ch)))
+        {
+            return AvitoAdRenewalResult.Failed(
+                "invalid_item_id",
+                "У объявления отсутствует корректный идентификатор Avito.");
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        var unpublishedHtml = await LoadUnpublishedItemsHtmlOnPageAsync(page, "renewal", cancellationToken)
+            .ConfigureAwait(false);
+        var itemSnippet = AvitoParserService.ExtractItemSnippetHtml(unpublishedHtml, avitoItemId);
+        if (string.IsNullOrWhiteSpace(itemSnippet))
+        {
+            return AvitoAdRenewalResult.AlreadyPublished(
+                "Объявления уже нет среди неопубликованных. Возможно, оно было опубликовано ранее.");
+        }
+
+        var publishButton = await FindPublishButtonAsync(page, avitoItemId, cancellationToken).ConfigureAwait(false);
+        if (publishButton is null)
+        {
+            return AvitoAdRenewalResult.Failed(
+                "publish_action_not_available",
+                "Avito не показывает действие «Опубликовать» для этого объявления.");
+        }
+
+        if (!await AvitoHumanPointer.TryClickHandleAsync(page, publishButton, cancellationToken).ConfigureAwait(false))
+        {
+            return AvitoAdRenewalResult.Failed(
+                "publish_action_click_failed",
+                "Не удалось нажать «Опубликовать» в карточке объявления.");
+        }
+
+        const string submitSelector = "button[data-marker='submit-button']";
+        try
+        {
+            await page.WaitForSelectorAsync(
+                    submitSelector,
+                    new WaitForSelectorOptions { Timeout = 30_000, Visible = true })
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            await page.GoToAsync(ProfileUnpublishedItemsPageUrl, MonitoringNavigation(page, 60_000)).ConfigureAwait(false);
+            await WaitForProfileItemsReadyAsync(page, nameof(RenewAdOnPageAsync), cancellationToken).ConfigureAwait(false);
+            var afterFirstClick = await page.GetContentAsync().ConfigureAwait(false);
+            if (string.IsNullOrWhiteSpace(AvitoParserService.ExtractItemSnippetHtml(afterFirstClick, avitoItemId)))
+            {
+                return AvitoAdRenewalResult.Submitted(
+                    "Объявление отправлено на публикацию. Avito обновляет его статус.");
+            }
+
+            return AvitoAdRenewalResult.Failed(
+                "publication_form_not_opened",
+                "После первого шага Avito не открыл страницу подтверждения публикации.");
+        }
+
+        await ThrowIfCaptchaOnPageAsync(page, cancellationToken).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+        if (!await TryClickFirstVisibleAsync(page, submitSelector, cancellationToken).ConfigureAwait(false))
+        {
+            return AvitoAdRenewalResult.Failed(
+                "publication_submit_failed",
+                "Не удалось подтвердить публикацию на странице Avito.");
+        }
+
+        try
+        {
+            await page.WaitForFunctionAsync(
+                    "() => !document.querySelector(\"button[data-marker='submit-button']\")",
+                    new WaitForFunctionOptions { Timeout = 45_000, PollingInterval = 400 })
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            // Некоторые версии Avito оставляют страницу формы до завершения фонового запроса.
+            // Финальную проверку делаем по карточке на вкладке «Неопубликованные» ниже.
+        }
+
+        await ThrowIfCaptchaOnPageAsync(page, cancellationToken).ConfigureAwait(false);
+        await page.GoToAsync(ProfileUnpublishedItemsPageUrl, MonitoringNavigation(page, 60_000)).ConfigureAwait(false);
+        await WaitForProfileItemsReadyAsync(page, nameof(RenewAdOnPageAsync), cancellationToken).ConfigureAwait(false);
+
+        if (await FindPublishButtonAsync(page, avitoItemId, cancellationToken).ConfigureAwait(false) is not null)
+        {
+            return AvitoAdRenewalResult.Failed(
+                "publication_not_confirmed",
+                "Avito оставил объявление неопубликованным. Повторите попытку или откройте карточку вручную.");
+        }
+
+        return AvitoAdRenewalResult.Submitted(
+            "Объявление отправлено на публикацию на 30 дней. Avito обновляет его статус.");
+    }
+
+    private static async Task<IElementHandle?> FindPublishButtonAsync(
+        IPage page,
+        string avitoItemId,
+        CancellationToken cancellationToken)
+    {
+        var buttons = await page.QuerySelectorAllAsync("button[data-marker='publish-action']").ConfigureAwait(false);
+        IElementHandle? hiddenMatch = null;
+        foreach (var button in buttons)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            string relatedItemId;
+            try
+            {
+                relatedItemId = await button.EvaluateFunctionAsync<string>(
+                        """
+                        el => {
+                          let node = el;
+                          for (let depth = 0; node && depth < 16; depth++, node = node.parentElement) {
+                            const href = node.querySelector?.('a[data-marker="view-link"]')?.getAttribute('href') || '';
+                            const hrefMatch = href.match(/(\d+)(?:\/?(?:\?|#|$))/);
+                            if (hrefMatch) return hrefMatch[1];
+                            const marker = node.querySelector?.('[data-marker^="item/"]')?.getAttribute('data-marker') || '';
+                            const markerMatch = marker.match(/^item\/(\d+)\//);
+                            if (markerMatch) return markerMatch[1];
+                          }
+                          return '';
+                        }
+                        """)
+                    .ConfigureAwait(false);
+            }
+            catch
+            {
+                continue;
+            }
+
+            if (string.Equals(relatedItemId, avitoItemId, StringComparison.Ordinal))
+            {
+                hiddenMatch ??= button;
+                var box = await button.BoundingBoxAsync().ConfigureAwait(false);
+                if (box is { Width: >= 1, Height: >= 1 })
+                {
+                    return button;
+                }
+            }
+        }
+
+        return hiddenMatch;
+    }
+
+    private static async Task<bool> TryClickFirstVisibleAsync(
+        IPage page,
+        string selector,
+        CancellationToken cancellationToken)
+    {
+        var handles = await page.QuerySelectorAllAsync(selector).ConfigureAwait(false);
+        foreach (var handle in handles)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (await AvitoHumanPointer.TryClickHandleAsync(page, handle, cancellationToken).ConfigureAwait(false))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private async Task<AvitoAdListCapture> CaptureActiveAdsListOnPageAsync(
         IPage page,
         string adsPowerUserId,
@@ -2201,6 +2367,14 @@ public sealed partial class AdsPowerAvitoAutomationService
         {
             using var _ = AvitoCaptchaTaskContext.Use(captchaOptions);
             return await owner.LoadUnpublishedItemsHtmlOnPageAsync(page, AdsPowerUserId, cancellationToken).ConfigureAwait(false);
+        }
+
+        public async Task<AvitoAdRenewalResult> RenewAdAsync(
+            string avitoItemId,
+            CancellationToken cancellationToken = default)
+        {
+            using var _ = AvitoCaptchaTaskContext.Use(captchaOptions);
+            return await owner.RenewAdOnPageAsync(page, avitoItemId, cancellationToken).ConfigureAwait(false);
         }
 
         public async Task<AvitoAdListCapture> CaptureActiveAdsListAsync(CancellationToken cancellationToken = default)

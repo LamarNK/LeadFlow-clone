@@ -27,6 +27,9 @@ public interface IMonitoringService
     IReadOnlyList<AvitoAdStatus> GetBlockedAdsSnapshot();
     IReadOnlyList<AvitoAdStatus> GetUnpublishedAdsSnapshot();
 
+    /// <summary>Явно публикует одно объявление из вкладки «Неопубликованные» и обновляет снимок.</summary>
+    Task<AvitoAdRenewalResult> RenewAdAsync(AvitoAdStatus ad, CancellationToken cancellationToken);
+
     /// <summary>
     /// Восстанавливает в памяти снимки объявлений из полей активных, ошибочных и неопубликованных объявлений
     /// (<c>ActiveAdsSnapshotJson</c>, <c>BlockedAdsSnapshotJson</c>, <c>UnpublishedAdsSnapshotJson</c>)

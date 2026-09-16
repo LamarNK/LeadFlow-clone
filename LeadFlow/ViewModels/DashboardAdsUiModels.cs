@@ -1,5 +1,7 @@
 
 
+using CommunityToolkit.Mvvm.ComponentModel;
+
 namespace LeadFlow.ViewModels;
 
 public enum AdsScopeKind { All, Account, SubProfile }
@@ -57,6 +59,14 @@ public enum DashboardAdBadgeKind
     NeedsAction
 }
 
+public enum AdRenewalUiState
+{
+    Ready,
+    Running,
+    Succeeded,
+    Failed
+}
+
 public sealed class AdsFilterTab(AdsDashboardFilter filter, string title)
 {
     public AdsDashboardFilter Filter { get; } = filter;
@@ -72,16 +82,24 @@ public sealed class AdsSortChoice(AdsSortOption option, string label)
 }
 
 /// <summary>Элемент единой сетки объявлений на главном экране (активные / заблокированные / неопубликованные).</summary>
-public sealed class DashboardAdDisplayItem
+public sealed class DashboardAdDisplayItem : ObservableObject
 {
-    public DashboardAdDisplayItem(DashboardAdKind kind, AvitoAdStatus ad)
+    private AdRenewalUiState renewalState;
+    private string renewalMessage = string.Empty;
+
+    public DashboardAdDisplayItem(
+        DashboardAdKind kind,
+        AvitoAdStatus ad,
+        bool supportsRenewalAutomation = true)
     {
         Kind = kind;
         Ad = ad;
+        SupportsRenewalAutomation = supportsRenewalAutomation;
     }
 
     public DashboardAdKind Kind { get; }
     public AvitoAdStatus Ad { get; }
+    public bool SupportsRenewalAutomation { get; }
 
     public bool IsDraftAd =>
         Ad.Status.Contains("черновик", StringComparison.CurrentCultureIgnoreCase)
@@ -89,6 +107,60 @@ public sealed class DashboardAdDisplayItem
 
     public bool IsBlockedPresentation => Kind == DashboardAdKind.Blocked;
     public bool IsUnpublishedPresentation => Kind == DashboardAdKind.Unpublished;
+
+    public AdRenewalUiState RenewalState
+    {
+        get => renewalState;
+        private set
+        {
+            if (!SetProperty(ref renewalState, value)) return;
+            OnPropertyChanged(nameof(IsRenewalRunning));
+            OnPropertyChanged(nameof(IsRenewalSucceeded));
+            OnPropertyChanged(nameof(IsRenewalFailed));
+            OnPropertyChanged(nameof(CanStartRenewal));
+            OnPropertyChanged(nameof(RenewalButtonCaption));
+        }
+    }
+
+    public string RenewalMessage
+    {
+        get => renewalMessage;
+        private set => SetProperty(ref renewalMessage, value);
+    }
+
+    public bool ShowRenewalAction => IsUnpublishedPresentation && Ad.CanPublish && SupportsRenewalAutomation;
+    public bool ShowRenewalUnavailable => IsUnpublishedPresentation && !ShowRenewalAction;
+    public bool IsRenewalRunning => RenewalState == AdRenewalUiState.Running;
+    public bool IsRenewalSucceeded => RenewalState == AdRenewalUiState.Succeeded;
+    public bool IsRenewalFailed => RenewalState == AdRenewalUiState.Failed;
+    public bool CanStartRenewal => ShowRenewalAction && !IsRenewalRunning && !IsRenewalSucceeded;
+    public string RenewalButtonCaption => RenewalState switch
+    {
+        AdRenewalUiState.Running => "Публикуем…",
+        AdRenewalUiState.Failed => "Повторить публикацию",
+        AdRenewalUiState.Succeeded => "Отправлено",
+        _ => "Опубликовать на 30 дней"
+    };
+
+    public string RenewalUnavailableText =>
+        !SupportsRenewalAutomation
+            ? "Автопродление доступно для профилей AdsPower. Откройте объявление и опубликуйте его вручную."
+            : Ad.Status.Contains("ожида", StringComparison.CurrentCultureIgnoreCase)
+        || Ad.Status.Contains("провер", StringComparison.CurrentCultureIgnoreCase)
+            ? "Публикация уже отправлена в Avito — ожидаем обновления статуса."
+            : "Продление недоступно: Avito не показывает действие «Опубликовать».";
+
+    public void SetRenewalRunning()
+    {
+        RenewalMessage = "Открываем аккаунт и проверяем объявление…";
+        RenewalState = AdRenewalUiState.Running;
+    }
+
+    public void SetRenewalResult(AvitoAdRenewalResult result)
+    {
+        RenewalMessage = result.Message;
+        RenewalState = result.Success ? AdRenewalUiState.Succeeded : AdRenewalUiState.Failed;
+    }
 
     public bool NeedsActionStatusBadge =>
         !IsBlockedPresentation && !IsUnpublishedPresentation
