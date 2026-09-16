@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.HttpOverrides;
@@ -29,6 +30,31 @@ public static class CrmEndpoints
         var crmTasks = app.MapGroup("/api/v1/crm").RequireAuthorization(PanelPermissions.CrmTasks);
         var crmAnalytics = app.MapGroup("/api/v1/crm").RequireAuthorization(PanelPermissions.CrmAnalytics);
         var crmAdmin = app.MapGroup("/api/v1/crm").RequireAuthorization(PanelPermissions.CrmTeam);
+
+        var recordings = crmBoard.MapGroup("/calls/recordings")
+            .RequireAuthorization(new AuthorizeAttribute { Roles = PanelRoles.Admin + "," + PanelRoles.OfficeLead });
+        recordings.MapGet("", async (Guid? officeId, DateTime fromUtc, DateTime toUtc,
+            string? managerUserId, string? phone, string? direction, int? page,
+            ClaimsPrincipal principal, OfficeScopeService officeScope,
+            CrmCallRecordingsQueryService calls, CancellationToken ct) =>
+        {
+            var scope = await officeScope.ResolveAsync(principal, ct);
+            if (!scope.HasAccess) return Results.Forbid();
+            var data = await calls.GetAsync(scope.ResolveFilter(officeId), principal,
+                DateTime.SpecifyKind(fromUtc, DateTimeKind.Utc), DateTime.SpecifyKind(toUtc, DateTimeKind.Utc),
+                managerUserId, phone, direction, page ?? 1, ct);
+            return data is null
+                ? Results.BadRequest(new { error = "Проверьте офис, период (не более года) и телефон (не менее трёх цифр)." })
+                : Results.Ok(data);
+        });
+        recordings.MapGet("/{callId:guid}/content", async (Guid callId,
+            ClaimsPrincipal principal, CrmCallRecordingsQueryService calls, CancellationToken ct) =>
+        {
+            var recording = await calls.OpenAsync(callId, principal, ct);
+            return recording.Stream is null ? Results.NotFound()
+                : Results.File(recording.Stream, recording.ContentType ?? "audio/wav",
+                    recording.FileName, enableRangeProcessing: true);
+        });
 
         crmBoard.MapGet("/calls/missed", async (Guid? officeId, DateTime fromUtc, DateTime toUtc,
             string? managerUserId, string? status, int? page, Guid? callId, ClaimsPrincipal principal,

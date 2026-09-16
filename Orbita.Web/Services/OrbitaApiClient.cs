@@ -3099,16 +3099,38 @@ public sealed class OrbitaApiClient(
         return (stream, fileName, contentType, error);
     }
 
-    public async Task<(Stream? Stream, string? FileName, string? ContentType, string? Error)> OpenCrmCallRecordingAsync(
-        Guid callId,
+    public Task<CrmCallRecordingsDto?> GetCrmCallRecordingsAsync(DateTime fromUtc, DateTime toUtc,
+        Guid? officeId, string? managerUserId, string? phone, string? direction, int page,
         CancellationToken ct = default)
+    {
+        var url = WithOfficeQuery("api/v1/crm/calls/recordings", officeId);
+        url = AppendQuery(url, "fromUtc", fromUtc.ToUniversalTime().ToString("O"));
+        url = AppendQuery(url, "toUtc", toUtc.ToUniversalTime().ToString("O"));
+        url = AppendQuery(url, "managerUserId", managerUserId);
+        url = AppendQuery(url, "phone", phone);
+        url = AppendQuery(url, "direction", direction);
+        url = AppendQuery(url, "page", page.ToString());
+        return GetAsync<CrmCallRecordingsDto>(url, ct);
+    }
+
+    public Task<(Stream? Stream, string? FileName, string? ContentType, string? Error)> OpenCrmArchivedCallRecordingAsync(
+        Guid callId, CancellationToken ct = default) =>
+        OpenCrmRecordingContentAsync($"api/v1/crm/calls/recordings/{callId:D}/content", callId, ct);
+
+    public Task<(Stream? Stream, string? FileName, string? ContentType, string? Error)> OpenCrmCallRecordingAsync(
+        Guid callId,
+        CancellationToken ct = default) =>
+        OpenCrmRecordingContentAsync($"api/v1/crm/calls/{callId:D}/recording", callId, ct);
+
+    private async Task<(Stream? Stream, string? FileName, string? ContentType, string? Error)> OpenCrmRecordingContentAsync(
+        string url, Guid callId, CancellationToken ct)
     {
         if (_preview.Enabled)
         {
             return (null, null, null, "Запись звонка недоступна в режиме предпросмотра.");
         }
 
-        using var request = new HttpRequestMessage(HttpMethod.Get, $"api/v1/crm/calls/{callId:D}/recording");
+        using var request = new HttpRequestMessage(HttpMethod.Get, url);
         using var response = await SendAuthenticatedAsync(request, ct, HttpCompletionOption.ResponseHeadersRead);
         if (response is null)
         {
@@ -3122,7 +3144,7 @@ public sealed class OrbitaApiClient(
 
         var contentType = response.Content.Headers.ContentType?.MediaType ?? "audio/wav";
         var (stream, fileName, error) = await MaterializeDownloadResponseAsync(response, $"Звонок-{callId:N}.wav", ct);
-        return (stream, fileName, contentType, error);
+        return (stream, response.Content.Headers.ContentDisposition?.FileNameStar ?? fileName, contentType, error);
     }
 
     public Task<CrmCallAiInsightDto?> GetCrmCallAiInsightAsync(

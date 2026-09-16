@@ -347,6 +347,7 @@ public static class OrbitaApiStartupExtensions
         builder.Services.AddScoped<CrmTaskAttachmentStorageService>();
         builder.Services.AddScoped<CrmSuccessDocumentStorageService>();
         builder.Services.AddScoped<CrmCallRecordingStorageService>();
+        builder.Services.AddScoped<CrmCallRecordingsQueryService>();
         builder.Services.AddHostedService<WorkerDiagnosticsCleanupService>();
         builder.Services.AddSingleton<WorkerLogFileArchive>();
         builder.Services.AddScoped<WorkerLogArchiveService>();

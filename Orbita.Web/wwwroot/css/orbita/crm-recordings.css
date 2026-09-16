@@ -1,0 +1,12 @@
+.crm-recordings { min-width: 0; }
+.crm-recordings__direction { display: inline-block; margin-top: 8px; color: var(--text-secondary); font-size: 11px; white-space: nowrap; }
+.crm-recordings__player { display: grid; gap: 8px; min-width: 240px; }
+.crm-recordings__player audio { display: block; width: 100%; max-width: 340px; height: 36px; }
+.crm-recordings__download { display: inline-flex; align-items: center; gap: 7px; width: fit-content; padding: 6px 0; font-size: 12px; font-weight: 600; }
+.crm-recordings .crm-recordings__error { color: #b33046; max-width: 340px; margin: 0; line-height: 1.5; }
+.crm-recordings td[data-label="Кандидат"] { overflow-wrap: anywhere; }
+@media (max-width: 640px) {
+    .crm-recordings__player { min-width: 0; margin-top: 8px; }
+    .crm-recordings__player audio { max-width: 100%; }
+    .crm-recordings .crm-missed__pagination { gap: 14px; flex-wrap: wrap; }
+}

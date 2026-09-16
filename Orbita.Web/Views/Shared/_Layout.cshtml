@@ -81,6 +81,7 @@ else
     <link rel="stylesheet" href="~/css/orbita/crm.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/orbita/crm-notifications.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/orbita/crm-missed-calls.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/orbita/crm-recordings.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/orbita/crm-analytics.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/orbita/scrollbar.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/orbita-mobile.css" asp-append-version="true" />
@@ -173,6 +174,10 @@ else
                         {
                             <a class="nav-item @(ctrl == "Crm" && act is "Index" or "Card" or null ? "active" : "")" href="@Url.Action("Index", "Crm")" title="CRM менеджеров"><i class="fa-solid fa-columns" aria-hidden="true"></i><span class="nav-item-label">CRM</span></a>
                             <a class="nav-item @(ctrl == "Crm" && act == "MissedCalls" ? "active" : "")" href="@Url.Action("MissedCalls", "Crm")" title="Пропущенные входящие звонки"><i class="fa-solid fa-phone-slash" aria-hidden="true"></i><span class="nav-item-label">Пропущенные</span></a>
+                            @if (PanelRoles.CanAccessCallRecordings(User))
+                            {
+                                <a class="nav-item @(ctrl == "Crm" && act == "Recordings" ? "active" : "")" href="@Url.Action("Recordings", "Crm")" title="Записи звонков"><i class="fa-solid fa-headphones" aria-hidden="true"></i><span class="nav-item-label">Записи звонков</span></a>
+                            }
                         }
                         @if (canCrmAnalytics)
                         {

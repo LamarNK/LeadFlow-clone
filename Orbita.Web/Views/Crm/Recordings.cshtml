@@ -1,0 +1,94 @@
+@using Orbita.Contracts
+@model CrmCallRecordingsViewModel
+@{
+    ViewData["Title"] = "Записи звонков";
+    string Link(int page = 1) => Url.Action("Recordings", "Crm", new {
+        from = Model.From, to = Model.To, managerUserId = Model.ManagerUserId,
+        phone = Model.Phone, direction = Model.Direction, page, tz = Model.TimeZoneOffset })!;
+    string Duration(int seconds) => $"{Math.Max(0, seconds) / 60}:{Math.Max(0, seconds) % 60:00}";
+}
+<partial name="_PageHeader" model="Model.Header" />
+<main class="orbita-main crm-missed crm-recordings">
+    <form method="get" class="card crm-missed__filters">
+        <input type="hidden" name="tz" value="@Model.TimeZoneOffset" />
+        <label>С даты<input type="date" name="from" value="@Model.From" required /></label>
+        <label>По дату включительно<input type="date" name="to" value="@Model.To" required /></label>
+        <label>Телефон кандидата<input type="search" name="phone" value="@Model.Phone" maxlength="64" placeholder="Номер или от 3 цифр" /></label>
+        <label class="crm-missed__manager">Ответственный сейчас
+            <select name="managerUserId"><option value="">Все сотрудники</option>
+                @if (!string.IsNullOrEmpty(Model.ManagerUserId) && !(Model.Data?.Managers.Any(x => x.Id == Model.ManagerUserId) ?? false))
+                { <option value="@Model.ManagerUserId" selected>Выбранный сотрудник (нет записей)</option> }
+                @foreach (var manager in Model.Data?.Managers ?? [])
+                { <option value="@manager.Id" selected="@(manager.Id == Model.ManagerUserId)">@manager.Name</option> }
+            </select>
+        </label>
+        <label>Направление
+            <select name="direction">
+                <option value="">Все звонки</option>
+                <option value="@CrmCallDirections.Incoming" selected="@(Model.Direction == CrmCallDirections.Incoming)">Входящие</option>
+                <option value="@CrmCallDirections.Outgoing" selected="@(Model.Direction == CrmCallDirections.Outgoing)">Исходящие</option>
+            </select>
+        </label>
+        <button type="submit" class="settings-primary-btn">Показать</button>
+        <a asp-action="Recordings" asp-route-tz="@Model.TimeZoneOffset" class="crm-missed__reset">Сбросить фильтры</a>
+    </form>
+    @if (Model.Data is not { } data)
+    {
+        <section class="card crm-missed__empty" role="alert">
+            <h2>Не удалось загрузить записи</h2>
+            <p>Проверьте выбранный офис, период (не более года) и телефон (не менее трёх цифр). Ошибка загрузки не означает, что записей нет.</p>
+            <a class="settings-primary-btn" href="@Link()">Повторить</a>
+        </section>
+    }
+    else
+    {
+        <section class="card crm-missed__list">
+            <header><div><h2>Архив разговоров</h2><p>Прослушивайте, скачивайте записи и переходите в карточку кандидата.</p></div><span>Найдено: @data.Total</span></header>
+            @if (data.Rows.Count == 0)
+            {
+                <div class="crm-missed__empty"><i class="fa-solid fa-headphones" aria-hidden="true"></i><h3>Записей по этим условиям нет</h3><p>Выберите другой период или сбросьте фильтры. Новые разговоры появятся после сохранения записи в архив.</p></div>
+            }
+            else
+            {
+                <div class="crm-missed__table-wrap"><table>
+                    <caption class="visually-hidden">Записи телефонных разговоров за выбранный период</caption>
+                    <thead><tr><th scope="col">Когда / звонок</th><th scope="col">Кандидат</th><th scope="col">Ответственный</th><th scope="col">Запись</th></tr></thead>
+                    <tbody>@foreach (var call in data.Rows)
+                    {
+                        var local = call.StartedAtUtc.AddMinutes(-Model.TimeZoneOffset);
+                        var audioUrl = Url.Action("RecordingAudio", "Crm", new { callId = call.Id });
+                        <tr>
+                            <td data-label="Когда">
+                                <div><strong>@local.ToString("dd.MM.yyyy")</strong><small>@local.ToString("HH:mm:ss")</small></div>
+                                <span class="crm-recordings__direction">@(call.Direction == CrmCallDirections.Incoming ? "Входящий" : call.Direction == CrmCallDirections.Outgoing ? "Исходящий" : "Звонок") · @Duration(call.DurationSeconds)</span>
+                            </td>
+                            <td data-label="Кандидат">
+                                @if (call.CardId is Guid cardId)
+                                { <a class="crm-missed__candidate" asp-action="Card" asp-route-id="@cardId">@(string.IsNullOrWhiteSpace(call.CandidateName) ? "Карточка кандидата" : call.CandidateName)</a> }
+                                else { <strong>Без карточки</strong> }
+                                <span class="crm-missed__phone">@(string.IsNullOrEmpty(call.Phone) ? "Номер не определён" : "+" + call.Phone)</span>
+                            </td>
+                            <td data-label="Ответственный"><strong>@(call.ResponsibleName ?? "Не назначен")</strong><small>@call.OfficeName</small></td>
+                            <td data-label="Запись">
+                                <div class="crm-recordings__player">
+                                    <audio controls preload="none" src="@audioUrl" aria-label="Запись звонка @call.Phone от @local.ToString("dd.MM.yyyy HH:mm")"></audio>
+                                    <a class="crm-recordings__download" asp-action="RecordingAudio" asp-route-callId="@call.Id" asp-route-download="true" download="download"><i class="fa-solid fa-download" aria-hidden="true"></i> Скачать</a>
+                                    <p class="crm-recordings__error" role="status" hidden>Не удалось открыть аудио. Обновите страницу и повторите. Если ошибка сохранится, запись нужно проверить в архиве.</p>
+                                </div>
+                            </td>
+                        </tr>
+                    }</tbody>
+                </table></div>
+                <nav class="crm-missed__pagination" aria-label="Страницы записей">
+                    @if (data.Page > 1) { <a href="@Link(data.Page - 1)">← Назад</a> }
+                    <span>Страница @data.Page из @Math.Max(1, (int)Math.Ceiling(data.Total / (double)data.PageSize))</span>
+                    @if ((long)data.Page * data.PageSize < data.Total) { <a href="@Link(data.Page + 1)">Далее →</a> }
+                </nav>
+            }
+            <p class="crm-missed__note">Ответственный — текущий владелец карточки. Для звонка без карточки указан сотрудник, с которым связан звонок. Здесь показаны только сохранённые аудиозаписи доступных вам офисов.</p>
+        </section>
+    }
+</main>
+@section Scripts {
+    <script src="~/js/crm-recordings.js" asp-append-version="true"></script>
+}

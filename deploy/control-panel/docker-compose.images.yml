@@ -304,6 +304,10 @@ volumes:
   orbita_dataprotection_api:
   orbita_telephony_queue:
   orbita_crm_call_recordings:
+    # Production archive is hosted on PBX and mounted by the NFS volume driver.
+    # Missing/unreachable storage must not fall back to an empty local volume.
+    external: true
+    name: orbita_crm_recordings_ats
   orbita_crm_success_documents:
   orbita_asterisk_recordings:
   orbita_telephony_runtime:

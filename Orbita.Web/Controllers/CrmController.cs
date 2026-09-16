@@ -21,6 +21,41 @@ public sealed class CrmController(
 {
     [HttpGet]
     [Authorize(Policy = PanelPermissions.CrmBoard)]
+    [Authorize(Roles = PanelRoles.Admin + "," + PanelRoles.OfficeLead)]
+    public async Task<IActionResult> Recordings(string? from, string? to, string? managerUserId,
+        string? phone, string? direction, int page = 1, CancellationToken ct = default)
+    {
+        var tz = BrowserTimeZone.Resolve(HttpContext);
+        var period = string.IsNullOrWhiteSpace(from) || string.IsNullOrWhiteSpace(to)
+            ? DashboardPeriod.CreateLastDays(7, tz) : DashboardPeriod.Parse(from, to, tz);
+        var (fromUtc, toUtc) = LocalCalendarDateRange.ToUtcRange(period);
+        var data = await api.GetCrmCallRecordingsAsync(fromUtc, toUtc, officeContext.EffectiveOfficeId,
+            managerUserId, phone, direction, page, ct);
+        return View(new CrmCallRecordingsViewModel
+        {
+            Data = data, From = period.From.ToString("yyyy-MM-dd"), To = period.To.ToString("yyyy-MM-dd"),
+            ManagerUserId = managerUserId, Phone = phone, Direction = direction, TimeZoneOffset = tz,
+            Header = new() { Title = "Записи звонков", Subtitle = "Разговоры, кандидаты и ответственные", ShowRefresh = true }
+        });
+    }
+
+    [HttpGet]
+    [Authorize(Policy = PanelPermissions.CrmBoard)]
+    [Authorize(Roles = PanelRoles.Admin + "," + PanelRoles.OfficeLead)]
+    [ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
+    public async Task<IActionResult> RecordingAudio(Guid callId, bool download = false, CancellationToken ct = default)
+    {
+        var result = await api.OpenCrmArchivedCallRecordingAsync(callId, ct);
+        if (result.Stream is null) return NotFound("Запись недоступна или не найдена в архиве.");
+        return new FileStreamResult(result.Stream, result.ContentType ?? "audio/wav")
+        {
+            EnableRangeProcessing = true,
+            FileDownloadName = download ? result.FileName ?? $"Звонок-{callId:N}.wav" : null
+        };
+    }
+
+    [HttpGet]
+    [Authorize(Policy = PanelPermissions.CrmBoard)]
     public async Task<IActionResult> MissedCalls(string? from, string? to, string? managerUserId,
         string? status, int page = 1, Guid? callId = null, CancellationToken ct = default)
     {

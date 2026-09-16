@@ -69,6 +69,10 @@ public static class PanelRoles
     public static bool IsGlobalAdmin(ClaimsPrincipal principal) =>
         principal.IsInRole(Admin);
 
+    /// <summary>The office recording archive is reserved for administrators and office leads.</summary>
+    public static bool CanAccessCallRecordings(ClaimsPrincipal principal) =>
+        principal.IsInRole(Admin) || principal.IsInRole(OfficeLead);
+
     /// <summary>
     /// Elevated access within the current office (team CRM, all cards/managers).
     /// Global admins, office leads and senior managers.

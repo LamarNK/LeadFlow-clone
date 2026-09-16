@@ -117,11 +117,25 @@
 
     runtime.updateActiveNav = function updateActiveNav(currentPath) {
         var curKey = runtime.getNavKey(currentPath);
-        document.querySelectorAll('.orbita-nav .nav-item').forEach(function (a) {
+        var links = Array.from(document.querySelectorAll('.orbita-nav .nav-item'));
+        var crmLink = null;
+        if (curKey === 'crm') {
+            var path = (currentPath || '').split('?')[0].replace(/\/+$/, '').toLowerCase();
+            var longest = -1;
+            links.forEach(function (a) {
+                var href = (a.getAttribute('href') || '').split('?')[0].replace(/\/+$/, '').toLowerCase();
+                if (runtime.getNavKey(href) === 'crm' && href.length > longest
+                    && (path === href || path.startsWith(href + '/'))) {
+                    crmLink = a;
+                    longest = href.length;
+                }
+            });
+        }
+        links.forEach(function (a) {
             a.classList.remove('active');
             try {
                 var linkKey = runtime.getNavKey(a.getAttribute('href') || a.href);
-                if (linkKey === curKey) {
+                if (curKey === 'crm' ? a === crmLink : linkKey === curKey) {
                     a.classList.add('active');
                 }
             } catch (e) { }
@@ -255,6 +269,7 @@
             scripts = ['/js/orbita-responses.js'];
         } else if (key === 'crm' || p.startsWith('/crm')) {
             scripts = ['/js/orbita-crm-board.js', '/js/orbita-crm-card.js', '/js/orbita-crm-team.js'];
+            if (p.startsWith('/crm/recordings')) scripts.push('/js/crm-recordings.js');
         } else if (key === 'mysettings') {
             scripts = [
                 '/js/orbita-bitrix-instances.js',
