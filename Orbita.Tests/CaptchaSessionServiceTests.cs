@@ -88,6 +88,62 @@ public sealed class CaptchaSessionServiceTests
                 && x.Status == CaptchaSessionStatuses.Cancelled);
     }
 
+    [Fact]
+    public async Task SweepExpiredAsync_ExpiresActiveSession_AndReleasesWorkerLock()
+    {
+        await using var db = CreateDb();
+        var officeId = Guid.NewGuid();
+        var workerId = Guid.NewGuid();
+        var accountId = Guid.NewGuid();
+        SeedWorker(db, officeId, workerId, accountId, ownerUserId: "op1");
+        var sessionId = Guid.NewGuid();
+        var worker = db.Workers.Single(x => x.Id == workerId);
+        worker.ActiveCaptchaSessionId = sessionId;
+        worker.ActiveCaptchaSessionStartedAtUtc = DateTime.UtcNow.AddMinutes(-10);
+        db.CaptchaSessions.Add(new CaptchaSessionEntity
+        {
+            Id = sessionId,
+            WorkerId = workerId,
+            AccountId = accountId,
+            AccountName = "Acc1",
+            OfficeId = officeId,
+            OperatorUserId = "op1",
+            OperatorDisplayName = "Operator 1",
+            PageUrl = "https://www.avito.ru/captcha",
+            CaptchaKind = "geetest",
+            Status = CaptchaSessionStatuses.Active,
+            CreatedAtUtc = DateTime.UtcNow.AddMinutes(-15),
+            ExpiresAtUtc = DateTime.UtcNow.AddMinutes(-5)
+        });
+        db.CaptchaSessions.Add(new CaptchaSessionEntity
+        {
+            Id = Guid.NewGuid(),
+            WorkerId = workerId,
+            AccountId = accountId,
+            AccountName = "Acc1",
+            OfficeId = officeId,
+            OperatorUserId = "op1",
+            OperatorDisplayName = "Operator 1",
+            PageUrl = "https://www.avito.ru/captcha",
+            CaptchaKind = "geetest",
+            Status = CaptchaSessionStatuses.Cancelled,
+            CreatedAtUtc = DateTime.UtcNow.AddMinutes(-15),
+            ExpiresAtUtc = DateTime.UtcNow.AddMinutes(-5)
+        });
+        await db.SaveChangesAsync();
+
+        var service = CreateService(db);
+        var swept = await service.SweepExpiredAsync();
+
+        Assert.Equal(1, swept);
+        var expired = await db.CaptchaSessions.AsNoTracking().SingleAsync(x => x.Id == sessionId);
+        Assert.Equal(CaptchaSessionStatuses.Expired, expired.Status);
+        Assert.Equal("Истекло время сессии.", expired.FailureMessage);
+        Assert.NotNull(expired.CompletedAtUtc);
+        var released = await db.Workers.AsNoTracking().SingleAsync(x => x.Id == workerId);
+        Assert.Null(released.ActiveCaptchaSessionId);
+    }
+
     private static CaptchaSessionService CreateService(
         OrbitaDbContext db,
         ICaptchaSessionRelayNotifier? relayNotifier = null)

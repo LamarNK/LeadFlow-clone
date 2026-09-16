@@ -10,6 +10,9 @@ public static class CaptchaSessionStatuses
     public const string Expired = "expired";
     public const string Cancelled = "cancelled";
 
+    /// <summary>Активные статусы в форме, транслируемой в SQL (для IQueryable.Where).</summary>
+    public static readonly string[] ActiveStatuses = [Pending, Opening, Active];
+
     public static bool IsActive(string? status) =>
         status is Pending or Opening or Active;
 }

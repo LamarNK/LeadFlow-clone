@@ -321,7 +321,7 @@ public sealed class CaptchaSessionService(
         var now = DateTime.UtcNow;
         var expired = await db.CaptchaSessions
             .Include(x => x.Worker)
-            .Where(x => CaptchaSessionStatuses.IsActive(x.Status) && x.ExpiresAtUtc <= now)
+            .Where(x => CaptchaSessionStatuses.ActiveStatuses.Contains(x.Status) && x.ExpiresAtUtc <= now)
             .ToListAsync(ct)
             .ConfigureAwait(false);
 
