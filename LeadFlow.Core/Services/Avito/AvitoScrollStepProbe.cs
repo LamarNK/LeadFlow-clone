@@ -17,18 +17,23 @@ internal sealed record AvitoScrollStepProbe(
     bool AtEnd,
     IReadOnlyList<AvitoScrollStepItem> NewItems,
     bool IsFullRescan,
-    bool RequiresFallbackRescan)
+    bool RequiresFallbackRescan,
+    double ScrollTop = -1,
+    int ClientHeight = 0)
 {
     public bool AllowEarlyStop => !IsFullRescan && !RequiresFallbackRescan;
 }
+
+internal sealed record ScrollGeometryProbe(double ScrollTop, int ClientHeight, double ScrollHeight);
 
 internal static class AvitoScrollStepProbeParser
 {
     public static AvitoScrollStepProbe Parse(string? raw, int previousItemCount)
     {
+        var fallback = Fallback(previousItemCount);
         if (string.IsNullOrWhiteSpace(raw))
         {
-            return Fallback(previousItemCount);
+            return fallback;
         }
 
         try
@@ -45,15 +50,25 @@ internal static class AvitoScrollStepProbeParser
                 || !root.TryGetProperty("newItems", out var itemsElement)
                 || itemsElement.ValueKind != JsonValueKind.Array)
             {
-                return Fallback(previousItemCount);
+                return fallback;
             }
 
+            var scrollTop = TryReadDouble(root, "scrollTop", out var scrollTopValue) ? scrollTopValue : -1;
+            var clientHeight = TryReadInt(root, "clientHeight", out var clientHeightValue) ? clientHeightValue : 0;
             var requiresFallbackRescan = !structureValid || (itemCount < previousItemCount && !fullRescan);
             var expectedFirstIndex = fullRescan ? 0 : previousItemCount;
             var expectedCount = itemCount - expectedFirstIndex;
             if (expectedCount < 0 || itemsElement.GetArrayLength() != expectedCount)
             {
-                return Fallback(itemCount, moved, atEnd);
+                return new AvitoScrollStepProbe(
+                    itemCount,
+                    moved,
+                    atEnd,
+                    [],
+                    IsFullRescan: false,
+                    RequiresFallbackRescan: true,
+                    scrollTop,
+                    clientHeight);
             }
 
             var items = new List<AvitoScrollStepItem>(expectedCount);
@@ -68,7 +83,15 @@ internal static class AvitoScrollStepProbeParser
                     || string.IsNullOrWhiteSpace(fullName)
                     || string.IsNullOrWhiteSpace(fingerprint))
                 {
-                    return Fallback(itemCount, moved, atEnd);
+                    return new AvitoScrollStepProbe(
+                        itemCount,
+                        moved,
+                        atEnd,
+                        [],
+                        IsFullRescan: false,
+                        RequiresFallbackRescan: true,
+                        scrollTop,
+                        clientHeight);
                 }
 
                 items.Add(new AvitoScrollStepItem(
@@ -82,11 +105,46 @@ internal static class AvitoScrollStepProbeParser
                 expectedIndex++;
             }
 
-            return new AvitoScrollStepProbe(itemCount, moved, atEnd, items, fullRescan, requiresFallbackRescan);
+            return new AvitoScrollStepProbe(
+                itemCount,
+                moved,
+                atEnd,
+                items,
+                fullRescan,
+                requiresFallbackRescan,
+                scrollTop,
+                clientHeight);
         }
         catch
         {
-            return Fallback(previousItemCount);
+            return fallback;
+        }
+    }
+
+    public static ScrollGeometryProbe? TryParseGeometry(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(UnwrapJsonString(raw));
+            var root = doc.RootElement;
+            if (root.ValueKind != JsonValueKind.Object
+                || !TryReadDouble(root, "scrollTop", out var scrollTop)
+                || !TryReadInt(root, "clientHeight", out var clientHeight)
+                || !TryReadDouble(root, "scrollHeight", out var scrollHeight))
+            {
+                return null;
+            }
+
+            return new ScrollGeometryProbe(scrollTop, clientHeight, scrollHeight);
+        }
+        catch
+        {
+            return null;
         }
     }
 
@@ -99,6 +157,15 @@ internal static class AvitoScrollStepProbeParser
         return root.TryGetProperty(name, out var property)
                && property.ValueKind == JsonValueKind.Number
                && property.TryGetInt32(out value);
+    }
+
+    private static bool TryReadDouble(JsonElement root, string name, out double value)
+    {
+        value = 0;
+        return root.TryGetProperty(name, out var property)
+               && property.ValueKind == JsonValueKind.Number
+               && property.TryGetDouble(out value)
+               && double.IsFinite(value);
     }
 
     private static bool TryReadBool(JsonElement root, string name, out bool value)

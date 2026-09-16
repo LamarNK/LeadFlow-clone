@@ -33,7 +33,8 @@ public static class AvitoCandidatesListPreparer
         Func<string, CancellationToken, Task<bool>>? isOpenPhoneWatchAsync = null,
         bool skipDetailEnrich = false,
         Func<AvitoFirewallProbe.Detection, string?, CancellationToken, Task<bool>>? trySolveCaptchaAsync = null,
-        IReadOnlyCollection<WorkerOpenPhoneWatchDto>? openPhoneWatches = null)
+        IReadOnlyCollection<WorkerOpenPhoneWatchDto>? openPhoneWatches = null,
+        CandidatesPageActors? actors = null)
     {
         var totalSw = Stopwatch.StartNew();
         var firewallSw = Stopwatch.StartNew();
@@ -60,6 +61,7 @@ public static class AvitoCandidatesListPreparer
         var scrollFingerprintProbeCalls = 0;
         var scrollFullRescans = 0;
         var scrollFallbackRescans = 0;
+        var jsScrollFallbacks = 0;
         var phoneRevealBudget = AvitoHumanVariation.NextPhoneRevealBudget();
         var phoneWatchNameKeys = (openPhoneWatches ?? [])
             .Select(static x => ResponsePhoneWatchEvaluator.BuildFullNameKey(x.FullName))
@@ -87,7 +89,23 @@ public static class AvitoCandidatesListPreparer
 
             var previousCount = lastCount < 0 ? 0 : lastCount;
             scrollStepCalls++;
-            var step = await TryParseScrollStepAsync(executeScript, previousCount, cancellationToken).ConfigureAwait(false);
+            var wheelStep = await TryWheelScrollStepAsync(executeScript, actors, previousCount, cancellationToken)
+                .ConfigureAwait(false);
+            AvitoScrollStepProbe step;
+            if (wheelStep.WheelUsed && wheelStep.Step is not null)
+            {
+                step = wheelStep.Step;
+            }
+            else
+            {
+                if (actors?.WheelScrollAsync is not null)
+                {
+                    jsScrollFallbacks++;
+                }
+
+                step = await TryParseScrollStepAsync(executeScript, previousCount, cancellationToken).ConfigureAwait(false);
+            }
+
             var count = step.ItemCount;
 
             // Один incremental-пакет обслуживает и phone-watch, и known-history.
@@ -147,8 +165,12 @@ public static class AvitoCandidatesListPreparer
             if (round > 0
                 && AvitoHumanVariation.RollPermille(MonitoringTiming.ScrollBackChancePermille))
             {
-                _ = await executeScript(AvitoCandidatesPageScripts.BuildScrollBackScript(), cancellationToken)
-                    .ConfigureAwait(false);
+                if (!await TryWheelScrollBackAsync(executeScript, actors, cancellationToken).ConfigureAwait(false))
+                {
+                    _ = await executeScript(AvitoCandidatesPageScripts.BuildScrollBackScript(), cancellationToken)
+                        .ConfigureAwait(false);
+                }
+
                 await HumanDelay.AfterListScrollAsync(cancellationToken).ConfigureAwait(false);
             }
 
@@ -157,8 +179,12 @@ public static class AvitoCandidatesListPreparer
         scrollSw.Stop();
 
         var postScrollSw = Stopwatch.StartNew();
-        _ = await executeScript(AvitoCandidatesPageScripts.BuildScrollToTopScript(), cancellationToken)
-            .ConfigureAwait(false);
+        if (!await TryWheelScrollToTopAsync(executeScript, actors, cancellationToken).ConfigureAwait(false))
+        {
+            jsScrollFallbacks++;
+            _ = await executeScript(AvitoCandidatesPageScripts.BuildScrollToTopScript(), cancellationToken)
+                .ConfigureAwait(false);
+        }
         await HumanDelay.AfterListScrollAsync(cancellationToken).ConfigureAwait(false);
         await HumanDelay.AfterListReadyAsync(cancellationToken).ConfigureAwait(false);
         postScrollSw.Stop();
@@ -218,26 +244,97 @@ public static class AvitoCandidatesListPreparer
             .ConfigureAwait(false);
         prioritySw.Stop();
         PhonesReadyProbe? phonesProbe = null;
+        var detailEnrichClicks = 0;
+        var detailEnrichSkipped = 0;
+        var detailEnrichHits = 0;
+        long phoneRevealMs = 0;
+        long detailEnrichMs = 0;
 
-        var phoneRevealSw = Stopwatch.StartNew();
-        await TryEnableClipboardGuardAsync(executeScript, cancellationToken).ConfigureAwait(false);
-        try
+        var isJobCrmPage = await TryDetectJobCrmResponsesPageAsync(executeScript, cancellationToken)
+            .ConfigureAwait(false);
+        async Task RunDetailEnrichmentAsync()
         {
-            for (var i = 0; i < phoneRevealLimit; i++)
+            var detailEnrichSw = Stopwatch.StartNew();
+            try
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                if (phoneClicksTotal >= phoneRevealBudget)
+                if (domItems > 0 && !isJobCrmPage && !skipDetailEnrich)
                 {
-                    break;
+                    var enrichment = await TryCollectDetailEnrichmentAsync(
+                            executeScript,
+                            Math.Min(domItems, MaxDetailEnrichClicks),
+                            resolveExistingSourceResponseIdsAsync,
+                            resolveExistingPhonesAsync,
+                            actors,
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                    detailEnrichClicks = enrichment.Clicks;
+                    detailEnrichSkipped = enrichment.Skipped;
+                    detailEnrichHits = enrichment.Hits;
+                    if (enrichment.Entries.Count > 0)
+                    {
+                        var enrichmentJson = JsonSerializer.Serialize(enrichment.Entries);
+                        _ = await executeScript(
+                                AvitoCandidatesPageScripts.BuildApplyDetailEnrichmentScript(enrichmentJson),
+                                cancellationToken)
+                            .ConfigureAwait(false);
+                    }
                 }
+            }
+            finally
+            {
+                detailEnrichSw.Stop();
+                detailEnrichMs = detailEnrichSw.ElapsedMilliseconds;
+            }
+        }
 
-                phoneRevealRounds++;
-
-                var revealStep = await TryRevealMaskedPhonesAsync(executeScript, cancellationToken).ConfigureAwait(false);
-                if (revealStep?.Clicked > 0)
+        async Task RunPhoneRevealAsync()
+        {
+            var phoneRevealSw = Stopwatch.StartNew();
+            try
+            {
+                for (var i = 0; i < phoneRevealLimit; i++)
                 {
-                    phoneClicksTotal += revealStep.Clicked;
-                    await HumanDelay.AfterPhoneRevealClickAsync(cancellationToken).ConfigureAwait(false);
+                    cancellationToken.ThrowIfCancellationRequested();
+                    if (phoneClicksTotal >= phoneRevealBudget)
+                    {
+                        break;
+                    }
+
+                    phoneRevealRounds++;
+
+                    var revealStep = await TryRevealMaskedPhonesAsync(executeScript, actors, cancellationToken).ConfigureAwait(false);
+                    if (revealStep is { Attempted: true })
+                    {
+                        if (revealStep.Clicked > 0)
+                        {
+                            phoneClicksTotal += revealStep.Clicked;
+                            await HumanDelay.AfterPhoneRevealClickAsync(cancellationToken).ConfigureAwait(false);
+                        }
+                        else
+                        {
+                            await HumanDelay.AfterPhoneRevealOutcomeAsync(false, cancellationToken).ConfigureAwait(false);
+                        }
+
+                        phonesProbe = await TryParsePhonesReadyAsync(executeScript, cancellationToken).ConfigureAwait(false);
+                        if (phonesProbe?.Ready == true
+                            || phonesProbe?.Items == 0
+                            || phoneClicksTotal >= phoneRevealBudget)
+                        {
+                            break;
+                        }
+
+                        continue;
+                    }
+
+                    var popupStep = await TryRevealNextContactsPopupPhoneAsync(executeScript, actors, cancellationToken)
+                        .ConfigureAwait(false);
+                    if (popupStep?.Clicked == true)
+                    {
+                        phoneClicksTotal++;
+                        await HumanDelay.AfterPhoneRevealOutcomeAsync(popupStep.Revealed, cancellationToken)
+                            .ConfigureAwait(false);
+                    }
+
                     phonesProbe = await TryParsePhonesReadyAsync(executeScript, cancellationToken).ConfigureAwait(false);
                     if (phonesProbe?.Ready == true
                         || phonesProbe?.Items == 0
@@ -246,68 +343,27 @@ public static class AvitoCandidatesListPreparer
                         break;
                     }
 
-                    continue;
+                    if (revealStep?.Masked == 0 && popupStep?.Pending == 0)
+                    {
+                        await HumanDelay.DelayAsync(280, 520, cancellationToken).ConfigureAwait(false);
+                    }
                 }
 
-                var popupStep = await TryRevealNextContactsPopupPhoneAsync(executeScript, cancellationToken)
-                    .ConfigureAwait(false);
-                if (popupStep?.Clicked == true)
-                {
-                    phoneClicksTotal++;
-                    await HumanDelay.AfterPhoneRevealOutcomeAsync(popupStep.Revealed, cancellationToken)
-                        .ConfigureAwait(false);
-                }
-
-                phonesProbe = await TryParsePhonesReadyAsync(executeScript, cancellationToken).ConfigureAwait(false);
-                if (phonesProbe?.Ready == true
-                    || phonesProbe?.Items == 0
-                    || phoneClicksTotal >= phoneRevealBudget)
-                {
-                    break;
-                }
-
-                if (revealStep?.Masked == 0 && popupStep?.Pending == 0)
-                {
-                    await HumanDelay.DelayAsync(280, 520, cancellationToken).ConfigureAwait(false);
-                }
+                phonesProbe ??= await TryParsePhonesReadyAsync(executeScript, cancellationToken).ConfigureAwait(false);
             }
-        }
-        finally
-        {
-            await TryDisableClipboardGuardAsync(executeScript, CancellationToken.None).ConfigureAwait(false);
-        }
-
-        phonesProbe ??= await TryParsePhonesReadyAsync(executeScript, cancellationToken).ConfigureAwait(false);
-        phoneRevealSw.Stop();
-
-        var detailEnrichSw = Stopwatch.StartNew();
-        var detailEnrichClicks = 0;
-        var detailEnrichSkipped = 0;
-        var detailEnrichHits = 0;
-        var isJobCrmPage = await TryDetectJobCrmResponsesPageAsync(executeScript, cancellationToken)
-            .ConfigureAwait(false);
-        if (domItems > 0 && !isJobCrmPage && !skipDetailEnrich)
-        {
-            var enrichment = await TryCollectDetailEnrichmentAsync(
-                    executeScript,
-                    Math.Min(domItems, MaxDetailEnrichClicks),
-                    resolveExistingSourceResponseIdsAsync,
-                    resolveExistingPhonesAsync,
-                    cancellationToken)
-                .ConfigureAwait(false);
-            detailEnrichClicks = enrichment.Clicks;
-            detailEnrichSkipped = enrichment.Skipped;
-            detailEnrichHits = enrichment.Hits;
-            if (enrichment.Entries.Count > 0)
+            finally
             {
-                var enrichmentJson = JsonSerializer.Serialize(enrichment.Entries);
-                _ = await executeScript(
-                        AvitoCandidatesPageScripts.BuildApplyDetailEnrichmentScript(enrichmentJson),
-                        cancellationToken)
-                    .ConfigureAwait(false);
+                phoneRevealSw.Stop();
+                phoneRevealMs = phoneRevealSw.ElapsedMilliseconds;
             }
         }
-        detailEnrichSw.Stop();
+
+        await RunPhoneRevealAsync().ConfigureAwait(false);
+        if (!isJobCrmPage && !skipDetailEnrich && domItems > 0)
+        {
+            await HumanDelay.BetweenResponsesAsync(cancellationToken).ConfigureAwait(false);
+            await RunDetailEnrichmentAsync().ConfigureAwait(false);
+        }
 
         var result = new CandidatesListPrepareResult(
             scrollRounds,
@@ -363,8 +419,8 @@ public static class AvitoCandidatesListPreparer
                 ["candidates.prepare.scrollMs"] = scrollSw.ElapsedMilliseconds,
                 ["candidates.prepare.postScrollMs"] = postScrollSw.ElapsedMilliseconds,
                 ["candidates.prepare.priorityMs"] = prioritySw.ElapsedMilliseconds,
-                ["candidates.prepare.phoneRevealMs"] = phoneRevealSw.ElapsedMilliseconds,
-                ["candidates.prepare.detailEnrichMs"] = detailEnrichSw.ElapsedMilliseconds,
+                ["candidates.prepare.phoneRevealMs"] = phoneRevealMs,
+                ["candidates.prepare.detailEnrichMs"] = detailEnrichMs,
                 ["candidates.prepare.scrollDomCalls"] = scrollStepCalls + scrollProfileProbeCalls + scrollFingerprintProbeCalls,
                 ["candidates.prepare.scrollStepCalls"] = scrollStepCalls,
                 ["candidates.prepare.scrollProfileProbeCalls"] = scrollProfileProbeCalls,
@@ -372,7 +428,8 @@ public static class AvitoCandidatesListPreparer
                 ["candidates.prepare.scrollProfileItemsParsed"] = incrementalState.ParsedItems,
                 ["candidates.prepare.scrollFingerprintItemsParsed"] = 0,
                 ["candidates.prepare.scrollFullRescans"] = scrollFullRescans,
-                ["candidates.prepare.scrollFallbackRescans"] = scrollFallbackRescans
+                ["candidates.prepare.scrollFallbackRescans"] = scrollFallbackRescans,
+                ["candidates.prepare.jsScrollFallbacks"] = jsScrollFallbacks
             });
 
         return result;
@@ -386,6 +443,126 @@ public static class AvitoCandidatesListPreparer
         var raw = await executeScript(AvitoCandidatesPageScripts.BuildScrollStepScript(previousItemCount), cancellationToken)
             .ConfigureAwait(false);
         return AvitoScrollStepProbeParser.Parse(raw, previousItemCount);
+    }
+
+    /// <summary>
+    /// Шаг прокрутки CDP-колесом: JS только читает геометрию и снимает DOM, движение — trusted wheel.
+    /// Возвращает (null, true), если колесо недоступно/не сработало — вызывающий уходит в JS-fallback.
+    /// </summary>
+    private static async Task<(AvitoScrollStepProbe? Step, bool WheelUsed)> TryWheelScrollStepAsync(
+        Func<string, CancellationToken, Task<string>> executeScript,
+        CandidatesPageActors? actors,
+        int previousItemCount,
+        CancellationToken cancellationToken)
+    {
+        if (actors?.WheelScrollAsync is null)
+        {
+            return (null, false);
+        }
+
+        var geometryRaw = await executeScript(
+                AvitoCandidatesPageScripts.BuildScrollGeometryScript(),
+                cancellationToken)
+            .ConfigureAwait(false);
+        var geometry = AvitoScrollStepProbeParser.TryParseGeometry(geometryRaw);
+        if (geometry is null || geometry.ClientHeight <= 0)
+        {
+            return (null, false);
+        }
+
+        var ratio = 0.32 + Random.Shared.NextDouble() * 0.28;
+        var delta = Math.Max((int)(geometry.ClientHeight * ratio), 180);
+        if (!await actors.TryWheelScrollAsync(delta, cancellationToken).ConfigureAwait(false))
+        {
+            return (null, false);
+        }
+
+        await HumanDelay.DelayAsync(80, 180, cancellationToken).ConfigureAwait(false);
+        var probeRaw = await executeScript(
+                AvitoCandidatesPageScripts.BuildScrollStepProbeScript(previousItemCount),
+                cancellationToken)
+            .ConfigureAwait(false);
+        var probe = AvitoScrollStepProbeParser.Parse(probeRaw, previousItemCount);
+        if (probe.ScrollTop < 0)
+        {
+            // The wheel was already sent; retrying with JS here would scroll twice.
+            return (probe with { RequiresFallbackRescan = true }, true);
+        }
+
+        var moved = probe.ScrollTop >= 0 && Math.Abs(probe.ScrollTop - geometry.ScrollTop) > 2;
+        if (!moved && !probe.AtEnd)
+        {
+            return (null, false);
+        }
+
+        return (probe with { Moved = moved }, true);
+    }
+
+    private static async Task<bool> TryWheelScrollBackAsync(
+        Func<string, CancellationToken, Task<string>> executeScript,
+        CandidatesPageActors? actors,
+        CancellationToken cancellationToken)
+    {
+        if (actors?.WheelScrollAsync is null)
+        {
+            return false;
+        }
+
+        var geometryRaw = await executeScript(
+                AvitoCandidatesPageScripts.BuildScrollGeometryScript(),
+                cancellationToken)
+            .ConfigureAwait(false);
+        var geometry = AvitoScrollStepProbeParser.TryParseGeometry(geometryRaw);
+        if (geometry is null || geometry.ClientHeight <= 0)
+        {
+            return false;
+        }
+
+        var ratio = 0.18 + Random.Shared.NextDouble() * 0.22;
+        var delta = -Math.Max((int)(geometry.ClientHeight * ratio), 120);
+        return await actors.TryWheelScrollAsync(delta, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>Возврат наверх CDP-колесом серией жестов; false — использовать JS-fallback.</summary>
+    private static async Task<bool> TryWheelScrollToTopAsync(
+        Func<string, CancellationToken, Task<string>> executeScript,
+        CandidatesPageActors? actors,
+        CancellationToken cancellationToken)
+    {
+        if (actors?.WheelScrollAsync is null)
+        {
+            return false;
+        }
+
+        for (var attempt = 0; attempt < 12; attempt++)
+        {
+            var geometryRaw = await executeScript(
+                    AvitoCandidatesPageScripts.BuildScrollGeometryScript(),
+                    cancellationToken)
+                .ConfigureAwait(false);
+            var geometry = AvitoScrollStepProbeParser.TryParseGeometry(geometryRaw);
+            if (geometry is null)
+            {
+                return false;
+            }
+
+            if (geometry.ScrollTop <= 2)
+            {
+                return true;
+            }
+
+            var delta = -(int)Math.Max(geometry.ClientHeight * (0.6 + Random.Shared.NextDouble() * 0.3), 240);
+            if (!await actors.TryWheelScrollAsync(delta, cancellationToken).ConfigureAwait(false))
+            {
+                return false;
+            }
+
+            await HumanDelay.AfterListScrollAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        var finalRaw = await executeScript(AvitoCandidatesPageScripts.BuildScrollGeometryScript(), cancellationToken)
+            .ConfigureAwait(false);
+        return AvitoScrollStepProbeParser.TryParseGeometry(finalRaw)?.ScrollTop <= 2;
     }
 
     private static async Task<PhonesReadyProbe?> TryParsePhonesReadyAsync(
@@ -415,34 +592,12 @@ public static class AvitoCandidatesListPreparer
         }
     }
 
-    private static async Task TryEnableClipboardGuardAsync(
-        Func<string, CancellationToken, Task<string>> executeScript,
-        CancellationToken cancellationToken)
-    {
-        _ = await executeScript(AvitoCandidatesPageScripts.BuildEnableClipboardGuardScript(), cancellationToken)
-            .ConfigureAwait(false);
-    }
-
-    private static async Task TryDisableClipboardGuardAsync(
-        Func<string, CancellationToken, Task<string>> executeScript,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            _ = await executeScript(AvitoCandidatesPageScripts.BuildDisableClipboardGuardScript(), cancellationToken)
-                .ConfigureAwait(false);
-        }
-        catch
-        {
-            // Страница могла перезагрузиться; не прерываем подготовку списка.
-        }
-    }
-
     private static async Task<DetailEnrichmentResult> TryCollectDetailEnrichmentAsync(
         Func<string, CancellationToken, Task<string>> executeScript,
         int itemCount,
         Func<IReadOnlyCollection<string>, CancellationToken, Task<IReadOnlySet<string>>>? resolveExistingSourceResponseIdsAsync,
         Func<IReadOnlyCollection<string>, CancellationToken, Task<IReadOnlySet<string>>>? resolveExistingPhonesAsync,
+        CandidatesPageActors? actors,
         CancellationToken cancellationToken)
     {
         var entries = new Dictionary<string, object>(StringComparer.Ordinal);
@@ -512,13 +667,18 @@ public static class AvitoCandidatesListPreparer
 
             await HumanDelay.BeforeCandidateClickAsync(cancellationToken).ConfigureAwait(false);
 
-            var clickRaw = await executeScript(
-                    AvitoCandidatesPageScripts.BuildClickCandidateItemByIndexScript(index),
-                    cancellationToken)
-                .ConfigureAwait(false);
-            if (!TryParseClickStep(clickRaw, out var clickOk) || !clickOk)
+            var pointerClicked = actors is not null
+                && await actors.TryClickItemChildAsync(index, null, cancellationToken).ConfigureAwait(false);
+            if (!pointerClicked)
             {
-                continue;
+                var clickRaw = await executeScript(
+                        AvitoCandidatesPageScripts.BuildClickCandidateItemByIndexScript(index),
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                if (!TryParseClickStep(clickRaw, out var clickOk) || !clickOk)
+                {
+                    continue;
+                }
             }
 
             await HumanDelay.AfterCandidateClickAsync(cancellationToken).ConfigureAwait(false);
@@ -1115,8 +1275,46 @@ public static class AvitoCandidatesListPreparer
 
     private static async Task<RevealPhonesStepProbe?> TryRevealMaskedPhonesAsync(
         Func<string, CancellationToken, Task<string>> executeScript,
+        CandidatesPageActors? actors,
         CancellationToken cancellationToken)
     {
+        if (actors?.PointerClickItemChildAsync is not null)
+        {
+            var locate = await TryParseMaskedPhoneTargetAsync(executeScript, cancellationToken).ConfigureAwait(false);
+            if (locate is null)
+            {
+                return null;
+            }
+
+            if (locate.Masked == 0 || locate.TargetIndex < 0)
+            {
+                return new RevealPhonesStepProbe(locate.Items, locate.Masked, 0, Attempted: false);
+            }
+
+            if (await actors.TryClickItemChildAsync(
+                    locate.TargetIndex,
+                    "[data-marker='job-application/phone']",
+                    cancellationToken).ConfigureAwait(false))
+            {
+                return new RevealPhonesStepProbe(locate.Items, locate.Masked, 1, Attempted: true);
+            }
+
+            // A CDP error may arrive after dispatch. Let DOM settle before deciding on a fallback.
+            await HumanDelay.AfterPhoneRevealClickAsync(cancellationToken).ConfigureAwait(false);
+            var after = await TryParseMaskedPhoneTargetAsync(executeScript, cancellationToken).ConfigureAwait(false);
+            if (after is null)
+            {
+                return new RevealPhonesStepProbe(locate.Items, locate.Masked, 0, Attempted: true);
+            }
+
+            if (after.Masked < locate.Masked || after.TargetIndex != locate.TargetIndex)
+            {
+                return new RevealPhonesStepProbe(locate.Items, locate.Masked, 1, Attempted: true);
+            }
+
+            // The mask is still present, so the pointer action did not take effect; use the existing fallback.
+        }
+
         var raw = await executeScript(AvitoCandidatesPageScripts.BuildRevealMaskedPhonesStepScript(), cancellationToken)
             .ConfigureAwait(false);
         if (string.IsNullOrWhiteSpace(raw))
@@ -1128,10 +1326,40 @@ public static class AvitoCandidatesListPreparer
         {
             using var doc = JsonDocument.Parse(UnwrapJsonString(raw));
             var root = doc.RootElement;
+            var clicked = root.TryGetProperty("clicked", out var clickedProperty)
+                ? clickedProperty.GetInt32()
+                : 0;
             return new RevealPhonesStepProbe(
                 root.TryGetProperty("items", out var i) ? i.GetInt32() : 0,
                 root.TryGetProperty("masked", out var m) ? m.GetInt32() : 0,
-                root.TryGetProperty("clicked", out var c) ? c.GetInt32() : 0);
+                clicked,
+                Attempted: clicked > 0);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static async Task<MaskedPhoneTargetProbe?> TryParseMaskedPhoneTargetAsync(
+        Func<string, CancellationToken, Task<string>> executeScript,
+        CancellationToken cancellationToken)
+    {
+        var raw = await executeScript(AvitoCandidatesPageScripts.BuildFindMaskedPhoneTargetScript(), cancellationToken)
+            .ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(UnwrapJsonString(raw));
+            var root = doc.RootElement;
+            return new MaskedPhoneTargetProbe(
+                root.TryGetProperty("items", out var i) ? i.GetInt32() : 0,
+                root.TryGetProperty("masked", out var m) ? m.GetInt32() : 0,
+                root.TryGetProperty("targetIndex", out var t) ? t.GetInt32() : -1);
         }
         catch
         {
@@ -1141,8 +1369,15 @@ public static class AvitoCandidatesListPreparer
 
     private static async Task<ContactsPopupRevealProbe?> TryRevealNextContactsPopupPhoneAsync(
         Func<string, CancellationToken, Task<string>> executeScript,
+        CandidatesPageActors? actors,
         CancellationToken cancellationToken)
     {
+        if (actors?.PointerClickItemChildAsync is not null)
+        {
+            return await RevealNextContactsPopupPhoneWithPointerAsync(executeScript, actors, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
         var click = await TryParseContactsPopupClickAsync(executeScript, cancellationToken).ConfigureAwait(false);
         if (click is null)
         {
@@ -1166,12 +1401,11 @@ public static class AvitoCandidatesListPreparer
 
         await HumanDelay.AfterPhoneRevealClickAsync(cancellationToken).ConfigureAwait(false);
 
-        for (var elapsed = 0;
-             elapsed < MonitoringTiming.ContactsPopupMaxWaitMs;
-             elapsed += (MonitoringTiming.ContactsPopupPollMinMs + MonitoringTiming.ContactsPopupPollMaxMs) / 2)
+        var popupWaitSw = Stopwatch.StartNew();
+        while (popupWaitSw.ElapsedMilliseconds < MonitoringTiming.ContactsPopupMaxWaitMs)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var probe = await TryParseContactsPopupProbeAsync(executeScript, click.Index, cancellationToken)
+            var probe = await TryParseContactsPopupProbeAsync(executeScript, click.Index, true, cancellationToken)
                 .ConfigureAwait(false);
             if (probe is { Revealed: true })
             {
@@ -1195,6 +1429,124 @@ public static class AvitoCandidatesListPreparer
         _ = await executeScript(AvitoCandidatesPageScripts.BuildCloseContactsPopupScript(), cancellationToken)
             .ConfigureAwait(false);
         return new ContactsPopupRevealProbe(click.Items, click.Pending, true, false);
+    }
+
+    /// <summary>Popup-раскрытие через trusted CDP-клик: JS только находит цель и читает состояние.</summary>
+    private static async Task<ContactsPopupRevealProbe?> RevealNextContactsPopupPhoneWithPointerAsync(
+        Func<string, CancellationToken, Task<string>> executeScript,
+        CandidatesPageActors actors,
+        CancellationToken cancellationToken)
+    {
+        var target = await TryParseContactsPopupTargetAsync(executeScript, cancellationToken).ConfigureAwait(false);
+        if (target is null)
+        {
+            return null;
+        }
+
+        if (target.Pending == 0)
+        {
+            return new ContactsPopupRevealProbe(target.Items, 0, false, false);
+        }
+
+        if (target.ClosedExisting)
+        {
+            await CloseContactsPopupAsync(executeScript, actors, cancellationToken).ConfigureAwait(false);
+            await HumanDelay.DelayAsync(180, 420, cancellationToken).ConfigureAwait(false);
+            target = await TryParseContactsPopupTargetAsync(executeScript, cancellationToken).ConfigureAwait(false);
+            if (target is null)
+            {
+                return null;
+            }
+        }
+
+        if (target.TargetIndex < 0)
+        {
+            return new ContactsPopupRevealProbe(target.Items, target.Pending, false, false);
+        }
+
+        var childSelector = target.Kind == "call-button"
+            ? "[data-marker='job-application/call-button']"
+            : "[data-marker='job-application/phone']";
+        if (!await actors.TryClickItemChildAsync(target.TargetIndex, childSelector, cancellationToken)
+                .ConfigureAwait(false))
+        {
+            return new ContactsPopupRevealProbe(target.Items, target.Pending, false, false);
+        }
+
+        await HumanDelay.AfterPhoneRevealClickAsync(cancellationToken).ConfigureAwait(false);
+
+        var popupWaitSw = Stopwatch.StartNew();
+        while (popupWaitSw.ElapsedMilliseconds < MonitoringTiming.ContactsPopupMaxWaitMs)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var probe = await TryParseContactsPopupProbeAsync(executeScript, target.TargetIndex, false, cancellationToken)
+                .ConfigureAwait(false);
+            if (probe is { Revealed: true })
+            {
+                await CloseContactsPopupAsync(executeScript, actors, cancellationToken).ConfigureAwait(false);
+                return new ContactsPopupRevealProbe(target.Items, target.Pending, true, true);
+            }
+
+            if (probe is { State: "error" })
+            {
+                await CloseContactsPopupAsync(executeScript, actors, cancellationToken).ConfigureAwait(false);
+                return new ContactsPopupRevealProbe(target.Items, target.Pending, true, false);
+            }
+
+            await HumanDelay.DelayAsync(
+                    MonitoringTiming.ContactsPopupPollMinMs,
+                    MonitoringTiming.ContactsPopupPollMaxMs,
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        await CloseContactsPopupAsync(executeScript, actors, cancellationToken).ConfigureAwait(false);
+        return new ContactsPopupRevealProbe(target.Items, target.Pending, true, false);
+    }
+
+    private static async Task CloseContactsPopupAsync(
+        Func<string, CancellationToken, Task<string>> executeScript,
+        CandidatesPageActors actors,
+        CancellationToken cancellationToken)
+    {
+        if (actors.CloseContactsPopupAsync is not null
+            && await actors.SafeCloseContactsPopupAsync(cancellationToken).ConfigureAwait(false))
+        {
+            return;
+        }
+
+        _ = await executeScript(AvitoCandidatesPageScripts.BuildCloseContactsPopupScript(), cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private static async Task<ContactsPopupTargetProbe?> TryParseContactsPopupTargetAsync(
+        Func<string, CancellationToken, Task<string>> executeScript,
+        CancellationToken cancellationToken)
+    {
+        var raw = await executeScript(
+                AvitoCandidatesPageScripts.BuildFindContactsPopupTargetScript(),
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(UnwrapJsonString(raw));
+            var root = doc.RootElement;
+            return new ContactsPopupTargetProbe(
+                root.TryGetProperty("items", out var i) ? i.GetInt32() : 0,
+                root.TryGetProperty("pending", out var p) ? p.GetInt32() : 0,
+                root.TryGetProperty("targetIndex", out var t) ? t.GetInt32() : -1,
+                root.TryGetProperty("kind", out var k) ? k.GetString() ?? "none" : "none",
+                root.TryGetProperty("closedExisting", out var closed) && closed.ValueKind == JsonValueKind.True);
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private static async Task<ContactsPopupClickProbe?> TryParseContactsPopupClickAsync(
@@ -1230,10 +1582,11 @@ public static class AvitoCandidatesListPreparer
     private static async Task<ContactsPopupStateProbe?> TryParseContactsPopupProbeAsync(
         Func<string, CancellationToken, Task<string>> executeScript,
         int targetIndex,
+        bool closeOnReady,
         CancellationToken cancellationToken)
     {
         var raw = await executeScript(
-                AvitoCandidatesPageScripts.BuildContactsPopupProbeScript(targetIndex),
+                AvitoCandidatesPageScripts.BuildContactsPopupProbeScript(targetIndex, closeOnReady),
                 cancellationToken)
             .ConfigureAwait(false);
         if (string.IsNullOrWhiteSpace(raw))
@@ -1278,7 +1631,11 @@ public static class AvitoCandidatesListPreparer
 
     private sealed record PhonesReadyProbe(bool Ready, int Items, int WithPhone, int Masked);
 
-    private sealed record RevealPhonesStepProbe(int Items, int Masked, int Clicked);
+    private sealed record RevealPhonesStepProbe(int Items, int Masked, int Clicked, bool Attempted);
+
+    private sealed record MaskedPhoneTargetProbe(int Items, int Masked, int TargetIndex);
+
+    private sealed record ContactsPopupTargetProbe(int Items, int Pending, int TargetIndex, string Kind, bool ClosedExisting);
 
     private sealed record ContactsPopupRevealProbe(int Items, int Pending, bool Clicked, bool Revealed);
 

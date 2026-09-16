@@ -19,6 +19,12 @@ public sealed record GeeTestV4SessionContext(
     public bool HasChallenge => !string.IsNullOrWhiteSpace(Challenge);
     public bool HasRiskType => !string.IsNullOrWhiteSpace(RiskType);
 
+    /// <summary>
+    /// Контекст дополнен телом ответа GeeTest/firewall. Актуальный challenge выдаётся сервером в response:
+    /// challenge из request-стадии почти всегда отклоняется целевым сайтом при verify.
+    /// </summary>
+    public bool HasCapturedResponse => Source.Contains("response", StringComparison.OrdinalIgnoreCase);
+
     public string Fingerprint
     {
         get
@@ -298,6 +304,30 @@ public sealed class GeeTestV4NetworkContextCapture : IAsyncDisposable
             cancellationToken.ThrowIfCancellationRequested();
             var snapshot = Snapshot();
             if (snapshot is { CaptchaId: not null } && (snapshot.HasChallenge || snapshot.HasRiskType))
+            {
+                return snapshot;
+            }
+
+            await Task.Delay(100, cancellationToken).ConfigureAwait(false);
+        }
+
+        return Snapshot();
+    }
+
+    /// <summary>
+    /// Ждёт контекст, дополненный телом ответа (актуальный challenge приходит в response).
+    /// После таймаута возвращает лучший доступный снимок — request-only контекст.
+    /// </summary>
+    public async Task<GeeTestV4SessionContext?> WaitForResponseContextAsync(
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
+    {
+        var deadline = DateTime.UtcNow + timeout;
+        while (DateTime.UtcNow < deadline)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var snapshot = Snapshot();
+            if (snapshot is { CaptchaId: not null } && snapshot.HasCapturedResponse)
             {
                 return snapshot;
             }

@@ -6,7 +6,10 @@ namespace LeadFlow.Core.Services;
 /// </summary>
 public static class HumanDelay
 {
-    /// <summary>Спит [<paramref name="minMs"/>..<paramref name="maxMs"/>] миллисекунд, равномерное распределение.</summary>
+    /// <summary>
+    /// Спит [<paramref name="minMs"/>..<paramref name="maxMs"/>] миллисекунд, равномерное распределение.
+    /// Масштабируется на фактор персоны аккаунта (<see cref="AvitoPersona"/>) — анти-кластеризация.
+    /// </summary>
     public static Task DelayAsync(int minMs, int maxMs, CancellationToken cancellationToken = default)
     {
         var lo = Math.Max(0, Math.Min(minMs, maxMs));
@@ -16,6 +19,18 @@ public static class HumanDelay
             return Task.CompletedTask;
         }
 
+        if (AvitoPersona.TimingFactor is > 0.99 and < 1.01)
+        {
+            return DelayCoreAsync(lo, hi, cancellationToken);
+        }
+
+        var scaledLo = Math.Max(0, (int)(lo * AvitoPersona.TimingFactor));
+        var scaledHi = Math.Max(scaledLo, (int)(hi * AvitoPersona.TimingFactor));
+        return DelayCoreAsync(scaledLo, scaledHi, cancellationToken);
+    }
+
+    private static Task DelayCoreAsync(int lo, int hi, CancellationToken cancellationToken)
+    {
         // Random.Shared.Next(min, maxExclusive); добавляем +1, чтобы границы включались.
         var ms = lo == hi ? lo : Random.Shared.Next(lo, hi + 1);
         return Task.Delay(ms, cancellationToken);
@@ -23,6 +38,16 @@ public static class HumanDelay
 
     public static Task DelaySecondsAsync(int minSeconds, int maxSeconds, CancellationToken cancellationToken = default) =>
         DelayAsync(minSeconds * 1000, maxSeconds * 1000, cancellationToken);
+
+    /// <summary>
+    /// Рандомная пауза вокруг базового значения: [0.7×..1.6×] baseMs.
+    /// Для мест, где раньше стояла фиксированная константа — фиксированные интервалы выдают автоматизацию.
+    /// </summary>
+    public static Task AroundAsync(int baseMs, CancellationToken cancellationToken = default) =>
+        DelayAsync(
+            Math.Max(20, (int)(baseMs * 0.7)),
+            Math.Max(30, (int)(baseMs * 1.6)),
+            cancellationToken);
 
     public static Task BetweenResponsesAsync(CancellationToken cancellationToken = default) =>
         DelaySecondsAsync(
@@ -128,6 +153,7 @@ public static class HumanDelay
         var hi = Math.Max(
             MonitoringTiming.HumanTypeCharDelayMinMs,
             MonitoringTiming.HumanTypeCharDelayMaxMs);
-        return lo == hi ? lo : Random.Shared.Next(lo, hi + 1);
+        var delay = lo == hi ? lo : Random.Shared.Next(lo, hi + 1);
+        return Math.Max(0, (int)Math.Round(delay * AvitoPersona.TimingFactor));
     }
 }

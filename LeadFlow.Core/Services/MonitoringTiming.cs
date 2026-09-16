@@ -13,23 +13,23 @@ public static class MonitoringTiming
     public const int PendingUpdateRetrySeconds = 15;
 
     /// <summary>
-    /// Минимальная пауза между циклами (8 мин) при высокой доле новых откликов
+    /// Минимальная пауза между циклами (12 мин) при высокой доле новых откликов
     /// в последнем цикле. Ниже не опускаемся, чтобы не долбить Avito даже на пике.
     /// </summary>
-    public const int CycleDelayMinMinutes = 8;
+    public const int CycleDelayMinMinutes = 12;
 
     /// <summary>
-    /// Максимальная дневная пауза между циклами (45 мин), если в последнем цикле
+    /// Максимальная дневная пауза между циклами (70 мин), если в последнем цикле
     /// новых откликов почти не было. Единичный отклик держит паузу близко к этому потолку.
     /// </summary>
-    public const int CycleDelayMaxMinutes = 45;
+    public const int CycleDelayMaxMinutes = 70;
 
     /// <summary>
     /// Случайный разброс дневной паузы успешного прохода без backlog (±% от расчёта).
     /// Сдвигает соседние аккаунты относительно друг друга, чтобы не бить в Avito
     /// одним расписанием. Не применяется к явному RetryAfter, backlog и ночному floor.
     /// </summary>
-    public const int CycleDelayJitterPercent = 10;
+    public const int CycleDelayJitterPercent = 20;
 
     /// <summary>К пустому циклу N… добавляется (N−1)×шаг минут (см. Max), чтобы реже дергать Авито при долгой тишине.</summary>
     public const int CycleQuietBackoffExtraMinutesPerStep = 4;
@@ -46,7 +46,7 @@ public static class MonitoringTiming
     /// <summary>Насколько сильно исторический слот (день недели + час) может поднять «активность» при расчёте паузы (0…1).</summary>
     public const double CycleHistoricalHeatActivityBoostCap = 0.55;
 
-    public const int DelayBetweenAccountsSeconds = 15;
+    public const int DelayBetweenAccountsSeconds = 30;
 
     /// <summary>Сдвиг старта параллельных аккаунтов (мс), чтобы не бить в AdsPower Local API пачкой browser/start.</summary>
     public const int ParallelAccountLaunchStaggerMs = 2000;
@@ -76,7 +76,7 @@ public static class MonitoringTiming
     /// Также уборка срабатывает при смене локального календарного дня и при остановке мониторинга.
     /// </summary>
     public const int BrowserHousekeepingEveryNCycles = 3;
-    public const int DelayBetweenResponsesSeconds = 8;
+    public const int DelayBetweenResponsesSeconds = 15;
 
     /// <summary>
     /// Оценка «ёмкости» цикла для расчёта паузы между проходами (<see cref="MonitoringCycleDelay"/>).
@@ -131,27 +131,47 @@ public static class MonitoringTiming
     public const int MinMessengerAutoRepliesPerSubProfilePerCycle = 1;
 
     /// <summary>Вероятность (‰) пропустить чтение баланса в этом проходе субпрофиля.</summary>
-    public const int SkipBalanceChancePermille = 250;
+    public const int SkipBalanceChancePermille = 350;
 
     /// <summary>Вероятность (‰) коротко прокрутить список назад, как при перечитывании.</summary>
-    public const int ScrollBackChancePermille = 200;
+    public const int ScrollBackChancePermille = 350;
 
     /// <summary>Вероятность (‰) задержаться на «Мои объявления» перед откликами.</summary>
-    public const int ItemsLingerChancePermille = 400;
+    public const int ItemsLingerChancePermille = 550;
 
     /// <summary>Вероятность (‰) лишнего движения мыши перед кликом.</summary>
-    public const int MouseWanderChancePermille = 350;
+    public const int MouseWanderChancePermille = 500;
 
     /// <summary>Вероятность (‰) дополнительной паузы между субпрофилями.</summary>
-    public const int ExtraSubProfilePauseChancePermille = 300;
+    public const int ExtraSubProfilePauseChancePermille = 450;
+
+    // ---- Колесо мыши (CDP mouseWheel вместо JS scrollBy) ----
+
+    /// <summary>Один тик колеса: минимальная дельта (px).</summary>
+    public const int WheelTickDeltaMinPx = 40;
+
+    /// <summary>Один тик колеса: максимальная дельта (px).</summary>
+    public const int WheelTickDeltaMaxPx = 160;
+
+    /// <summary>Пауза между тиками колеса (мс), нижняя граница.</summary>
+    public const int WheelTickPauseMinMs = 20;
+
+    /// <summary>Пауза между тиками колеса (мс), верхняя граница.</summary>
+    public const int WheelTickPauseMaxMs = 60;
+
+    /// <summary>Вероятность (‰) микро-тика в обратную сторону после жеста (поправка недоскролла).</summary>
+    public const int WheelReverseTickChancePermille = 120;
+
+    /// <summary>Вероятность (‰) небольшого движения курсора во время длинной паузы.</summary>
+    public const int HumanNoiseChancePermille = 300;
 
     /// <summary>Пауза «смотрю список» после загрузки откликов.</summary>
-    public const int HumanDelayAfterListReadyMinMs = 1800;
-    public const int HumanDelayAfterListReadyMaxMs = 6500;
+    public const int HumanDelayAfterListReadyMinMs = 2500;
+    public const int HumanDelayAfterListReadyMaxMs = 9000;
 
     /// <summary>Пауза на объявлениях, если решили задержаться.</summary>
-    public const int HumanDelayItemsLingerMinMs = 2500;
-    public const int HumanDelayItemsLingerMaxMs = 9000;
+    public const int HumanDelayItemsLingerMinMs = 3500;
+    public const int HumanDelayItemsLingerMaxMs = 12000;
 
     /// <summary>Ночная тишина по Москве: с этого часа включительно.</summary>
     public const int NightQuietStartHourInclusive = 23;
@@ -170,52 +190,52 @@ public static class MonitoringTiming
     // имитируем чтение пользователем, чтобы не палить ботскую частоту запросов.
 
     /// <summary>Между обработкой откликов: рандом в [min..max] секунд (вокруг <see cref="DelayBetweenResponsesSeconds"/>).</summary>
-    public const int HumanDelayBetweenResponsesMinSeconds = 5;
-    public const int HumanDelayBetweenResponsesMaxSeconds = 14;
+    public const int HumanDelayBetweenResponsesMinSeconds = 10;
+    public const int HumanDelayBetweenResponsesMaxSeconds = 30;
 
     /// <summary>После переключения суб-профиля и до того, как тянуть с него данные.</summary>
-    public const int HumanDelayAfterProfileSwitchMinMs = 6000;
-    public const int HumanDelayAfterProfileSwitchMaxMs = 15000;
+    public const int HumanDelayAfterProfileSwitchMinMs = 8000;
+    public const int HumanDelayAfterProfileSwitchMaxMs = 20000;
 
     /// <summary>После загрузки страницы /profile/pro/items до снятия HTML — даём «дочитать» SPA + лёгкий jitter.</summary>
-    public const int HumanDelayAfterItemsRenderMinMs = 5000;
-    public const int HumanDelayAfterItemsRenderMaxMs = 10000;
+    public const int HumanDelayAfterItemsRenderMinMs = 6000;
+    public const int HumanDelayAfterItemsRenderMaxMs = 12000;
 
     /// <summary>После загрузки модалки переключения профилей.</summary>
-    public const int HumanDelayAfterSwitchModalMinMs = 800;
-    public const int HumanDelayAfterSwitchModalMaxMs = 2200;
+    public const int HumanDelayAfterSwitchModalMinMs = 1200;
+    public const int HumanDelayAfterSwitchModalMaxMs = 3200;
 
     /// <summary>Пауза между суб-профилями на одном аккаунте — крупнее, имитируем «походили по кабинету».</summary>
-    public const int HumanDelayBetweenSubProfilesMinMs = 8000;
-    public const int HumanDelayBetweenSubProfilesMaxMs = 18000;
+    public const int HumanDelayBetweenSubProfilesMinMs = 12000;
+    public const int HumanDelayBetweenSubProfilesMaxMs = 25000;
 
     /// <summary>Перед кликом по карточке отклика (панель «Данные», чат).</summary>
-    public const int HumanDelayBeforeCandidateClickMinMs = 650;
-    public const int HumanDelayBeforeCandidateClickMaxMs = 1600;
+    public const int HumanDelayBeforeCandidateClickMinMs = 1200;
+    public const int HumanDelayBeforeCandidateClickMaxMs = 3200;
 
     /// <summary>После клика по карточке до чтения панели или мини-чата.</summary>
-    public const int HumanDelayAfterCandidateClickMinMs = 800;
-    public const int HumanDelayAfterCandidateClickMaxMs = 2000;
+    public const int HumanDelayAfterCandidateClickMinMs = 1500;
+    public const int HumanDelayAfterCandidateClickMaxMs = 4000;
 
     /// <summary>После чтения панели «Данные» — имитация просмотра, до следующей карточки.</summary>
-    public const int HumanDelayAfterDetailPanelReadMinMs = 350;
-    public const int HumanDelayAfterDetailPanelReadMaxMs = 950;
+    public const int HumanDelayAfterDetailPanelReadMinMs = 800;
+    public const int HumanDelayAfterDetailPanelReadMaxMs = 2200;
 
     /// <summary>После шага прокрутки списка откликов (подгрузка + «почитать»).</summary>
-    public const int HumanDelayAfterListScrollMinMs = 650;
-    public const int HumanDelayAfterListScrollMaxMs = 1500;
+    public const int HumanDelayAfterListScrollMinMs = 1200;
+    public const int HumanDelayAfterListScrollMaxMs = 3000;
 
     /// <summary>После клика «показать номер» до опроса popup / inline.</summary>
-    public const int HumanDelayAfterPhoneRevealClickMinMs = 700;
-    public const int HumanDelayAfterPhoneRevealClickMaxMs = 1700;
+    public const int HumanDelayAfterPhoneRevealClickMinMs = 1300;
+    public const int HumanDelayAfterPhoneRevealClickMaxMs = 3400;
 
     /// <summary>После успешного раскрытия номера — не сразу к следующей карточке.</summary>
-    public const int HumanDelayAfterPhoneRevealSuccessMinMs = 900;
-    public const int HumanDelayAfterPhoneRevealSuccessMaxMs = 2200;
+    public const int HumanDelayAfterPhoneRevealSuccessMinMs = 1800;
+    public const int HumanDelayAfterPhoneRevealSuccessMaxMs = 4500;
 
     /// <summary>Если popup не отдал номер — короткая пауза перед ретраем.</summary>
-    public const int HumanDelayAfterPhoneRevealMissMinMs = 500;
-    public const int HumanDelayAfterPhoneRevealMissMaxMs = 1100;
+    public const int HumanDelayAfterPhoneRevealMissMinMs = 900;
+    public const int HumanDelayAfterPhoneRevealMissMaxMs = 2000;
 
     /// <summary>Опрос DOM popup контактов (мс).</summary>
     public const int ContactsPopupPollMinMs = 220;
@@ -225,12 +245,12 @@ public static class MonitoringTiming
     public const int ContactsPopupMaxWaitMs = 5_500;
 
     /// <summary>После закрытия мини-чата / сбора переписки — «прочитал и закрыл».</summary>
-    public const int HumanDelayAfterMessengerCardMinMs = 2400;
-    public const int HumanDelayAfterMessengerCardMaxMs = 6500;
+    public const int HumanDelayAfterMessengerCardMinMs = 3500;
+    public const int HumanDelayAfterMessengerCardMaxMs = 9000;
 
     /// <summary>Пауза между символами при наборе (логин, чат).</summary>
-    public const int HumanTypeCharDelayMinMs = 38;
-    public const int HumanTypeCharDelayMaxMs = 95;
+    public const int HumanTypeCharDelayMinMs = 55;
+    public const int HumanTypeCharDelayMaxMs = 150;
 
     // ---- Ожидание готовности страницы откликов (сигналы DOM, не только таймер) ----
 
@@ -306,10 +326,10 @@ public static class MonitoringTiming
     public const int AutoLoginPostSubmitPollMs = 650;
 
     /// <summary>Пауза после набора текста в мини-чат перед отправкой (мс).</summary>
-    public const int MessengerAutoReplyAfterTypeMinMs = 800;
+    public const int MessengerAutoReplyAfterTypeMinMs = 1200;
 
     /// <summary>Пауза после набора текста в мини-чат перед отправкой (мс).</summary>
-    public const int MessengerAutoReplyAfterTypeMaxMs = 1800;
+    public const int MessengerAutoReplyAfterTypeMaxMs = 3000;
 
     /// <summary>Ожидание появления отправленного сообщения в истории чата (мс).</summary>
     public const int MessengerAutoReplyPostSendMaxWaitMs = 8_000;

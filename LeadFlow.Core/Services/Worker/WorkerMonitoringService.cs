@@ -718,6 +718,8 @@ public sealed class WorkerMonitoringService(
         Guid workerId,
         CancellationToken cancellationToken)
     {
+        // Персона аккаунта: стабильный множитель таймингов, чтобы аккаунты не были поведенческими близнецами.
+        using var personaScope = AvitoPersona.Begin(account.Id.ToString());
         using var captchaRequestContext = CaptchaProviderRequestContext.Use(new CaptchaProviderRequestContextValue(
             WorkerId: workerId,
             AccountId: account.Id,

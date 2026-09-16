@@ -25,6 +25,8 @@ public sealed class AvitoGeeTestSolver(
     private const string LoginClickCaptchaPreparedHostId = "leadflow-geetest-capture";
     private const string LoginClickCaptchaPreparedImageSelector = "#leadflow-geetest-capture-image";
     private const string LoginClickCaptchaPreparedHintSelector = "#leadflow-geetest-capture-hint";
+    private static readonly TimeSpan ResponseContextWaitTimeout = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan DiagnosticsContextWaitTimeout = TimeSpan.FromSeconds(1);
     private static readonly SemaphoreSlim Gate = new(
         AvitoGeeTestSolveSupport.MaxConcurrentGeeTestSolves,
         AvitoGeeTestSolveSupport.MaxConcurrentGeeTestSolves);
@@ -221,7 +223,10 @@ public sealed class AvitoGeeTestSolver(
 
                 var liveContext = contextCapture is null
                     ? null
-                    : await contextCapture.WaitForContextAsync(TimeSpan.FromSeconds(1), cancellationToken).ConfigureAwait(false);
+                    : await contextCapture.WaitForResponseContextAsync(
+                            dynamicContextEnabled ? ResponseContextWaitTimeout : DiagnosticsContextWaitTimeout,
+                            cancellationToken)
+                        .ConfigureAwait(false);
                 var captchaId = dynamicContextEnabled ? liveContext?.CaptchaId : null;
                 captchaId ??= AvitoCaptchaDetector.ExtractGeeTestCaptchaId(html);
                 var context = liveContext ?? new GeeTestV4SessionContext(captchaId, null, null, "fallback", DateTime.UtcNow);
@@ -232,7 +237,26 @@ public sealed class AvitoGeeTestSolver(
 
                 if (dynamicContextEnabled)
                 {
-                    effectiveTaskOptions = effectiveTaskOptions.WithSessionContext(context);
+                    // Актуальный challenge выдаётся сервером в теле ответа GeeTest. Challenge из request-стадии
+                    // приводит к токену для чужой сессии — Avito отклоняет его на verify (verified_false).
+                    // Если response не пойман за таймаут — решаем по captcha_id без challenge.
+                    if (context.HasCapturedResponse)
+                    {
+                        effectiveTaskOptions = effectiveTaskOptions.WithSessionContext(context);
+                    }
+                    else
+                    {
+                        _ = GlobalLogger.Instance.LogAsync(
+                            "Captcha: ответ GeeTest не перехвачен за таймаут — решаем без challenge по captcha_id.",
+                            DeskLinkAuditLogLevel.Warning,
+                            properties: new Dictionary<string, object?>
+                            {
+                                ["step"] = "captcha_context_response_missing",
+                                ["captcha.attempt"] = attempt,
+                                ["captcha.contextSource"] = context.Source,
+                                ["captcha.contextFingerprint"] = context.Fingerprint
+                            });
+                    }
                 }
 
                 if (dynamicContextEnabled && !contextTracker.TryUse(context))
@@ -261,6 +285,7 @@ public sealed class AvitoGeeTestSolver(
                         ["captcha.proxyMode"] = effectiveTaskOptions.UsesSuppliedProxy ? "profile" : "proxyless",
                         ["captcha.userAgentPresent"] = !string.IsNullOrWhiteSpace(effectiveTaskOptions.UserAgent),
                         ["captcha.contextSource"] = context.Source,
+                        ["captcha.contextResponseCaptured"] = context.HasCapturedResponse,
                         ["captcha.contextFingerprint"] = context.Fingerprint,
                         ["captcha.challengePresent"] = context.HasChallenge,
                         ["captcha.riskTypePresent"] = context.HasRiskType,

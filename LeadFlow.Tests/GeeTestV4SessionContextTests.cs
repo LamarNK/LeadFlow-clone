@@ -73,6 +73,21 @@ public sealed class GeeTestV4SessionContextTests
         Assert.Equal("request+response", merged.Source);
     }
 
+    [Theory]
+    [InlineData("geetest_request", false)]
+    [InlineData("firewall_request", false)]
+    [InlineData("fallback", false)]
+    [InlineData("geetest_response", true)]
+    [InlineData("geetest_request+geetest_response", true)]
+    [InlineData("firewall_request+firewall_response", true)]
+    [InlineData("geetest_request+geetest_response+firewall_response", true)]
+    public void HasCapturedResponse_DetectsResponseStage(string source, bool expected)
+    {
+        var context = new GeeTestV4SessionContext("id", "challenge", null, source, DateTime.UtcNow);
+
+        Assert.Equal(expected, context.HasCapturedResponse);
+    }
+
     [Fact]
     public void AttemptTracker_RejectsDuplicateAndDetectsChangedContext()
     {

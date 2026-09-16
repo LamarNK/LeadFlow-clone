@@ -5,15 +5,40 @@ namespace LeadFlow.Core.Services.Avito;
 /// </summary>
 public static class AvitoCandidatesPageScripts
 {
-    /// <summary>Общие хелперы: кэш раскрытых номеров и чтение popup «Временный номер».</summary>
-    private const string ContactsPhoneHelpersJs =
+    /// <summary>
+    /// Хранилище данных текущего прохода в Symbol-ключе; сбрасывается перед обходом списка.
+    /// </summary>
+    private const string StateStoreHelpersJs =
         """
-        const initRevealedPhonesStore = () => {
-            if (!window.__leadflowRevealedPhones || typeof window.__leadflowRevealedPhones !== "object") {
-                window.__leadflowRevealedPhones = {};
+        const lfState = () => {
+            const sym = Symbol.for("dom.cache.v1");
+            let store = window[sym];
+            if (!store || typeof store !== "object") {
+                store = {};
+                try {
+                    Object.defineProperty(window, sym, { value: store, enumerable: false, configurable: true, writable: true });
+                } catch {
+                    window[sym] = store;
+                }
             }
 
-            return window.__leadflowRevealedPhones;
+            return store;
+        };
+        """;
+
+    /// <summary>Общие хелперы: Symbol-state + кэш раскрытых номеров и чтение popup «Временный номер».</summary>
+    private const string ContactsPhoneHelpersJs = StateStoreHelpersJs + ContactsPhoneHelpersCoreJs;
+
+    /// <summary>Хелперы чтения телефонов (без state-хранилища).</summary>
+    private const string ContactsPhoneHelpersCoreJs =
+        """
+        const initRevealedPhonesStore = () => {
+            const state = lfState();
+            if (!state.revealedPhones || typeof state.revealedPhones !== "object") {
+                state.revealedPhones = {};
+            }
+
+            return state.revealedPhones;
         };
 
         const normalizePhoneText = (text) => (text ?? "").replace(/\s+/g, " ").trim();
@@ -29,7 +54,7 @@ public static class AvitoCandidatesPageScripts
         };
 
         const getCachedPhone = (index) => {
-            const store = window.__leadflowRevealedPhones;
+            const store = lfState().revealedPhones;
             if (!store || typeof store !== "object") {
                 return "";
             }
@@ -38,7 +63,7 @@ public static class AvitoCandidatesPageScripts
         };
 
         const clearCachedPhone = (index) => {
-            const store = window.__leadflowRevealedPhones;
+            const store = lfState().revealedPhones;
             if (!store || typeof store !== "object") {
                 return;
             }
@@ -95,7 +120,7 @@ public static class AvitoCandidatesPageScripts
         };
 
         const shouldSkipPhoneReveal = (index) => {
-            const skips = window.__leadflowSkipPhoneReveal;
+            const skips = lfState().skipPhoneReveal;
             if (!skips || typeof skips !== "object") {
                 return false;
             }
@@ -104,7 +129,7 @@ public static class AvitoCandidatesPageScripts
         };
 
         const isPhoneWatchPriority = (index) => {
-            const priorities = window.__leadflowPhoneWatchPriority;
+            const priorities = lfState().phoneWatchPriority;
             return !!(priorities && typeof priorities === "object"
                 && (priorities[String(index)] || priorities[index]));
         };
@@ -588,9 +613,75 @@ public static class AvitoCandidatesPageScripts
         })();
         """;
 
+    /// <summary>Геометрия скроллера списка откликов: для расчёта дельты CDP-колеса.</summary>
+    public static string BuildScrollGeometryScript() =>
+        """
+        (() => {
+            const findScroller = () => {
+                const first = document.querySelector("[data-marker='job-application/item']");
+                if (first) {
+                    let node = first.parentElement;
+                    while (node && node !== document.body) {
+                        const style = window.getComputedStyle(node);
+                        const overflowY = style.overflowY;
+                        if ((overflowY === "auto" || overflowY === "scroll") && node.scrollHeight > node.clientHeight + 40) {
+                            return node;
+                        }
+                        node = node.parentElement;
+                    }
+                }
+
+                const hints = document.querySelector(
+                    "[class*='scrollable'], [data-marker='job-applications/list'], .styles-page-cyvKh, main"
+                );
+                if (hints) {
+                    let node = hints;
+                    while (node && node !== document.body) {
+                        const style = window.getComputedStyle(node);
+                        if ((style.overflowY === "auto" || style.overflowY === "scroll")
+                            && node.scrollHeight > node.clientHeight + 40) {
+                            return node;
+                        }
+                        node = node.parentElement;
+                    }
+                }
+
+                return document.scrollingElement || document.documentElement;
+            };
+
+            const scroller = findScroller();
+            return JSON.stringify({
+                scrollTop: scroller.scrollTop,
+                clientHeight: scroller.clientHeight,
+                scrollHeight: scroller.scrollHeight
+            });
+        })();
+        """;
+
+    /// <summary>Снимок после шага прокрутки без самого прокрутки (движение делает CDP-колесо).</summary>
+    public static string BuildScrollStepProbeScript(int previousItemCount = 0) =>
+        BuildScrollStepScript(previousItemCount, includeScroll: false);
+
     /// <summary>Один шаг прокрутки вниз по контейнеру списка откликов.</summary>
     public static string BuildScrollStepScript(int previousItemCount = 0) =>
-        $$"""
+        BuildScrollStepScript(previousItemCount, includeScroll: true);
+
+    private static string BuildScrollStepScript(int previousItemCount, bool includeScroll)
+    {
+        var scrollBlock = includeScroll
+            ? """
+            const ratio = 0.32 + Math.random() * 0.28;
+            const delta = Math.max(Math.floor(scroller.clientHeight * ratio), 180);
+            try {
+                // The result is sampled immediately below, so animation would report moved=false
+                // before the first frame and make the C# loop stop after three false stable rounds.
+                scroller.scrollBy({ top: delta, left: 0, behavior: "auto" });
+            } catch {
+                scroller.scrollBy(0, delta);
+            }
+            """
+            : "";
+        return $$"""
         (() => {
         {{ContactsPhoneHelpersJs}}
         {{AgeParseHelpersJs}}
@@ -632,15 +723,7 @@ public static class AvitoCandidatesPageScripts
 
             const scroller = findScroller();
             const beforeTop = scroller.scrollTop;
-            const ratio = 0.32 + Math.random() * 0.28;
-            const delta = Math.max(Math.floor(scroller.clientHeight * ratio), 180);
-            try {
-                // The result is sampled immediately below, so animation would report moved=false
-                // before the first frame and make the C# loop stop after three false stable rounds.
-                scroller.scrollBy({ top: delta, left: 0, behavior: "auto" });
-            } catch {
-                scroller.scrollBy(0, delta);
-            }
+            {{scrollBlock}}
             const atEnd = scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 8;
             initRevealedPhonesStore();
             const items = Array.from(document.querySelectorAll("[data-marker='job-application/item']"));
@@ -729,7 +812,7 @@ public static class AvitoCandidatesPageScripts
                 normalizeUrl(item?.querySelector("[data-marker='job-application/link/to-resume']")?.getAttribute("href") ?? ""),
                 resolveMessengerUrl(item)
             ].join("\u001f");
-            const boundary = window.__leadflowScrollBoundary;
+            const boundary = lfState().scrollBoundary;
             const domChanged = previousItemCount > 0 && (
                 items.length < previousItemCount
                 || !boundary
@@ -745,7 +828,7 @@ public static class AvitoCandidatesPageScripts
             const fullRescan = items.length < previousItemCount || domChanged || !structureValid;
             const newItems = (fullRescan ? items : items.slice(previousItemCount))
                 .map((item, offset) => mapItem(item, fullRescan ? offset : previousItemCount + offset));
-            window.__leadflowScrollBoundary = {
+            lfState().scrollBoundary = {
                 count: items.length,
                 firstKey: itemKey(items[0]),
                 lastKey: itemKey(items.at(-1))
@@ -754,6 +837,7 @@ public static class AvitoCandidatesPageScripts
                 itemCount: items.length,
                 scrollTop: scroller.scrollTop,
                 scrollHeight: scroller.scrollHeight,
+                clientHeight: scroller.clientHeight,
                 moved: Math.abs(scroller.scrollTop - beforeTop) > 2,
                 atEnd,
                 fullRescan,
@@ -762,6 +846,7 @@ public static class AvitoCandidatesPageScripts
             });
         })();
         """;
+    }
 
     /// <summary>Короткий скролл вверх — как будто перечитали предыдущие карточки.</summary>
     public static string BuildScrollBackScript() =>
@@ -876,12 +961,16 @@ public static class AvitoCandidatesPageScripts
 
     /// <summary>Очищает привязанный к DOM-индексам кэш перед новым проходом/субпрофилем.</summary>
     public static string BuildResetCandidateCollectionStateScript() =>
-        """
+        $$"""
         (() => {
-            window.__leadflowRevealedPhones = {};
-            window.__leadflowSkipPhoneReveal = {};
-            window.__leadflowPhoneWatchPriority = {};
-            window.__leadflowScrollBoundary = null;
+        {{StateStoreHelpersJs}}
+            const state = lfState();
+            state.revealedPhones = {};
+            state.skipPhoneReveal = {};
+            state.phoneWatchPriority = {};
+            state.scrollBoundary = null;
+            state.detailEnrichment = {};
+            state.messengerMarkedBefore = new WeakSet();
             return JSON.stringify({ ok: true });
         })();
         """;
@@ -894,81 +983,15 @@ public static class AvitoCandidatesPageScripts
                 .Where(static x => x >= 0)
                 .Distinct()
                 .ToDictionary(static x => x.ToString(), static _ => true));
-        return $"window.__leadflowPhoneWatchPriority = {priorityJson}; JSON.stringify({{ ok: true, prioritized: Object.keys(window.__leadflowPhoneWatchPriority).length }});";
+        return $$"""
+        (() => {
+        {{StateStoreHelpersJs}}
+            const state = lfState();
+            state.phoneWatchPriority = {{priorityJson}};
+            return JSON.stringify({ ok: true, prioritized: Object.keys(state.phoneWatchPriority).length });
+        })();
+        """;
     }
-
-    /// <summary>Блокирует копирование в буфер на странице (клик «телефон» на Avito часто вызывает copy).</summary>
-    public static string BuildEnableClipboardGuardScript() =>
-        """
-        (() => {
-            if (window.__leadflowClipboardGuard) {
-                return JSON.stringify({ ok: true, already: true });
-            }
-
-            const guard = { orig: {} };
-            const clip = navigator.clipboard;
-            if (clip) {
-                if (typeof clip.writeText === "function") {
-                    guard.orig.writeText = clip.writeText.bind(clip);
-                    clip.writeText = async () => {};
-                }
-
-                if (typeof clip.write === "function") {
-                    guard.orig.write = clip.write.bind(clip);
-                    clip.write = async () => {};
-                }
-            }
-
-            guard.origExecCommand = document.execCommand.bind(document);
-            document.execCommand = function (cmd, ...args) {
-                if (String(cmd ?? "").toLowerCase() === "copy") {
-                    return true;
-                }
-
-                return guard.origExecCommand(cmd, ...args);
-            };
-
-            guard.copyHandler = (event) => {
-                event.preventDefault();
-                event.stopImmediatePropagation();
-            };
-            document.addEventListener("copy", guard.copyHandler, true);
-            window.__leadflowClipboardGuard = guard;
-            return JSON.stringify({ ok: true });
-        })();
-        """;
-
-    public static string BuildDisableClipboardGuardScript() =>
-        """
-        (() => {
-            const guard = window.__leadflowClipboardGuard;
-            if (!guard) {
-                return JSON.stringify({ ok: true });
-            }
-
-            const clip = navigator.clipboard;
-            if (clip) {
-                if (guard.orig.writeText) {
-                    clip.writeText = guard.orig.writeText;
-                }
-
-                if (guard.orig.write) {
-                    clip.write = guard.orig.write;
-                }
-            }
-
-            if (guard.origExecCommand) {
-                document.execCommand = guard.origExecCommand;
-            }
-
-            if (guard.copyHandler) {
-                document.removeEventListener("copy", guard.copyHandler, true);
-            }
-
-            delete window.__leadflowClipboardGuard;
-            return JSON.stringify({ ok: true });
-        })();
-        """;
 
     /// <summary>Клик по кнопке «Перейти в чат» на карточке отклика (тот же индекс, что у <c>job-application/item</c>).</summary>
     public static string BuildClickCandidateChatByIndexScript(int index) =>
@@ -1217,7 +1240,14 @@ public static class AvitoCandidatesPageScripts
         """;
 
     public static string BuildApplyDetailEnrichmentScript(string enrichmentJson) =>
-        $"window.__leadflowDetailEnrichment = {enrichmentJson}; JSON.stringify({{ ok: true, count: Object.keys(window.__leadflowDetailEnrichment || {{}}).length }});";
+        $$"""
+        (() => {
+        {{StateStoreHelpersJs}}
+            const state = lfState();
+            state.detailEnrichment = {{enrichmentJson}};
+            return JSON.stringify({ ok: true, count: Object.keys(state.detailEnrichment || {}).length });
+        })();
+        """;
 
     /// <summary>Ключи карточек списка для пропуска detail-enrich (sourceResponseId + телефон для enrichment map).</summary>
     public static string BuildCollectListItemSkipKeysScript() =>
@@ -1498,7 +1528,14 @@ public static class AvitoCandidatesPageScripts
         var skipJson = System.Text.Json.JsonSerializer.Serialize(
             skipIndices.Distinct().ToDictionary(static x => x.ToString(), static _ => true));
         // Merge: fingerprint / phone / profile / collection-filter skips must accumulate, not overwrite.
-        return $"window.__leadflowSkipPhoneReveal = Object.assign(window.__leadflowSkipPhoneReveal && typeof window.__leadflowSkipPhoneReveal === 'object' ? window.__leadflowSkipPhoneReveal : {{}}, {skipJson}); JSON.stringify({{ ok: true, skipped: Object.keys(window.__leadflowSkipPhoneReveal || {{}}).length }});";
+        return $$"""
+        (() => {
+        {{StateStoreHelpersJs}}
+            const state = lfState();
+            state.skipPhoneReveal = Object.assign(state.skipPhoneReveal && typeof state.skipPhoneReveal === "object" ? state.skipPhoneReveal : {}, {{skipJson}});
+            return JSON.stringify({ ok: true, skipped: Object.keys(state.skipPhoneReveal || {}).length });
+        })();
+        """;
     }
 
     /// <summary>CRM-страница откликов <c>/profile/job/responses</c> (фильтры, cv-button, «Скачать отчёт»).</summary>
@@ -1592,12 +1629,13 @@ public static class AvitoCandidatesPageScripts
 
     /// <summary>
     /// Помечает уже видимые истории до открытия карточки. После клика по кандидату новый мини-чат
-    /// выбирается по отсутствию этой метки, а не по первому глобальному виджету мессенджера.
+    /// выбирается по отсутствию в WeakSet «был до открытия», а не по первому глобальному виджету мессенджера.
+    /// Никаких DOM-атрибутов и window-глобалов: состояние только в Symbol-хранилище.
     /// </summary>
     public static string BuildMarkMessengerRootsBeforeOpenScript() =>
-        """
+        $$"""
         (() => {
-            const attribute = "data-leadflow-messenger-before";
+        {{StateStoreHelpersJs}}
             const isVisible = (element) => {
                 if (!element) {
                     return false;
@@ -1613,26 +1651,40 @@ public static class AvitoCandidatesPageScripts
             };
             const isHistoryVisible = (history) => isVisible(history)
                 || isVisible(history?.querySelector("[data-marker='messagesHistory/list']"));
-            const marker = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+            const state = lfState();
+            state.messengerMarkedBefore = new WeakSet();
+
             let marked = 0;
             for (const history of document.querySelectorAll("[data-marker='messagesHistory']")) {
                 if (!isHistoryVisible(history)) {
                     continue;
                 }
 
-                history.setAttribute(attribute, marker);
+                state.messengerMarkedBefore.add(history);
                 marked++;
             }
 
-            window.__leadflowMessengerBeforeMarker = marker;
-            return JSON.stringify({ ok: true, marker, marked });
+            return JSON.stringify({ ok: true, marked });
         })();
+        """;
+
+    /// <summary>История чата, которой не было в WeakSet до клика (общий фрагмент).</summary>
+    private const string MessengerOpenedHistoryJs =
+        """
+        const isMessengerHistoryOpenedAfterMark = (history) => {
+            const state = lfState();
+            const markedBefore = state.messengerMarkedBefore;
+            const visible = isVisible(history) || isVisible(history?.querySelector("[data-marker='messagesHistory/list']"));
+            return visible && !(markedBefore instanceof WeakSet && markedBefore.has(history));
+        };
         """;
 
     /// <summary>Мини-панель в углу или полноэкранный канал после клика «Перейти в чат».</summary>
     public static string BuildMessengerUiVisibleExpression() =>
-        """
+        $$"""
         () => {
+        {{StateStoreHelpersJs}}
+        {{MessengerOpenedHistoryJs}}
             if (/\/profile\/messenger\/channel\//i.test(window.location.href)) {
                 return true;
             }
@@ -1653,7 +1705,7 @@ public static class AvitoCandidatesPageScripts
 
             // В разметке Avito ссылка «Открыть сообщения во весь экран» и messagesHistory —
             // соседи внутри channel-module-root. Сам контейнер истории может переиспользоваться
-            // между карточками, поэтому его метка до клика не является признаком старого чата.
+            // между карточками, поэтому метка до клика не является признаком старого чата.
             const activeMiniRoot = Array.from(document.querySelectorAll("a[data-marker='mini-messenger/messenger-page-link']"))
                 .map((link) => isVisible(link) ? link.closest("[class*='channel-module-root']") : null)
                 .find((root) => isVisible(root) && !!root.querySelector("[data-marker='messagesHistory']"));
@@ -1661,22 +1713,17 @@ public static class AvitoCandidatesPageScripts
                 return true;
             }
 
-            const marker = String(window.__leadflowMessengerBeforeMarker ?? "");
-            if (!marker) {
-                return false;
-            }
-
             return Array.from(document.querySelectorAll("[data-marker='messagesHistory']"))
-                .some((history) => (isVisible(history)
-                        || isVisible(history.querySelector("[data-marker='messagesHistory/list']")))
-                    && history.getAttribute("data-leadflow-messenger-before") !== marker);
+                .some((history) => isMessengerHistoryOpenedAfterMark(history));
         }
         """;
 
     /// <summary>В оболочке мини-чата уже есть хотя бы одно <c>data-marker=message</c>.</summary>
     public static string BuildMessengerMessagesPresentExpression() =>
-        """
+        $$"""
         () => {
+        {{StateStoreHelpersJs}}
+        {{MessengerOpenedHistoryJs}}
             const hasMessage = (root) => !!root?.querySelector("[data-marker='message']");
             const isVisible = (element) => {
                 if (!element) {
@@ -1698,13 +1745,8 @@ public static class AvitoCandidatesPageScripts
                 return true;
             }
 
-            const marker = String(window.__leadflowMessengerBeforeMarker ?? "");
-            const openedHistory = marker
-                ? Array.from(document.querySelectorAll("[data-marker='messagesHistory']"))
-                    .find((history) => (isVisible(history)
-                            || isVisible(history.querySelector("[data-marker='messagesHistory/list']")))
-                        && history.getAttribute("data-leadflow-messenger-before") !== marker)
-                : null;
+            const openedHistory = Array.from(document.querySelectorAll("[data-marker='messagesHistory']"))
+                .find((history) => isMessengerHistoryOpenedAfterMark(history));
             if (hasMessage(openedHistory)) {
                 return true;
             }
@@ -1768,8 +1810,9 @@ public static class AvitoCandidatesPageScripts
     /// между карточками, поэтому метка до клика служит только резервным вариантом.
     /// </summary>
     public static string BuildScrollAndCollectMiniMessengerMessagesScript() =>
-        """
+        $$"""
         (() => {
+        {{StateStoreHelpersJs}}
             const normalize = (text) => (text ?? "").replace(/\s+/g, " ").trim();
             const isVisible = (element) => {
                 if (!element) {
@@ -1885,16 +1928,14 @@ public static class AvitoCandidatesPageScripts
                 return isVisible(root) && !!root.querySelector("[data-marker='messagesHistory']");
             });
             const miniRoot = miniLink?.closest("[class*='channel-module-root']") || null;
-            const marker = String(window.__leadflowMessengerBeforeMarker ?? "");
             const histories = Array.from(document.querySelectorAll("[data-marker='messagesHistory']"));
             const visibleHistoryCount = histories.filter((history) => isVisible(history)
                 || isVisible(history.querySelector("[data-marker='messagesHistory/list']"))).length;
-            const openedHistory = marker
-                ? histories
-                    .find((history) => (isVisible(history)
-                            || isVisible(history.querySelector("[data-marker='messagesHistory/list']")))
-                        && history.getAttribute("data-leadflow-messenger-before") !== marker)
-                : null;
+            const markedBefore = lfState().messengerMarkedBefore;
+            const openedHistory = histories
+                .find((history) => (isVisible(history)
+                        || isVisible(history.querySelector("[data-marker='messagesHistory/list']")))
+                    && !(markedBefore instanceof WeakSet && markedBefore.has(history)));
             const isChannelPage = /\/profile\/messenger\/channel\//i.test(window.location.href);
             const channelRoot = miniRoot
                 || openedHistory?.closest("[class*='channel-module-root']")
@@ -1925,13 +1966,17 @@ public static class AvitoCandidatesPageScripts
                 return JSON.stringify({ ok: false, reason: "no_messages_list", diagnostics, avatarUrl, messages: [] });
             }
 
+            // Скролл истории вверх делает C# CDP-колесом по listRect; JS не двигает страницу.
+            var listRect = null;
             if (list) {
-                const step = Math.max(Math.floor(list.clientHeight * 0.65), 180);
-                try {
-                    list.scrollBy({ top: -step, left: 0, behavior: "auto" });
-                } catch {
-                    list.scrollTop = Math.max(0, list.scrollTop - step);
-                }
+                const rect = list.getBoundingClientRect();
+                listRect = {
+                    x: rect.x,
+                    y: rect.y,
+                    width: rect.width,
+                    height: rect.height,
+                    clientHeight: list.clientHeight
+                };
             }
 
             return JSON.stringify({
@@ -1939,9 +1984,40 @@ public static class AvitoCandidatesPageScripts
                 reason: messages.length === 0 ? "no_message_text" : null,
                 diagnostics,
                 avatarUrl,
+                listRect,
                 messages,
                 count: messages.length
             });
+        })();
+        """;
+
+    /// <summary>Легаси-прокрутка истории вверх (fallback, если колесо недоступно).</summary>
+    public static string BuildScrollMessengerHistoryBackScript() =>
+        """
+        (() => {
+            const roots = Array.from(document.querySelectorAll("[data-marker='messagesHistory']"));
+            const isVisible = (element) => {
+                if (!element) return false;
+                const style = window.getComputedStyle(element);
+                if (style.display === "none" || style.visibility === "hidden") return false;
+                const rect = element.getBoundingClientRect();
+                return rect.width > 0 && rect.height > 0;
+            };
+            const list = roots
+                .map((root) => root.querySelector("[data-marker='messagesHistory/list']"))
+                .find((element) => isVisible(element));
+            if (!list) {
+                return JSON.stringify({ ok: false });
+            }
+
+            const step = Math.max(Math.floor(list.clientHeight * 0.65), 180);
+            try {
+                list.scrollBy({ top: -step, left: 0, behavior: "auto" });
+            } catch {
+                list.scrollTop = Math.max(0, list.scrollTop - step);
+            }
+
+            return JSON.stringify({ ok: true });
         })();
         """;
 
@@ -2043,7 +2119,43 @@ public static class AvitoCandidatesPageScripts
         })();
         """;
 
-    /// <summary>Клик по inline-кнопкам с маской «**» (старый UX без popup).</summary>
+    /// <summary>
+    /// Поиск первой замаскированной кнопки «телефон» без клика (trusted-клик делает C# через CDP).
+    /// Возвращает { items, masked, targetIndex }; targetIndex = -1 — цели нет.
+    /// </summary>
+    public static string BuildFindMaskedPhoneTargetScript() =>
+        $$"""
+        (() => {
+        {{ContactsPhoneHelpersJs}}
+            const items = Array.from(document.querySelectorAll("[data-marker='job-application/item']"));
+            const orderedIndexes = Array.from(items.keys()).sort((a, b) =>
+                Number(isPhoneWatchPriority(b)) - Number(isPhoneWatchPriority(a)) || a - b);
+            let masked = 0;
+            let targetIndex = -1;
+            for (const index of orderedIndexes) {
+                const item = items[index];
+                const btn = item.querySelector("[data-marker='job-application/phone']");
+                if (!btn || btn.closest?.("[data-marker^='download-report-button']")) {
+                    continue;
+                }
+
+                const raw = btn.textContent ?? "";
+                if (!/\*/.test(raw)) {
+                    continue;
+                }
+
+                masked++;
+                clearCachedPhone(index);
+                if (targetIndex < 0) {
+                    targetIndex = index;
+                }
+            }
+
+            return JSON.stringify({ items: items.length, masked, targetIndex });
+        })();
+        """;
+
+    /// <summary>Легаси-вариант: найти и кликнуть маску одним evaluate (без CDP-указателя).</summary>
     public static string BuildRevealMaskedPhonesStepScript() =>
         $$"""
         (() => {
@@ -2092,6 +2204,57 @@ public static class AvitoCandidatesPageScripts
             }
 
             return JSON.stringify({ items: items.length, masked, clicked });
+        })();
+        """;
+
+    /// <summary>
+    /// Поиск цели popup-раскрытия без клика (trusted-клик делает C#). kind: call-button | masked-phone.
+    /// closedExisting=true, если был открыт старый popup (C# закрывает trusted-способом и повторяет).
+    /// </summary>
+    public static string BuildFindContactsPopupTargetScript() =>
+        $$"""
+        (() => {
+        {{ContactsPhoneHelpersJs}}
+            const items = Array.from(document.querySelectorAll("[data-marker='job-application/item']"));
+            let pending = 0;
+            for (let index = 0; index < items.length; index++) {
+                if (needsPhoneReveal(items[index], index)) {
+                    pending++;
+                }
+            }
+
+            if (pending === 0) {
+                return JSON.stringify({ items: items.length, pending: 0, targetIndex: -1, kind: "none" });
+            }
+
+            if (isContactsPopupOpen()) {
+                return JSON.stringify({
+                    items: items.length,
+                    pending,
+                    targetIndex: -1,
+                    kind: "none",
+                    closedExisting: true
+                });
+            }
+
+            const orderedIndexes = Array.from(items.keys()).sort((a, b) =>
+                Number(isPhoneWatchPriority(b)) - Number(isPhoneWatchPriority(a)) || a - b);
+            for (const index of orderedIndexes) {
+                const item = items[index];
+                if (!needsPhoneReveal(item, index)) {
+                    continue;
+                }
+
+                if (item.querySelector("[data-marker='job-application/call-button']")) {
+                    return JSON.stringify({ items: items.length, pending, targetIndex: index, kind: "call-button" });
+                }
+
+                if (/\*/.test(item.querySelector("[data-marker='job-application/phone']")?.textContent ?? "")) {
+                    return JSON.stringify({ items: items.length, pending, targetIndex: index, kind: "masked-phone" });
+                }
+            }
+
+            return JSON.stringify({ items: items.length, pending, targetIndex: -1, kind: "none", reason: "no_popup_target" });
         })();
         """;
 
@@ -2176,8 +2339,8 @@ public static class AvitoCandidatesPageScripts
         })();
         """;
 
-    /// <summary>Снимок popup контактов; при готовом номере пишет кэш и закрывает окно.</summary>
-    public static string BuildContactsPopupProbeScript(int targetIndex) =>
+    /// <summary>Снимок popup контактов; при готовом номере пишет кэш. Закрытие — C# trusted-кликом.</summary>
+    public static string BuildContactsPopupProbeScript(int targetIndex, bool closeOnReady = false) =>
         $$"""
         (() => {
         {{ContactsPhoneHelpersJs}}
@@ -2189,7 +2352,9 @@ public static class AvitoCandidatesPageScripts
                     store[String(index)] = snap.phone;
                 }
 
-                closeContactsPopup();
+                if ({{(closeOnReady ? "true" : "false")}}) {
+                    closeContactsPopup();
+                }
             }
 
             return JSON.stringify({
@@ -2649,10 +2814,10 @@ public static class AvitoCandidatesPageScripts
                 let city = vacancyAndCity.city;
 
                 const phoneKey = phone.replace(/\D/g, "");
-                const enriched =
-                    (typeof window !== "undefined" && window.__leadflowDetailEnrichment)
-                        ? (window.__leadflowDetailEnrichment[phoneKey] ?? window.__leadflowDetailEnrichment[String(rootIndex)])
-                        : null;
+                const enrichmentState = lfState().detailEnrichment;
+                const enriched = enrichmentState
+                    ? (enrichmentState[phoneKey] ?? enrichmentState[String(rootIndex)])
+                    : null;
                 if (enriched) {
                     if (enriched.vacancyUrl) {
                         vacancyUrl = enriched.vacancyUrl;

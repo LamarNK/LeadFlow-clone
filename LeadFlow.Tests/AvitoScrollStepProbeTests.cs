@@ -38,4 +38,15 @@ public sealed class AvitoScrollStepProbeTests
         Assert.True(probe.IsFullRescan || probe.RequiresFallbackRescan);
         Assert.False(probe.AllowEarlyStop);
     }
+
+    [Fact]
+    public void ScrollGeometry_AcceptsFractionalScrollOffsets()
+    {
+        var geometry = AvitoScrollStepProbeParser.TryParseGeometry(
+            "{\"scrollTop\":19.5,\"clientHeight\":600,\"scrollHeight\":1400.25}");
+
+        Assert.NotNull(geometry);
+        Assert.Equal(19.5, geometry.ScrollTop);
+        Assert.Equal(1400.25, geometry.ScrollHeight);
+    }
 }

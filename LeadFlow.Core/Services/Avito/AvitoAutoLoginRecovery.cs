@@ -184,7 +184,7 @@ public static class AvitoAutoLoginRecovery
                         : "найден сохранённый профиль, но клик не сработал");
                     if (selected)
                     {
-                        await Task.Delay(MonitoringTiming.AutoLoginAfterUserSelectMs, cancellationToken)
+                        await HumanDelay.AroundAsync(MonitoringTiming.AutoLoginAfterUserSelectMs, cancellationToken)
                             .ConfigureAwait(false);
                         continue;
                     }
@@ -271,7 +271,7 @@ public static class AvitoAutoLoginRecovery
                 if (selected)
                 {
                     progressed = true;
-                    await Task.Delay(MonitoringTiming.AutoLoginAfterUserSelectMs, cancellationToken).ConfigureAwait(false);
+                    await HumanDelay.AroundAsync(MonitoringTiming.AutoLoginAfterUserSelectMs, cancellationToken).ConfigureAwait(false);
                     continue;
                 }
 
@@ -285,7 +285,7 @@ public static class AvitoAutoLoginRecovery
                     if (switched)
                     {
                         progressed = true;
-                        await Task.Delay(MonitoringTiming.AutoLoginAfterUserSelectMs, cancellationToken).ConfigureAwait(false);
+                        await HumanDelay.AroundAsync(MonitoringTiming.AutoLoginAfterUserSelectMs, cancellationToken).ConfigureAwait(false);
                         continue;
                     }
                 }
@@ -323,7 +323,7 @@ public static class AvitoAutoLoginRecovery
                 if (switched)
                 {
                     progressed = true;
-                    await Task.Delay(MonitoringTiming.AutoLoginAfterUserSelectMs, cancellationToken).ConfigureAwait(false);
+                    await HumanDelay.AroundAsync(MonitoringTiming.AutoLoginAfterUserSelectMs, cancellationToken).ConfigureAwait(false);
                     continue;
                 }
             }
@@ -336,7 +336,7 @@ public static class AvitoAutoLoginRecovery
                 if (opened)
                 {
                     progressed = true;
-                    await Task.Delay(MonitoringTiming.AutoLoginAfterOpenLoginMs, cancellationToken).ConfigureAwait(false);
+                    await HumanDelay.AroundAsync(MonitoringTiming.AutoLoginAfterOpenLoginMs, cancellationToken).ConfigureAwait(false);
                     continue;
                 }
             }
@@ -456,7 +456,7 @@ public static class AvitoAutoLoginRecovery
     {
         steps?.Add("обновление вкладки");
         await TryReloadPageAsync(page, cancellationToken).ConfigureAwait(false);
-        await Task.Delay(MonitoringTiming.AutoLoginPreRefreshSettleMs, cancellationToken).ConfigureAwait(false);
+        await HumanDelay.AroundAsync(MonitoringTiming.AutoLoginPreRefreshSettleMs, cancellationToken).ConfigureAwait(false);
 
         var afterReload = await ProbeAsync(page, cancellationToken).ConfigureAwait(false);
         if (IsSessionRecovered(afterReload))
@@ -467,7 +467,7 @@ public static class AvitoAutoLoginRecovery
 
         steps?.Add("переход на dashboard");
         await TryNavigateToDashboardAsync(page, cancellationToken).ConfigureAwait(false);
-        await Task.Delay(MonitoringTiming.AutoLoginDashboardNavSettleMs, cancellationToken).ConfigureAwait(false);
+        await HumanDelay.AroundAsync(MonitoringTiming.AutoLoginDashboardNavSettleMs, cancellationToken).ConfigureAwait(false);
 
         var afterDashboard = await ProbeAsync(page, cancellationToken).ConfigureAwait(false);
         if (IsSessionRecovered(afterDashboard))
@@ -929,8 +929,8 @@ public static class AvitoAutoLoginRecovery
 
     private static async Task WaitForAuthSettleAsync(IPage page, CancellationToken cancellationToken)
     {
-        for (var elapsed = 0; elapsed < MonitoringTiming.AutoLoginPostSubmitMaxWaitMs;
-             elapsed += MonitoringTiming.AutoLoginPostSubmitPollMs)
+        var waitSw = System.Diagnostics.Stopwatch.StartNew();
+        while (waitSw.ElapsedMilliseconds < MonitoringTiming.AutoLoginPostSubmitMaxWaitMs)
         {
             cancellationToken.ThrowIfCancellationRequested();
             var state = await ProbeAsync(page, cancellationToken).ConfigureAwait(false);
@@ -944,7 +944,7 @@ public static class AvitoAutoLoginRecovery
                 return;
             }
 
-            await Task.Delay(MonitoringTiming.AutoLoginPostSubmitPollMs, cancellationToken).ConfigureAwait(false);
+            await HumanDelay.AroundAsync(MonitoringTiming.AutoLoginPostSubmitPollMs, cancellationToken).ConfigureAwait(false);
         }
     }
 

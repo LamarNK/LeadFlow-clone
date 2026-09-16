@@ -298,7 +298,7 @@ public sealed class WorkerAvitoAdsMonitor(
             var parsedCards = avitoParser.ToListCards(parsed);
             cards.AddRange(parsedCards);
 
-            foreach (var card in parsedCards.Where(static x => x.ExpiresAtUtc is null))
+            foreach (var card in parsedCards.Where(static x => x.ExpiryParseError is not null))
             {
                 var snippetHtml = AvitoParserService.ExtractItemSnippetHtml(html, card.AvitoItemId);
                 await LogListExpiryParseFailureAsync(

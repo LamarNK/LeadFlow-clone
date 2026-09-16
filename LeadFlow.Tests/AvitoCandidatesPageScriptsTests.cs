@@ -61,7 +61,7 @@ public sealed class AvitoCandidatesPageScriptsTests
         Assert.Contains("mini-messenger/messenger-page-link", script, StringComparison.Ordinal);
         Assert.Contains("channel-module-root", script, StringComparison.Ordinal);
         Assert.Contains("no_active_candidate_messenger", script, StringComparison.Ordinal);
-        Assert.Contains("__leadflowMessengerBeforeMarker", script, StringComparison.Ordinal);
+        Assert.Contains("messengerMarkedBefore", script, StringComparison.Ordinal);
         Assert.Contains("[data-marker='platformMessage/text']", script, StringComparison.Ordinal);
         Assert.Contains("[data-marker='messageChunk']", script, StringComparison.Ordinal);
         Assert.Contains("const root = miniRoot", script, StringComparison.Ordinal);
@@ -80,8 +80,11 @@ public sealed class AvitoCandidatesPageScriptsTests
         Assert.Contains("host.endsWith(\".img.avito.st\")", script, StringComparison.Ordinal);
         Assert.Contains("avatarUrl", script, StringComparison.Ordinal);
         Assert.DoesNotContain("itemPreview", script, StringComparison.Ordinal);
-        Assert.Contains("behavior: \"auto\"", script, StringComparison.Ordinal);
-        Assert.DoesNotContain("behavior: \"smooth\"", script, StringComparison.Ordinal);
+        // Скролл истории делает C# CDP-колесом: JS только отдаёт listRect, сам не скроллит.
+        Assert.DoesNotContain("scrollBy", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("scrollTop =", script, StringComparison.Ordinal);
+        Assert.Contains("listRect", script, StringComparison.Ordinal);
+        Assert.Contains("clientHeight", script, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -89,8 +92,8 @@ public sealed class AvitoCandidatesPageScriptsTests
     {
         var script = AvitoCandidatesPageScripts.BuildMessengerUiVisibleExpression();
 
-        Assert.Contains("__leadflowMessengerBeforeMarker", script, StringComparison.Ordinal);
-        Assert.Contains("data-leadflow-messenger-before", script, StringComparison.Ordinal);
+        Assert.Contains("messengerMarkedBefore", script, StringComparison.Ordinal);
+        Assert.Contains("WeakSet", script, StringComparison.Ordinal);
         Assert.Contains("mini-messenger/messenger-page-link", script, StringComparison.Ordinal);
         Assert.Contains("channel-module-root", script, StringComparison.Ordinal);
         Assert.Contains("[data-marker='messagesHistory']", script, StringComparison.Ordinal);
@@ -103,8 +106,8 @@ public sealed class AvitoCandidatesPageScriptsTests
     {
         var script = AvitoCandidatesPageScripts.BuildMarkMessengerRootsBeforeOpenScript();
 
-        Assert.Contains("data-leadflow-messenger-before", script, StringComparison.Ordinal);
-        Assert.Contains("__leadflowMessengerBeforeMarker", script, StringComparison.Ordinal);
+        Assert.Contains("WeakSet", script, StringComparison.Ordinal);
+        Assert.Contains("messengerMarkedBefore", script, StringComparison.Ordinal);
         Assert.Contains("[data-marker='messagesHistory']", script, StringComparison.Ordinal);
         Assert.Contains("isHistoryVisible", script, StringComparison.Ordinal);
     }
@@ -115,8 +118,8 @@ public sealed class AvitoCandidatesPageScriptsTests
         var script = AvitoCandidatesPageScripts.BuildMessengerMessagesPresentExpression();
 
         Assert.Contains("[data-marker='message']", script, StringComparison.Ordinal);
-        Assert.Contains("__leadflowMessengerBeforeMarker", script, StringComparison.Ordinal);
-        Assert.Contains("data-leadflow-messenger-before", script, StringComparison.Ordinal);
+        Assert.Contains("messengerMarkedBefore", script, StringComparison.Ordinal);
+        Assert.Contains("WeakSet", script, StringComparison.Ordinal);
         Assert.Contains("mini-messenger/messenger-page-link", script, StringComparison.Ordinal);
         Assert.Contains("channel-module-root", script, StringComparison.Ordinal);
         Assert.Contains("[data-marker='messagesHistory']", script, StringComparison.Ordinal);
@@ -211,7 +214,7 @@ public sealed class AvitoCandidatesPageScriptsTests
     {
         var script = AvitoCandidatesPageScripts.BuildContactsPopupProbeScript(3);
 
-        Assert.Contains("__leadflowRevealedPhones", script, StringComparison.Ordinal);
+        Assert.Contains("revealedPhones", script, StringComparison.Ordinal);
         Assert.Contains("snapshotContactsPopupState", script, StringComparison.Ordinal);
         Assert.Contains("const index = 3;", script, StringComparison.Ordinal);
         Assert.Contains("временн", script, StringComparison.OrdinalIgnoreCase);
@@ -245,9 +248,28 @@ public sealed class AvitoCandidatesPageScriptsTests
         Assert.Contains("phoneDigits", script, StringComparison.Ordinal);
         Assert.Contains("fullRescan", script, StringComparison.Ordinal);
         Assert.Contains("structureValid", script, StringComparison.Ordinal);
-        Assert.Contains("__leadflowScrollBoundary", script, StringComparison.Ordinal);
+        Assert.Contains("lfState().scrollBoundary", script, StringComparison.Ordinal);
         Assert.Contains("domChanged", script, StringComparison.Ordinal);
         Assert.DoesNotContain("clientHeight * 0.9", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildScrollStepProbeScript_DoesNotMoveThePage()
+    {
+        var script = AvitoCandidatesPageScripts.BuildScrollStepProbeScript(17);
+
+        Assert.Contains("const previousItemCount = 17", script, StringComparison.Ordinal);
+        Assert.Contains("clientHeight: scroller.clientHeight", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("scroller.scrollBy(", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void BuildScrollGeometryScript_ReadsWithoutScrolling()
+    {
+        var script = AvitoCandidatesPageScripts.BuildScrollGeometryScript();
+
+        Assert.Contains("scrollTop: scroller.scrollTop", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("scroller.scrollBy(", script, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -276,7 +298,7 @@ public sealed class AvitoCandidatesPageScriptsTests
     {
         var script = AvitoCandidatesPageScripts.BuildPhonesReadyProbeScript();
 
-        Assert.Contains("__leadflowRevealedPhones", script, StringComparison.Ordinal);
+        Assert.Contains("revealedPhones", script, StringComparison.Ordinal);
         Assert.Contains("needsPhoneReveal", script, StringComparison.Ordinal);
         Assert.Contains("readItemPhone", script, StringComparison.Ordinal);
     }
@@ -287,7 +309,7 @@ public sealed class AvitoCandidatesPageScriptsTests
         var script = AvitoCandidatesPageScripts.BuildExtractionScript();
 
         Assert.Contains("readItemPhone(root, rootIndex)", script, StringComparison.Ordinal);
-        Assert.Contains("__leadflowRevealedPhones", script, StringComparison.Ordinal);
+        Assert.Contains("revealedPhones", script, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -300,12 +322,12 @@ public sealed class AvitoCandidatesPageScriptsTests
         var reset = AvitoCandidatesPageScripts.BuildResetCandidateCollectionStateScript();
 
         Assert.Contains("26", priority, StringComparison.Ordinal);
-        Assert.Contains("__leadflowPhoneWatchPriority", priority, StringComparison.Ordinal);
+        Assert.Contains("phoneWatchPriority", priority, StringComparison.Ordinal);
         Assert.Contains("isPhoneWatchPriority", maskedReveal, StringComparison.Ordinal);
         Assert.Contains("isPhoneWatchPriority", popupReveal, StringComparison.Ordinal);
         Assert.Contains("priorityPending", readyProbe, StringComparison.Ordinal);
-        Assert.Contains("__leadflowRevealedPhones = {}", reset, StringComparison.Ordinal);
-        Assert.Contains("__leadflowScrollBoundary = null", reset, StringComparison.Ordinal);
+        Assert.Contains("revealedPhones = {}", reset, StringComparison.Ordinal);
+        Assert.Contains("scrollBoundary = null", reset, StringComparison.Ordinal);
     }
 
     [Fact]

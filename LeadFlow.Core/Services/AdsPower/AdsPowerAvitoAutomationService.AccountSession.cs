@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text.Json;
 using LeadFlow.Core.Logging.Audit;
 using LeadFlow.Core.Models;
 using LeadFlow.Core.Services;
@@ -360,7 +361,7 @@ public sealed partial class AdsPowerAvitoAutomationService
         if (CanTryClearCaptcha(warmupState)
             && await TryClearGeeTestCaptchaAsync(page, cancellationToken).ConfigureAwait(false))
         {
-            await Task.Delay(MonitoringTiming.AutoLoginDashboardNavSettleMs, cancellationToken).ConfigureAwait(false);
+            await HumanDelay.AroundAsync(MonitoringTiming.AutoLoginDashboardNavSettleMs, cancellationToken).ConfigureAwait(false);
             warmupState = await ProbePageStateAsync(page, cancellationToken).ConfigureAwait(false);
         }
 
@@ -589,7 +590,7 @@ public sealed partial class AdsPowerAvitoAutomationService
                     ["page.url"] = page.Url
                 });
 
-            await Task.Delay(MonitoringTiming.TransientErrorReloadSettleMs, cancellationToken)
+            await HumanDelay.AroundAsync(MonitoringTiming.TransientErrorReloadSettleMs, cancellationToken)
                 .ConfigureAwait(false);
 
             state = await ProbePageStateAsync(page, cancellationToken).ConfigureAwait(false);
@@ -852,7 +853,8 @@ public sealed partial class AdsPowerAvitoAutomationService
         var maxWaitMs = MonitoringTiming.VerifySubProfileMaxWaitMs;
         var pollMs = MonitoringTiming.VerifySubProfilePollMs;
 
-        for (var elapsed = 0; elapsed < maxWaitMs; elapsed += pollMs)
+        var pollSw = Stopwatch.StartNew();
+        while (pollSw.ElapsedMilliseconds < maxWaitMs)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
@@ -874,7 +876,7 @@ public sealed partial class AdsPowerAvitoAutomationService
                 return true;
             }
 
-            await Task.Delay(pollMs, cancellationToken).ConfigureAwait(false);
+            await HumanDelay.AroundAsync(pollMs, cancellationToken).ConfigureAwait(false);
         }
 
         await DismissProfileSwitchModalAsync(page, cancellationToken, runtimeProvider).ConfigureAwait(false);
@@ -908,6 +910,7 @@ public sealed partial class AdsPowerAvitoAutomationService
             && AvitoHumanVariation.RollPermille(MonitoringTiming.ItemsLingerChancePermille))
         {
             await HumanDelay.AfterItemsLingerAsync(cancellationToken).ConfigureAwait(false);
+            await AvitoHumanNoise.MaybeDriftAsync(page, MonitoringTiming.HumanNoiseChancePermille, cancellationToken).ConfigureAwait(false);
         }
 
         var navigationSw = Stopwatch.StartNew();
@@ -957,7 +960,8 @@ public sealed partial class AdsPowerAvitoAutomationService
             messengerEnrichmentHints?.IsOpenPhoneWatchAsync,
             skipDetailEnrich: true,
             CreateCaptchaSolveCallback(page),
-            messengerEnrichmentHints?.OpenPhoneWatches).ConfigureAwait(false);
+            messengerEnrichmentHints?.OpenPhoneWatches,
+            BuildCandidatesPageActors(page)).ConfigureAwait(false);
         prepareSw.Stop();
 
         var extractSw = Stopwatch.StartNew();
@@ -1000,7 +1004,7 @@ public sealed partial class AdsPowerAvitoAutomationService
 
             try
             {
-                await page.GoToAsync(ProfileItemsPageUrl, MonitoringNavigation(page, 45_000)).ConfigureAwait(false);
+                await NavigateInSiteAsync(page, ProfileItemsPageUrl, 45_000, cancellationToken).ConfigureAwait(false);
             }
             catch (Exception ex) when (IsRecoverableNavigationError(ex))
             {
@@ -1587,7 +1591,7 @@ public sealed partial class AdsPowerAvitoAutomationService
         {
             try
             {
-                await page.GoToAsync(ProfileItemsPageUrl, MonitoringNavigation(page, 60_000)).ConfigureAwait(false);
+                await NavigateInSiteAsync(page, ProfileItemsPageUrl, 60_000, cancellationToken).ConfigureAwait(false);
             }
             catch (Exception ex) when (IsRecoverableNavigationError(ex))
             {
@@ -1625,7 +1629,7 @@ public sealed partial class AdsPowerAvitoAutomationService
         {
             try
             {
-                await page.GoToAsync(ProfileBlockedItemsPageUrl, MonitoringNavigation(page, 60_000)).ConfigureAwait(false);
+                await NavigateInSiteAsync(page, ProfileBlockedItemsPageUrl, 60_000, cancellationToken).ConfigureAwait(false);
             }
             catch (Exception ex) when (IsRecoverableNavigationError(ex))
             {
@@ -1660,7 +1664,7 @@ public sealed partial class AdsPowerAvitoAutomationService
         if (!page.Url.Contains("tabs%22%3A%22inactive", StringComparison.OrdinalIgnoreCase)
             && !page.Url.Contains("tabs=inactive", StringComparison.OrdinalIgnoreCase))
         {
-            try { await page.GoToAsync(ProfileUnpublishedItemsPageUrl, MonitoringNavigation(page, 60_000)).ConfigureAwait(false); }
+            try { await NavigateInSiteAsync(page, ProfileUnpublishedItemsPageUrl, 60_000, cancellationToken).ConfigureAwait(false); }
             catch (Exception ex) when (IsRecoverableNavigationError(ex)) { await Task.Delay(1400, cancellationToken).ConfigureAwait(false); }
         }
 
@@ -1721,7 +1725,7 @@ public sealed partial class AdsPowerAvitoAutomationService
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {
-            await page.GoToAsync(ProfileUnpublishedItemsPageUrl, MonitoringNavigation(page, 60_000)).ConfigureAwait(false);
+            await NavigateInSiteAsync(page, ProfileUnpublishedItemsPageUrl, 60_000, cancellationToken).ConfigureAwait(false);
             await WaitForProfileItemsReadyAsync(page, nameof(RenewAdOnPageAsync), cancellationToken).ConfigureAwait(false);
             var afterFirstClick = await page.GetContentAsync().ConfigureAwait(false);
             if (string.IsNullOrWhiteSpace(AvitoParserService.ExtractItemSnippetHtml(afterFirstClick, avitoItemId)))
@@ -1758,7 +1762,7 @@ public sealed partial class AdsPowerAvitoAutomationService
         }
 
         await ThrowIfCaptchaOnPageAsync(page, cancellationToken).ConfigureAwait(false);
-        await page.GoToAsync(ProfileUnpublishedItemsPageUrl, MonitoringNavigation(page, 60_000)).ConfigureAwait(false);
+        await NavigateInSiteAsync(page, ProfileUnpublishedItemsPageUrl, 60_000, cancellationToken).ConfigureAwait(false);
         await WaitForProfileItemsReadyAsync(page, nameof(RenewAdOnPageAsync), cancellationToken).ConfigureAwait(false);
 
         if (await FindPublishButtonAsync(page, avitoItemId, cancellationToken).ConfigureAwait(false) is not null)
@@ -1850,7 +1854,7 @@ public sealed partial class AdsPowerAvitoAutomationService
             {
                 try
                 {
-                    await page.GoToAsync(ProfileItemsPageUrl, MonitoringNavigation(page, 60_000)).ConfigureAwait(false);
+                    await NavigateInSiteAsync(page, ProfileItemsPageUrl, 60_000, cancellationToken).ConfigureAwait(false);
                 }
                 catch (Exception ex) when (IsRecoverableNavigationError(ex))
                 {
@@ -1904,11 +1908,26 @@ public sealed partial class AdsPowerAvitoAutomationService
                     break;
                 }
 
-                var clicked = await EvaluateWithRetryAsync<bool>(
-                        page,
-                        AvitoAdListPageScripts.ClickNextPageScript,
-                        cancellationToken)
-                    .ConfigureAwait(false);
+                var clicked = false;
+                foreach (var selector in AvitoAdListPageScripts.NextPageSelectors)
+                {
+                    if (await AvitoHumanPointer.TryClickSelectorAsync(page, selector, cancellationToken)
+                            .ConfigureAwait(false))
+                    {
+                        clicked = true;
+                        break;
+                    }
+                }
+
+                if (!clicked)
+                {
+                    clicked = await EvaluateWithRetryAsync<bool>(
+                            page,
+                            AvitoAdListPageScripts.ClickNextPageScript,
+                            cancellationToken)
+                        .ConfigureAwait(false);
+                }
+
                 if (!clicked)
                 {
                     complete = false;
@@ -1973,15 +1992,34 @@ public sealed partial class AdsPowerAvitoAutomationService
                 if (!tab) return false;
                 const selected = tab.getAttribute('aria-selected');
                 if (selected === 'true') return false;
-                tab.click();
                 return true;
             })()
             """;
 
-        var clicked = await EvaluateWithRetryAsync<bool>(page, clickActive, cancellationToken).ConfigureAwait(false);
-        if (!clicked)
+        var needsClick = await EvaluateWithRetryAsync<bool>(page, clickActive, cancellationToken).ConfigureAwait(false);
+        if (!needsClick)
         {
             return;
+        }
+
+        // Trusted-клик по табу; JS click() — только если CDP-указатель не добрался.
+        if (!await AvitoHumanPointer.TryClickSelectorAsync(
+                page,
+                "[data-marker='profile-items-tab/tab(active)']",
+                cancellationToken).ConfigureAwait(false))
+        {
+            _ = await EvaluateWithRetryAsync<bool>(
+                    page,
+                    """
+                    (() => {
+                        const tab = document.querySelector('[data-marker="profile-items-tab/tab(active)"]');
+                        if (!tab) return false;
+                        tab.click();
+                        return true;
+                    })()
+                    """,
+                    cancellationToken)
+                .ConfigureAwait(false);
         }
 
         await WaitForProfileItemsReadyAsync(page, nameof(EnsureActiveItemsTabAsync), cancellationToken)
@@ -2009,8 +2047,18 @@ public sealed partial class AdsPowerAvitoAutomationService
         for (var round = 0; round < MonitoringTiming.AvitoAdsListMaxScrollRounds; round++)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var step = await ProbeActiveAdsScrollAsync(page, AvitoAdListPageScripts.ScrollStepScript, cancellationToken)
-                .ConfigureAwait(false);
+            var wheelStep = await TryWheelScrollActiveAdsAsync(page, cancellationToken).ConfigureAwait(false);
+            AvitoAdListScrollProbe step;
+            if (wheelStep is not null)
+            {
+                step = wheelStep;
+            }
+            else
+            {
+                step = await ProbeActiveAdsScrollAsync(page, AvitoAdListPageScripts.ScrollStepScript, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
             await HumanDelay.AfterListScrollAsync(cancellationToken).ConfigureAwait(false);
             await WaitForProfileItemsReadyAsync(page, nameof(ScrollActiveAdsUntilSettledAsync), cancellationToken)
                 .ConfigureAwait(false);
@@ -2051,6 +2099,94 @@ public sealed partial class AdsPowerAvitoAutomationService
         }
 
         return last.AtEnd || last.Count == 0;
+    }
+
+    private async Task<AvitoAdListScrollProbe?> TryWheelScrollActiveAdsAsync(
+        IPage page,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            var geometryRaw = await EvaluateWithRetryAsync<string>(
+                    page,
+                    AvitoAdListPageScripts.GeometryScript,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            var geometry = AvitoScrollStepProbeParser.TryParseGeometry(geometryRaw);
+            if (geometry is null || geometry.ClientHeight <= 0)
+            {
+                return null;
+            }
+
+            // «Показать ещё» — trusted-кликом по селектору; текстовый фолбэк остаётся в JS-пути.
+            var loadMoreClicked = false;
+            if (await EvaluateWithRetryAsync<bool>(
+                    page,
+                    AvitoAdListPageScripts.HasLoadMoreScript,
+                    cancellationToken).ConfigureAwait(false))
+            {
+                foreach (var selector in AvitoAdListPageScripts.LoadMoreSelectors)
+                {
+                    if (await AvitoHumanPointer.TryClickSelectorAsync(page, selector, cancellationToken)
+                            .ConfigureAwait(false))
+                    {
+                        loadMoreClicked = true;
+                        break;
+                    }
+                }
+
+                if (!loadMoreClicked)
+                {
+                    // Кнопка нашлась по тексту, но не по маркеру — остаёмся на JS-шаге.
+                    return null;
+                }
+            }
+
+            // The ads scroller is not the candidates scroller; wheel over the rect we just probed.
+            using var rectDoc = JsonDocument.Parse(UnwrapMessengerJson(geometryRaw));
+            var rect = rectDoc.RootElement;
+            var ratio = 0.32 + Random.Shared.NextDouble() * 0.28;
+            var delta = Math.Max((int)(geometry.ClientHeight * ratio), 180);
+            if (!await AvitoHumanWheel.ScrollOverRectAsync(
+                    page,
+                    rect.GetProperty("x").GetDecimal(),
+                    rect.GetProperty("y").GetDecimal(),
+                    rect.GetProperty("width").GetDecimal(),
+                    rect.GetProperty("height").GetDecimal(),
+                    delta,
+                    cancellationToken).ConfigureAwait(false))
+            {
+                return loadMoreClicked
+                    ? (await ProbeActiveAdsScrollAsync(page, AvitoAdListPageScripts.ProbeScript, cancellationToken)
+                        .ConfigureAwait(false)) with { LoadMoreClicked = true }
+                    : null;
+            }
+
+            var afterRaw = await EvaluateWithRetryAsync<string>(
+                    page,
+                    AvitoAdListPageScripts.GeometryScript,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            var after = AvitoScrollStepProbeParser.TryParseGeometry(afterRaw);
+            var moved = after is not null && Math.Abs(after.ScrollTop - geometry.ScrollTop) > 2;
+
+            var probe = await ProbeActiveAdsScrollAsync(page, AvitoAdListPageScripts.ProbeScript, cancellationToken)
+                .ConfigureAwait(false);
+            if (!moved && !loadMoreClicked && !probe.AtEnd)
+            {
+                return null;
+            }
+
+            return probe with { Moved = moved || loadMoreClicked, LoadMoreClicked = loadMoreClicked };
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private async Task<AvitoAdListScrollProbe> ProbeActiveAdsScrollAsync(
@@ -2123,7 +2259,7 @@ public sealed partial class AdsPowerAvitoAutomationService
 
         try
         {
-            await page.GoToAsync(ProfileItemsPageUrl, MonitoringNavigation(page, 45_000)).ConfigureAwait(false);
+            await NavigateInSiteAsync(page, ProfileItemsPageUrl, 45_000, cancellationToken).ConfigureAwait(false);
             await WaitForProfileItemsShellAsync(page, nameof(LoadItemDetailHtmlOnPageAsync), cancellationToken)
                 .ConfigureAwait(false);
         }

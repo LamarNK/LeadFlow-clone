@@ -132,6 +132,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 && AvitoHumanVariation.RollPermille(MonitoringTiming.ItemsLingerChancePermille))
             {
                 await HumanDelay.AfterItemsLingerAsync(cancellationToken).ConfigureAwait(false);
+                await AvitoHumanNoise.MaybeDriftAsync(page, MonitoringTiming.HumanNoiseChancePermille, cancellationToken).ConfigureAwait(false);
             }
 
             var navigationSw = Stopwatch.StartNew();
@@ -163,7 +164,8 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 messengerEnrichmentHints?.IsOpenPhoneWatchAsync,
                 skipDetailEnrich: true,
                 CreateCaptchaSolveCallback(page),
-                messengerEnrichmentHints?.OpenPhoneWatches).ConfigureAwait(false);
+                messengerEnrichmentHints?.OpenPhoneWatches,
+                BuildCandidatesPageActors(page)).ConfigureAwait(false);
             prepareSw.Stop();
 
             var extractSw = Stopwatch.StartNew();
@@ -3877,6 +3879,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 || !string.IsNullOrWhiteSpace(messengerAvatarUrl))
             {
                 await HumanDelay.AfterMessengerCardAsync(cancellationToken).ConfigureAwait(false);
+                await AvitoHumanNoise.MaybeDriftAsync(page, MonitoringTiming.HumanNoiseChancePermille, cancellationToken).ConfigureAwait(false);
             }
             else
             {
@@ -4352,16 +4355,10 @@ public sealed partial class AdsPowerAvitoAutomationService(
             Width = MessengerEnrichmentViewportWidth,
             Height = MessengerEnrichmentViewportHeight
         }).ConfigureAwait(false);
-        try
-        {
-            await page.EvaluateExpressionAsync("window.dispatchEvent(new Event('resize'))").ConfigureAwait(false);
-        }
-        catch
-        {
-            // Не прерываем enrichment — layout может обновиться и без явного resize.
-        }
+        // Синтетический dispatchEvent('resize') не шлём: Emulation.setDeviceMetricsOverride
+        // сам меняет layout и порождает нативное resize-событие (isTrusted=true).
 
-        await Task.Delay(MessengerEnrichmentViewportResizeDelayMs, cancellationToken).ConfigureAwait(false);
+        await HumanDelay.AroundAsync(MessengerEnrichmentViewportResizeDelayMs, cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task TryResizeBrowserWindowAsync(IPage page, int width, int height)
@@ -4399,7 +4396,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
         try
         {
             await page.GoBackAsync().ConfigureAwait(false);
-            await Task.Delay(500, cancellationToken).ConfigureAwait(false);
+            await HumanDelay.AroundAsync(500, cancellationToken).ConfigureAwait(false);
             if (AvitoCandidatesPageUrls.IsCandidatesResponsesUrl(page.Url))
             {
                 return;
@@ -4416,7 +4413,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
                     candidatesReturnUrl,
                     MonitoringNavigation(page, 30_000))
                 .ConfigureAwait(false);
-            await Task.Delay(400, cancellationToken).ConfigureAwait(false);
+            await HumanDelay.AroundAsync(400, cancellationToken).ConfigureAwait(false);
         }
         catch
         {
@@ -4479,6 +4476,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
                     AvitoCandidatesPageScripts.BuildScrollAndCollectMiniMessengerMessagesScript(),
                     cancellationToken)
                 .ConfigureAwait(false);
+            await ScrollMessengerHistoryBackWithWheelAsync(page, messagesRaw, cancellationToken).ConfigureAwait(false);
             var parsed = TryParseMiniMessengerCollectionResult(messagesRaw) with
             {
                 WaitConfirmed = waitConfirmed,
@@ -4511,6 +4509,66 @@ public sealed partial class AdsPowerAvitoAutomationService(
         }
 
         return richest ?? latest;
+    }
+
+    /// <summary>
+    /// Прокрутка истории мини-чата вверх CDP-колесом по listRect из результата сбора;
+    /// fallback — легаси JS scrollBy (мгновенный, зато без чтения геометрии).
+    /// </summary>
+    private static async Task ScrollMessengerHistoryBackWithWheelAsync(
+        IPage page,
+        string? collectRaw,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            if (!string.IsNullOrWhiteSpace(collectRaw))
+            {
+                using var doc = JsonDocument.Parse(UnwrapMessengerJson(collectRaw));
+                if (doc.RootElement.TryGetProperty("listRect", out var rectElement)
+                    && rectElement.ValueKind == JsonValueKind.Object
+                    && rectElement.TryGetProperty("x", out var x) && x.TryGetDecimal(out var rectX)
+                    && rectElement.TryGetProperty("y", out var y) && y.TryGetDecimal(out var rectY)
+                    && rectElement.TryGetProperty("width", out var w) && w.TryGetDecimal(out var rectW)
+                    && rectElement.TryGetProperty("height", out var h) && h.TryGetDecimal(out var rectH)
+                    && rectW > 0 && rectH > 0)
+                {
+                    var step = Math.Max((int)(rectH * 0.65m), 180);
+                    if (await AvitoHumanWheel.ScrollOverRectAsync(
+                            page,
+                            rectX,
+                            rectY,
+                            rectW,
+                            rectH,
+                            -step,
+                            cancellationToken).ConfigureAwait(false))
+                    {
+                        return;
+                    }
+                }
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            // Геометрия не прочиталась — легаси-путь ниже.
+        }
+
+        try
+        {
+            _ = await EvaluateWithRetryAsync<string>(
+                    page,
+                    AvitoCandidatesPageScripts.BuildScrollMessengerHistoryBackScript(),
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch
+        {
+            // История могла закрыться вместе с мини-чатом — не критично.
+        }
     }
 
     private static IReadOnlyList<AvitoChatMessage> ParseMiniMessengerMessages(JsonArray chatMessages) =>
@@ -4634,6 +4692,56 @@ public sealed partial class AdsPowerAvitoAutomationService(
             item[property] = text;
         }
     }
+
+    /// <summary>
+    /// Навигация «как пользователь»: сначала <c>location.assign</c> из контекста страницы
+    /// (Referer = текущая страница, как переход по внутренней ссылке), при неудаче — обычный GoToAsync.
+    /// Первую навигацию сессии и открытие внешних URL делают GoToAsync напрямую.
+    /// </summary>
+    private static async Task NavigateInSiteAsync(
+        IPage page,
+        string targetUrl,
+        int timeoutMs,
+        CancellationToken cancellationToken)
+    {
+        var before = page.Url;
+        try
+        {
+            await TryAssignLocationAsync(page, targetUrl, cancellationToken).ConfigureAwait(false);
+            for (var elapsed = 0; elapsed < MonitoringTiming.AdsPowerForcedNavigationMaxWaitMs; elapsed += 250)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                await Task.Delay(250, cancellationToken).ConfigureAwait(false);
+                if (!string.Equals(page.Url, before, StringComparison.OrdinalIgnoreCase))
+                {
+                    return;
+                }
+            }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            // location.assign не сработал — GoToAsync ниже.
+        }
+
+        await page.GoToAsync(targetUrl, MonitoringNavigation(page, timeoutMs)).ConfigureAwait(false);
+    }
+
+    /// <summary>Trusted-мост для preparer: CDP-клики, закрытие popup, колесо мыши.</summary>
+    private static CandidatesPageActors BuildCandidatesPageActors(IPage page) =>
+        new(
+            PointerClickItemChildAsync: (index, childSelector, ct) =>
+                AvitoHumanPointer.TryClickItemChildAsync(
+                    page,
+                    CandidatesPageActors.ItemsSelector,
+                    index,
+                    childSelector,
+                    ct),
+            CloseContactsPopupAsync: ct => AvitoHumanPointer.TryCloseContactsPopupAsync(page, ct),
+            WheelScrollAsync: (deltaPx, ct) => AvitoHumanWheel.ScrollAsync(page, deltaPx, ct));
 
     private static async Task<bool> TryClickCandidateItemWithPointerAsync(
         IPage page,
@@ -4842,12 +4950,11 @@ public sealed partial class AdsPowerAvitoAutomationService(
         CancellationToken cancellationToken)
     {
         var expected = autoReplyMessage.Trim();
-        for (var elapsed = 0;
-             elapsed < MonitoringTiming.MessengerAutoReplyPostSendMaxWaitMs;
-             elapsed += MonitoringTiming.MessengerAutoReplyPostSendPollMs)
+        var waitSw = Stopwatch.StartNew();
+        while (waitSw.ElapsedMilliseconds < MonitoringTiming.MessengerAutoReplyPostSendMaxWaitMs)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            await Task.Delay(MonitoringTiming.MessengerAutoReplyPostSendPollMs, cancellationToken)
+            await HumanDelay.AroundAsync(MonitoringTiming.MessengerAutoReplyPostSendPollMs, cancellationToken)
                 .ConfigureAwait(false);
 
             var messagesRaw = await EvaluateWithRetryAsync<string>(
@@ -4855,6 +4962,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
                     AvitoCandidatesPageScripts.BuildScrollAndCollectMiniMessengerMessagesScript(),
                     cancellationToken)
                 .ConfigureAwait(false);
+            await ScrollMessengerHistoryBackWithWheelAsync(page, messagesRaw, cancellationToken).ConfigureAwait(false);
             var messages = ParseMiniMessengerMessages(TryParseMiniMessengerMessages(messagesRaw));
             if (messages.Any(m =>
                     AvitoChatAutoReplyEvaluator.IsEmployerMessage(m)

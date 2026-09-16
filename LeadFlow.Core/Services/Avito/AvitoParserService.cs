@@ -434,11 +434,20 @@ public class AvitoParserService
             ad.ExpiresAtUtc = expiresAtUtc;
             ad.RemainingDays = remainingDays;
         }
-        else
+        else if (ExpectsActiveListExpiry(ad))
         {
             ad.ExpiryParseError = expiryError;
         }
     }
+
+    /// <summary>
+    /// Карточка в состоянии, в котором Avito обязан показывать «ещё N дней — до дата».
+    /// У истёкших, снятых с публикации и неопубликованных карточек даты в разметке нет —
+    /// это не ошибка парсинга.
+    /// </summary>
+    private static bool ExpectsActiveListExpiry(AvitoAdStatus ad) =>
+        string.Equals(ad.SourceTab, AvitoAdStatus.ActiveTab, StringComparison.Ordinal)
+        && (string.IsNullOrWhiteSpace(ad.Status) || string.Equals(ad.Status, "Активно", StringComparison.Ordinal));
 
     private static string ExtractRoleMarkerInnerText(string html, string roleMarker)
     {
