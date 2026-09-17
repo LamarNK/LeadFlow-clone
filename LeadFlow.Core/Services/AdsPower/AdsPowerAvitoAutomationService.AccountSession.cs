@@ -4,6 +4,7 @@ using LeadFlow.Core.Logging.Audit;
 using LeadFlow.Core.Models;
 using LeadFlow.Core.Services;
 using LeadFlow.Core.Services.Avito;
+using LeadFlow.Core.Services.Avito.Session;
 using LeadFlow.Core.Services.Browser;
 using LeadFlow.Core.Services.Captcha;
 using LeadFlow.Core.Services.LocalChrome;
@@ -902,8 +903,21 @@ public sealed partial class AdsPowerAvitoAutomationService
         CancellationToken cancellationToken)
     {
         var pipelineSw = Stopwatch.StartNew();
+        // Оркестратор сессии: фоновый наблюдатель ловит капча-модалку/блок IP/потерю входа
+        // поверх РАБОЧЕЙ страницы откликов (старые probe-сценарии видели только полную замену
+        // страницы) и рулит паузой/восстановлением независимо от текущего шага сценария.
+        await using var orchestrator = AvitoPageObstacleProbe.CreateOrchestrator(
+            page,
+            TimeSpan.FromMilliseconds(1000));
+        orchestrator.RegisterHandler(AvitoPageObstacleKind.Captcha, (obstacle, ct) =>
+            RecoverFromCaptchaWithSolverAsync(page, obstacle, ct));
+        orchestrator.RegisterHandler(AvitoPageObstacleKind.TransientError, (_, ct) =>
+            RecoverFromTransientErrorAsync(page, ct));
+        orchestrator.Start();
         var executeScript = (string script, CancellationToken ct) =>
-            EvaluateWithRetryAsync<string>(page, script, ct);
+            orchestrator.RunStepAsync(
+                token => EvaluateWithRetryAsync<string>(page, script, token),
+                ct);
 
         var waitSw = Stopwatch.StartNew();
         if (IsOnActiveProfileItemsPage(page.Url)
@@ -965,7 +979,10 @@ public sealed partial class AdsPowerAvitoAutomationService
         prepareSw.Stop();
 
         var extractSw = Stopwatch.StartNew();
-        var raw = await EvaluateWithRetryAsync<string>(page, ExtractionScript, cancellationToken).ConfigureAwait(false);
+        var raw = await orchestrator.RunStepAsync(
+                token => EvaluateWithRetryAsync<string>(page, ExtractionScript, token),
+                cancellationToken)
+            .ConfigureAwait(false);
         if (string.IsNullOrWhiteSpace(raw))
         {
             throw new InvalidOperationException("Браузер CDP: скрипт извлечения вернул пустой результат.");
@@ -973,7 +990,12 @@ public sealed partial class AdsPowerAvitoAutomationService
         extractSw.Stop();
 
         var messengerSw = Stopwatch.StartNew();
-        raw = await TryEnrichCandidatesJsonMessengerUrlsAsync(page, raw, messengerEnrichmentHints, cancellationToken)
+        raw = await TryEnrichCandidatesJsonMessengerUrlsAsync(
+                page,
+                raw,
+                messengerEnrichmentHints,
+                cancellationToken,
+                orchestrator)
             .ConfigureAwait(false);
         messengerSw.Stop();
         pipelineSw.Stop();
@@ -989,6 +1011,50 @@ public sealed partial class AdsPowerAvitoAutomationService
 
         return raw;
     }
+
+    /// <summary>
+    /// Обработчик капчи для оркестратора сессии: прогоняет существующий автопроход GeeTest v4
+    /// (RuCaptcha) с контекстом текущего субпрофиля. Успех подтверждается повторной
+    /// проверкой страницы самим оркестратором.
+    /// </summary>
+    private async Task<AvitoObstacleRecoveryResult> RecoverFromCaptchaWithSolverAsync(
+        IPage page,
+        AvitoPageObstacle obstacle,
+        CancellationToken cancellationToken)
+    {
+        string? html = null;
+        try
+        {
+            html = await page.GetContentAsync().ConfigureAwait(false);
+        }
+        catch
+        {
+            // Солвер снимет HTML сам.
+        }
+
+        var solved = await TrySolveGeeTestAsync(
+                page,
+                html,
+                obstacle.Url ?? page.Url,
+                obstacle.CaptchaKind ?? "captcha",
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (!solved)
+        {
+            AvitoCaptchaTaskContext.NoteUnsolved();
+            return AvitoObstacleRecoveryResult.Failure("GeeTest v4 не пройдена через RuCaptcha.");
+        }
+
+        return AvitoObstacleRecoveryResult.Success("GeeTest v4 пройдена через RuCaptcha.");
+    }
+
+    private async Task<AvitoObstacleRecoveryResult> RecoverFromTransientErrorAsync(
+        IPage page,
+        CancellationToken cancellationToken) =>
+        await TryRecoverTransientAvitoErrorAsync(page, cancellationToken, nameof(RecoverFromTransientErrorAsync))
+            .ConfigureAwait(false)
+            ? AvitoObstacleRecoveryResult.Success("Страница обновлена после ошибки Avito.")
+            : AvitoObstacleRecoveryResult.Failure("Не удалось обновить страницу после ошибки Avito.");
 
     private async Task<AvitoMoneySidebar?> TryReadMoneySidebarOnPageAsync(
         IPage page,

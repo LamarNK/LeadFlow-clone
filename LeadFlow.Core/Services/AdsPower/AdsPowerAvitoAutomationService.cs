@@ -8,6 +8,7 @@ using LeadFlow.Core.Models;
 using LeadFlow.Core.Logging.Audit;
 using LeadFlow.Core.Services;
 using LeadFlow.Core.Services.Avito;
+using LeadFlow.Core.Services.Avito.Session;
 using LeadFlow.Core.Services.Browser;
 using LeadFlow.Core.Services.Captcha;
 using LeadFlow.Core.Services.LocalChrome;
@@ -3671,7 +3672,8 @@ public sealed partial class AdsPowerAvitoAutomationService(
         IPage page,
         string rawJson,
         CandidatesMessengerEnrichmentHints? enrichmentHints,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        AvitoSessionOrchestrator? orchestrator = null)
     {
         JsonNode? root;
         try
@@ -3783,6 +3785,13 @@ public sealed partial class AdsPowerAvitoAutomationService(
         {
             cancellationToken.ThrowIfCancellationRequested();
 
+            if (orchestrator is not null)
+            {
+                // Точка возобновления: капча, замеченная наблюдателем во время прошлого кандидата,
+                // к этому моменту уже обработана — продолжаем только на «чистой» странице.
+                await orchestrator.WaitReadyAsync(cancellationToken).ConfigureAwait(false);
+            }
+
             var item = candidates[i]?.AsObject();
             if (item is null)
             {
@@ -3867,7 +3876,8 @@ public sealed partial class AdsPowerAvitoAutomationService(
                     enrichmentHints?.AckOutboundChatSentAsync,
                     candidateAlreadyKnown: isKnownSourceId,
                     autoRepliesRemaining: autoReplyBudget - autoRepliesSent,
-                    cancellationToken)
+                    cancellationToken,
+                    orchestrator)
                 .ConfigureAwait(false);
             if (enrichment.AutoReplySent)
             {
@@ -4089,7 +4099,8 @@ public sealed partial class AdsPowerAvitoAutomationService(
         Func<IReadOnlyList<Guid>, CancellationToken, Task>? ackOutboundChatSentAsync,
         bool candidateAlreadyKnown,
         int autoRepliesRemaining,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        AvitoSessionOrchestrator? orchestrator = null)
     {
         var autoReplySent = false;
         await CloseMiniMessengerPanelIfOpenAsync(page, cancellationToken).ConfigureAwait(false);
@@ -4168,6 +4179,15 @@ public sealed partial class AdsPowerAvitoAutomationService(
 
         var messengerUiConfirmed = await TryWaitForMessengerUiAsync(page, 12_000).ConfigureAwait(false);
 
+        if (!messengerUiConfirmed && orchestrator is not null)
+        {
+            // Клик «прошёл», но чат не открылся: частый признак капча-модалки, перехватившей
+            // указатель поверх списка. Форсируем немедленную проверку и, если нужно,
+            // дожидаемся восстановления до повторного клика.
+            orchestrator.ReportSuspicion();
+            await orchestrator.WaitReadyAsync(cancellationToken).ConfigureAwait(false);
+        }
+
         // Pointer/CDP mouse returns true as soon as the event is dispatched. Overlays, wander
         // tooltips and AdsPower hit-testing can swallow it — the existing DOM fallback never
         // ran on this path, so the mini-chat stayed closed (click=pointer, uiConfirmed=false,
@@ -4194,6 +4214,14 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 clickMethod = clickedViaPointer ? "pointer_then_dom" : "dom_retry";
                 await HumanDelay.AfterCandidateClickAsync(cancellationToken).ConfigureAwait(false);
                 messengerUiConfirmed = await TryWaitForMessengerUiAsync(page, 8_000).ConfigureAwait(false);
+            }
+
+            if (!messengerUiConfirmed && orchestrator is not null)
+            {
+                // Повторный клик тоже не открыл чат — ещё одна точка проверки препятствия:
+                // после восстановления вкладка могла перезагрузиться, DOM-ссылки устарели.
+                orchestrator.ReportSuspicion();
+                await orchestrator.WaitReadyAsync(cancellationToken).ConfigureAwait(false);
             }
         }
 
