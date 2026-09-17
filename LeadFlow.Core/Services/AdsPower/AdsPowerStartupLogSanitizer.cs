@@ -210,16 +210,20 @@ internal static class AdsPowerStartupLogSanitizer
         }
 
         var trimmed = payload.TrimStart();
+
+        // Структурная проверка JSON первична: JSON-документ, в строковом поле которого
+        // есть HTML (например data.html при ошибке), не должен классифицироваться как html —
+        // иначе код/сообщение AdsPower из тела не извлекаются.
+        if (trimmed.StartsWith('{') || trimmed.StartsWith('['))
+        {
+            return "json";
+        }
+
         if (trimmed.StartsWith("<", StringComparison.Ordinal)
             || trimmed.Contains("<html", StringComparison.OrdinalIgnoreCase)
             || trimmed.Contains("<!DOCTYPE", StringComparison.OrdinalIgnoreCase))
         {
             return "html";
-        }
-
-        if (trimmed.StartsWith('{') || trimmed.StartsWith('['))
-        {
-            return "json";
         }
 
         return "text";
