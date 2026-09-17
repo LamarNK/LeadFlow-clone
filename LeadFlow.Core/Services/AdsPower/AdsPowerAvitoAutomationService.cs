@@ -3830,23 +3830,27 @@ public sealed partial class AdsPowerAvitoAutomationService(
             }
         }
 
-        await RunSessionStepAsync(
-                orchestrator,
-                expectedRecoveryGeneration,
-                ct => EnsureMessengerEnrichmentViewportAsync(page, ct),
-                cancellationToken)
-            .ConfigureAwait(false);
+        var miniChatActionsEnabled = enrichmentHints?.EnableMiniChatActions != false;
+        if (miniChatActionsEnabled)
+        {
+            await RunSessionStepAsync(
+                    orchestrator,
+                    expectedRecoveryGeneration,
+                    ct => EnsureMessengerEnrichmentViewportAsync(page, ct),
+                    cancellationToken)
+                .ConfigureAwait(false);
 
-        _ = await RunSessionStepAsync(
-                orchestrator,
-                expectedRecoveryGeneration,
-                ct => EvaluateWithRetryAsync<string>(
-                    page,
-                    AvitoCandidatesPageScripts.BuildDismissCandidateDetailPanelScript(),
-                    ct),
-                cancellationToken)
-            .ConfigureAwait(false);
-        await Task.Delay(250, cancellationToken).ConfigureAwait(false);
+            _ = await RunSessionStepAsync(
+                    orchestrator,
+                    expectedRecoveryGeneration,
+                    ct => EvaluateWithRetryAsync<string>(
+                        page,
+                        AvitoCandidatesPageScripts.BuildDismissCandidateDetailPanelScript(),
+                        ct),
+                    cancellationToken)
+                .ConfigureAwait(false);
+            await Task.Delay(250, cancellationToken).ConfigureAwait(false);
+        }
 
         var candidatesReturnUrl = AvitoCandidatesPageUrls.IsCandidatesResponsesUrl(page.Url)
             ? page.Url
@@ -3953,7 +3957,10 @@ public sealed partial class AdsPowerAvitoAutomationService(
             }
 
             var hasUnread = false;
-            if (isKnownSourceId && !hasPendingOutbound && !openPhoneWatch)
+            if (miniChatActionsEnabled
+                && isKnownSourceId
+                && !hasPendingOutbound
+                && !openPhoneWatch)
             {
                 hasUnread = await RunSessionStepAsync(
                         orchestrator,
@@ -3963,7 +3970,8 @@ public sealed partial class AdsPowerAvitoAutomationService(
                     .ConfigureAwait(false);
             }
 
-            if (MessengerEnrichmentSkip.ShouldSkipOpeningCard(
+            if (miniChatActionsEnabled
+                && MessengerEnrichmentSkip.ShouldSkipOpeningCard(
                     isKnownSourceId,
                     hasUnread,
                     openPhoneWatch,
@@ -3981,6 +3989,11 @@ public sealed partial class AdsPowerAvitoAutomationService(
                         ct => TryApplyDetailPanelToCandidateAsync(page, item, domIndex, ct),
                         cancellationToken)
                     .ConfigureAwait(false);
+            }
+
+            if (!miniChatActionsEnabled)
+            {
+                continue;
             }
 
             var enrichment = await TryEnrichMessengerForCandidateCardAsync(

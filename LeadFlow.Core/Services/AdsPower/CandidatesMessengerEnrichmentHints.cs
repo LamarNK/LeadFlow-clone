@@ -21,4 +21,9 @@ public sealed record CandidatesMessengerEnrichmentHints(
     /// <summary>Длительность window phone-watch; сохранённые в Orbita записи в этом окне перечитываются.</summary>
     int PhoneWatchHours = ResponsePhoneWatchRules.DefaultUnchangedHours,
     /// <summary>Активные наблюдения Orbita, которые должны быть найдены даже ниже ранней границы скролла.</summary>
-    IReadOnlyList<WorkerOpenPhoneWatchDto>? OpenPhoneWatches = null);
+    IReadOnlyList<WorkerOpenPhoneWatchDto>? OpenPhoneWatches = null,
+    /// <summary>
+    /// Разрешает открывать мини-чат, читать историю и отправлять сообщения.
+    /// Воркер отключает этот флаг, сохраняя обычный сбор откликов и телефонов.
+    /// </summary>
+    bool EnableMiniChatActions = true);
