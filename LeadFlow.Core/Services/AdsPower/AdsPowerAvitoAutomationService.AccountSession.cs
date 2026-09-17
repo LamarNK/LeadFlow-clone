@@ -455,7 +455,8 @@ public sealed partial class AdsPowerAvitoAutomationService
         string subProfileId,
         string adsPowerUserId,
         string runtimeProvider,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        AvitoSessionOrchestrator? orchestrator = null)
     {
         if (string.IsNullOrWhiteSpace(subProfileId))
         {
@@ -473,7 +474,8 @@ public sealed partial class AdsPowerAvitoAutomationService
                     subProfileId,
                     adsPowerUserId,
                     runtimeProvider,
-                    cancellationToken)
+                    cancellationToken,
+                    orchestrator)
                 .ConfigureAwait(false);
             if (last.Ok)
             {
@@ -655,7 +657,8 @@ public sealed partial class AdsPowerAvitoAutomationService
         string subProfileId,
         string adsPowerUserId,
         string runtimeProvider,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        AvitoSessionOrchestrator? orchestrator = null)
     {
         _ = GlobalLogger.Instance.LogAsync(
             $"{runtimeProvider} profile-switch click started (session): subProfile={subProfileId}.",
@@ -900,7 +903,8 @@ public sealed partial class AdsPowerAvitoAutomationService
         IPage page,
         string adsPowerUserId,
         CandidatesMessengerEnrichmentHints? messengerEnrichmentHints,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        AvitoSessionOrchestrator? orchestrator = null)
     {
         const int maxRestartsAfterRecovery = 2;
         for (var attempt = 1; attempt <= maxRestartsAfterRecovery; attempt++)
@@ -911,7 +915,8 @@ public sealed partial class AdsPowerAvitoAutomationService
                         page,
                         adsPowerUserId,
                         messengerEnrichmentHints,
-                        cancellationToken)
+                        cancellationToken,
+                        orchestrator)
                     .ConfigureAwait(false);
             }
             catch (AvitoSessionRestartRequiredException ex)
@@ -944,7 +949,8 @@ public sealed partial class AdsPowerAvitoAutomationService
         IPage page,
         string adsPowerUserId,
         CandidatesMessengerEnrichmentHints? messengerEnrichmentHints,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        AvitoSessionOrchestrator? orchestrator = null)
     {
         var pipelineSw = Stopwatch.StartNew();
         var waitSw = Stopwatch.StartNew();
@@ -959,25 +965,21 @@ public sealed partial class AdsPowerAvitoAutomationService
         await EnsureOnCandidatesPageAsync(page, adsPowerUserId, cancellationToken).ConfigureAwait(false);
         navigationSw.Stop();
 
-        // Оркестратор стартует после навигации: observer не должен конкурировать с GoTo/Reload.
-        await using var orchestrator = AvitoPageObstacleProbe.CreateOrchestrator(
-            page,
-            TimeSpan.FromMilliseconds(1000));
-        orchestrator.RegisterHandler(AvitoPageObstacleKind.Captcha, (obstacle, ct) =>
-            RecoverFromCaptchaWithSolverAsync(page, obstacle, ct));
-        orchestrator.RegisterHandler(AvitoPageObstacleKind.TransientError, (_, ct) =>
-            RecoverFromTransientErrorAsync(page, ct));
-        orchestrator.Start();
-        var passRecoveryGeneration = orchestrator.RecoveryGeneration;
+        // Оркестратор сессии уже работает (создан при первом сценарии) — используем его,
+        // зафиксировав поколение на весь проход: любое восстановление перезапускает проход,
+        // чтобы не продолжать по DOM-индексам, снятым до reload.
+        var passRecoveryGeneration = orchestrator?.RecoveryGeneration ?? 0;
         var executeScript = (string script, CancellationToken ct) =>
-            orchestrator.RunStepAsync(
-                passRecoveryGeneration,
-                token => EvaluateWithRetryAsync<string>(page, script, token),
-                ct);
+            orchestrator is null
+                ? EvaluateWithRetryAsync<string>(page, script, ct)
+                : orchestrator.RunStepAsync(
+                    passRecoveryGeneration,
+                    token => EvaluateWithRetryAsync<string>(page, script, token),
+                    ct);
         var captchaSolve = CreateCaptchaSolveCallback(page);
         Func<AvitoFirewallProbe.Detection, string?, CancellationToken, Task<bool>>? gatedCaptchaSolve =
-            captchaSolve is null
-                ? null
+            captchaSolve is null || orchestrator is null
+                ? captchaSolve
                 : async (detection, html, ct) =>
                 {
                     var solved = await orchestrator.RunStepAsync(
@@ -1043,7 +1045,8 @@ public sealed partial class AdsPowerAvitoAutomationService
         prepareSw.Stop();
 
         var extractSw = Stopwatch.StartNew();
-        var raw = await orchestrator.RunStepAsync(
+        var raw = await RunSessionStepAsync(
+                orchestrator,
                 passRecoveryGeneration,
                 token => EvaluateWithRetryAsync<string>(page, ExtractionScript, token),
                 cancellationToken)
@@ -1076,6 +1079,28 @@ public sealed partial class AdsPowerAvitoAutomationService
             nameof(ExtractCandidatesJsonOnPageAsync));
 
         return raw;
+    }
+
+    /// <summary>
+    /// Оркестратор уровня CDP-сессии: один наблюдатель и один решатель капчи на все сценарии
+    /// (отклики, объявления, кошелёк, пополнение, переключение профилей). Регистрирует
+    /// существующие восстановители: GeeTest v4 (RuCaptcha), обновление страницы, автовход.
+    /// </summary>
+    internal AvitoSessionOrchestrator CreateSessionOrchestrator(IPage page)
+    {
+        var orchestrator = AvitoPageObstacleProbe.CreateOrchestrator(
+            page,
+            TimeSpan.FromMilliseconds(1000));
+        orchestrator.RegisterHandler(AvitoPageObstacleKind.Captcha, (obstacle, ct) =>
+            RecoverFromCaptchaWithSolverAsync(page, obstacle, ct));
+        orchestrator.RegisterHandler(AvitoPageObstacleKind.TransientError, (_, ct) =>
+            RecoverFromTransientErrorAsync(page, ct));
+        orchestrator.RegisterHandler(AvitoPageObstacleKind.LoginRequired, async (_, ct) =>
+            await TryRecoverAvitoLoginAsync(page, ct).ConfigureAwait(false)
+                ? AvitoObstacleRecoveryResult.Success("Автовход выполнен.")
+                : AvitoObstacleRecoveryResult.Failure("Автовход не удался."));
+        orchestrator.Start();
+        return orchestrator;
     }
 
     /// <summary>
@@ -1130,7 +1155,8 @@ public sealed partial class AdsPowerAvitoAutomationService
     private async Task<AvitoMoneySidebar?> TryReadMoneySidebarOnPageAsync(
         IPage page,
         string adsPowerUserId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        AvitoSessionOrchestrator? orchestrator = null)
     {
         if (!IsOnActiveProfileItemsPage(page.Url))
         {
@@ -1164,7 +1190,26 @@ public sealed partial class AdsPowerAvitoAutomationService
         string html;
         try
         {
+            if (orchestrator is not null)
+            {
+                // Не парсим баланс с страницы под капчей: дожидаемся восстановления
+                // (или терминального исключения), затем читаем HTML.
+                await orchestrator.WaitReadyAsync(cancellationToken).ConfigureAwait(false);
+            }
+
             html = await page.GetContentAsync().ConfigureAwait(false);
+        }
+        catch (AvitoCaptchaDetectedException)
+        {
+            throw;
+        }
+        catch (AvitoLoginRequiredException)
+        {
+            throw;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch
         {
@@ -1202,7 +1247,8 @@ public sealed partial class AdsPowerAvitoAutomationService
     private async Task<string> LoadWalletHistoryHtmlOnPageAsync(
         IPage page,
         string adsPowerUserId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        AvitoSessionOrchestrator? orchestrator = null)
     {
         try
         {
@@ -1236,7 +1282,11 @@ public sealed partial class AdsPowerAvitoAutomationService
         cancellationToken.ThrowIfCancellationRequested();
         try
         {
-            return await page.GetContentAsync().ConfigureAwait(false) ?? string.Empty;
+            var html = await page.GetContentAsync().ConfigureAwait(false) ?? string.Empty;
+            // История кошелька раньше возвращала HTML капчи как «историю операций» — теперь
+            // препятствие распознаётся и либо устраняется, либо честно прерывает сценарий.
+            await ThrowIfCaptchaAsync(page, html, cancellationToken, orchestrator).ConfigureAwait(false);
+            return html;
         }
         catch (Exception ex)
         {
@@ -1264,7 +1314,8 @@ public sealed partial class AdsPowerAvitoAutomationService
         decimal amount,
         CancellationToken cancellationToken,
         Func<CancellationToken, Task<(bool Allowed, string? Error)>>? beforePayClickAsync = null,
-        Func<string, CancellationToken, Task>? reportProgressAsync = null)
+        Func<string, CancellationToken, Task>? reportProgressAsync = null,
+        AvitoSessionOrchestrator? orchestrator = null)
     {
         if (amount <= 0m)
         {
@@ -1291,7 +1342,7 @@ public sealed partial class AdsPowerAvitoAutomationService
                     "Открываем страницу пополнения аванса…",
                     cancellationToken)
                 .ConfigureAwait(false);
-            await NavigateToAdvancePageAsync(page, cancellationToken).ConfigureAwait(false);
+            await NavigateToAdvancePageAsync(page, cancellationToken, orchestrator).ConfigureAwait(false);
 
             // 2) Ввод суммы.
             cancellationToken.ThrowIfCancellationRequested();
@@ -1300,7 +1351,7 @@ public sealed partial class AdsPowerAvitoAutomationService
                     $"Вводим сумму {amount:0.##} ₽…",
                     cancellationToken)
                 .ConfigureAwait(false);
-            if (!await EnterAmountAsync(page, amount, cancellationToken).ConfigureAwait(false))
+            if (!await RunSessionStepAsync(orchestrator, ct => EnterAmountAsync(page, amount, ct), cancellationToken).ConfigureAwait(false))
             {
                 return AvitoAdvanceTopUpResult.Failed(
                     "Не удалось ввести сумму пополнения: поле ввода не найдено.");
@@ -1315,7 +1366,7 @@ public sealed partial class AdsPowerAvitoAutomationService
                     "Подтверждаем сумму пополнения…",
                     cancellationToken)
                 .ConfigureAwait(false);
-            if (!await ClickSubmitAsync(page, cancellationToken).ConfigureAwait(false))
+            if (!await RunSessionStepAsync(orchestrator, ct => ClickSubmitAsync(page, ct), cancellationToken).ConfigureAwait(false))
             {
                 return AvitoAdvanceTopUpResult.Failed(
                     "Не удалось подтвердить сумму пополнения: кнопка не найдена.");
@@ -1328,7 +1379,7 @@ public sealed partial class AdsPowerAvitoAutomationService
                     "Выбираем оплату через СБП…",
                     cancellationToken)
                 .ConfigureAwait(false);
-            if (!await SelectSbpAsync(page, cancellationToken).ConfigureAwait(false))
+            if (!await RunSessionStepAsync(orchestrator, ct => SelectSbpAsync(page, ct), cancellationToken).ConfigureAwait(false))
             {
                 return AvitoAdvanceTopUpResult.Failed(
                     "Не удалось выбрать способ оплаты СБП: вариант не найден.");
@@ -1371,7 +1422,7 @@ public sealed partial class AdsPowerAvitoAutomationService
                     "Переходим к оплате и ждём QR-код…",
                     cancellationToken)
                 .ConfigureAwait(false);
-            if (!await ClickPayAsync(page, cancellationToken).ConfigureAwait(false))
+            if (!await RunSessionStepAsync(orchestrator, ct => ClickPayAsync(page, ct), cancellationToken).ConfigureAwait(false))
             {
                 return AvitoAdvanceTopUpResult.Failed(
                     "Не удалось перейти к оплате: кнопка оплаты не найдена.");
@@ -1476,7 +1527,10 @@ public sealed partial class AdsPowerAvitoAutomationService
         }
     }
 
-    private async Task NavigateToAdvancePageAsync(IPage page, CancellationToken cancellationToken)
+    private async Task NavigateToAdvancePageAsync(
+        IPage page,
+        CancellationToken cancellationToken,
+        AvitoSessionOrchestrator? orchestrator = null)
     {
         var target = AvitoAdvanceTopUpScripts.AdvancePageUrl;
         if (!string.Equals(page.Url, target, StringComparison.OrdinalIgnoreCase))
@@ -1492,7 +1546,7 @@ public sealed partial class AdsPowerAvitoAutomationService
             }
         }
 
-        await ThrowIfCaptchaOnPageAsync(page, cancellationToken).ConfigureAwait(false);
+        await ThrowIfCaptchaOnPageAsync(page, cancellationToken, orchestrator).ConfigureAwait(false);
 
         // Ждём появления поля суммы (или формы входа — тогда автовход).
         try
@@ -1722,7 +1776,8 @@ public sealed partial class AdsPowerAvitoAutomationService
     private async Task<string> LoadProfileItemsHtmlOnPageAsync(
         IPage page,
         string adsPowerUserId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        AvitoSessionOrchestrator? orchestrator = null)
     {
         if (!IsOnActiveProfileItemsPage(page.Url))
         {
@@ -1753,14 +1808,15 @@ public sealed partial class AdsPowerAvitoAutomationService
             throw new InvalidOperationException("Браузер CDP: страница объявлений Avito вернула пустой HTML.");
         }
 
-        await ThrowIfCaptchaAsync(page, html, cancellationToken).ConfigureAwait(false);
+        await ThrowIfCaptchaAsync(page, html, cancellationToken, orchestrator).ConfigureAwait(false);
         return html;
     }
 
     private async Task<string> LoadBlockedItemsHtmlOnPageAsync(
         IPage page,
         string adsPowerUserId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        AvitoSessionOrchestrator? orchestrator = null)
     {
         if (!IsOnRejectedTab(page.Url))
         {
@@ -1789,14 +1845,15 @@ public sealed partial class AdsPowerAvitoAutomationService
             throw new InvalidOperationException("Браузер CDP: вкладка «С ошибками» вернула пустой HTML.");
         }
 
-        await ThrowIfCaptchaAsync(page, html, cancellationToken).ConfigureAwait(false);
+        await ThrowIfCaptchaAsync(page, html, cancellationToken, orchestrator).ConfigureAwait(false);
         return html;
     }
 
     private async Task<string> LoadUnpublishedItemsHtmlOnPageAsync(
         IPage page,
         string adsPowerUserId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        AvitoSessionOrchestrator? orchestrator = null)
     {
         if (!page.Url.Contains("tabs%22%3A%22inactive", StringComparison.OrdinalIgnoreCase)
             && !page.Url.Contains("tabs=inactive", StringComparison.OrdinalIgnoreCase))
@@ -1810,14 +1867,15 @@ public sealed partial class AdsPowerAvitoAutomationService
         await HumanDelay.AfterItemsRenderAsync(cancellationToken).ConfigureAwait(false);
         var html = await EvaluateWithRetryAsync<string>(page, "(() => document.documentElement?.outerHTML || '')()", cancellationToken).ConfigureAwait(false);
         if (string.IsNullOrWhiteSpace(html)) throw new InvalidOperationException("Браузер CDP: вкладка «Неопубликованные» вернула пустой HTML.");
-        await ThrowIfCaptchaAsync(page, html, cancellationToken).ConfigureAwait(false);
+        await ThrowIfCaptchaAsync(page, html, cancellationToken, orchestrator).ConfigureAwait(false);
         return html;
     }
 
     private async Task<AvitoAdRenewalResult> RenewAdOnPageAsync(
         IPage page,
         string avitoItemId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        AvitoSessionOrchestrator? orchestrator = null)
     {
         if (string.IsNullOrWhiteSpace(avitoItemId)
             || avitoItemId.Any(static ch => !char.IsAsciiDigit(ch)))
@@ -1876,7 +1934,7 @@ public sealed partial class AdsPowerAvitoAutomationService
                 "После первого шага Avito не открыл страницу подтверждения публикации.");
         }
 
-        await ThrowIfCaptchaOnPageAsync(page, cancellationToken).ConfigureAwait(false);
+        await ThrowIfCaptchaOnPageAsync(page, cancellationToken, orchestrator).ConfigureAwait(false);
         cancellationToken.ThrowIfCancellationRequested();
         if (!await TryClickFirstVisibleAsync(page, submitSelector, cancellationToken).ConfigureAwait(false))
         {
@@ -1898,7 +1956,7 @@ public sealed partial class AdsPowerAvitoAutomationService
             // Финальную проверку делаем по карточке на вкладке «Неопубликованные» ниже.
         }
 
-        await ThrowIfCaptchaOnPageAsync(page, cancellationToken).ConfigureAwait(false);
+        await ThrowIfCaptchaOnPageAsync(page, cancellationToken, orchestrator).ConfigureAwait(false);
         await NavigateInSiteAsync(page, ProfileUnpublishedItemsPageUrl, 60_000, cancellationToken).ConfigureAwait(false);
         await WaitForProfileItemsReadyAsync(page, nameof(RenewAdOnPageAsync), cancellationToken).ConfigureAwait(false);
 
@@ -1983,7 +2041,8 @@ public sealed partial class AdsPowerAvitoAutomationService
     private async Task<AvitoAdListCapture> CaptureActiveAdsListOnPageAsync(
         IPage page,
         string adsPowerUserId,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        AvitoSessionOrchestrator? orchestrator = null)
     {
         try
         {
@@ -2021,20 +2080,28 @@ public sealed partial class AdsPowerAvitoAutomationService
                 };
             }
 
-            await ThrowIfCaptchaAsync(page, firstHtml, cancellationToken).ConfigureAwait(false);
+            await ThrowIfCaptchaAsync(page, firstHtml, cancellationToken, orchestrator).ConfigureAwait(false);
             var pages = new List<string> { firstHtml };
             var complete = await ScrollActiveAdsUntilSettledAsync(
                     page,
                     pages,
-                    cancellationToken)
+                    cancellationToken,
+                    orchestrator)
                 .ConfigureAwait(false);
-            if (!await TryCaptureActiveAdsHtmlAsync(page, pages, cancellationToken).ConfigureAwait(false))
+            if (!await TryCaptureActiveAdsHtmlAsync(page, pages, cancellationToken, orchestrator).ConfigureAwait(false))
             {
                 complete = false;
             }
 
             for (var pageIndex = 1; pageIndex < MonitoringTiming.AvitoAdsListMaxPages; pageIndex++)
             {
+                if (orchestrator is not null)
+                {
+                    // Контрольная точка перед кликом пагинации: капча, найденная наблюдателем
+                    // на предыдущей странице, к этому моменту уже устранена.
+                    await orchestrator.WaitReadyAsync(cancellationToken).ConfigureAwait(false);
+                }
+
                 var hasNext = await EvaluateWithRetryAsync<bool>(
                         page,
                         AvitoAdListPageScripts.HasNextPageScript,
@@ -2077,12 +2144,12 @@ public sealed partial class AdsPowerAvitoAutomationService
                     .ConfigureAwait(false);
                 await HumanDelay.AfterItemsRenderAsync(cancellationToken).ConfigureAwait(false);
 
-                if (!await ScrollActiveAdsUntilSettledAsync(page, pages, cancellationToken).ConfigureAwait(false))
+                if (!await ScrollActiveAdsUntilSettledAsync(page, pages, cancellationToken, orchestrator).ConfigureAwait(false))
                 {
                     complete = false;
                 }
 
-                if (!await TryCaptureActiveAdsHtmlAsync(page, pages, cancellationToken).ConfigureAwait(false))
+                if (!await TryCaptureActiveAdsHtmlAsync(page, pages, cancellationToken, orchestrator).ConfigureAwait(false))
                 {
                     complete = false;
                     break;
@@ -2167,7 +2234,8 @@ public sealed partial class AdsPowerAvitoAutomationService
     private async Task<bool> ScrollActiveAdsUntilSettledAsync(
         IPage page,
         List<string> pages,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        AvitoSessionOrchestrator? orchestrator = null)
     {
         var initial = await ProbeActiveAdsScrollAsync(page, AvitoAdListPageScripts.ProbeScript, cancellationToken)
             .ConfigureAwait(false);
@@ -2204,7 +2272,7 @@ public sealed partial class AdsPowerAvitoAutomationService
                 .ConfigureAwait(false);
             if (last.FirstWindowMoved(previousFirst))
             {
-                _ = await TryCaptureActiveAdsHtmlAsync(page, pages, cancellationToken).ConfigureAwait(false);
+                _ = await TryCaptureActiveAdsHtmlAsync(page, pages, cancellationToken, orchestrator).ConfigureAwait(false);
             }
 
             previousFirst = string.IsNullOrEmpty(last.FirstMarker) ? previousFirst : last.FirstMarker;
@@ -2338,7 +2406,8 @@ public sealed partial class AdsPowerAvitoAutomationService
     private async Task<bool> TryCaptureActiveAdsHtmlAsync(
         IPage page,
         List<string> pages,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        AvitoSessionOrchestrator? orchestrator = null)
     {
         var html = await EvaluateWithRetryAsync<string>(
                 page,
@@ -2350,7 +2419,7 @@ public sealed partial class AdsPowerAvitoAutomationService
             return false;
         }
 
-        await ThrowIfCaptchaAsync(page, html, cancellationToken).ConfigureAwait(false);
+        await ThrowIfCaptchaAsync(page, html, cancellationToken, orchestrator).ConfigureAwait(false);
         pages.Add(html);
         return true;
     }
@@ -2358,7 +2427,8 @@ public sealed partial class AdsPowerAvitoAutomationService
     private async Task<string> LoadItemDetailHtmlOnPageAsync(
         IPage page,
         string url,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        AvitoSessionOrchestrator? orchestrator = null)
     {
         var target = NormalizeDetailUrl(url);
         if (string.IsNullOrWhiteSpace(target))
@@ -2393,6 +2463,12 @@ public sealed partial class AdsPowerAvitoAutomationService
                 "(() => document.documentElement?.outerHTML || '')()",
                 cancellationToken)
             .ConfigureAwait(false);
+
+        // Раньше HTML капчи мог вернуться как «карточка объявления» и уехать в парсер.
+        if (!string.IsNullOrWhiteSpace(html))
+        {
+            await ThrowIfCaptchaAsync(page, html, cancellationToken, orchestrator).ConfigureAwait(false);
+        }
 
         try
         {
@@ -2586,6 +2662,17 @@ public sealed partial class AdsPowerAvitoAutomationService
 
         public string? CurrentPageUrl => page.Url;
 
+        private AvitoSessionOrchestrator? sessionOrchestrator;
+
+        /// <summary>
+        /// Оркестратор на всю CDP-сессию: наблюдатель следит за страницей при любом сценарии
+        /// (отклики, объявления, кошелёк, пополнение, переключение профилей). Создаётся лениво
+        /// внутри контекста <see cref="AvitoCaptchaTaskContext"/> первого вызова — обработчики
+        /// наследуют параметры субпрофиля.
+        /// </summary>
+        private AvitoSessionOrchestrator Orchestrator =>
+            sessionOrchestrator ??= owner.CreateSessionOrchestrator(page);
+
         public Task<byte[]?> CapturePageScreenshotAsync(CancellationToken cancellationToken = default) =>
             BrowserDiagnosticsCapture.CapturePageScreenshotAsync(page, cancellationToken);
 
@@ -2599,7 +2686,8 @@ public sealed partial class AdsPowerAvitoAutomationService
         public async Task<SubProfileSwitchResult> SwitchSubProfileAsync(string subProfileId, CancellationToken cancellationToken = default)
         {
             using var _ = AvitoCaptchaTaskContext.Use(captchaOptions);
-            return await owner.SwitchSubProfileOnPageAsync(page, subProfileId, AdsPowerUserId, RuntimeProvider, cancellationToken).ConfigureAwait(false);
+            var orchestrator = Orchestrator;
+            return await owner.SwitchSubProfileOnPageAsync(page, subProfileId, AdsPowerUserId, RuntimeProvider, cancellationToken, orchestrator).ConfigureAwait(false);
         }
 
         public async Task<bool> VerifyActiveSubProfileAsync(string subProfileId, CancellationToken cancellationToken = default)
@@ -2619,27 +2707,31 @@ public sealed partial class AdsPowerAvitoAutomationService
             CancellationToken cancellationToken = default)
         {
             using var _ = AvitoCaptchaTaskContext.Use(captchaOptions);
+            var orchestrator = Orchestrator;
             return await owner
-                .ExtractCandidatesJsonOnPageAsync(page, AdsPowerUserId, messengerEnrichmentHints, cancellationToken)
+                .ExtractCandidatesJsonOnPageAsync(page, AdsPowerUserId, messengerEnrichmentHints, cancellationToken, orchestrator)
                 .ConfigureAwait(false);
         }
 
         public async Task<string> LoadProfileItemsHtmlAsync(CancellationToken cancellationToken = default)
         {
             using var _ = AvitoCaptchaTaskContext.Use(captchaOptions);
-            return await owner.LoadProfileItemsHtmlOnPageAsync(page, AdsPowerUserId, cancellationToken).ConfigureAwait(false);
+            var orchestrator = Orchestrator;
+            return await owner.LoadProfileItemsHtmlOnPageAsync(page, AdsPowerUserId, cancellationToken, orchestrator).ConfigureAwait(false);
         }
 
         public async Task<string> LoadBlockedItemsHtmlAsync(CancellationToken cancellationToken = default)
         {
             using var _ = AvitoCaptchaTaskContext.Use(captchaOptions);
-            return await owner.LoadBlockedItemsHtmlOnPageAsync(page, AdsPowerUserId, cancellationToken).ConfigureAwait(false);
+            var orchestrator = Orchestrator;
+            return await owner.LoadBlockedItemsHtmlOnPageAsync(page, AdsPowerUserId, cancellationToken, orchestrator).ConfigureAwait(false);
         }
 
         public async Task<string> LoadUnpublishedItemsHtmlAsync(CancellationToken cancellationToken = default)
         {
             using var _ = AvitoCaptchaTaskContext.Use(captchaOptions);
-            return await owner.LoadUnpublishedItemsHtmlOnPageAsync(page, AdsPowerUserId, cancellationToken).ConfigureAwait(false);
+            var orchestrator = Orchestrator;
+            return await owner.LoadUnpublishedItemsHtmlOnPageAsync(page, AdsPowerUserId, cancellationToken, orchestrator).ConfigureAwait(false);
         }
 
         public async Task<AvitoAdRenewalResult> RenewAdAsync(
@@ -2647,31 +2739,36 @@ public sealed partial class AdsPowerAvitoAutomationService
             CancellationToken cancellationToken = default)
         {
             using var _ = AvitoCaptchaTaskContext.Use(captchaOptions);
-            return await owner.RenewAdOnPageAsync(page, avitoItemId, cancellationToken).ConfigureAwait(false);
+            var orchestrator = Orchestrator;
+            return await owner.RenewAdOnPageAsync(page, avitoItemId, cancellationToken, orchestrator).ConfigureAwait(false);
         }
 
         public async Task<AvitoAdListCapture> CaptureActiveAdsListAsync(CancellationToken cancellationToken = default)
         {
             using var _ = AvitoCaptchaTaskContext.Use(captchaOptions);
-            return await owner.CaptureActiveAdsListOnPageAsync(page, AdsPowerUserId, cancellationToken).ConfigureAwait(false);
+            var orchestrator = Orchestrator;
+            return await owner.CaptureActiveAdsListOnPageAsync(page, AdsPowerUserId, cancellationToken, orchestrator).ConfigureAwait(false);
         }
 
         public async Task<string> LoadItemDetailHtmlAsync(string url, CancellationToken cancellationToken = default)
         {
             using var _ = AvitoCaptchaTaskContext.Use(captchaOptions);
-            return await owner.LoadItemDetailHtmlOnPageAsync(page, url, cancellationToken).ConfigureAwait(false);
+            var orchestrator = Orchestrator;
+            return await owner.LoadItemDetailHtmlOnPageAsync(page, url, cancellationToken, orchestrator).ConfigureAwait(false);
         }
 
         public async Task<AvitoMoneySidebar?> TryReadMoneySidebarAsync(CancellationToken cancellationToken = default)
         {
             using var _ = AvitoCaptchaTaskContext.Use(captchaOptions);
-            return await owner.TryReadMoneySidebarOnPageAsync(page, AdsPowerUserId, cancellationToken).ConfigureAwait(false);
+            var orchestrator = Orchestrator;
+            return await owner.TryReadMoneySidebarOnPageAsync(page, AdsPowerUserId, cancellationToken, orchestrator).ConfigureAwait(false);
         }
 
         public async Task<string> LoadWalletHistoryHtmlAsync(CancellationToken cancellationToken = default)
         {
             using var _ = AvitoCaptchaTaskContext.Use(captchaOptions);
-            return await owner.LoadWalletHistoryHtmlOnPageAsync(page, AdsPowerUserId, cancellationToken)
+            var orchestrator = Orchestrator;
+            return await owner.LoadWalletHistoryHtmlOnPageAsync(page, AdsPowerUserId, cancellationToken, orchestrator)
                 .ConfigureAwait(false);
         }
 
@@ -2681,15 +2778,41 @@ public sealed partial class AdsPowerAvitoAutomationService
             Func<CancellationToken, Task<(bool Allowed, string? Error)>>? beforePayClickAsync = null,
             Func<string, CancellationToken, Task>? reportProgressAsync = null)
         {
-            using var _ = AvitoCaptchaTaskContext.Use(captchaOptions);
-            return await owner.RunAdvanceTopUpOnPageAsync(
-                    page,
-                    AdsPowerUserId,
-                    amount,
-                    cancellationToken,
-                    beforePayClickAsync,
-                    reportProgressAsync)
-                .ConfigureAwait(false);
+            using var captchaScope = AvitoCaptchaTaskContext.Use(captchaOptions);
+            var orchestrator = Orchestrator;
+
+            // Восстановление страницы (reload после капчи) отменяет DOM-состояние сценария
+            // пополнения — безопасно начать сценарий заново; claim-барьер защищает от двойной оплаты.
+            const int maxRestartsAfterRecovery = 2;
+            for (var attempt = 1; attempt <= maxRestartsAfterRecovery; attempt++)
+            {
+                try
+                {
+                    return await owner.RunAdvanceTopUpOnPageAsync(
+                            page,
+                            AdsPowerUserId,
+                            amount,
+                            cancellationToken,
+                            beforePayClickAsync,
+                            reportProgressAsync,
+                            orchestrator)
+                        .ConfigureAwait(false);
+                }
+                catch (AvitoSessionRestartRequiredException) when (attempt < maxRestartsAfterRecovery)
+                {
+                    _ = GlobalLogger.Instance.LogAsync(
+                        $"AdsPower advance top-up: страница восстановлена, перезапускаем сценарий ({attempt + 1}/{maxRestartsAfterRecovery}).",
+                        DeskLinkAuditLogLevel.Info,
+                        memberName: nameof(RunAdvanceTopUpAsync),
+                        properties: new Dictionary<string, object?>
+                        {
+                            ["step"] = "topup_restart_after_recovery",
+                            ["adsPower.userId"] = AdsPowerUserId
+                        });
+                }
+            }
+
+            return AvitoAdvanceTopUpResult.Failed("Сценарий пополнения не завершился после восстановления страницы.");
         }
 
         public async Task<string> CaptureProfileSwitchHtmlAsync(CancellationToken cancellationToken = default)
@@ -2704,6 +2827,13 @@ public sealed partial class AdsPowerAvitoAutomationService
 
         public async ValueTask DisposeAsync()
         {
+            var orchestrator = sessionOrchestrator;
+            sessionOrchestrator = null;
+            if (orchestrator is not null)
+            {
+                await orchestrator.DisposeAsync().ConfigureAwait(false);
+            }
+
             try
             {
                 browser.Disconnect();

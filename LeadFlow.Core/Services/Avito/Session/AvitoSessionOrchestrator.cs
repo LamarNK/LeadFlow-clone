@@ -165,6 +165,20 @@ public sealed class AvitoSessionOrchestrator : IAsyncDisposable
     public async Task WaitReadyAsync(long expectedRecoveryGeneration, CancellationToken cancellationToken) =>
         await WaitReadyAsync((long?)expectedRecoveryGeneration, cancellationToken).ConfigureAwait(false);
 
+    /// <summary>Идёт ли сейчас эпизод восстановления (внутри обработчика повторный вызов запрещён).</summary>
+    public bool IsRecovering
+    {
+        get
+        {
+            lock (gate)
+            {
+                return status is AvitoSessionStatus.PauseRequested
+                    or AvitoSessionStatus.Recovering
+                    or AvitoSessionStatus.Verifying;
+            }
+        }
+    }
+
     private async Task WaitReadyAsync(long? expectedRecoveryGeneration, CancellationToken cancellationToken)
     {
         while (true)
@@ -291,13 +305,40 @@ public sealed class AvitoSessionOrchestrator : IAsyncDisposable
     public async Task CheckNowAsync(long expectedRecoveryGeneration, CancellationToken cancellationToken)
     {
         await WaitReadyAsync(expectedRecoveryGeneration, cancellationToken).ConfigureAwait(false);
-        var obstacle = await ProbeUntilKnownAsync(cancellationToken).ConfigureAwait(false);
+        var obstacle = await ProbeUntilKnownOrThrowAsync(cancellationToken).ConfigureAwait(false);
         if (obstacle.Kind != AvitoPageObstacleKind.None && TryBeginEpisode(obstacle))
         {
             await RunEpisodeAsync(obstacle, cancellationToken).ConfigureAwait(false);
         }
 
         await WaitReadyAsync(expectedRecoveryGeneration, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Проверка без инвалидации поколения (для точечных checkpoint-ов старых сценариев:
+    /// объявления, кошелёк, пополнение). Восстановление не требует перезапуска вызванного
+    /// сценария — вызывающий код сам решает, повторять ли операцию.
+    /// </summary>
+    public Task CheckNowAsync(CancellationToken cancellationToken) =>
+        CheckNowAsync(RecoveryGeneration, cancellationToken);
+
+    /// <summary>
+    /// Контрольная точка перед действием: состояние обязано быть определимым.
+    /// Устойчивый Unknown — fail-closed (переходный CDP-сбой для мониторинга), но не терминал сессии:
+    /// навигация между страницами законно даёт Unknown, следующий цикл повторит попытку.
+    /// </summary>
+    private async Task<AvitoPageObstacle> ProbeUntilKnownOrThrowAsync(CancellationToken cancellationToken)
+    {
+        var obstacle = await ProbeUntilKnownAsync(cancellationToken).ConfigureAwait(false);
+        if (obstacle.Kind == AvitoPageObstacleKind.Unknown)
+        {
+            LogThrottledUnknown();
+            throw AdsPowerCdpGuard.Timeout(
+                "подтверждение состояния страницы",
+                TimeSpan.FromMilliseconds(UnknownProbeRetryInterval.TotalMilliseconds * MaxUnknownProbeAttempts));
+        }
+
+        return obstacle;
     }
 
     public async ValueTask DisposeAsync()
@@ -377,6 +418,14 @@ public sealed class AvitoSessionOrchestrator : IAsyncDisposable
                     continue;
                 }
 
+                // Unknown в фоне — не эпизод: навигация/перерисовка страницы законны.
+                // Fail-closed гарантируется проверкой перед действием (RunStepAsync/CheckNow).
+                if (obstacle.Kind == AvitoPageObstacleKind.Unknown)
+                {
+                    LogThrottledUnknown();
+                    continue;
+                }
+
                 if (!TryBeginEpisode(obstacle))
                 {
                     continue;
@@ -409,7 +458,7 @@ public sealed class AvitoSessionOrchestrator : IAsyncDisposable
             return;
         }
 
-        var obstacle = await ProbeUntilKnownAsync(cancellationToken).ConfigureAwait(false);
+        var obstacle = await ProbeUntilKnownOrThrowAsync(cancellationToken).ConfigureAwait(false);
         if (obstacle.Kind != AvitoPageObstacleKind.None && TryBeginEpisode(obstacle))
         {
             await RunEpisodeAsync(obstacle, cancellationToken).ConfigureAwait(false);

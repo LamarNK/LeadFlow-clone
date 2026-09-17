@@ -589,7 +589,6 @@ public sealed partial class AdsPowerAvitoAutomationService(
         {
             return;
         }
-
         var isIpBlock = AvitoCaptchaDetector.HasIpBlockChallenge(html);
         if (!isIpBlock
             && await TrySolveGeeTestAsync(page, html, page.Url, kind, cancellationToken).ConfigureAwait(false))
@@ -692,7 +691,38 @@ public sealed partial class AdsPowerAvitoAutomationService(
         return AvitoCaptchaTaskContext.Use(captchaOptions);
     }
 
-    private async Task ThrowIfCaptchaOnPageAsync(IPage page, CancellationToken cancellationToken)
+    /// <summary>
+    /// Точечная проверка HTML сценария с оркестратором сессии: при препятствии решение идёт
+    /// через единственный обработчик с исключительным владением вкладкой (без параллельных
+    /// вызовов решателя из самого сценария). Завершение — страница подтверждённо чистая;
+    /// неустранимое препятствие бросает терминальное исключение мониторинга.
+    /// Внутри recovery (IsRecovering) уходим в легаси-путь: оркестратор ждать самого себя не может.
+    /// </summary>
+    private async Task ThrowIfCaptchaAsync(
+        IPage page,
+        string html,
+        CancellationToken cancellationToken,
+        AvitoSessionOrchestrator? orchestrator)
+    {
+        if (AvitoCaptchaDetector.Classify(html) is null
+            && !AvitoCaptchaDetector.CanAttemptGeeTestSolve(html))
+        {
+            return;
+        }
+
+        if (orchestrator is not null && !orchestrator.IsRecovering)
+        {
+            await orchestrator.CheckNowAsync(cancellationToken).ConfigureAwait(false);
+            return;
+        }
+
+        await ThrowIfCaptchaAsync(page, html, cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task ThrowIfCaptchaOnPageAsync(
+        IPage page,
+        CancellationToken cancellationToken,
+        AvitoSessionOrchestrator? orchestrator = null)
     {
         string? html = null;
         try
@@ -720,7 +750,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
             return;
         }
 
-        await ThrowIfCaptchaAsync(page, html, cancellationToken).ConfigureAwait(false);
+        await ThrowIfCaptchaAsync(page, html, cancellationToken, orchestrator).ConfigureAwait(false);
     }
 
     private async Task<bool> TryClearGeeTestCaptchaAsync(IPage page, CancellationToken cancellationToken)
@@ -2187,22 +2217,48 @@ public sealed partial class AdsPowerAvitoAutomationService(
             (script, ct) => EvaluateWithRetryAsync<string>(page, script, ct, CdpPageReadTimeout),
             cancellationToken);
 
+    /// <summary>
+    /// Автовход выполняется строго по одному на сервис: наблюдатель оркестратора и сами сценарии
+    /// могут обнаружить потерю входа одновременно — два параллельных автовхода, кликающих одну
+    /// форму, недопустимы. Второй вызов ждёт первого и затем просто проверяет результат.
+    /// </summary>
+    private readonly SemaphoreSlim loginRecoveryGate = new(1, 1);
+
     private async Task<bool> TryRecoverAvitoLoginAsync(IPage page, CancellationToken cancellationToken)
     {
-        var recovery = await AvitoAutoLoginRecovery.TryRecoverAsync(
-                page,
-                credentials: null,
-                TryClearGeeTestCaptchaAsync,
-                cancellationToken)
-            .ConfigureAwait(false);
-        if (string.Equals(recovery.FailureReason, "password_reset_sms_required", StringComparison.Ordinal))
+        var owned = await loginRecoveryGate.WaitAsync(0, cancellationToken).ConfigureAwait(false);
+        if (!owned)
         {
-            throw new AvitoLoginRequiredException(
-                page.Url,
-                passwordResetSmsPhone: recovery.PasswordResetSmsPhone ?? "указанный в Avito номер");
+            await loginRecoveryGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+            // Параллельный автовход уже отработал: проверяем, стал ли вход действителен.
+            var state = await ProbePageStateAsync(page, cancellationToken).ConfigureAwait(false);
+            if (state?.HasLoginForm != true && state?.PageKind != AvitoPageKind.Login)
+            {
+                return true;
+            }
         }
 
-        return recovery.Recovered;
+        try
+        {
+            var recovery = await AvitoAutoLoginRecovery.TryRecoverAsync(
+                    page,
+                    credentials: null,
+                    TryClearGeeTestCaptchaAsync,
+                    cancellationToken)
+                .ConfigureAwait(false);
+            if (string.Equals(recovery.FailureReason, "password_reset_sms_required", StringComparison.Ordinal))
+            {
+                throw new AvitoLoginRequiredException(
+                    page.Url,
+                    passwordResetSmsPhone: recovery.PasswordResetSmsPhone ?? "указанный в Avito номер");
+            }
+
+            return recovery.Recovered;
+        }
+        finally
+        {
+            loginRecoveryGate.Release();
+        }
     }
 
     private async Task EnsureOnCandidatesPageAsync(
@@ -3667,6 +3723,14 @@ public sealed partial class AdsPowerAvitoAutomationService(
 
         return jsonIndex;
     }
+
+    private static Task<T> RunSessionStepAsync<T>(
+        AvitoSessionOrchestrator? orchestrator,
+        Func<CancellationToken, Task<T>> step,
+        CancellationToken cancellationToken) =>
+        orchestrator is null
+            ? step(cancellationToken)
+            : orchestrator.RunStepAsync(step, cancellationToken);
 
     private static Task<T> RunSessionStepAsync<T>(
         AvitoSessionOrchestrator? orchestrator,

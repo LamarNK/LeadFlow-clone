@@ -224,7 +224,9 @@ public sealed class AvitoSessionOrchestratorTests
 
         Assert.Equal(0, stepCalls);
         Assert.Equal(3, probe.ProbeCount);
-        Assert.Equal(AvitoSessionStatus.RequiresManualAction, orchestrator.Status);
+        // Fail-closed на действии, но не терминал сессии: навигация между страницами
+        // законно даёт Unknown, следующий цикл повторит попытку.
+        Assert.Equal(AvitoSessionStatus.Running, orchestrator.Status);
     }
 
     [Fact]
@@ -245,7 +247,20 @@ public sealed class AvitoSessionOrchestratorTests
                 CancellationToken.None));
 
         Assert.Equal(0, stepCalls);
-        Assert.Equal(AvitoSessionStatus.RequiresManualAction, orchestrator.Status);
+        Assert.Equal(AvitoSessionStatus.Running, orchestrator.Status);
+    }
+
+    [Fact]
+    public async Task Observer_PersistentUnknown_DoesNotTerminateSession()
+    {
+        var probe = new ScriptedProbe([], tail: AvitoPageObstacle.Unknown);
+        await using var orchestrator = Create(probe, interval: TimeSpan.FromMilliseconds(10));
+
+        orchestrator.Start();
+        await WaitUntilAsync(() => probe.ProbeCount >= 3, TimeSpan.FromSeconds(5));
+
+        Assert.Equal(AvitoSessionStatus.Running, orchestrator.Status);
+        Assert.Null(orchestrator.ActiveObstacle);
     }
 
     [Fact]
