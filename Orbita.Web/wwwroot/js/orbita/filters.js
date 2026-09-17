@@ -144,23 +144,21 @@
         return Array.prototype.slice.call(picker.querySelectorAll('[data-statistics-multiselect-option]'));
     }
 
-    function schedulePickerSubmit(picker) {
-        var form = picker && picker.closest('form');
-        if (!form) return;
-        if (picker.__orbitaPickerSubmitTimer) {
-            window.clearTimeout(picker.__orbitaPickerSubmitTimer);
-        }
-        picker.__orbitaPickerSubmitTimer = window.setTimeout(function () {
-            picker.__orbitaPickerSubmitTimer = null;
-            runtime.submitFilterForm(form);
-        }, 300);
+    function markPickerDirty(picker) {
+        picker.__orbitaPickerDirty = true;
     }
 
     function closeStatisticsPicker(picker) {
         var menu = picker.querySelector('[data-statistics-multiselect-menu]');
         var trigger = picker.querySelector('[data-statistics-multiselect-trigger]');
+        var wasOpen = !!(menu && !menu.hidden);
         if (menu) menu.hidden = true;
         if (trigger) trigger.setAttribute('aria-expanded', 'false');
+        if (wasOpen && picker.__orbitaPickerDirty) {
+            picker.__orbitaPickerDirty = false;
+            var form = picker.closest('form');
+            if (form) runtime.submitFilterForm(form);
+        }
     }
 
     function syncStatisticsPicker(picker, forceAll) {
@@ -171,12 +169,12 @@
         var options = statisticsPickerOptions(picker);
         if (!fieldName || !triggerText || !valuesRoot || !selectAll) return;
 
-        var selected = options.filter(function (option) { return option.checked; });
-        var isAll = forceAll === true || selected.length === 0 || selected.length === options.length;
-        if (isAll) {
+        if (forceAll === true) {
             options.forEach(function (option) { option.checked = true; });
-            selected = options;
         }
+
+        var selected = options.filter(function (option) { return option.checked; });
+        var isAll = options.length === 0 || selected.length === options.length;
 
         selectAll.checked = isAll;
         selectAll.indeterminate = !isAll && selected.length > 0;
@@ -191,7 +189,7 @@
             });
         }
 
-        if (isAll) {
+        if (isAll || selected.length === 0) {
             triggerText.textContent = picker.getAttribute('data-statistics-all-label') || 'Все';
         } else if (selected.length === 1) {
             triggerText.textContent = selected[0].parentElement.textContent.trim();
@@ -216,12 +214,13 @@
 
             var menu = picker.querySelector('[data-statistics-multiselect-menu]');
             if (!menu) return;
-            var willOpen = menu.hidden;
-            menu.hidden = !willOpen;
-            trigger.setAttribute('aria-expanded', String(willOpen));
-            if (willOpen) {
+            if (menu.hidden) {
+                menu.hidden = false;
+                trigger.setAttribute('aria-expanded', 'true');
                 var search = picker.querySelector('[data-statistics-multiselect-search]');
                 if (search) search.focus();
+            } else {
+                closeStatisticsPicker(picker);
             }
         });
 
@@ -230,12 +229,12 @@
             if (!picker) return;
             if (event.target.closest('[data-statistics-multiselect-all]')) {
                 syncStatisticsPicker(picker, true);
-                schedulePickerSubmit(picker);
+                markPickerDirty(picker);
                 return;
             }
             if (event.target.closest('[data-statistics-multiselect-option]')) {
                 syncStatisticsPicker(picker, false);
-                schedulePickerSubmit(picker);
+                markPickerDirty(picker);
             }
         });
 
