@@ -286,7 +286,7 @@ public sealed class AdsPowerStartupDiagnosticsTests
         Assert.Null(logged[1].Properties["startup.lastSuccessfulCdp"]);
         Assert.Equal("ожидание очереди AdsPower browser/start", logged[1].Properties["startup.stage"]);
         Assert.Equal("local_api", logged[0].Properties["startup.boundary"]);
-        Assert.Null(logged[0].Properties["cdp.call"]);
+        Assert.Null(logged[0].Properties.GetValueOrDefault("cdp.call"));
         Assert.False(AdsPowerCdpGuard.IsCdpTimeout(new HttpRequestException("timed out")));
         Assert.True(IsLocalApiFailure(logged));
         Assert.False(IsCdpHang(logged));
@@ -438,7 +438,10 @@ public sealed class AdsPowerStartupDiagnosticsTests
             Assert.Equal(0, start.Properties["localApi.adsPowerCode"]);
             Assert.Equal(200, start.Properties["localApi.httpStatus"]);
             Assert.Equal("avito", start.Properties["localApi.openUrlClass"]);
-            Assert.Equal("avito", start.Properties["adsPower.openUrlClass"]);
+            // adsPower.* пишутся в событие "request started", а не в browser_start.
+            Assert.Contains(
+                correlated,
+                e => Equals(e.Properties.GetValueOrDefault("adsPower.openUrlClass"), "avito"));
             Assert.True((double)start.Properties["localApi.durationMs"]! >= 0);
             Assert.Equal("ws,debug_port", start.Properties["localApi.dataKeys"]);
             Assert.False(start.Properties.ContainsKey("adsPower.baseUrl"));

@@ -19,7 +19,12 @@ internal sealed class CapturedGlobalLog
 /// </summary>
 internal sealed class GlobalLogCapture : IDisposable
 {
-    private static readonly object Gate = new();
+    // SemaphoreSlim вместо Monitor: тесты после await возобновляются на другом потоке,
+    // а Monitor имеет привязку к потоку и Monitor.Exit из другого потока бросает
+    // SynchronizationLockException, оставляя статический лок захваченным навсегда
+    // (это зависало все последующие тесты, вызывающие Start()).
+    private static readonly SemaphoreSlim Gate = new(1, 1);
+    private readonly object _sync = new();
     private readonly List<CapturedGlobalLog> _entries = [];
     private bool _disposed;
 
@@ -27,25 +32,56 @@ internal sealed class GlobalLogCapture : IDisposable
     {
     }
 
-    public IReadOnlyList<CapturedGlobalLog> Entries => _entries;
+    public IReadOnlyList<CapturedGlobalLog> Entries
+    {
+        get
+        {
+            lock (_sync)
+            {
+                return _entries.ToArray();
+            }
+        }
+    }
 
     public static GlobalLogCapture Start()
     {
-        Monitor.Enter(Gate);
+        Gate.Wait();
         var capture = new GlobalLogCapture();
         GlobalLogger.TestCapture = capture.OnLog;
         return capture;
     }
 
-    public IReadOnlyList<CapturedGlobalLog> WithCorrelation(string correlationId) =>
-        _entries.Where(e => Equals(e.Properties.GetValueOrDefault("startup.correlationId"), correlationId)).ToList();
+    public IReadOnlyList<CapturedGlobalLog> WithCorrelation(string correlationId)
+    {
+        lock (_sync)
+        {
+            return _entries.Where(e => Equals(e.Properties.GetValueOrDefault("startup.correlationId"), correlationId)).ToList();
+        }
+    }
 
-    public IReadOnlyList<CapturedGlobalLog> StartupEvents(string eventName) =>
-        _entries.Where(e => Equals(e.Properties.GetValueOrDefault("startup.event"), eventName)).ToList();
+    public IReadOnlyList<CapturedGlobalLog> StartupEvents(string eventName)
+    {
+        lock (_sync)
+        {
+            return _entries.Where(e => Equals(e.Properties.GetValueOrDefault("startup.event"), eventName)).ToList();
+        }
+    }
 
     public string CombinedBlob(IEnumerable<CapturedGlobalLog>? subset = null)
     {
-        var logs = subset ?? _entries;
+        IReadOnlyList<CapturedGlobalLog> logs;
+        if (subset is null)
+        {
+            lock (_sync)
+            {
+                logs = _entries.ToArray();
+            }
+        }
+        else
+        {
+            logs = subset as IReadOnlyList<CapturedGlobalLog> ?? subset.ToList();
+        }
+
         return string.Join(
             "\n",
             logs.Select(e =>
@@ -65,7 +101,7 @@ internal sealed class GlobalLogCapture : IDisposable
 
         _disposed = true;
         GlobalLogger.TestCapture = null;
-        Monitor.Exit(Gate);
+        Gate.Release();
     }
 
     private void OnLog(
@@ -76,7 +112,7 @@ internal sealed class GlobalLogCapture : IDisposable
         IReadOnlyDictionary<string, object?> properties,
         string? serializedPayload)
     {
-        _entries.Add(new CapturedGlobalLog
+        var entry = new CapturedGlobalLog
         {
             Level = level,
             Message = message,
@@ -84,6 +120,10 @@ internal sealed class GlobalLogCapture : IDisposable
             ErrorKey = errorKey,
             Properties = new Dictionary<string, object?>(properties),
             SerializedPayload = serializedPayload
-        });
+        };
+        lock (_sync)
+        {
+            _entries.Add(entry);
+        }
     }
 }
