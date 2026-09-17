@@ -142,27 +142,31 @@ public sealed partial class CrmAnalyticsQueryService
         }).ToList();
 
         // Cohort results include subsequent owners' work, but only between receipt and the
-        // selected period's end. Every numerator is a subset of exactly this receipt base.
+        // selected period's end. Conversion is sequential: every step uses the previous
+        // step's distinct-card count as its denominator.
         var cohortById = cohort.ToDictionary(x => x.Id);
         bool InCohort(PeriodHistoryRow row) => cohortById.TryGetValue(row.CardId, out var card)
             && row.CreatedAtUtc >= fromUtc && row.CreatedAtUtc >= card.EnteredAtUtc && row.CreatedAtUtc < toUtc;
         var cohortEvents = history.Select(x => x.ToPeriodRow(x.OfficeId ?? cardContexts[x.CardId].OfficeId)).Where(InCohort).ToList();
         var cohortContacts = firstContacts.Where(x => InCohort(x.Event)).Select(x => x.Event).ToList();
         var cohortResults = new List<CrmSalesCohortMetricDto>();
+        var conversionBase = cohort.Count;
         void CohortMetric(string key, string label, IEnumerable<PeriodHistoryRow> rows)
         {
             var selected = rows.ToList();
             var ids = selected.Select(x => x.CardId).Distinct().ToArray();
             AddCardEvidence(key, ids);
             AddProofEvidence(key, selected.Select(x => x.Id));
-            cohortResults.Add(new(key, label, ids.Length, cohort.Count == 0 ? null : Percent(ids.Length, cohort.Count)));
+            cohortResults.Add(new(key, label, ids.Length,
+                conversionBase == 0 ? null : Percent(ids.Length, conversionBase)));
+            conversionBase = ids.Length;
         }
-        CohortMetric("sales.cohort.contacts", "Установили контакт", cohortContacts);
-        CohortMetric("sales.cohort.questionnaires", "Дошли до анкеты", cohortEvents.Where(x => IsRealStageEvent(x)
+        CohortMetric("sales.cohort.contacts", "Новый лид → Дозвон", cohortContacts);
+        CohortMetric("sales.cohort.questionnaires", "Дозвон → Анкета", cohortEvents.Where(x => IsRealStageEvent(x)
             && rules.IsMilestone(x.OfficeId, ParseDestinationStage(x.Details)!, CrmStages.Questionnaire)));
-        CohortMetric("sales.cohort.tickets", "Дошли до билета", cohortEvents.Where(x => IsRealStageEvent(x)
+        CohortMetric("sales.cohort.tickets", "Анкета → Билет", cohortEvents.Where(x => IsRealStageEvent(x)
             && rules.IsMilestone(x.OfficeId, ParseDestinationStage(x.Details)!, CrmStages.Ticket)));
-        CohortMetric("sales.cohort.successes", "Достигли успеха", cohortEvents.Where(x => x.Action == "Closed" && CrmSalesRules.IsSuccess(x.Details)));
+        CohortMetric("sales.cohort.successes", "Билет → Успех", cohortEvents.Where(x => x.Action == "Closed" && CrmSalesRules.IsSuccess(x.Details)));
         foreach (var (oldKey, newKey) in new[] {
             ("cohort.contacts", "sales.cohort.contacts"), ("cohort.questionnaires", "sales.cohort.questionnaires"),
             ("cohort.tickets", "sales.cohort.tickets"), ("cohort.contracts", "sales.cohort.successes") })

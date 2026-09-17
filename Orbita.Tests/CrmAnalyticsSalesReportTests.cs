@@ -169,6 +169,36 @@ public sealed partial class CrmAnalyticsQueryServiceTests
     private static CrmAnalyticsQuery SalesQuery(DateTime from, Guid? office = null, string? manager = null) =>
         new(from, from.AddDays(1), office ?? OfficeOneId, manager, CrmAnalyticsCohortBases.Received);
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task Sales_CohortConversionUsesPreviousStepAsDenominator(bool relational)
+    {
+        await using var h = relational ? await Harness.CreateSqliteAsync(Now) : await Harness.CreateAsync(Now);
+        h.AddOffice(OfficeOneId, "Первый", CrmStages.All);
+        h.AddManager(ManagerOneId, OfficeOneId, "Анна", 20, false);
+        var from = Now.UtcDateTime.Date.AddDays(-1);
+        for (var i = 0; i < 10; i++)
+        {
+            var card = SalesCard(h, ManagerOneId, from.AddMinutes(i + 1));
+            if (i >= 8) continue;
+            SalesMove(h, card, CrmStages.Lead, CrmStages.Negotiations, from.AddHours(1).AddMinutes(i));
+            if (i >= 4) continue;
+            SalesMove(h, card, CrmStages.Negotiations, CrmStages.Questionnaire, from.AddHours(2).AddMinutes(i));
+            if (i >= 2) continue;
+            SalesMove(h, card, CrmStages.Questionnaire, CrmStages.Ticket, from.AddHours(3).AddMinutes(i));
+            if (i == 0) SalesClose(h, card, CrmStages.Ticket, CrmCloseReasons.Success, from.AddHours(4));
+        }
+        await h.Db.SaveChangesAsync();
+
+        var data = (await h.Sut.GetAsync(OfficeScope.GlobalAdmin, "admin", true, SalesQuery(from))).Data!;
+        var metrics = data.Sales!.Cohort.Results;
+        Assert.Equal(new[] { 8, 4, 2, 1 }, metrics.Select(x => x.Count));
+        Assert.Equal(new double?[] { 80, 50, 50, 50 }, metrics.Select(x => x.Percent));
+        Assert.Equal(new[] { "Новый лид → Дозвон", "Дозвон → Анкета", "Анкета → Билет", "Билет → Успех" },
+            metrics.Select(x => x.Label));
+    }
+
     private static CrmCandidateCardEntity SalesCard(Harness h, string? manager, DateTime entered,
         string entryStage = CrmStages.Lead, Guid? office = null)
     {

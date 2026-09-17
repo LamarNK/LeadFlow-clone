@@ -646,9 +646,9 @@ public sealed partial class CrmAnalyticsQueryServiceTests
         Assert.Equal(1, decomposition.Tickets);
         Assert.Equal(1, decomposition.Contracts);
         Assert.Equal(50, decomposition.ContactConversionPercent);
-        Assert.Equal(8.33, decomposition.QuestionnaireConversionPercent);
-        Assert.Equal(8.33, decomposition.TicketConversionPercent);
-        Assert.Equal(8.33, decomposition.ContractConversionPercent);
+        Assert.Equal(16.67, decomposition.QuestionnaireConversionPercent);
+        Assert.Equal(100, decomposition.TicketConversionPercent);
+        Assert.Equal(100, decomposition.ContractConversionPercent);
 
         var breakdown = decomposition.ContactBreakdown.ToDictionary(x => x.Label, StringComparer.Ordinal);
         Assert.Equal(6, breakdown["Первый контакт"].Count);
@@ -1335,7 +1335,8 @@ public sealed partial class CrmAnalyticsQueryServiceTests
         Assert.Equal(0, data.Decomposition!.Contracts);
         Assert.Equal(1, data.Decomposition.Tickets);
         Assert.Equal(0, data.Decomposition.Questionnaires);
-        Assert.Equal(50, data.Decomposition.TicketConversionPercent);
+        Assert.Equal(0, data.Decomposition.TicketConversionPercent);
+        Assert.Null(data.Sales!.Cohort.Results.Single(x => x.Key == "sales.cohort.tickets").Percent);
         Assert.Equal(2, data.PeriodActivity!.StageChanges);
         Assert.Equal(0, data.Funnels.Single().Stages.Single(x => x.Stage == CrmStages.Ndz73).ReachedCount);
     }

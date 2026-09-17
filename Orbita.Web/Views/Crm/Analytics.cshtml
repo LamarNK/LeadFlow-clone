@@ -200,7 +200,7 @@ else
             <div class="sales-heading-main"><span class="sales-section-number">03</span><div><h2 id="sales-cohort-title">Конверсия новых лидов</h2><p>Только карточки, поступившие за @period, и их результаты за эти же даты.</p></div></div>
             <span class="sales-scope-tag">Одна группа карточек</span>
         </header>
-        <div class="sales-cohort-base"><div><span class="sales-eyebrow">База расчёта</span><button type="button" data-evidence-url="@Evidence(CrmSalesMetrics.Received)" data-evidence-title="Новые лиды"><strong>@sales.Cohort.Received</strong> новых лидов</button></div><p>Все проценты ниже считаются от этой базы. Старые НДЗ входят в общие дозвоны выше, но не увеличивают конверсию новых лидов.</p></div>
+        <div class="sales-cohort-base"><div><span class="sales-eyebrow">Начало воронки</span><button type="button" data-evidence-url="@Evidence(CrmSalesMetrics.Received)" data-evidence-title="Новые лиды"><strong>@sales.Cohort.Received</strong> новых лидов</button></div><p>Первый процент считается от новых лидов, каждый следующий — от предыдущего этапа. Старые НДЗ входят в общие дозвоны выше, но не увеличивают эту воронку.</p></div>
         @if (sales.Cohort.Received == 0)
         {
             <p class="sales-empty sales-cohort-empty">За выбранные даты новых лидов нет — процент не рассчитывается. Работа со старыми карточками показана в первых двух блоках.</p>
@@ -208,16 +208,19 @@ else
         else
         {
             <div class="sales-conversions">
-                @foreach (var metric in sales.Cohort.Results)
+                @for (var metricIndex = 0; metricIndex < sales.Cohort.Results.Count; metricIndex++)
                 {
+                    var metric = sales.Cohort.Results[metricIndex];
+                    var baseCount = metricIndex == 0 ? sales.Cohort.Received : sales.Cohort.Results[metricIndex - 1].Count;
+                    var baseLabel = metricIndex switch { 0 => "новых лидов", 1 => "дозвонов", 2 => "анкет", _ => "билетов" };
                     <button type="button" class="sales-conversion" data-evidence-url="@Evidence(metric.Key)" data-evidence-title="Новые лиды · @metric.Label">
-                        <span>@metric.Label</span><strong>@Percentage(metric.Percent)</strong><small>@metric.Count из @sales.Cohort.Received карточек</small>
+                        <span>@metric.Label</span><strong>@Percentage(metric.Percent)</strong><small>@metric.Count из @baseCount @baseLabel</small>
                         <span class="sales-bar" aria-hidden="true"><span style="width:@((metric.Percent ?? 0).ToString("0.##", System.Globalization.CultureInfo.InvariantCulture))%"></span></span>
                     </button>
                 }
             </div>
         }
-        <p class="sales-data-note">Одна карточка учитывается один раз в каждом результате. Переходы последующих ответственных не теряются. События после выбранной конечной даты сюда не входят.</p>
+        <p class="sales-data-note">Одна карточка учитывается один раз на каждом этапе. Каждый процент сравнивает этап с предыдущим. Переходы последующих ответственных не теряются. События после выбранной конечной даты сюда не входят.</p>
         @if (sales.Cohort.Unassigned > 0) { <p class="sales-alert">Сейчас без ответственного: <button type="button" data-evidence-url="@Evidence(CrmSalesMetrics.Unassigned)" data-evidence-title="Новые лиды без ответственного">@sales.Cohort.Unassigned</button>. Они входят в общую базу новых лидов.</p> }
         <div class="sales-evidence" data-evidence-host hidden role="region" aria-label="Детализация конверсии"></div>
     </section>
