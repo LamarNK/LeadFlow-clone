@@ -320,6 +320,10 @@
     cursor: pointer;
 }
 
+.statistics-multiselect__option[hidden] {
+    display: none;
+}
+
 .statistics-multiselect__option:hover {
     background: #f2f6fc;
 }

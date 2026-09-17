@@ -194,7 +194,82 @@ public sealed class DashboardMarkupTests
         Assert.DoesNotContain("name=\"accountId\"", view);
         Assert.Contains("data-statistics-multiselect", picker);
         Assert.Contains("name=\"@Model.FieldName\"", picker);
-        Assert.Contains("schedulePickerSubmit(picker);", filtersJs);
+        Assert.Contains("selectAll.checked ? 'all' : 'none'", filtersJs);
+        Assert.Contains("syncStatisticsPicker(picker, selectAllMode);", filtersJs);
+        Assert.Contains("selected.length === 0", filtersJs);
+        Assert.Contains("statistics-multiselect__option[hidden]", ReadRepoFile("Orbita.Web/wwwroot/css/orbita/statistics.css"));
+        Assert.Contains("balances-worker-picker__option[hidden]", ReadRepoFile("Orbita.Web/wwwroot/css/orbita/balances.css"));
+        Assert.Contains("orbita-account-combobox__option[hidden]", ReadRepoFile("Orbita.Web/wwwroot/css/orbita/search-and-filters.css"));
+    }
+
+    [Fact]
+    public void SharedMultiSelect_CanClearAllSelections_AndVisuallyFiltersSearchResults()
+    {
+        var filtersScript = new Uri(FindRepoFile("Orbita.Web/wwwroot/js/orbita/filters.js")).AbsoluteUri;
+        var statisticsStyles = new Uri(FindRepoFile("Orbita.Web/wwwroot/css/orbita/statistics.css")).AbsoluteUri;
+        var pagePath = Path.Combine(Path.GetTempPath(), $"orbita-multiselect-{Guid.NewGuid():N}.html");
+        var html = $$"""
+            <!doctype html>
+            <html>
+            <head><link rel="stylesheet" href="{{statisticsStyles}}"></head>
+            <body>
+              <form>
+                <div data-statistics-multiselect data-statistics-field="workerIds" data-statistics-all-label="Все воркеры">
+                  <div data-statistics-multiselect-values></div>
+                  <button type="button" data-statistics-multiselect-trigger aria-expanded="true">
+                    <span data-statistics-multiselect-text>Все воркеры</span>
+                  </button>
+                  <div data-statistics-multiselect-menu>
+                    <label class="statistics-multiselect__option">
+                      <input type="checkbox" data-statistics-multiselect-all checked>
+                    </label>
+                    <input type="search" data-statistics-multiselect-search>
+                    <label id="alpha" class="statistics-multiselect__option" data-statistics-multiselect-option-row data-statistics-search-text="Альфа">
+                      <input type="checkbox" value="alpha" data-statistics-multiselect-option checked>
+                    </label>
+                    <label id="beta" class="statistics-multiselect__option" data-statistics-multiselect-option-row data-statistics-search-text="Бета">
+                      <input type="checkbox" value="beta" data-statistics-multiselect-option checked>
+                    </label>
+                  </div>
+                </div>
+              </form>
+              <script src="{{filtersScript}}"></script>
+              <script>
+                window.OrbitaRuntime.initStatisticsMultiSelects();
+                const all = document.querySelector('[data-statistics-multiselect-all]');
+                all.checked = false;
+                all.dispatchEvent(new Event('change', { bubbles: true }));
+                const search = document.querySelector('[data-statistics-multiselect-search]');
+                search.value = 'Бета';
+                search.dispatchEvent(new Event('input', { bubbles: true }));
+                const options = Array.from(document.querySelectorAll('[data-statistics-multiselect-option]'));
+                document.body.dataset.selectedCount = String(options.filter(x => x.checked).length);
+                document.body.dataset.allChecked = String(all.checked);
+                document.body.dataset.trigger = document.querySelector('[data-statistics-multiselect-text]').textContent;
+                document.body.dataset.alphaHidden = String(document.querySelector('#alpha').hidden);
+                document.body.dataset.alphaDisplay = getComputedStyle(document.querySelector('#alpha')).display;
+                document.body.dataset.betaHidden = String(document.querySelector('#beta').hidden);
+              </script>
+            </body>
+            </html>
+            """;
+
+        try
+        {
+            File.WriteAllText(pagePath, html, Encoding.UTF8);
+            var dom = DumpDomWithEdge(pagePath);
+
+            Assert.Contains("data-selected-count=\"0\"", dom);
+            Assert.Contains("data-all-checked=\"false\"", dom);
+            Assert.Contains("data-trigger=\"Не выбрано\"", dom);
+            Assert.Contains("data-alpha-hidden=\"true\"", dom);
+            Assert.Contains("data-alpha-display=\"none\"", dom);
+            Assert.Contains("data-beta-hidden=\"false\"", dom);
+        }
+        finally
+        {
+            File.Delete(pagePath);
+        }
     }
 
     [Fact]

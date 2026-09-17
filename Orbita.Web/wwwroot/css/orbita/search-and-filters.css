@@ -885,6 +885,10 @@ body.orbita-search-open {
     cursor: pointer;
 }
 
+.orbita-account-combobox__option[hidden] {
+    display: none;
+}
+
 .orbita-account-combobox__option:hover,
 .orbita-account-combobox__option.is-selected {
     background: #f2f4f7;

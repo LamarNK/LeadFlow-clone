@@ -161,7 +161,7 @@
         }
     }
 
-    function syncStatisticsPicker(picker, forceAll) {
+    function syncStatisticsPicker(picker, selectAllMode) {
         var fieldName = picker.getAttribute('data-statistics-field');
         var triggerText = picker.querySelector('[data-statistics-multiselect-text]');
         var valuesRoot = picker.querySelector('[data-statistics-multiselect-values]');
@@ -169,8 +169,10 @@
         var options = statisticsPickerOptions(picker);
         if (!fieldName || !triggerText || !valuesRoot || !selectAll) return;
 
-        if (forceAll === true) {
+        if (selectAllMode === 'all') {
             options.forEach(function (option) { option.checked = true; });
+        } else if (selectAllMode === 'none') {
+            options.forEach(function (option) { option.checked = false; });
         }
 
         var selected = options.filter(function (option) { return option.checked; });
@@ -189,8 +191,10 @@
             });
         }
 
-        if (isAll || selected.length === 0) {
+        if (isAll) {
             triggerText.textContent = picker.getAttribute('data-statistics-all-label') || 'Все';
+        } else if (selected.length === 0) {
+            triggerText.textContent = 'Не выбрано';
         } else if (selected.length === 1) {
             triggerText.textContent = selected[0].parentElement.textContent.trim();
         } else {
@@ -228,7 +232,9 @@
             var picker = event.target.closest('[data-statistics-multiselect]');
             if (!picker) return;
             if (event.target.closest('[data-statistics-multiselect-all]')) {
-                syncStatisticsPicker(picker, true);
+                var selectAll = event.target.closest('[data-statistics-multiselect-all]');
+                var selectAllMode = selectAll.checked ? 'all' : 'none';
+                syncStatisticsPicker(picker, selectAllMode);
                 markPickerDirty(picker);
                 return;
             }
