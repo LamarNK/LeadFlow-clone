@@ -196,6 +196,9 @@ public static class AvitoCandidatesListPreparer
         var domItems = finalListItems.Count;
         var phoneRevealRounds = 0;
         var phoneClicksTotal = 0;
+        var phoneRevealSuccesses = 0;
+        var phoneRevealFailures = 0;
+        var phoneRevealEffectiveBudget = 0;
         var prioritySw = Stopwatch.StartNew();
         var openWatchProtected = await ResolveOpenPhoneWatchProtectedIndicesAsync(
                 finalListItems,
@@ -292,10 +295,18 @@ public static class AvitoCandidatesListPreparer
             var phoneRevealSw = Stopwatch.StartNew();
             try
             {
+                // Адаптивный бюджет: база не разгребает хвост замаскированных карточек на
+                // «жирных» субпрофилях (новые отклики конкурируют со старыми за клики) —
+                // карточки без телефона молча выпадают из сбора. Решение об остановке
+                // принимает PhoneRevealBudgetController: он сначала пробует поднять
+                // бюджет по хвосту и только потом говорит «стоп».
+                var budgetController = new PhoneRevealBudgetController(phoneRevealBudget);
+                var lastPendingCount = 0;
+                var lastWithPhone = -1;
                 for (var i = 0; i < phoneRevealLimit; i++)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-                    if (phoneClicksTotal >= phoneRevealBudget)
+                    if (budgetController.ShouldStop(phoneClicksTotal, lastPendingCount))
                     {
                         break;
                     }
@@ -315,10 +326,32 @@ public static class AvitoCandidatesListPreparer
                             await HumanDelay.AfterPhoneRevealOutcomeAsync(false, cancellationToken).ConfigureAwait(false);
                         }
 
+                        lastPendingCount = revealStep.Masked;
                         phonesProbe = await TryParsePhonesReadyAsync(executeScript, cancellationToken).ConfigureAwait(false);
+                        if (phonesProbe is not null)
+                        {
+                            lastPendingCount = phonesProbe.Masked;
+                            if (lastWithPhone >= 0 && phonesProbe.WithPhone > lastWithPhone)
+                            {
+                                phoneRevealSuccesses++;
+                                // Inline-раскрытие не проходит через popup-проб:
+                                // двигаем round-robin курсор явно.
+                                await AdvanceRevealCursorAsync(executeScript, cancellationToken)
+                                    .ConfigureAwait(false);
+                            }
+                            else if (lastWithPhone >= 0 && revealStep.Clicked > 0)
+                            {
+                                phoneRevealFailures++;
+                                await MarkPhoneRevealFailedAsync(executeScript, revealStep.ClickedIndex, cancellationToken)
+                                    .ConfigureAwait(false);
+                            }
+
+                            lastWithPhone = phonesProbe.WithPhone;
+                        }
+
                         if (phonesProbe?.Ready == true
                             || phonesProbe?.Items == 0
-                            || phoneClicksTotal >= phoneRevealBudget)
+                            || budgetController.ShouldStop(phoneClicksTotal, lastPendingCount))
                         {
                             break;
                         }
@@ -333,12 +366,33 @@ public static class AvitoCandidatesListPreparer
                         phoneClicksTotal++;
                         await HumanDelay.AfterPhoneRevealOutcomeAsync(popupStep.Revealed, cancellationToken)
                             .ConfigureAwait(false);
+                        if (popupStep.Revealed)
+                        {
+                            phoneRevealSuccesses++;
+                        }
+                        else
+                        {
+                            phoneRevealFailures++;
+                            await MarkPhoneRevealFailedAsync(executeScript, popupStep.Index, cancellationToken)
+                                .ConfigureAwait(false);
+                        }
+                    }
+
+                    if (popupStep is not null)
+                    {
+                        lastPendingCount = popupStep.Pending;
                     }
 
                     phonesProbe = await TryParsePhonesReadyAsync(executeScript, cancellationToken).ConfigureAwait(false);
+                    if (phonesProbe is not null)
+                    {
+                        lastPendingCount = phonesProbe.Masked;
+                        lastWithPhone = phonesProbe.WithPhone;
+                    }
+
                     if (phonesProbe?.Ready == true
                         || phonesProbe?.Items == 0
-                        || phoneClicksTotal >= phoneRevealBudget)
+                        || budgetController.ShouldStop(phoneClicksTotal, lastPendingCount))
                     {
                         break;
                     }
@@ -350,6 +404,7 @@ public static class AvitoCandidatesListPreparer
                 }
 
                 phonesProbe ??= await TryParsePhonesReadyAsync(executeScript, cancellationToken).ConfigureAwait(false);
+                phoneRevealEffectiveBudget = budgetController.EffectiveBudget;
             }
             finally
             {
@@ -379,7 +434,11 @@ public static class AvitoCandidatesListPreparer
             cardFingerprintSkipCount,
             phoneSkipCount,
             profileSkipCount,
-            collectionFilterSkipCount);
+            collectionFilterSkipCount,
+            PhoneRevealSuccesses: phoneRevealSuccesses,
+            PhoneRevealFailures: phoneRevealFailures,
+            PhoneRevealFailedCards: phonesProbe?.Failed ?? 0,
+            PhoneRevealBudget: phoneRevealEffectiveBudget > 0 ? phoneRevealEffectiveBudget : phoneRevealBudget);
 
         var detailEnrichNote = isJobCrmPage
             ? "detailEnrich=skipped (CRM page)"
@@ -387,11 +446,14 @@ public static class AvitoCandidatesListPreparer
                 ? "detailEnrich=deferred (same pass as chat)"
                 : $"detailEnrich={result.DetailEnrichHits}/{result.DetailEnrichClicks} (skipped {result.DetailEnrichSkipped})";
         var scrollNote = stoppedOnKnownHistory ? ", scrollStop=known-history" : "";
-        var phoneCapNote = phoneClicksTotal >= phoneRevealBudget
-            ? $", phoneRevealCap={phoneRevealBudget}"
+        var phoneCapNote = phoneClicksTotal >= result.PhoneRevealBudget && result.PhoneRevealBudget > 0
+            ? $", phoneRevealCap={result.PhoneRevealBudget}"
+            : "";
+        var budgetRaisedNote = result.PhoneRevealBudget > phoneRevealBudget
+            ? $", phoneRevealBudgetRaised={phoneRevealBudget}->{result.PhoneRevealBudget}"
             : "";
         _ = GlobalLogger.Instance.LogAsync(
-            $"Candidates list prepared for {logContext}: scrollRounds={result.ScrollRounds}, domItems={result.DomItemCount}{scrollNote}, phonesReady={result.PhonesReady} ({result.CardsWithPhone}/{result.DomItemCount}), maskedLeft={result.MaskedPhonesLeft}, cardFingerprintSkips={result.CardFingerprintSkips}, phoneSkips={result.PhoneSkips}, profileSkips={result.ProfileSkips}, collectionFilterSkips={result.CollectionFilterSkips}, phoneRevealRounds={result.PhoneRevealRounds}, phoneClicks={result.PhoneRevealClicks}{phoneCapNote}, {detailEnrichNote}.",
+            $"Candidates list prepared for {logContext}: scrollRounds={result.ScrollRounds}, domItems={result.DomItemCount}{scrollNote}, phonesReady={result.PhonesReady} ({result.CardsWithPhone}/{result.DomItemCount}), maskedLeft={result.MaskedPhonesLeft}, deferredForPhone={result.DeferredForPhone}, revealOk={result.PhoneRevealSuccesses}, revealFailed={result.PhoneRevealFailures}, cardFingerprintSkips={result.CardFingerprintSkips}, phoneSkips={result.PhoneSkips}, profileSkips={result.ProfileSkips}, collectionFilterSkips={result.CollectionFilterSkips}, phoneRevealRounds={result.PhoneRevealRounds}, phoneClicks={result.PhoneRevealClicks}{phoneCapNote}{budgetRaisedNote}, {detailEnrichNote}.",
             DeskLinkAuditLogLevel.Info,
             properties: new Dictionary<string, object?>
             {
@@ -404,10 +466,15 @@ public static class AvitoCandidatesListPreparer
                 ["candidates.prepare.cardsWithPhone"] = result.CardsWithPhone,
                 ["candidates.prepare.phonesReady"] = result.PhonesReady,
                 ["candidates.prepare.maskedPhonesLeft"] = result.MaskedPhonesLeft,
+                ["candidates.prepare.deferredForPhone"] = result.DeferredForPhone,
                 ["candidates.prepare.phoneRevealRounds"] = result.PhoneRevealRounds,
                 ["candidates.prepare.phoneRevealClicks"] = result.PhoneRevealClicks,
-                ["candidates.prepare.phoneRevealBudget"] = phoneRevealBudget,
-                ["candidates.prepare.phoneRevealCapped"] = phoneClicksTotal >= phoneRevealBudget,
+                ["candidates.prepare.phoneRevealBudget"] = result.PhoneRevealBudget,
+                ["candidates.prepare.phoneRevealBudgetRaised"] = result.PhoneRevealBudget > phoneRevealBudget,
+                ["candidates.prepare.phoneRevealCapped"] = phoneClicksTotal >= result.PhoneRevealBudget && result.PhoneRevealBudget > 0,
+                ["candidates.prepare.phoneRevealSuccesses"] = result.PhoneRevealSuccesses,
+                ["candidates.prepare.phoneRevealFailures"] = result.PhoneRevealFailures,
+                ["candidates.prepare.phoneRevealFailedCards"] = result.PhoneRevealFailedCards,
                 ["candidates.prepare.detailEnrichClicks"] = result.DetailEnrichClicks,
                 ["candidates.prepare.detailEnrichSkipped"] = result.DetailEnrichSkipped,
                 ["candidates.prepare.detailEnrichHits"] = result.DetailEnrichHits,
@@ -584,7 +651,8 @@ public static class AvitoCandidatesListPreparer
                 root.TryGetProperty("ready", out var r) && r.GetBoolean(),
                 root.TryGetProperty("items", out var i) ? i.GetInt32() : 0,
                 root.TryGetProperty("withPhone", out var p) ? p.GetInt32() : 0,
-                root.TryGetProperty("masked", out var m) ? m.GetInt32() : 0);
+                root.TryGetProperty("masked", out var m) ? m.GetInt32() : 0,
+                root.TryGetProperty("failed", out var f) ? f.GetInt32() : 0);
         }
         catch
         {
@@ -1288,7 +1356,7 @@ public static class AvitoCandidatesListPreparer
 
             if (locate.Masked == 0 || locate.TargetIndex < 0)
             {
-                return new RevealPhonesStepProbe(locate.Items, locate.Masked, 0, Attempted: false);
+                return new RevealPhonesStepProbe(locate.Items, locate.Masked, 0, Attempted: false, Failed: locate.Failed);
             }
 
             if (await actors.TryClickItemChildAsync(
@@ -1296,7 +1364,13 @@ public static class AvitoCandidatesListPreparer
                     "[data-marker='job-application/phone']",
                     cancellationToken).ConfigureAwait(false))
             {
-                return new RevealPhonesStepProbe(locate.Items, locate.Masked, 1, Attempted: true);
+                return new RevealPhonesStepProbe(
+                    locate.Items,
+                    locate.Masked,
+                    1,
+                    Attempted: true,
+                    ClickedIndex: locate.TargetIndex,
+                    Failed: locate.Failed);
             }
 
             // A CDP error may arrive after dispatch. Let DOM settle before deciding on a fallback.
@@ -1304,12 +1378,18 @@ public static class AvitoCandidatesListPreparer
             var after = await TryParseMaskedPhoneTargetAsync(executeScript, cancellationToken).ConfigureAwait(false);
             if (after is null)
             {
-                return new RevealPhonesStepProbe(locate.Items, locate.Masked, 0, Attempted: true);
+                return new RevealPhonesStepProbe(locate.Items, locate.Masked, 0, Attempted: true, Failed: locate.Failed);
             }
 
             if (after.Masked < locate.Masked || after.TargetIndex != locate.TargetIndex)
             {
-                return new RevealPhonesStepProbe(locate.Items, locate.Masked, 1, Attempted: true);
+                return new RevealPhonesStepProbe(
+                    locate.Items,
+                    locate.Masked,
+                    1,
+                    Attempted: true,
+                    ClickedIndex: locate.TargetIndex,
+                    Failed: locate.Failed);
             }
 
             // The mask is still present, so the pointer action did not take effect; use the existing fallback.
@@ -1333,7 +1413,9 @@ public static class AvitoCandidatesListPreparer
                 root.TryGetProperty("items", out var i) ? i.GetInt32() : 0,
                 root.TryGetProperty("masked", out var m) ? m.GetInt32() : 0,
                 clicked,
-                Attempted: clicked > 0);
+                Attempted: clicked > 0,
+                ClickedIndex: root.TryGetProperty("index", out var idx) ? idx.GetInt32() : -1,
+                Failed: root.TryGetProperty("failed", out var failed) ? failed.GetInt32() : 0);
         }
         catch
         {
@@ -1359,7 +1441,8 @@ public static class AvitoCandidatesListPreparer
             return new MaskedPhoneTargetProbe(
                 root.TryGetProperty("items", out var i) ? i.GetInt32() : 0,
                 root.TryGetProperty("masked", out var m) ? m.GetInt32() : 0,
-                root.TryGetProperty("targetIndex", out var t) ? t.GetInt32() : -1);
+                root.TryGetProperty("targetIndex", out var t) ? t.GetInt32() : -1,
+                root.TryGetProperty("failed", out var f) ? f.GetInt32() : 0);
         }
         catch
         {
@@ -1396,7 +1479,7 @@ public static class AvitoCandidatesListPreparer
 
         if (!click.Clicked)
         {
-            return new ContactsPopupRevealProbe(click.Items, click.Pending, false, false);
+            return new ContactsPopupRevealProbe(click.Items, click.Pending, false, false, click.Index);
         }
 
         await HumanDelay.AfterPhoneRevealClickAsync(cancellationToken).ConfigureAwait(false);
@@ -1409,14 +1492,14 @@ public static class AvitoCandidatesListPreparer
                 .ConfigureAwait(false);
             if (probe is { Revealed: true })
             {
-                return new ContactsPopupRevealProbe(click.Items, click.Pending, true, true);
+                return new ContactsPopupRevealProbe(click.Items, click.Pending, true, true, click.Index);
             }
 
             if (probe is { State: "error" })
             {
                 _ = await executeScript(AvitoCandidatesPageScripts.BuildCloseContactsPopupScript(), cancellationToken)
                     .ConfigureAwait(false);
-                return new ContactsPopupRevealProbe(click.Items, click.Pending, true, false);
+                return new ContactsPopupRevealProbe(click.Items, click.Pending, true, false, click.Index);
             }
 
             await HumanDelay.DelayAsync(
@@ -1428,7 +1511,7 @@ public static class AvitoCandidatesListPreparer
 
         _ = await executeScript(AvitoCandidatesPageScripts.BuildCloseContactsPopupScript(), cancellationToken)
             .ConfigureAwait(false);
-        return new ContactsPopupRevealProbe(click.Items, click.Pending, true, false);
+        return new ContactsPopupRevealProbe(click.Items, click.Pending, true, false, click.Index);
     }
 
     /// <summary>Popup-раскрытие через trusted CDP-клик: JS только находит цель и читает состояние.</summary>
@@ -1470,7 +1553,11 @@ public static class AvitoCandidatesListPreparer
         if (!await actors.TryClickItemChildAsync(target.TargetIndex, childSelector, cancellationToken)
                 .ConfigureAwait(false))
         {
-            return new ContactsPopupRevealProbe(target.Items, target.Pending, false, false);
+            // Trusted-клик не сработал: помечаем карточку failed в этом проходе,
+            // иначе следующий раунд снова выберет её и съест весь бюджет раундов.
+            await MarkPhoneRevealFailedAsync(executeScript, target.TargetIndex, cancellationToken)
+                .ConfigureAwait(false);
+            return new ContactsPopupRevealProbe(target.Items, target.Pending, false, false, target.TargetIndex);
         }
 
         await HumanDelay.AfterPhoneRevealClickAsync(cancellationToken).ConfigureAwait(false);
@@ -1484,13 +1571,13 @@ public static class AvitoCandidatesListPreparer
             if (probe is { Revealed: true })
             {
                 await CloseContactsPopupAsync(executeScript, actors, cancellationToken).ConfigureAwait(false);
-                return new ContactsPopupRevealProbe(target.Items, target.Pending, true, true);
+                return new ContactsPopupRevealProbe(target.Items, target.Pending, true, true, target.TargetIndex);
             }
 
             if (probe is { State: "error" })
             {
                 await CloseContactsPopupAsync(executeScript, actors, cancellationToken).ConfigureAwait(false);
-                return new ContactsPopupRevealProbe(target.Items, target.Pending, true, false);
+                return new ContactsPopupRevealProbe(target.Items, target.Pending, true, false, target.TargetIndex);
             }
 
             await HumanDelay.DelayAsync(
@@ -1501,7 +1588,7 @@ public static class AvitoCandidatesListPreparer
         }
 
         await CloseContactsPopupAsync(executeScript, actors, cancellationToken).ConfigureAwait(false);
-        return new ContactsPopupRevealProbe(target.Items, target.Pending, true, false);
+        return new ContactsPopupRevealProbe(target.Items, target.Pending, true, false, target.TargetIndex);
     }
 
     private static async Task CloseContactsPopupAsync(
@@ -1627,17 +1714,57 @@ public static class AvitoCandidatesListPreparer
         return t;
     }
 
-    private sealed record KnownHistoryProbe(bool AllKnown, int ParsedItems);
+        private static async Task MarkPhoneRevealFailedAsync(
+            Func<string, CancellationToken, Task<string>> executeScript,
+            int index,
+            CancellationToken cancellationToken)
+        {
+            if (index < 0)
+            {
+                return;
+            }
 
-    private sealed record PhonesReadyProbe(bool Ready, int Items, int WithPhone, int Masked);
+            try
+            {
+                _ = await executeScript(
+                        AvitoCandidatesPageScripts.BuildMarkPhoneRevealFailedScript(index),
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch
+            {
+                // best effort: пометка нужна только внутри текущего прохода
+            }
+        }
 
-    private sealed record RevealPhonesStepProbe(int Items, int Masked, int Clicked, bool Attempted);
+        private static async Task AdvanceRevealCursorAsync(
+            Func<string, CancellationToken, Task<string>> executeScript,
+            CancellationToken cancellationToken)
+        {
+            try
+            {
+                _ = await executeScript(
+                        AvitoCandidatesPageScripts.BuildAdvanceRevealCursorScript(),
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch
+            {
+                // best effort: курсор — эвристика ротации, не критичен
+            }
+        }
 
-    private sealed record MaskedPhoneTargetProbe(int Items, int Masked, int TargetIndex);
+        private sealed record KnownHistoryProbe(bool AllKnown, int ParsedItems);
+
+    private sealed record PhonesReadyProbe(bool Ready, int Items, int WithPhone, int Masked, int Failed = 0);
+
+    private sealed record RevealPhonesStepProbe(int Items, int Masked, int Clicked, bool Attempted, int ClickedIndex = -1, int Failed = 0);
+
+    private sealed record MaskedPhoneTargetProbe(int Items, int Masked, int TargetIndex, int Failed = 0);
 
     private sealed record ContactsPopupTargetProbe(int Items, int Pending, int TargetIndex, string Kind, bool ClosedExisting);
 
-    private sealed record ContactsPopupRevealProbe(int Items, int Pending, bool Clicked, bool Revealed);
+    private sealed record ContactsPopupRevealProbe(int Items, int Pending, bool Clicked, bool Revealed, int Index = -1);
 
     private sealed record ContactsPopupClickProbe(int Items, int Pending, bool Clicked, bool ClosedExisting, int Index);
 
@@ -1662,4 +1789,16 @@ public sealed record CandidatesListPrepareResult(
     int CardFingerprintSkips = 0,
     int PhoneSkips = 0,
     int ProfileSkips = 0,
-    int CollectionFilterSkips = 0);
+    int CollectionFilterSkips = 0,
+    /// <summary>Клики, реально давшие номер в этом проходе.</summary>
+    int PhoneRevealSuccesses = 0,
+    /// <summary>Клики, не давшие номера (карточка помечена failed до конца прохода).</summary>
+    int PhoneRevealFailures = 0,
+    /// <summary>Карточки, чей клик не дал номера (включая отметки из popup-пути).</summary>
+    int PhoneRevealFailedCards = 0,
+    /// <summary>Итоговый (возможно адаптивно поднятый) бюджет раскрытия телефонов.</summary>
+    int PhoneRevealBudget = 0)
+{
+    /// <summary>Карточки, отложенные до следующего прохода из-за нехватки бюджета/неудачных кликов.</summary>
+    public int DeferredForPhone => Math.Max(0, MaskedPhonesLeft + PhoneRevealFailedCards);
+}

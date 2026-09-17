@@ -128,6 +128,87 @@ public static class AvitoCandidatesPageScripts
             return !!(skips[String(index)] || skips[index]);
         };
 
+        // Карточка, чей клик не дал номера в этом проходе: не тыкаем повторно до
+        // следующего прохода (иначе одна «мёртвая» кнопка съедает весь бюджет).
+        const markPhoneRevealFailed = (index) => {
+            if (index < 0) {
+                return;
+            }
+
+            const state = lfState();
+            if (!state.failedPhoneReveal || typeof state.failedPhoneReveal !== "object") {
+                state.failedPhoneReveal = {};
+            }
+
+            state.failedPhoneReveal[String(index)] = true;
+            advanceRevealCursor();
+        };
+
+        const hasFailedPhoneReveal = (index) => {
+            const failed = lfState().failedPhoneReveal;
+            return !!(failed && typeof failed === "object"
+                && (failed[String(index)] || failed[index]));
+        };
+
+        // Round-robin курсор выбора целей: живёт в lfState и НЕ сбрасывается между
+        // проходами. Дополнительно зеркалим в sessionStorage — он переживает
+        // перезагрузку страницы в той же вкладке, иначе каждый reload сбрасывал бы
+        // ротацию в начало. Иначе при inflow >= бюджета глубокие замаскированные
+        // карточки голодают до 6-дневного cutoff.
+        const revealCursorStorageKey = "lf.revealCursor.v1";
+
+        const readStoredRevealCursor = () => {
+            try {
+                const value = Number(window.sessionStorage?.getItem(revealCursorStorageKey));
+                if (Number.isFinite(value) && value > 0) {
+                    return value;
+                }
+            } catch {
+            }
+
+            return 0;
+        };
+
+        const getRevealCursor = () => {
+            const value = Number(lfState().revealCursor);
+            const inMemory = Number.isFinite(value) && value > 0 ? value : 0;
+            return Math.max(inMemory, readStoredRevealCursor());
+        };
+
+        const advanceRevealCursor = () => {
+            const next = getRevealCursor() + 1;
+            lfState().revealCursor = next;
+            try {
+                window.sessionStorage?.setItem(revealCursorStorageKey, String(next));
+            } catch {
+            }
+        };
+
+        // Порядок обхода карточек для раскрытия: phone-watch всегда первыми,
+        // остальные — со сдвигом на курсор (round-robin).
+        const orderedRevealIndexes = (items) => {
+            const ordered = Array.from(items.keys()).sort((a, b) =>
+                Number(isPhoneWatchPriority(b)) - Number(isPhoneWatchPriority(a)) || a - b);
+            const rest = ordered.filter((index) => !isPhoneWatchPriority(index));
+            if (rest.length === 0) {
+                return ordered;
+            }
+
+            const by = getRevealCursor() % rest.length;
+            const rotatedRest = rest.slice(by).concat(rest.slice(0, by));
+            const result = [];
+            let rotatedIndex = 0;
+            for (const index of ordered) {
+                if (isPhoneWatchPriority(index)) {
+                    result.push(index);
+                } else {
+                    result.push(rotatedRest[rotatedIndex++]);
+                }
+            }
+
+            return result;
+        };
+
         const isPhoneWatchPriority = (index) => {
             const priorities = lfState().phoneWatchPriority;
             return !!(priorities && typeof priorities === "object"
@@ -918,7 +999,7 @@ public static class AvitoCandidatesPageScripts
         })();
         """;
 
-    /// <summary>Телефон раскрыт: inline, в кэше после popup или в кнопке без маски «**».</summary>
+    /// <summary>Телефон раскрыт: inline, в кэше после popup или в кнопке без маски «**». failed — карточки, чей клик не дал номера в этом проходе.</summary>
     public static string BuildPhonesReadyProbeScript() =>
         $$"""
         (() => {
@@ -927,23 +1008,29 @@ public static class AvitoCandidatesPageScripts
 
             const items = Array.from(document.querySelectorAll("[data-marker='job-application/item']"));
             if (items.length === 0) {
-                return JSON.stringify({ ready: false, items: 0, withPhone: 0, masked: 0 });
+                return JSON.stringify({ ready: false, items: 0, withPhone: 0, masked: 0, failed: 0, priorityPending: 0 });
             }
 
             let withPhone = 0;
             let masked = 0;
+            let failed = 0;
             let priorityPending = 0;
             for (let index = 0; index < items.length; index++) {
                 const item = items[index];
-                if (needsPhoneReveal(item, index)) {
-                    masked++;
-                    if (isPhoneWatchPriority(index)) {
-                        priorityPending++;
-                    }
+                if (!needsPhoneReveal(item, index)) {
+                    withPhone++;
                     continue;
                 }
 
-                withPhone++;
+                if (hasFailedPhoneReveal(index)) {
+                    failed++;
+                    continue;
+                }
+
+                masked++;
+                if (isPhoneWatchPriority(index)) {
+                    priorityPending++;
+                }
             }
 
             const ratio = withPhone / items.length;
@@ -954,12 +1041,14 @@ public static class AvitoCandidatesPageScripts
                 items: items.length,
                 withPhone,
                 masked,
+                failed,
                 priorityPending
             });
         })();
         """;
 
     /// <summary>Очищает привязанный к DOM-индексам кэш перед новым проходом/субпрофилем.</summary>
+    /// <remarks><c>revealCursor</c> намеренно НЕ сбрасывается: round-robin между проходами.</remarks>
     public static string BuildResetCandidateCollectionStateScript() =>
         $$"""
         (() => {
@@ -967,6 +1056,7 @@ public static class AvitoCandidatesPageScripts
             const state = lfState();
             state.revealedPhones = {};
             state.skipPhoneReveal = {};
+            state.failedPhoneReveal = {};
             state.phoneWatchPriority = {};
             state.scrollBoundary = null;
             state.detailEnrichment = {};
@@ -2128,11 +2218,16 @@ public static class AvitoCandidatesPageScripts
         (() => {
         {{ContactsPhoneHelpersJs}}
             const items = Array.from(document.querySelectorAll("[data-marker='job-application/item']"));
-            const orderedIndexes = Array.from(items.keys()).sort((a, b) =>
-                Number(isPhoneWatchPriority(b)) - Number(isPhoneWatchPriority(a)) || a - b);
+            const orderedIndexes = orderedRevealIndexes(items);
             let masked = 0;
+            let failed = 0;
             let targetIndex = -1;
             for (const index of orderedIndexes) {
+                if (hasFailedPhoneReveal(index)) {
+                    failed++;
+                    continue;
+                }
+
                 const item = items[index];
                 const btn = item.querySelector("[data-marker='job-application/phone']");
                 if (!btn || btn.closest?.("[data-marker^='download-report-button']")) {
@@ -2151,11 +2246,11 @@ public static class AvitoCandidatesPageScripts
                 }
             }
 
-            return JSON.stringify({ items: items.length, masked, targetIndex });
+            return JSON.stringify({ items: items.length, masked, failed, targetIndex });
         })();
         """;
 
-    /// <summary>Легаси-вариант: найти и кликнуть маску одним evaluate (без CDP-указателя).</summary>
+    /// <summary>Легаси-вариант: найти и кликнуть маску одним evaluate (без CDP-указателя). Возвращает index клика.</summary>
     public static string BuildRevealMaskedPhonesStepScript() =>
         $$"""
         (() => {
@@ -2176,11 +2271,15 @@ public static class AvitoCandidatesPageScripts
             };
 
             const items = Array.from(document.querySelectorAll("[data-marker='job-application/item']"));
-            const orderedIndexes = Array.from(items.keys()).sort((a, b) =>
-                Number(isPhoneWatchPriority(b)) - Number(isPhoneWatchPriority(a)) || a - b);
+            const orderedIndexes = orderedRevealIndexes(items);
             let masked = 0;
             let clicked = 0;
+            let clickedIndex = -1;
             for (const index of orderedIndexes) {
+                if (hasFailedPhoneReveal(index)) {
+                    continue;
+                }
+
                 const item = items[index];
                 const btn = item.querySelector("[data-marker='job-application/phone']");
                 if (!btn || btn.closest?.("[data-marker^='download-report-button']")) {
@@ -2201,9 +2300,10 @@ public static class AvitoCandidatesPageScripts
 
                 humanClick(pickPhoneClickTarget(btn));
                 clicked++;
+                clickedIndex = index;
             }
 
-            return JSON.stringify({ items: items.length, masked, clicked });
+            return JSON.stringify({ items: items.length, masked, clicked, index: clickedIndex });
         })();
         """;
 
@@ -2218,7 +2318,7 @@ public static class AvitoCandidatesPageScripts
             const items = Array.from(document.querySelectorAll("[data-marker='job-application/item']"));
             let pending = 0;
             for (let index = 0; index < items.length; index++) {
-                if (needsPhoneReveal(items[index], index)) {
+                if (!hasFailedPhoneReveal(index) && needsPhoneReveal(items[index], index)) {
                     pending++;
                 }
             }
@@ -2237,9 +2337,12 @@ public static class AvitoCandidatesPageScripts
                 });
             }
 
-            const orderedIndexes = Array.from(items.keys()).sort((a, b) =>
-                Number(isPhoneWatchPriority(b)) - Number(isPhoneWatchPriority(a)) || a - b);
+            const orderedIndexes = orderedRevealIndexes(items);
             for (const index of orderedIndexes) {
+                if (hasFailedPhoneReveal(index)) {
+                    continue;
+                }
+
                 const item = items[index];
                 if (!needsPhoneReveal(item, index)) {
                     continue;
@@ -2269,7 +2372,7 @@ public static class AvitoCandidatesPageScripts
             const items = Array.from(document.querySelectorAll("[data-marker='job-application/item']"));
             let pending = 0;
             for (let index = 0; index < items.length; index++) {
-                if (needsPhoneReveal(items[index], index)) {
+                if (!hasFailedPhoneReveal(index) && needsPhoneReveal(items[index], index)) {
                     pending++;
                 }
             }
@@ -2298,9 +2401,12 @@ public static class AvitoCandidatesPageScripts
 
             let targetIndex = -1;
             let targetItem = null;
-            const orderedIndexes = Array.from(items.keys()).sort((a, b) =>
-                Number(isPhoneWatchPriority(b)) - Number(isPhoneWatchPriority(a)) || a - b);
+            const orderedIndexes = orderedRevealIndexes(items);
             for (const index of orderedIndexes) {
+                if (hasFailedPhoneReveal(index)) {
+                    continue;
+                }
+
                 const item = items[index];
                 if (!needsPhoneReveal(item, index)) {
                     continue;
@@ -2352,6 +2458,10 @@ public static class AvitoCandidatesPageScripts
                     store[String(index)] = snap.phone;
                 }
 
+                // Раскрытый номер больше не цель: сдвигаем round-robin курсор,
+                // чтобы следующий выбор начинался глубже списка.
+                advanceRevealCursor();
+
                 if ({{(closeOnReady ? "true" : "false")}}) {
                     closeContactsPopup();
                 }
@@ -2372,6 +2482,32 @@ public static class AvitoCandidatesPageScripts
         {{ContactsPhoneHelpersJs}}
             closeContactsPopup();
             return JSON.stringify({ ok: true });
+        })();
+        """;
+
+    /// <summary>
+    /// Пометить карточку «клик не дал номера в этом проходе»: до конца прохода
+    /// повторно её не кликаем (в следующем проходе store сбрасывается).
+    /// </summary>
+    public static string BuildMarkPhoneRevealFailedScript(int index) =>
+        $$"""
+        (() => {
+        {{ContactsPhoneHelpersJs}}
+            markPhoneRevealFailed({{index}});
+            return JSON.stringify({ ok: true, index: {{index}} });
+        })();
+        """;
+
+    /// <summary>
+    /// Сдвинуть round-robin курсор выбора целей раскрытия (например, после
+    /// inline-раскрытия, которое не проходит через popup-проб).
+    /// </summary>
+    public static string BuildAdvanceRevealCursorScript() =>
+        $$"""
+        (() => {
+        {{ContactsPhoneHelpersJs}}
+            advanceRevealCursor();
+            return JSON.stringify({ ok: true, cursor: getRevealCursor() });
         })();
         """;
 
@@ -2800,6 +2936,7 @@ public static class AvitoCandidatesPageScripts
             };
 
             const listItems = Array.from(document.querySelectorAll("[data-marker='job-application/item']"));
+            let missingPhoneCount = 0;
             const candidates = roots.map((root) => {
                 const name = getNameNode(root)?.textContent?.trim() ?? "";
                 const rootIndex = listItems.indexOf(root);
@@ -2860,15 +2997,25 @@ public static class AvitoCandidatesPageScripts
                     rawText
                 };
             }).filter((item) => {
-                if (!item.fullName || !item.phone) {
+                if (!item.fullName) {
                     return false;
                 }
 
-                if (/\*/.test(item.phone)) {
+                // Карточка без раскрытого номера: не попадает в выборку. Считаем её
+                // «ожидающей раскрытия» только если это карточка списка (domIndex >= 0;
+                // корни вне списка — панель кандидата — не являются целью раскрытия)
+                // и она не помечена skip (известный дубль/профиль/фильтр).
+                if (!item.phone
+                    || /\*/.test(item.phone)
+                    || item.phone.replace(/\D/g, "").length < 10) {
+                    if (item.domIndex >= 0 && !shouldSkipPhoneReveal(item.domIndex)) {
+                        missingPhoneCount++;
+                    }
+
                     return false;
                 }
 
-                return item.phone.replace(/\D/g, "").length >= 10;
+                return true;
             });
 
             const isJobCrmResponsesPage = !!(
@@ -2883,7 +3030,8 @@ public static class AvitoCandidatesPageScripts
                 candidates,
                 pageVariant: isJobCrmResponsesPage ? "job-crm" : "legacy",
                 domItemCount: document.querySelectorAll("[data-marker='job-application/item']").length,
-                domStatusCount: statusButtons.length
+                domStatusCount: statusButtons.length,
+                missingPhoneCount
             };
         })();
         """;
