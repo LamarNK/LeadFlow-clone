@@ -34,7 +34,8 @@ public static class AvitoCandidatesListPreparer
         bool skipDetailEnrich = false,
         Func<AvitoFirewallProbe.Detection, string?, CancellationToken, Task<bool>>? trySolveCaptchaAsync = null,
         IReadOnlyCollection<WorkerOpenPhoneWatchDto>? openPhoneWatches = null,
-        CandidatesPageActors? actors = null)
+        CandidatesPageActors? actors = null,
+        AvitoAccountPassBudget? passBudget = null)
     {
         var totalSw = Stopwatch.StartNew();
         var firewallSw = Stopwatch.StartNew();
@@ -210,6 +211,11 @@ public static class AvitoCandidatesListPreparer
                 cancellationToken)
             .ConfigureAwait(false);
         phoneRevealBudget = CandidatePhoneRevealBudget.Resolve(phoneRevealBudget, openWatchProtected.Count);
+        // Бюджет всего прохода аккаунта ограничивает и этот субпрофиль: сумма кликов
+        // всех субпрофилей и повторных попыток не может превысить потолок аккаунта.
+        // Контрактные phone-watch получают приоритетный порядок карточек, но не
+        // увеличивают суммарный потолок прохода.
+        var passRevealCeiling = passBudget?.PhoneRevealClicksRemaining;
         var phoneRevealLimit = domItems == 0
             ? MaxPhoneRevealRoundsWhenNoItems
             : Math.Max(MaxPhoneRevealRounds, openWatchProtected.Count);
@@ -299,16 +305,37 @@ public static class AvitoCandidatesListPreparer
                 // «жирных» субпрофилях (новые отклики конкурируют со старыми за клики) —
                 // карточки без телефона молча выпадают из сбора. Решение об остановке
                 // принимает PhoneRevealBudgetController: он сначала пробует поднять
-                // бюджет по хвосту и только потом говорит «стоп».
-                var budgetController = new PhoneRevealBudgetController(phoneRevealBudget);
+                // бюджет по хвосту и только потом говорит «стоп». Адаптивный подъём
+                // не выше остатка бюджета прохода аккаунта.
+                var budgetController = new PhoneRevealBudgetController(phoneRevealBudget, passRevealCeiling);
                 var lastPendingCount = 0;
                 var lastWithPhone = -1;
+                // Расход локального бюджета — ЗАТРАЧЕННЫЕ единицы (резерв без refund),
+                // а не только подтверждённые клики: неопределённые исходы (CDP-сбой
+                // после dispatch) съедают бюджет субпрофиля так же, как и бюджета прохода.
+                // Без бюджета прохода (одиночные вызовы) остаёмся на подтверждённых кликах.
+                var phoneRevealUnitsSpent = 0;
+                int LocalBudgetSpent() => passBudget is null ? phoneClicksTotal : phoneRevealUnitsSpent;
                 for (var i = 0; i < phoneRevealLimit; i++)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
-                    if (budgetController.ShouldStop(phoneClicksTotal, lastPendingCount))
+                    if (budgetController.ShouldStop(LocalBudgetSpent(), lastPendingCount))
                     {
                         break;
+                    }
+
+                    // Бюджет прохода резервируем ДО клика: если клик ушёл в браузер,
+                    // а ответ потерялся (timeout / restart после восстановления),
+                    // резерв остаётся списанным — повтор не выйдет за потолок аккаунта.
+                    // Возврат (refund) — только при достоверном «клика не было».
+                    if (passBudget is not null)
+                    {
+                        if (passBudget.ReservePhoneRevealClicks(1) == 0)
+                        {
+                            break;
+                        }
+
+                        phoneRevealUnitsSpent++;
                     }
 
                     phoneRevealRounds++;
@@ -323,6 +350,9 @@ public static class AvitoCandidatesListPreparer
                         }
                         else
                         {
+                            // Attempted=true с Clicked=0 — клик мог уйти до CDP-сбоя
+                            // (после-проба не смогла подтвердить). Исход неопределён:
+                            // резерв НЕ возвращаем.
                             await HumanDelay.AfterPhoneRevealOutcomeAsync(false, cancellationToken).ConfigureAwait(false);
                         }
 
@@ -351,7 +381,7 @@ public static class AvitoCandidatesListPreparer
 
                         if (phonesProbe?.Ready == true
                             || phonesProbe?.Items == 0
-                            || budgetController.ShouldStop(phoneClicksTotal, lastPendingCount))
+                            || budgetController.ShouldStop(LocalBudgetSpent(), lastPendingCount))
                         {
                             break;
                         }
@@ -377,6 +407,18 @@ public static class AvitoCandidatesListPreparer
                                 .ConfigureAwait(false);
                         }
                     }
+                    else if (popupStep is null || popupStep.Index < 0)
+                    {
+                        // Masked-шаг не attempting (клика не было) и popup цели не нашёл
+                        // (null / нет цели / нет pending) — клика в этой итерации точно
+                        // не было, возвращаем резерв (общий и локальный). Index >= 0 при
+                        // Clicked=false — сбой trusted-клика: исход неопределён, резерв держим.
+                        if (passBudget is not null)
+                        {
+                            passBudget.RefundPhoneRevealClicks(1);
+                            phoneRevealUnitsSpent--;
+                        }
+                    }
 
                     if (popupStep is not null)
                     {
@@ -392,7 +434,7 @@ public static class AvitoCandidatesListPreparer
 
                     if (phonesProbe?.Ready == true
                         || phonesProbe?.Items == 0
-                        || budgetController.ShouldStop(phoneClicksTotal, lastPendingCount))
+                        || budgetController.ShouldStop(LocalBudgetSpent(), lastPendingCount))
                     {
                         break;
                     }

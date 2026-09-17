@@ -32,7 +32,14 @@ public static class MonitoringAccountResume
         passStartedAtUtc is not null
         && (passFinishedAtUtc is null || passStartedAtUtc > passFinishedAtUtc);
 
-    public static void BeginOrResumePass(
+    /// <summary>
+    /// Начинает новый проход или продолжает незавершённый.
+    /// Возвращает true, если начат НОВЫЙ проход: вызывающий код обязан сбросить
+    /// связанные с проходом счётчики (бюджет действий на аккаунте), потому что
+    /// <see cref="IsUnfinishedPass"/> больше не отличает их от счётчиков активного прохода.
+    /// false — проход возобновлён, состояние прохода (включая счётчики) сохраняется.
+    /// </summary>
+    public static bool BeginOrResumePass(
         DateTime utcNow,
         ref DateTime? passStartedAtUtc,
         ref DateTime? passFinishedAtUtc,
@@ -41,12 +48,13 @@ public static class MonitoringAccountResume
         ArgumentNullException.ThrowIfNull(completedSubIds);
         if (IsUnfinishedPass(passStartedAtUtc, passFinishedAtUtc))
         {
-            return;
+            return false;
         }
 
         passStartedAtUtc = utcNow;
         passFinishedAtUtc = null;
         completedSubIds.Clear();
+        return true;
     }
 
     public static void MarkSubCompleted(HashSet<string> completedSubIds, string? subProfileId)

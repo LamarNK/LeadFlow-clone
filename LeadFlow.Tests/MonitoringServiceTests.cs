@@ -836,7 +836,8 @@ public sealed class MonitoringServiceTests
 
             public Task<string> ExtractCandidatesJsonAsync(
                 CandidatesMessengerEnrichmentHints? messengerEnrichmentHints = null,
-                CancellationToken cancellationToken = default) =>
+                CancellationToken cancellationToken = default,
+                AvitoAccountPassBudget? passBudget = null) =>
                 Task.FromResult("""{"hasCaptcha":false,"hasLogin":false,"candidates":[]}""");
 
             public Task<string> LoadProfileItemsHtmlAsync(CancellationToken cancellationToken = default)

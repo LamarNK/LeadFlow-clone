@@ -17,7 +17,8 @@ public interface IAdsPowerAccountSession : IAsyncDisposable
 
     Task<string> ExtractCandidatesJsonAsync(
         CandidatesMessengerEnrichmentHints? messengerEnrichmentHints = null,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        AvitoAccountPassBudget? passBudget = null);
 
     Task<string> LoadProfileItemsHtmlAsync(CancellationToken cancellationToken = default);
 

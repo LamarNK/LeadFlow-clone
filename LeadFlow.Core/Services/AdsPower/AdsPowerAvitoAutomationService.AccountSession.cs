@@ -904,7 +904,8 @@ public sealed partial class AdsPowerAvitoAutomationService
         string adsPowerUserId,
         CandidatesMessengerEnrichmentHints? messengerEnrichmentHints,
         CancellationToken cancellationToken,
-        AvitoSessionOrchestrator? orchestrator = null)
+        AvitoSessionOrchestrator? orchestrator = null,
+        AvitoAccountPassBudget? passBudget = null)
     {
         const int maxRestartsAfterRecovery = 2;
         for (var attempt = 1; attempt <= maxRestartsAfterRecovery; attempt++)
@@ -916,7 +917,8 @@ public sealed partial class AdsPowerAvitoAutomationService
                         adsPowerUserId,
                         messengerEnrichmentHints,
                         cancellationToken,
-                        orchestrator)
+                        orchestrator,
+                        passBudget)
                     .ConfigureAwait(false);
             }
             catch (AvitoSessionRestartRequiredException ex)
@@ -929,6 +931,27 @@ public sealed partial class AdsPowerAvitoAutomationService
                         ex);
                 }
 
+                // Перезапуск не бесплатен: считаем его в бюджете прохода аккаунта,
+                // чтобы цепочка «капча → решение → reload → капча» не крутилась
+                // бесконечно на всех субпрофилях сразу. Бюджет действий при этом
+                // сохраняется: потраченные клики не сбрасываются.
+                if (passBudget is not null && !passBudget.TryRegisterSessionRestart())
+                {
+                    _ = GlobalLogger.Instance.LogAsync(
+                        $"Avito responses: лимит перезапусков сценария после восстановления на проход аккаунта исчерпан " +
+                        $"({passBudget.SessionRestartCap}); завершаем сбор откликов.",
+                        DeskLinkAuditLogLevel.Warning,
+                        memberName: nameof(ExtractCandidatesJsonOnPageAsync),
+                        properties: new Dictionary<string, object?>
+                        {
+                            ["step"] = "candidates_restart_budget_exhausted",
+                            ["recovery.generation"] = ex.RecoveryGeneration,
+                            ["pass.budget"] = passBudget.Describe(),
+                            ["page.url"] = page.Url
+                        });
+                    throw;
+                }
+
                 _ = GlobalLogger.Instance.LogAsync(
                     $"Avito responses: страница восстановлена, начинаем проход заново ({attempt + 1}/{maxRestartsAfterRecovery}).",
                     DeskLinkAuditLogLevel.Info,
@@ -937,6 +960,7 @@ public sealed partial class AdsPowerAvitoAutomationService
                     {
                         ["step"] = "candidates_restart_after_recovery",
                         ["recovery.generation"] = ex.RecoveryGeneration,
+                        ["pass.budget"] = passBudget?.Describe(),
                         ["page.url"] = page.Url
                     });
             }
@@ -950,7 +974,8 @@ public sealed partial class AdsPowerAvitoAutomationService
         string adsPowerUserId,
         CandidatesMessengerEnrichmentHints? messengerEnrichmentHints,
         CancellationToken cancellationToken,
-        AvitoSessionOrchestrator? orchestrator = null)
+        AvitoSessionOrchestrator? orchestrator = null,
+        AvitoAccountPassBudget? passBudget = null)
     {
         var pipelineSw = Stopwatch.StartNew();
         var waitSw = Stopwatch.StartNew();
@@ -1041,7 +1066,8 @@ public sealed partial class AdsPowerAvitoAutomationService
             skipDetailEnrich: true,
             gatedCaptchaSolve,
             messengerEnrichmentHints?.OpenPhoneWatches,
-            BuildCandidatesPageActors(page, orchestrator, passRecoveryGeneration)).ConfigureAwait(false);
+            BuildCandidatesPageActors(page, orchestrator, passRecoveryGeneration),
+            passBudget).ConfigureAwait(false);
         prepareSw.Stop();
 
         var extractSw = Stopwatch.StartNew();
@@ -1064,7 +1090,8 @@ public sealed partial class AdsPowerAvitoAutomationService
                 messengerEnrichmentHints,
                 cancellationToken,
                 orchestrator,
-                passRecoveryGeneration)
+                passRecoveryGeneration,
+                passBudget)
             .ConfigureAwait(false);
         messengerSw.Stop();
         pipelineSw.Stop();
@@ -2704,12 +2731,13 @@ public sealed partial class AdsPowerAvitoAutomationService
 
         public async Task<string> ExtractCandidatesJsonAsync(
             CandidatesMessengerEnrichmentHints? messengerEnrichmentHints = null,
-            CancellationToken cancellationToken = default)
+            CancellationToken cancellationToken = default,
+            AvitoAccountPassBudget? passBudget = null)
         {
             using var _ = AvitoCaptchaTaskContext.Use(captchaOptions);
             var orchestrator = Orchestrator;
             return await owner
-                .ExtractCandidatesJsonOnPageAsync(page, AdsPowerUserId, messengerEnrichmentHints, cancellationToken, orchestrator)
+                .ExtractCandidatesJsonOnPageAsync(page, AdsPowerUserId, messengerEnrichmentHints, cancellationToken, orchestrator, passBudget)
                 .ConfigureAwait(false);
         }
 

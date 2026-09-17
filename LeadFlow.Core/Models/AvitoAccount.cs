@@ -24,6 +24,20 @@ public sealed partial class AvitoAccount : ObservableObject
     public DateTime? MonitoringPassStartedAtUtc { get; set; }
     public DateTime? MonitoringPassFinishedAtUtc { get; set; }
     public HashSet<string> MonitoringPassCompletedSubIds { get; set; } = new(StringComparer.Ordinal);
+
+    /// <summary>
+    /// Израсходованный бюджет текущего логического прохода (см. <c>AvitoAccountPassBudget</c>):
+    /// восстанавливается при возобновлении незавершённого прохода в новой сессии/после рестарта
+    /// воркера, чтобы несколько сессий одного прохода не получали полный бюджет каждая.
+    /// Сбрасывается при старте нового прохода.</summary>
+    public int MonitoringPassPhoneRevealClicksSpent { get; set; }
+
+    /// <summary>See <see cref="MonitoringPassPhoneRevealClicksSpent"/>.</summary>
+    public int MonitoringPassAutoRepliesSpent { get; set; }
+
+    /// <summary>See <see cref="MonitoringPassPhoneRevealClicksSpent"/>.</summary>
+    public int MonitoringPassSessionRestarts { get; set; }
+
     [ObservableProperty] private string lastErrorMessage = string.Empty;
 
     [ObservableProperty] private string? assignedUserAgent;

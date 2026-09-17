@@ -79,14 +79,6 @@ namespace Orbita.Tests
     }
 }
 
-namespace Orbita.Worker
-{
-    public sealed class WorkerCredentials
-    {
-        public Guid? WorkerId { get; set; }
-    }
-}
-
 namespace Orbita.Worker.Services
 {
     public sealed class OrbitaApiClient

@@ -812,7 +812,8 @@ public sealed class WorkerAccountRuntimeTests
 
         public Task<string> ExtractCandidatesJsonAsync(
             CandidatesMessengerEnrichmentHints? messengerEnrichmentHints = null,
-            CancellationToken cancellationToken = default) =>
+            CancellationToken cancellationToken = default,
+            LeadFlow.Core.Services.Avito.AvitoAccountPassBudget? passBudget = null) =>
             throw new NotSupportedException();
 
         public Task<string> LoadProfileItemsHtmlAsync(CancellationToken cancellationToken = default) =>

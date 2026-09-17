@@ -1414,20 +1414,16 @@ public sealed class WorkerMonitoringService(
             string.IsNullOrWhiteSpace(account.AdsPowerApiBaseUrl) ? string.Empty : account.AdsPowerApiBaseUrl,
             string.IsNullOrWhiteSpace(account.AdsPowerApiKey) ? null : account.AdsPowerApiKey);
 
+        // Логический проход открываем для ЛЮБОГО аккаунта с внешним браузером,
+        // включая аккаунты без субпрофилей: бюджет их действий тоже привязан к
+        // незавершённому проходу. Иначе потраченные счётчики сохранялись бы вместе
+        // с ЗАВЕРШЁННЫМ проходом, и transient-retry получал бы полный бюджет заново.
+        BeginOrResumeAccountPass(account);
         if (account.SubProfiles.Count > 0)
         {
             var enabledBeforeBrowser = SubProfileEnabledFilter
                 .GetEnabled(account.SubProfiles, account.DisabledSubProfileIds)
                 .ToList();
-            var passStartedEarly = account.MonitoringPassStartedAtUtc;
-            var passFinishedEarly = account.MonitoringPassFinishedAtUtc;
-            MonitoringAccountResume.BeginOrResumePass(
-                DateTime.UtcNow,
-                ref passStartedEarly,
-                ref passFinishedEarly,
-                account.MonitoringPassCompletedSubIds);
-            account.MonitoringPassStartedAtUtc = passStartedEarly;
-            account.MonitoringPassFinishedAtUtc = passFinishedEarly;
             var remainingBeforeBrowser = MonitoringAccountResume.RemainingSubProfiles(
                 enabledBeforeBrowser,
                 static sub => sub.Id,
@@ -1475,6 +1471,9 @@ public sealed class WorkerMonitoringService(
                 account.ProxyPassword),
             captchaCounters);
         WorkerOpenedAccountSession? opened = null;
+        // Общий бюджет действий на весь проход аккаунта: все субпрофили и повторные
+        // попытки после восстановления страницы делят одни счётчики (см. AvitoAccountPassBudget).
+        AvitoAccountPassBudget? passBudget = null;
         var localChromeLockHeld = false;
         try
         {
@@ -1577,6 +1576,14 @@ public sealed class WorkerMonitoringService(
             }
 
             var allSubProfiles = account.SubProfiles;
+            if (passBudget is null)
+            {
+                // Бюджет привязан к логическому проходу: при возобновлении незавершённого
+                // прохода (новая сессия того же прохода, рестарт воркера) израсходованные
+                // счётчики восстанавливаются с аккаунта; новый проход — с чистыми.
+                passBudget = AvitoAccountPassBudget.ForAccountPass(account, PersistAccountBestEffort);
+            }
+
             if (allSubProfiles.Count == 0)
             {
                 if (MonitoringTiming.CollectActiveAdsInWorkerPass && IsAdsStatsStale(account))
@@ -1615,7 +1622,7 @@ public sealed class WorkerMonitoringService(
                     PhoneWatchHours: phoneWatchHours,
                     OpenPhoneWatches: singleOpenPhoneWatches);
                 var rawJson = await session
-                    .ExtractCandidatesJsonAsync(singleProfileHints, cancellationToken)
+                    .ExtractCandidatesJsonAsync(singleProfileHints, cancellationToken, passBudget)
                     .ConfigureAwait(false);
                 var singleParse = await avitoResponseSource
                     .ParseCandidatesDetailedFromRawAsync(account, settings, rawJson, cancellationToken)
@@ -1667,15 +1674,7 @@ public sealed class WorkerMonitoringService(
             var subProfiles = SubProfileEnabledFilter
                 .GetEnabled(allSubProfiles, account.DisabledSubProfileIds)
                 .ToList();
-            var passStarted = account.MonitoringPassStartedAtUtc;
-            var passFinished = account.MonitoringPassFinishedAtUtc;
-            MonitoringAccountResume.BeginOrResumePass(
-                DateTime.UtcNow,
-                ref passStarted,
-                ref passFinished,
-                account.MonitoringPassCompletedSubIds);
-            account.MonitoringPassStartedAtUtc = passStarted;
-            account.MonitoringPassFinishedAtUtc = passFinished;
+            BeginOrResumeAccountPass(account);
             var beforeResumeSkip = subProfiles.Count;
             subProfiles = MonitoringAccountResume.RemainingSubProfiles(
                 subProfiles,
@@ -1931,7 +1930,7 @@ public sealed class WorkerMonitoringService(
                         PhoneWatchHours: phoneWatchHours,
                         OpenPhoneWatches: openPhoneWatches);
                     var rawJson = await session
-                        .ExtractCandidatesJsonAsync(messengerHints, cancellationToken)
+                        .ExtractCandidatesJsonAsync(messengerHints, cancellationToken, passBudget)
                         .ConfigureAwait(false);
                     var issueAtBefore = sub.LastIssueAt;
                     var parseResult = await avitoResponseSource
@@ -2176,6 +2175,26 @@ public sealed class WorkerMonitoringService(
         }
         finally
         {
+            if (passBudget is not null)
+            {
+                // Сводка нагрузки прохода: база для оценки «капч на 100 проходов»
+                // против «действий на проход». Считаем и пустые, и оборванные проходы.
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"Worker pass budget {account.DisplayName}: {passBudget.Describe()}.",
+                    DeskLinkAuditLogLevel.Info,
+                    properties: new Dictionary<string, object?>
+                    {
+                        ["step"] = "pass_budget_summary",
+                        ["accountId"] = account.Id,
+                        ["pass.phoneRevealClicksSpent"] = passBudget.PhoneRevealClicksSpent,
+                        ["pass.phoneRevealClicksCap"] = passBudget.PhoneRevealClicksCap,
+                        ["pass.autoRepliesSpent"] = passBudget.AutoRepliesSpent,
+                        ["pass.autoRepliesCap"] = passBudget.AutoRepliesCap,
+                        ["pass.sessionRestarts"] = passBudget.SessionRestarts,
+                        ["pass.sessionRestartCap"] = passBudget.SessionRestartCap
+                    });
+            }
+
             if (browserOpened)
             {
                 browserMonitorSource.Unregister(account.Id);
@@ -2212,6 +2231,49 @@ public sealed class WorkerMonitoringService(
             {
                 _localChromeLock.Release(account.Id, LocalChromeAccountLock.Monitoring);
             }
+        }
+    }
+
+    /// <summary>
+    /// Начинает новый логический проход аккаунта или возобновляет незавершённый.
+    /// При старте НОВОГО прохода сбрасывает и счётчики бюджета предыдущего прохода:
+    /// <see cref="AvitoAccountPassBudget"/> восстанавливает их только для незавершённого
+    /// прохода, а после <see cref="MonitoringAccountResume.BeginOrResumePass"/> отличить
+    /// «только что начатый» проход от возобновляемого по timestamps уже невозможно.
+    /// </summary>
+    private static void BeginOrResumeAccountPass(AvitoAccount account)
+    {
+        var passStarted = account.MonitoringPassStartedAtUtc;
+        var passFinished = account.MonitoringPassFinishedAtUtc;
+        if (MonitoringAccountResume.BeginOrResumePass(
+                DateTime.UtcNow,
+                ref passStarted,
+                ref passFinished,
+                account.MonitoringPassCompletedSubIds))
+        {
+            account.MonitoringPassPhoneRevealClicksSpent = 0;
+            account.MonitoringPassAutoRepliesSpent = 0;
+            account.MonitoringPassSessionRestarts = 0;
+        }
+
+        account.MonitoringPassStartedAtUtc = passStarted;
+        account.MonitoringPassFinishedAtUtc = passFinished;
+    }
+
+    /// <summary>
+    /// Best-effort фиксация аккаунта при каждой мутации бюджета прохода: если процесс
+    /// упадёт сразу после браузерного действия, списанный резерв уже записан в персистентность
+    /// (runtime store / account-resume.json), и продолжение прохода не получит его повторно.
+    /// </summary>
+    private void PersistAccountBestEffort(AvitoAccount account)
+    {
+        try
+        {
+            _ = repository.SaveAccountAsync(account, CancellationToken.None);
+        }
+        catch
+        {
+            // Счётчики остаются в памяти процесса и уйдут с ближайшим обычным сохранением.
         }
     }
 

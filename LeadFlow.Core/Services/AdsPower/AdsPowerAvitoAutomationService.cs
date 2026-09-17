@@ -3756,7 +3756,8 @@ public sealed partial class AdsPowerAvitoAutomationService(
         CandidatesMessengerEnrichmentHints? enrichmentHints,
         CancellationToken cancellationToken,
         AvitoSessionOrchestrator? orchestrator = null,
-        long expectedRecoveryGeneration = 0)
+        long expectedRecoveryGeneration = 0,
+        AvitoAccountPassBudget? passBudget = null)
     {
         JsonNode? root;
         try
@@ -3853,6 +3854,18 @@ public sealed partial class AdsPowerAvitoAutomationService(
 
         var isJobCrm = await TryDetectJobCrmResponsesPageAsync(page, cancellationToken).ConfigureAwait(false);
         var autoReplyBudget = AvitoHumanVariation.NextAutoReplyBudget();
+        if (passBudget is not null)
+        {
+            // Локальная жеребьёвка субпрофиля не может превысить остаток бюджета
+            // прохода аккаунта — иначе перезапуск после восстановления страницы
+            // (повторная жеребьёвка) размножал бы автоответы.
+            var remaining = passBudget.AutoRepliesRemaining;
+            if (autoReplyBudget > remaining)
+            {
+                autoReplyBudget = remaining;
+            }
+        }
+
         var autoRepliesSent = 0;
 
         const int maxEnrich = 80;
@@ -3982,10 +3995,13 @@ public sealed partial class AdsPowerAvitoAutomationService(
                     autoRepliesRemaining: autoReplyBudget - autoRepliesSent,
                     cancellationToken,
                     orchestrator,
-                    expectedRecoveryGeneration)
+                    expectedRecoveryGeneration,
+                    passBudget)
                 .ConfigureAwait(false);
-            if (enrichment.AutoReplySent)
+            if (enrichment.AutoReplyBudgetConsumed)
             {
+                // Локальный бюджет субпрофиля расходуют и неопределённые попытки
+                // (OutcomeUnknown), а не только подтверждённые отправки.
                 autoRepliesSent++;
             }
             var messengerAvatarUrl = enrichment.Collection?.AvatarUrl;
@@ -4129,6 +4145,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
         JsonArray ChatMessages,
         bool UiConfirmed = false,
         bool AutoReplySent = false,
+        bool AutoReplyBudgetConsumed = false,
         string ClickMethod = "not_clicked",
         MiniMessengerCollectionResult? Collection = null);
 
@@ -4216,9 +4233,13 @@ public sealed partial class AdsPowerAvitoAutomationService(
         int autoRepliesRemaining,
         CancellationToken cancellationToken,
         AvitoSessionOrchestrator? orchestrator = null,
-        long expectedRecoveryGeneration = 0)
+        long expectedRecoveryGeneration = 0,
+        AvitoAccountPassBudget? passBudget = null)
     {
+        // autoReplySent — подтверждённая отправка (телеметрия); autoReplyBudgetConsumed —
+        // расход ЛОКАЛЬНОГО бюджета субпрофиля: его съедают и неопределённые исходы.
         var autoReplySent = false;
+        var autoReplyBudgetConsumed = false;
         await RunSessionStepAsync(
                 orchestrator,
                 expectedRecoveryGeneration,
@@ -4472,17 +4493,20 @@ public sealed partial class AdsPowerAvitoAutomationService(
                     continue;
                 }
 
-                if (await RunSessionStepAsync(
-                            orchestrator,
-                            expectedRecoveryGeneration,
-                            ct => TrySendMiniMessengerTextAsync(page, item.Text, "manager-outbound", ct),
-                            cancellationToken)
-                        .ConfigureAwait(false))
+                var outboundStatus = await RunSessionStepAsync(
+                        orchestrator,
+                        expectedRecoveryGeneration,
+                        ct => TrySendMiniMessengerTextAsync(page, item.Text, "manager-outbound", ct),
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                if (outboundStatus == MiniMessengerSendStatus.Confirmed)
                 {
                     acked.Add(item.Id);
                 }
                 else
                 {
+                    // NotAttempted/OutcomeUnknown: подтверждения нет — не подтверждаем доставку,
+                    // сообщение останется в очереди (возможен повтор; клейм уже снят по таймауту).
                     break;
                 }
             }
@@ -4521,21 +4545,56 @@ public sealed partial class AdsPowerAvitoAutomationService(
                      parsedChat,
                      autoReply.Message))
         {
-            if (await RunSessionStepAsync(
+            // Резервируем ДО клика «отправить»: если сообщение ушло в браузер, а
+            // подтверждение потерялось (timeout / restart), резерв остаётся списанным —
+            // повтор после восстановления не отправит лишнего. Резерв возвращаем ТОЛЬКО
+            // при достоверном отказе отправки (NotAttempted).
+            var autoReplyReserved = passBudget?.TryReserveAutoReply() ?? true;
+            if (!autoReplyReserved)
+            {
+                _ = GlobalLogger.Instance.LogAsync(
+                    "AdsPower messenger auto-reply skipped: pass budget exhausted mid-card.",
+                    DeskLinkAuditLogLevel.Info,
+                    memberName: nameof(TryEnrichMessengerForCandidateCardAsync),
+                    properties: new Dictionary<string, object?>
+                    {
+                        ["messenger.autoReply.budgetExhausted"] = true,
+                        ["messenger.autoReply.remaining"] = autoRepliesRemaining
+                    });
+            }
+            else
+            {
+                var sendStatus = await RunSessionStepAsync(
                         orchestrator,
                         expectedRecoveryGeneration,
                         ct => TrySendMiniMessengerTextAsync(page, autoReply.Message, "auto-reply", ct),
                         cancellationToken)
-                    .ConfigureAwait(false))
-            {
-                autoReplySent = true;
-                collection = await CollectMiniMessengerMessagesAsync(
-                        page,
-                        cancellationToken,
-                        orchestrator,
-                        expectedRecoveryGeneration)
                     .ConfigureAwait(false);
-                chatMessages = collection.Messages;
+                if (sendStatus == MiniMessengerSendStatus.Confirmed)
+                {
+                    autoReplySent = true;
+                    autoReplyBudgetConsumed = true;
+                    collection = await CollectMiniMessengerMessagesAsync(
+                            page,
+                            cancellationToken,
+                            orchestrator,
+                            expectedRecoveryGeneration)
+                        .ConfigureAwait(false);
+                    chatMessages = collection.Messages;
+                }
+                else if (sendStatus == MiniMessengerSendStatus.NotAttempted)
+                {
+                    // Достоверно не отправили — возвращаем резерв, локальный бюджет не расходуем.
+                    passBudget?.RefundAutoReply();
+                }
+                else
+                {
+                    // OutcomeUnknown: сообщение могло уйти до потери подтверждения —
+                    // общий резерв держим, ЛОКАЛЬНЫЙ бюджет субпрофиля расходуем,
+                    // чтобы CDP-сбои не позволяли одному субпрофилю потратить весь
+                    // бюджет прохода (до 9) вместо локальной жеребьёвки 1–3.
+                    autoReplyBudgetConsumed = true;
+                }
             }
         }
         else if (autoReply.Enabled
@@ -4601,6 +4660,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
             chatMessages,
             UiConfirmed: messengerUiConfirmed || !string.IsNullOrWhiteSpace(channelUrl) || chatMessages.Count > 0,
             AutoReplySent: autoReplySent,
+            AutoReplyBudgetConsumed: autoReplyBudgetConsumed,
             ClickMethod: clickMethod,
             Collection: collection);
     }
@@ -5139,7 +5199,36 @@ public sealed partial class AdsPowerAvitoAutomationService(
         "form[data-marker='reply'] button[type='submit']"
     ];
 
-    private static async Task<bool> TrySendMiniMessengerTextWithPointerAsync(
+    /// <summary>
+    /// Исход отправки сообщения в mini-messenger. Определяет, можно ли вернуть
+    /// зарезервированную единицу бюджета прохода и разрешён ли повтор отправки.
+    /// </summary>
+    private enum MiniMessengerSendStatus
+    {
+        /// <summary>Достоверно ничего не отправляли (нет input / ввод не удался / скрипт отчитался об отказе).</summary>
+        NotAttempted,
+
+        /// <summary>Клик «отправить»/Enter/JS-клик могли уйти в браузер, но подтверждения в истории нет. Резерв держим, повтор запрещён.</summary>
+        OutcomeUnknown,
+
+        /// <summary>Сообщение появилось в истории чата.</summary>
+        Confirmed
+    }
+
+    /// <summary>
+    /// Исход pointer-этапа отправки: NotAttempted — ввод/клик достоверно не начинались
+    /// (JS-fallback разрешён); Submitted — клик/Enter ушли в браузер (подтверждение
+    /// уточнит вызывающий); OutcomeUnknown — исключение на любом этапе: клик мог уйти
+    /// до сбоя, JS-fallback запрещён.
+    /// </summary>
+    private enum MiniMessengerPointerStatus
+    {
+        NotAttempted,
+        Submitted,
+        OutcomeUnknown
+    }
+
+    private static async Task<MiniMessengerPointerStatus> TrySendMiniMessengerTextWithPointerAsync(
         IPage page,
         string messageText,
         CancellationToken cancellationToken)
@@ -5149,13 +5238,13 @@ public sealed partial class AdsPowerAvitoAutomationService(
             var input = await page.QuerySelectorAsync("[data-marker='reply/input']").ConfigureAwait(false);
             if (input is null)
             {
-                return false;
+                return MiniMessengerPointerStatus.NotAttempted;
             }
 
             if (!await AvitoHumanPointer.TryTypeIntoHandleAsync(page, input, messageText, cancellationToken)
                     .ConfigureAwait(false))
             {
-                return false;
+                return MiniMessengerPointerStatus.NotAttempted;
             }
 
             await HumanDelay.BeforeMessengerAutoReplySendAsync(cancellationToken).ConfigureAwait(false);
@@ -5166,43 +5255,63 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 if (await AvitoHumanPointer.TryClickSelectorAsync(page, selector, cancellationToken)
                         .ConfigureAwait(false))
                 {
-                    return true;
+                    return MiniMessengerPointerStatus.Submitted;
                 }
             }
 
             await page.Keyboard.PressAsync("Enter").ConfigureAwait(false);
-            return true;
+            return MiniMessengerPointerStatus.Submitted;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch
         {
-            return false;
+            // Исключение могло прийти после dispatch клика/Enter — исход неизвестен.
+            return MiniMessengerPointerStatus.OutcomeUnknown;
         }
     }
 
-    private async Task<bool> TrySendMiniMessengerTextAsync(
+    /// <summary>
+    /// Отправка шаблонного текста в mini-messenger (pointer, при достоверном отказе — JS-fallback).
+    /// Резерв бюджета прохода можно возвращать ТОЛЬКО при NotAttempted:
+    /// OutcomeUnknown означает, что сообщение могло уйти, а подтверждение потерялось.
+    /// </summary>
+    private async Task<MiniMessengerSendStatus> TrySendMiniMessengerTextAsync(
         IPage page,
         string messageText,
         string purpose,
         CancellationToken cancellationToken)
     {
-        if (await TrySendMiniMessengerTextWithPointerAsync(page, messageText, cancellationToken).ConfigureAwait(false))
+        var pointerStatus = await TrySendMiniMessengerTextWithPointerAsync(page, messageText, cancellationToken)
+            .ConfigureAwait(false);
+        if (pointerStatus == MiniMessengerPointerStatus.OutcomeUnknown)
         {
-            var appearedViaPointer = await WaitForEmployerAutoReplyInChatAsync(page, messageText, cancellationToken)
-                .ConfigureAwait(false);
+            // Pointer-клик мог уйти до исключения: JS-fallback отправил бы ВТОРОЕ сообщение.
             _ = GlobalLogger.Instance.LogAsync(
-                appearedViaPointer
-                    ? $"AdsPower messenger {purpose} sent."
-                    : $"AdsPower messenger {purpose} submitted, but outgoing message was not confirmed in chat history.",
-                appearedViaPointer ? DeskLinkAuditLogLevel.Info : DeskLinkAuditLogLevel.Warning,
+                $"AdsPower messenger {purpose}: pointer dispatch failed after possible submit, send outcome unknown.",
+                DeskLinkAuditLogLevel.Warning,
                 memberName: nameof(TrySendMiniMessengerTextAsync),
                 properties: new Dictionary<string, object?>
                 {
                     ["page.url"] = page.Url,
                     ["messenger.send.purpose"] = purpose,
-                    ["messenger.send.confirmed"] = appearedViaPointer,
-                    ["messenger.send.method"] = "pointer-type"
+                    ["messenger.send.status"] = nameof(MiniMessengerSendStatus.OutcomeUnknown),
+                    ["messenger.send.method"] = "pointer"
                 });
-            return appearedViaPointer;
+            return MiniMessengerSendStatus.OutcomeUnknown;
+        }
+
+        if (pointerStatus == MiniMessengerPointerStatus.Submitted)
+        {
+            return await ConfirmSendStatusAsync(
+                    page,
+                    messageText,
+                    purpose,
+                    "pointer-type",
+                    cancellationToken)
+                .ConfigureAwait(false);
         }
 
         await HumanDelay.BeforeMessengerAutoReplySendAsync(cancellationToken).ConfigureAwait(false);
@@ -5212,7 +5321,25 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 AvitoCandidatesPageScripts.BuildSendMiniMessengerReplyScript(messageText),
                 cancellationToken)
             .ConfigureAwait(false);
-        if (!TryParseMessengerSendStep(sendRaw, out var sent, out var reason) || !sent)
+        if (!TryParseMessengerSendStep(sendRaw, out var sent, out var reason))
+        {
+            // Пустой/битый ответ: скрипт мог кликнуть до ошибки — исход неизвестен.
+            _ = GlobalLogger.Instance.LogAsync(
+                $"AdsPower messenger {purpose} failed: {reason ?? "unknown"} (send outcome unknown).",
+                DeskLinkAuditLogLevel.Warning,
+                memberName: nameof(TrySendMiniMessengerTextAsync),
+                properties: new Dictionary<string, object?>
+                {
+                    ["page.url"] = page.Url,
+                    ["messenger.send.purpose"] = purpose,
+                    ["messenger.send.reason"] = reason,
+                    ["messenger.send.status"] = nameof(MiniMessengerSendStatus.OutcomeUnknown),
+                    ["messenger.send.method"] = "js"
+                });
+            return MiniMessengerSendStatus.OutcomeUnknown;
+        }
+
+        if (!sent)
         {
             _ = GlobalLogger.Instance.LogAsync(
                 $"AdsPower messenger {purpose} failed: {reason ?? "unknown"}.",
@@ -5222,12 +5349,27 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 {
                     ["page.url"] = page.Url,
                     ["messenger.send.purpose"] = purpose,
-                    ["messenger.send.reason"] = reason
+                    ["messenger.send.reason"] = reason,
+                    ["messenger.send.status"] = nameof(MiniMessengerSendStatus.NotAttempted),
+                    ["messenger.send.method"] = "js"
                 });
-            return false;
+            return MiniMessengerSendStatus.NotAttempted;
         }
 
-        var appeared = await WaitForEmployerAutoReplyInChatAsync(page, messageText, cancellationToken).ConfigureAwait(false);
+        return await ConfirmSendStatusAsync(page, messageText, purpose, reason, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>Ждёт отправленное сообщение в истории чата: Confirmed — видно, OutcomeUnknown — отправлено, но не подтвердилось.</summary>
+    private async Task<MiniMessengerSendStatus> ConfirmSendStatusAsync(
+        IPage page,
+        string messageText,
+        string purpose,
+        string method,
+        CancellationToken cancellationToken)
+    {
+        var appeared = await WaitForEmployerAutoReplyInChatAsync(page, messageText, cancellationToken)
+            .ConfigureAwait(false);
         _ = GlobalLogger.Instance.LogAsync(
             appeared
                 ? $"AdsPower messenger {purpose} sent."
@@ -5239,10 +5381,13 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 ["page.url"] = page.Url,
                 ["messenger.send.purpose"] = purpose,
                 ["messenger.send.confirmed"] = appeared,
-                ["messenger.send.method"] = reason
+                ["messenger.send.status"] = appeared
+                    ? nameof(MiniMessengerSendStatus.Confirmed)
+                    : nameof(MiniMessengerSendStatus.OutcomeUnknown),
+                ["messenger.send.method"] = method
             });
 
-        return appeared;
+        return appeared ? MiniMessengerSendStatus.Confirmed : MiniMessengerSendStatus.OutcomeUnknown;
     }
 
     private async Task<bool> WaitForEmployerAutoReplyInChatAsync(

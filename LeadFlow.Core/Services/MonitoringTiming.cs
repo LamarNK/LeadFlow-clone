@@ -133,6 +133,23 @@ public static class MonitoringTiming
     /// <summary>Каждая N-я карточка хвоста сверх бюджета добавляет один дополнительный клик.</summary>
     public const int PhoneRevealBacklogExtraDivisor = 2;
 
+    /// <summary>
+    /// Потолок раскрытия номеров на весь проход аккаунта: все субпрофили, включая
+    /// перезапуски извлечения после восстановления страницы. Количество субпрофилей
+    /// не должно размножать суммарную нагрузку на Avito.
+    /// </summary>
+    public const int MaxPhoneRevealsPerAccountPass = 40;
+
+    /// <summary>Потолок шаблонных автоответов на весь проход аккаунта (все субпрофили).</summary>
+    public const int MaxMessengerAutoRepliesPerAccountPass = 9;
+
+    /// <summary>
+    /// Сколько перезапусков сценария после восстановления страницы (решённая капча,
+    /// reload) допускается на один проход аккаунта. Считаются все субпрофили вместе,
+    /// чтобы цепочка «капча → решение → reload → капча» не крутилась бесконечно.
+    /// </summary>
+    public const int MaxSessionRestartsPerAccountPass = 6;
+
     /// <summary>Максимум шаблонных автоответов в чат на один субпрофиль за проход.</summary>
     public const int MaxMessengerAutoRepliesPerSubProfilePerCycle = 3;
 

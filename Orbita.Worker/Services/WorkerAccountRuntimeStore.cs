@@ -11,27 +11,48 @@ namespace Orbita.Worker.Services;
 public sealed class WorkerAccountRuntimeStore
 {
     private static readonly JsonSerializerOptions ResumeJson = new(JsonSerializerDefaults.Web);
+
+    // Сериализует «обновить словарь + записать файл»: воркер обрабатывает аккаунты
+    // параллельно, и без лока два Upsert одновременно писали бы account-resume.json —
+    // возможен частичный JSON или snapshot без самой свежей записи другого аккаунта
+    // (бюджет прохода «откатился» бы при crash-resume).
+    private readonly object resumeGate = new();
+    private readonly string resumePath;
     private readonly ConcurrentDictionary<Guid, AvitoAccount> _accounts = new();
-    private readonly ConcurrentDictionary<Guid, ResumeEntry> _resume = LoadResume();
+    private readonly ConcurrentDictionary<Guid, ResumeEntry> _resume;
+
+    public WorkerAccountRuntimeStore() : this(WorkerConfigStore.ConfigDirectory)
+    {
+    }
+
+    /// <summary>Тестовый конструктор: изолированный каталог resume-файла.</summary>
+    internal WorkerAccountRuntimeStore(string configDirectory)
+    {
+        resumePath = Path.Combine(configDirectory, "account-resume.json");
+        _resume = LoadResume();
+    }
 
     public void Upsert(AvitoAccount account)
     {
         var clone = Clone(account);
-        var nextEntry = ResumeEntry.FromAccount(clone);
-        if (_resume.TryGetValue(account.Id, out var prev)
-            && nextEntry.NextUtc is null
-            && prev.NextUtc is not null)
+        lock (resumeGate)
         {
-            // Snapshot без NextMonitoringAtUtc не должен затирать сохранённую паузу.
-            nextEntry.NextUtc = prev.NextUtc;
-            clone.NextMonitoringAtUtc = prev.NextUtc;
-        }
+            var nextEntry = ResumeEntry.FromAccount(clone);
+            if (_resume.TryGetValue(account.Id, out var prev)
+                && nextEntry.NextUtc is null
+                && prev.NextUtc is not null)
+            {
+                // Snapshot без NextMonitoringAtUtc не должен затирать сохранённую паузу.
+                nextEntry.NextUtc = prev.NextUtc;
+                clone.NextMonitoringAtUtc = prev.NextUtc;
+            }
 
-        _accounts[account.Id] = clone;
-        if (!_resume.TryGetValue(account.Id, out prev) || !prev.SameAs(nextEntry))
-        {
-            _resume[account.Id] = nextEntry;
-            SaveResume();
+            _accounts[account.Id] = clone;
+            if (!_resume.TryGetValue(account.Id, out prev) || !prev.SameAs(nextEntry))
+            {
+                _resume[account.Id] = nextEntry;
+                SaveResumeLocked();
+            }
         }
     }
 
@@ -80,6 +101,11 @@ public sealed class WorkerAccountRuntimeStore
                 source.MonitoringPassCompletedSubIds,
                 StringComparer.Ordinal);
         }
+
+        // Бюджет текущего прохода восстанавливается вместе с остальным состоянием прохода.
+        target.MonitoringPassPhoneRevealClicksSpent = source.MonitoringPassPhoneRevealClicksSpent;
+        target.MonitoringPassAutoRepliesSpent = source.MonitoringPassAutoRepliesSpent;
+        target.MonitoringPassSessionRestarts = source.MonitoringPassSessionRestarts;
         target.LastAuthCheckAt = source.LastAuthCheckAt;
         target.ActiveAdsCount = source.ActiveAdsCount;
         target.BlockedCount = source.BlockedCount;
@@ -139,6 +165,9 @@ public sealed class WorkerAccountRuntimeStore
             MonitoringPassCompletedSubIds = new HashSet<string>(
                 source.MonitoringPassCompletedSubIds,
                 StringComparer.Ordinal),
+            MonitoringPassPhoneRevealClicksSpent = source.MonitoringPassPhoneRevealClicksSpent,
+            MonitoringPassAutoRepliesSpent = source.MonitoringPassAutoRepliesSpent,
+            MonitoringPassSessionRestarts = source.MonitoringPassSessionRestarts,
             LastAuthCheckAt = source.LastAuthCheckAt,
             ActiveAdsCount = source.ActiveAdsCount,
             BlockedCount = source.BlockedCount,
@@ -160,20 +189,17 @@ public sealed class WorkerAccountRuntimeStore
         return clone;
     }
 
-    private static string ResumePath =>
-        Path.Combine(WorkerConfigStore.ConfigDirectory, "account-resume.json");
-
-    private static ConcurrentDictionary<Guid, ResumeEntry> LoadResume()
+    private ConcurrentDictionary<Guid, ResumeEntry> LoadResume()
     {
         var map = new ConcurrentDictionary<Guid, ResumeEntry>();
         try
         {
-            if (!File.Exists(ResumePath))
+            if (!File.Exists(resumePath))
             {
                 return map;
             }
 
-            var json = File.ReadAllText(ResumePath);
+            var json = File.ReadAllText(resumePath);
             var file = JsonSerializer.Deserialize<AccountResumeFileDto>(json, ResumeJson);
             if (file?.Accounts is { Count: > 0 })
             {
@@ -212,18 +238,21 @@ public sealed class WorkerAccountRuntimeStore
         return map;
     }
 
-    private void SaveResume()
+    /// <summary>Вызывается только под <see cref="resumeGate"/>. Атомарная замена файла: параллельный читатель или краш не увидит частичный JSON.</summary>
+    private void SaveResumeLocked()
     {
         try
         {
-            Directory.CreateDirectory(WorkerConfigStore.ConfigDirectory);
+            Directory.CreateDirectory(Path.GetDirectoryName(resumePath)!);
             var file = new AccountResumeFileDto
             {
                 Accounts = _resume.ToDictionary(
                     static kv => kv.Key.ToString("D"),
                     static kv => kv.Value.ToDto())
             };
-            File.WriteAllText(ResumePath, JsonSerializer.Serialize(file, ResumeJson));
+            var tempPath = resumePath + ".tmp";
+            File.WriteAllText(tempPath, JsonSerializer.Serialize(file, ResumeJson));
+            File.Move(tempPath, resumePath, overwrite: true);
         }
         catch
         {
@@ -263,12 +292,23 @@ public sealed class WorkerAccountRuntimeStore
         public DateTime? PassFinishedAtUtc { get; set; }
         public HashSet<string> CompletedSubIds { get; set; } = new(StringComparer.Ordinal);
 
+        // Израсходованный бюджет незавершённого прохода — переживает рестарт процесса,
+        // чтобы продолжение прохода не получило полный бюджет заново.
+        public int PassPhoneRevealClicksSpent { get; set; }
+
+        public int PassAutoRepliesSpent { get; set; }
+
+        public int PassSessionRestarts { get; set; }
+
         public static ResumeEntry FromAccount(AvitoAccount account) => new()
         {
             NextUtc = account.NextMonitoringAtUtc,
             PassStartedAtUtc = account.MonitoringPassStartedAtUtc,
             PassFinishedAtUtc = account.MonitoringPassFinishedAtUtc,
-            CompletedSubIds = new HashSet<string>(account.MonitoringPassCompletedSubIds, StringComparer.Ordinal)
+            CompletedSubIds = new HashSet<string>(account.MonitoringPassCompletedSubIds, StringComparer.Ordinal),
+            PassPhoneRevealClicksSpent = account.MonitoringPassPhoneRevealClicksSpent,
+            PassAutoRepliesSpent = account.MonitoringPassAutoRepliesSpent,
+            PassSessionRestarts = account.MonitoringPassSessionRestarts
         };
 
         public static ResumeEntry FromDto(AccountResumeEntryDto dto) => new()
@@ -278,7 +318,10 @@ public sealed class WorkerAccountRuntimeStore
             PassFinishedAtUtc = AsUtc(dto.PassFinishedAtUtc),
             CompletedSubIds = new HashSet<string>(
                 dto.CompletedSubIds ?? [],
-                StringComparer.Ordinal)
+                StringComparer.Ordinal),
+            PassPhoneRevealClicksSpent = Math.Max(0, dto.PassPhoneRevealClicksSpent),
+            PassAutoRepliesSpent = Math.Max(0, dto.PassAutoRepliesSpent),
+            PassSessionRestarts = Math.Max(0, dto.PassSessionRestarts)
         };
 
         public AccountResumeEntryDto ToDto() => new()
@@ -286,7 +329,10 @@ public sealed class WorkerAccountRuntimeStore
             NextUtc = NextUtc,
             PassStartedAtUtc = PassStartedAtUtc,
             PassFinishedAtUtc = PassFinishedAtUtc,
-            CompletedSubIds = CompletedSubIds.Count == 0 ? null : CompletedSubIds.ToList()
+            CompletedSubIds = CompletedSubIds.Count == 0 ? null : CompletedSubIds.ToList(),
+            PassPhoneRevealClicksSpent = PassPhoneRevealClicksSpent,
+            PassAutoRepliesSpent = PassAutoRepliesSpent,
+            PassSessionRestarts = PassSessionRestarts
         };
 
         public void ApplyTo(AvitoAccount target)
@@ -298,13 +344,43 @@ public sealed class WorkerAccountRuntimeStore
             {
                 target.MonitoringPassCompletedSubIds = new HashSet<string>(CompletedSubIds, StringComparer.Ordinal);
             }
+
+            // Счётчики принадлежат проходу, СОХРАНЁННОМУ на диске: применяем их, только
+            // пока сам этот проход не завершён (после FinishPass устаревший расход не
+            // должен попадать в аккаунт следующего прохода) и пока целевой проход тоже
+            // не завершён. Берём максимум: live-значение свежее дискового либо равно ему.
+            if (OwnPassIsUnfinished() && MonitoringAccountResumeIsUnfinished(target))
+            {
+                target.MonitoringPassPhoneRevealClicksSpent = Math.Max(
+                    target.MonitoringPassPhoneRevealClicksSpent,
+                    PassPhoneRevealClicksSpent);
+                target.MonitoringPassAutoRepliesSpent = Math.Max(
+                    target.MonitoringPassAutoRepliesSpent,
+                    PassAutoRepliesSpent);
+                target.MonitoringPassSessionRestarts = Math.Max(
+                    target.MonitoringPassSessionRestarts,
+                    PassSessionRestarts);
+            }
         }
+
+        private bool OwnPassIsUnfinished() =>
+            LeadFlow.Core.Services.MonitoringAccountResume.IsUnfinishedPass(
+                PassStartedAtUtc,
+                PassFinishedAtUtc);
+
+        private static bool MonitoringAccountResumeIsUnfinished(AvitoAccount target) =>
+            LeadFlow.Core.Services.MonitoringAccountResume.IsUnfinishedPass(
+                target.MonitoringPassStartedAtUtc,
+                target.MonitoringPassFinishedAtUtc);
 
         public bool SameAs(ResumeEntry other) =>
             NextUtc == other.NextUtc
             && PassStartedAtUtc == other.PassStartedAtUtc
             && PassFinishedAtUtc == other.PassFinishedAtUtc
-            && CompletedSubIds.SetEquals(other.CompletedSubIds);
+            && CompletedSubIds.SetEquals(other.CompletedSubIds)
+            && PassPhoneRevealClicksSpent == other.PassPhoneRevealClicksSpent
+            && PassAutoRepliesSpent == other.PassAutoRepliesSpent
+            && PassSessionRestarts == other.PassSessionRestarts;
     }
 
     private sealed class AccountResumeFileDto
@@ -318,5 +394,8 @@ public sealed class WorkerAccountRuntimeStore
         public DateTime? PassStartedAtUtc { get; set; }
         public DateTime? PassFinishedAtUtc { get; set; }
         public List<string>? CompletedSubIds { get; set; }
+        public int PassPhoneRevealClicksSpent { get; set; }
+        public int PassAutoRepliesSpent { get; set; }
+        public int PassSessionRestarts { get; set; }
     }
 }

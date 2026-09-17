@@ -86,7 +86,8 @@ public sealed class MonitoringAccountResumeTests
         DateTime? started = Now.AddMinutes(-5);
         DateTime? finished = null;
         var done = new HashSet<string>(StringComparer.Ordinal) { "a" };
-        MonitoringAccountResume.BeginOrResumePass(Now, ref started, ref finished, done);
+        var beganNew = MonitoringAccountResume.BeginOrResumePass(Now, ref started, ref finished, done);
+        Assert.False(beganNew);
         Assert.Equal(Now.AddMinutes(-5), started);
         Assert.Null(finished);
         Assert.Contains("a", done);
@@ -98,10 +99,23 @@ public sealed class MonitoringAccountResumeTests
         DateTime? started = Now.AddMinutes(-40);
         DateTime? finished = Now.AddMinutes(-20);
         var done = new HashSet<string>(StringComparer.Ordinal) { "a" };
-        MonitoringAccountResume.BeginOrResumePass(Now, ref started, ref finished, done);
+        var beganNew = MonitoringAccountResume.BeginOrResumePass(Now, ref started, ref finished, done);
+        Assert.True(beganNew);
         Assert.Equal(Now, started);
         Assert.Null(finished);
         Assert.Empty(done);
+    }
+
+    [Fact]
+    public void BeginOrResume_FreshAccount_StartsNewPass()
+    {
+        DateTime? started = null;
+        DateTime? finished = null;
+        var done = new HashSet<string>(StringComparer.Ordinal);
+        var beganNew = MonitoringAccountResume.BeginOrResumePass(Now, ref started, ref finished, done);
+        Assert.True(beganNew);
+        Assert.Equal(Now, started);
+        Assert.Null(finished);
     }
 
     [Fact]

@@ -31,6 +31,10 @@
     <Compile Include="..\Orbita.Worker\Services\CandidateProfileDuplicateMatchResolver.cs" Link="CandidateProfileDuplicateMatchResolver.cs" />
     <Compile Include="..\Orbita.Worker\Services\WorkerUpdateBatchScript.cs" Link="WorkerUpdateBatchScript.cs" />
     <Compile Include="..\Orbita.Worker\Services\MonitoringCycleJournalSink.cs" Link="MonitoringCycleJournalSink.cs" />
+    <Compile Include="..\Orbita.Worker\Services\WorkerAccountRuntimeStore.cs" Link="WorkerAccountRuntimeStore.cs" />
+    <Compile Include="..\Orbita.Worker\WorkerConfigStore.cs" Link="WorkerConfigStore.cs" />
+    <Compile Include="..\Orbita.Worker\WorkerCredentials.cs" Link="WorkerCredentials.cs" />
+    <Compile Include="..\Orbita.Worker\WorkerSetupConstants.cs" Link="WorkerSetupConstants.cs" />
   </ItemGroup>
 
 </Project>
