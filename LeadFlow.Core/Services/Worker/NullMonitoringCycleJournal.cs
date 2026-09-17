@@ -26,7 +26,8 @@ public sealed class NullMonitoringCycleJournal : IMonitoringCycleJournal
         bool loginAttempted = false,
         bool loginSucceeded = false,
         int watchRefreshedCount = 0,
-        int phoneChangedCount = 0)
+        int phoneChangedCount = 0,
+        int skippedNoPhoneCount = 0)
     {
     }
 

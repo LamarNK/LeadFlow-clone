@@ -83,12 +83,6 @@ public static class MonitoringTiming
     /// Жёсткого лимита публикаций нет — скорость ограничивают <see cref="HumanDelayBetweenResponsesMinSeconds"/> и клики на Avito.
     /// </summary>
     public const int TypicalResponsesPerAccountPerCycle = 30;
-
-    [Obsolete("Публикации больше не ограничиваются. Используйте TypicalResponsesPerAccountPerCycle для эвристик паузы.")]
-    public const int MaxResponsesPerAccountPerCycle = TypicalResponsesPerAccountPerCycle;
-
-    [Obsolete("Публикации больше не ограничиваются. Используйте TypicalResponsesPerAccountPerCycle для эвристик паузы.")]
-    public const int MaxResponsesPerSubProfilePerCycle = TypicalResponsesPerAccountPerCycle;
     public const int ActiveAdsRefreshIntervalMinutes = 75;
 
     /// <summary>Собирать статистику объявлений в проходе Orbita.Worker (отклики + объявления). Пока выключено.</summary>
@@ -123,6 +117,21 @@ public static class MonitoringTiming
 
     /// <summary>Нижняя граница бюджета раскрытия номеров за проход (рандом в [min..max]).</summary>
     public const int MinPhoneRevealsPerSubProfilePerCycle = 6;
+
+    /// <summary>
+    /// Потолок прироста бюджета раскрытия номеров от хвоста замаскированных карточек.
+    /// Не ограничивает бюджет, поднятый числом открытых phone-watch (контрактная работа).
+    /// </summary>
+    public const int PhoneRevealBudgetHardCapPerCycle = 40;
+
+    /// <summary>
+    /// Хвост раскрытия растёт только если замаскированных карточек больше бюджета
+    /// на этот запас (защита от микроскопического превышения).
+    /// </summary>
+    public const int PhoneRevealBacklogMinSurplus = 3;
+
+    /// <summary>Каждая N-я карточка хвоста сверх бюджета добавляет один дополнительный клик.</summary>
+    public const int PhoneRevealBacklogExtraDivisor = 2;
 
     /// <summary>Максимум шаблонных автоответов в чат на один субпрофиль за проход.</summary>
     public const int MaxMessengerAutoRepliesPerSubProfilePerCycle = 3;

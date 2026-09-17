@@ -246,6 +246,9 @@ public sealed class AvitoResponseSource(
         var domItemCount = root.TryGetProperty("domItemCount", out var domItemsProp) ? domItemsProp.GetInt32() : 0;
         var domStatusCount = root.TryGetProperty("domStatusCount", out var domStatusProp) ? domStatusProp.GetInt32() : 0;
         var scriptCandidatesCount = AvitoCandidatesExtractionSummary.ReadScriptCandidatesCount(root);
+        var missingPhoneCount = root.TryGetProperty("missingPhoneCount", out var missingPhoneProp)
+            ? Math.Max(0, missingPhoneProp.GetInt32())
+            : 0;
 
         var candidates = AvitoCandidatesJsonParser.ParseCandidates(root, account);
         var parsedCount = candidates.Count;
@@ -290,7 +293,8 @@ public sealed class AvitoResponseSource(
             parsedCount,
             skippedDuplicateInBatch,
             ordered.Count,
-            sampleNames);
+            sampleNames,
+            missingPhoneCount);
 
         return new AvitoCandidatesParseResult(ordered, summary);
     }

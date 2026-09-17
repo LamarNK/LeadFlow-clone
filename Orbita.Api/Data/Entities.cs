@@ -555,6 +555,8 @@ public sealed class MonitoringSubProfileRunEntity
     public int PublishedCount { get; set; }
     public int DeferredCount { get; set; }
     public int SkippedDuplicateCount { get; set; }
+    /// <summary>Карточки без раскрытого телефона: не публикуются и не дубли — отложены на следующий проход.</summary>
+    public int SkippedNoPhoneCount { get; set; }
     /// <summary>Новые отклики, впервые собранные в этом проходе (без повторных публикаций).</summary>
     public int CollectedCount { get; set; }
     public int WatchRefreshedCount { get; set; }

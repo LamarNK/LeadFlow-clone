@@ -871,7 +871,7 @@ public sealed class MonitoringService(
         return true;
     }
 
-    /// <returns>Новые откликов с Авито, был ли опрос источника, есть ли необработанный «хвост» сверх лимита за цикл.</returns>
+    /// <returns>Новые откликов с Авито, был ли опрос источника, есть ли необработанный «хвост» сверх лимита за цикл (всегда false: жёсткого лимита публикаций нет).</returns>
     internal async Task<(int NewResponsesDetected, bool PolledSource, bool HasUndischargedBacklog)> ProcessAccountAsync(
         AvitoAccount account,
         AppSettings settings,
@@ -959,8 +959,7 @@ public sealed class MonitoringService(
         var accountSw = Stopwatch.StartNew();
         try
         {
-            var maxPerCycle = MonitoringTiming.MaxResponsesPerAccountPerCycle;
-            var (detectedTotal, backlog) = await StreamProcessAccountResponsesAsync(account, settings, maxPerCycle, cancellationToken).ConfigureAwait(false);
+            var detectedTotal = await StreamProcessAccountResponsesAsync(account, settings, cancellationToken).ConfigureAwait(false);
 
             if (account.Status == AvitoAccountStatus.Monitoring)
             {
@@ -977,7 +976,7 @@ public sealed class MonitoringService(
                     $"Аккаунт «{account.DisplayName}» проверен, но есть проблемы суб-профилей: {AccountIssueTracker.FormatStatusHint(account)}");
             }
 
-            return (detectedTotal, true, backlog);
+            return (detectedTotal, true, false);
         }
         catch (AvitoCaptchaDetectedException captchaEx)
         {
@@ -1359,17 +1358,15 @@ public sealed class MonitoringService(
     /// (до перехода к следующему суб-профилю). Это убирает большой буфер «сначала собираем всё, потом обрабатываем»
     /// и сокращает задержку до отправки в Bitrix.
     /// </summary>
-    /// <returns>(всего обнаружено новых откликов, превышен ли бюджет цикла).</returns>
-    private async Task<(int Detected, bool Backlog)> StreamProcessAccountResponsesAsync(
+    /// <returns>Всего обнаружено новых откликов. Жёсткого лимита публикаций нет — темп задаёт <see cref="HumanDelay.BetweenResponsesAsync"/>.</returns>
+    private async Task<int> StreamProcessAccountResponsesAsync(
         AvitoAccount account,
         AppSettings settings,
-        int maxPerCycle,
         CancellationToken cancellationToken)
     {
         var processedInCycle = 0;
         var detectedTotal = 0;
         var seenKeys = new HashSet<string>(StringComparer.Ordinal);
-        var budgetExhausted = false;
 
         // Локальная функция: получает пачку, дедуплицирует в рамках цикла, шлёт в обработку немедленно.
         async Task<int> ProcessBatchInlineAsync(IReadOnlyList<CandidateResponse> batch, string sourceLabel)
@@ -1402,24 +1399,18 @@ public sealed class MonitoringService(
                 freshCount++;
                 detectedTotal++;
 
-                if (processedInCycle >= maxPerCycle)
-                {
-                    budgetExhausted = true;
-                    continue;
-                }
-
-                UpdateStatus(
-                    MonitoringStatus.Running,
-                    $"Аккаунт \"{account.DisplayName}\" ({sourceLabel}): обрабатываем отклик {processedInCycle + 1}/{maxPerCycle}.");
-
-                await ProcessResponseAsync(response, settings, cancellationToken).ConfigureAwait(false);
-                processedInCycle++;
-
-                if (processedInCycle < maxPerCycle && !cancellationToken.IsCancellationRequested)
+                if (processedInCycle > 0)
                 {
                     // Рандомная пауза имитирует «человек прочитал отклик и переключается на следующий».
                     await HumanDelay.BetweenResponsesAsync(cancellationToken).ConfigureAwait(false);
                 }
+
+                UpdateStatus(
+                    MonitoringStatus.Running,
+                    $"Аккаунт \"{account.DisplayName}\" ({sourceLabel}): обрабатываем отклик {processedInCycle + 1}.");
+
+                await ProcessResponseAsync(response, settings, cancellationToken).ConfigureAwait(false);
+                processedInCycle++;
             }
 
             return freshCount;
@@ -1427,9 +1418,9 @@ public sealed class MonitoringService(
 
         if (settings.DemoModeEnabled)
         {
-            var demo = await avitoDemoResponseSource.GetBatchAsync(account, maxPerCycle, cancellationToken).ConfigureAwait(false);
+            var demo = await avitoDemoResponseSource.GetBatchAsync(account, int.MaxValue, cancellationToken).ConfigureAwait(false);
             await ProcessBatchInlineAsync(demo, "demo").ConfigureAwait(false);
-            return (detectedTotal, budgetExhausted || detectedTotal > maxPerCycle);
+            return detectedTotal;
         }
 
         var subProfiles = account.ProfileProvider == AvitoProfileProvider.AdsPower
@@ -1516,23 +1507,10 @@ public sealed class MonitoringService(
 
             UpdateStatus(MonitoringStatus.Running, $"Аккаунт \"{account.DisplayName}\": запрашиваем новые отклики.");
             var responses = await avitoResponseSource.GetNewResponsesAsync(account, settings, cancellationToken).ConfigureAwait(false);
-
-            if (responses.Count > maxPerCycle)
-            {
-                _ = GlobalLogger.Instance.LogAsync(
-                    $"[monitoring] Аккаунт \"{account.DisplayName}\": новых откликов {responses.Count}, в этом цикле обрабатываем {maxPerCycle}; остальные подтянутся в следующих проверках.",
-                    DeskLinkAuditLogLevel.Info);
-                UpdateStatus(
-                    MonitoringStatus.Running,
-                    $"Аккаунт \"{account.DisplayName}\": найдено новых откликов {responses.Count}, в этом цикле обрабатываем до {maxPerCycle}.");
-            }
-            else
-            {
-                UpdateStatus(MonitoringStatus.Running, $"Аккаунт \"{account.DisplayName}\" проверен: найдено новых откликов {responses.Count}.");
-            }
+            UpdateStatus(MonitoringStatus.Running, $"Аккаунт \"{account.DisplayName}\" проверен: найдено новых откликов {responses.Count}.");
 
             await ProcessBatchInlineAsync(responses, account.DisplayName).ConfigureAwait(false);
-            return (detectedTotal, budgetExhausted || responses.Count > maxPerCycle);
+            return detectedTotal;
             }
             finally
             {
@@ -1599,7 +1577,7 @@ public sealed class MonitoringService(
 
         async Task ProcessSubProfilePassAsync(AvitoSubProfile sub, int i, bool deferredRetry)
         {
-            if (cancellationToken.IsCancellationRequested || budgetExhausted)
+            if (cancellationToken.IsCancellationRequested)
             {
                 return;
             }
@@ -1669,7 +1647,7 @@ public sealed class MonitoringService(
 
                 if (skipProfile)
                 {
-                    if (i < subProfiles.Count - 1 && !cancellationToken.IsCancellationRequested && !budgetExhausted)
+                    if (i < subProfiles.Count - 1 && !cancellationToken.IsCancellationRequested)
                         await HumanDelay.BetweenSubProfilesAsync(cancellationToken).ConfigureAwait(false);
                     return;
                 }
@@ -1716,7 +1694,7 @@ public sealed class MonitoringService(
                 if (account.Status == AvitoAccountStatus.RequiresLogin)
                 {
                     await repository.SaveAccountAsync(account, cancellationToken).ConfigureAwait(false);
-                    if (i < subProfiles.Count - 1 && !cancellationToken.IsCancellationRequested && !budgetExhausted)
+                    if (i < subProfiles.Count - 1 && !cancellationToken.IsCancellationRequested)
                     {
                         await HumanDelay.BetweenSubProfilesAsync(cancellationToken).ConfigureAwait(false);
                     }
@@ -1735,11 +1713,10 @@ public sealed class MonitoringService(
                 var processedBeforeBatch = processedInCycle;
                 var freshInBatch = await ProcessBatchInlineAsync(batch, subLabel).ConfigureAwait(false);
                 var processedFromBatch = processedInCycle - processedBeforeBatch;
-                var deferredInBatch = Math.Max(0, batch.Count - processedFromBatch);
 
                 _ = GlobalLogger.Instance.LogAsync(
-                    $"Суб-профиль «{sub.Name}» аккаунта {account.DisplayName}: новых для LeadFlow {batch.Count}, обработано сейчас {processedFromBatch} (лимит аккаунта {processedInCycle}/{maxPerCycle}), отложено на следующие циклы {deferredInBatch}.",
-                    deferredInBatch > 0 ? DeskLinkAuditLogLevel.Warning : DeskLinkAuditLogLevel.Info,
+                    $"Суб-профиль «{sub.Name}» аккаунта {account.DisplayName}: новых для LeadFlow {batch.Count}, обработано сейчас {processedFromBatch}.",
+                    DeskLinkAuditLogLevel.Info,
                     properties: new Dictionary<string, object?>
                     {
                         ["accountId"] = account.Id,
@@ -1749,9 +1726,7 @@ public sealed class MonitoringService(
                         ["batchTotal"] = batch.Count,
                         ["freshInBatch"] = freshInBatch,
                         ["processedFromBatch"] = processedFromBatch,
-                        ["deferredInBatch"] = deferredInBatch,
                         ["processedInCycle"] = processedInCycle,
-                        ["maxPerCycle"] = maxPerCycle,
                         ["deferredRetry"] = deferredRetry
                     });
 
@@ -1796,7 +1771,7 @@ public sealed class MonitoringService(
 
                         if (skipProfile)
                         {
-                            if (i < subProfiles.Count - 1 && !cancellationToken.IsCancellationRequested && !budgetExhausted)
+                            if (i < subProfiles.Count - 1 && !cancellationToken.IsCancellationRequested)
                                 await HumanDelay.BetweenSubProfilesAsync(cancellationToken).ConfigureAwait(false);
                             return;
                         }
@@ -1946,7 +1921,7 @@ public sealed class MonitoringService(
                     });
             }
 
-            if (i < subProfiles.Count - 1 && !cancellationToken.IsCancellationRequested && !budgetExhausted)
+            if (i < subProfiles.Count - 1 && !cancellationToken.IsCancellationRequested)
             {
                 await HumanDelay.BetweenSubProfilesAsync(cancellationToken).ConfigureAwait(false);
             }
@@ -1954,7 +1929,7 @@ public sealed class MonitoringService(
 
         for (var i = 0; i < subProfiles.Count; i++)
         {
-            if (cancellationToken.IsCancellationRequested || budgetExhausted)
+            if (cancellationToken.IsCancellationRequested)
             {
                 break;
             }
@@ -1962,7 +1937,7 @@ public sealed class MonitoringService(
             await ProcessSubProfilePassAsync(subProfiles[i], i, deferredRetry: false).ConfigureAwait(false);
         }
 
-        if (deferredSubIds.Count > 0 && !cancellationToken.IsCancellationRequested && !budgetExhausted)
+        if (deferredSubIds.Count > 0 && !cancellationToken.IsCancellationRequested)
         {
             _ = GlobalLogger.Instance.LogAsync(
                 $"Аккаунт \"{account.DisplayName}\": второй проход для {deferredSubIds.Count} отложенных суб-профилей.",
@@ -1980,7 +1955,7 @@ public sealed class MonitoringService(
 
             foreach (var (sub, index) in subProfiles.Select((s, idx) => (Sub: s, Index: idx)))
             {
-                if (cancellationToken.IsCancellationRequested || budgetExhausted)
+                if (cancellationToken.IsCancellationRequested)
                 {
                     break;
                 }
@@ -2085,7 +2060,7 @@ public sealed class MonitoringService(
             }
         }
 
-        return (detectedTotal, budgetExhausted);
+        return detectedTotal;
         }
         finally
         {

@@ -1126,10 +1126,12 @@ public sealed class WorkerMonitoringService(
             var watchRefreshedCount = 0;
             var phoneChangedCount = 0;
             var skippedPersonDuplicates = 0;
+            var skippedNoPhone = 0;
             var filteredAge = 0;
             var filteredGender = 0;
             var filteredResponseAge = 0;
             var filterSamples = new List<string>(5);
+            var noPhoneSamples = new List<string>(5);
             var utcNow = DateTime.UtcNow;
             for (var i = 0; i < readyCandidates.Count; i++)
             {
@@ -1195,17 +1197,34 @@ public sealed class WorkerMonitoringService(
                     continue;
                 }
 
+                var responseCreatedAt = candidate.CreatedAt == default
+                    ? (candidate.CollectedAt == default ? DateTime.UtcNow : candidate.CollectedAt)
+                    : candidate.CreatedAt;
+
                 var phoneNormalized = phoneNormalizer.Normalize(candidate.PhoneRaw) ?? string.Empty;
                 if (string.IsNullOrWhiteSpace(phoneNormalized))
                 {
-                    skippedPersonDuplicates++;
+                    // Карточка без раскрытого номера (маска/лимит бюджета/неудачный клик) —
+                    // это НЕ дубль: считаем отдельно и логируем образцы, чтобы потери
+                    // были видимы (остаётся в очереди на следующий проход).
+                    skippedNoPhone++;
+                    if (noPhoneSamples.Count < 5)
+                    {
+                        noPhoneSamples.Add($"{candidate.FullName}|created={responseCreatedAt:yyyy-MM-dd}");
+                    }
+
                     continue;
                 }
 
                 var fullNameKey = ResponsePhoneWatchEvaluator.BuildFullNameKey(candidate.FullName);
                 if (string.IsNullOrWhiteSpace(fullNameKey))
                 {
-                    skippedPersonDuplicates++;
+                    skippedNoPhone++;
+                    if (noPhoneSamples.Count < 5)
+                    {
+                        noPhoneSamples.Add($"(no-name)|created={responseCreatedAt:yyyy-MM-dd}");
+                    }
+
                     continue;
                 }
 
@@ -1225,9 +1244,6 @@ public sealed class WorkerMonitoringService(
                 // Проверка давности отклика (пропускать старше N дней).
                 // Открытое phone-watch — не режем: окно наблюдения (например 5 суток) может быть
                 // длиннее фильтра «старше 3 дней», смена номера всё равно должна дойти.
-                var responseCreatedAt = candidate.CreatedAt == default
-                    ? (candidate.CollectedAt == default ? DateTime.UtcNow : candidate.CollectedAt)
-                    : candidate.CreatedAt;
                 var ageFilterResult = ResponseCollectionFilter.EvaluateResponseAge(responseCreatedAt, settings.ResponseFilters);
                 if (!ageFilterResult.Pass && !watchingOpen)
                 {
@@ -1326,6 +1342,14 @@ public sealed class WorkerMonitoringService(
                     memberName: nameof(StreamProcessAccountResponsesAsync));
             }
 
+            if (skippedNoPhone > 0)
+            {
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"Responses without revealed phone for {account.DisplayName}: count={skippedNoPhone} (deferred to next pass, not published). Samples: {string.Join("; ", noPhoneSamples)}",
+                    DeskLinkAuditLogLevel.Info,
+                    memberName: nameof(StreamProcessAccountResponsesAsync));
+            }
+
             return new CandidateBatchPublishResult(
                 readyCandidates.Count,
                 publishedCount,
@@ -1333,7 +1357,8 @@ public sealed class WorkerMonitoringService(
                 skippedPersonDuplicates,
                 collectedCount,
                 watchRefreshedCount,
-                phoneChangedCount);
+                phoneChangedCount,
+                SkippedNoPhoneCount: skippedNoPhone);
         }
 
         if (settings.DemoModeEnabled)
@@ -1603,7 +1628,6 @@ public sealed class WorkerMonitoringService(
                     null,
                     singlePublishResult.PublishedCount,
                     singlePublishResult.ReadyCount,
-                    MonitoringTiming.MaxResponsesPerSubProfilePerCycle,
                     singlePublishResult.DeferredByCycleLimit,
                     singlePublishResult.SkippedPersonDuplicates);
                 var singleCaptcha = TakeCaptchaSnapshot(captchaCounters);
@@ -1618,7 +1642,8 @@ public sealed class WorkerMonitoringService(
                     singleCaptcha.Seen,
                     singleCaptcha.Solved,
                     loginAttempt.Attempted,
-                    loginAttempt.Succeeded);
+                    loginAttempt.Succeeded,
+                    skippedNoPhoneCount: singleParse.Summary.MissingPhoneCount + singlePublishResult.SkippedNoPhoneCount);
                 if (account.Status == AvitoAccountStatus.RequiresLogin
                     || account.Status == AvitoAccountStatus.RequiresManualAction)
                 {
@@ -1941,7 +1966,6 @@ public sealed class WorkerMonitoringService(
                         sub,
                         publishResult.PublishedCount,
                         publishResult.ReadyCount,
-                        MonitoringTiming.MaxResponsesPerSubProfilePerCycle,
                         publishResult.DeferredByCycleLimit,
                         publishResult.SkippedPersonDuplicates);
 
@@ -1959,7 +1983,8 @@ public sealed class WorkerMonitoringService(
                         loginAttempt.Attempted,
                         loginAttempt.Succeeded,
                         publishResult.WatchRefreshedCount,
-                        publishResult.PhoneChangedCount);
+                        publishResult.PhoneChangedCount,
+                        parseResult.Summary.MissingPhoneCount + publishResult.SkippedNoPhoneCount);
                     subProfilesProcessed++;
                     consecutiveCaptchaFails = 0;
                     MonitoringAccountResume.MarkSubCompleted(account.MonitoringPassCompletedSubIds, sub.Id);

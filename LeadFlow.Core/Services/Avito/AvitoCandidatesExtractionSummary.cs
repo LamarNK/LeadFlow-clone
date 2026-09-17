@@ -13,7 +13,10 @@ public sealed record AvitoCandidatesExtractionSummary(
     int ParsedValidCount,
     int SkippedDuplicateInBatch,
     int NewUniqueCount,
-    IReadOnlyList<string> SampleNames)
+    IReadOnlyList<string> SampleNames,
+    // Карточки с именем, но без раскрытого телефона: не попали в выборку,
+    // отложены до следующего прохода (не дубль и не потеря навсегда).
+    int MissingPhoneCount = 0)
 {
     public string PageVariantLabel => DescribePageVariant(PageUrl, PageVariant);
 
@@ -26,7 +29,8 @@ public sealed record AvitoCandidatesExtractionSummary(
         0,
         0,
         0,
-        []);
+        [],
+        0);
 
     public static int ReadScriptCandidatesCount(JsonElement root) =>
         root.TryGetProperty("candidates", out var arr) && arr.ValueKind == JsonValueKind.Array
@@ -76,6 +80,11 @@ public sealed record AvitoCandidatesExtractionSummary(
         if (ScriptCandidatesCount > ParsedValidCount)
         {
             sb.Append($" (отброшено без имени/телефона: {ScriptCandidatesCount - ParsedValidCount})");
+        }
+
+        if (MissingPhoneCount > 0)
+        {
+            sb.Append($"; без телефона (ожидает раскрытия): {MissingPhoneCount}");
         }
 
         if (DomItemCount > ParsedValidCount && DomItemCount > 0)

@@ -53,4 +53,6 @@ public sealed record MonitoringSubProfileRunUploadDto(
     bool LoginAttempted = false,
     bool LoginSucceeded = false,
     int WatchRefreshedCount = 0,
-    int PhoneChangedCount = 0);
+    int PhoneChangedCount = 0,
+    // Карточки без раскрытого телефона — отложены на следующий проход (не публикуются, не дубли).
+    int SkippedNoPhoneCount = 0);

@@ -31,7 +31,9 @@ public interface IMonitoringCycleJournal
         bool loginAttempted = false,
         bool loginSucceeded = false,
         int watchRefreshedCount = 0,
-        int phoneChangedCount = 0);
+        int phoneChangedCount = 0,
+        // Карточки без раскрытого телефона — отложены на следующий проход.
+        int skippedNoPhoneCount = 0);
 
     /// <summary>Субпрофиль не запускался в этом цикле — очередь не дошла.</summary>
     void SkipSubProfile(

@@ -49,6 +49,7 @@ public sealed class MonitoringCycleJournalSink(
         public int PublishedCount { get; set; }
         public int DeferredCount { get; set; }
         public int SkippedDuplicateCount { get; set; }
+        public int SkippedNoPhoneCount { get; set; }
         public int CollectedCount { get; set; }
         public int WatchRefreshedCount { get; set; }
         public int PhoneChangedCount { get; set; }
@@ -149,7 +150,8 @@ public sealed class MonitoringCycleJournalSink(
         bool loginAttempted = false,
         bool loginSucceeded = false,
         int watchRefreshedCount = 0,
-        int phoneChangedCount = 0)
+        int phoneChangedCount = 0,
+        int skippedNoPhoneCount = 0)
     {
         if (!_cycles.TryGetValue(cycleId, out var cycle)
             || !cycle.SubProfiles.TryGetValue(subProfileRunId, out var sub))
@@ -169,7 +171,8 @@ public sealed class MonitoringCycleJournalSink(
             captchaCount,
             captchaSolvedCount,
             watchRefreshedCount,
-            phoneChangedCount);
+            phoneChangedCount,
+            skippedNoPhoneCount);
         sub.LoginAttempted = loginAttempted;
         sub.LoginSucceeded = loginSucceeded;
         cycle.Dirty = true;
@@ -423,7 +426,8 @@ public sealed class MonitoringCycleJournalSink(
                     s.LoginAttempted,
                     s.LoginSucceeded,
                     s.WatchRefreshedCount,
-                    s.PhoneChangedCount))
+                    s.PhoneChangedCount,
+                    s.SkippedNoPhoneCount))
                 .ToList());
 
     private static void ApplyCounts(
@@ -436,12 +440,14 @@ public sealed class MonitoringCycleJournalSink(
         int captchaCount,
         int captchaSolvedCount,
         int watchRefreshedCount = 0,
-        int phoneChangedCount = 0)
+        int phoneChangedCount = 0,
+        int skippedNoPhoneCount = 0)
     {
         sub.FoundCount = Math.Max(0, foundCount);
         sub.PublishedCount = Math.Max(0, publishedCount);
         sub.DeferredCount = Math.Max(0, deferredCount);
         sub.SkippedDuplicateCount = Math.Max(0, skippedDuplicateCount);
+        sub.SkippedNoPhoneCount = Math.Max(0, skippedNoPhoneCount);
         sub.CollectedCount = Math.Max(0, collectedCount);
         sub.WatchRefreshedCount = Math.Max(0, watchRefreshedCount);
         sub.PhoneChangedCount = Math.Max(0, phoneChangedCount);

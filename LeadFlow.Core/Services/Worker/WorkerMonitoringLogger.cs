@@ -163,7 +163,6 @@ internal static class WorkerMonitoringLogger
         AvitoSubProfile? sub,
         int published,
         int readyToPublish,
-        int cycleLimit,
         int deferredByCycleLimit = 0,
         int skippedPersonDuplicates = 0)
     {
@@ -174,8 +173,8 @@ internal static class WorkerMonitoringLogger
             ? $" {skippedPersonDuplicates} пропущено (дубль кандидата)."
             : string.Empty;
         var message = deferredByCycleLimit > 0
-            ? $"{who} — опубликовано {published} из {readyToPublish} готовых; {deferredByCycleLimit} отложено (лимит {cycleLimit} на субпрофиль за проход).{duplicateNote}"
-            : $"{who} — опубликовано {published} из {readyToPublish} готовых (лимит {cycleLimit} на субпрофиль за проход).{duplicateNote}";
+            ? $"{who} — опубликовано {published} из {readyToPublish} готовых; {deferredByCycleLimit} отложено на следующий проход.{duplicateNote}"
+            : $"{who} — опубликовано {published} из {readyToPublish} готовых.{duplicateNote}";
         LogInfo(message);
     }
 

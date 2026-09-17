@@ -137,6 +137,7 @@ public sealed class MonitoringRunIngestService(OrbitaDbContext db)
                     var published = Math.Max(0, subDto.PublishedCount);
                     var deferred = Math.Max(0, subDto.DeferredCount);
                     var skippedDup = Math.Max(0, subDto.SkippedDuplicateCount);
+                    var skippedNoPhone = Math.Max(0, subDto.SkippedNoPhoneCount);
                     var collected = Math.Max(0, subDto.CollectedCount);
                     var captcha = Math.Max(0, subDto.CaptchaCount);
                     var captchaSolved = Math.Min(captcha, Math.Max(0, subDto.CaptchaSolvedCount));
@@ -146,13 +147,13 @@ public sealed class MonitoringRunIngestService(OrbitaDbContext db)
                             "Id", "CycleRunId", "SubProfileId", "SubProfileName",
                             "Position", "Total", "StartedAtUtc", "CompletedAtUtc",
                             "Outcome", "ErrorType", "ErrorMessage",
-                            "FoundCount", "PublishedCount", "DeferredCount", "SkippedDuplicateCount",
+                            "FoundCount", "PublishedCount", "DeferredCount", "SkippedDuplicateCount", "SkippedNoPhoneCount",
                             "CollectedCount", "CaptchaCount", "CaptchaSolvedCount", "LoginAttempted", "LoginSucceeded")
                         VALUES (
                             {subDto.Id}, {cycleDto.Id}, {subProfileId}, {subName},
                             {position}, {total}, {subStarted}, {subCompleted},
                             {outcome}, {errorType}, {errorMessage},
-                            {found}, {published}, {deferred}, {skippedDup},
+                            {found}, {published}, {deferred}, {skippedDup}, {skippedNoPhone},
                             {collected}, {captcha}, {captchaSolved}, {subDto.LoginAttempted}, {subDto.LoginSucceeded})
                         ON CONFLICT ("Id") DO UPDATE SET
                             "CycleRunId" = EXCLUDED."CycleRunId",
@@ -169,6 +170,7 @@ public sealed class MonitoringRunIngestService(OrbitaDbContext db)
                             "PublishedCount" = EXCLUDED."PublishedCount",
                             "DeferredCount" = EXCLUDED."DeferredCount",
                             "SkippedDuplicateCount" = EXCLUDED."SkippedDuplicateCount",
+                            "SkippedNoPhoneCount" = EXCLUDED."SkippedNoPhoneCount",
                             "CollectedCount" = EXCLUDED."CollectedCount",
                             "CaptchaCount" = EXCLUDED."CaptchaCount",
                             "CaptchaSolvedCount" = EXCLUDED."CaptchaSolvedCount",
@@ -331,6 +333,7 @@ public sealed class MonitoringRunIngestService(OrbitaDbContext db)
                 subEntity.PublishedCount = Math.Max(0, subDto.PublishedCount);
                 subEntity.DeferredCount = Math.Max(0, subDto.DeferredCount);
                 subEntity.SkippedDuplicateCount = Math.Max(0, subDto.SkippedDuplicateCount);
+                subEntity.SkippedNoPhoneCount = Math.Max(0, subDto.SkippedNoPhoneCount);
                 subEntity.CollectedCount = Math.Max(0, subDto.CollectedCount);
                 subEntity.WatchRefreshedCount = Math.Max(0, subDto.WatchRefreshedCount);
                 subEntity.PhoneChangedCount = Math.Max(0, subDto.PhoneChangedCount);
