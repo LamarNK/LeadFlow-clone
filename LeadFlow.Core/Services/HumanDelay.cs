@@ -6,6 +6,24 @@ namespace LeadFlow.Core.Services;
 /// </summary>
 public static class HumanDelay
 {
+    // AsyncLocal, чтобы подавление действовало только в async-потоке конкретного теста
+    // и не влияло на параллельно выполняющиеся тесты, проверяющие реальные паузы.
+    private static readonly AsyncLocal<bool> SuppressDelaysScope = new();
+
+    /// <summary>Реальные паузы подавлены в текущем async-потоке (только для тестов).</summary>
+    public static bool DelaysSuppressed => SuppressDelaysScope.Value;
+
+    /// <summary>
+    /// Тесты: подавляет реальные паузы в текущем async-потоке выполнения —
+    /// <c>using var _ = HumanDelay.SuppressDelaysForTests();</c>.
+    /// </summary>
+    public static IDisposable SuppressDelaysForTests()
+    {
+        var previous = SuppressDelaysScope.Value;
+        SuppressDelaysScope.Value = true;
+        return new RestoreSuppressScope(previous, SuppressDelaysScope);
+    }
+
     /// <summary>
     /// Спит [<paramref name="minMs"/>..<paramref name="maxMs"/>] миллисекунд, равномерное распределение.
     /// Масштабируется на фактор персоны аккаунта (<see cref="AvitoPersona"/>) — анти-кластеризация.
@@ -31,9 +49,19 @@ public static class HumanDelay
 
     private static Task DelayCoreAsync(int lo, int hi, CancellationToken cancellationToken)
     {
+        if (DelaysSuppressed)
+        {
+            return Task.CompletedTask;
+        }
+
         // Random.Shared.Next(min, maxExclusive); добавляем +1, чтобы границы включались.
         var ms = lo == hi ? lo : Random.Shared.Next(lo, hi + 1);
         return Task.Delay(ms, cancellationToken);
+    }
+
+    private sealed class RestoreSuppressScope(bool Previous, AsyncLocal<bool> local) : IDisposable
+    {
+        public void Dispose() => local.Value = Previous;
     }
 
     public static Task DelaySecondsAsync(int minSeconds, int maxSeconds, CancellationToken cancellationToken = default) =>

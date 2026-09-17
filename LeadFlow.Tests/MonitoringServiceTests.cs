@@ -80,7 +80,9 @@ public sealed class MonitoringServiceTests
 
                 try
                 {
-                    await Task.Delay(2000, ct);
+                    // Задержка больше ParallelAccountLaunchStaggerMs, иначе вызовы идут
+                    // вплотную друг за другом без перекрытия и параллельность не проявляется.
+                    await Task.Delay(MonitoringTiming.ParallelAccountLaunchStaggerMs + 2000, ct);
                     return Array.Empty<CandidateResponse>();
                 }
                 finally
@@ -121,6 +123,8 @@ public sealed class MonitoringServiceTests
     [Fact]
     public async Task ProcessAccount_PublishesAllNewResponsesWithoutHardCap()
     {
+        // Без подавления тест спал бы 14 × (10–30) с «человеческих» пауз между публикациями.
+        using var _ = HumanDelay.SuppressDelaysForTests();
         var settings = NewSettings();
         var source = new FakeAvitoResponseSource
         {
