@@ -52,7 +52,9 @@ public sealed class AvitoPageObstacleScriptTests
         // рабочего списка игнорировалась. Теперь диалог/виджет — самостоятельные сигналы,
         // а текстовые fallback-и ограничены пустым списком (слова из чата не считаются капчей).
         Assert.Contains("hasCaptchaDialog", script, StringComparison.Ordinal);
-        Assert.Contains("listMissing && (hasFirewallDom || hasFirewallText)", script, StringComparison.Ordinal);
+        Assert.Contains("hasCaptchaContinue", script, StringComparison.Ordinal);
+        Assert.Contains("listMissing && hasFirewallContainer", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("listMissing && (hasFirewallDom || hasFirewallText)", script, StringComparison.Ordinal);
         Assert.DoesNotContain("itemCount === 0 &&\n                statusCount === 0 &&\n                (hasFirewallDom || (hasFirewallText && hasCaptchaWidget) || hasFirewallText)", script, StringComparison.Ordinal);
     }
 
@@ -76,6 +78,9 @@ public sealed class AvitoPageObstacleScriptTests
         var script = AvitoPageObstacleScripts.BuildProbeScript();
 
         // Зеркалим C#-детектор: блок IP — только когда это НЕ решаемая капча.
-        Assert.Contains("!hasCaptchaChallenge && (hasIpText || hasStaticIpBlock)", script, StringComparison.Ordinal);
+        Assert.Contains("!hasCaptchaChallenge", script, StringComparison.Ordinal);
+        Assert.Contains("hasStaticIpBlock || (listMissing && hasIpText", script, StringComparison.Ordinal);
+        Assert.Contains("location.hash === \"#block\"", script, StringComparison.Ordinal);
+        Assert.Contains("support.avito.ru/request/720", script, StringComparison.Ordinal);
     }
 }

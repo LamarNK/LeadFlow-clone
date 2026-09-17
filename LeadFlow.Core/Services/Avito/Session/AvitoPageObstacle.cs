@@ -39,3 +39,13 @@ public sealed record AvitoObstacleRecoveryResult(bool Recovered, string? Message
 
     public static AvitoObstacleRecoveryResult Failure(string? message = null) => new(false, message);
 }
+
+/// <summary>
+/// Восстановление страницы могло выполнить reload/navigation. Текущий рабочий проход должен
+/// отбросить DOM-индексы и снимки, заново открыть страницу и собрать устойчивые ключи кандидатов.
+/// </summary>
+public sealed class AvitoSessionRestartRequiredException(long recoveryGeneration)
+    : Exception("Страница Avito была восстановлена; рабочий проход нужно начать заново.")
+{
+    public long RecoveryGeneration { get; } = recoveryGeneration;
+}

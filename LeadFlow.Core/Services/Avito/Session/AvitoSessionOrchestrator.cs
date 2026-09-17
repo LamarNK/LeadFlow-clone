@@ -1,4 +1,5 @@
 using LeadFlow.Core.Logging.Audit;
+using LeadFlow.Core.Services.AdsPower;
 
 namespace LeadFlow.Core.Services.Avito.Session;
 
@@ -48,16 +49,21 @@ public sealed class AvitoSessionOrchestrator : IAsyncDisposable
     private const int MaxRecoveryAttemptsPerEpisode = 2;
     private const int ClearProbesRequiredToResume = 2;
     private const int MaxVerifyProbes = 4;
+    private const int MaxUnknownProbeAttempts = 3;
     private static readonly TimeSpan VerifyProbeInterval = TimeSpan.FromMilliseconds(700);
+    private static readonly TimeSpan UnknownProbeRetryInterval = TimeSpan.FromMilliseconds(350);
+    private static readonly TimeSpan DefaultRecoveryAttemptTimeout = TimeSpan.FromMinutes(7);
     private static readonly TimeSpan UnknownLogThrottle = TimeSpan.FromSeconds(30);
 
     private readonly Func<CancellationToken, Task<AvitoPageObstacle>> probeAsync;
     private readonly Func<CancellationToken, Task<string?>> fetchHtmlAsync;
     private readonly TimeSpan probeInterval;
     private readonly TimeSpan minStepProbeInterval;
+    private readonly TimeSpan recoveryAttemptTimeout;
     private readonly Dictionary<AvitoPageObstacleKind, AvitoObstacleHandler> handlers = new();
     private readonly object gate = new();
     private readonly SemaphoreSlim tabOwnership = new(1, 1);
+    private readonly SemaphoreSlim probeOwnership = new(1, 1);
     private readonly CancellationTokenSource lifecycleCts = new();
 
     private AvitoSessionStatus status = AvitoSessionStatus.Running;
@@ -67,16 +73,19 @@ public sealed class AvitoSessionOrchestrator : IAsyncDisposable
     private Task? observerTask;
     private long lastProbeTicks;
     private long disposed;
+    private long recoveryGeneration;
     private DateTime lastUnknownLogUtc = DateTime.MinValue;
 
     public AvitoSessionOrchestrator(
         Func<CancellationToken, Task<AvitoPageObstacle>> probeAsync,
         Func<CancellationToken, Task<string?>> fetchHtmlAsync,
-        TimeSpan? probeInterval = null)
+        TimeSpan? probeInterval = null,
+        TimeSpan? recoveryAttemptTimeout = null)
     {
         this.probeAsync = probeAsync;
         this.fetchHtmlAsync = fetchHtmlAsync;
         this.probeInterval = probeInterval ?? TimeSpan.FromSeconds(1);
+        this.recoveryAttemptTimeout = recoveryAttemptTimeout ?? DefaultRecoveryAttemptTimeout;
         minStepProbeInterval = TimeSpan.FromMilliseconds(this.probeInterval.TotalMilliseconds * 0.75);
     }
 
@@ -102,6 +111,12 @@ public sealed class AvitoSessionOrchestrator : IAsyncDisposable
             }
         }
     }
+
+    /// <summary>
+    /// Увеличивается после каждого подтверждённого восстановления. Рабочие сценарии используют
+    /// поколение как инвалидатор DOM-индексов и снимков, полученных до reload/navigation.
+    /// </summary>
+    public long RecoveryGeneration => Interlocked.Read(ref recoveryGeneration);
 
     public void RegisterHandler(AvitoPageObstacleKind kind, AvitoObstacleHandler handler)
     {
@@ -144,15 +159,23 @@ public sealed class AvitoSessionOrchestrator : IAsyncDisposable
     /// исключение, понятное мониторингу (капча/блок IP/нужен вход). Используется между
     /// кандидатами, перед важными действиями и в точках возобновления.
     /// </summary>
-    public async Task WaitReadyAsync(CancellationToken cancellationToken)
+    public Task WaitReadyAsync(CancellationToken cancellationToken) =>
+        WaitReadyAsync(expectedRecoveryGeneration: null, cancellationToken);
+
+    public async Task WaitReadyAsync(long expectedRecoveryGeneration, CancellationToken cancellationToken) =>
+        await WaitReadyAsync((long?)expectedRecoveryGeneration, cancellationToken).ConfigureAwait(false);
+
+    private async Task WaitReadyAsync(long? expectedRecoveryGeneration, CancellationToken cancellationToken)
     {
         while (true)
         {
             Task wait;
+            AvitoPageObstacle? terminalObstacle = null;
             lock (gate)
             {
                 if (status == AvitoSessionStatus.Running)
                 {
+                    ThrowIfRecoveryGenerationChanged(expectedRecoveryGeneration);
                     return;
                 }
 
@@ -163,6 +186,7 @@ public sealed class AvitoSessionOrchestrator : IAsyncDisposable
 
                 if (status == AvitoSessionStatus.RequiresManualAction)
                 {
+                    terminalObstacle = activeObstacle;
                     wait = Task.CompletedTask;
                 }
                 else
@@ -171,10 +195,9 @@ public sealed class AvitoSessionOrchestrator : IAsyncDisposable
                 }
             }
 
-            if (wait.IsCompleted)
+            if (terminalObstacle is not null)
             {
-                var obstacle = ActiveObstacle;
-                throw await BuildTerminalExceptionAsync(obstacle, cancellationToken).ConfigureAwait(false);
+                throw await BuildTerminalExceptionAsync(terminalObstacle, cancellationToken).ConfigureAwait(false);
             }
 
             try
@@ -195,27 +218,86 @@ public sealed class AvitoSessionOrchestrator : IAsyncDisposable
     /// </summary>
     public async Task<T> RunStepAsync<T>(Func<CancellationToken, Task<T>> step, CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(step);
-        await WaitReadyAsync(cancellationToken).ConfigureAwait(false);
-        await MaybeProbeBeforeStepAsync(cancellationToken).ConfigureAwait(false);
-        await WaitReadyAsync(cancellationToken).ConfigureAwait(false);
+        return await RunStepAsync(RecoveryGeneration, step, cancellationToken).ConfigureAwait(false);
+    }
 
-        await tabOwnership.WaitAsync(cancellationToken).ConfigureAwait(false);
-        try
+    public async Task<T> RunStepAsync<T>(
+        long expectedRecoveryGeneration,
+        Func<CancellationToken, Task<T>> step,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(step);
+        await WaitReadyAsync(expectedRecoveryGeneration, cancellationToken).ConfigureAwait(false);
+        await MaybeProbeBeforeStepAsync(cancellationToken).ConfigureAwait(false);
+        await WaitReadyAsync(expectedRecoveryGeneration, cancellationToken).ConfigureAwait(false);
+
+        while (true)
         {
-            return await step(cancellationToken).ConfigureAwait(false);
-        }
-        finally
-        {
+            await tabOwnership.WaitAsync(cancellationToken).ConfigureAwait(false);
+            var readyToRun = false;
             try
             {
-                tabOwnership.Release();
+                // Между WaitReady и захватом семафора observer мог поставить PauseRequested.
+                // Не выполняем действие в этом окне: освобождаем вкладку для recovery и ждём заново.
+                readyToRun = Status == AvitoSessionStatus.Running;
+                if (readyToRun)
+                {
+                    ThrowIfRecoveryGenerationChanged(expectedRecoveryGeneration);
+                    return await step(cancellationToken).ConfigureAwait(false);
+                }
             }
-            catch (ObjectDisposedException)
+            finally
             {
-                // Сессия завершается — владение уже не важно.
+                try
+                {
+                    tabOwnership.Release();
+                }
+                catch (ObjectDisposedException)
+                {
+                    // Сессия завершается — владение уже не важно.
+                }
+            }
+
+            if (!readyToRun)
+            {
+                await WaitReadyAsync(expectedRecoveryGeneration, cancellationToken).ConfigureAwait(false);
             }
         }
+    }
+
+    public async Task RunStepAsync(Func<CancellationToken, Task> step, CancellationToken cancellationToken)
+    {
+        await RunStepAsync(RecoveryGeneration, step, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async Task RunStepAsync(
+        long expectedRecoveryGeneration,
+        Func<CancellationToken, Task> step,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(step);
+        await RunStepAsync(
+                expectedRecoveryGeneration,
+                async ct =>
+                {
+                    await step(ct).ConfigureAwait(false);
+                    return true;
+                },
+                cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    /// <summary>Немедленная подтверждённая проверка после подозрительного результата действия.</summary>
+    public async Task CheckNowAsync(long expectedRecoveryGeneration, CancellationToken cancellationToken)
+    {
+        await WaitReadyAsync(expectedRecoveryGeneration, cancellationToken).ConfigureAwait(false);
+        var obstacle = await ProbeUntilKnownAsync(cancellationToken).ConfigureAwait(false);
+        if (obstacle.Kind != AvitoPageObstacleKind.None && TryBeginEpisode(obstacle))
+        {
+            await RunEpisodeAsync(obstacle, cancellationToken).ConfigureAwait(false);
+        }
+
+        await WaitReadyAsync(expectedRecoveryGeneration, cancellationToken).ConfigureAwait(false);
     }
 
     public async ValueTask DisposeAsync()
@@ -289,15 +371,9 @@ public sealed class AvitoSessionOrchestrator : IAsyncDisposable
                     continue;
                 }
 
-                var obstacle = await ProbeCoreAsync(cancellationToken).ConfigureAwait(false);
+                var obstacle = await ProbeUntilKnownAsync(cancellationToken).ConfigureAwait(false);
                 if (obstacle.Kind == AvitoPageObstacleKind.None)
                 {
-                    continue;
-                }
-
-                if (obstacle.Kind == AvitoPageObstacleKind.Unknown)
-                {
-                    LogThrottledUnknown();
                     continue;
                 }
 
@@ -333,9 +409,8 @@ public sealed class AvitoSessionOrchestrator : IAsyncDisposable
             return;
         }
 
-        var obstacle = await ProbeCoreAsync(cancellationToken).ConfigureAwait(false);
-        if (obstacle.Kind is not (AvitoPageObstacleKind.None or AvitoPageObstacleKind.Unknown)
-            && TryBeginEpisode(obstacle))
+        var obstacle = await ProbeUntilKnownAsync(cancellationToken).ConfigureAwait(false);
+        if (obstacle.Kind != AvitoPageObstacleKind.None && TryBeginEpisode(obstacle))
         {
             await RunEpisodeAsync(obstacle, cancellationToken).ConfigureAwait(false);
         }
@@ -343,9 +418,50 @@ public sealed class AvitoSessionOrchestrator : IAsyncDisposable
 
     private async Task<AvitoPageObstacle> ProbeCoreAsync(CancellationToken cancellationToken)
     {
-        var obstacle = await probeAsync(cancellationToken).ConfigureAwait(false);
-        Interlocked.Exchange(ref lastProbeTicks, DateTime.UtcNow.Ticks);
-        return obstacle;
+        await probeOwnership.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            AvitoPageObstacle obstacle;
+            try
+            {
+                obstacle = await probeAsync(cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
+            }
+            catch
+            {
+                obstacle = AvitoPageObstacle.Unknown;
+            }
+
+            Interlocked.Exchange(ref lastProbeTicks, DateTime.UtcNow.Ticks);
+            return obstacle;
+        }
+        finally
+        {
+            probeOwnership.Release();
+        }
+    }
+
+    private async Task<AvitoPageObstacle> ProbeUntilKnownAsync(CancellationToken cancellationToken)
+    {
+        for (var attempt = 1; attempt <= MaxUnknownProbeAttempts; attempt++)
+        {
+            var obstacle = await ProbeCoreAsync(cancellationToken).ConfigureAwait(false);
+            if (obstacle.Kind != AvitoPageObstacleKind.Unknown)
+            {
+                return obstacle;
+            }
+
+            LogThrottledUnknown();
+            if (attempt < MaxUnknownProbeAttempts)
+            {
+                await Task.Delay(UnknownProbeRetryInterval, cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        return AvitoPageObstacle.Unknown;
     }
 
     private bool TryBeginEpisode(AvitoPageObstacle obstacle)
@@ -402,13 +518,20 @@ public sealed class AvitoSessionOrchestrator : IAsyncDisposable
                 }
 
                 AvitoObstacleRecoveryResult result;
+                using var attemptCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                attemptCts.CancelAfter(recoveryAttemptTimeout);
                 try
                 {
-                    result = await handler(obstacle, cancellationToken).ConfigureAwait(false);
+                    result = await handler(obstacle, attemptCts.Token).ConfigureAwait(false);
                 }
                 catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
                 {
                     throw;
+                }
+                catch (OperationCanceledException) when (attemptCts.IsCancellationRequested)
+                {
+                    result = AvitoObstacleRecoveryResult.Failure(
+                        $"обработчик не завершился за {recoveryAttemptTimeout.TotalSeconds:0} с");
                 }
                 catch (Exception ex)
                 {
@@ -436,6 +559,7 @@ public sealed class AvitoSessionOrchestrator : IAsyncDisposable
                 {
                     lock (gate)
                     {
+                        Interlocked.Increment(ref recoveryGeneration);
                         status = AvitoSessionStatus.Running;
                         activeObstacle = null;
                     }
@@ -477,6 +601,23 @@ public sealed class AvitoSessionOrchestrator : IAsyncDisposable
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             AbortEpisode();
+        }
+        catch (Exception ex)
+        {
+            lock (gate)
+            {
+                activeObstacle = AvitoPageObstacle.Unknown;
+                status = AvitoSessionStatus.RequiresManualAction;
+            }
+
+            SignalResumeLocked();
+            _ = GlobalLogger.Instance.LogAsync(
+                $"Avito session orchestrator: непредвиденная ошибка восстановления — {ex.Message}",
+                DeskLinkAuditLogLevel.Error,
+                errorKey: "session.orchestrator",
+                memberName: nameof(RunEpisodeAsync),
+                filePath: nameof(AvitoSessionOrchestrator) + ".cs",
+                properties: BuildObstacleProperties(obstacle, "episode_error"));
         }
         finally
         {
@@ -566,8 +707,20 @@ public sealed class AvitoSessionOrchestrator : IAsyncDisposable
                 "firewall",
                 obstacle.Url,
                 html),
-            _ => new AvitoLoginRequiredException(obstacle.Url, obstacle.Title)
+            AvitoPageObstacleKind.Unknown => AdsPowerCdpGuard.Timeout(
+                "проверка препятствий страницы",
+                TimeSpan.FromTicks(UnknownProbeRetryInterval.Ticks * MaxUnknownProbeAttempts)),
+            _ => new AvitoLoginRequiredException(obstacle?.Url, obstacle?.Title)
         };
+    }
+
+    private void ThrowIfRecoveryGenerationChanged(long? expectedRecoveryGeneration)
+    {
+        if (expectedRecoveryGeneration is not null
+            && RecoveryGeneration != expectedRecoveryGeneration.Value)
+        {
+            throw new AvitoSessionRestartRequiredException(RecoveryGeneration);
+        }
     }
 
     private void SignalResumeLocked()

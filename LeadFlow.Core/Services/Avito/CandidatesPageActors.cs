@@ -1,3 +1,5 @@
+using LeadFlow.Core.Services.Avito.Session;
+
 namespace LeadFlow.Core.Services.Avito;
 
 /// <summary>
@@ -29,6 +31,14 @@ public sealed record CandidatesPageActors(
         {
             throw;
         }
+        catch (AvitoSessionRestartRequiredException)
+        {
+            throw;
+        }
+        catch (TimeoutException)
+        {
+            throw;
+        }
         catch
         {
             return false;
@@ -51,6 +61,14 @@ public sealed record CandidatesPageActors(
         {
             throw;
         }
+        catch (AvitoSessionRestartRequiredException)
+        {
+            throw;
+        }
+        catch (TimeoutException)
+        {
+            throw;
+        }
         catch
         {
             return false;
@@ -70,6 +88,14 @@ public sealed record CandidatesPageActors(
             return await WheelScrollAsync(deltaPx, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (AvitoSessionRestartRequiredException)
+        {
+            throw;
+        }
+        catch (TimeoutException)
         {
             throw;
         }

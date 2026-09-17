@@ -902,23 +902,51 @@ public sealed partial class AdsPowerAvitoAutomationService
         CandidatesMessengerEnrichmentHints? messengerEnrichmentHints,
         CancellationToken cancellationToken)
     {
-        var pipelineSw = Stopwatch.StartNew();
-        // Оркестратор сессии: фоновый наблюдатель ловит капча-модалку/блок IP/потерю входа
-        // поверх РАБОЧЕЙ страницы откликов (старые probe-сценарии видели только полную замену
-        // страницы) и рулит паузой/восстановлением независимо от текущего шага сценария.
-        await using var orchestrator = AvitoPageObstacleProbe.CreateOrchestrator(
-            page,
-            TimeSpan.FromMilliseconds(1000));
-        orchestrator.RegisterHandler(AvitoPageObstacleKind.Captcha, (obstacle, ct) =>
-            RecoverFromCaptchaWithSolverAsync(page, obstacle, ct));
-        orchestrator.RegisterHandler(AvitoPageObstacleKind.TransientError, (_, ct) =>
-            RecoverFromTransientErrorAsync(page, ct));
-        orchestrator.Start();
-        var executeScript = (string script, CancellationToken ct) =>
-            orchestrator.RunStepAsync(
-                token => EvaluateWithRetryAsync<string>(page, script, token),
-                ct);
+        const int maxRestartsAfterRecovery = 2;
+        for (var attempt = 1; attempt <= maxRestartsAfterRecovery; attempt++)
+        {
+            try
+            {
+                return await ExtractCandidatesJsonOnPageOnceAsync(
+                        page,
+                        adsPowerUserId,
+                        messengerEnrichmentHints,
+                        cancellationToken)
+                    .ConfigureAwait(false);
+            }
+            catch (AvitoSessionRestartRequiredException ex)
+            {
+                if (attempt >= maxRestartsAfterRecovery)
+                {
+                    throw AdsPowerCdpGuard.Timeout(
+                        "повторный сбор откликов после восстановления страницы",
+                        TimeSpan.FromMinutes(1),
+                        ex);
+                }
 
+                _ = GlobalLogger.Instance.LogAsync(
+                    $"Avito responses: страница восстановлена, начинаем проход заново ({attempt + 1}/{maxRestartsAfterRecovery}).",
+                    DeskLinkAuditLogLevel.Info,
+                    memberName: nameof(ExtractCandidatesJsonOnPageAsync),
+                    properties: new Dictionary<string, object?>
+                    {
+                        ["step"] = "candidates_restart_after_recovery",
+                        ["recovery.generation"] = ex.RecoveryGeneration,
+                        ["page.url"] = page.Url
+                    });
+            }
+        }
+
+        throw new InvalidOperationException("Проход страницы откликов не завершился после восстановления страницы.");
+    }
+
+    private async Task<string> ExtractCandidatesJsonOnPageOnceAsync(
+        IPage page,
+        string adsPowerUserId,
+        CandidatesMessengerEnrichmentHints? messengerEnrichmentHints,
+        CancellationToken cancellationToken)
+    {
+        var pipelineSw = Stopwatch.StartNew();
         var waitSw = Stopwatch.StartNew();
         if (IsOnActiveProfileItemsPage(page.Url)
             && AvitoHumanVariation.RollPermille(MonitoringTiming.ItemsLingerChancePermille))
@@ -930,6 +958,42 @@ public sealed partial class AdsPowerAvitoAutomationService
         var navigationSw = Stopwatch.StartNew();
         await EnsureOnCandidatesPageAsync(page, adsPowerUserId, cancellationToken).ConfigureAwait(false);
         navigationSw.Stop();
+
+        // Оркестратор стартует после навигации: observer не должен конкурировать с GoTo/Reload.
+        await using var orchestrator = AvitoPageObstacleProbe.CreateOrchestrator(
+            page,
+            TimeSpan.FromMilliseconds(1000));
+        orchestrator.RegisterHandler(AvitoPageObstacleKind.Captcha, (obstacle, ct) =>
+            RecoverFromCaptchaWithSolverAsync(page, obstacle, ct));
+        orchestrator.RegisterHandler(AvitoPageObstacleKind.TransientError, (_, ct) =>
+            RecoverFromTransientErrorAsync(page, ct));
+        orchestrator.Start();
+        var passRecoveryGeneration = orchestrator.RecoveryGeneration;
+        var executeScript = (string script, CancellationToken ct) =>
+            orchestrator.RunStepAsync(
+                passRecoveryGeneration,
+                token => EvaluateWithRetryAsync<string>(page, script, token),
+                ct);
+        var captchaSolve = CreateCaptchaSolveCallback(page);
+        Func<AvitoFirewallProbe.Detection, string?, CancellationToken, Task<bool>>? gatedCaptchaSolve =
+            captchaSolve is null
+                ? null
+                : async (detection, html, ct) =>
+                {
+                    var solved = await orchestrator.RunStepAsync(
+                            passRecoveryGeneration,
+                            token => captchaSolve(detection, html, token),
+                            ct)
+                        .ConfigureAwait(false);
+                    if (solved)
+                    {
+                        // Старый probe-обработчик мог перезагрузить страницу: не продолжаем
+                        // обход по индексам, которые были сняты до решения капчи.
+                        throw new AvitoSessionRestartRequiredException(orchestrator.RecoveryGeneration + 1);
+                    }
+
+                    return false;
+                };
 
         var finalSignature = await AvitoCandidatesPageWaiter
             .TryCaptureListSignatureAsync(executeScript, cancellationToken)
@@ -973,13 +1037,14 @@ public sealed partial class AdsPowerAvitoAutomationService
             messengerEnrichmentHints?.ResponseFilters,
             messengerEnrichmentHints?.IsOpenPhoneWatchAsync,
             skipDetailEnrich: true,
-            CreateCaptchaSolveCallback(page),
+            gatedCaptchaSolve,
             messengerEnrichmentHints?.OpenPhoneWatches,
-            BuildCandidatesPageActors(page)).ConfigureAwait(false);
+            BuildCandidatesPageActors(page, orchestrator, passRecoveryGeneration)).ConfigureAwait(false);
         prepareSw.Stop();
 
         var extractSw = Stopwatch.StartNew();
         var raw = await orchestrator.RunStepAsync(
+                passRecoveryGeneration,
                 token => EvaluateWithRetryAsync<string>(page, ExtractionScript, token),
                 cancellationToken)
             .ConfigureAwait(false);
@@ -995,7 +1060,8 @@ public sealed partial class AdsPowerAvitoAutomationService
                 raw,
                 messengerEnrichmentHints,
                 cancellationToken,
-                orchestrator)
+                orchestrator,
+                passRecoveryGeneration)
             .ConfigureAwait(false);
         messengerSw.Stop();
         pipelineSw.Stop();
@@ -1025,7 +1091,12 @@ public sealed partial class AdsPowerAvitoAutomationService
         string? html = null;
         try
         {
-            html = await page.GetContentAsync().ConfigureAwait(false);
+            html = await AdsPowerCdpGuard.WaitAsync(
+                    page.GetContentAsync(),
+                    CdpEvaluateHangTimeout,
+                    "чтение HTML для оркестратора капчи",
+                    cancellationToken)
+                .ConfigureAwait(false);
         }
         catch
         {

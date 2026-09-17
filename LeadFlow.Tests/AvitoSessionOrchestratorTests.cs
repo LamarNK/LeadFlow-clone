@@ -68,7 +68,7 @@ public sealed class AvitoSessionOrchestratorTests
     }
 
     [Fact]
-    public async Task RunStepAsync_CaptchaBeforeStep_RecoversThenExecutesStepOnce()
+    public async Task RunStepAsync_CaptchaBeforeStep_RecoversThenRequiresPassRestart()
     {
         // До шага: captcha → verify(чисто) → verify(чисто), затем сам шаг выполняется.
         var probe = new ScriptedProbe([GeeTestCaptcha]);
@@ -80,14 +80,27 @@ public sealed class AvitoSessionOrchestratorTests
                 return Task.FromResult(AvitoObstacleRecoveryResult.Success());
             }));
 
-        var result = await orchestrator.RunStepAsync(
-            _ => Task.FromResult("step-done"),
-            CancellationToken.None);
+        var stepCalls = 0;
+        var ex = await Assert.ThrowsAsync<AvitoSessionRestartRequiredException>(() =>
+            orchestrator.RunStepAsync(
+                _ =>
+                {
+                    stepCalls++;
+                    return Task.FromResult("step-done");
+                },
+                CancellationToken.None));
 
-        Assert.Equal("step-done", result);
+        Assert.Equal(1, ex.RecoveryGeneration);
+        Assert.Equal(0, stepCalls);
         Assert.Equal(1, handlerCalls);
         Assert.Equal(AvitoSessionStatus.Running, orchestrator.Status);
         Assert.Null(orchestrator.ActiveObstacle);
+
+        // Даже когда страница уже снова чистая, старый DOM-снимок не может делать клики.
+        await Assert.ThrowsAsync<AvitoSessionRestartRequiredException>(() =>
+            orchestrator.WaitReadyAsync(expectedRecoveryGeneration: 0, CancellationToken.None));
+        await Assert.ThrowsAsync<AvitoSessionRestartRequiredException>(() =>
+            orchestrator.RunStepAsync(0, _ => Task.FromResult(1), CancellationToken.None));
     }
 
     [Fact]
@@ -133,6 +146,42 @@ public sealed class AvitoSessionOrchestratorTests
     }
 
     [Fact]
+    public async Task RunStepAsync_TimedOutHandler_IsCancelledAndDoesNotOverlapRetry()
+    {
+        var activeHandlers = 0;
+        var maxConcurrentHandlers = 0;
+        var attempts = 0;
+        var probe = new ScriptedProbe([GeeTestCaptcha]);
+        await using var orchestrator = new AvitoSessionOrchestrator(
+            probe.ProbeAsync,
+            _ => Task.FromResult<string?>(null),
+            recoveryAttemptTimeout: TimeSpan.FromMilliseconds(50));
+        orchestrator.RegisterHandler(AvitoPageObstacleKind.Captcha, async (_, ct) =>
+        {
+            Interlocked.Increment(ref attempts);
+            var active = Interlocked.Increment(ref activeHandlers);
+            maxConcurrentHandlers = Math.Max(maxConcurrentHandlers, active);
+            try
+            {
+                await Task.Delay(Timeout.Infinite, ct);
+            }
+            finally
+            {
+                Interlocked.Decrement(ref activeHandlers);
+            }
+
+            return AvitoObstacleRecoveryResult.Success();
+        });
+
+        await Assert.ThrowsAsync<AvitoCaptchaDetectedException>(() =>
+            orchestrator.RunStepAsync(_ => Task.FromResult(1), CancellationToken.None));
+
+        Assert.Equal(2, attempts);
+        Assert.Equal(1, maxConcurrentHandlers);
+        Assert.Equal(0, activeHandlers);
+    }
+
+    [Fact]
     public async Task RunStepAsync_IpBlockWithoutHandler_ThrowsFirewallException()
     {
         var probe = new ScriptedProbe([IpBlock]);
@@ -155,6 +204,92 @@ public sealed class AvitoSessionOrchestratorTests
 
         await Assert.ThrowsAsync<AvitoLoginRequiredException>(() =>
             orchestrator.RunStepAsync(_ => Task.FromResult(1), CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task RunStepAsync_UnknownProbeFailsClosedWithoutExecutingStep()
+    {
+        var probe = new ScriptedProbe([], tail: AvitoPageObstacle.Unknown);
+        await using var orchestrator = Create(probe);
+        var stepCalls = 0;
+
+        await Assert.ThrowsAsync<TimeoutException>(() =>
+            orchestrator.RunStepAsync(
+                _ =>
+                {
+                    stepCalls++;
+                    return Task.FromResult(1);
+                },
+                CancellationToken.None));
+
+        Assert.Equal(0, stepCalls);
+        Assert.Equal(3, probe.ProbeCount);
+        Assert.Equal(AvitoSessionStatus.RequiresManualAction, orchestrator.Status);
+    }
+
+    [Fact]
+    public async Task RunStepAsync_ProbeThrows_AlsoFailsClosed()
+    {
+        await using var orchestrator = new AvitoSessionOrchestrator(
+            _ => throw new InvalidOperationException("CDP disconnected"),
+            _ => Task.FromResult<string?>(null));
+        var stepCalls = 0;
+
+        await Assert.ThrowsAsync<TimeoutException>(() =>
+            orchestrator.RunStepAsync(
+                _ =>
+                {
+                    stepCalls++;
+                    return Task.FromResult(1);
+                },
+                CancellationToken.None));
+
+        Assert.Equal(0, stepCalls);
+        Assert.Equal(AvitoSessionStatus.RequiresManualAction, orchestrator.Status);
+    }
+
+    [Fact]
+    public async Task Observer_DoesNotEnterRecoveryUntilRunningStepReleasesTab()
+    {
+        var probe = new ScriptedProbe([
+            AvitoPageObstacle.None,
+            GeeTestCaptcha,
+            AvitoPageObstacle.None,
+            AvitoPageObstacle.None
+        ]);
+        var stepEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var releaseStep = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        var handlerEntered = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        await using var orchestrator = Create(
+            probe,
+            interval: TimeSpan.FromSeconds(30),
+            configure: o => o.RegisterHandler(AvitoPageObstacleKind.Captcha, (_, _) =>
+            {
+                handlerEntered.TrySetResult();
+                return Task.FromResult(AvitoObstacleRecoveryResult.Success());
+            }));
+
+        var generation = orchestrator.RecoveryGeneration;
+        var stepTask = orchestrator.RunStepAsync(
+            generation,
+            async _ =>
+            {
+                stepEntered.TrySetResult();
+                await releaseStep.Task;
+                return true;
+            },
+            CancellationToken.None);
+        await stepEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        orchestrator.Start();
+        orchestrator.ReportSuspicion();
+        await Task.Delay(150);
+        Assert.False(handlerEntered.Task.IsCompleted);
+
+        releaseStep.SetResult();
+        await stepTask.WaitAsync(TimeSpan.FromSeconds(5));
+        await handlerEntered.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        await WaitUntilAsync(() => orchestrator.Status == AvitoSessionStatus.Running, TimeSpan.FromSeconds(5));
     }
 
     [Fact]

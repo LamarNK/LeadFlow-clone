@@ -38,17 +38,15 @@ public static class AvitoPageObstacleScripts
             };
 
             // Виджеты классической разметки (v3 id, hCaptcha, картинка).
-            const hasOldWidget = !!(
-                document.getElementById("geetest_captcha")
-                || document.getElementById("inner-captcha")
-                || document.getElementById("h-captcha")
-                || document.querySelector(".h-captcha[data-sitekey]")
-            );
+            const hasOldWidget = Array.from(document.querySelectorAll(
+                "#geetest_captcha, #inner-captcha, #h-captcha, .h-captcha[data-sitekey]"))
+                .some(isVisibleEl);
             if (hasOldWidget) signals.push("legacy-widget");
 
             // GeeTest DOM (v3 и v4 в light DOM): панели, overlay, iframe.
-            const hasGeeTestDom = !!document.querySelector(
-                ".geetest_boxShow, .geetest_popup_wrap, [class*='geetest_box'], [class*='geetest_panel'], [class*='geetest_holder'], iframe[src*='geetest']");
+            const hasGeeTestDom = Array.from(document.querySelectorAll(
+                ".geetest_boxShow, .geetest_popup_wrap, [class*='geetest_box'], [class*='geetest_panel'], [class*='geetest_holder'], iframe[src*='geetest']"))
+                .some(isVisibleEl);
             if (hasGeeTestDom) signals.push("geetest-dom");
 
             // GeeTest v4 смонтирован (Avito подгружает gt4 только при показе капчи).
@@ -77,9 +75,11 @@ public static class AvitoPageObstacleScripts
             const itemCount = document.querySelectorAll("[data-marker='job-application/item']").length;
             const statusCount = document.querySelectorAll("[data-marker='job-application/response/status-select-button']").length;
 
-            const hasFirewallDom = !!document.querySelector(
+            const hasFirewallContainer = !!document.querySelector(
                 ".firewall-container, .js-firewall-form, .firewall-title, form.js-firewall-form"
-            ) || location.hash === "#block"
+            );
+            const hasFirewallDom = hasFirewallContainer
+              || location.hash === "#block"
               || !!document.querySelector('a[href*="support.avito.ru/request/720"]');
             if (hasFirewallDom) signals.push("firewall-dom");
 
@@ -89,31 +89,36 @@ public static class AvitoPageObstacleScripts
             const listMissing = itemCount === 0 && statusCount === 0;
             if (hasFirewallText && listMissing) signals.push("firewall-text");
 
+            const hasCaptchaContinue = listMissing
+              && hasFirewallContainer
+              && /Продолжить/i.test(probeText);
             const hasCaptchaChallenge = hasOldWidget
                 || hasGeeTestDom
                 || hasCaptchaDialog
-                || (listMissing && (hasFirewallDom || hasFirewallText))
-                || (listMissing && /капч|captcha/i.test(probeText) && /Продолжить/i.test(probeText));
+                || hasCaptchaContinue
+                || (listMissing && hasFirewallContainer && !/проблема\s+с\s+IP/i.test(probeText));
 
             // Блок IP — только когда это НЕ решаемая капча (зеркалим классификацию C#-детектора).
             const hasIpText = /Доступ\s+ограничен/i.test(probeText) && /проблема\s+с\s+IP/i.test(probeText);
             const hasStaticIpBlock = location.hash === "#block"
               && !!document.querySelector('a[href*="support.avito.ru/request/720"]')
               && /Отключить\s+VPN|самол[её]те/i.test(probeText);
-            const hasIpBlock = !hasCaptchaChallenge && (hasIpText || hasStaticIpBlock);
+            const hasIpBlock = !hasCaptchaChallenge
+              && (hasStaticIpBlock || (listMissing && hasIpText
+                && (/Доступ\s+ограничен/i.test(title) || hasFirewallDom)));
             if (hasIpBlock) signals.push("ip-block");
 
             let captchaKind = null;
             if (hasCaptchaChallenge) {
                 captchaKind = "captcha";
-                if (document.getElementById("geetest_captcha")
+                if (isVisibleEl(document.getElementById("geetest_captcha"))
                     || hasGeeTestDom
                     || (hasGeeTestV4Mounted && hasCaptchaDialog)) {
                     captchaKind = "geetest";
-                } else if (document.getElementById("h-captcha")
-                    || document.querySelector(".h-captcha[data-sitekey]")) {
+                } else if (isVisibleEl(document.getElementById("h-captcha"))
+                    || isVisibleEl(document.querySelector(".h-captcha[data-sitekey]"))) {
                     captchaKind = "hCaptcha";
-                } else if (document.getElementById("inner-captcha")) {
+                } else if (isVisibleEl(document.getElementById("inner-captcha"))) {
                     captchaKind = "image-captcha";
                 }
             }

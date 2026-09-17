@@ -3668,12 +3668,31 @@ public sealed partial class AdsPowerAvitoAutomationService(
         return jsonIndex;
     }
 
+    private static Task<T> RunSessionStepAsync<T>(
+        AvitoSessionOrchestrator? orchestrator,
+        long expectedRecoveryGeneration,
+        Func<CancellationToken, Task<T>> step,
+        CancellationToken cancellationToken) =>
+        orchestrator is null
+            ? step(cancellationToken)
+            : orchestrator.RunStepAsync(expectedRecoveryGeneration, step, cancellationToken);
+
+    private static Task RunSessionStepAsync(
+        AvitoSessionOrchestrator? orchestrator,
+        long expectedRecoveryGeneration,
+        Func<CancellationToken, Task> step,
+        CancellationToken cancellationToken) =>
+        orchestrator is null
+            ? step(cancellationToken)
+            : orchestrator.RunStepAsync(expectedRecoveryGeneration, step, cancellationToken);
+
     private async Task<string> TryEnrichCandidatesJsonMessengerUrlsAsync(
         IPage page,
         string rawJson,
         CandidatesMessengerEnrichmentHints? enrichmentHints,
         CancellationToken cancellationToken,
-        AvitoSessionOrchestrator? orchestrator = null)
+        AvitoSessionOrchestrator? orchestrator = null,
+        long expectedRecoveryGeneration = 0)
     {
         JsonNode? root;
         try
@@ -3688,6 +3707,11 @@ public sealed partial class AdsPowerAvitoAutomationService(
         if (root is null)
         {
             return rawJson;
+        }
+
+        if (orchestrator is not null)
+        {
+            await orchestrator.WaitReadyAsync(expectedRecoveryGeneration, cancellationToken).ConfigureAwait(false);
         }
 
         var candidates = root["candidates"]?.AsArray();
@@ -3741,12 +3765,20 @@ public sealed partial class AdsPowerAvitoAutomationService(
             }
         }
 
-        await EnsureMessengerEnrichmentViewportAsync(page, cancellationToken)
+        await RunSessionStepAsync(
+                orchestrator,
+                expectedRecoveryGeneration,
+                ct => EnsureMessengerEnrichmentViewportAsync(page, ct),
+                cancellationToken)
             .ConfigureAwait(false);
 
-        _ = await EvaluateWithRetryAsync<string>(
-                page,
-                AvitoCandidatesPageScripts.BuildDismissCandidateDetailPanelScript(),
+        _ = await RunSessionStepAsync(
+                orchestrator,
+                expectedRecoveryGeneration,
+                ct => EvaluateWithRetryAsync<string>(
+                    page,
+                    AvitoCandidatesPageScripts.BuildDismissCandidateDetailPanelScript(),
+                    ct),
                 cancellationToken)
             .ConfigureAwait(false);
         await Task.Delay(250, cancellationToken).ConfigureAwait(false);
@@ -3789,7 +3821,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
             {
                 // Точка возобновления: капча, замеченная наблюдателем во время прошлого кандидата,
                 // к этому моменту уже обработана — продолжаем только на «чистой» странице.
-                await orchestrator.WaitReadyAsync(cancellationToken).ConfigureAwait(false);
+                await orchestrator.WaitReadyAsync(expectedRecoveryGeneration, cancellationToken).ConfigureAwait(false);
             }
 
             var item = candidates[i]?.AsObject();
@@ -3846,7 +3878,11 @@ public sealed partial class AdsPowerAvitoAutomationService(
             var hasUnread = false;
             if (isKnownSourceId && !hasPendingOutbound && !openPhoneWatch)
             {
-                hasUnread = await TryReadCandidateChatUnreadAsync(page, domIndex, cancellationToken)
+                hasUnread = await RunSessionStepAsync(
+                        orchestrator,
+                        expectedRecoveryGeneration,
+                        ct => TryReadCandidateChatUnreadAsync(page, domIndex, ct),
+                        cancellationToken)
                     .ConfigureAwait(false);
             }
 
@@ -3862,7 +3898,11 @@ public sealed partial class AdsPowerAvitoAutomationService(
 
             if (!isJobCrm && CandidateJsonNeedsDetail(item))
             {
-                await TryApplyDetailPanelToCandidateAsync(page, item, domIndex, cancellationToken)
+                await RunSessionStepAsync(
+                        orchestrator,
+                        expectedRecoveryGeneration,
+                        ct => TryApplyDetailPanelToCandidateAsync(page, item, domIndex, ct),
+                        cancellationToken)
                     .ConfigureAwait(false);
             }
 
@@ -3877,7 +3917,8 @@ public sealed partial class AdsPowerAvitoAutomationService(
                     candidateAlreadyKnown: isKnownSourceId,
                     autoRepliesRemaining: autoReplyBudget - autoRepliesSent,
                     cancellationToken,
-                    orchestrator)
+                    orchestrator,
+                    expectedRecoveryGeneration)
                 .ConfigureAwait(false);
             if (enrichment.AutoReplySent)
             {
@@ -3889,7 +3930,12 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 || !string.IsNullOrWhiteSpace(messengerAvatarUrl))
             {
                 await HumanDelay.AfterMessengerCardAsync(cancellationToken).ConfigureAwait(false);
-                await AvitoHumanNoise.MaybeDriftAsync(page, MonitoringTiming.HumanNoiseChancePermille, cancellationToken).ConfigureAwait(false);
+                await RunSessionStepAsync(
+                        orchestrator,
+                        expectedRecoveryGeneration,
+                        ct => AvitoHumanNoise.MaybeDriftAsync(page, MonitoringTiming.HumanNoiseChancePermille, ct),
+                        cancellationToken)
+                    .ConfigureAwait(false);
             }
             else
             {
@@ -3958,7 +4004,12 @@ public sealed partial class AdsPowerAvitoAutomationService(
             }
         }
 
-        await CloseMiniMessengerPanelIfOpenAsync(page, cancellationToken).ConfigureAwait(false);
+        await RunSessionStepAsync(
+                orchestrator,
+                expectedRecoveryGeneration,
+                ct => CloseMiniMessengerPanelIfOpenAsync(page, ct),
+                cancellationToken)
+            .ConfigureAwait(false);
 
         return root.ToJsonString();
     }
@@ -4100,17 +4151,39 @@ public sealed partial class AdsPowerAvitoAutomationService(
         bool candidateAlreadyKnown,
         int autoRepliesRemaining,
         CancellationToken cancellationToken,
-        AvitoSessionOrchestrator? orchestrator = null)
+        AvitoSessionOrchestrator? orchestrator = null,
+        long expectedRecoveryGeneration = 0)
     {
         var autoReplySent = false;
-        await CloseMiniMessengerPanelIfOpenAsync(page, cancellationToken).ConfigureAwait(false);
+        await RunSessionStepAsync(
+                orchestrator,
+                expectedRecoveryGeneration,
+                ct => CloseMiniMessengerPanelIfOpenAsync(page, ct),
+                cancellationToken)
+            .ConfigureAwait(false);
         try
         {
-            await EvaluateWithRetryAsync<string>(
-                    page,
-                    AvitoCandidatesPageScripts.BuildMarkMessengerRootsBeforeOpenScript(),
+            await RunSessionStepAsync(
+                    orchestrator,
+                    expectedRecoveryGeneration,
+                    ct => EvaluateWithRetryAsync<string>(
+                        page,
+                        AvitoCandidatesPageScripts.BuildMarkMessengerRootsBeforeOpenScript(),
+                        ct),
                     cancellationToken)
                 .ConfigureAwait(false);
+        }
+        catch (AvitoSessionRestartRequiredException)
+        {
+            throw;
+        }
+        catch (TimeoutException)
+        {
+            throw;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch
         {
@@ -4121,7 +4194,24 @@ public sealed partial class AdsPowerAvitoAutomationService(
 
         try
         {
-            await page.BringToFrontAsync().ConfigureAwait(false);
+            await RunSessionStepAsync(
+                    orchestrator,
+                    expectedRecoveryGeneration,
+                    _ => page.BringToFrontAsync(),
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch (AvitoSessionRestartRequiredException)
+        {
+            throw;
+        }
+        catch (TimeoutException)
+        {
+            throw;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch
         {
@@ -4129,7 +4219,11 @@ public sealed partial class AdsPowerAvitoAutomationService(
         }
 
         var clickMethod = "failed";
-        var clickedViaPointer = await TryClickCandidateChatWithPointerAsync(page, candidateIndex, cancellationToken)
+        var clickedViaPointer = await RunSessionStepAsync(
+                orchestrator,
+                expectedRecoveryGeneration,
+                ct => TryClickCandidateChatWithPointerAsync(page, candidateIndex, ct),
+                cancellationToken)
             .ConfigureAwait(false);
         string? clickReason = null;
         var clicked = clickedViaPointer;
@@ -4139,7 +4233,11 @@ public sealed partial class AdsPowerAvitoAutomationService(
         }
         else
         {
-            var domClick = await TryClickCandidateChatByDomAsync(page, candidateIndex, cancellationToken)
+            var domClick = await RunSessionStepAsync(
+                    orchestrator,
+                    expectedRecoveryGeneration,
+                    ct => TryClickCandidateChatByDomAsync(page, candidateIndex, ct),
+                    cancellationToken)
                 .ConfigureAwait(false);
             clicked = domClick.Ok;
             clickReason = domClick.Reason;
@@ -4151,6 +4249,12 @@ public sealed partial class AdsPowerAvitoAutomationService(
 
         if (!clicked)
         {
+            if (orchestrator is not null)
+            {
+                await orchestrator.CheckNowAsync(expectedRecoveryGeneration, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
             if (!string.IsNullOrWhiteSpace(clickReason))
             {
                 _ = GlobalLogger.Instance.LogAsync(
@@ -4184,8 +4288,8 @@ public sealed partial class AdsPowerAvitoAutomationService(
             // Клик «прошёл», но чат не открылся: частый признак капча-модалки, перехватившей
             // указатель поверх списка. Форсируем немедленную проверку и, если нужно,
             // дожидаемся восстановления до повторного клика.
-            orchestrator.ReportSuspicion();
-            await orchestrator.WaitReadyAsync(cancellationToken).ConfigureAwait(false);
+            await orchestrator.CheckNowAsync(expectedRecoveryGeneration, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         // Pointer/CDP mouse returns true as soon as the event is dispatched. Overlays, wander
@@ -4196,18 +4300,38 @@ public sealed partial class AdsPowerAvitoAutomationService(
         {
             try
             {
-                await EvaluateWithRetryAsync<string>(
-                        page,
-                        AvitoCandidatesPageScripts.BuildDismissCandidateDetailPanelScript(),
+                await RunSessionStepAsync(
+                        orchestrator,
+                        expectedRecoveryGeneration,
+                        ct => EvaluateWithRetryAsync<string>(
+                            page,
+                            AvitoCandidatesPageScripts.BuildDismissCandidateDetailPanelScript(),
+                            ct),
                         cancellationToken)
                     .ConfigureAwait(false);
+            }
+            catch (AvitoSessionRestartRequiredException)
+            {
+                throw;
+            }
+            catch (TimeoutException)
+            {
+                throw;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
             }
             catch
             {
                 // Best-effort: popup/panel over the chat button.
             }
 
-            var retry = await TryClickCandidateChatByDomAsync(page, candidateIndex, cancellationToken)
+            var retry = await RunSessionStepAsync(
+                    orchestrator,
+                    expectedRecoveryGeneration,
+                    ct => TryClickCandidateChatByDomAsync(page, candidateIndex, ct),
+                    cancellationToken)
                 .ConfigureAwait(false);
             if (retry.Ok)
             {
@@ -4220,25 +4344,46 @@ public sealed partial class AdsPowerAvitoAutomationService(
             {
                 // Повторный клик тоже не открыл чат — ещё одна точка проверки препятствия:
                 // после восстановления вкладка могла перезагрузиться, DOM-ссылки устарели.
-                orchestrator.ReportSuspicion();
-                await orchestrator.WaitReadyAsync(cancellationToken).ConfigureAwait(false);
+                await orchestrator.CheckNowAsync(expectedRecoveryGeneration, cancellationToken)
+                    .ConfigureAwait(false);
             }
         }
 
         string? channelUrl = null;
         try
         {
-            channelUrl = await page.EvaluateExpressionAsync<string>(
-                    AvitoCandidatesPageScripts.BuildResolveMessengerChannelUrlExpression())
+            channelUrl = await RunSessionStepAsync(
+                    orchestrator,
+                    expectedRecoveryGeneration,
+                    _ => page.EvaluateExpressionAsync<string>(
+                        AvitoCandidatesPageScripts.BuildResolveMessengerChannelUrlExpression()),
+                    cancellationToken)
                 .ConfigureAwait(false);
             channelUrl = string.IsNullOrWhiteSpace(channelUrl) ? null : channelUrl.Trim();
+        }
+        catch (AvitoSessionRestartRequiredException)
+        {
+            throw;
+        }
+        catch (TimeoutException)
+        {
+            throw;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch
         {
             // Ссылка канала может появиться позже, чем список сообщений.
         }
 
-        var collection = await CollectMiniMessengerMessagesAsync(page, cancellationToken).ConfigureAwait(false);
+        var collection = await CollectMiniMessengerMessagesAsync(
+                page,
+                cancellationToken,
+                orchestrator,
+                expectedRecoveryGeneration)
+            .ConfigureAwait(false);
         var chatMessages = collection.Messages;
         autoReply ??= new AvitoMessengerAutoReplySettings();
         var parsedChat = ParseMiniMessengerMessages(chatMessages);
@@ -4263,7 +4408,11 @@ public sealed partial class AdsPowerAvitoAutomationService(
                     continue;
                 }
 
-                if (await TrySendMiniMessengerTextAsync(page, item.Text, "manager-outbound", cancellationToken)
+                if (await RunSessionStepAsync(
+                            orchestrator,
+                            expectedRecoveryGeneration,
+                            ct => TrySendMiniMessengerTextAsync(page, item.Text, "manager-outbound", ct),
+                            cancellationToken)
                         .ConfigureAwait(false))
                 {
                     acked.Add(item.Id);
@@ -4291,7 +4440,12 @@ public sealed partial class AdsPowerAvitoAutomationService(
 
             if (acked.Count > 0)
             {
-                collection = await CollectMiniMessengerMessagesAsync(page, cancellationToken).ConfigureAwait(false);
+                collection = await CollectMiniMessengerMessagesAsync(
+                        page,
+                        cancellationToken,
+                        orchestrator,
+                        expectedRecoveryGeneration)
+                    .ConfigureAwait(false);
                 chatMessages = collection.Messages;
             }
         }
@@ -4303,11 +4457,20 @@ public sealed partial class AdsPowerAvitoAutomationService(
                      parsedChat,
                      autoReply.Message))
         {
-            if (await TrySendMiniMessengerTextAsync(page, autoReply.Message, "auto-reply", cancellationToken)
+            if (await RunSessionStepAsync(
+                        orchestrator,
+                        expectedRecoveryGeneration,
+                        ct => TrySendMiniMessengerTextAsync(page, autoReply.Message, "auto-reply", ct),
+                        cancellationToken)
                     .ConfigureAwait(false))
             {
                 autoReplySent = true;
-                collection = await CollectMiniMessengerMessagesAsync(page, cancellationToken).ConfigureAwait(false);
+                collection = await CollectMiniMessengerMessagesAsync(
+                        page,
+                        cancellationToken,
+                        orchestrator,
+                        expectedRecoveryGeneration)
+                    .ConfigureAwait(false);
                 chatMessages = collection.Messages;
             }
         }
@@ -4332,10 +4495,26 @@ public sealed partial class AdsPowerAvitoAutomationService(
         {
             try
             {
-                channelUrl = await page.EvaluateExpressionAsync<string>(
-                        AvitoCandidatesPageScripts.BuildResolveMessengerChannelUrlExpression())
+                channelUrl = await RunSessionStepAsync(
+                        orchestrator,
+                        expectedRecoveryGeneration,
+                        _ => page.EvaluateExpressionAsync<string>(
+                            AvitoCandidatesPageScripts.BuildResolveMessengerChannelUrlExpression()),
+                        cancellationToken)
                     .ConfigureAwait(false);
                 channelUrl = string.IsNullOrWhiteSpace(channelUrl) ? null : channelUrl.Trim();
+            }
+            catch (AvitoSessionRestartRequiredException)
+            {
+                throw;
+            }
+            catch (TimeoutException)
+            {
+                throw;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                throw;
             }
             catch
             {
@@ -4345,7 +4524,11 @@ public sealed partial class AdsPowerAvitoAutomationService(
 
         if (!AvitoCandidatesPageUrls.IsCandidatesResponsesUrl(page.Url))
         {
-            await ReturnToCandidatesPageAfterMessengerAsync(page, candidatesReturnUrl, cancellationToken)
+            await RunSessionStepAsync(
+                    orchestrator,
+                    expectedRecoveryGeneration,
+                    ct => ReturnToCandidatesPageAfterMessengerAsync(page, candidatesReturnUrl, ct),
+                    cancellationToken)
                 .ConfigureAwait(false);
         }
 
@@ -4475,7 +4658,9 @@ public sealed partial class AdsPowerAvitoAutomationService(
 
     private async Task<MiniMessengerCollectionResult> CollectMiniMessengerMessagesAsync(
         IPage page,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        AvitoSessionOrchestrator? orchestrator = null,
+        long expectedRecoveryGeneration = 0)
     {
         var waitConfirmed = false;
         try
@@ -4496,15 +4681,29 @@ public sealed partial class AdsPowerAvitoAutomationService(
         for (var round = 0; round < 6; round++)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (orchestrator is not null)
+            {
+                await orchestrator.WaitReadyAsync(expectedRecoveryGeneration, cancellationToken)
+                    .ConfigureAwait(false);
+            }
             await HumanDelay.DelayAsync(round == 0 ? 400 : 280, round == 0 ? 900 : 650, cancellationToken)
                 .ConfigureAwait(false);
 
-            var messagesRaw = await EvaluateWithRetryAsync<string>(
-                    page,
-                    AvitoCandidatesPageScripts.BuildScrollAndCollectMiniMessengerMessagesScript(),
+            var messagesRaw = await RunSessionStepAsync(
+                    orchestrator,
+                    expectedRecoveryGeneration,
+                    async ct =>
+                    {
+                        var raw = await EvaluateWithRetryAsync<string>(
+                                page,
+                                AvitoCandidatesPageScripts.BuildScrollAndCollectMiniMessengerMessagesScript(),
+                                ct)
+                            .ConfigureAwait(false);
+                        await ScrollMessengerHistoryBackWithWheelAsync(page, raw, ct).ConfigureAwait(false);
+                        return raw;
+                    },
                     cancellationToken)
                 .ConfigureAwait(false);
-            await ScrollMessengerHistoryBackWithWheelAsync(page, messagesRaw, cancellationToken).ConfigureAwait(false);
             var parsed = TryParseMiniMessengerCollectionResult(messagesRaw) with
             {
                 WaitConfirmed = waitConfirmed,
@@ -4759,17 +4958,27 @@ public sealed partial class AdsPowerAvitoAutomationService(
     }
 
     /// <summary>Trusted-мост для preparer: CDP-клики, закрытие popup, колесо мыши.</summary>
-    private static CandidatesPageActors BuildCandidatesPageActors(IPage page) =>
+    private static CandidatesPageActors BuildCandidatesPageActors(
+        IPage page,
+        AvitoSessionOrchestrator? orchestrator = null,
+        long expectedRecoveryGeneration = 0) =>
         new(
-            PointerClickItemChildAsync: (index, childSelector, ct) =>
-                AvitoHumanPointer.TryClickItemChildAsync(
-                    page,
-                    CandidatesPageActors.ItemsSelector,
-                    index,
-                    childSelector,
-                    ct),
-            CloseContactsPopupAsync: ct => AvitoHumanPointer.TryCloseContactsPopupAsync(page, ct),
-            WheelScrollAsync: (deltaPx, ct) => AvitoHumanWheel.ScrollAsync(page, deltaPx, ct));
+            PointerClickItemChildAsync: (index, childSelector, ct) => RunSessionStepAsync(
+                orchestrator,
+                expectedRecoveryGeneration,
+                token => AvitoHumanPointer.TryClickItemChildAsync(
+                    page, CandidatesPageActors.ItemsSelector, index, childSelector, token),
+                ct),
+            CloseContactsPopupAsync: ct => RunSessionStepAsync(
+                orchestrator,
+                expectedRecoveryGeneration,
+                token => AvitoHumanPointer.TryCloseContactsPopupAsync(page, token),
+                ct),
+            WheelScrollAsync: (deltaPx, ct) => RunSessionStepAsync(
+                orchestrator,
+                expectedRecoveryGeneration,
+                token => AvitoHumanWheel.ScrollAsync(page, deltaPx, token),
+                ct));
 
     private static async Task<bool> TryClickCandidateItemWithPointerAsync(
         IPage page,
