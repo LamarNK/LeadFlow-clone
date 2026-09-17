@@ -1,6 +1,7 @@
 using LeadFlow.Core.Services;
 using LeadFlow.Core.Services.Worker;
 using Microsoft.Extensions.Hosting;
+using Orbita.Contracts;
 
 namespace Orbita.Worker.Services;
 
@@ -11,6 +12,11 @@ public sealed class WorkerAvitoAdsMonitorHost(
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        if (!OrbitaFeatureToggles.ListingsEnabled)
+        {
+            return;
+        }
+
         while (!stoppingToken.IsCancellationRequested)
         {
             try

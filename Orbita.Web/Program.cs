@@ -82,7 +82,12 @@ builder.Services.AddAuthorization(options =>
     {
         options.AddPolicy(permission.Id, policy =>
         {
-            if (permission.Id is PanelPermissions.Balances or PanelPermissions.Listings)
+            if (permission.Id is PanelPermissions.Balances && !OrbitaFeatureToggles.BalancesEnabled
+                || permission.Id is PanelPermissions.Listings && !OrbitaFeatureToggles.ListingsEnabled)
+            {
+                policy.RequireAssertion(_ => false);
+            }
+            else if (permission.Id is PanelPermissions.Balances or PanelPermissions.Listings)
             {
                 policy.RequireRole(PanelRoles.Admin, PanelRoles.Operator);
             }

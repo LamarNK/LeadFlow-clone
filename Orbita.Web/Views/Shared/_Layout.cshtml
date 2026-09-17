@@ -116,8 +116,8 @@ else
                 var canDashboard = can(PanelPermissions.Dashboard);
                 var canWorkers = can(PanelPermissions.Workers);
                 var canAccounts = can(PanelPermissions.Accounts);
-                var canBalances = User.IsInRole(PanelRoles.Admin) || User.IsInRole(PanelRoles.Operator);
-                var canListings = User.IsInRole(PanelRoles.Admin) || User.IsInRole(PanelRoles.Operator);
+                var canBalances = OrbitaFeatureToggles.BalancesEnabled && (User.IsInRole(PanelRoles.Admin) || User.IsInRole(PanelRoles.Operator));
+                var canListings = OrbitaFeatureToggles.ListingsEnabled && (User.IsInRole(PanelRoles.Admin) || User.IsInRole(PanelRoles.Operator));
                 var canStatistics = can(PanelPermissions.Statistics);
                 var canResponses = can(PanelPermissions.Responses);
                 var canCrmBoard = can(PanelPermissions.CrmBoard);
