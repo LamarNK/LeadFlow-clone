@@ -1664,6 +1664,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
 
         var deadline = DateTime.UtcNow + CdpSwitchEffectTimeout;
         AvitoSubProfileSwitchSnapshot after = before;
+        var targetWasCurrentBeforeDismissal = false;
         while (DateTime.UtcNow < deadline)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -1675,10 +1676,13 @@ public sealed partial class AdsPowerAvitoAutomationService(
 
             if (AvitoSubProfileSwitchEffect.TargetBecameCurrent(after, subProfileId) && after.ModalOpen)
             {
+                targetWasCurrentBeforeDismissal = true;
                 await DismissProfileSwitchModalAsync(page, cancellationToken, runtimeProvider).ConfigureAwait(false);
                 after = await ProbeSwitchSnapshotAsync(page, subProfileId, cancellationToken).ConfigureAwait(false);
-                if (AvitoSubProfileSwitchEffect.IsSuccessfulSwitch(after, subProfileId)
-                    || AvitoSubProfileSwitchEffect.TargetBecameCurrent(after, subProfileId))
+                if (AvitoSubProfileSwitchEffect.IsSuccessfulSwitchAfterModalDismissal(
+                        after,
+                        subProfileId,
+                        targetWasCurrentBeforeDismissal))
                 {
                     break;
                 }
@@ -1690,12 +1694,17 @@ public sealed partial class AdsPowerAvitoAutomationService(
         if (!AvitoSubProfileSwitchEffect.IsSuccessfulSwitch(after, subProfileId)
             && AvitoSubProfileSwitchEffect.TargetBecameCurrent(after, subProfileId))
         {
+            targetWasCurrentBeforeDismissal = true;
             await DismissProfileSwitchModalAsync(page, cancellationToken, runtimeProvider).ConfigureAwait(false);
             after = await ProbeSwitchSnapshotAsync(page, subProfileId, cancellationToken).ConfigureAwait(false);
         }
 
-        if (!AvitoSubProfileSwitchEffect.IsSuccessfulSwitch(after, subProfileId)
-            && !AvitoSubProfileSwitchEffect.TargetBecameCurrent(after, subProfileId))
+        var switchSucceeded = AvitoSubProfileSwitchEffect.IsSuccessfulSwitch(after, subProfileId)
+            || AvitoSubProfileSwitchEffect.IsSuccessfulSwitchAfterModalDismissal(
+                after,
+                subProfileId,
+                targetWasCurrentBeforeDismissal);
+        if (!switchSucceeded)
         {
             if (AvitoSubProfileSwitchEffect.ClickReportedSuccessWithoutDomChange(
                     before, after, subProfileId, pointerClick || domClick))

@@ -93,6 +93,31 @@ public sealed class AvitoSubProfileSwitchEffectTests
     }
 
     [Fact]
+    public void SuccessfulSwitchAfterModalDismissal_PreservesTargetConfirmedBeforeCardsDisappear()
+    {
+        var afterDismissal = new AvitoSubProfileSwitchSnapshot(
+            ModalOpen: false,
+            CardsCount: 0,
+            TargetCardFound: false,
+            CurrentSubProfileId: null,
+            CurrentSubProfileName: null,
+            Url: "https://www.avito.ru/profile/dashboard");
+
+        Assert.True(AvitoSubProfileSwitchEffect.IsSuccessfulSwitchAfterModalDismissal(
+            afterDismissal,
+            "222",
+            targetWasCurrentBeforeDismissal: true));
+        Assert.False(AvitoSubProfileSwitchEffect.IsSuccessfulSwitchAfterModalDismissal(
+            afterDismissal,
+            "222",
+            targetWasCurrentBeforeDismissal: false));
+        Assert.False(AvitoSubProfileSwitchEffect.IsSuccessfulSwitchAfterModalDismissal(
+            afterDismissal with { CurrentSubProfileId = "111" },
+            "222",
+            targetWasCurrentBeforeDismissal: true));
+    }
+
+    [Fact]
     public void ModalClosedPredicate_DoesNotUseRoleDialogOr()
     {
         var js = AvitoSubProfileSwitchEffect.BuildModalClosedPredicateJs();

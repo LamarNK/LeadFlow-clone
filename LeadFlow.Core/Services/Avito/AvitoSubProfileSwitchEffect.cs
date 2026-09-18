@@ -52,6 +52,20 @@ public static class AvitoSubProfileSwitchEffect
     public static bool IsSuccessfulSwitch(AvitoSubProfileSwitchSnapshot after, string targetId) =>
         IdsEqual(after.CurrentSubProfileId, targetId) && !after.ModalOpen;
 
+    /// <summary>
+    /// После закрытия модалки карточки удаляются из DOM, поэтому current id в новом snapshot
+    /// может исчезнуть. Сохраняем подтверждение target, полученное до закрытия, и требуем,
+    /// чтобы сам корень модалки действительно исчез.
+    /// </summary>
+    public static bool IsSuccessfulSwitchAfterModalDismissal(
+        AvitoSubProfileSwitchSnapshot after,
+        string targetId,
+        bool targetWasCurrentBeforeDismissal) =>
+        !after.ModalOpen
+        && (IdsEqual(after.CurrentSubProfileId, targetId)
+            || (targetWasCurrentBeforeDismissal
+                && string.IsNullOrWhiteSpace(after.CurrentSubProfileId)));
+
     public static bool TargetBecameCurrent(AvitoSubProfileSwitchSnapshot after, string targetId) =>
         IdsEqual(after.CurrentSubProfileId, targetId);
 
