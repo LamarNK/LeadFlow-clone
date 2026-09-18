@@ -43,6 +43,35 @@ public static class AvitoCandidatesPageScripts
 
         const normalizePhoneText = (text) => (text ?? "").replace(/\s+/g, " ").trim();
 
+        const contactVisible = (element) => !!element && element.getClientRects().length > 0
+            && getComputedStyle(element).visibility !== "hidden";
+        const candidateName = (item) => normalizePhoneText(item?.querySelector("h3,h4")?.textContent).toLowerCase();
+        const candidateIdentity = (item) => JSON.stringify([
+            candidateName(item),
+            ...Array.from(item?.querySelectorAll("a[href]") ?? []).map(a => a.getAttribute("href")),
+            ...Array.from(item?.querySelectorAll("p") ?? []).map(p => normalizePhoneText(p.textContent))
+        ]);
+        const contactPopups = () => Array.from(document.querySelectorAll(
+            "[data-marker='job-application/response/contacts-popup/popup']"))
+            .filter(contactVisible)
+            .filter(element => !element.parentElement?.closest("[data-marker='job-application/response/contacts-popup/popup']"));
+        const rememberPhoneTarget = (item, index) => {
+            lfState().phoneTarget = { item, index, identity: candidateIdentity(item), name: candidateName(item),
+                oldPopups: new Set(contactPopups()) };
+        };
+        const currentPhoneTarget = (index) => {
+            const target = lfState().phoneTarget;
+            const item = document.querySelectorAll("[data-marker='job-application/item']")[index];
+            return target && target.index === index && target.item === item && target.name
+                && target.identity === candidateIdentity(item) ? target : null;
+        };
+        const cacheTargetPhone = (index, phone) => {
+            const target = currentPhoneTarget(index);
+            if (!target) return false;
+            initRevealedPhonesStore()[String(index)] = { item: target.item, identity: target.identity, phone };
+            return true;
+        };
+
         const isRevealedPhoneText = (raw) => {
             const text = normalizePhoneText(raw);
             if (!text || /\*/.test(text)) {
@@ -50,7 +79,7 @@ public static class AvitoCandidatesPageScripts
             }
 
             const digits = text.replace(/\D/g, "");
-            return digits.length >= 10;
+            return /^\+?[\d\s().-]+$/.test(text) && digits.length >= 10 && digits.length <= 15;
         };
 
         const getCachedPhone = (index) => {
@@ -59,7 +88,10 @@ public static class AvitoCandidatesPageScripts
                 return "";
             }
 
-            return normalizePhoneText(store[String(index)] ?? store[index] ?? "");
+            const cached = store[String(index)];
+            const item = document.querySelectorAll("[data-marker='job-application/item']")[index];
+            return cached && cached.item === item && cached.identity === candidateIdentity(item)
+                ? normalizePhoneText(cached.phone) : "";
         };
 
         const clearCachedPhone = (index) => {
@@ -236,8 +268,7 @@ public static class AvitoCandidatesPageScripts
             return !isRevealedPhoneText(readItemPhone(item, index));
         };
 
-        const readContactsPopupPhone = () => {
-            const popup = document.querySelector("[data-marker='job-application/response/contacts-popup/popup']");
+        const readContactsPopupPhone = (popup = null) => {
             if (!popup) {
                 return "";
             }
@@ -252,7 +283,7 @@ public static class AvitoCandidatesPageScripts
                 while (section && section !== popup) {
                     for (const h3 of section.querySelectorAll("h3")) {
                         const text = normalizePhoneText(h3.textContent ?? "");
-                        if (isRevealedPhoneText(text)) {
+                        if (contactVisible(h3) && isRevealedPhoneText(text)) {
                             return text;
                         }
                     }
@@ -263,7 +294,7 @@ public static class AvitoCandidatesPageScripts
 
             for (const h3 of popup.querySelectorAll("h3")) {
                 const text = normalizePhoneText(h3.textContent ?? "");
-                if (isRevealedPhoneText(text)) {
+                if (contactVisible(h3) && isRevealedPhoneText(text)) {
                     return text;
                 }
             }
@@ -272,13 +303,11 @@ public static class AvitoCandidatesPageScripts
         };
 
         const hasContactsPopupLoadError = () => {
-            const popup = document.querySelector("[data-marker='job-application/response/contacts-popup/popup']");
-            const scope = popup ?? document;
-            return /не\s+удалось\s+загрузить\s+контактные\s+данные/i.test(scope.textContent ?? "");
+            return contactPopups().some(popup => /не\s+удалось\s+загрузить\s+контактные\s+данные/i.test(popup.textContent ?? ""));
         };
 
         const isContactsPopupOpen = () =>
-            !!document.querySelector("[data-marker='job-application/response/contacts-popup/popup']")
+            contactPopups().length > 0
             || hasContactsPopupLoadError();
 
         const humanClick = (element) => {
@@ -332,7 +361,7 @@ public static class AvitoCandidatesPageScripts
         };
 
         const closeContactsPopup = () => {
-            const closeBtn = document.querySelector("[data-marker='job-application/response/contacts-popup/close']");
+            const closeBtn = Array.from(document.querySelectorAll("[data-marker='job-application/response/contacts-popup/close']")).find(contactVisible);
             if (closeBtn && humanClick(closeBtn)) {
                 return true;
             }
@@ -348,9 +377,8 @@ public static class AvitoCandidatesPageScripts
 
         const clickPhoneRevealTarget = (item) => {
             const callBtn = item.querySelector("[data-marker='job-application/call-button']");
-            if (callBtn) {
-                humanClick(callBtn);
-                return { clicked: true, kind: "call-button" };
+            if (contactVisible(callBtn)) {
+                return { clicked: humanClick(callBtn), kind: "call-button" };
             }
 
             const phoneBtn = item.querySelector("[data-marker='job-application/phone']");
@@ -364,8 +392,14 @@ public static class AvitoCandidatesPageScripts
             return { clicked: false, kind: "none" };
         };
 
-        const snapshotContactsPopupState = () => {
-            if (hasContactsPopupLoadError()) {
+        const snapshotContactsPopupState = (index) => {
+            const target = currentPhoneTarget(index);
+            if (!target) return { state: "target_changed", phone: "" };
+            const popups = contactPopups().filter(popup => !target.oldPopups.has(popup));
+            const popup = popups.find(popup =>
+                normalizePhoneText(popup.querySelector("h1,h2")?.textContent).toLowerCase() === target.name);
+            if (!popup) return { state: popups.length ? "name_mismatch" : "closed", phone: "" };
+            if (/не\s+удалось\s+загрузить\s+контактные\s+данные/i.test(popup.textContent ?? "")) {
                 return { state: "error", phone: "" };
             }
 
@@ -373,7 +407,7 @@ public static class AvitoCandidatesPageScripts
                 return { state: "closed", phone: "" };
             }
 
-            const phone = readContactsPopupPhone();
+            const phone = readContactsPopupPhone(popup);
             if (phone) {
                 return { state: "ready", phone };
             }
@@ -1012,13 +1046,15 @@ public static class AvitoCandidatesPageScripts
             }
 
             let withPhone = 0;
+            let excluded = 0;
             let masked = 0;
             let failed = 0;
             let priorityPending = 0;
             for (let index = 0; index < items.length; index++) {
                 const item = items[index];
                 if (!needsPhoneReveal(item, index)) {
-                    withPhone++;
+                    if (isRevealedPhoneText(readItemPhone(item, index))) withPhone++;
+                    else excluded++;
                     continue;
                 }
 
@@ -1033,13 +1069,14 @@ public static class AvitoCandidatesPageScripts
                 }
             }
 
-            const ratio = withPhone / items.length;
+            const ratio = (withPhone + excluded) / items.length;
             return JSON.stringify({
                 // General readiness must never leave an active phone-watch unopened.
                 ready: priorityPending === 0
-                    && (ratio >= 0.92 || (items.length <= 3 && withPhone === items.length)),
+                    && (ratio >= 0.92 || (items.length <= 3 && withPhone + excluded === items.length)),
                 items: items.length,
                 withPhone,
+                excluded,
                 masked,
                 failed,
                 priorityPending
@@ -1055,6 +1092,7 @@ public static class AvitoCandidatesPageScripts
         {{StateStoreHelpersJs}}
             const state = lfState();
             state.revealedPhones = {};
+            state.phoneTarget = null;
             state.skipPhoneReveal = {};
             state.failedPhoneReveal = {};
             state.phoneWatchPriority = {};
@@ -1175,6 +1213,17 @@ public static class AvitoCandidatesPageScripts
             } catch (error) {
                 return JSON.stringify({ ok: false, reason: String(error), index: idx, items: items.length });
             }
+        })();
+        """;
+
+    public static string BuildRememberCandidateTargetScript(int index) =>
+        $$"""
+        (() => {
+        {{ContactsPhoneHelpersJs}}
+            const item = document.querySelectorAll("[data-marker='job-application/item']")[{{index}}];
+            if (!item) return JSON.stringify({ ok: false });
+            rememberPhoneTarget(item, {{index}});
+            return JSON.stringify({ ok: true });
         })();
         """;
 
@@ -1305,20 +1354,25 @@ public static class AvitoCandidatesPageScripts
                 return t;
             };
 
-            const popupPhone = readContactsPopupPhone();
-            const phoneEl =
-                document.querySelector("[data-marker='job-application/phone']") ??
-                document.querySelector("[data-marker='job-application/call-button']");
+        {{CandidatePanelRootJs}}
+            const target = currentPhoneTarget(lfState().phoneTarget?.index);
+            const phoneEl = findVerifiedPanelButton(target);
+            if (!phoneEl) {
+                return JSON.stringify({ phoneDigits: "", phone: "", vacancyUrl: "", vacancy: "", city: "", age: "", hasPanel: false });
+            }
+            const popupPhone = snapshotContactsPopupState(target.index).phone;
             const inlinePhone = normalize(phoneEl?.textContent ?? "");
             const phone = isRevealedPhoneText(popupPhone)
                 ? popupPhone
                 : (isRevealedPhoneText(inlinePhone) ? inlinePhone : "");
             const phoneDigits = phone.replace(/\D/g, "");
 
-            const responseRoot =
-                phoneEl?.closest?.("[class*='styles-module-response']") ??
-                document.querySelector("[class*='styles-module-response']");
-            const searchRoot = responseRoot ?? document;
+            let responseRoot = phoneEl.parentElement;
+            while (responseRoot.parentElement && responseRoot.parentElement !== document.body
+                && !responseRoot.parentElement.querySelector("[data-marker='job-application/item']")) {
+                responseRoot = responseRoot.parentElement;
+            }
+            const searchRoot = responseRoot;
 
             let vacancyUrl = "";
             for (const paragraph of searchRoot.querySelectorAll("p")) {
@@ -1350,6 +1404,7 @@ public static class AvitoCandidatesPageScripts
             return JSON.stringify({
                 phoneDigits,
                 phone,
+                candidateIdentity: target.identity,
                 vacancyUrl,
                 vacancy,
                 city,
@@ -1382,9 +1437,12 @@ public static class AvitoCandidatesPageScripts
         {{ContactsPhoneHelpersJs}}
             const normalize = (text) => (text ?? "").replace(/\s+/g, " ").trim();
             const items = Array.from(document.querySelectorAll("[data-marker='job-application/item']"));
+            // На проверенном подробном UI панель открывает сама role=button
+            // карточка. У обычного списка и у анкеты чат-бота такой семантики нет.
+            const supportsPanel = item => item.getAttribute("role") === "button";
             let pending = 0;
             for (let index = 0; index < items.length; index++) {
-                if (!hasFailedPhoneReveal(index) && needsPhoneReveal(items[index], index)) {
+                if (supportsPanel(items[index]) && !hasFailedPhoneReveal(index) && needsPhoneReveal(items[index], index)) {
                     pending++;
                 }
             }
@@ -1395,11 +1453,12 @@ public static class AvitoCandidatesPageScripts
                     continue;
                 }
 
-                if (!needsPhoneReveal(items[index], index)) {
+                if (!supportsPanel(items[index]) || !needsPhoneReveal(items[index], index)) {
                     continue;
                 }
 
                 const targetName = normalize(items[index].querySelector("h3, h4")?.textContent ?? "");
+                rememberPhoneTarget(items[index], index);
                 return JSON.stringify({ items: items.length, pending, targetIndex: index, targetName });
             }
 
@@ -1408,118 +1467,83 @@ public static class AvitoCandidatesPageScripts
         """;
 
     /// <summary>
-    /// Корень панели «Данные о кандидате»: диалог/drawer/aside или response-контейнер,
-    /// но НЕ карточка списка (исключаем корни внутри job-application/item и содержащие их).
+    /// Корень панели «Данные о кандидате». На CRM-страницах панель не имеет role=dialog
+    /// и постоянных классов: её надёжный признак — кнопка контактов (call-button /
+    /// «Показать номер»), расположенная ВНЕ карточек списка. Корень — ближайший предок
+    /// такой кнопки, не содержащий карточек. Дополнительно принимаем dialog/aside-корни.
     /// </summary>
     private const string CandidatePanelRootJs =
         """
-        const findCandidatePanelRoot = () => {
-            const roots = Array.from(document.querySelectorAll(
-                "[role='dialog'], aside[class*='drawer'], aside[class*='Drawer'], [class*='styles-module-response']"));
-            return roots.find((root) =>
-                !root.closest("[data-marker='job-application/item']")
-                && !root.querySelector("[data-marker='job-application/item']"))
-                ?? null;
+        const findPanelPhoneButtons = () => Array.from(document.querySelectorAll(
+            "[data-marker='job-application/call-button'], [data-marker='job-application/phone']"))
+            .filter(element => contactVisible(element)
+                && !element.closest("[data-marker='job-application/item']")
+                && !element.closest("[data-marker='job-application/response/contacts-popup/popup']"));
+
+        const findVerifiedPanelButton = (target) => {
+            if (!target) return null;
+            for (const button of findPanelPhoneButtons()) {
+                let root = button.parentElement;
+                while (root && root !== document.body && !root.querySelector("[data-marker='job-application/item']")) {
+                    if (Array.from(root.querySelectorAll("h1,h2,h3,h4,div,span,p")).some(element =>
+                        contactVisible(element) && normalizePhoneText(element.textContent).toLowerCase() === target.name)) {
+                        return button;
+                    }
+                    root = root.parentElement;
+                }
+            }
+            return null;
         };
         """;
 
-    /// <summary>
-    /// Клик «Показать номер» в открытой панели «Данные о кандидате»
-    /// (новый UX Avito: телефон карточки списка недоступен, только в панели).
-    /// </summary>
+    /// <summary>Раскрытие только в панели подтверждённой цели; один клик за попытку.</summary>
     public static string BuildRevealPanelPhoneScript() =>
         $$"""
         (() => {
         {{ContactsPhoneHelpersJs}}
         {{CandidatePanelRootJs}}
-            const normalize = (text) => (text ?? "").replace(/\s+/g, " ").trim();
-
-            const panel = findCandidatePanelRoot();
-            if (!panel) {
-                return JSON.stringify({ clicked: false, reason: "no_panel" });
-            }
-
-            const callBtn = panel.querySelector("[data-marker='job-application/call-button']");
-            if (callBtn) {
-                humanClick(callBtn);
-                return JSON.stringify({ clicked: true, kind: "call-button" });
-            }
-
-            for (const button of Array.from(panel.querySelectorAll("button, a, [role='button']"))) {
-                const text = normalize(button.textContent);
-                if (/показа(ть|ние)\s+(номер|телефон)/i.test(text)) {
-                    humanClick(button);
-                    return JSON.stringify({ clicked: true, kind: "show-phone" });
-                }
-            }
-
-            return JSON.stringify({ clicked: false, reason: "no_phone_button" });
+            const target = currentPhoneTarget(lfState().phoneTarget?.index);
+            if (!target) return JSON.stringify({ clicked: false, reason: "target_changed" });
+            const button = findVerifiedPanelButton(target);
+            if (!button) return JSON.stringify({ clicked: false, reason: "no_panel" });
+            if (isRevealedPhoneText(button.textContent)) return JSON.stringify({ clicked: false, reason: "already_revealed" });
+            if (target.panelClicked || isContactsPopupOpen()) return JSON.stringify({ clicked: false, reason: "awaiting_popup" });
+            target.oldPopups = new Set(contactPopups());
+            target.panelClicked = humanClick(button);
+            return JSON.stringify({ clicked: target.panelClicked, kind: "panel-phone-button" });
         })();
         """;
 
-    /// <summary>
-    /// Прочитать телефон из открытой панели кандидата. Номер кэшируется по индексу
-    /// карточки ТОЛЬКО при совпадении имени панели с ожидаемым (защита от устаревшей
-    /// панели чужого кандидата). При успехе сдвигает round-robin курсор.
-    /// </summary>
+    /// <summary>Панель и popup сверяются с целью клика до записи номера в кэш.</summary>
     public static string BuildCandidatePanelPhoneProbeScript(int targetIndex, string expectedNameJson) =>
         $$"""
         (() => {
         {{ContactsPhoneHelpersJs}}
         {{CandidatePanelRootJs}}
-            const normalize = (text) => (text ?? "").replace(/\s+/g, " ").trim();
-            const normalizeName = (text) => normalize(text).toLowerCase();
-            const expectedName = normalizeName({{expectedNameJson}});
-
-            const panel = findCandidatePanelRoot();
-            if (!panel) {
-                return JSON.stringify({ panelOpen: false, nameMatch: false, phone: "", revealed: false });
+            const expectedName = normalizePhoneText({{expectedNameJson}}).toLowerCase();
+            const target = currentPhoneTarget({{targetIndex}});
+            if (!target || target.name !== expectedName) {
+                return JSON.stringify({ panelOpen: false, nameMatch: false, phone: "", revealed: false, reason: "target_changed" });
             }
-
-            let panelName = "";
-            for (const heading of Array.from(panel.querySelectorAll("h2, h3, h4"))) {
-                const text = normalize(heading.textContent);
-                if (text) {
-                    panelName = text;
-                    break;
-                }
+            const button = findVerifiedPanelButton(target);
+            if (!button) {
+                return JSON.stringify({ panelOpen: findPanelPhoneButtons().length > 0, nameMatch: false, phone: "", revealed: false, reason: "no_panel" });
             }
-
-            const normalizedPanelName = normalizeName(panelName);
-            const nameMatch = !!expectedName
-                && !!normalizedPanelName
-                && (normalizedPanelName.includes(expectedName) || expectedName.includes(normalizedPanelName));
-            if (!nameMatch) {
-                return JSON.stringify({ panelOpen: true, nameMatch: false, phone: "", revealed: false, panelName });
-            }
-
-            const candidates = [
-                panel.querySelector("[data-marker='job-application/phone']"),
-                panel.querySelector("[data-marker='job-application/call-button']"),
-                ...Array.from(panel.querySelectorAll("h3, h4, [class*='phone'], a[href^='tel:']"))
-            ];
-
-            let phone = readContactsPopupPhone();
+            let phone = normalizePhoneText(button.textContent);
             if (!isRevealedPhoneText(phone)) {
-                for (const element of candidates) {
-                    const text = normalize(element?.textContent ?? "");
-                    if (isRevealedPhoneText(text)) {
-                        phone = text;
-                        break;
-                    }
+                // В реальном Avito кнопка панели открывает тот же contacts-popup,
+                // что и кнопка строки. Читать его можно лишь после собственного клика.
+                const snap = target.panelClicked ? snapshotContactsPopupState({{targetIndex}}) : { state: "closed", phone: "" };
+                phone = snap.state === "ready" ? snap.phone : "";
+                if (snap.state === "error" || snap.state === "name_mismatch") {
+                    return JSON.stringify({ panelOpen: true, nameMatch: true, phone: "", revealed: false, reason: snap.state });
                 }
             }
-
-            if (isRevealedPhoneText(phone)) {
-                const store = initRevealedPhonesStore();
-                if ({{targetIndex}} >= 0) {
-                    store[String({{targetIndex}})] = phone;
-                }
-
-                advanceRevealCursor();
+            if (isRevealedPhoneText(phone) && cacheTargetPhone({{targetIndex}}, phone)) {
+                if (!target.completed) advanceRevealCursor();
+                target.completed = true;
                 return JSON.stringify({ panelOpen: true, nameMatch: true, phone, revealed: true });
             }
-
             return JSON.stringify({ panelOpen: true, nameMatch: true, phone: "", revealed: false });
         })();
         """;
@@ -2534,10 +2558,12 @@ public static class AvitoCandidatesPageScripts
                 }
 
                 if (item.querySelector("[data-marker='job-application/call-button']")) {
+                    rememberPhoneTarget(item, index);
                     return JSON.stringify({ items: items.length, pending, targetIndex: index, kind: "call-button" });
                 }
 
                 if (/\*/.test(item.querySelector("[data-marker='job-application/phone']")?.textContent ?? "")) {
+                    rememberPhoneTarget(item, index);
                     return JSON.stringify({ items: items.length, pending, targetIndex: index, kind: "masked-phone" });
                 }
             }
@@ -2618,6 +2644,7 @@ public static class AvitoCandidatesPageScripts
                 });
             }
 
+            rememberPhoneTarget(targetItem, targetIndex);
             const clickResult = clickPhoneRevealTarget(targetItem);
             return JSON.stringify({
                 items: items.length,
@@ -2636,16 +2663,15 @@ public static class AvitoCandidatesPageScripts
         (() => {
         {{ContactsPhoneHelpersJs}}
             const index = {{targetIndex}};
-            const snap = snapshotContactsPopupState();
+            const snap = snapshotContactsPopupState(index);
             if (snap.state === "ready" && snap.phone) {
-                const store = initRevealedPhonesStore();
-                if (index >= 0) {
-                    store[String(index)] = snap.phone;
-                }
+                cacheTargetPhone(index, snap.phone);
 
                 // Раскрытый номер больше не цель: сдвигаем round-robin курсор,
                 // чтобы следующий выбор начинался глубже списка.
-                advanceRevealCursor();
+                const target = currentPhoneTarget(index);
+                if (!target.completed) advanceRevealCursor();
+                target.completed = true;
 
                 if ({{(closeOnReady ? "true" : "false")}}) {
                     closeContactsPopup();
@@ -2805,7 +2831,8 @@ public static class AvitoCandidatesPageScripts
 
                 const name = getNameNode(root);
                 const phone = getPhoneNode(root);
-                if (!name || !phone) {
+                const index = Array.from(document.querySelectorAll("[data-marker='job-application/item']")).indexOf(root);
+                if (!name || (!phone && !isRevealedPhoneText(getCachedPhone(index)))) {
                     return;
                 }
 
@@ -2814,7 +2841,9 @@ public static class AvitoCandidatesPageScripts
             };
 
             for (const button of statusButtons) {
-                const root = button.closest?.("[data-marker='job-application/item']") ?? findCardRoot(button);
+                // При наличии списка панели не являются дополнительными откликами.
+                const root = button.closest?.("[data-marker='job-application/item']")
+                    ?? (itemCount === 0 ? findCardRoot(button) : null);
                 addRoot(root);
             }
 
@@ -3150,7 +3179,7 @@ public static class AvitoCandidatesPageScripts
                 const enriched = enrichmentState
                     ? (enrichmentState[phoneKey] ?? enrichmentState[String(rootIndex)])
                     : null;
-                if (enriched) {
+                if (enriched && enriched.candidateIdentity === candidateIdentity(root)) {
                     if (enriched.vacancyUrl) {
                         vacancyUrl = enriched.vacancyUrl;
                     }

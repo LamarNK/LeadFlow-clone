@@ -140,38 +140,18 @@ public sealed class CandidatesListPrepareResultTests
     }
 
     [Fact]
-    public void PanelPhoneRevealScript_ClicksShowPhoneInPanel()
+    public void PanelPhoneRevealScript_ClicksPanelButtonOutsideList()
     {
         var script = AvitoCandidatesPageScripts.BuildRevealPanelPhoneScript();
 
-        Assert.Contains("job-application/call-button", script);
-        Assert.Contains("показа(ть|ние)\\s+(номер|телефон)", script);
-        Assert.Contains("humanClick", script);
+        Assert.Contains("findPanelPhoneButtons", script);
+        Assert.Contains("!element.closest(\"[data-marker='job-application/item']\")", script);
+        Assert.Contains("humanClick(button)", script);
+        Assert.Contains("already_revealed", script);
     }
 
-    [Fact]
-    public void PanelPhoneProbeScript_VerifiesNameBeforeCaching()
-    {
-        var script = AvitoCandidatesPageScripts.BuildCandidatePanelPhoneProbeScript(
-            5,
-            System.Text.Json.JsonSerializer.Serialize("Швагерус Владимир Александрович"));
-
-        Assert.Contains("nameMatch", script);
-        // Имя передаётся JSON-литералом (кириллица экранируется как \uXXXX).
-        Assert.Contains("const expectedName", script);
-        Assert.Contains("\\u0428\\u0432", script);
-        // Кэш и курсор — только после сверки имени.
-        Assert.Contains("if (!nameMatch)", script);
-        Assert.Contains("advanceRevealCursor()", script);
-        Assert.Contains("readContactsPopupPhone()", script);
-    }
-
-    [Fact]
-    public void PanelPhoneScripts_ExcludeListCardsFromPanelRoot()
-    {
-        Assert.Contains("!root.closest(\"[data-marker='job-application/item']\")", AvitoCandidatesPageScripts.BuildRevealPanelPhoneScript());
-        Assert.Contains("!root.querySelector(\"[data-marker='job-application/item']\")", AvitoCandidatesPageScripts.BuildCandidatePanelPhoneProbeScript(1, "\"X\""));
-    }
+    // Phone ownership, hidden panels and reordered cards are covered by
+    // AvitoPhoneOwnershipBrowserTests executing the production JS.
 
     [Fact]
     public void ClickItemButtonByMarkerScript_TargetsEnrichmentResultsButton()

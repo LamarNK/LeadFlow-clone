@@ -199,7 +199,8 @@ public static class AvitoCandidatesListPreparer
         var phoneClicksTotal = 0;
         var phoneRevealSuccesses = 0;
         var phoneRevealFailures = 0;
-        var phoneRevealEffectiveBudget = 0;
+        var phoneTargetChanges = 0;
+        var phonePopupNameMismatches = 0;
         var panelPhoneClicks = 0;
         var panelPhoneSuccesses = 0;
         var panelPhoneFailures = 0;
@@ -300,6 +301,10 @@ public static class AvitoCandidatesListPreparer
             }
         }
 
+        var budgetController = new PhoneRevealBudgetController(phoneRevealBudget, passRevealCeiling);
+        var phoneRevealUnitsSpent = 0;
+        int LocalBudgetSpent() => passBudget is null ? phoneClicksTotal : phoneRevealUnitsSpent;
+
         async Task RunPhoneRevealAsync()
         {
             var phoneRevealSw = Stopwatch.StartNew();
@@ -311,15 +316,12 @@ public static class AvitoCandidatesListPreparer
                 // принимает PhoneRevealBudgetController: он сначала пробует поднять
                 // бюджет по хвосту и только потом говорит «стоп». Адаптивный подъём
                 // не выше остатка бюджета прохода аккаунта.
-                var budgetController = new PhoneRevealBudgetController(phoneRevealBudget, passRevealCeiling);
                 var lastPendingCount = 0;
                 var lastWithPhone = -1;
                 // Расход локального бюджета — ЗАТРАЧЕННЫЕ единицы (резерв без refund),
                 // а не только подтверждённые клики: неопределённые исходы (CDP-сбой
                 // после dispatch) съедают бюджет субпрофиля так же, как и бюджета прохода.
                 // Без бюджета прохода (одиночные вызовы) остаёмся на подтверждённых кликах.
-                var phoneRevealUnitsSpent = 0;
-                int LocalBudgetSpent() => passBudget is null ? phoneClicksTotal : phoneRevealUnitsSpent;
                 for (var i = 0; i < phoneRevealLimit; i++)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
@@ -407,8 +409,13 @@ public static class AvitoCandidatesListPreparer
                         else
                         {
                             phoneRevealFailures++;
-                            await MarkPhoneRevealFailedAsync(executeScript, popupStep.Index, cancellationToken)
-                                .ConfigureAwait(false);
+                            if (popupStep.Reason == "target_changed") phoneTargetChanges++;
+                            else
+                            {
+                                if (popupStep.Reason == "name_mismatch") phonePopupNameMismatches++;
+                                await MarkPhoneRevealFailedAsync(executeScript, popupStep.Index, cancellationToken)
+                                    .ConfigureAwait(false);
+                            }
                         }
                     }
                     else if (popupStep is null || popupStep.Index < 0)
@@ -447,10 +454,15 @@ public static class AvitoCandidatesListPreparer
                     {
                         await HumanDelay.DelayAsync(280, 520, cancellationToken).ConfigureAwait(false);
                     }
+                    if (revealStep?.Masked == 0 && popupStep is { Clicked: false, Index: < 0 })
+                    {
+                        // Есть карточки без номера, но в списке нет доступной
+                        // кнопки контактов. Следующий этап проверит их панели.
+                        break;
+                    }
                 }
 
                 phonesProbe ??= await TryParsePhonesReadyAsync(executeScript, cancellationToken).ConfigureAwait(false);
-                phoneRevealEffectiveBudget = budgetController.EffectiveBudget;
             }
             finally
             {
@@ -468,11 +480,6 @@ public static class AvitoCandidatesListPreparer
         /// </summary>
         async Task RunPanelPhoneEnrichmentAsync()
         {
-            if (!isJobCrmPage)
-            {
-                return;
-            }
-
             for (var processed = 0; processed < MonitoringTiming.MaxPanelPhoneEnrichmentsPerCycle; processed++)
             {
                 cancellationToken.ThrowIfCancellationRequested();
@@ -481,6 +488,14 @@ public static class AvitoCandidatesListPreparer
                 {
                     break;
                 }
+
+                if (budgetController.ShouldStop(LocalBudgetSpent(), target.Pending)
+                    || (passBudget is not null && passBudget.ReservePhoneRevealClicks(1) == 0))
+                {
+                    break;
+                }
+                phoneRevealUnitsSpent++;
+                phoneClicksTotal++;
 
                 PanelPhoneOutcome? outcome = null;
                 try
@@ -508,8 +523,11 @@ public static class AvitoCandidatesListPreparer
                     panelPhoneFailures++;
                     panelFailReasons.TryGetValue(outcome?.Reason ?? "error", out var reasonCount);
                     panelFailReasons[outcome?.Reason ?? "error"] = reasonCount + 1;
-                    await MarkPhoneRevealFailedAsync(executeScript, target.TargetIndex, cancellationToken)
-                        .ConfigureAwait(false);
+                    if (outcome?.Reason != "target_changed")
+                    {
+                        await MarkPhoneRevealFailedAsync(executeScript, target.TargetIndex, cancellationToken)
+                            .ConfigureAwait(false);
+                    }
                 }
 
                 _ = await executeScript(
@@ -532,29 +550,6 @@ public static class AvitoCandidatesListPreparer
             PanelPhoneTargetProbe target,
             CancellationToken ct)
         {
-            const string panelButtonMarker = "job-crm/response/enrichment-results-button";
-            var panelButtonSelector = $"[data-marker='{panelButtonMarker}']";
-            var panelButtonMarkerJson = System.Text.Json.JsonSerializer.Serialize(panelButtonMarker);
-
-            // На CRM-страницах панель кандидата открывает кнопка «Данные о кандидате»;
-            // клик по строке — только fallback (может не открывать ничего).
-            async Task<bool> ClickPanelButtonAsync()
-            {
-                await HumanDelay.BeforeCandidateClickAsync(ct).ConfigureAwait(false);
-                var clicked = panelActors is not null
-                    && await panelActors.TryClickItemChildAsync(target.TargetIndex, panelButtonSelector, ct).ConfigureAwait(false);
-                if (clicked)
-                {
-                    return true;
-                }
-
-                var buttonRaw = await executeScriptAction(
-                        AvitoCandidatesPageScripts.BuildClickItemButtonByMarkerScript(target.TargetIndex, panelButtonMarkerJson),
-                        ct)
-                    .ConfigureAwait(false);
-                return TryParseClickStep(buttonRaw, out var buttonOk) && buttonOk;
-            }
-
             async Task<bool> ClickRowAsync()
             {
                 await HumanDelay.BeforeCandidateClickAsync(ct).ConfigureAwait(false);
@@ -585,19 +580,15 @@ public static class AvitoCandidatesListPreparer
             }
 
             var expectedNameJson = System.Text.Json.JsonSerializer.Serialize(target.TargetName);
-            if (!await ClickPanelButtonAsync().ConfigureAwait(false))
+            // Убираем старый popup до открытия панели. Анкета/enrichment-results
+            // не является контактом; открываем только проверенную clickable-карточку.
+            _ = await executeScriptAction(AvitoCandidatesPageScripts.BuildCloseContactsPopupScript(), ct).ConfigureAwait(false);
+            if (!await ClickRowAsync().ConfigureAwait(false))
             {
-                // Кнопки «Данные о кандидате» нет — пробуем клик по строке целиком.
-                if (!await ClickRowAsync().ConfigureAwait(false))
-                {
-                    return new PanelPhoneOutcome(false, "row_click_failed");
-                }
+                return new PanelPhoneOutcome(false, "row_click_failed");
             }
 
-            await HumanDelay.AfterCandidateClickAsync(ct).ConfigureAwait(false);
-            await RunRevealScriptAsync().ConfigureAwait(false);
-
-            var retriedStalePanel = false;
+            var revealAttempted = false;
             var sawOpenPanel = false;
             var sawNameMatch = false;
             var panelWaitSw = Stopwatch.StartNew();
@@ -624,26 +615,14 @@ public static class AvitoCandidatesListPreparer
                     sawNameMatch = true;
                 }
 
-                if (probe is { NameMatch: false } && !retriedStalePanel)
+                if (probe?.Reason is "target_changed" or "name_mismatch" or "error")
                 {
-                    // Панель чужого кандидата или пустая (клик не переключил её):
-                    // закрываем, кликаем кнопку заново и пробуем ещё раз.
-                    retriedStalePanel = true;
-                    _ = await executeScriptAction(
-                            AvitoCandidatesPageScripts.BuildDismissCandidateDetailPanelScript(),
-                            ct)
-                        .ConfigureAwait(false);
-                    await HumanDelay.DelayAsync(280, 620, ct).ConfigureAwait(false);
-                    if (!await ClickPanelButtonAsync().ConfigureAwait(false)
-                        && !await ClickRowAsync().ConfigureAwait(false))
-                    {
-                        return new PanelPhoneOutcome(false, "row_click_failed");
-                    }
-
-                    await HumanDelay.AfterCandidateClickAsync(ct).ConfigureAwait(false);
+                    return new PanelPhoneOutcome(false, probe.Reason);
+                }
+                if (probe is { PanelOpen: true, NameMatch: true } && !revealAttempted)
+                {
+                    revealAttempted = true;
                     await RunRevealScriptAsync().ConfigureAwait(false);
-                    panelWaitSw.Restart();
-                    continue;
                 }
 
                 // Панель может открываться асинхронно после клика: если она ещё
@@ -692,10 +671,11 @@ public static class AvitoCandidatesListPreparer
             PhoneRevealSuccesses: phoneRevealSuccesses,
             PhoneRevealFailures: phoneRevealFailures,
             PhoneRevealFailedCards: phonesProbe?.Failed ?? 0,
-            PhoneRevealBudget: phoneRevealEffectiveBudget > 0 ? phoneRevealEffectiveBudget : phoneRevealBudget,
+            PhoneRevealBudget: budgetController.EffectiveBudget,
             PanelPhoneClicks: panelPhoneClicks,
             PanelPhoneSuccesses: panelPhoneSuccesses,
-            PanelPhoneFailures: panelPhoneFailures);
+            PanelPhoneFailures: panelPhoneFailures,
+            PhoneRevealExcludedCards: phonesProbe?.Excluded ?? 0);
 
         var detailEnrichNote = isJobCrmPage
             ? "detailEnrich=skipped (CRM page)"
@@ -738,6 +718,10 @@ public static class AvitoCandidatesListPreparer
                 ["candidates.prepare.phoneRevealCapped"] = phoneClicksTotal >= result.PhoneRevealBudget && result.PhoneRevealBudget > 0,
                 ["candidates.prepare.phoneRevealSuccesses"] = result.PhoneRevealSuccesses,
                 ["candidates.prepare.phoneRevealFailures"] = result.PhoneRevealFailures,
+                ["candidates.prepare.phoneTargetChanged"] = phoneTargetChanges,
+                ["candidates.prepare.phonePopupNameMismatch"] = phonePopupNameMismatches,
+                ["candidates.prepare.phoneRevealExcludedCards"] = result.PhoneRevealExcludedCards,
+                ["candidates.prepare.panelPhoneTargetChanged"] = panelFailReasons.GetValueOrDefault("target_changed"),
                 ["candidates.prepare.phoneRevealFailedCards"] = result.PhoneRevealFailedCards,
                 ["candidates.prepare.panelPhoneClicks"] = result.PanelPhoneClicks,
                 ["candidates.prepare.panelPhoneSuccesses"] = result.PanelPhoneSuccesses,
@@ -923,7 +907,8 @@ public static class AvitoCandidatesListPreparer
                 root.TryGetProperty("items", out var i) ? i.GetInt32() : 0,
                 root.TryGetProperty("withPhone", out var p) ? p.GetInt32() : 0,
                 root.TryGetProperty("masked", out var m) ? m.GetInt32() : 0,
-                root.TryGetProperty("failed", out var f) ? f.GetInt32() : 0);
+                root.TryGetProperty("failed", out var f) ? f.GetInt32() : 0,
+                root.TryGetProperty("excluded", out var ex) ? ex.GetInt32() : 0);
         }
         catch
         {
@@ -1004,6 +989,8 @@ public static class AvitoCandidatesListPreparer
 
             clicks++;
 
+            _ = await executeScript(AvitoCandidatesPageScripts.BuildRememberCandidateTargetScript(index), cancellationToken)
+                .ConfigureAwait(false);
             await HumanDelay.BeforeCandidateClickAsync(cancellationToken).ConfigureAwait(false);
 
             var pointerClicked = actors is not null
@@ -1032,6 +1019,7 @@ public static class AvitoCandidatesListPreparer
 
             var payload = new Dictionary<string, string?>
             {
+                ["candidateIdentity"] = detail.CandidateIdentity,
                 ["vacancyUrl"] = detail.VacancyUrl,
                 ["vacancy"] = detail.Vacancy,
                 ["city"] = detail.City,
@@ -1271,10 +1259,16 @@ public static class AvitoCandidatesListPreparer
         {
             using var doc = JsonDocument.Parse(UnwrapJsonString(raw));
             var root = doc.RootElement;
+            if (!root.TryGetProperty("hasPanel", out var hasPanel) || hasPanel.ValueKind != JsonValueKind.True
+                || !root.TryGetProperty("candidateIdentity", out var identity) || string.IsNullOrWhiteSpace(identity.GetString()))
+            {
+                return null;
+            }
             var phoneDigits = root.TryGetProperty("phoneDigits", out var phoneProp)
                 ? phoneProp.GetString() ?? string.Empty
                 : string.Empty;
             return new DetailPanelProbe(
+                identity.GetString()!,
                 phoneDigits,
                 root.TryGetProperty("vacancyUrl", out var urlProp) ? urlProp.GetString() ?? string.Empty : string.Empty,
                 root.TryGetProperty("vacancy", out var vacancyProp) ? vacancyProp.GetString() ?? string.Empty : string.Empty,
@@ -1766,11 +1760,11 @@ public static class AvitoCandidatesListPreparer
                 return new ContactsPopupRevealProbe(click.Items, click.Pending, true, true, click.Index);
             }
 
-            if (probe is { State: "error" })
+            if (probe is { State: "error" or "target_changed" or "name_mismatch" })
             {
                 _ = await executeScript(AvitoCandidatesPageScripts.BuildCloseContactsPopupScript(), cancellationToken)
                     .ConfigureAwait(false);
-                return new ContactsPopupRevealProbe(click.Items, click.Pending, true, false, click.Index);
+                return new ContactsPopupRevealProbe(click.Items, click.Pending, true, false, click.Index, probe.State);
             }
 
             await HumanDelay.DelayAsync(
@@ -1845,10 +1839,10 @@ public static class AvitoCandidatesListPreparer
                 return new ContactsPopupRevealProbe(target.Items, target.Pending, true, true, target.TargetIndex);
             }
 
-            if (probe is { State: "error" })
+            if (probe is { State: "error" or "target_changed" or "name_mismatch" })
             {
                 await CloseContactsPopupAsync(executeScript, actors, cancellationToken).ConfigureAwait(false);
-                return new ContactsPopupRevealProbe(target.Items, target.Pending, true, false, target.TargetIndex);
+                return new ContactsPopupRevealProbe(target.Items, target.Pending, true, false, target.TargetIndex, probe.State);
             }
 
             await HumanDelay.DelayAsync(
@@ -1970,7 +1964,8 @@ public static class AvitoCandidatesListPreparer
             return new PanelPhoneStateProbe(
                 root.TryGetProperty("panelOpen", out var o) && o.ValueKind == JsonValueKind.True,
                 root.TryGetProperty("revealed", out var r) && r.ValueKind == JsonValueKind.True,
-                root.TryGetProperty("nameMatch", out var nm) is false || nm.ValueKind == JsonValueKind.True);
+                root.TryGetProperty("nameMatch", out var nm) && nm.ValueKind == JsonValueKind.True,
+                root.TryGetProperty("reason", out var reason) ? reason.GetString() : null);
         }
         catch
         {
@@ -2098,7 +2093,7 @@ public static class AvitoCandidatesListPreparer
 
         private sealed record KnownHistoryProbe(bool AllKnown, int ParsedItems);
 
-    private sealed record PhonesReadyProbe(bool Ready, int Items, int WithPhone, int Masked, int Failed = 0);
+    private sealed record PhonesReadyProbe(bool Ready, int Items, int WithPhone, int Masked, int Failed = 0, int Excluded = 0);
 
     private sealed record RevealPhonesStepProbe(int Items, int Masked, int Clicked, bool Attempted, int ClickedIndex = -1, int Failed = 0);
 
@@ -2106,13 +2101,13 @@ public static class AvitoCandidatesListPreparer
 
     private sealed record ContactsPopupTargetProbe(int Items, int Pending, int TargetIndex, string Kind, bool ClosedExisting);
 
-    private sealed record ContactsPopupRevealProbe(int Items, int Pending, bool Clicked, bool Revealed, int Index = -1);
+    private sealed record ContactsPopupRevealProbe(int Items, int Pending, bool Clicked, bool Revealed, int Index = -1, string? Reason = null);
 
     private sealed record PanelPhoneTargetProbe(int Items, int Pending, int TargetIndex, string TargetName = "");
 
     private sealed record PanelPhoneRevealProbe(bool Clicked);
 
-    private sealed record PanelPhoneStateProbe(bool PanelOpen, bool Revealed, bool NameMatch = true);
+    private sealed record PanelPhoneStateProbe(bool PanelOpen, bool Revealed, bool NameMatch = false, string? Reason = null);
 
     /// <summary>Итог добора телефона через панель: успех + причина для диагностики.</summary>
     private sealed record PanelPhoneOutcome(bool Success, string Reason);
@@ -2121,7 +2116,7 @@ public static class AvitoCandidatesListPreparer
 
     private sealed record ContactsPopupStateProbe(string State, bool Revealed);
 
-    private sealed record DetailPanelProbe(string PhoneDigits, string VacancyUrl, string Vacancy, string City, string Age);
+    private sealed record DetailPanelProbe(string CandidateIdentity, string PhoneDigits, string VacancyUrl, string Vacancy, string City, string Age);
 
     private sealed record DetailEnrichmentResult(Dictionary<string, object> Entries, int Clicks, int Skipped, int Hits);
 }
@@ -2149,10 +2144,11 @@ public sealed record CandidatesListPrepareResult(
     int PhoneRevealFailedCards = 0,
     /// <summary>Итоговый (возможно адаптивно поднятый) бюджет раскрытия телефонов.</summary>
     int PhoneRevealBudget = 0,
-    /// <summary>Карточки, для которых телефон добирали через панель «Данные о кандидате».</summary>
+    /// <summary>Карточки, для которых телефон добирали через боковую панель отклика.</summary>
     int PanelPhoneClicks = 0,
     int PanelPhoneSuccesses = 0,
-    int PanelPhoneFailures = 0)
+    int PanelPhoneFailures = 0,
+    int PhoneRevealExcludedCards = 0)
 {
     /// <summary>Карточки, отложенные до следующего прохода из-за нехватки бюджета/неудачных кликов.</summary>
     public int DeferredForPhone => Math.Max(0, MaskedPhonesLeft + PhoneRevealFailedCards);
