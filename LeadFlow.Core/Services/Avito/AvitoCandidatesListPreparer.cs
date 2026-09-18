@@ -200,6 +200,9 @@ public static class AvitoCandidatesListPreparer
         var phoneRevealSuccesses = 0;
         var phoneRevealFailures = 0;
         var phoneRevealEffectiveBudget = 0;
+        var panelPhoneClicks = 0;
+        var panelPhoneSuccesses = 0;
+        var panelPhoneFailures = 0;
         var prioritySw = Stopwatch.StartNew();
         var openWatchProtected = await ResolveOpenPhoneWatchProtectedIndicesAsync(
                 finalListItems,
@@ -455,7 +458,168 @@ public static class AvitoCandidatesListPreparer
             }
         }
 
+        /// <summary>
+        /// Добор телефонов через панель «Данные о кандидате» для карточек, у которых
+        /// номера нет в списке (новый UX Avito на CRM-страницах). Выполняется после
+        /// основного reveal-цикла; каждая карточка: клик по строке → клик «Показать
+        /// номер» в панели → чтение номера в кэш (со сверкой имени кандидата, чтобы
+        /// не записать чужой номер) → закрытие панели.
+        /// </summary>
+        async Task RunPanelPhoneEnrichmentAsync()
+        {
+            if (!isJobCrmPage)
+            {
+                return;
+            }
+
+            for (var processed = 0; processed < MonitoringTiming.MaxPanelPhoneEnrichmentsPerCycle; processed++)
+            {
+                cancellationToken.ThrowIfCancellationRequested();
+                var target = await TryParsePanelPhoneTargetAsync(executeScript, cancellationToken).ConfigureAwait(false);
+                if (target is null || target.Pending == 0 || target.TargetIndex < 0)
+                {
+                    break;
+                }
+
+                var phoneFound = false;
+                try
+                {
+                    panelPhoneClicks++;
+                    phoneFound = await TryRevealPhoneViaPanelAsync(executeScript, actors, target, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch
+                {
+                    // Ошибка одного клика не должна валить весь проход: карточка
+                    // получит повторную попытку в следующем проходе.
+                }
+
+                if (phoneFound)
+                {
+                    panelPhoneSuccesses++;
+                }
+                else
+                {
+                    panelPhoneFailures++;
+                    await MarkPhoneRevealFailedAsync(executeScript, target.TargetIndex, cancellationToken)
+                        .ConfigureAwait(false);
+                }
+
+                _ = await executeScript(
+                        AvitoCandidatesPageScripts.BuildDismissCandidateDetailPanelScript(),
+                        cancellationToken)
+                    .ConfigureAwait(false);
+                await HumanDelay.DelayAsync(280, 620, cancellationToken).ConfigureAwait(false);
+            }
+
+            if (panelPhoneClicks > 0)
+            {
+                phonesProbe = await TryParsePhonesReadyAsync(executeScript, cancellationToken).ConfigureAwait(false);
+            }
+        }
+
+        /// <summary>Одна карточка: открыть панель, раскрыть и прочитать номер.</summary>
+        async Task<bool> TryRevealPhoneViaPanelAsync(
+            Func<string, CancellationToken, Task<string>> executeScriptAction,
+            CandidatesPageActors? panelActors,
+            PanelPhoneTargetProbe target,
+            CancellationToken ct)
+        {
+            async Task<bool> ClickRowAsync()
+            {
+                await HumanDelay.BeforeCandidateClickAsync(ct).ConfigureAwait(false);
+                var rowClicked = panelActors is not null
+                    && await panelActors.TryClickItemChildAsync(target.TargetIndex, null, ct).ConfigureAwait(false);
+                if (rowClicked)
+                {
+                    return true;
+                }
+
+                var clickRaw = await executeScriptAction(
+                        AvitoCandidatesPageScripts.BuildClickCandidateItemByIndexScript(target.TargetIndex),
+                        ct)
+                    .ConfigureAwait(false);
+                return TryParseClickStep(clickRaw, out var clickOk) && clickOk;
+            }
+
+            async Task RunRevealScriptAsync()
+            {
+                var revealRaw = await executeScriptAction(
+                        AvitoCandidatesPageScripts.BuildRevealPanelPhoneScript(),
+                        ct)
+                    .ConfigureAwait(false);
+                if (TryParsePanelPhoneReveal(revealRaw) is { Clicked: true })
+                {
+                    await HumanDelay.AfterPhoneRevealClickAsync(ct).ConfigureAwait(false);
+                }
+            }
+
+            var expectedNameJson = System.Text.Json.JsonSerializer.Serialize(target.TargetName);
+            if (!await ClickRowAsync().ConfigureAwait(false))
+            {
+                return false;
+            }
+
+            await HumanDelay.AfterCandidateClickAsync(ct).ConfigureAwait(false);
+            await RunRevealScriptAsync().ConfigureAwait(false);
+
+            var retriedStalePanel = false;
+            var panelWaitSw = Stopwatch.StartNew();
+            while (panelWaitSw.ElapsedMilliseconds < MonitoringTiming.PanelPhoneMaxWaitMs)
+            {
+                ct.ThrowIfCancellationRequested();
+                var probeRaw = await executeScriptAction(
+                        AvitoCandidatesPageScripts.BuildCandidatePanelPhoneProbeScript(target.TargetIndex, expectedNameJson),
+                        ct)
+                    .ConfigureAwait(false);
+                var probe = TryParsePanelPhoneProbe(probeRaw);
+                if (probe is { Revealed: true })
+                {
+                    return true;
+                }
+
+                if (probe is { NameMatch: false } && !retriedStalePanel)
+                {
+                    // Панель чужого кандидата (клик по строке не переключил её):
+                    // закрываем, кликаем строку заново и пробуем ещё раз.
+                    retriedStalePanel = true;
+                    _ = await executeScriptAction(
+                            AvitoCandidatesPageScripts.BuildDismissCandidateDetailPanelScript(),
+                            ct)
+                        .ConfigureAwait(false);
+                    await HumanDelay.DelayAsync(280, 620, ct).ConfigureAwait(false);
+                    if (!await ClickRowAsync().ConfigureAwait(false))
+                    {
+                        return false;
+                    }
+
+                    await HumanDelay.AfterCandidateClickAsync(ct).ConfigureAwait(false);
+                    await RunRevealScriptAsync().ConfigureAwait(false);
+                    panelWaitSw.Restart();
+                    continue;
+                }
+
+                if (probe is not { PanelOpen: true })
+                {
+                    return false;
+                }
+
+                await HumanDelay.DelayAsync(
+                        MonitoringTiming.PanelPhonePollMinMs,
+                        MonitoringTiming.PanelPhonePollMaxMs,
+                        ct)
+                    .ConfigureAwait(false);
+            }
+
+            return false;
+        }
+
         await RunPhoneRevealAsync().ConfigureAwait(false);
+        await RunPanelPhoneEnrichmentAsync().ConfigureAwait(false);
         if (!isJobCrmPage && !skipDetailEnrich && domItems > 0)
         {
             await HumanDelay.BetweenResponsesAsync(cancellationToken).ConfigureAwait(false);
@@ -480,7 +644,10 @@ public static class AvitoCandidatesListPreparer
             PhoneRevealSuccesses: phoneRevealSuccesses,
             PhoneRevealFailures: phoneRevealFailures,
             PhoneRevealFailedCards: phonesProbe?.Failed ?? 0,
-            PhoneRevealBudget: phoneRevealEffectiveBudget > 0 ? phoneRevealEffectiveBudget : phoneRevealBudget);
+            PhoneRevealBudget: phoneRevealEffectiveBudget > 0 ? phoneRevealEffectiveBudget : phoneRevealBudget,
+            PanelPhoneClicks: panelPhoneClicks,
+            PanelPhoneSuccesses: panelPhoneSuccesses,
+            PanelPhoneFailures: panelPhoneFailures);
 
         var detailEnrichNote = isJobCrmPage
             ? "detailEnrich=skipped (CRM page)"
@@ -494,8 +661,11 @@ public static class AvitoCandidatesListPreparer
         var budgetRaisedNote = result.PhoneRevealBudget > phoneRevealBudget
             ? $", phoneRevealBudgetRaised={phoneRevealBudget}->{result.PhoneRevealBudget}"
             : "";
+        var panelPhoneNote = result.PanelPhoneClicks > 0
+            ? $", panelPhone={result.PanelPhoneSuccesses}/{result.PanelPhoneClicks} (failed {result.PanelPhoneFailures})"
+            : "";
         _ = GlobalLogger.Instance.LogAsync(
-            $"Candidates list prepared for {logContext}: scrollRounds={result.ScrollRounds}, domItems={result.DomItemCount}{scrollNote}, phonesReady={result.PhonesReady} ({result.CardsWithPhone}/{result.DomItemCount}), maskedLeft={result.MaskedPhonesLeft}, deferredForPhone={result.DeferredForPhone}, revealOk={result.PhoneRevealSuccesses}, revealFailed={result.PhoneRevealFailures}, cardFingerprintSkips={result.CardFingerprintSkips}, phoneSkips={result.PhoneSkips}, profileSkips={result.ProfileSkips}, collectionFilterSkips={result.CollectionFilterSkips}, phoneRevealRounds={result.PhoneRevealRounds}, phoneClicks={result.PhoneRevealClicks}{phoneCapNote}{budgetRaisedNote}, {detailEnrichNote}.",
+            $"Candidates list prepared for {logContext}: scrollRounds={result.ScrollRounds}, domItems={result.DomItemCount}{scrollNote}, phonesReady={result.PhonesReady} ({result.CardsWithPhone}/{result.DomItemCount}), maskedLeft={result.MaskedPhonesLeft}, deferredForPhone={result.DeferredForPhone}, revealOk={result.PhoneRevealSuccesses}, revealFailed={result.PhoneRevealFailures}{panelPhoneNote}, cardFingerprintSkips={result.CardFingerprintSkips}, phoneSkips={result.PhoneSkips}, profileSkips={result.ProfileSkips}, collectionFilterSkips={result.CollectionFilterSkips}, phoneRevealRounds={result.PhoneRevealRounds}, phoneClicks={result.PhoneRevealClicks}{phoneCapNote}{budgetRaisedNote}, {detailEnrichNote}.",
             DeskLinkAuditLogLevel.Info,
             properties: new Dictionary<string, object?>
             {
@@ -517,6 +687,9 @@ public static class AvitoCandidatesListPreparer
                 ["candidates.prepare.phoneRevealSuccesses"] = result.PhoneRevealSuccesses,
                 ["candidates.prepare.phoneRevealFailures"] = result.PhoneRevealFailures,
                 ["candidates.prepare.phoneRevealFailedCards"] = result.PhoneRevealFailedCards,
+                ["candidates.prepare.panelPhoneClicks"] = result.PanelPhoneClicks,
+                ["candidates.prepare.panelPhoneSuccesses"] = result.PanelPhoneSuccesses,
+                ["candidates.prepare.panelPhoneFailures"] = result.PanelPhoneFailures,
                 ["candidates.prepare.detailEnrichClicks"] = result.DetailEnrichClicks,
                 ["candidates.prepare.detailEnrichSkipped"] = result.DetailEnrichSkipped,
                 ["candidates.prepare.detailEnrichHits"] = result.DetailEnrichHits,
@@ -1678,6 +1851,77 @@ public static class AvitoCandidatesListPreparer
         }
     }
 
+    private static async Task<PanelPhoneTargetProbe?> TryParsePanelPhoneTargetAsync(
+        Func<string, CancellationToken, Task<string>> executeScript,
+        CancellationToken cancellationToken)
+    {
+        var raw = await executeScript(
+                AvitoCandidatesPageScripts.BuildFindPanelPhoneTargetScript(),
+                cancellationToken)
+            .ConfigureAwait(false);
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(UnwrapJsonString(raw));
+            var root = doc.RootElement;
+            return new PanelPhoneTargetProbe(
+                root.TryGetProperty("items", out var i) ? i.GetInt32() : 0,
+                root.TryGetProperty("pending", out var p) ? p.GetInt32() : 0,
+                root.TryGetProperty("targetIndex", out var t) ? t.GetInt32() : -1,
+                root.TryGetProperty("targetName", out var n) ? n.GetString() ?? string.Empty : string.Empty);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static PanelPhoneRevealProbe? TryParsePanelPhoneReveal(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(UnwrapJsonString(raw));
+            var root = doc.RootElement;
+            return new PanelPhoneRevealProbe(
+                root.TryGetProperty("clicked", out var c) && c.ValueKind == JsonValueKind.True);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private static PanelPhoneStateProbe? TryParsePanelPhoneProbe(string? raw)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var doc = JsonDocument.Parse(UnwrapJsonString(raw));
+            var root = doc.RootElement;
+            return new PanelPhoneStateProbe(
+                root.TryGetProperty("panelOpen", out var o) && o.ValueKind == JsonValueKind.True,
+                root.TryGetProperty("revealed", out var r) && r.ValueKind == JsonValueKind.True,
+                root.TryGetProperty("nameMatch", out var nm) is false || nm.ValueKind == JsonValueKind.True);
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     private static async Task<ContactsPopupClickProbe?> TryParseContactsPopupClickAsync(
         Func<string, CancellationToken, Task<string>> executeScript,
         CancellationToken cancellationToken)
@@ -1808,6 +2052,12 @@ public static class AvitoCandidatesListPreparer
 
     private sealed record ContactsPopupRevealProbe(int Items, int Pending, bool Clicked, bool Revealed, int Index = -1);
 
+    private sealed record PanelPhoneTargetProbe(int Items, int Pending, int TargetIndex, string TargetName = "");
+
+    private sealed record PanelPhoneRevealProbe(bool Clicked);
+
+    private sealed record PanelPhoneStateProbe(bool PanelOpen, bool Revealed, bool NameMatch = true);
+
     private sealed record ContactsPopupClickProbe(int Items, int Pending, bool Clicked, bool ClosedExisting, int Index);
 
     private sealed record ContactsPopupStateProbe(string State, bool Revealed);
@@ -1839,7 +2089,11 @@ public sealed record CandidatesListPrepareResult(
     /// <summary>Карточки, чей клик не дал номера (включая отметки из popup-пути).</summary>
     int PhoneRevealFailedCards = 0,
     /// <summary>Итоговый (возможно адаптивно поднятый) бюджет раскрытия телефонов.</summary>
-    int PhoneRevealBudget = 0)
+    int PhoneRevealBudget = 0,
+    /// <summary>Карточки, для которых телефон добирали через панель «Данные о кандидате».</summary>
+    int PanelPhoneClicks = 0,
+    int PanelPhoneSuccesses = 0,
+    int PanelPhoneFailures = 0)
 {
     /// <summary>Карточки, отложенные до следующего прохода из-за нехватки бюджета/неудачных кликов.</summary>
     public int DeferredForPhone => Math.Max(0, MaskedPhonesLeft + PhoneRevealFailedCards);

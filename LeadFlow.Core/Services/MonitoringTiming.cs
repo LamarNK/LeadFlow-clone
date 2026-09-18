@@ -134,6 +134,20 @@ public static class MonitoringTiming
     public const int PhoneRevealBacklogExtraDivisor = 2;
 
     /// <summary>
+    /// Максимум карточек за проход, для которых телефон добывается через панель
+    /// «Данные о кандидате» (новый UX: в списке номера нет). Панельные клики
+    /// тяжелее списочных — держим отдельный, консервативный лимит.
+    /// </summary>
+    public const int MaxPanelPhoneEnrichmentsPerCycle = 12;
+
+    /// <summary>Ожидание появления телефона в панели кандидата после клика «Показать номер».</summary>
+    public const int PanelPhoneMaxWaitMs = 8000;
+
+    public const int PanelPhonePollMinMs = 400;
+
+    public const int PanelPhonePollMaxMs = 900;
+
+    /// <summary>
     /// Потолок раскрытия номеров на весь проход аккаунта: все субпрофили, включая
     /// перезапуски извлечения после восстановления страницы. Количество субпрофилей
     /// не должно размножать суммарную нагрузку на Avito.

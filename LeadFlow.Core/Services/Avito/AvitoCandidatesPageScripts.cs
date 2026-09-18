@@ -1339,6 +1339,161 @@ public static class AvitoCandidatesPageScripts
         })();
         """;
 
+    /// <summary>
+    /// Поиск карточки, которой не хватило телефона после основного reveal-цикла
+    /// (в списке номера нет — только в панели «Данные о кандидате»). Цель — та же
+    /// семантика, что у popup-раскрытия: needsPhoneReveal и не помечена failed.
+    /// Возвращает и имя кандидата — проба панели сверяет его, чтобы не закэшировать
+    /// телефон чужой карточки под этим индексом.
+    /// </summary>
+    public static string BuildFindPanelPhoneTargetScript() =>
+        $$"""
+        (() => {
+        {{ContactsPhoneHelpersJs}}
+            const normalize = (text) => (text ?? "").replace(/\s+/g, " ").trim();
+            const items = Array.from(document.querySelectorAll("[data-marker='job-application/item']"));
+            let pending = 0;
+            for (let index = 0; index < items.length; index++) {
+                if (!hasFailedPhoneReveal(index) && needsPhoneReveal(items[index], index)) {
+                    pending++;
+                }
+            }
+
+            const orderedIndexes = orderedRevealIndexes(items);
+            for (const index of orderedIndexes) {
+                if (hasFailedPhoneReveal(index)) {
+                    continue;
+                }
+
+                if (!needsPhoneReveal(items[index], index)) {
+                    continue;
+                }
+
+                const targetName = normalize(items[index].querySelector("h3, h4")?.textContent ?? "");
+                return JSON.stringify({ items: items.length, pending, targetIndex: index, targetName });
+            }
+
+            return JSON.stringify({ items: items.length, pending, targetIndex: -1, targetName: "" });
+        })();
+        """;
+
+    /// <summary>
+    /// Корень панели «Данные о кандидате»: диалог/drawer/aside или response-контейнер,
+    /// но НЕ карточка списка (исключаем корни внутри job-application/item и содержащие их).
+    /// </summary>
+    private const string CandidatePanelRootJs =
+        """
+        const findCandidatePanelRoot = () => {
+            const roots = Array.from(document.querySelectorAll(
+                "[role='dialog'], aside[class*='drawer'], aside[class*='Drawer'], [class*='styles-module-response']"));
+            return roots.find((root) =>
+                !root.closest("[data-marker='job-application/item']")
+                && !root.querySelector("[data-marker='job-application/item']"))
+                ?? null;
+        };
+        """;
+
+    /// <summary>
+    /// Клик «Показать номер» в открытой панели «Данные о кандидате»
+    /// (новый UX Avito: телефон карточки списка недоступен, только в панели).
+    /// </summary>
+    public static string BuildRevealPanelPhoneScript() =>
+        $$"""
+        (() => {
+        {{ContactsPhoneHelpersJs}}
+        {{CandidatePanelRootJs}}
+            const normalize = (text) => (text ?? "").replace(/\s+/g, " ").trim();
+
+            const panel = findCandidatePanelRoot();
+            if (!panel) {
+                return JSON.stringify({ clicked: false, reason: "no_panel" });
+            }
+
+            const callBtn = panel.querySelector("[data-marker='job-application/call-button']");
+            if (callBtn) {
+                humanClick(callBtn);
+                return JSON.stringify({ clicked: true, kind: "call-button" });
+            }
+
+            for (const button of Array.from(panel.querySelectorAll("button, a, [role='button']"))) {
+                const text = normalize(button.textContent);
+                if (/показа(ть|ние)\s+(номер|телефон)/i.test(text)) {
+                    humanClick(button);
+                    return JSON.stringify({ clicked: true, kind: "show-phone" });
+                }
+            }
+
+            return JSON.stringify({ clicked: false, reason: "no_phone_button" });
+        })();
+        """;
+
+    /// <summary>
+    /// Прочитать телефон из открытой панели кандидата. Номер кэшируется по индексу
+    /// карточки ТОЛЬКО при совпадении имени панели с ожидаемым (защита от устаревшей
+    /// панели чужого кандидата). При успехе сдвигает round-robin курсор.
+    /// </summary>
+    public static string BuildCandidatePanelPhoneProbeScript(int targetIndex, string expectedNameJson) =>
+        $$"""
+        (() => {
+        {{ContactsPhoneHelpersJs}}
+        {{CandidatePanelRootJs}}
+            const normalize = (text) => (text ?? "").replace(/\s+/g, " ").trim();
+            const normalizeName = (text) => normalize(text).toLowerCase();
+            const expectedName = normalizeName({{expectedNameJson}});
+
+            const panel = findCandidatePanelRoot();
+            if (!panel) {
+                return JSON.stringify({ panelOpen: false, nameMatch: false, phone: "", revealed: false });
+            }
+
+            let panelName = "";
+            for (const heading of Array.from(panel.querySelectorAll("h2, h3, h4"))) {
+                const text = normalize(heading.textContent);
+                if (text) {
+                    panelName = text;
+                    break;
+                }
+            }
+
+            const normalizedPanelName = normalizeName(panelName);
+            const nameMatch = !!expectedName
+                && !!normalizedPanelName
+                && (normalizedPanelName.includes(expectedName) || expectedName.includes(normalizedPanelName));
+            if (!nameMatch) {
+                return JSON.stringify({ panelOpen: true, nameMatch: false, phone: "", revealed: false, panelName });
+            }
+
+            const candidates = [
+                panel.querySelector("[data-marker='job-application/phone']"),
+                panel.querySelector("[data-marker='job-application/call-button']"),
+                ...Array.from(panel.querySelectorAll("h3, h4, [class*='phone'], a[href^='tel:']"))
+            ];
+
+            let phone = readContactsPopupPhone();
+            if (!isRevealedPhoneText(phone)) {
+                for (const element of candidates) {
+                    const text = normalize(element?.textContent ?? "");
+                    if (isRevealedPhoneText(text)) {
+                        phone = text;
+                        break;
+                    }
+                }
+            }
+
+            if (isRevealedPhoneText(phone)) {
+                const store = initRevealedPhonesStore();
+                if ({{targetIndex}} >= 0) {
+                    store[String({{targetIndex}})] = phone;
+                }
+
+                advanceRevealCursor();
+                return JSON.stringify({ panelOpen: true, nameMatch: true, phone, revealed: true });
+            }
+
+            return JSON.stringify({ panelOpen: true, nameMatch: true, phone: "", revealed: false });
+        })();
+        """;
+
     /// <summary>Ключи карточек списка для пропуска detail-enrich (sourceResponseId + телефон для enrichment map).</summary>
     public static string BuildCollectListItemSkipKeysScript() =>
         $$"""

@@ -127,4 +127,67 @@ public sealed class CandidatesListPrepareResultTests
         Assert.Contains("advanceRevealCursor()", script);
         Assert.Contains("getRevealCursor()", script);
     }
+
+    [Fact]
+    public void PanelPhoneTargetScript_ReturnsTargetNameForVerification()
+    {
+        var script = AvitoCandidatesPageScripts.BuildFindPanelPhoneTargetScript();
+
+        Assert.Contains("orderedRevealIndexes(items)", script);
+        Assert.Contains("hasFailedPhoneReveal(index)", script);
+        Assert.Contains("needsPhoneReveal(items[index], index)", script);
+        Assert.Contains("targetName", script);
+    }
+
+    [Fact]
+    public void PanelPhoneRevealScript_ClicksShowPhoneInPanel()
+    {
+        var script = AvitoCandidatesPageScripts.BuildRevealPanelPhoneScript();
+
+        Assert.Contains("job-application/call-button", script);
+        Assert.Contains("показа(ть|ние)\\s+(номер|телефон)", script);
+        Assert.Contains("humanClick", script);
+    }
+
+    [Fact]
+    public void PanelPhoneProbeScript_VerifiesNameBeforeCaching()
+    {
+        var script = AvitoCandidatesPageScripts.BuildCandidatePanelPhoneProbeScript(
+            5,
+            System.Text.Json.JsonSerializer.Serialize("Швагерус Владимир Александрович"));
+
+        Assert.Contains("nameMatch", script);
+        // Имя передаётся JSON-литералом (кириллица экранируется как \uXXXX).
+        Assert.Contains("const expectedName", script);
+        Assert.Contains("\\u0428\\u0432", script);
+        // Кэш и курсор — только после сверки имени.
+        Assert.Contains("if (!nameMatch)", script);
+        Assert.Contains("advanceRevealCursor()", script);
+        Assert.Contains("readContactsPopupPhone()", script);
+    }
+
+    [Fact]
+    public void PanelPhoneScripts_ExcludeListCardsFromPanelRoot()
+    {
+        Assert.Contains("!root.closest(\"[data-marker='job-application/item']\")", AvitoCandidatesPageScripts.BuildRevealPanelPhoneScript());
+        Assert.Contains("!root.querySelector(\"[data-marker='job-application/item']\")", AvitoCandidatesPageScripts.BuildCandidatePanelPhoneProbeScript(1, "\"X\""));
+    }
+
+    [Fact]
+    public void PrepareResult_CarriesPanelPhoneCounters()
+    {
+        var result = new CandidatesListPrepareResult(
+            ScrollRounds: 3,
+            PhoneRevealRounds: 4,
+            DomItemCount: 40,
+            CardsWithPhone: 30,
+            PhonesReady: false,
+            PanelPhoneClicks: 12,
+            PanelPhoneSuccesses: 10,
+            PanelPhoneFailures: 2);
+
+        Assert.Equal(12, result.PanelPhoneClicks);
+        Assert.Equal(10, result.PanelPhoneSuccesses);
+        Assert.Equal(2, result.PanelPhoneFailures);
+    }
 }
