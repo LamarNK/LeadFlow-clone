@@ -34,6 +34,7 @@ public static class OrbitaEndpointMappings
         TelephonyEndpoints.Map(app);
         CrmEndpoints.Map(app);
         WorkerPanelEndpoints.Map(app);
+        WorkerScheduleEndpoints.Map(app);
         AuthenticationEndpoints.Map(app);
     }
 }

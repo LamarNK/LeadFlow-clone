@@ -1,0 +1,175 @@
+@model ScheduleViewModel
+@using Orbita.Contracts
+@{
+    ViewData["Title"] = "Расписание";
+    var data = Model.Schedule;
+    var group = Model.SelectedGroup;
+    var settings = data?.Settings;
+    var todayDay = -1;
+    if (settings is not null)
+    {
+        try
+        {
+            var localToday = TimeZoneInfo.ConvertTimeFromUtc(DateTime.UtcNow, TimeZoneInfo.FindSystemTimeZoneById(settings.TimeZoneId));
+            todayDay = localToday.DayOfWeek == DayOfWeek.Sunday ? 6 : (int)localToday.DayOfWeek - 1;
+        }
+        catch { }
+    }
+    string StateLabel(string state) => state switch { WorkerScheduleShifts.Day => "День", WorkerScheduleShifts.Night => "Ночь", _ => "Выходной" };
+    string StateIcon(string state) => state switch { WorkerScheduleShifts.Day => "fa-sun", WorkerScheduleShifts.Night => "fa-moon", _ => "fa-bed" };
+    string StateWindow(string state) => state switch
+    {
+        WorkerScheduleShifts.Day when settings is not null => $"{settings.DayStartLocalTime}–{settings.DayEndLocalTime}",
+        WorkerScheduleShifts.Night when settings is not null => $"{settings.NightStartLocalTime}–{settings.NightEndLocalTime}",
+        _ => ""
+    };
+    var selectedToday = group?.Calendar.ElementAtOrDefault(todayDay);
+    var currentDayWindowWorkers = 0;
+    var currentNightWorkers = 0;
+    var currentOffWorkers = 0;
+    var currentPausedWorkers = 0;
+    if (data is not null && data.Groups.Count > 0 && todayDay >= 0)
+    {
+        var activeGroups = data.Groups.Where(x => x.Calendar.ElementAtOrDefault(todayDay)?.Shift1 != WorkerScheduleShifts.Off).ToList();
+        currentDayWindowWorkers = activeGroups.Sum(x => x.Workers.Count(w => w.IsEnabled && (w.Shift == WorkerScheduleShifts.Shift1 ? x.Calendar[todayDay].Shift1 : x.Calendar[todayDay].Shift2) == WorkerScheduleShifts.Day));
+        currentNightWorkers = activeGroups.Sum(x => x.Workers.Count(w => w.IsEnabled && (w.Shift == WorkerScheduleShifts.Shift1 ? x.Calendar[todayDay].Shift1 : x.Calendar[todayDay].Shift2) == WorkerScheduleShifts.Night));
+        currentOffWorkers = data.Groups.Where(x => x.Calendar.ElementAtOrDefault(todayDay)?.Shift1 == WorkerScheduleShifts.Off).Sum(x => x.Workers.Count(w => w.IsEnabled));
+        currentPausedWorkers = data.Groups.Sum(x => x.Workers.Count(w => !w.IsEnabled));
+    }
+}
+<partial name="_PageHeader" model="Model.Header" />
+<main class="orbita-main schedule-page" data-orbita-live data-orbita-live-page="schedule">
+    @Html.AntiForgeryToken()
+    <section class="schedule-loading" data-schedule-loading hidden aria-live="polite">
+        <span class="schedule-loading__bar"></span><span class="schedule-loading__bar schedule-loading__bar--wide"></span>
+        <span class="schedule-loading__bar schedule-loading__bar--short"></span>
+    </section>
+    @if (Model.NeedsOfficeSelection)
+    {
+        <section class="schedule-empty" aria-labelledby="scheduleOfficeTitle">
+            <i class="fa-solid fa-building" aria-hidden="true"></i>
+            <h2 id="scheduleOfficeTitle">Выберите офис</h2>
+            <p>Расписание воркеров настраивается отдельно для каждого офиса.</p>
+        </section>
+    }
+    else if (!string.IsNullOrWhiteSpace(Model.Error) || data is null || group is null || settings is null)
+    {
+        <section class="schedule-empty schedule-empty--error">
+            <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+            <h2>Расписание недоступно</h2>
+            <p>@(Model.Error ?? "Обновите страницу и повторите попытку.")</p>
+        </section>
+    }
+    else
+    {
+        <header class="schedule-commandbar">
+            <div class="schedule-cycle-note"><i class="fa-solid fa-arrows-rotate" aria-hidden="true"></i><span>6 рабочих дней, полный выходной и автоматическая смена дневного и ночного окна.</span></div>
+            <div class="schedule-commandbar__actions">
+                <button type="button" class="schedule-btn schedule-btn--ghost" data-schedule-settings-open><i class="fa-solid fa-sliders" aria-hidden="true"></i><span>Время смен</span></button>
+                <button type="button" class="schedule-btn schedule-btn--ghost" data-schedule-auto><i class="fa-solid fa-shuffle" aria-hidden="true"></i><span>Распределить</span></button>
+                <button type="button" class="schedule-btn schedule-btn--primary" data-schedule-add-open><i class="fa-solid fa-plus" aria-hidden="true"></i><span>Добавить воркеров</span></button>
+            </div>
+        </header>
+
+        <nav class="schedule-days" aria-label="Группы по выходным дням">
+            @foreach (var item in data.Groups)
+            {
+                var itemState = item.Calendar.ElementAtOrDefault(todayDay)?.Shift1;
+                var itemIsOff = itemState == WorkerScheduleShifts.Off;
+                <a class="schedule-day @(item.Id == group.Id ? "is-active" : "")" asp-action="Index" asp-route-dayOff="@item.DayOff" aria-current="@(item.Id == group.Id ? "page" : null)">
+                    <span>@item.Name</span><strong>@item.WorkerCount</strong>
+                    <small>@(itemIsOff ? "Выходной" : "Работает")</small>
+                </a>
+            }
+        </nav>
+
+        <section class="schedule-week-board" aria-labelledby="weekBoardTitle">
+            <div class="schedule-section-heading"><div><h2 id="weekBoardTitle">Недельное расписание (все группы)</h2><p>Как меняются дневное и ночное окна по каждому выходному дню.</p></div><span class="schedule-section-date">Сегодня: @data.Groups.FirstOrDefault()?.Calendar.ElementAtOrDefault(todayDay)?.Label</span></div>
+            <div class="schedule-week-table-wrap">
+                <table class="schedule-week-table">
+                    <thead><tr><th>Группа (выходной день)</th>@foreach (var day in data.Groups.First().Calendar) { <th>@day.Label[..2]</th> }</tr></thead>
+                    <tbody>
+                    @foreach (var row in data.Groups)
+                    {
+                        <tr><th scope="row"><a asp-action="Index" asp-route-dayOff="@row.DayOff">@row.Name</a><span>@row.WorkerCount воркеров</span></th>
+                        @foreach (var day in row.Calendar)
+                        {
+                            <td class="@(day.IsDayOff ? "is-off" : "")"><div class="schedule-week-cell"><span class="state state--@day.Shift1.ToLowerInvariant()"><i class="fa-regular @StateIcon(day.Shift1)" aria-hidden="true"></i>@StateLabel(day.Shift1) 1</span><span class="state state--@day.Shift2.ToLowerInvariant()"><i class="fa-regular @StateIcon(day.Shift2)" aria-hidden="true"></i>@StateLabel(day.Shift2) 2</span></div></td>
+                        }
+                        </tr>
+                    }
+                    </tbody>
+                </table>
+            </div>
+        </section>
+
+        <section class="schedule-current" aria-labelledby="currentScheduleTitle">
+            <div class="schedule-section-heading"><div><h2 id="currentScheduleTitle">Сейчас (@(data.Groups.FirstOrDefault()?.Calendar.ElementAtOrDefault(todayDay)?.Label ?? "Сегодня"))</h2><p>Распределение воркеров по фактическому окну мониторинга.</p></div></div>
+            <div class="schedule-current__cards"><article class="schedule-metric schedule-metric--day"><i class="fa-regular fa-sun" aria-hidden="true"></i><div><span>Дневная смена</span><strong>@currentDayWindowWorkers</strong><small>воркеров</small></div></article><article class="schedule-metric schedule-metric--night"><i class="fa-regular fa-moon" aria-hidden="true"></i><div><span>Ночная смена</span><strong>@currentNightWorkers</strong><small>воркеров</small></div></article><article class="schedule-metric schedule-metric--off"><i class="fa-solid fa-bed" aria-hidden="true"></i><div><span>Отдыхают</span><strong>@currentOffWorkers</strong><small>воркеров</small></div></article><article class="schedule-metric schedule-metric--paused"><i class="fa-solid fa-pause" aria-hidden="true"></i><div><span>Отключены</span><strong>@currentPausedWorkers</strong><small>воркеров</small></div></article></div>
+        </section>
+
+        <div class="schedule-main-grid">
+        <section class="schedule-overview" data-group-id="@group.Id" data-day-off="@group.DayOff">
+            <div class="schedule-overview__heading">
+                <span class="schedule-overview__icon"><i class="fa-regular fa-calendar" aria-hidden="true"></i></span>
+                <div><h2>@group.Name</h2><p>@group.WorkerCount воркеров · выходной каждую неделю</p></div>
+                <label class="schedule-orientation"><span>Смена 1 в активном цикле</span><select data-schedule-orientation><option value="DAY_FIRST" selected="@(group.CurrentWeekShift == WorkerScheduleShifts.DayFirst)">Дневная</option><option value="NIGHT_FIRST" selected="@(group.CurrentWeekShift == WorkerScheduleShifts.NightFirst)">Ночная</option></select></label>
+            </div>
+            @if (group.DayOff == todayDay)
+            {
+                <div class="schedule-dayoff-banner"><i class="fa-solid fa-bed" aria-hidden="true"></i><strong>Сегодня выходной</strong><span>Обе смены на паузе. После завершения суток порядок смен изменится.</span></div>
+            }
+            <div class="schedule-overview__grid">
+                <article class="shift-card shift-card--@((selectedToday?.Shift1 ?? WorkerScheduleShifts.Off).ToLowerInvariant())">
+                    <div class="shift-card__icon"><i class="fa-solid @StateIcon(selectedToday?.Shift1 ?? WorkerScheduleShifts.Off)" aria-hidden="true"></i></div>
+                    <div><span>Смена 1</span><strong>@group.Shift1Count воркеров</strong><p>Сейчас: @StateLabel(selectedToday?.Shift1 ?? WorkerScheduleShifts.Off).ToLowerInvariant()@(selectedToday?.Shift1 == WorkerScheduleShifts.Off ? "" : $" · {StateWindow(selectedToday?.Shift1 ?? WorkerScheduleShifts.Off)}")</p></div>
+                </article>
+                <article class="shift-card shift-card--@((selectedToday?.Shift2 ?? WorkerScheduleShifts.Off).ToLowerInvariant())">
+                    <div class="shift-card__icon"><i class="fa-solid @StateIcon(selectedToday?.Shift2 ?? WorkerScheduleShifts.Off)" aria-hidden="true"></i></div>
+                    <div><span>Смена 2</span><strong>@group.Shift2Count воркеров</strong><p>Сейчас: @StateLabel(selectedToday?.Shift2 ?? WorkerScheduleShifts.Off).ToLowerInvariant()@(selectedToday?.Shift2 == WorkerScheduleShifts.Off ? "" : $" · {StateWindow(selectedToday?.Shift2 ?? WorkerScheduleShifts.Off)}")</p></div>
+                </article>
+                <section class="schedule-calendar" aria-labelledby="calendarTitle">
+                    <h3 id="calendarTitle">Недельный цикл</h3>
+                    <div class="schedule-calendar__grid">
+                        @foreach (var day in group.Calendar)
+                        {
+                            <article class="schedule-calendar__day @(day.IsDayOff ? "is-off" : "")">
+                                <strong>@day.Label[..2]</strong>
+                                <span class="state state--@day.Shift1.ToLowerInvariant()"><i class="fa-regular @StateIcon(day.Shift1)" aria-hidden="true"></i>@StateLabel(day.Shift1)</span>
+                                <span class="state state--@day.Shift2.ToLowerInvariant()"><i class="fa-regular @StateIcon(day.Shift2)" aria-hidden="true"></i>@StateLabel(day.Shift2)</span>
+                            </article>
+                        }
+                    </div>
+                    <div class="schedule-calendar__legend"><span>Верхняя строка — Смена 1</span><span>Нижняя — Смена 2</span></div>
+                </section>
+            </div>
+        </section>
+
+        <section class="schedule-workers">
+            <header class="schedule-workers__toolbar"><div><h2>Воркеры группы</h2><span>@group.WorkerCount назначено</span></div><label class="schedule-search"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i><input type="search" placeholder="Поиск по воркерам..." data-schedule-search /></label></header>
+            @if (group.Workers.Count == 0)
+            {
+                <div class="schedule-empty schedule-empty--inline"><i class="fa-solid fa-server" aria-hidden="true"></i><h3>В группе пока нет воркеров</h3><p>Добавьте вручную или используйте автоматическое распределение.</p></div>
+            }
+            else
+            {
+                <div class="schedule-table-wrap"><table class="data-table schedule-table"><thead><tr><th>Воркер</th><th>Смена</th><th>Статус</th><th>Сегодня</th><th>Следующий рабочий день</th><th><span class="sr-only">Действия</span></th></tr></thead><tbody>
+                @foreach (var worker in group.Workers)
+                {
+                    <tr data-schedule-worker-row data-search="@worker.DisplayName.ToLowerInvariant()"><td><span class="schedule-worker-name">@worker.DisplayName</span><small>@(worker.LastSeenAtUtc.HasValue ? $"Последняя связь {worker.LastSeenAtUtc.Value:dd.MM HH:mm}" : "Нет данных о связи")</small></td><td><select data-schedule-worker-shift data-worker-id="@worker.WorkerId"><option value="SHIFT_1" selected="@(worker.Shift == WorkerScheduleShifts.Shift1)">Смена 1</option><option value="SHIFT_2" selected="@(worker.Shift == WorkerScheduleShifts.Shift2)">Смена 2</option></select></td><td><span class="worker-state @(!worker.IsEnabled || worker.IsMonitoringPaused ? "is-paused" : worker.IsOnline ? "is-online" : "is-offline")"><i class="fa-solid fa-circle" aria-hidden="true"></i>@(!worker.IsEnabled ? "Отключен" : worker.IsMonitoringPaused ? "Пауза" : worker.IsOnline ? "Онлайн" : "Офлайн")</span></td><td><span class="state state--@worker.TodayState.ToLowerInvariant()">@StateLabel(worker.TodayState)</span></td><td>@worker.NextWorkingDay</td><td><button type="button" class="schedule-icon-btn schedule-icon-btn--danger" data-schedule-remove data-worker-id="@worker.WorkerId" data-worker-name="@worker.DisplayName" title="Удалить из группы" aria-label="Удалить @worker.DisplayName из группы"><i class="fa-regular fa-trash-can" aria-hidden="true"></i></button></td></tr>
+                }
+                </tbody></table></div>
+            }
+        </section>
+        </div>
+
+        <div class="schedule-modal" data-schedule-add-modal hidden><div class="schedule-modal__backdrop" data-schedule-modal-close></div><section class="schedule-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="scheduleAddTitle"><header><div><h2 id="scheduleAddTitle">Добавить воркеров</h2><p>Выберите воркеров и смену для группы «@group.Name».</p></div><button type="button" class="schedule-icon-btn" data-schedule-modal-close aria-label="Закрыть"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button></header><label class="schedule-search schedule-search--modal"><i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i><input type="search" placeholder="Найти воркера..." data-schedule-candidate-search /></label><div class="schedule-candidates">
+        @foreach (var candidate in data.Workers)
+        {
+            <label class="schedule-candidate" data-candidate data-search="@candidate.DisplayName.ToLowerInvariant()"><input type="checkbox" value="@candidate.WorkerId" data-candidate-check data-existing-group="@(candidate.GroupId?.ToString() ?? "")" /><span class="schedule-candidate__status @(candidate.IsOnline ? "is-online" : "is-offline")"></span><span><strong>@candidate.DisplayName</strong><small>@(candidate.GroupId.HasValue ? $"Сейчас: {candidate.GroupName}, {(candidate.Shift == WorkerScheduleShifts.Shift1 ? "Смена 1" : "Смена 2")}" : "Не распределён")</small></span></label>
+        }
+        </div><fieldset class="schedule-shift-picker"><legend>Смена</legend><label><input type="radio" name="schedule-add-shift" value="SHIFT_1" checked /><span>Смена 1</span></label><label><input type="radio" name="schedule-add-shift" value="SHIFT_2" /><span>Смена 2</span></label></fieldset><p class="schedule-form-error" data-schedule-add-error hidden></p><footer><button type="button" class="schedule-btn schedule-btn--ghost" data-schedule-modal-close>Отмена</button><button type="button" class="schedule-btn schedule-btn--primary" data-schedule-add-submit>Добавить</button></footer></section></div>
+
+        <div class="schedule-modal" data-schedule-settings-modal hidden><div class="schedule-modal__backdrop" data-schedule-settings-close></div><section class="schedule-modal__dialog schedule-modal__dialog--settings" role="dialog" aria-modal="true" aria-labelledby="scheduleSettingsTitle"><header><div><h2 id="scheduleSettingsTitle">Время смен</h2><p>Общие окна запуска для всех групп выбранного офиса.</p></div><button type="button" class="schedule-icon-btn" data-schedule-settings-close aria-label="Закрыть"><i class="fa-solid fa-xmark" aria-hidden="true"></i></button></header><div class="schedule-time-grid"><label><span>Дневная, начало</span><input type="time" value="@settings.DayStartLocalTime" data-day-start /></label><label><span>Дневная, конец</span><input type="time" value="@settings.DayEndLocalTime" data-day-end /></label><label><span>Ночная, начало</span><input type="time" value="@settings.NightStartLocalTime" data-night-start /></label><label><span>Ночная, конец</span><input type="time" value="@settings.NightEndLocalTime" data-night-end /></label></div><label class="schedule-timezone"><span>Часовой пояс</span><input type="text" value="@settings.TimeZoneId" data-timezone /></label><p class="schedule-form-error" data-schedule-settings-error hidden></p><footer><button type="button" class="schedule-btn schedule-btn--ghost" data-schedule-settings-close>Отмена</button><button type="button" class="schedule-btn schedule-btn--primary" data-schedule-settings-submit>Сохранить</button></footer></section></div>
+    }
+</main>

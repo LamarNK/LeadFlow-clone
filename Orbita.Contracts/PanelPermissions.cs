@@ -9,6 +9,7 @@ public static class PanelPermissions
     public const string Dashboard = "dashboard";
     public const string Workers = "workers";
     public const string Accounts = "accounts";
+    public const string Schedule = "schedule";
     public const string Balances = "balances";
     public const string Listings = "listings";
     public const string Statistics = "statistics";
@@ -33,12 +34,14 @@ public static class PanelPermissions
     /// <summary>Strips team/analytics from Manager role so desk-only defaults stick after upgrades.</summary>
     public const string ManagerDeskOnlyUpgrade = "manager-desk-v1";
     public const string ListingsUpgrade = "listings-v1";
+    public const string ScheduleUpgrade = "schedule-v1";
 
     public static readonly IReadOnlyList<PanelPermissionDefinition> All =
     [
         new(Dashboard, "Панель управления", "Сводка по работе офисов."),
         new(Workers, "Воркеры", "Просмотр и управление воркерами."),
         new(Accounts, "Аккаунты", "Просмотр аккаунтов и их состояния."),
+        new(Schedule, "Расписание", "Управление сменами и выходными воркеров."),
         new(Balances, "Балансы", "Контроль балансов и пополнение аккаунтов Avito."),
         new(Listings, "Объявления", "Контроль сроков размещения объявлений Avito."),
         new(Statistics, "Статистика", "Просмотр аналитики по откликам."),
@@ -74,7 +77,7 @@ public static class PanelPermissions
         {
             PanelRoles.Admin => All.Select(x => x.Id).ToArray(),
             PanelRoles.OfficeLead => All
-                .Where(x => x.Id is not Administration and not Balances and not Listings)
+                .Where(x => x.Id is not Administration and not Balances and not Listings and not Schedule)
                 .Select(x => x.Id)
                 .ToArray(),
             PanelRoles.SeniorManager =>
@@ -83,7 +86,7 @@ public static class PanelPermissions
             ],
             // Manager: only own CRM desk work — no team board / analytics by default.
             PanelRoles.Manager => [CrmBoard, CrmTasks, Settings],
-            PanelRoles.Operator => [Dashboard, Workers, Accounts, Balances, Listings, Statistics, Responses, Events, Settings],
+            PanelRoles.Operator => [Dashboard, Workers, Accounts, Schedule, Balances, Listings, Statistics, Responses, Events, Settings],
             _ => [Dashboard, Workers, Accounts, Statistics, Responses, Events, Settings]
         };
 
@@ -108,6 +111,13 @@ public static class PanelPermissions
 
         var normalized = PanelRoles.Normalize(role);
         return normalized is PanelRoles.Admin or PanelRoles.Operator;
+    }
+
+    public static bool NeedsScheduleUpgrade(string? role, IEnumerable<string>? permissions)
+    {
+        var current = permissions?.ToHashSet(StringComparer.Ordinal) ?? [];
+        return !current.Contains(Schedule)
+               && PanelRoles.Normalize(role) is PanelRoles.Admin or PanelRoles.Operator;
     }
 
     public static bool NeedsCrmTeamUpgrade(IEnumerable<string>? permissions)

@@ -328,6 +328,7 @@ public static class OrbitaApiStartupExtensions
             })
             .RemoveAllLoggers();
         builder.Services.AddScoped<WorkerScheduleService>();
+        builder.Services.AddScoped<WorkerScheduleManager>();
         builder.Services.AddScoped<WorkerCommandService>();
         builder.Services.AddScoped<WorkerEventService>();
         builder.Services.Configure<WorkerReleaseOptions>(builder.Configuration.GetSection(WorkerReleaseOptions.SectionName));

@@ -124,6 +124,39 @@ public sealed class OrbitaApiClient(
             ? Task.FromResult<IReadOnlyList<WorkerListItem>?>(DesignPreviewData.GetWorkers(officeContext.EffectiveOfficeId))
             : GetAsync<IReadOnlyList<WorkerListItem>>(WithOfficeQuery("api/v1/workers"), ct);
 
+    public Task<WorkerScheduleOfficeDto?> GetWorkerScheduleAsync(int? dayOff = null, CancellationToken ct = default)
+    {
+        var path = WithOfficeQuery("api/v1/schedule");
+        if (dayOff.HasValue) path = AppendQuery(path, "selectedDayOff", dayOff.Value.ToString());
+        return GetAsync<WorkerScheduleOfficeDto>(path, ct);
+    }
+
+    public Task<(bool Success, string? Error)> AssignScheduleWorkersAsync(AddWorkerScheduleRequest payload, CancellationToken ct = default) =>
+        SendScheduleMutationAsync(HttpMethod.Post, "api/v1/schedule/assign", payload, ct);
+
+    public Task<(bool Success, string? Error)> MoveScheduleWorkerAsync(MoveWorkerScheduleRequest payload, CancellationToken ct = default) =>
+        SendScheduleMutationAsync(HttpMethod.Post, "api/v1/schedule/move", payload, ct);
+
+    public Task<(bool Success, string? Error)> RemoveScheduleWorkerAsync(Guid workerId, CancellationToken ct = default) =>
+        SendScheduleMutationAsync(HttpMethod.Post, "api/v1/schedule/remove", new RemoveWorkerScheduleRequest(workerId), ct);
+
+    public Task<(bool Success, string? Error)> UpdateScheduleSettingsAsync(UpdateWorkerScheduleSettingsRequest payload, CancellationToken ct = default) =>
+        SendScheduleMutationAsync(HttpMethod.Put, "api/v1/schedule/settings", payload, ct);
+
+    public Task<(bool Success, string? Error)> UpdateScheduleGroupAsync(Guid groupId, UpdateWorkerScheduleGroupRequest payload, CancellationToken ct = default) =>
+        SendScheduleMutationAsync(HttpMethod.Put, $"api/v1/schedule/groups/{groupId:D}", payload, ct);
+
+    public Task<(bool Success, string? Error)> AutoDistributeScheduleAsync(CancellationToken ct = default) =>
+        SendScheduleMutationAsync(HttpMethod.Post, "api/v1/schedule/auto-distribute", new { }, ct);
+
+    private async Task<(bool Success, string? Error)> SendScheduleMutationAsync<T>(HttpMethod method, string path, T payload, CancellationToken ct)
+    {
+        if (_preview.Enabled) return (true, null);
+        using var request = new HttpRequestMessage(method, WithOfficeQuery(path)) { Content = JsonContent.Create(payload) };
+        using var response = await SendAuthenticatedAsync(request, ct);
+        return response is null ? (false, InvalidApiSessionError) : response.IsSuccessStatusCode ? (true, null) : (false, await ReadApiErrorAsync(response, ct));
+    }
+
     public Task<WorkersPageDto?> GetDashboardWorkersAsync(
         int page = 1,
         int? pageSize = null,

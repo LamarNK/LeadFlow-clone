@@ -15,7 +15,8 @@ public enum PanelChangeKind
     WorkerDetails,
     /// <summary>Office-scoped reference/settings data.</summary>
     Reference,
-    Listings
+    Listings,
+    Schedule
 }
 
 public sealed record PanelChangeNotification(

@@ -85,4 +85,5 @@ public sealed class AuthorizationRedirectTests : IClassFixture<WebApplicationFac
 
         Assert.Equal(HttpStatusCode.OK, dashboard.StatusCode);
     }
+
 }

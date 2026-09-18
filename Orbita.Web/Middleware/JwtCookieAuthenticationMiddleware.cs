@@ -17,13 +17,21 @@ public sealed class JwtCookieAuthenticationMiddleware(RequestDelegate next)
         IConfiguration config,
         IOptions<DesignPreviewOptions> previewOptions)
     {
-        if (context.User.Identity?.IsAuthenticated != true
-            && context.Request.Cookies.TryGetValue(AuthSession.TokenCookieName, out var token)
+        context.Request.Cookies.TryGetValue(AuthSession.TokenCookieName, out var token);
+        var preview = previewOptions.Value;
+
+        if (context.User.Identity?.IsAuthenticated == true
+            && preview.Enabled
+            && string.Equals(token, AuthSession.DesignPreviewToken, StringComparison.Ordinal)
+            && NeedsPreviewRefresh(context.User))
+        {
+            await auth.SignInPreviewAsync(preview.Email, preview.DisplayName, context.RequestAborted);
+        }
+        else if (context.User.Identity?.IsAuthenticated != true
             && !string.IsNullOrWhiteSpace(token))
         {
             if (string.Equals(token, AuthSession.DesignPreviewToken, StringComparison.Ordinal))
             {
-                var preview = previewOptions.Value;
                 if (preview.Enabled)
                 {
                     await auth.SignInPreviewAsync(preview.Email, preview.DisplayName, context.RequestAborted);
@@ -47,6 +55,15 @@ public sealed class JwtCookieAuthenticationMiddleware(RequestDelegate next)
         }
 
         await next(context);
+    }
+
+    private static bool NeedsPreviewRefresh(ClaimsPrincipal user)
+    {
+        if (!user.IsInRole(PanelRoles.Admin)) return true;
+        var current = user.FindAll(PanelPermissions.ClaimType)
+            .Select(claim => claim.Value)
+            .ToHashSet(StringComparer.Ordinal);
+        return PanelPermissions.DefaultForRole(PanelRoles.Admin).Any(permission => !current.Contains(permission));
     }
 
     private static bool NeedsAccessRefresh(HttpContext context, ClaimsPrincipal user)

@@ -14,7 +14,9 @@ public sealed class WorkerScheduleHostedService(
             {
                 await using var scope = services.CreateAsyncScope();
                 var scheduler = scope.ServiceProvider.GetRequiredService<WorkerScheduleService>();
+                var manager = scope.ServiceProvider.GetRequiredService<WorkerScheduleManager>();
                 var changed = await scheduler.ApplyAsync(stoppingToken).ConfigureAwait(false);
+                changed += await manager.ApplyAsync(stoppingToken).ConfigureAwait(false);
                 if (changed > 0)
                 {
                     logger.LogInformation("Worker schedule applied to {Count} workers.", changed);

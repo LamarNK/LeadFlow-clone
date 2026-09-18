@@ -14,7 +14,7 @@ public sealed class WorkerScheduleService(
     {
         var nowUtc = DateTime.UtcNow;
         var workers = await db.Workers
-            .Where(x => x.AutoScheduleEnabled)
+            .Where(x => x.AutoScheduleEnabled && !db.WorkerScheduleAssignments.Any(a => a.WorkerId == x.Id))
             .ToListAsync(ct)
             .ConfigureAwait(false);
 

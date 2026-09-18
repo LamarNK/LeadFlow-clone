@@ -13,6 +13,7 @@
         accounts: ['Accounts', 'NavBadges', 'Dashboard'],
         listings: ['Listings', 'Accounts'],
         statistics: ['Statistics', 'Dashboard', 'Accounts', 'NavBadges'],
+        schedule: ['Schedule', 'Workers', 'Dashboard'],
         crm: ['Crm']
     };
 
@@ -31,7 +32,7 @@
 
     function normalizeKind(kind) {
         if (typeof kind === 'number') {
-            var names = ['Dashboard', 'Responses', 'Workers', 'Events', 'Errors', 'Accounts', 'Statistics', 'NavBadges', 'Crm', 'WorkerDetails', 'Reference', 'Listings'];
+            var names = ['Dashboard', 'Responses', 'Workers', 'Events', 'Errors', 'Accounts', 'Statistics', 'NavBadges', 'Crm', 'WorkerDetails', 'Reference', 'Listings', 'Schedule'];
             return names[kind] || null;
         }
         return kind;

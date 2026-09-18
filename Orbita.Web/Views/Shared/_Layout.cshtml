@@ -12,7 +12,7 @@
     var contentOnly = Context.Request.Headers.ContainsKey("X-Orbita-Content-Only");
     var polishOperationsUi = ViewContext.RouteData.Values["controller"]?.ToString()
         is "Dashboard" or "Workers" or "Accounts" or "Listings" or "Statistics" or "Responses"
-        or "Events" or "Errors" or "Settings" or "MySettings" or "TelephonySettings";
+        or "Events" or "Errors" or "Settings" or "MySettings" or "TelephonySettings" or "Schedule";
     // Fast navigation keeps the outer shell (including the sidebar) alive between pages.
     // The assembly MVID changes on every build and lets the client detect that the shell
     // was rendered by an older deployment and must be refreshed as a complete document.
@@ -67,6 +67,7 @@ else
     <link rel="stylesheet" href="~/css/orbita/workers.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/orbita/worker-detail.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/orbita/accounts.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/css/orbita/schedule.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/orbita/balances.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/orbita/listings.css" asp-append-version="true" />
     <link rel="stylesheet" href="~/css/orbita/events.css" asp-append-version="true" />
@@ -116,6 +117,7 @@ else
                 var canDashboard = can(PanelPermissions.Dashboard);
                 var canWorkers = can(PanelPermissions.Workers);
                 var canAccounts = can(PanelPermissions.Accounts);
+                var canSchedule = can(PanelPermissions.Schedule);
                 var canBalances = OrbitaFeatureToggles.BalancesEnabled && (User.IsInRole(PanelRoles.Admin) || User.IsInRole(PanelRoles.Operator));
                 var canListings = OrbitaFeatureToggles.ListingsEnabled && (User.IsInRole(PanelRoles.Admin) || User.IsInRole(PanelRoles.Operator));
                 var canStatistics = can(PanelPermissions.Statistics);
@@ -129,7 +131,7 @@ else
                 var canTelephony = can(PanelPermissions.Administration) || User.IsInRole(PanelRoles.OfficeLead);
                 var canAdministration = can(PanelPermissions.Administration);
             }
-            @if (canDashboard || canWorkers || canAccounts || canBalances || canListings || canStatistics || canResponses)
+            @if (canDashboard || canWorkers || canAccounts || canSchedule || canBalances || canListings || canStatistics || canResponses)
             {
                 <section class="orbita-nav-section orbita-nav-section--primary" aria-labelledby="navMainTitle">
                     <h2 class="orbita-nav-section-title" id="navMainTitle">Основное</h2>
@@ -145,6 +147,10 @@ else
                         @if (canAccounts)
                         {
                             <a class="nav-item @(ctrl == "Accounts" ? "active" : "")" href="@Url.Action("Index", "Accounts")" title="Аккаунты"><i class="fa-solid fa-users" aria-hidden="true"></i><span class="nav-item-label">Аккаунты</span></a>
+                        }
+                        @if (canSchedule)
+                        {
+                            <a class="nav-item @(ctrl == "Schedule" ? "active" : "")" href="@Url.Action("Index", "Schedule")" title="Расписание"><i class="fa-solid fa-calendar-days" aria-hidden="true"></i><span class="nav-item-label">Расписание</span></a>
                         }
                         @if (canBalances)
                         {
@@ -347,6 +353,7 @@ else
 <script src="~/js/orbita/sidebar.js" asp-append-version="true"></script>
 <script src="~/js/orbita/feedback.js" asp-append-version="true"></script>
 <script src="~/js/orbita/workers.js" asp-append-version="true"></script>
+<script src="~/js/orbita-schedule.js" asp-append-version="true"></script>
 <script src="~/js/orbita/filters.js" asp-append-version="true"></script>
 <script src="~/js/orbita/detail-modal.js" asp-append-version="true"></script>
 <script src="~/js/orbita/navigation.js" asp-append-version="true"></script>

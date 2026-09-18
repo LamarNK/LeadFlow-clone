@@ -73,6 +73,12 @@ public sealed class AccessProfileService(
             if (await UpgradeListingsAccessAsync(role, claims))
             {
                 upgraded = true;
+                claims = await roles.GetClaimsAsync(role);
+            }
+
+            if (await UpgradeScheduleAccessAsync(role, claims))
+            {
+                upgraded = true;
             }
 
             if (upgraded)
@@ -201,6 +207,25 @@ public sealed class AccessProfileService(
             role,
             new Claim(PanelPermissions.PermissionUpgradeClaimType, PanelPermissions.ListingsUpgrade));
         return addListings;
+    }
+
+    private async Task<bool> UpgradeScheduleAccessAsync(IdentityRole role, IEnumerable<Claim> claims)
+    {
+        if (claims.Any(claim => claim.Type == PanelPermissions.PermissionUpgradeClaimType
+                                && claim.Value == PanelPermissions.ScheduleUpgrade))
+        {
+            return false;
+        }
+
+        var permissions = claims.Where(claim => claim.Type == PanelPermissions.ClaimType).Select(claim => claim.Value).ToArray();
+        var addSchedule = PanelPermissions.NeedsScheduleUpgrade(role.Name, permissions);
+        if (addSchedule)
+        {
+            await roles.AddClaimAsync(role, new Claim(PanelPermissions.ClaimType, PanelPermissions.Schedule));
+        }
+
+        await roles.AddClaimAsync(role, new Claim(PanelPermissions.PermissionUpgradeClaimType, PanelPermissions.ScheduleUpgrade));
+        return addSchedule;
     }
 
     public async Task<IReadOnlyList<AccessProfileDto>> GetAllAsync(CancellationToken ct = default)

@@ -299,6 +299,43 @@ public sealed class WorkerEntity
     public ICollection<WorkerSnapshotEntity> Snapshots { get; set; } = [];
     public ICollection<WorkerAccountEntity> Accounts { get; set; } = [];
     public ICollection<WorkerEventEntity> Events { get; set; } = [];
+    public WorkerScheduleAssignmentEntity? ScheduleAssignment { get; set; }
+}
+
+public sealed class WorkerScheduleOfficeEntity
+{
+    public Guid OfficeId { get; set; }
+    public string DayStartLocalTime { get; set; } = "07:00";
+    public string DayEndLocalTime { get; set; } = "19:00";
+    public string NightStartLocalTime { get; set; } = "19:00";
+    public string NightEndLocalTime { get; set; } = "07:00";
+    public string TimeZoneId { get; set; } = "Europe/Moscow";
+    public DateTime UpdatedAtUtc { get; set; }
+    public string? UpdatedByUserId { get; set; }
+    public OfficeEntity Office { get; set; } = null!;
+    public ICollection<WorkerScheduleGroupEntity> Groups { get; set; } = [];
+}
+
+public sealed class WorkerScheduleGroupEntity
+{
+    public Guid Id { get; set; }
+    public Guid OfficeId { get; set; }
+    public int DayOff { get; set; }
+    public string Name { get; set; } = string.Empty;
+    public string CurrentWeekShift { get; set; } = WorkerScheduleShifts.DayFirst;
+    public DateOnly? LastAppliedOffDate { get; set; }
+    public uint RowVersion { get; set; }
+    public WorkerScheduleOfficeEntity Office { get; set; } = null!;
+    public ICollection<WorkerScheduleAssignmentEntity> Assignments { get; set; } = [];
+}
+
+public sealed class WorkerScheduleAssignmentEntity
+{
+    public Guid WorkerId { get; set; }
+    public Guid GroupId { get; set; }
+    public string Shift { get; set; } = WorkerScheduleShifts.Shift1;
+    public WorkerEntity Worker { get; set; } = null!;
+    public WorkerScheduleGroupEntity Group { get; set; } = null!;
 }
 
 public sealed class WorkerSettingsTemplateEntity

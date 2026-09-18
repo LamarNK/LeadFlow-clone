@@ -15,6 +15,9 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
     public DbSet<WorkerSettingsTemplateEntity> WorkerSettingsTemplates => Set<WorkerSettingsTemplateEntity>();
     public DbSet<WorkerSnapshotEntity> WorkerSnapshots => Set<WorkerSnapshotEntity>();
     public DbSet<WorkerAccountEntity> WorkerAccounts => Set<WorkerAccountEntity>();
+    public DbSet<WorkerScheduleOfficeEntity> WorkerScheduleOffices => Set<WorkerScheduleOfficeEntity>();
+    public DbSet<WorkerScheduleGroupEntity> WorkerScheduleGroups => Set<WorkerScheduleGroupEntity>();
+    public DbSet<WorkerScheduleAssignmentEntity> WorkerScheduleAssignments => Set<WorkerScheduleAssignmentEntity>();
     public DbSet<WorkerAvitoAdEntity> WorkerAvitoAds => Set<WorkerAvitoAdEntity>();
     public DbSet<WorkerAvitoAdListScheduleEntity> WorkerAvitoAdListSchedules => Set<WorkerAvitoAdListScheduleEntity>();
     public DbSet<WorkerEventEntity> WorkerEvents => Set<WorkerEventEntity>();
@@ -261,6 +264,39 @@ public sealed class OrbitaDbContext(DbContextOptions<OrbitaDbContext> options)
             entity.Property(x => x.LocalTrafficBlockedAnalytics).IsRequired().HasDefaultValue(0);
             entity.Property(x => x.LocalTrafficBlockedPrefetch).IsRequired().HasDefaultValue(0);
             entity.HasOne(x => x.Worker).WithMany(x => x.Accounts).HasForeignKey(x => x.WorkerId);
+        });
+
+        modelBuilder.Entity<WorkerScheduleOfficeEntity>(entity =>
+        {
+            entity.ToTable("WorkerScheduleOffices");
+            entity.HasKey(x => x.OfficeId);
+            entity.Property(x => x.DayStartLocalTime).HasMaxLength(5).IsRequired();
+            entity.Property(x => x.DayEndLocalTime).HasMaxLength(5).IsRequired();
+            entity.Property(x => x.NightStartLocalTime).HasMaxLength(5).IsRequired();
+            entity.Property(x => x.NightEndLocalTime).HasMaxLength(5).IsRequired();
+            entity.Property(x => x.TimeZoneId).HasMaxLength(128).IsRequired();
+            entity.HasOne(x => x.Office).WithOne().HasForeignKey<WorkerScheduleOfficeEntity>(x => x.OfficeId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<WorkerScheduleGroupEntity>(entity =>
+        {
+            entity.ToTable("WorkerScheduleGroups");
+            entity.HasKey(x => x.Id);
+            entity.HasIndex(x => new { x.OfficeId, x.DayOff }).IsUnique();
+            entity.Property(x => x.Name).HasMaxLength(64).IsRequired();
+            entity.Property(x => x.CurrentWeekShift).HasMaxLength(16).IsRequired();
+            entity.Property(x => x.RowVersion).IsRowVersion().HasColumnName("xmin");
+            entity.HasOne(x => x.Office).WithMany(x => x.Groups).HasForeignKey(x => x.OfficeId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<WorkerScheduleAssignmentEntity>(entity =>
+        {
+            entity.ToTable("WorkerScheduleAssignments");
+            entity.HasKey(x => x.WorkerId);
+            entity.HasIndex(x => new { x.GroupId, x.Shift });
+            entity.Property(x => x.Shift).HasMaxLength(16).IsRequired();
+            entity.HasOne(x => x.Worker).WithOne(x => x.ScheduleAssignment).HasForeignKey<WorkerScheduleAssignmentEntity>(x => x.WorkerId).OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(x => x.Group).WithMany(x => x.Assignments).HasForeignKey(x => x.GroupId).OnDelete(DeleteBehavior.Cascade);
         });
 
         modelBuilder.Entity<WorkerAvitoAdEntity>(entity =>

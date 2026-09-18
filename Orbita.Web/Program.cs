@@ -56,6 +56,7 @@ builder.Services.AddScoped<IResponsesService, ResponsesService>();
 builder.Services.AddScoped<IErrorsService, ErrorsService>();
 builder.Services.AddScoped<IOfficeContext, OfficeContext>();
 builder.Services.AddScoped<IAccountsService, AccountsService>();
+builder.Services.AddScoped<IWorkerScheduleWebService, WorkerScheduleWebService>();
 builder.Services.AddScoped<IBalancesService, BalancesService>();
 builder.Services.AddScoped<IListingsService, ListingsService>();
 builder.Services.AddScoped<IStatisticsService, StatisticsService>();
