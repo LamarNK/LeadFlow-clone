@@ -108,15 +108,46 @@ public sealed class DashboardService(
             w.IsOnline,
             w.ActiveAccounts ?? w.CurrentActivity?.ActiveAccounts);
         var activeAccounts = w.ActiveAccounts ?? w.CurrentActivity?.ActiveAccounts ?? [];
-        var subProfiles = (w.SubProfiles ?? [])
-            .Select(profile => new DashboardWorkerSubProfileViewModel
+        var currentAccountIds = w.IsEnabled && w.IsOnline
+            ? activeAccounts
+                .Where(x => x.Phase is WorkerActivityPhases.Account or WorkerActivityPhases.SubProfile)
+                .Select(x => x.AccountId)
+                .ToHashSet()
+            : [];
+        if (w.IsEnabled
+            && w.IsOnline
+            && w.CurrentActivity?.AccountId is Guid currentAccountId
+            && w.CurrentActivity.Phase is WorkerActivityPhases.Account or WorkerActivityPhases.SubProfile)
+        {
+            currentAccountIds.Add(currentAccountId);
+        }
+
+        var accounts = (w.Accounts ?? [])
+            .OrderByDescending(account => currentAccountIds.Contains(account.Id))
+            .ThenByDescending(account => account.LastMonitoringAtUtc)
+            .ThenByDescending(account => account.UpdatedAtUtc)
+            .Select((account, index) => new DashboardWorkerAccountViewModel
             {
-                Id = profile.Id,
-                Name = profile.Name,
-                Balance = profile.Balance,
-                IsEnabled = profile.IsEnabled,
-                IsProcessing = w.IsEnabled && w.IsOnline && profile.IsEnabled
-                    && IsProcessingSubProfile(w.CurrentActivity, activeAccounts, profile)
+                Id = account.Id,
+                Name = account.Name,
+                IsEnabled = account.IsEnabled,
+                IsProcessing = currentAccountIds.Contains(account.Id),
+                IsLastActive = index == 0 && !currentAccountIds.Contains(account.Id),
+                TotalBalance = account.TotalBalance,
+                LastMonitoringAtUtc = account.LastMonitoringAtUtc,
+                ResponsesToday = account.ResponsesToday,
+                DuplicatesToday = account.DuplicatesToday,
+                ErrorsToday = account.ErrorsToday,
+                LastActivityUtc = account.LastActivityUtc,
+                SubProfiles = account.SubProfiles.Select(profile => new DashboardWorkerSubProfileViewModel
+                {
+                    Id = profile.Id,
+                    Name = profile.Name,
+                    Balance = profile.Balance,
+                    IsEnabled = profile.IsEnabled,
+                    IsProcessing = w.IsEnabled && w.IsOnline && profile.IsEnabled
+                        && IsProcessingSubProfile(w.CurrentActivity, activeAccounts, account.Id, profile)
+                }).ToList()
             })
             .ToList();
         return new DashboardWorkerRowViewModel
@@ -142,17 +173,18 @@ public sealed class DashboardService(
             CurrentActivityNextCycleAtUtc = activity.NextCycleAtUtc,
             OfficeName = w.OfficeName,
             TotalBalance = w.TotalBalance,
-            SubProfiles = subProfiles
+            Accounts = accounts
         };
     }
 
     private static bool IsProcessingSubProfile(
         WorkerActivityDto? activity,
         IReadOnlyList<WorkerActiveAccountDto> activeAccounts,
+        Guid accountId,
         DashboardWorkerSubProfileItem profile)
     {
         if (activeAccounts.Any(active =>
-                active.AccountId == profile.AccountId
+                active.AccountId == accountId
                 && string.Equals(active.Phase, WorkerActivityPhases.SubProfile, StringComparison.OrdinalIgnoreCase)
                 && (string.Equals(active.SubProfileId, profile.Id, StringComparison.OrdinalIgnoreCase)
                     || string.Equals(active.SubProfileName, profile.Name, StringComparison.OrdinalIgnoreCase))))
@@ -160,7 +192,7 @@ public sealed class DashboardService(
             return true;
         }
 
-        return activity?.AccountId == profile.AccountId
+        return activity?.AccountId == accountId
             && string.Equals(activity.Phase, WorkerActivityPhases.SubProfile, StringComparison.OrdinalIgnoreCase)
             && (string.Equals(activity.SubProfileId, profile.Id, StringComparison.OrdinalIgnoreCase)
                 || string.Equals(activity.SubProfileName, profile.Name, StringComparison.OrdinalIgnoreCase));

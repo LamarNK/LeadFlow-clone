@@ -1091,6 +1091,33 @@
     .data-table--dashboard-workers.data-table--cards tbody tr::before { order: 3; }
     .data-table--dashboard-workers.data-table--cards tbody tr::after { order: 5; }
 
+    .data-table--dashboard-workers.data-table--cards tbody tr.dashboard-worker-accounts-detail {
+        display: block;
+        grid-column: 1 / -1;
+        height: auto;
+        margin: -2px 0 10px;
+        padding: 0;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+        box-shadow: none;
+    }
+
+    .data-table--dashboard-workers.data-table--cards tbody tr.dashboard-worker-accounts-detail[hidden] {
+        display: none;
+    }
+
+    .data-table--dashboard-workers.data-table--cards tbody tr.dashboard-worker-accounts-detail::before,
+    .data-table--dashboard-workers.data-table--cards tbody tr.dashboard-worker-accounts-detail::after {
+        display: none;
+    }
+
+    .data-table--dashboard-workers.data-table--cards tbody tr.dashboard-worker-accounts-detail > td {
+        display: block;
+        width: 100%;
+        height: auto;
+    }
+
     .data-table--dashboard-workers.data-table--cards tbody td[data-label="Статус"],
     .data-table--dashboard-workers.data-table--cards tbody td[data-label="Субпрофили"] {
         order: 2;

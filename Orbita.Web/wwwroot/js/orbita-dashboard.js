@@ -75,6 +75,7 @@
     }
 
     var workerView = dashboardPreference('orbita-dashboard-worker-view', 'table');
+    var expandedWorkerAccounts = new Set();
     var highlightMs = 1800;
 
     // The dashboard script can be prefetched before Chart.js finishes loading.
@@ -784,13 +785,22 @@
         return new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 }).format(Number(value) || 0) + ' ₽';
     }
 
-    function renderWorkerSubProfiles(w) {
-        var profiles = Array.isArray(w.subProfiles) ? w.subProfiles.slice(0, 10) : [];
+    function renderAccountSubProfiles(account, workerId, otherAccountsCount, showExpandButton) {
+        var profiles = Array.isArray(account.subProfiles) ? account.subProfiles.slice(0, 10) : [];
+        var state = account.isProcessing
+            ? '<span class="dashboard-account-summary-state dashboard-account-summary-state--processing">Сейчас</span>'
+            : (account.isLastActive ? '<span class="dashboard-account-summary-state">Последний</span>' : '');
+        if (!account.isEnabled) {
+            state += '<span class="dashboard-account-summary-state dashboard-account-summary-state--disabled">Выкл.</span>';
+        }
+        var isExpanded = expandedWorkerAccounts.has(String(workerId));
+        var expandLabel = isExpanded ? 'Скрыть' : 'Показать ' + otherAccountsCount;
+        var expandButton = showExpandButton && otherAccountsCount > 0
+            ? '<button type="button" class="dashboard-accounts-expand" data-dashboard-accounts-expand data-worker-id="' + escapeHtml(workerId) + '" data-account-count="' + otherAccountsCount + '" aria-expanded="' + (isExpanded ? 'true' : 'false') + '" aria-controls="worker-accounts-' + escapeHtml(workerId) + '"><span>' + expandLabel + '</span><i class="fa-solid fa-chevron-down" aria-hidden="true"></i></button>'
+            : '';
+        var head = '<div class="dashboard-account-summary-head"><span class="dashboard-account-summary-name" title="' + escapeHtml(account.name || 'Аккаунт') + '">' + escapeHtml(account.name || 'Аккаунт') + '</span>' + state + expandButton + '</div>';
         if (!profiles.length) {
-            return {
-                profiles: '<span class="dashboard-subprofiles-empty">Нет данных</span>',
-                balance: '<strong>' + formatRubles(w.totalBalance) + '</strong><div class="dashboard-balance-bars"></div>'
-            };
+            return head + '<div class="dashboard-subprofiles"><span class="dashboard-subprofiles-empty">Нет данных</span></div>';
         }
 
         var knownBalances = profiles
@@ -804,6 +814,15 @@
             var title = (profile.name || profile.id || ('Субпрофиль ' + (index + 1))) + ' · ' + stateLabel + ' · ' + balanceLabel;
             return '<span class="dashboard-subprofile-dot dashboard-subprofile-dot--' + state + '" title="' + escapeHtml(title) + '" aria-label="Субпрофиль ' + (index + 1) + ': ' + escapeHtml(title) + '">' + (index + 1) + '</span>';
         }).join('');
+        return head + '<div class="dashboard-subprofiles" aria-label="Субпрофили аккаунта ' + escapeHtml(account.name || '') + '"><div class="dashboard-subprofile-dots">' + dots + '</div></div>';
+    }
+
+    function renderAccountBalance(account, workerTotalBalance) {
+        var profiles = Array.isArray(account.subProfiles) ? account.subProfiles.slice(0, 10) : [];
+        var knownBalances = profiles
+            .map(function (profile) { return profile.balance == null ? null : Math.max(0, Number(profile.balance) || 0); })
+            .filter(function (balance) { return balance != null; });
+        var maxBalance = Math.max.apply(Math, knownBalances.concat([1]));
         var bars = profiles.map(function (profile) {
             var value = profile.balance == null ? null : Math.max(0, Number(profile.balance) || 0);
             var height = value == null ? 8 : Math.max(14, Math.min(100, Math.round(value / maxBalance * 100)));
@@ -813,10 +832,30 @@
             return '<span class="dashboard-balance-bar dashboard-balance-bar--' + tone + ' dashboard-balance-bar--' + state + '" style="--balance-height:' + height + '%" title="' + escapeHtml(title) + '" aria-hidden="true"></span>';
         }).join('');
 
-        return {
-            profiles: '<div class="dashboard-subprofiles" aria-label="Субпрофили воркера"><div class="dashboard-subprofile-dots">' + dots + '</div></div>',
-            balance: '<strong>' + formatRubles(w.totalBalance) + '</strong><div class="dashboard-balance-bars" aria-label="Баланс субпрофилей">' + bars + '</div>'
-        };
+        var workerTotal = workerTotalBalance != null && Number(workerTotalBalance) !== Number(account.totalBalance)
+            ? '<span class="dashboard-worker-total-balance">Всего: ' + formatRubles(workerTotalBalance) + '</span>'
+            : '';
+        return '<strong>' + formatRubles(account.totalBalance) + '</strong>' + workerTotal + '<div class="dashboard-balance-bars" aria-label="Баланс субпрофилей аккаунта ' + escapeHtml(account.name || '') + '">' + bars + '</div>';
+    }
+
+    function renderOtherAccounts(w, showOfficeColumn) {
+        var accounts = Array.isArray(w.accounts) ? w.accounts.slice(1) : [];
+        if (!accounts.length) return '';
+        var isExpanded = expandedWorkerAccounts.has(String(w.id));
+        var rows = accounts.map(function (account) {
+            var activity = account.lastActivityUtc
+                ? '<time data-orbita-utc="' + escapeHtml(account.lastActivityUtc) + '" data-orbita-format="activity"></time>'
+                : '—';
+            var metrics = '<div class="dashboard-worker-account-metrics" aria-label="Показатели аккаунта ' + escapeHtml(account.name || '') + '">' +
+                '<span><small>Отклики</small><strong>' + (Number(account.responsesToday) || 0) + '</strong></span>' +
+                '<span><small>Дубли</small><strong>' + (Number(account.duplicatesToday) || 0) + '</strong></span>' +
+                '<span class="dashboard-worker-account-metric--errors"><small>Ошибки</small><strong>' + (Number(account.errorsToday) || 0) + '</strong></span>' +
+                '<span><small>Активность</small><strong>' + activity + '</strong></span></div>';
+            return '<article class="dashboard-worker-account-row"><div class="dashboard-worker-account-profiles">' +
+                renderAccountSubProfiles(account, w.id, 0, false) +
+                '</div>' + metrics + '<div class="dashboard-worker-account-balance"><span class="dashboard-worker-account-balance-label">Баланс аккаунта</span>' + renderAccountBalance(account, null) + '</div></article>';
+        }).join('');
+        return '<tr class="dashboard-worker-accounts-detail" id="worker-accounts-' + escapeHtml(w.id) + '" data-dashboard-accounts-detail="' + escapeHtml(w.id) + '"' + (isExpanded ? '' : ' hidden') + '><td colspan="' + (showOfficeColumn ? 12 : 11) + '"><section class="dashboard-worker-accounts-panel" aria-label="Другие аккаунты воркера ' + escapeHtml(w.displayName || '') + '"><div class="dashboard-worker-accounts-list">' + rows + '</div></section></td></tr>';
     }
 
     function renderWorkerToggleCell(w) {
@@ -978,14 +1017,21 @@
             var monitoringPausedTooltip = isMonitoringPaused
                 ? '<span class="dashboard-monitoring-paused-tooltip" title="Мониторинг приостановлен" aria-label="Предупреждение: мониторинг приостановлен"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i></span>'
                 : '';
-            var subProfileSummary = renderWorkerSubProfiles(w);
+            var workerAccounts = Array.isArray(w.accounts) ? w.accounts : [];
+            var primaryAccount = workerAccounts[0] || null;
+            var subProfilesHtml = primaryAccount
+                ? renderAccountSubProfiles(primaryAccount, w.id, workerAccounts.length - 1, true)
+                : '<span class="dashboard-subprofiles-empty">Нет аккаунтов</span>';
+            var balanceHtml = primaryAccount
+                ? renderAccountBalance(primaryAccount, w.totalBalance)
+                : '<strong>0 ₽</strong>';
 
             return '<tr class="dashboard-worker-row' + lowBalanceClass + monitoringPausedClass + '" data-href="' + escapeHtml(detailsUrl) + '" data-dashboard-worker-online="' + (w.isEnabled && w.isOnline ? 'true' : 'false') + '" data-dashboard-worker-empty="' + (!w.totalAccounts ? 'true' : 'false') + '" data-dashboard-worker-paused="' + (isMonitoringPaused ? 'true' : 'false') + '" data-dashboard-worker-activity="' + (iso ? Date.parse(iso) || 0 : 0) + '" data-dashboard-worker-name="' + escapeHtml(w.displayName || '') + '" data-dashboard-worker-ip="' + escapeHtml(w.ipAddress || '') + '" data-dashboard-worker-responses="' + (Number(w.responses) || 0) + '" data-dashboard-worker-errors="' + (Number(w.errors) || 0) + '">' +
                 '<td class="cell-name" data-label="Воркер">' + nameCell + lowBalanceTooltip + monitoringPausedTooltip + '</td>' +
                 officeCell +
                 '<td data-label="Статус"><span class="status-dot' + statusClass + '"><i class="fa-solid fa-circle status-dot-icon" aria-hidden="true"></i>' + statusText + '</span></td>' +
-                '<td class="dashboard-subprofiles-cell" data-label="Субпрофили">' + subProfileSummary.profiles + '</td>' +
-                '<td class="dashboard-balance-cell" data-label="Баланс субпрофилей">' + subProfileSummary.balance + '</td>' +
+                '<td class="dashboard-subprofiles-cell" data-label="Субпрофили">' + subProfilesHtml + '</td>' +
+                '<td class="dashboard-balance-cell" data-label="Баланс субпрофилей">' + balanceHtml + '</td>' +
                 accountsCell +
                 '<td class="cell-num" data-label="Откликов">' + w.responses + '</td>' +
                 '<td class="cell-num" data-label="Дублей">' + w.duplicates + '</td>' +
@@ -1001,7 +1047,7 @@
                 '<a class="row-menu-item" href="' + escapeHtml(settingsLogsUrl(w.id)) + '">Просмотреть логи</a>' +
                 '<a class="row-menu-item" href="' + escapeHtml(detailsUrl) + '#worker-settings">Настройки</a>' +
                 '</div></div></td>' +
-                '</tr>';
+                '</tr>' + renderOtherAccounts(w, !!(liveRoot && liveRoot.getAttribute('data-show-office-column') === 'true'));
         }).join('');
 
         if (window.OrbitaTime) {
@@ -1010,6 +1056,7 @@
 
         initDashboardRowMenus();
         initDashboardRowNavigation();
+        initDashboardAccountExpanders();
         initDashboardWorkerToggleButtons();
         initDashboardWorkerToolbar();
         if (window.Orbita && window.Orbita.initWorkerRestartButtons) {
@@ -1173,6 +1220,7 @@
 
             row.addEventListener('click', function (e) {
                 if (e.target.closest('[data-row-menu]')
+                    || e.target.closest('[data-dashboard-accounts-expand]')
                     || e.target.closest('[data-dashboard-enable-worker]')
                     || e.target.closest('[data-dashboard-disable-worker]')
                     || e.target.closest('a')
@@ -1184,6 +1232,31 @@
                 } else {
                     window.location.href = href;
                 }
+            });
+        });
+    }
+
+    function initDashboardAccountExpanders() {
+        document.querySelectorAll('[data-dashboard-accounts-expand]').forEach(function (button) {
+            if (button.hasAttribute('data-dashboard-accounts-expand-bound')) return;
+            button.setAttribute('data-dashboard-accounts-expand-bound', '1');
+            button.addEventListener('click', function (event) {
+                event.preventDefault();
+                event.stopPropagation();
+                var workerId = String(button.getAttribute('data-worker-id') || '');
+                var detail = document.querySelector('[data-dashboard-accounts-detail="' + CSS.escape(workerId) + '"]');
+                if (!workerId || !detail) return;
+                var willOpen = detail.hasAttribute('hidden');
+                detail.toggleAttribute('hidden', !willOpen);
+                button.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+                button.classList.toggle('is-expanded', willOpen);
+                var buttonLabel = button.querySelector('span');
+                if (buttonLabel) {
+                    var accountCount = Number(button.getAttribute('data-account-count')) || 0;
+                    buttonLabel.textContent = willOpen ? 'Скрыть' : 'Показать ' + accountCount;
+                }
+                if (willOpen) expandedWorkerAccounts.add(workerId);
+                else expandedWorkerAccounts.delete(workerId);
             });
         });
     }
@@ -1584,6 +1657,7 @@
         initDashboardWorkerToolbar();
         initDashboardRowMenus();
         initDashboardRowNavigation();
+        initDashboardAccountExpanders();
         initDashboardMonitoringButtons();
         initDashboardWorkerToggleButtons();
         initLiveRefresh();

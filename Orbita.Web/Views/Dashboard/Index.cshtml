@@ -261,31 +261,34 @@
                                     </span>
                                 </td>
                                 <td class="dashboard-subprofiles-cell" data-label="Субпрофили">
-                                    <partial name="_WorkerSubProfiles" model="w" />
+                                    @if (w.PrimaryAccount is { } primaryAccount)
+                                    {
+                                        <partial name="_WorkerSubProfiles" model="@(new DashboardWorkerAccountSubProfilesPartialViewModel
+                                        {
+                                            WorkerId = w.Id,
+                                            Account = primaryAccount,
+                                            OtherAccountsCount = w.OtherAccounts.Count,
+                                            ShowExpandButton = true
+                                        })" />
+                                    }
+                                    else
+                                    {
+                                        <span class="dashboard-subprofiles-empty">Нет аккаунтов</span>
+                                    }
                                 </td>
                                 <td class="dashboard-balance-cell" data-label="Баланс субпрофилей">
-                                    <strong>@w.TotalBalance.ToString("N0") ₽</strong>
-                                    <div class="dashboard-balance-bars" aria-label="Баланс субпрофилей">
-                                        @{
-                                            var maxSubProfileBalance = w.SubProfiles
-                                                .Where(x => x.Balance.HasValue)
-                                                .Select(x => x.Balance!.Value)
-                                                .DefaultIfEmpty(1m)
-                                                .Max();
-                                        }
-                                        @foreach (var profile in w.SubProfiles)
+                                    @if (w.PrimaryAccount is { } balanceAccount)
+                                    {
+                                        <partial name="_WorkerAccountBalance" model="@(new DashboardWorkerAccountBalancePartialViewModel
                                         {
-                                            var balanceHeight = profile.Balance.HasValue && maxSubProfileBalance > 0
-                                                ? Math.Clamp((int)Math.Round(profile.Balance.Value / maxSubProfileBalance * 100), 14, 100)
-                                                : 8;
-                                            var balanceTone = !profile.Balance.HasValue ? "unknown" : profile.Balance.Value <= 250 ? "low" : "normal";
-                                            var balanceState = profile.IsProcessing ? "processing" : profile.IsEnabled ? "enabled" : "disabled";
-                                            <span class="dashboard-balance-bar dashboard-balance-bar--@balanceTone dashboard-balance-bar--@balanceState"
-                                                  style="--balance-height:@(balanceHeight)%"
-                                                  title="@profile.Name · @(profile.Balance.HasValue ? $"{profile.Balance.Value:N0} ₽" : "баланс неизвестен")"
-                                                  aria-hidden="true"></span>
-                                        }
-                                    </div>
+                                            Account = balanceAccount,
+                                            WorkerTotalBalance = w.TotalBalance
+                                        })" />
+                                    }
+                                    else
+                                    {
+                                        <strong>0 ₽</strong>
+                                    }
                                 </td>
                                 @{
                                     var accountProgress = w.TotalAccounts > 0
@@ -342,6 +345,45 @@
                                     </div>
                                 </td>
                             </tr>
+                            @if (w.OtherAccounts.Count > 0)
+                            {
+                                <tr class="dashboard-worker-accounts-detail"
+                                    id="worker-accounts-@w.Id"
+                                    data-dashboard-accounts-detail="@w.Id"
+                                    hidden>
+                                    <td colspan="@(Model.ShowOfficeColumn ? 12 : 11)">
+                                        <section class="dashboard-worker-accounts-panel" aria-label="Другие аккаунты воркера @w.DisplayName">
+                                            <div class="dashboard-worker-accounts-list">
+                                                @foreach (var account in w.OtherAccounts)
+                                                {
+                                                    <article class="dashboard-worker-account-row">
+                                                        <div class="dashboard-worker-account-profiles">
+                                                            <partial name="_WorkerSubProfiles" model="@(new DashboardWorkerAccountSubProfilesPartialViewModel
+                                                            {
+                                                                WorkerId = w.Id,
+                                                                Account = account
+                                                            })" />
+                                                        </div>
+                                                        <div class="dashboard-worker-account-metrics" aria-label="Показатели аккаунта @account.Name">
+                                                            <span><small>Отклики</small><strong>@account.ResponsesToday</strong></span>
+                                                            <span><small>Дубли</small><strong>@account.DuplicatesToday</strong></span>
+                                                            <span class="dashboard-worker-account-metric--errors"><small>Ошибки</small><strong>@account.ErrorsToday</strong></span>
+                                                            <span><small>Активность</small><strong><partial name="_UtcTime" model="@(new UtcTimeDisplayModel(account.LastActivityUtc, "activity"))" /></strong></span>
+                                                        </div>
+                                                        <div class="dashboard-worker-account-balance">
+                                                            <span class="dashboard-worker-account-balance-label">Баланс аккаунта</span>
+                                                            <partial name="_WorkerAccountBalance" model="@(new DashboardWorkerAccountBalancePartialViewModel
+                                                            {
+                                                                Account = account
+                                                            })" />
+                                                        </div>
+                                                    </article>
+                                                }
+                                            </div>
+                                        </section>
+                                    </td>
+                                </tr>
+                            }
                         }
                         </tbody>
                     </table>

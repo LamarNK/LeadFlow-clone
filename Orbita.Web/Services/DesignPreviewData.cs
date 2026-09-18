@@ -2265,18 +2265,62 @@ internal static class DesignPreviewData
             w.LowBalanceAccountCount,
             BuildPreviewWorkerActivity(i, w.IsOnline),
             IpAddress: $"185.22.{174 + i}.{101 + i}",
-            SubProfiles: BuildPreviewDashboardSubProfiles(i),
-            TotalBalance: BuildPreviewDashboardSubProfiles(i).Sum(x => x.Balance ?? 0))).ToList();
+            Accounts: BuildPreviewDashboardAccounts(i),
+            TotalBalance: BuildPreviewDashboardAccounts(i).Sum(x => x.TotalBalance))).ToList();
 
-    private static IReadOnlyList<DashboardWorkerSubProfileItem> BuildPreviewDashboardSubProfiles(int workerIndex) =>
-        Enumerable.Range(0, 10)
-            .Select(index => new DashboardWorkerSubProfileItem(
-                PreviewWorkerIds[workerIndex],
-                $"profile-{workerIndex + 1}-{index + 1}",
-                $"Субпрофиль {index + 1}",
-                Math.Max(80, 260 + workerIndex * 95 + ((index * 173) % 980)),
-                index != (workerIndex + 2) % 10))
+    private static IReadOnlyList<DashboardWorkerAccountItem> BuildPreviewDashboardAccounts(int workerIndex) =>
+        Enumerable.Range(0, 3)
+            .Select(accountIndex =>
+            {
+                var accountId = workerIndex == 0 && accountIndex == 0
+                    ? AccountAlphaId
+                    : workerIndex == 10 && accountIndex == 0
+                        ? AccountBetaId
+                        : PreviewAccountId(workerIndex, accountIndex);
+                var profiles = Enumerable.Range(0, 10)
+                    .Select(index => new DashboardWorkerSubProfileItem(
+                        $"profile-{workerIndex + 1}-{accountIndex + 1}-{index + 1}",
+                        $"Субпрофиль {index + 1}",
+                        Math.Max(80, 260 + workerIndex * 95 + accountIndex * 70 + ((index * 173) % 980)),
+                        accountIndex != 2 && index != (workerIndex + accountIndex + 2) % 10))
+                    .ToList();
+                var workerResponses = new[] { 432, 401, 401, 388, 356, 342, 318, 295, 271, 248, 192, 0 }[workerIndex];
+                var workerDuplicates = new[] { 98, 87, 71, 64, 58, 52, 47, 41, 36, 29, 18, 0 }[workerIndex];
+                var workerErrors = new[] { 5, 8, 5, 4, 6, 3, 2, 4, 1, 2, 3, 0 }[workerIndex];
+                var responses = PreviewAccountMetric(workerResponses, accountIndex);
+                var duplicates = PreviewAccountMetric(workerDuplicates, accountIndex);
+                var errors = PreviewAccountMetric(workerErrors, accountIndex);
+                var lastActivity = Now.AddMinutes(-(workerIndex * 4 + accountIndex * 18));
+                return new DashboardWorkerAccountItem(
+                    accountId,
+                    $"Avito {100 + workerIndex * 3 + accountIndex + 1}",
+                    accountIndex != 2,
+                    profiles.Sum(x => x.Balance ?? 0),
+                    lastActivity,
+                    lastActivity,
+                    profiles,
+                    responses,
+                    duplicates,
+                    errors,
+                    lastActivity);
+            })
             .ToList();
+
+    private static int PreviewAccountMetric(int workerTotal, int accountIndex) => accountIndex switch
+    {
+        0 => (int)Math.Round(workerTotal * 0.48m),
+        1 => (int)Math.Round(workerTotal * 0.33m),
+        _ => workerTotal
+            - (int)Math.Round(workerTotal * 0.48m)
+            - (int)Math.Round(workerTotal * 0.33m)
+    };
+
+    private static Guid PreviewAccountId(int workerIndex, int accountIndex)
+    {
+        var bytes = PreviewWorkerIds[workerIndex].ToByteArray();
+        bytes[^1] = (byte)(accountIndex + 1);
+        return new Guid(bytes);
+    }
 
     private static IReadOnlyList<WorkerRowViewModel> BuildWorkerRows()
     {
@@ -2566,17 +2610,30 @@ internal static class DesignPreviewData
                 CurrentActivityPhase = w.CurrentActivityPhase,
                 CurrentActivityNextCycleAtUtc = w.CurrentActivityNextCycleAtUtc,
                 OfficeName = w.OfficeName,
-                TotalBalance = BuildPreviewDashboardSubProfiles(Array.IndexOf(PreviewWorkerIds, w.Id))
-                    .Where(x => x.Balance.HasValue)
-                    .Sum(x => x.Balance!.Value),
-                SubProfiles = BuildPreviewDashboardSubProfiles(Array.IndexOf(PreviewWorkerIds, w.Id))
-                    .Select((x, index) => new DashboardWorkerSubProfileViewModel
+                TotalBalance = BuildPreviewDashboardAccounts(Array.IndexOf(PreviewWorkerIds, w.Id))
+                    .Sum(x => x.TotalBalance),
+                Accounts = BuildPreviewDashboardAccounts(Array.IndexOf(PreviewWorkerIds, w.Id))
+                    .Select((account, accountIndex) => new DashboardWorkerAccountViewModel
                     {
-                        Id = x.Id,
-                        Name = x.Name,
-                        Balance = x.Balance,
-                        IsEnabled = x.IsEnabled,
-                        IsProcessing = index == Array.IndexOf(PreviewWorkerIds, w.Id) % 10
+                        Id = account.Id,
+                        Name = account.Name,
+                        IsEnabled = account.IsEnabled,
+                        IsProcessing = accountIndex == 0 && w.IsOnline,
+                        IsLastActive = accountIndex == 0 && !w.IsOnline,
+                        TotalBalance = account.TotalBalance,
+                        LastMonitoringAtUtc = account.LastMonitoringAtUtc,
+                        ResponsesToday = account.ResponsesToday,
+                        DuplicatesToday = account.DuplicatesToday,
+                        ErrorsToday = account.ErrorsToday,
+                        LastActivityUtc = account.LastActivityUtc,
+                        SubProfiles = account.SubProfiles.Select((profile, profileIndex) => new DashboardWorkerSubProfileViewModel
+                        {
+                            Id = profile.Id,
+                            Name = profile.Name,
+                            Balance = profile.Balance,
+                            IsEnabled = profile.IsEnabled,
+                            IsProcessing = accountIndex == 0 && profileIndex == Array.IndexOf(PreviewWorkerIds, w.Id) % 10
+                        }).ToList()
                     })
                     .ToList()
             })

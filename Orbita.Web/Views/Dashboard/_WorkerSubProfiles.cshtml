@@ -1,15 +1,43 @@
-@model DashboardWorkerRowViewModel
-<div class="dashboard-subprofiles" aria-label="Субпрофили воркера">
-    @if (Model.SubProfiles.Count == 0)
+@model DashboardWorkerAccountSubProfilesPartialViewModel
+<div class="dashboard-account-summary-head">
+    <span class="dashboard-account-summary-name" title="@Model.Account.Name">@Model.Account.Name</span>
+    @if (Model.Account.IsProcessing)
+    {
+        <span class="dashboard-account-summary-state dashboard-account-summary-state--processing">Сейчас</span>
+    }
+    else if (Model.Account.IsLastActive)
+    {
+        <span class="dashboard-account-summary-state">Последний</span>
+    }
+    @if (!Model.Account.IsEnabled)
+    {
+        <span class="dashboard-account-summary-state dashboard-account-summary-state--disabled">Выкл.</span>
+    }
+    @if (Model.ShowExpandButton && Model.OtherAccountsCount > 0)
+    {
+        <button type="button"
+                class="dashboard-accounts-expand"
+                data-dashboard-accounts-expand
+                data-worker-id="@Model.WorkerId"
+                data-account-count="@Model.OtherAccountsCount"
+                aria-expanded="false"
+                aria-controls="worker-accounts-@Model.WorkerId">
+            <span>Показать @Model.OtherAccountsCount</span>
+            <i class="fa-solid fa-chevron-down" aria-hidden="true"></i>
+        </button>
+    }
+</div>
+<div class="dashboard-subprofiles" aria-label="Субпрофили аккаунта @Model.Account.Name">
+    @if (Model.Account.SubProfiles.Count == 0)
     {
         <span class="dashboard-subprofiles-empty">Нет данных</span>
     }
     else
     {
         <div class="dashboard-subprofile-dots">
-            @for (var index = 0; index < Model.SubProfiles.Count; index++)
+            @for (var index = 0; index < Model.Account.SubProfiles.Count; index++)
             {
-                var profile = Model.SubProfiles[index];
+                var profile = Model.Account.SubProfiles[index];
                 var state = profile.IsProcessing ? "processing" : profile.IsEnabled ? "enabled" : "disabled";
                 var stateLabel = profile.IsProcessing ? "воркер работает" : profile.IsEnabled ? "включён" : "выключен";
                 var balanceLabel = profile.Balance.HasValue ? $"{profile.Balance.Value:N0} ₽" : "баланс неизвестен";

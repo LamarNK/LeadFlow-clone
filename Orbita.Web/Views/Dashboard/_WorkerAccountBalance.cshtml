@@ -1,0 +1,27 @@
+@model DashboardWorkerAccountBalancePartialViewModel
+<strong>@Model.Account.TotalBalance.ToString("N0") ₽</strong>
+@if (Model.WorkerTotalBalance.HasValue && Model.WorkerTotalBalance.Value != Model.Account.TotalBalance)
+{
+    <span class="dashboard-worker-total-balance">Всего: @Model.WorkerTotalBalance.Value.ToString("N0") ₽</span>
+}
+<div class="dashboard-balance-bars" aria-label="Баланс субпрофилей аккаунта @Model.Account.Name">
+    @{
+        var maxSubProfileBalance = Model.Account.SubProfiles
+            .Where(x => x.Balance.HasValue)
+            .Select(x => x.Balance!.Value)
+            .DefaultIfEmpty(1m)
+            .Max();
+    }
+    @foreach (var profile in Model.Account.SubProfiles)
+    {
+        var balanceHeight = profile.Balance.HasValue && maxSubProfileBalance > 0
+            ? Math.Clamp((int)Math.Round(profile.Balance.Value / maxSubProfileBalance * 100), 14, 100)
+            : 8;
+        var balanceTone = !profile.Balance.HasValue ? "unknown" : profile.Balance.Value <= 250 ? "low" : "normal";
+        var balanceState = profile.IsProcessing ? "processing" : profile.IsEnabled ? "enabled" : "disabled";
+        <span class="dashboard-balance-bar dashboard-balance-bar--@balanceTone dashboard-balance-bar--@balanceState"
+              style="--balance-height:@(balanceHeight)%"
+              title="@profile.Name · @(profile.Balance.HasValue ? $"{profile.Balance.Value:N0} ₽" : "баланс неизвестен")"
+              aria-hidden="true"></span>
+    }
+</div>

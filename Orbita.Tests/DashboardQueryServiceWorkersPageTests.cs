@@ -721,6 +721,141 @@ public sealed class DashboardQueryServiceWorkersPageTests
     }
 
     [Fact]
+    public async Task GetWorkersPageAsync_GroupsSubProfilesByAccountAndOrdersLatestAccountFirst()
+    {
+        DashboardQueryService.ClearCacheForTests();
+        await using var db = CreateDb();
+        var now = DateTime.UtcNow;
+        SeedOffice(db, now);
+        var workerId = Guid.NewGuid();
+        SeedWorker(db, workerId, "worker", now.AddMinutes(-1));
+        var olderAccountId = SeedAccount(
+            db,
+            workerId,
+            "Older account",
+            totalBalance: 100m,
+            subProfilesJson: """[{"Id":"old","Name":"Old profile","Balance":100}]""");
+        var latestAccountId = SeedAccount(
+            db,
+            workerId,
+            "Latest account",
+            totalBalance: 250m,
+            subProfilesJson: """[{"Id":"latest","Name":"Latest profile","Balance":250}]""");
+        var olderAccount = db.WorkerAccounts.Local.Single(x => x.AccountId == olderAccountId);
+        olderAccount.IsEnabled = false;
+        olderAccount.LastMonitoringAt = now.AddHours(-2);
+        olderAccount.UpdatedAtUtc = now.AddHours(-2);
+        var latestAccount = db.WorkerAccounts.Local.Single(x => x.AccountId == latestAccountId);
+        latestAccount.LastMonitoringAt = now.AddMinutes(-5);
+        latestAccount.UpdatedAtUtc = now.AddMinutes(-5);
+        await db.SaveChangesAsync();
+
+        var page = await CreateService(db).GetWorkersPageAsync(
+            OfficeScope.ForOffice(OfficeId), OfficeId, page: 1, pageSize: 25);
+
+        var accounts = Assert.Single(page.Items).Accounts!;
+        Assert.Collection(
+            accounts,
+            account =>
+            {
+                Assert.Equal(latestAccountId, account.Id);
+                Assert.True(Assert.Single(account.SubProfiles).IsEnabled);
+            },
+            account =>
+            {
+                Assert.Equal(olderAccountId, account.Id);
+                Assert.False(Assert.Single(account.SubProfiles).IsEnabled);
+            });
+    }
+
+    [Fact]
+    public async Task GetWorkersPageAsync_ReturnsResponseAndErrorMetricsPerAccount()
+    {
+        DashboardQueryService.ClearCacheForTests();
+        await using var db = CreateDb();
+        var now = DateTime.UtcNow;
+        SeedOffice(db, now);
+        var workerId = Guid.NewGuid();
+        SeedWorker(db, workerId, "worker", now.AddMinutes(-1));
+        var firstAccountId = SeedAccount(db, workerId, "First account", 500m);
+        var secondAccountId = SeedAccount(db, workerId, "Second account", 600m);
+
+        foreach (var (accountId, status) in new[]
+                 {
+                     (firstAccountId, ResponseStatuses.New),
+                     (firstAccountId, ResponseStatuses.Duplicate),
+                     (secondAccountId, ResponseStatuses.New)
+                 })
+        {
+            var personId = Guid.NewGuid();
+            db.CandidatePersons.Add(new CandidatePersonEntity
+            {
+                Id = personId,
+                OfficeId = OfficeId,
+                CreatedAtUtc = now,
+                UpdatedAtUtc = now
+            });
+            db.CandidateResponses.Add(new CandidateResponseEntity
+            {
+                Id = Guid.NewGuid(),
+                PersonId = personId,
+                OfficeId = OfficeId,
+                WorkerId = workerId,
+                AccountId = accountId,
+                SourceResponseId = Guid.NewGuid().ToString("N"),
+                CreatedAt = now,
+                CollectedAt = now,
+                Status = status
+            });
+        }
+
+        db.WorkerEvents.AddRange(
+            new WorkerEventEntity
+            {
+                Id = Guid.NewGuid(),
+                WorkerId = workerId,
+                AccountId = firstAccountId,
+                Level = "Warning",
+                Message = "First account warning",
+                CreatedAtUtc = now
+            },
+            new WorkerEventEntity
+            {
+                Id = Guid.NewGuid(),
+                WorkerId = workerId,
+                AccountId = secondAccountId,
+                Level = "Error",
+                Message = "Second account error",
+                CreatedAtUtc = now
+            },
+            new WorkerEventEntity
+            {
+                Id = Guid.NewGuid(),
+                WorkerId = workerId,
+                AccountId = secondAccountId,
+                Level = "Error",
+                Message = "Dismissed error",
+                CreatedAtUtc = now,
+                IsDismissed = true
+            });
+        await db.SaveChangesAsync();
+
+        var page = await CreateService(db).GetWorkersPageAsync(
+            OfficeScope.ForOffice(OfficeId), OfficeId, page: 1, pageSize: 25);
+
+        var accounts = Assert.Single(page.Items).Accounts!;
+        var firstAccount = Assert.Single(accounts, account => account.Id == firstAccountId);
+        Assert.Equal(2, firstAccount.ResponsesToday);
+        Assert.Equal(1, firstAccount.DuplicatesToday);
+        Assert.Equal(1, firstAccount.ErrorsToday);
+
+        var secondAccount = Assert.Single(accounts, account => account.Id == secondAccountId);
+        Assert.Equal(1, secondAccount.ResponsesToday);
+        Assert.Equal(0, secondAccount.DuplicatesToday);
+        Assert.Equal(1, secondAccount.ErrorsToday);
+    }
+
+    [Fact]
     public void WorkerListPaging_NormalizesOutOfRangeValues()
     {
         Assert.Equal(25, WorkerListPaging.NormalizePageSize(0));

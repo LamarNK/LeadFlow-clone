@@ -73,6 +73,24 @@ public sealed class DashboardWorkerRowViewModel
     public DateTime? CurrentActivityNextCycleAtUtc { get; init; }
     public string OfficeName { get; init; } = string.Empty;
     public decimal TotalBalance { get; init; }
+    public IReadOnlyList<DashboardWorkerAccountViewModel> Accounts { get; init; } = [];
+    public DashboardWorkerAccountViewModel? PrimaryAccount => Accounts.FirstOrDefault();
+    public IReadOnlyList<DashboardWorkerAccountViewModel> OtherAccounts => Accounts.Skip(1).ToList();
+}
+
+public sealed class DashboardWorkerAccountViewModel
+{
+    public Guid Id { get; init; }
+    public string Name { get; init; } = string.Empty;
+    public bool IsEnabled { get; init; }
+    public bool IsProcessing { get; init; }
+    public bool IsLastActive { get; init; }
+    public decimal TotalBalance { get; init; }
+    public DateTime? LastMonitoringAtUtc { get; init; }
+    public int ResponsesToday { get; init; }
+    public int DuplicatesToday { get; init; }
+    public int ErrorsToday { get; init; }
+    public DateTime? LastActivityUtc { get; init; }
     public IReadOnlyList<DashboardWorkerSubProfileViewModel> SubProfiles { get; init; } = [];
 }
 
@@ -83,6 +101,20 @@ public sealed class DashboardWorkerSubProfileViewModel
     public decimal? Balance { get; init; }
     public bool IsEnabled { get; init; }
     public bool IsProcessing { get; init; }
+}
+
+public sealed class DashboardWorkerAccountSubProfilesPartialViewModel
+{
+    public Guid WorkerId { get; init; }
+    public DashboardWorkerAccountViewModel Account { get; init; } = new();
+    public int OtherAccountsCount { get; init; }
+    public bool ShowExpandButton { get; init; }
+}
+
+public sealed class DashboardWorkerAccountBalancePartialViewModel
+{
+    public DashboardWorkerAccountViewModel Account { get; init; } = new();
+    public decimal? WorkerTotalBalance { get; init; }
 }
 
 public sealed class DashboardChartPointViewModel
