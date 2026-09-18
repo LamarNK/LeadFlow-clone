@@ -195,6 +195,49 @@ public sealed class AvitoSessionOrchestratorTests
     }
 
     [Fact]
+    public async Task RunStepAsync_IpBlockWithHandler_RecoversAndResumesWork()
+    {
+        // Блок IP теперь решаем: зарегистрированный обработчик (перезапрос + капча)
+        // обязан получить эпизод, а не терминал «нет обработчика».
+        var probe = new ScriptedProbe([IpBlock]);
+        var handlerCalls = 0;
+        await using var orchestrator = Create(probe, configure: o =>
+            o.RegisterHandler(AvitoPageObstacleKind.IpBlocked, (_, _) =>
+            {
+                Interlocked.Increment(ref handlerCalls);
+                return Task.FromResult(AvitoObstacleRecoveryResult.Success());
+            }));
+
+        var ex = await Assert.ThrowsAsync<AvitoSessionRestartRequiredException>(() =>
+            orchestrator.RunStepAsync(_ => Task.FromResult("step-done"), CancellationToken.None));
+
+        Assert.Equal(1, ex.RecoveryGeneration);
+        Assert.Equal(1, handlerCalls);
+        Assert.Equal(AvitoSessionStatus.Running, orchestrator.Status);
+        Assert.Null(orchestrator.ActiveObstacle);
+    }
+
+    [Fact]
+    public async Task RunStepAsync_IpBlockHandlerFailsTwice_ThrowsFirewallException()
+    {
+        var probe = new ScriptedProbe([], tail: IpBlock);
+        var handlerCalls = 0;
+        await using var orchestrator = Create(probe, configure: o =>
+            o.RegisterHandler(AvitoPageObstacleKind.IpBlocked, (_, _) =>
+            {
+                Interlocked.Increment(ref handlerCalls);
+                return Task.FromResult(AvitoObstacleRecoveryResult.Failure("капча не пройдена"));
+            }));
+
+        var ex = await Assert.ThrowsAsync<AvitoCaptchaDetectedException>(() =>
+            orchestrator.RunStepAsync(_ => Task.FromResult(1), CancellationToken.None));
+
+        Assert.Equal("firewall", ex.Kind);
+        Assert.Equal(2, handlerCalls);
+        Assert.Equal(AvitoSessionStatus.RequiresManualAction, orchestrator.Status);
+    }
+
+    [Fact]
     public async Task RunStepAsync_LoginRequiredWithoutHandler_ThrowsLoginException()
     {
         var probe = new ScriptedProbe([

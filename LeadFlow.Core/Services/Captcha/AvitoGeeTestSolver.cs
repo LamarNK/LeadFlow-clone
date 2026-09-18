@@ -68,10 +68,8 @@ public sealed class AvitoGeeTestSolver(
         try
         {
             html ??= await SafeGetHtmlAsync(page, cancellationToken).ConfigureAwait(false);
-            if (AvitoCaptchaDetector.HasIpBlockChallenge(html))
-            {
-                return false;
-            }
+            // Страница «блок IP» больше не терминальна: Avito отдаёт капчу и с неё
+            // (activate-probe запросит /web/5/firewallCaptcha/get). Решаем как обычный firewall.
 
             if (AvitoCaptchaRedirectRecovery.RequiresRecovery(html))
             {
@@ -196,8 +194,7 @@ public sealed class AvitoGeeTestSolver(
                 if (attempt > 1)
                 {
                     html = await SafeGetHtmlAsync(page, cancellationToken).ConfigureAwait(false);
-                    if (AvitoCaptchaDetector.HasIpBlockChallenge(html)
-                        || AvitoCaptchaRedirectRecovery.RequiresRecovery(html)
+                    if (AvitoCaptchaRedirectRecovery.RequiresRecovery(html)
                         || !AvitoGeeTestSolveSupport.ShouldCreateProviderTask(html))
                     {
                         _ = GlobalLogger.Instance.LogAsync(

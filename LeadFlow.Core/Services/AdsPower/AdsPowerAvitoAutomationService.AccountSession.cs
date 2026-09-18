@@ -649,8 +649,10 @@ public sealed partial class AdsPowerAvitoAutomationService
     }
 
     private static bool CanTryClearCaptcha(AvitoPageState? pageState) =>
-        pageState?.HasFirewallIp != true
-        && (pageState?.HasCaptcha == true || pageState?.PageKind == AvitoPageKind.Captcha);
+        pageState?.HasCaptcha == true
+        || pageState?.PageKind == AvitoPageKind.Captcha
+        // Страница «блок IP» теперь решаема: капча запрашивается у сервера Avito.
+        || pageState?.HasFirewallIp == true;
 
     private async Task<SubProfileSwitchResult> TrySwitchSubProfileOnPageOnceAsync(
         IPage page,
@@ -1120,6 +1122,8 @@ public sealed partial class AdsPowerAvitoAutomationService
             TimeSpan.FromMilliseconds(1000));
         orchestrator.RegisterHandler(AvitoPageObstacleKind.Captcha, (obstacle, ct) =>
             RecoverFromCaptchaWithSolverAsync(page, obstacle, ct));
+        orchestrator.RegisterHandler(AvitoPageObstacleKind.IpBlocked, (obstacle, ct) =>
+            RecoverFromIpBlockAsync(page, obstacle, ct));
         orchestrator.RegisterHandler(AvitoPageObstacleKind.TransientError, (_, ct) =>
             RecoverFromTransientErrorAsync(page, ct));
         orchestrator.RegisterHandler(AvitoPageObstacleKind.LoginRequired, async (_, ct) =>
@@ -1169,6 +1173,84 @@ public sealed partial class AdsPowerAvitoAutomationService
         }
 
         return AvitoObstacleRecoveryResult.Success("GeeTest v4 пройдена через RuCaptcha.");
+    }
+
+    /// <summary>
+    /// Обработчик блока IP для оркестратора сессии. Раньше страница «Доступ ограничен:
+    /// проблема с IP» была терминальной — теперь Avito отдаёт с неё капчу. Перезапрашиваем
+    /// страницу (reload; сервер может вернуть решаемую firewall-капчу вместо блока)
+    /// и прогоняем штатный автопроход GeeTest v4 через RuCaptcha. Неудача после попыток —
+    /// прежнее терминальное поведение (блок IP для мониторинга).
+    /// </summary>
+    private async Task<AvitoObstacleRecoveryResult> RecoverFromIpBlockAsync(
+        IPage page,
+        AvitoPageObstacle obstacle,
+        CancellationToken cancellationToken)
+    {
+        _ = GlobalLogger.Instance.LogAsync(
+            "Браузер: обнаружен блок IP — перезапрашиваем страницу и пробуем пройти капчу.",
+            DeskLinkAuditLogLevel.Info,
+            memberName: nameof(RecoverFromIpBlockAsync),
+            properties: new Dictionary<string, object?>
+            {
+                ["step"] = "ip_block_recovery_started",
+                ["page.url"] = page.Url,
+                ["obstacle.url"] = obstacle.Url
+            });
+
+        // Фрагмент #block не отправляется серверу и нужен только самой странице,
+        // чтобы остановить свой reload-цикл. Честный перезапрос — это reload:
+        // новый GET может вернуть решаемую firewall-капчу вместо статического блока.
+        // (location.assign на тот же URL без фрагмента не годится: это same-document
+        // fragment navigation без запроса к серверу.)
+        try
+        {
+            await page.ReloadAsync(45_000).ConfigureAwait(false);
+            await Task.Delay(1500, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _ = GlobalLogger.Instance.LogAsync(
+                $"Браузер: перезапрос страницы блока IP не завершился — решаем на текущей странице ({ex.Message}).",
+                DeskLinkAuditLogLevel.Warning,
+                memberName: nameof(RecoverFromIpBlockAsync),
+                properties: new Dictionary<string, object?>
+                {
+                    ["step"] = "ip_block_recovery_reload_failed",
+                    ["page.url"] = page.Url
+                });
+        }
+
+        string? html = null;
+        try
+        {
+            html = await AdsPowerCdpGuard.WaitAsync(
+                    page.GetContentAsync(),
+                    CdpEvaluateHangTimeout,
+                    "чтение HTML для обработки блока IP",
+                    cancellationToken)
+                .ConfigureAwait(false);
+        }
+        catch
+        {
+            // Солвер снимет HTML сам.
+        }
+
+        if (!string.IsNullOrWhiteSpace(html) && !AvitoCaptchaDetector.IsCaptchaHtml(html))
+        {
+            return AvitoObstacleRecoveryResult.Success("Блок IP исчез после перезапроса страницы.");
+        }
+
+        var solved = await TrySolveGeeTestAsync(
+                page,
+                html,
+                page.Url,
+                AvitoCaptchaDetector.Classify(html) ?? "firewall",
+                cancellationToken)
+            .ConfigureAwait(false);
+        return solved
+            ? AvitoObstacleRecoveryResult.Success("Капча на странице блока IP пройдена через RuCaptcha.")
+            : AvitoObstacleRecoveryResult.Failure("Капча на странице блока IP не пройдена.");
     }
 
     private async Task<AvitoObstacleRecoveryResult> RecoverFromTransientErrorAsync(

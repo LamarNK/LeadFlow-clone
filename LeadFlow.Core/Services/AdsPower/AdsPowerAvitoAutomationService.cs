@@ -579,7 +579,8 @@ public sealed partial class AdsPowerAvitoAutomationService(
     }
 
     /// <summary>
-    /// Если в HTML обнаружена капча/firewall — пробуем GeeTest v4 через RuCaptcha,
+    /// Если в HTML обнаружена капча/firewall — пробуем GeeTest v4 через RuCaptcha
+    /// (включая страницу «блок IP»: капча с неё запрашивается у сервера),
     /// иначе бросаем <see cref="AvitoCaptchaDetectedException"/>.
     /// </summary>
     private async Task ThrowIfCaptchaAsync(IPage page, string html, CancellationToken cancellationToken)
@@ -590,8 +591,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
             return;
         }
         var isIpBlock = AvitoCaptchaDetector.HasIpBlockChallenge(html);
-        if (!isIpBlock
-            && await TrySolveGeeTestAsync(page, html, page.Url, kind, cancellationToken).ConfigureAwait(false))
+        if (await TrySolveGeeTestAsync(page, html, page.Url, kind, cancellationToken).ConfigureAwait(false))
         {
             return;
         }
@@ -784,17 +784,15 @@ public sealed partial class AdsPowerAvitoAutomationService(
         string? kind,
         CancellationToken cancellationToken)
     {
-        if (html is not null && AvitoCaptchaDetector.HasIpBlockChallenge(html))
-        {
-            return false;
-        }
-
         if (geeTestSolver is null)
         {
             return false;
         }
 
+        var isIpBlock = html is not null && AvitoCaptchaDetector.HasIpBlockChallenge(html);
+
         if (html is not null
+            && !isIpBlock
             && !AvitoCaptchaRedirectRecovery.RequiresRecovery(html)
             && !AvitoCaptchaDetector.CanAttemptGeeTestSolve(html)
             && !AvitoCaptchaDetector.HasSolvableCaptchaChallenge(html)
@@ -821,7 +819,8 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 {
                     ["step"] = "captcha_solve_failed",
                     ["page.url"] = pageUrl ?? page.Url,
-                    ["captcha.kind"] = kind
+                    ["captcha.kind"] = kind,
+                    ["captcha.ipBlock"] = isIpBlock
                 });
             return false;
         }

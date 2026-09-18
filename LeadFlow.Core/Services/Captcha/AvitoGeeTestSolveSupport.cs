@@ -187,12 +187,13 @@ public static class AvitoGeeTestSolveSupport
     /// <summary>
     /// Новую платную задачу RuCaptcha создаём только пока Avito ещё требует проверку.
     /// Экран «Проверка пройдена, перенаправление…» — это не новая капча.
+    /// Страница «блок IP» тоже требует проверку: капча с неё запрашивается
+    /// у сервера через activate-probe, поэтому задача создаётся и для неё.
     /// </summary>
     public static bool ShouldCreateProviderTask(string? html)
     {
         if (string.IsNullOrWhiteSpace(html)
-            || AvitoCaptchaRedirectRecovery.RequiresRecovery(html)
-            || AvitoCaptchaDetector.HasIpBlockChallenge(html))
+            || AvitoCaptchaRedirectRecovery.RequiresRecovery(html))
         {
             return false;
         }

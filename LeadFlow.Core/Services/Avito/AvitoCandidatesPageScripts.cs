@@ -2851,20 +2851,30 @@ public static class AvitoCandidatesPageScripts
             // The responses list has the authoritative response date even when the
             // mini-chat is empty.  Keep it as an ISO instant so the server does not
             // have to guess from `DateTime.UtcNow` or parse localized Russian text.
+            // Второй вид страницы отдаёт старые отклики как «15 сент.» — сокращённый
+            // месяц без времени; без времени берём начало суток.
             const parseResponseAt = (root) => {
                 const anchor = root.querySelector("[data-marker='job-application/link/to-resume']");
                 const text = (anchor?.textContent ?? root.textContent ?? "").replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim();
                 if (!text) return "";
 
-                const timeMatch = text.match(/(?:сегодня|вчера)(?:\s*,|\s+в)?\s*(\d{1,2}):(\d{2})/i);
                 const monthNames = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"];
+                const monthIndex = (token) => {
+                    const normalized = (token ?? "").toLowerCase().replace(/\.$/, "");
+                    return monthNames.findIndex((name) => name === normalized || name.startsWith(normalized));
+                };
+                // «сегодня, 09:41» / «вчера, 23:37» / «Сегодня в 00:33»
+                const timeMatch = text.match(/(?:сегодня|вчера)(?:\s*,|\s+в)?\s*(\d{1,2}):(\d{2})/i);
+                // «6 сентября в 01:02» — полное имя месяца, время обязательно.
                 const calendarMatch = text.match(/(?:^|\s)(\d{1,2})\s+(января|февраля|марта|апреля|мая|июня|июля|августа|сентября|октября|ноября|декабря)(?:\s+в)?\s+(\d{1,2}):(\d{2})/i);
+                // «15 сент.» — сокращённый месяц второго вида страницы, времени может не быть.
+                const shortCalendarMatch = text.match(/(?:^|\s)(\d{1,2})\s+(янв|февр|мар|апр|мая|июн|июл|авг|сент|окт|нояб|дек)\.?(?:\s+в)?\s*(?:(\d{1,2}):(\d{2}))?/i);
                 const now = new Date();
                 let year = now.getFullYear();
                 let month = now.getMonth();
                 let day = now.getDate();
-                let hours;
-                let minutes;
+                let hours = 0;
+                let minutes = 0;
                 if (timeMatch) {
                     hours = Number(timeMatch[1]);
                     minutes = Number(timeMatch[2]);
@@ -2872,16 +2882,16 @@ public static class AvitoCandidatesPageScripts
                         const yesterday = new Date(year, month, day - 1);
                         year = yesterday.getFullYear(); month = yesterday.getMonth(); day = yesterday.getDate();
                     }
-                } else if (calendarMatch) {
-                    day = Number(calendarMatch[1]);
-                    month = monthNames.findIndex((name) => name.localeCompare(calendarMatch[2], "ru", { sensitivity: "base" }) === 0);
-                    hours = Number(calendarMatch[3]);
-                    minutes = Number(calendarMatch[4]);
+                } else {
+                    const calendar = calendarMatch ?? shortCalendarMatch;
+                    if (!calendar) return "";
+                    day = Number(calendar[1]);
+                    month = monthIndex(calendar[2]);
                     if (month < 0) return "";
+                    hours = calendar[3] === undefined ? 0 : Number(calendar[3]);
+                    minutes = calendar[4] === undefined ? 0 : Number(calendar[4]);
                     const candidate = new Date(year, month, day, hours, minutes);
                     if (candidate.getTime() > now.getTime() + 86400000) year--;
-                } else {
-                    return "";
                 }
 
                 const result = new Date(year, month, day, hours, minutes);

@@ -170,6 +170,21 @@ public sealed class AvitoCandidatesPageScriptsTests
     }
 
     [Fact]
+    public void BuildExtractionScriptForPuppeteer_ParsesShortMonthDatesOfSecondPageKind()
+    {
+        // Второй вид страницы откликов: старые карточки без времени — «15 сент.».
+        var script = AvitoCandidatesPageScripts.BuildExtractionScriptForPuppeteer();
+
+        Assert.Contains("const shortCalendarMatch", script, StringComparison.Ordinal);
+        Assert.Contains("янв|февр|мар|апр|мая|июн|июл|авг|сент|окт|нояб|дек", script, StringComparison.Ordinal);
+        Assert.Contains("const monthIndex", script, StringComparison.Ordinal);
+        // Сначала полный месяц с временем, затем сокращённый без времени.
+        Assert.Contains("calendarMatch ?? shortCalendarMatch", script, StringComparison.Ordinal);
+        // Без времени на карточке берём начало суток, а не момент сбора.
+        Assert.Contains("calendar[3] === undefined ? 0 : Number(calendar[3])", script, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void BuildRevealMaskedPhonesStepScript_ClicksMaskedEvenIfKnown()
     {
         var script = AvitoCandidatesPageScripts.BuildRevealMaskedPhonesStepScript();

@@ -79,6 +79,25 @@ public sealed class AvitoGeeTestSolveSupportTests
     }
 
     [Fact]
+    public void ShouldCreateProviderTask_StaticIpBlockPage_ReturnsTrue()
+    {
+        // Страница «блок IP» решаема: капчу запрашивает activate-probe у сервера,
+        // поэтому задача провайдеру создаётся и для статического блока.
+        const string html = """
+            <html><head><title>Доступ ограничен: проблема с IP</title></head><body>
+              <h1>Доступ ограничен: проблема с IP</h1>
+              <ul><li>Отключить VPN.</li><li>В самолёте.</li></ul>
+              <a href="https://support.avito.ru/request/720">в поддержку</a>
+              <script>if (window.location.hash != "#block") { window.location.reload(); }</script>
+            </body></html>
+            """;
+
+        Assert.True(AvitoCaptchaDetector.HasIpBlockChallenge(html));
+        Assert.True(AvitoCaptchaDetector.IsCaptchaHtml(html));
+        Assert.True(AvitoGeeTestSolveSupport.ShouldCreateProviderTask(html));
+    }
+
+    [Fact]
     public void CanAutoSolve_IpFirewallWithoutConfirmedGeeTest_ReturnsFalse()
     {
         // Реальная SPA-модалка Avito до нажатия «Продолжить»: тип капчи ещё не выбран.
