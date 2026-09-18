@@ -29,9 +29,25 @@ public static class AvitoPageObstacleScripts
                 try {
                     if (!el) return false;
                     const style = window.getComputedStyle(el);
-                    if (style.display === "none" || style.visibility === "hidden") return false;
+                    if (style.display === "none" || style.visibility === "hidden" || style.opacity === "0") return false;
                     const rect = el.getBoundingClientRect();
                     return rect.width > 2 && rect.height > 2;
+                } catch {
+                    return false;
+                }
+            };
+
+            const isFrontmostEl = (el) => {
+                if (!isVisibleEl(el)) return false;
+                try {
+                    const rect = el.getBoundingClientRect();
+                    // Geometry alone is insufficient: Avito can leave a firewall layer
+                    // mounted under the profile-switch modal. Accept the element only
+                    // when its center is the topmost hit-test target.
+                    const x = Math.min(Math.max(rect.left + rect.width / 2, 0), Math.max(window.innerWidth - 1, 0));
+                    const y = Math.min(Math.max(rect.top + rect.height / 2, 0), Math.max(window.innerHeight - 1, 0));
+                    const top = document.elementFromPoint(x, y);
+                    return !!top && (top === el || el.contains(top));
                 } catch {
                     return false;
                 }
@@ -74,13 +90,16 @@ public static class AvitoPageObstacleScripts
 
             const itemCount = document.querySelectorAll("[data-marker='job-application/item']").length;
             const statusCount = document.querySelectorAll("[data-marker='job-application/response/status-select-button']").length;
+            const hasProfileSwitchModal = Array.from(document.querySelectorAll(
+                "[data-marker='component-profile-switch/root']"
+            )).some(isFrontmostEl);
 
             const hasFirewallContainer = Array.from(document.querySelectorAll(
                 ".firewall-container, .js-firewall-form, .firewall-title, form.js-firewall-form"
-            )).some(isVisibleEl);
+            )).some(isFrontmostEl);
             const hasSupportLink = Array.from(document.querySelectorAll(
                 'a[href*="support.avito.ru/request/720"]'
-            )).some(isVisibleEl);
+            )).some(isFrontmostEl);
             const hasFirewallDom = hasFirewallContainer
               || location.hash === "#block"
               || hasSupportLink;
@@ -106,7 +125,7 @@ public static class AvitoPageObstacleScripts
             const hasStaticIpBlock = location.hash === "#block"
               && hasSupportLink
               && /Отключить\s+VPN|самол[её]те/i.test(bodyText);
-            const hasIpBlock = !hasCaptchaChallenge
+            const hasIpBlock = !hasCaptchaChallenge && !hasProfileSwitchModal
               && (hasStaticIpBlock || (hasIpText
                 && (hasFirewallDom || (listMissing && /Доступ\s+ограничен/i.test(title)))));
             if (hasIpBlock) signals.push("ip-block");

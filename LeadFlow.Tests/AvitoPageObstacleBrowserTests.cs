@@ -64,4 +64,24 @@ public sealed class AvitoPageObstacleBrowserTests : IAsyncLifetime
 
         Assert.Equal(AvitoPageObstacleKind.IpBlocked, (await AvitoPageObstacleProbe.ProbeAsync(page, CancellationToken.None)).Kind);
     }
+
+    [Fact]
+    public async Task FirewallCoveredByProfileSwitch_IsNotIpBlocked()
+    {
+        await page.SetContentAsync("""
+            <div class="firewall-container" style="position:fixed; inset:0; z-index:1; display:flex; align-items:center; justify-content:center">
+              <div>
+                <h2 class="firewall-title">Доступ ограничен: проблема с IP</h2>
+                <a href="https://support.avito.ru/request/720">Поддержка</a>
+              </div>
+            </div>
+            <div data-marker="component-profile-switch/root" style="position:fixed; inset:18% 30%; z-index:2; background:white">
+              <h2>Выбор профиля</h2>
+              <div data-marker="component-profile-switch/profile-440795296">Кадровый отдел</div>
+            </div>
+            """);
+        await page.EvaluateFunctionAsync("() => { location.hash = '#block'; }");
+
+        Assert.Equal(AvitoPageObstacleKind.None, (await AvitoPageObstacleProbe.ProbeAsync(page, CancellationToken.None)).Kind);
+    }
 }
