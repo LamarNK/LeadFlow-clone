@@ -36,6 +36,7 @@ public static class ResponsePhoneWatchOrbitaState
 
         var watchStartedUtc = stored.CollectedAt == default ? utcNow : stored.CollectedAt;
         var closed = phoneWatchHours <= 0
+            || stored.WatchClosedInCrm
             || utcNow - watchStartedUtc >= TimeSpan.FromHours(phoneWatchHours);
         return new ResponsePhoneObservation
         {

@@ -149,6 +149,28 @@ public sealed class ResponsePhoneWatchChatRefreshTests
     }
 
     [Fact]
+    public void RestoreFromOrbita_ClosesWatch_WhenDealClosedInCrm()
+    {
+        var now = new DateTime(2026, 8, 23, 10, 0, 0, DateTimeKind.Utc);
+        var stored = new WorkerKnownSourceResponseDto(
+            "phone-watch:1a2b3c4d",
+            now.AddHours(-4),
+            "+7 933 401-04-97",
+            "79334010497",
+            WatchClosedInCrm: true);
+
+        var restored = ResponsePhoneWatchOrbitaState.RestoreObservation(
+            stored,
+            "sub-1",
+            "автономов никита андреевич",
+            phoneWatchHours: 120,
+            now);
+
+        Assert.NotNull(restored);
+        Assert.True(restored!.ClosedAfterStableSend);
+    }
+
+    [Fact]
     public void OrderByOrbitaAddedAt_PrioritizesNewestKnownPhoneWatch()
     {
         var newer = new CandidateResponse { FullName = "Новый Кандидат", AvitoSubProfileId = "sub-1" };

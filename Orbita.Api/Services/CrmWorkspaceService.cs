@@ -28,7 +28,8 @@ public sealed class CrmWorkspaceService(
     CandidateParser? candidateParser = null,
     CandidatePersonPhoneService? personPhone = null,
     ICrmNotificationRealtimeNotifier? crmNotificationRealtime = null,
-    IOrbitaQueryCache? queryCache = null)
+    IOrbitaQueryCache? queryCache = null,
+    CandidatePhoneWatchService? phoneWatches = null)
 {
     private readonly PhoneNormalizer _phoneNormalizer = phoneNormalizer ?? new PhoneNormalizer();
     private readonly CandidateParser _candidateParser = candidateParser ?? new CandidateParser();
@@ -1459,6 +1460,12 @@ public sealed class CrmWorkspaceService(
                     actorName,
                     now);
             }
+
+            // Сделка закрыта — phone-watch кандидата останавливаем досрочно.
+            if (phoneWatches is not null)
+            {
+                await phoneWatches.CloseForCardsAsync(cards, now, ct);
+            }
         }
         else
         {
@@ -1559,6 +1566,12 @@ public sealed class CrmWorkspaceService(
             actorUserId,
             actorName,
             now);
+
+        // Сделка закрыта — phone-watch кандидата останавливаем досрочно.
+        if (phoneWatches is not null)
+        {
+            await phoneWatches.CloseForCardsAsync([card], now, ct);
+        }
 
         await db.SaveChangesAsync(ct);
         NotifyBoardChanged(card.OfficeId);
@@ -1670,6 +1683,12 @@ public sealed class CrmWorkspaceService(
                 actorUserId,
                 actorName,
                 now);
+
+            // Сделка успешно закрыта — phone-watch кандидата останавливаем досрочно.
+            if (phoneWatches is not null)
+            {
+                await phoneWatches.CloseForCardsAsync([card], now, ct);
+            }
 
             await db.SaveChangesAsync(ct);
             await transaction.CommitAsync(ct);

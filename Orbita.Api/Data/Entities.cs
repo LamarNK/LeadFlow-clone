@@ -692,6 +692,9 @@ public static class CandidatePhoneWatchStates
     public const string Open = "Open";
     public const string Changed = "Changed";
     public const string Expired = "Expired";
+
+    /// <summary>Сделка кандидата закрыта в CRM любого офиса — наблюдение остановлено до истечения окна.</summary>
+    public const string ClosedInCrm = "ClosedInCrm";
 }
 
 public sealed class CandidateResponseEntity

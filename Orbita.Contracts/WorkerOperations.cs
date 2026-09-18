@@ -297,7 +297,9 @@ public sealed record WorkerKnownSourceResponseDto(
     string PhoneRaw,
     string PhoneNormalized,
     string ProfileFingerprint = "",
-    string ChatFingerprint = "");
+    string ChatFingerprint = "",
+    /// <summary>Сделка по кандидату закрыта в CRM любого офиса — наблюдение остановлено досрочно.</summary>
+    bool WatchClosedInCrm = false);
 
 public sealed record WorkerOpenPhoneWatchDto(
     string SourceResponseId,

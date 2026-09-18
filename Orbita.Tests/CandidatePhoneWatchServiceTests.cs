@@ -101,6 +101,139 @@ public sealed class CandidatePhoneWatchServiceTests
         Assert.True((await db.CandidatePhoneWatches.SingleAsync()).LastSeenUtc > firstSeen);
     }
 
+    [Fact]
+    public async Task CloseForCardsAsync_StopsActiveWatchBeforeWindowExpires()
+    {
+        await using var db = CreateDb();
+        var (worker, person, response) = Seed(db);
+        var card = new CrmCandidateCardEntity
+        {
+            Id = Guid.NewGuid(),
+            ResponseId = response.Id,
+            OfficeId = worker.OfficeId,
+            Stage = CrmStages.Lead,
+            CreatedAtUtc = DateTime.UtcNow,
+            UpdatedAtUtc = DateTime.UtcNow,
+            StageChangedAtUtc = DateTime.UtcNow
+        };
+        db.Add(card);
+        db.SaveChanges();
+
+        var accountId = Guid.NewGuid();
+        var service = new CandidatePhoneWatchService(db);
+        await service.UpsertAsync(
+            worker,
+            Candidate(accountId, person, DateTime.UtcNow.AddHours(-1)),
+            person.Id,
+            response.Id,
+            "79001111111",
+            WorkerCandidateOperationKinds.NewResponse,
+            CancellationToken.None);
+
+        var closedCount = await service.CloseForCardsAsync([card], DateTime.UtcNow, CancellationToken.None);
+
+        Assert.Equal(1, closedCount);
+        var watch = await db.CandidatePhoneWatches.SingleAsync();
+        Assert.Equal(CandidatePhoneWatchStates.ClosedInCrm, watch.State);
+    }
+
+    [Fact]
+    public async Task UpsertAsync_DoesNotReopenWatchClosedInCrm()
+    {
+        await using var db = CreateDb();
+        var (worker, person, response) = Seed(db);
+        var card = new CrmCandidateCardEntity
+        {
+            Id = Guid.NewGuid(),
+            ResponseId = response.Id,
+            OfficeId = worker.OfficeId,
+            Stage = CrmStages.Lead,
+            CreatedAtUtc = DateTime.UtcNow,
+            UpdatedAtUtc = DateTime.UtcNow,
+            StageChangedAtUtc = DateTime.UtcNow
+        };
+        db.Add(card);
+        db.SaveChanges();
+
+        var accountId = Guid.NewGuid();
+        var service = new CandidatePhoneWatchService(db);
+        await service.UpsertAsync(
+            worker,
+            Candidate(accountId, person, DateTime.UtcNow.AddHours(-1)),
+            person.Id,
+            response.Id,
+            "79001111111",
+            WorkerCandidateOperationKinds.NewResponse,
+            CancellationToken.None);
+        await service.CloseForCardsAsync([card], DateTime.UtcNow, CancellationToken.None);
+
+        // Опоздавшая публикация воркера (смена номера) не открывает закрытое в CRM окно.
+        await service.UpsertAsync(
+            worker,
+            Candidate(accountId, person, DateTime.UtcNow),
+            person.Id,
+            response.Id,
+            "79002222222",
+            WorkerCandidateOperationKinds.PhoneChanged,
+            CancellationToken.None);
+
+        var watch = await db.CandidatePhoneWatches.SingleAsync();
+        Assert.Equal(CandidatePhoneWatchStates.ClosedInCrm, watch.State);
+    }
+
+    [Fact]
+    public async Task LookupAsync_ReturnsClosedInCrmFlagAndExcludesWatchFromOpen()
+    {
+        await using var db = CreateDb();
+        var (worker, person, response) = Seed(db);
+        var card = new CrmCandidateCardEntity
+        {
+            Id = Guid.NewGuid(),
+            ResponseId = response.Id,
+            OfficeId = worker.OfficeId,
+            Stage = CrmStages.Lead,
+            CreatedAtUtc = DateTime.UtcNow,
+            UpdatedAtUtc = DateTime.UtcNow,
+            StageChangedAtUtc = DateTime.UtcNow
+        };
+        db.Add(card);
+        db.SaveChanges();
+
+        var accountId = Guid.NewGuid();
+        var service = new CandidatePhoneWatchService(db);
+        await service.UpsertAsync(
+            worker,
+            Candidate(accountId, person, DateTime.UtcNow.AddHours(-1)),
+            person.Id,
+            response.Id,
+            "79001111111",
+            WorkerCandidateOperationKinds.NewResponse,
+            CancellationToken.None);
+        await service.CloseForCardsAsync([card], DateTime.UtcNow, CancellationToken.None);
+        db.SaveChanges();
+        var watch = await db.CandidatePhoneWatches.SingleAsync();
+
+        var lookup = new CandidateLookupService(
+            db,
+            new CandidatePersonMatchService(db),
+            new CandidatePhoneWatchService(db));
+        var result = await lookup.LookupAsync(
+            worker.Id,
+            new WorkerCandidateLookupRequest(
+                accountId,
+                "PerAvitoAccount",
+                [watch.PublishedSourceResponseId],
+                [],
+                IncludeSourceResponseMetadata: true,
+                AvitoSubProfileId: "sub-1",
+                OpenPhoneWatchHours: 120));
+
+        Assert.NotNull(result);
+        var known = Assert.Single(result!.ExistingSourceResponses!);
+        Assert.True(known.WatchClosedInCrm);
+        Assert.Empty(result.OpenPhoneWatches!);
+    }
+
     private static WorkerCandidateDto Candidate(
         Guid accountId,
         CandidatePersonEntity person,

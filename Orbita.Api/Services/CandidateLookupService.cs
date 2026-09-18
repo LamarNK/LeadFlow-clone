@@ -200,7 +200,9 @@ public sealed class CandidateLookupService(
                             && x.AccountId == request.AccountId
                             && x.AvitoSubProfileId == subProfileIdForWatches
                             && x.SourceResponseId.StartsWith("phone-watch:")
-                            && x.CollectedAt >= watchCutoffUtc)
+                            && x.CollectedAt >= watchCutoffUtc
+                            // Сделка закрыта в CRM любого офиса — за откликом больше не следим.
+                            && !db.CrmCandidateCards.Any(card => card.ResponseId == x.Id && card.IsClosed))
                 .OrderByDescending(x => x.CollectedAt)
                 .Select(x => new WorkerOpenPhoneWatchDto(
                     x.SourceResponseId,

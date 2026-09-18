@@ -44,7 +44,8 @@ public sealed class CandidatePhoneWatchService(OrbitaDbContext db)
                 x.CurrentPhoneRaw,
                 x.CurrentPhoneNormalized,
                 x.ProfileFingerprint,
-                x.ChatFingerprint))
+                x.ChatFingerprint,
+                x.State == CandidatePhoneWatchStates.ClosedInCrm))
             .ToListAsync(ct);
     }
 
@@ -138,14 +139,63 @@ public sealed class CandidatePhoneWatchService(OrbitaDbContext db)
             candidate.VacancyUrl,
             candidate.Citizenship,
             candidate.MessengerUrl);
-        watch.State = watch.ExpiresAtUtc <= now
-            ? CandidatePhoneWatchStates.Expired
-            : operationKind == WorkerCandidateOperationKinds.PhoneChanged
-                ? CandidatePhoneWatchStates.Changed
-                : CandidatePhoneWatchStates.Open;
+        // Закрытый в CRM watch не возрождаем: опоздавшие публикации воркера не открывают окно заново.
+        if (watch.State != CandidatePhoneWatchStates.ClosedInCrm)
+        {
+            watch.State = watch.ExpiresAtUtc <= now
+                ? CandidatePhoneWatchStates.Expired
+                : operationKind == WorkerCandidateOperationKinds.PhoneChanged
+                    ? CandidatePhoneWatchStates.Changed
+                    : CandidatePhoneWatchStates.Open;
+        }
+
         watch.UpdatedAtUtc = now;
         await db.SaveChangesAsync(ct);
         return watch;
+    }
+
+    /// <summary>
+    /// Закрытие сделки в CRM офиса останавливает все активные phone-watch персоны кандидата,
+    /// даже если окно наблюдения ещё не истекло. Не вызывает SaveChanges — его делает вызывающий.
+    /// </summary>
+    public async Task<int> CloseForCardsAsync(
+        IReadOnlyCollection<CrmCandidateCardEntity> cards,
+        DateTime nowUtc,
+        CancellationToken ct)
+    {
+        var responseIds = cards
+            .Select(static card => card.ResponseId)
+            .Distinct()
+            .ToArray();
+        if (responseIds.Length == 0)
+        {
+            return 0;
+        }
+
+        var personIds = await db.CandidateResponses
+            .AsNoTracking()
+            .Where(x => responseIds.Contains(x.Id))
+            .Select(x => x.PersonId)
+            .Distinct()
+            .ToListAsync(ct);
+        if (personIds.Count == 0)
+        {
+            return 0;
+        }
+
+        var activeWatches = await db.CandidatePhoneWatches
+            .Where(x => personIds.Contains(x.PersonId)
+                && (x.State == CandidatePhoneWatchStates.Open
+                    || x.State == CandidatePhoneWatchStates.Changed))
+            .ToListAsync(ct);
+        foreach (var watch in activeWatches)
+        {
+            watch.State = CandidatePhoneWatchStates.ClosedInCrm;
+            watch.ExpiresAtUtc = nowUtc;
+            watch.UpdatedAtUtc = nowUtc;
+        }
+
+        return activeWatches.Count;
     }
 
     private static string BuildPublishedSourceResponseId(string subProfileId, string fullNameKey)
