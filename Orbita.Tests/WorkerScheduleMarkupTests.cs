@@ -41,6 +41,13 @@ public sealed class WorkerScheduleMarkupTests
         Assert.Contains("grid-template-columns:minmax(0,.65fr) minmax(0,.65fr) minmax(0,1.7fr)", styles);
     }
 
+    [Fact]
+    public void ScheduleStyles_HideFilteredWorkersAndCandidates()
+    {
+        var styles = ReadRepoFile("Orbita.Web", "wwwroot", "css", "orbita", "schedule.css");
+        Assert.Contains(".schedule-candidate[hidden],[data-schedule-worker-row][hidden] { display:none; }", styles);
+    }
+
     private static string ReadRepoFile(params string[] parts)
     {
         var directory = new DirectoryInfo(AppContext.BaseDirectory);
