@@ -372,7 +372,7 @@ public sealed class AvitoGeeTestSolveSupportTests
     }
 
     [Fact]
-    public void LoginClickCaptcha_CapturesIsolatedSourceAssetsInsteadOfAnimatedGeeTestNodes()
+    public void LoginClickCaptcha_CapturesNineGridFromVisibleCssComposition()
     {
         var source = File.ReadAllText(
             Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "LeadFlow.Core", "Services", "Captcha", "AvitoGeeTestSolver.cs"));
@@ -380,12 +380,17 @@ public sealed class AvitoGeeTestSolveSupportTests
         Assert.Contains("BuildPrepareLoginClickCaptchaCaptureScript", source, StringComparison.Ordinal);
         Assert.Contains("LoginClickCaptchaPreparedImageSelector", source, StringComparison.Ordinal);
         Assert.Contains("LoginClickCaptchaPreparedHintSelector", source, StringComparison.Ordinal);
+        Assert.Contains("prepared.IsNineGrid\n                        ? LoginNineGridCaptchaImageSelector", source, StringComparison.Ordinal);
+        Assert.Contains("prepared.IsNineGrid\n                        ? LoginClickCaptchaHintSelector", source, StringComparison.Ordinal);
+        Assert.Contains("const imageUrl = isNineGrid ? '' : readBackgroundUrl(clickImage)", source, StringComparison.Ordinal);
+        Assert.Contains("if (!isNineGrid)", source, StringComparison.Ordinal);
+        Assert.Contains("if (!isNineGrid) document.documentElement.appendChild(host)", source, StringComparison.Ordinal);
         Assert.Contains("mainImage.naturalWidth", source, StringComparison.Ordinal);
         Assert.Contains("hintImages.length", source, StringComparison.Ordinal);
         Assert.Contains("requiredClicks", source, StringComparison.Ordinal);
         Assert.Contains("maxWidth: '400px'", source, StringComparison.Ordinal);
         Assert.Contains("maxHeight: '150px'", source, StringComparison.Ordinal);
-        Assert.DoesNotContain("var imageBody = await image.ScreenshotBase64Async()", source, StringComparison.Ordinal);
+        Assert.Contains("var imageBody = await preparedImage.ScreenshotBase64Async()", source, StringComparison.Ordinal);
         Assert.DoesNotContain("var hintImageBody = await hint.ScreenshotBase64Async()", source, StringComparison.Ordinal);
     }
 

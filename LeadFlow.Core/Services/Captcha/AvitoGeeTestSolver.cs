@@ -22,6 +22,7 @@ public sealed class AvitoGeeTestSolver(
     private const int LoginClickCaptchaOutcomePollMs = 500;
     private const string LoginClickCaptchaImageSelector = ".geetest_click .geetest_bg, [class*='geetest_click'] [class*='geetest_bg']";
     private const string LoginNineGridCaptchaImageSelector = ".geetest_nine, [class*='geetest_nine']";
+    private const string LoginClickCaptchaHintSelector = ".geetest_ques_tips, [class*='geetest_ques_tips']";
     private const string LoginClickCaptchaPreparedHostId = "leadflow-geetest-capture";
     private const string LoginClickCaptchaPreparedImageSelector = "#leadflow-geetest-capture-image";
     private const string LoginClickCaptchaPreparedHintSelector = "#leadflow-geetest-capture-hint";
@@ -824,12 +825,16 @@ public sealed class AvitoGeeTestSolver(
 
             var preparedImage = await FindVisibleElementAsync(
                     page,
-                    LoginClickCaptchaPreparedImageSelector,
+                    prepared.IsNineGrid
+                        ? LoginNineGridCaptchaImageSelector
+                        : LoginClickCaptchaPreparedImageSelector,
                     cancellationToken)
                 .ConfigureAwait(false);
             var preparedHint = await FindVisibleElementAsync(
                     page,
-                    LoginClickCaptchaPreparedHintSelector,
+                    prepared.IsNineGrid
+                        ? LoginClickCaptchaHintSelector
+                        : LoginClickCaptchaPreparedHintSelector,
                     cancellationToken)
                 .ConfigureAwait(false);
             if (preparedImage is null || preparedHint is null)
@@ -923,16 +928,13 @@ public sealed class AvitoGeeTestSolver(
           const nineGrid = Array.from(root.querySelectorAll('.geetest_nine, [class*="geetest_nine"]'))
             .find(isVisible);
           const isNineGrid = !clickImage && !!nineGrid;
-          const sourceNode = clickImage
-            || (nineGrid && Array.from(nineGrid.querySelectorAll(
-                '.geetest_item_img, [class*="geetest_item_img"]')).find(isVisible));
-          const imageUrl = readBackgroundUrl(sourceNode);
+          const imageUrl = isNineGrid ? '' : readBackgroundUrl(clickImage);
           const hintUrls = Array.from(root.querySelectorAll(
               '.geetest_ques_tips img, [class*="geetest_ques_tips"] img'))
             .filter(isVisible)
             .map((image) => image.currentSrc || image.src || image.getAttribute('src') || '')
             .filter(Boolean);
-          if (!imageUrl || hintUrls.length === 0) {
+          if ((!isNineGrid && !imageUrl) || hintUrls.length === 0) {
             return JSON.stringify({ ok: false, error: 'source-assets-not-found' });
           }
 
@@ -956,72 +958,76 @@ public sealed class AvitoGeeTestSolver(
             animation: 'none',
             transition: 'none'
           });
-          document.documentElement.appendChild(host);
+          if (!isNineGrid) document.documentElement.appendChild(host);
 
           try {
-            const mainImage = await loadImage(imageUrl);
-            mainImage.id = imageId;
-            Object.assign(mainImage.style, {
-              display: 'block',
-              width: `${mainImage.naturalWidth}px`,
-              height: `${mainImage.naturalHeight}px`,
-              maxWidth: 'none',
-              maxHeight: 'none',
-              padding: '0',
-              margin: '0',
-              border: '0',
-              borderRadius: '0',
-              objectFit: 'fill',
-              transform: 'none',
-              animation: 'none',
-              transition: 'none'
-            });
-            host.appendChild(mainImage);
-
-            const hintImages = [];
-            for (const source of hintUrls) {
-              const image = await loadImage(source);
-              hintImages.push(image);
+            if (!isNineGrid) {
+              const mainImage = await loadImage(imageUrl);
+              mainImage.id = imageId;
+              Object.assign(mainImage.style, {
+                display: 'block',
+                width: `${mainImage.naturalWidth}px`,
+                height: `${mainImage.naturalHeight}px`,
+                maxWidth: 'none',
+                maxHeight: 'none',
+                padding: '0',
+                margin: '0',
+                border: '0',
+                borderRadius: '0',
+                objectFit: 'fill',
+                transform: 'none',
+                animation: 'none',
+                transition: 'none'
+              });
+              host.appendChild(mainImage);
             }
-            const gapWidth = Math.max(0, hintImages.length - 1) * 8;
-            const naturalWidth = hintImages.reduce((sum, image) => sum + image.naturalWidth, 0);
-            const naturalHeight = Math.max(...hintImages.map((image) => image.naturalHeight));
-            const scale = Math.min(
-              1,
-              naturalWidth > 0 ? (400 - gapWidth) / naturalWidth : 1,
-              naturalHeight > 0 ? 150 / naturalHeight : 1);
-            const widths = hintImages.map((image) => Math.max(1, Math.round(image.naturalWidth * scale)));
-            const heights = hintImages.map((image) => Math.max(1, Math.round(image.naturalHeight * scale)));
-            const canvas = document.createElement('canvas');
-            canvas.id = hintId;
-            canvas.dataset.maxWidth = '400px';
-            canvas.dataset.maxHeight = '150px';
-            canvas.width = Math.max(1, widths.reduce((sum, width) => sum + width, 0) + gapWidth);
-            canvas.height = Math.max(1, Math.max(...heights));
-            Object.assign(canvas.style, {
-              display: 'block',
-              width: `${canvas.width}px`,
-              height: `${canvas.height}px`,
-              maxWidth: '400px',
-              maxHeight: '150px',
-              padding: '0',
-              margin: '0',
-              border: '0',
-              background: '#fff',
-              transform: 'none',
-              animation: 'none',
-              transition: 'none'
-            });
-            const context = canvas.getContext('2d');
-            if (!context) throw new Error('hint-canvas-context-unavailable');
-            context.fillStyle = '#fff';
-            context.fillRect(0, 0, canvas.width, canvas.height);
-            let offsetX = 0;
-            hintImages.forEach((image, index) => {
-              context.drawImage(image, offsetX, 0, widths[index], heights[index]);
-              offsetX += widths[index] + 8;
-            });
-            host.appendChild(canvas);
+
+            if (!isNineGrid) {
+              const hintImages = [];
+              for (const source of hintUrls) {
+                const image = await loadImage(source);
+                hintImages.push(image);
+              }
+              const gapWidth = Math.max(0, hintImages.length - 1) * 8;
+              const naturalWidth = hintImages.reduce((sum, image) => sum + image.naturalWidth, 0);
+              const naturalHeight = Math.max(...hintImages.map((image) => image.naturalHeight));
+              const scale = Math.min(
+                1,
+                naturalWidth > 0 ? (400 - gapWidth) / naturalWidth : 1,
+                naturalHeight > 0 ? 150 / naturalHeight : 1);
+              const widths = hintImages.map((image) => Math.max(1, Math.round(image.naturalWidth * scale)));
+              const heights = hintImages.map((image) => Math.max(1, Math.round(image.naturalHeight * scale)));
+              const canvas = document.createElement('canvas');
+              canvas.id = hintId;
+              canvas.dataset.maxWidth = '400px';
+              canvas.dataset.maxHeight = '150px';
+              canvas.width = Math.max(1, widths.reduce((sum, width) => sum + width, 0) + gapWidth);
+              canvas.height = Math.max(1, Math.max(...heights));
+              Object.assign(canvas.style, {
+                display: 'block',
+                width: `${canvas.width}px`,
+                height: `${canvas.height}px`,
+                maxWidth: '400px',
+                maxHeight: '150px',
+                padding: '0',
+                margin: '0',
+                border: '0',
+                background: '#fff',
+                transform: 'none',
+                animation: 'none',
+                transition: 'none'
+              });
+              const context = canvas.getContext('2d');
+              if (!context) throw new Error('hint-canvas-context-unavailable');
+              context.fillStyle = '#fff';
+              context.fillRect(0, 0, canvas.width, canvas.height);
+              let offsetX = 0;
+              hintImages.forEach((image, index) => {
+                context.drawImage(image, offsetX, 0, widths[index], heights[index]);
+                offsetX += widths[index] + 8;
+              });
+              host.appendChild(canvas);
+            }
 
             const hintText = String(
               root.querySelector('.geetest_text_tips, [class*="geetest_text_tips"]')?.textContent || '').trim();
