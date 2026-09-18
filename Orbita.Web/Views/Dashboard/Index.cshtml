@@ -192,7 +192,8 @@
                                     <th>Офис</th>
                                 }
                                 <th>Статус</th>
-                                <th>Сейчас</th>
+                                <th class="dashboard-subprofiles-th">Субпрофили <small>(до 10)</small></th>
+                                <th class="dashboard-balance-th">Баланс субпрофилей</th>
                                 <th class="cell-num dashboard-accounts-th" title="Аккаунты">
                                     <span>Аккаунты</span>
                                     <small>активные / всего</small>
@@ -259,8 +260,32 @@
                                         @statusText
                                     </span>
                                 </td>
-                                <td data-label="Сейчас">
-                                    <partial name="_WorkerActivityPillFromRow" model="@(w.CurrentActivityLabel, w.CurrentActivityTone, w.IsActivityLive, w.CurrentActivityPhase, w.CurrentActivityNextCycleAtUtc)" />
+                                <td class="dashboard-subprofiles-cell" data-label="Субпрофили">
+                                    <partial name="_WorkerSubProfiles" model="w" />
+                                </td>
+                                <td class="dashboard-balance-cell" data-label="Баланс субпрофилей">
+                                    <strong>@w.TotalBalance.ToString("N0") ₽</strong>
+                                    <div class="dashboard-balance-bars" aria-label="Баланс субпрофилей">
+                                        @{
+                                            var maxSubProfileBalance = w.SubProfiles
+                                                .Where(x => x.Balance.HasValue)
+                                                .Select(x => x.Balance!.Value)
+                                                .DefaultIfEmpty(1m)
+                                                .Max();
+                                        }
+                                        @foreach (var profile in w.SubProfiles)
+                                        {
+                                            var balanceHeight = profile.Balance.HasValue && maxSubProfileBalance > 0
+                                                ? Math.Clamp((int)Math.Round(profile.Balance.Value / maxSubProfileBalance * 100), 14, 100)
+                                                : 8;
+                                            var balanceTone = !profile.Balance.HasValue ? "unknown" : profile.Balance.Value <= 250 ? "low" : "normal";
+                                            var balanceState = profile.IsProcessing ? "processing" : profile.IsEnabled ? "enabled" : "disabled";
+                                            <span class="dashboard-balance-bar dashboard-balance-bar--@balanceTone dashboard-balance-bar--@balanceState"
+                                                  style="--balance-height:@(balanceHeight)%"
+                                                  title="@profile.Name · @(profile.Balance.HasValue ? $"{profile.Balance.Value:N0} ₽" : "баланс неизвестен")"
+                                                  aria-hidden="true"></span>
+                                        }
+                                    </div>
                                 </td>
                                 @{
                                     var accountProgress = w.TotalAccounts > 0

@@ -1092,14 +1092,20 @@
     .data-table--dashboard-workers.data-table--cards tbody tr::after { order: 5; }
 
     .data-table--dashboard-workers.data-table--cards tbody td[data-label="Статус"],
-    .data-table--dashboard-workers.data-table--cards tbody td[data-label="Сейчас"] {
+    .data-table--dashboard-workers.data-table--cards tbody td[data-label="Субпрофили"] {
         order: 2;
     }
 
-    .data-table--dashboard-workers.data-table--cards tbody td[data-label="Сейчас"] {
+    .data-table--dashboard-workers.data-table--cards tbody td[data-label="Субпрофили"] {
         flex: 1 1 180px;
         min-width: 0;
         overflow: hidden;
+    }
+
+    .data-table--dashboard-workers.data-table--cards tbody td[data-label="Баланс субпрофилей"] {
+        order: 3;
+        flex: 1 1 100%;
+        min-width: 0;
     }
 
     .data-table--dashboard-workers.data-table--cards tbody td[data-label="Аккаунтов"],

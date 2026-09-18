@@ -1076,7 +1076,7 @@ a.kpi-card:focus-visible {
 
 .card--dashboard-workers .data-table--dashboard-workers {
     width: 100%;
-    min-width: 640px;
+    min-width: 1120px;
 }
 
 .card--dashboard-workers .data-table--dashboard-workers thead th {
@@ -1184,6 +1184,89 @@ a.kpi-card:focus-visible {
     gap: 8px;
 }
 
+.dashboard-subprofiles-th small {
+    color: #98a2b3;
+    font-size: 10px;
+    font-weight: 500;
+}
+
+.card--dashboard-workers .data-table--dashboard-workers .dashboard-subprofiles-cell {
+    min-width: 248px;
+}
+
+.card--dashboard-workers .data-table--dashboard-workers .dashboard-balance-cell {
+    min-width: 176px;
+}
+
+.dashboard-subprofile-dots {
+    display: grid;
+    grid-template-columns: repeat(10, 20px);
+    gap: 4px;
+    align-items: center;
+}
+
+.dashboard-subprofile-dot {
+    display: inline-grid;
+    width: 20px;
+    height: 20px;
+    box-sizing: border-box;
+    place-items: center;
+    border-radius: 50%;
+    color: #fff;
+    font-size: 9px;
+    font-weight: 700;
+    line-height: 1;
+    cursor: help;
+}
+
+.dashboard-subprofile-dot--enabled { background: #16a265; }
+.dashboard-subprofile-dot--disabled { background: #dc3545; }
+.dashboard-subprofile-dot--processing {
+    background: #2563eb;
+    box-shadow: 0 0 0 3px rgba(37, 99, 235, .15);
+}
+
+.dashboard-subprofiles-empty {
+    color: #98a2b3;
+    font-size: 12px;
+}
+
+.dashboard-balance-cell > strong {
+    display: block;
+    color: #1d2939;
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+    line-height: 1.2;
+    white-space: nowrap;
+}
+
+.dashboard-balance-bars {
+    display: grid;
+    grid-template-columns: repeat(10, 8px);
+    align-items: end;
+    height: 24px;
+    gap: 3px;
+    margin-top: 4px;
+}
+
+.dashboard-balance-bar {
+    width: 8px;
+    height: var(--balance-height);
+    min-height: 2px;
+    border-radius: 2px 2px 0 0;
+    background: #22b573;
+    cursor: help;
+}
+
+.dashboard-balance-bar--low { background: #ef4444; }
+.dashboard-balance-bar--unknown { background: #98a2b3; }
+.dashboard-balance-bar--disabled { opacity: .38; }
+.dashboard-balance-bar--processing { background: #2563eb; opacity: 1; }
+
+[data-theme="dark"] .dashboard-subprofiles-th small,
+[data-theme="dark"] .dashboard-subprofiles-empty { color: var(--text-muted); }
+[data-theme="dark"] .dashboard-balance-cell > strong { color: var(--text-primary); }
+
 .card--dashboard-workers.dashboard-workers-view--cards .data-table--dashboard-workers tbody tr {
     position: relative;
     display: flex;
@@ -1207,7 +1290,8 @@ a.kpi-card:focus-visible {
 
 .card--dashboard-workers.dashboard-workers-view--cards .data-table--dashboard-workers tbody td.cell-name,
 .card--dashboard-workers.dashboard-workers-view--cards .data-table--dashboard-workers tbody td[data-label="Статус"],
-.card--dashboard-workers.dashboard-workers-view--cards .data-table--dashboard-workers tbody td[data-label="Сейчас"],
+.card--dashboard-workers.dashboard-workers-view--cards .data-table--dashboard-workers tbody td[data-label="Субпрофили"],
+.card--dashboard-workers.dashboard-workers-view--cards .data-table--dashboard-workers tbody td[data-label="Баланс субпрофилей"],
 .card--dashboard-workers.dashboard-workers-view--cards .data-table--dashboard-workers tbody td[data-label="Аккаунтов"],
 .card--dashboard-workers.dashboard-workers-view--cards .data-table--dashboard-workers tbody td[data-label="Откликов"],
 .card--dashboard-workers.dashboard-workers-view--cards .data-table--dashboard-workers tbody td[data-label="Ошибок"],
@@ -1228,10 +1312,16 @@ a.kpi-card:focus-visible {
     padding-top: 2px;
 }
 
-.card--dashboard-workers.dashboard-workers-view--cards .data-table--dashboard-workers tbody td[data-label="Сейчас"] {
+.card--dashboard-workers.dashboard-workers-view--cards .data-table--dashboard-workers tbody td[data-label="Субпрофили"] {
     flex: 1 1 100%;
     min-width: 0;
     order: 3;
+}
+
+.card--dashboard-workers.dashboard-workers-view--cards .data-table--dashboard-workers tbody td[data-label="Баланс субпрофилей"] {
+    flex: 1 1 100%;
+    min-width: 0;
+    order: 4;
 }
 
 .card--dashboard-workers.dashboard-workers-view--cards .worker-activity-pill {

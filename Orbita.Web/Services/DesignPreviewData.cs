@@ -2264,7 +2264,19 @@ internal static class DesignPreviewData
             w.ActiveAccounts,
             w.LowBalanceAccountCount,
             BuildPreviewWorkerActivity(i, w.IsOnline),
-            IpAddress: $"185.22.{174 + i}.{101 + i}")).ToList();
+            IpAddress: $"185.22.{174 + i}.{101 + i}",
+            SubProfiles: BuildPreviewDashboardSubProfiles(i),
+            TotalBalance: BuildPreviewDashboardSubProfiles(i).Sum(x => x.Balance ?? 0))).ToList();
+
+    private static IReadOnlyList<DashboardWorkerSubProfileItem> BuildPreviewDashboardSubProfiles(int workerIndex) =>
+        Enumerable.Range(0, 10)
+            .Select(index => new DashboardWorkerSubProfileItem(
+                PreviewWorkerIds[workerIndex],
+                $"profile-{workerIndex + 1}-{index + 1}",
+                $"Субпрофиль {index + 1}",
+                Math.Max(80, 260 + workerIndex * 95 + ((index * 173) % 980)),
+                index != (workerIndex + 2) % 10))
+            .ToList();
 
     private static IReadOnlyList<WorkerRowViewModel> BuildWorkerRows()
     {
@@ -2553,7 +2565,20 @@ internal static class DesignPreviewData
                 IsActivityLive = w.IsActivityLive,
                 CurrentActivityPhase = w.CurrentActivityPhase,
                 CurrentActivityNextCycleAtUtc = w.CurrentActivityNextCycleAtUtc,
-                OfficeName = w.OfficeName
+                OfficeName = w.OfficeName,
+                TotalBalance = BuildPreviewDashboardSubProfiles(Array.IndexOf(PreviewWorkerIds, w.Id))
+                    .Where(x => x.Balance.HasValue)
+                    .Sum(x => x.Balance!.Value),
+                SubProfiles = BuildPreviewDashboardSubProfiles(Array.IndexOf(PreviewWorkerIds, w.Id))
+                    .Select((x, index) => new DashboardWorkerSubProfileViewModel
+                    {
+                        Id = x.Id,
+                        Name = x.Name,
+                        Balance = x.Balance,
+                        IsEnabled = x.IsEnabled,
+                        IsProcessing = index == Array.IndexOf(PreviewWorkerIds, w.Id) % 10
+                    })
+                    .ToList()
             })
             .ToList();
         var normalizedWorkerFilter = DashboardWorkerFilter.Normalize(workerFilter);

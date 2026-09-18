@@ -1,3 +1,5 @@
+using Orbita.Contracts;
+
 namespace Orbita.Api.Helpers;
 
 internal sealed record WorkerOperationalStats(
@@ -6,9 +8,11 @@ internal sealed record WorkerOperationalStats(
     int TodayEventErrors,
     int ActiveAccounts,
     int TotalAccounts,
-    int LowBalanceAccountCount)
+    int LowBalanceAccountCount,
+    IReadOnlyList<DashboardWorkerSubProfileItem> SubProfiles,
+    decimal TotalBalance)
 {
-    public static WorkerOperationalStats Empty { get; } = new(0, 0, 0, 0, 0, 0);
+    public static WorkerOperationalStats Empty { get; } = new(0, 0, 0, 0, 0, 0, [], 0);
 }
 
 internal static class WorkerOperationalStatsHelper
@@ -18,7 +22,9 @@ internal static class WorkerOperationalStatsHelper
         IReadOnlyDictionary<Guid, (int Total, int Duplicates, int ResponseErrors)> responseStats,
         IReadOnlyDictionary<Guid, int> eventErrors,
         IReadOnlyDictionary<Guid, (int Total, int Active)> accountStats,
-        IReadOnlyDictionary<Guid, int> lowBalanceAccountCounts)
+        IReadOnlyDictionary<Guid, int> lowBalanceAccountCounts,
+        IReadOnlyDictionary<Guid, IReadOnlyList<DashboardWorkerSubProfileItem>> subProfiles,
+        IReadOnlyDictionary<Guid, decimal> balances)
     {
         var result = new Dictionary<Guid, WorkerOperationalStats>();
         foreach (var workerId in workerIds)
@@ -27,6 +33,8 @@ internal static class WorkerOperationalStatsHelper
             eventErrors.TryGetValue(workerId, out var errors);
             accountStats.TryGetValue(workerId, out var accounts);
             lowBalanceAccountCounts.TryGetValue(workerId, out var lowBalanceCount);
+            subProfiles.TryGetValue(workerId, out var workerSubProfiles);
+            balances.TryGetValue(workerId, out var totalBalance);
 
             result[workerId] = new WorkerOperationalStats(
                 responses.Total,
@@ -34,7 +42,9 @@ internal static class WorkerOperationalStatsHelper
                 errors,
                 accounts.Active,
                 accounts.Total,
-                lowBalanceCount);
+                lowBalanceCount,
+                workerSubProfiles ?? [],
+                totalBalance);
         }
 
         return result;

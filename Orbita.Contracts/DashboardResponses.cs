@@ -53,7 +53,16 @@ public sealed record WorkerListItem(
     WorkerActivityDto? CurrentActivity = null,
     IReadOnlyList<WorkerActiveAccountDto>? ActiveAccounts = null,
     bool IsMonitoringPaused = false,
-    string IpAddress = "");
+    string IpAddress = "",
+    IReadOnlyList<DashboardWorkerSubProfileItem>? SubProfiles = null,
+    decimal TotalBalance = 0);
+
+public sealed record DashboardWorkerSubProfileItem(
+    Guid AccountId,
+    string Id,
+    string Name,
+    decimal? Balance,
+    bool IsEnabled);
 
 public sealed record WorkersPageDto(
     IReadOnlyList<WorkerListItem> Items,

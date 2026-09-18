@@ -363,7 +363,9 @@ public sealed class DashboardQueryService(
                     WorkerActivityMapper.DeserializeActiveAccounts(w.ActivityActiveAccountsJson)),
                 WorkerActivityMapper.DeserializeActiveAccounts(w.ActivityActiveAccountsJson),
                 w.IsMonitoringPaused,
-                w.IpAddress ?? string.Empty);
+                w.IpAddress ?? string.Empty,
+                op.SubProfiles,
+                op.TotalBalance);
         }).ToList();
     }
 
@@ -513,7 +515,9 @@ public sealed class DashboardQueryService(
                     WorkerActivityMapper.DeserializeActiveAccounts(w.ActivityActiveAccountsJson)),
                 WorkerActivityMapper.DeserializeActiveAccounts(w.ActivityActiveAccountsJson),
                 w.IsMonitoringPaused,
-                w.IpAddress ?? string.Empty);
+                w.IpAddress ?? string.Empty,
+                op.SubProfiles,
+                op.TotalBalance);
         }).ToList();
 
         var tabCounts = DashboardWorkerFilter.Count(items);
@@ -1856,6 +1860,31 @@ public sealed class DashboardQueryService(
             })
             .GroupBy(x => x.WorkerId)
             .ToDictionary(g => g.Key, g => g.Sum(static x => x.Count));
+        var subProfiles = accountRows
+            .SelectMany(account =>
+                (SubProfileDeserializer.Deserialize(
+                    account.SubProfilesJson,
+                    account.SubProfilesDisabledIdsJson) ?? [])
+                .Select(profile => new
+                {
+                    account.WorkerId,
+                    Item = new DashboardWorkerSubProfileItem(
+                        account.AccountId,
+                        profile.Id,
+                        profile.Name,
+                        profile.Balance,
+                        account.IsEnabledInPanel && profile.IsEnabledInPanel)
+                }))
+            .GroupBy(x => x.WorkerId)
+            .ToDictionary(
+                g => g.Key,
+                g => (IReadOnlyList<DashboardWorkerSubProfileItem>)g
+                    .Select(x => x.Item)
+                    .Take(10)
+                    .ToList());
+        var balances = accountRows
+            .GroupBy(x => x.WorkerId)
+            .ToDictionary(g => g.Key, g => g.Sum(x => x.TotalBalance));
         var responseStats = await ComputeWorkerTodayStatsAsync(workerIds, todayStartUtc, ct);
         var workerEventErrors = await ComputeWorkerEventErrorStatsAsync(
             workerIds.ToHashSet(),
@@ -1870,7 +1899,9 @@ public sealed class DashboardQueryService(
                 x => (x.Value.Total, x.Value.Duplicates, x.Value.Errors)),
             workerEventErrors.PerWorkerToday,
             accountCounts,
-            lowBalanceAccountCounts);
+            lowBalanceAccountCounts,
+            subProfiles,
+            balances);
     }
 
     private static int ResolveLowBalanceSubProfileCount(

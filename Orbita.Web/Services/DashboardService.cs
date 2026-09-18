@@ -107,6 +107,18 @@ public sealed class DashboardService(
             w.CurrentActivity,
             w.IsOnline,
             w.ActiveAccounts ?? w.CurrentActivity?.ActiveAccounts);
+        var activeAccounts = w.ActiveAccounts ?? w.CurrentActivity?.ActiveAccounts ?? [];
+        var subProfiles = (w.SubProfiles ?? [])
+            .Select(profile => new DashboardWorkerSubProfileViewModel
+            {
+                Id = profile.Id,
+                Name = profile.Name,
+                Balance = profile.Balance,
+                IsEnabled = profile.IsEnabled,
+                IsProcessing = w.IsEnabled && w.IsOnline && profile.IsEnabled
+                    && IsProcessingSubProfile(w.CurrentActivity, activeAccounts, profile)
+            })
+            .ToList();
         return new DashboardWorkerRowViewModel
         {
             Id = w.Id,
@@ -128,8 +140,30 @@ public sealed class DashboardService(
             IsActivityLive = activity.IsLive,
             CurrentActivityPhase = activity.Phase,
             CurrentActivityNextCycleAtUtc = activity.NextCycleAtUtc,
-            OfficeName = w.OfficeName
+            OfficeName = w.OfficeName,
+            TotalBalance = w.TotalBalance,
+            SubProfiles = subProfiles
         };
+    }
+
+    private static bool IsProcessingSubProfile(
+        WorkerActivityDto? activity,
+        IReadOnlyList<WorkerActiveAccountDto> activeAccounts,
+        DashboardWorkerSubProfileItem profile)
+    {
+        if (activeAccounts.Any(active =>
+                active.AccountId == profile.AccountId
+                && string.Equals(active.Phase, WorkerActivityPhases.SubProfile, StringComparison.OrdinalIgnoreCase)
+                && (string.Equals(active.SubProfileId, profile.Id, StringComparison.OrdinalIgnoreCase)
+                    || string.Equals(active.SubProfileName, profile.Name, StringComparison.OrdinalIgnoreCase))))
+        {
+            return true;
+        }
+
+        return activity?.AccountId == profile.AccountId
+            && string.Equals(activity.Phase, WorkerActivityPhases.SubProfile, StringComparison.OrdinalIgnoreCase)
+            && (string.Equals(activity.SubProfileId, profile.Id, StringComparison.OrdinalIgnoreCase)
+                || string.Equals(activity.SubProfileName, profile.Name, StringComparison.OrdinalIgnoreCase));
     }
 
     private PageHeaderViewModel BuildHeader(DashboardPeriod period)

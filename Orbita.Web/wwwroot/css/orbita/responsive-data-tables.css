@@ -1129,12 +1129,18 @@
     }
 
     .data-table--workers td[data-label="Сейчас"],
-    .data-table--dashboard-workers td[data-label="Сейчас"] {
+    .data-table--dashboard-workers td[data-label="Субпрофили"] {
         order: 4;
         display: inline-flex;
         align-items: center;
         width: auto;
         margin-bottom: 2px;
+    }
+
+    .data-table--dashboard-workers td[data-label="Баланс субпрофилей"] {
+        order: 5;
+        flex: 1 1 100%;
+        min-width: 0;
     }
 
     .data-table--workers td.cell-num,

@@ -72,6 +72,17 @@ public sealed class DashboardWorkerRowViewModel
     public string? CurrentActivityPhase { get; init; }
     public DateTime? CurrentActivityNextCycleAtUtc { get; init; }
     public string OfficeName { get; init; } = string.Empty;
+    public decimal TotalBalance { get; init; }
+    public IReadOnlyList<DashboardWorkerSubProfileViewModel> SubProfiles { get; init; } = [];
+}
+
+public sealed class DashboardWorkerSubProfileViewModel
+{
+    public string Id { get; init; } = string.Empty;
+    public string Name { get; init; } = string.Empty;
+    public decimal? Balance { get; init; }
+    public bool IsEnabled { get; init; }
+    public bool IsProcessing { get; init; }
 }
 
 public sealed class DashboardChartPointViewModel

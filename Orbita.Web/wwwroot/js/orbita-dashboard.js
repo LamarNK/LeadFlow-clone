@@ -780,6 +780,45 @@
         return template ? template.replace('__id__', workerId) : '';
     }
 
+    function formatRubles(value) {
+        return new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 }).format(Number(value) || 0) + ' ₽';
+    }
+
+    function renderWorkerSubProfiles(w) {
+        var profiles = Array.isArray(w.subProfiles) ? w.subProfiles.slice(0, 10) : [];
+        if (!profiles.length) {
+            return {
+                profiles: '<span class="dashboard-subprofiles-empty">Нет данных</span>',
+                balance: '<strong>' + formatRubles(w.totalBalance) + '</strong><div class="dashboard-balance-bars"></div>'
+            };
+        }
+
+        var knownBalances = profiles
+            .map(function (profile) { return profile.balance == null ? null : Math.max(0, Number(profile.balance) || 0); })
+            .filter(function (balance) { return balance != null; });
+        var maxBalance = Math.max.apply(Math, knownBalances.concat([1]));
+        var dots = profiles.map(function (profile, index) {
+            var state = profile.isProcessing ? 'processing' : (profile.isEnabled ? 'enabled' : 'disabled');
+            var stateLabel = profile.isProcessing ? 'воркер работает' : (profile.isEnabled ? 'включён' : 'выключен');
+            var balanceLabel = profile.balance == null ? 'баланс неизвестен' : formatRubles(profile.balance);
+            var title = (profile.name || profile.id || ('Субпрофиль ' + (index + 1))) + ' · ' + stateLabel + ' · ' + balanceLabel;
+            return '<span class="dashboard-subprofile-dot dashboard-subprofile-dot--' + state + '" title="' + escapeHtml(title) + '" aria-label="Субпрофиль ' + (index + 1) + ': ' + escapeHtml(title) + '">' + (index + 1) + '</span>';
+        }).join('');
+        var bars = profiles.map(function (profile) {
+            var value = profile.balance == null ? null : Math.max(0, Number(profile.balance) || 0);
+            var height = value == null ? 8 : Math.max(14, Math.min(100, Math.round(value / maxBalance * 100)));
+            var tone = value == null ? 'unknown' : (value <= 250 ? 'low' : 'normal');
+            var state = profile.isProcessing ? 'processing' : (profile.isEnabled ? 'enabled' : 'disabled');
+            var title = (profile.name || profile.id || 'Субпрофиль') + ' · ' + (value == null ? 'баланс неизвестен' : formatRubles(value));
+            return '<span class="dashboard-balance-bar dashboard-balance-bar--' + tone + ' dashboard-balance-bar--' + state + '" style="--balance-height:' + height + '%" title="' + escapeHtml(title) + '" aria-hidden="true"></span>';
+        }).join('');
+
+        return {
+            profiles: '<div class="dashboard-subprofiles" aria-label="Субпрофили воркера"><div class="dashboard-subprofile-dots">' + dots + '</div></div>',
+            balance: '<strong>' + formatRubles(w.totalBalance) + '</strong><div class="dashboard-balance-bars" aria-label="Баланс субпрофилей">' + bars + '</div>'
+        };
+    }
+
     function renderWorkerToggleCell(w) {
         if (!w.isMonitoringPaused) {
             return '<td class="dashboard-worker-toggle" data-label="">' +
@@ -939,12 +978,14 @@
             var monitoringPausedTooltip = isMonitoringPaused
                 ? '<span class="dashboard-monitoring-paused-tooltip" title="Мониторинг приостановлен" aria-label="Предупреждение: мониторинг приостановлен"><i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i></span>'
                 : '';
+            var subProfileSummary = renderWorkerSubProfiles(w);
 
             return '<tr class="dashboard-worker-row' + lowBalanceClass + monitoringPausedClass + '" data-href="' + escapeHtml(detailsUrl) + '" data-dashboard-worker-online="' + (w.isEnabled && w.isOnline ? 'true' : 'false') + '" data-dashboard-worker-empty="' + (!w.totalAccounts ? 'true' : 'false') + '" data-dashboard-worker-paused="' + (isMonitoringPaused ? 'true' : 'false') + '" data-dashboard-worker-activity="' + (iso ? Date.parse(iso) || 0 : 0) + '" data-dashboard-worker-name="' + escapeHtml(w.displayName || '') + '" data-dashboard-worker-ip="' + escapeHtml(w.ipAddress || '') + '" data-dashboard-worker-responses="' + (Number(w.responses) || 0) + '" data-dashboard-worker-errors="' + (Number(w.errors) || 0) + '">' +
                 '<td class="cell-name" data-label="Воркер">' + nameCell + lowBalanceTooltip + monitoringPausedTooltip + '</td>' +
                 officeCell +
                 '<td data-label="Статус"><span class="status-dot' + statusClass + '"><i class="fa-solid fa-circle status-dot-icon" aria-hidden="true"></i>' + statusText + '</span></td>' +
-                '<td data-label="Сейчас">' + (window.OrbitaLiveShared ? window.OrbitaLiveShared.renderActivityPill(w.currentActivityLabel, w.currentActivityTone, w.isActivityLive, window.OrbitaLiveShared.activityPillExtrasFromWorker(w)) : escapeHtml(w.currentActivityLabel || '—')) + '</td>' +
+                '<td class="dashboard-subprofiles-cell" data-label="Субпрофили">' + subProfileSummary.profiles + '</td>' +
+                '<td class="dashboard-balance-cell" data-label="Баланс субпрофилей">' + subProfileSummary.balance + '</td>' +
                 accountsCell +
                 '<td class="cell-num" data-label="Откликов">' + w.responses + '</td>' +
                 '<td class="cell-num" data-label="Дублей">' + w.duplicates + '</td>' +

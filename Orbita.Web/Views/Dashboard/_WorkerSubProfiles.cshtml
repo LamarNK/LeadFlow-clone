@@ -1,0 +1,22 @@
+@model DashboardWorkerRowViewModel
+<div class="dashboard-subprofiles" aria-label="Субпрофили воркера">
+    @if (Model.SubProfiles.Count == 0)
+    {
+        <span class="dashboard-subprofiles-empty">Нет данных</span>
+    }
+    else
+    {
+        <div class="dashboard-subprofile-dots">
+            @for (var index = 0; index < Model.SubProfiles.Count; index++)
+            {
+                var profile = Model.SubProfiles[index];
+                var state = profile.IsProcessing ? "processing" : profile.IsEnabled ? "enabled" : "disabled";
+                var stateLabel = profile.IsProcessing ? "воркер работает" : profile.IsEnabled ? "включён" : "выключен";
+                var balanceLabel = profile.Balance.HasValue ? $"{profile.Balance.Value:N0} ₽" : "баланс неизвестен";
+                <span class="dashboard-subprofile-dot dashboard-subprofile-dot--@state"
+                      title="@profile.Name · @stateLabel · @balanceLabel"
+                      aria-label="Субпрофиль @(index + 1): @profile.Name, @stateLabel, @balanceLabel">@(index + 1)</span>
+            }
+        </div>
+    }
+</div>
