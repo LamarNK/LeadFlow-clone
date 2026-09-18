@@ -36,6 +36,8 @@ public sealed record UpdatePanelUserOfficeRequest(Guid? OfficeId);
 
 public sealed record UpdatePanelUserFullNameRequest(string FullName);
 
+public sealed record UpdatePanelUserEmailRequest(string Email);
+
 public sealed record ResetPanelUserPasswordRequest(string Password);
 
 public sealed record UpdatePanelUserRoleRequest(string Role);
@@ -135,6 +137,7 @@ public static class PanelAuditActions
     public const string UserPermissionsUpdated = "user.permissions_updated";
     public const string UserCardDeletionPermissionUpdated = "user.crm_card_deletion_updated";
     public const string UserFullNameUpdated = "user.full_name_updated";
+    public const string UserEmailUpdated = "user.email_updated";
     public const string UserPasswordReset = "user.password_reset";
     public const string UserPasswordChanged = "user.password_changed";
     public const string AccessProfileUpdated = "access_profile.updated";

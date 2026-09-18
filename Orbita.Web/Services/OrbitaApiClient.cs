@@ -561,6 +561,32 @@ public sealed class OrbitaApiClient(
             : (false, await ReadApiErrorAsync(response, ct));
     }
 
+    public async Task<(bool Success, string? Error)> UpdateOfficeStaffEmailAsync(
+        string userId,
+        string email,
+        Guid? officeId = null,
+        CancellationToken ct = default)
+    {
+        if (_preview.Enabled)
+        {
+            return DesignPreviewData.UpdateOfficeStaffEmail(userId, email);
+        }
+
+        using var request = new HttpRequestMessage(
+            HttpMethod.Put,
+            WithOfficeQuery($"api/v1/office-staff/users/{Uri.EscapeDataString(userId)}/email", officeId));
+        request.Content = JsonContent.Create(new UpdatePanelUserEmailRequest(email));
+        using var response = await SendAuthenticatedAsync(request, ct);
+        if (response is null)
+        {
+            return (false, InvalidApiSessionError);
+        }
+
+        return response.IsSuccessStatusCode
+            ? (true, null)
+            : (false, await ReadApiErrorAsync(response, ct));
+    }
+
     public async Task<(bool Success, string? Error)> UpdateOfficeStaffRoleAsync(
         string userId,
         string role,

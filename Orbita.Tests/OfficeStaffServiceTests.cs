@@ -148,6 +148,56 @@ public sealed class OfficeStaffServiceTests
     }
 
     [Fact]
+    public async Task OfficeLead_CanChangeManagerEmailWithoutChangingUserId()
+    {
+        await using var h = await Harness.CreateAsync();
+        var lead = await h.CreateUserAsync("lead@test.local", PanelRoles.OfficeLead, h.OfficeA);
+        var manager = await h.CreateUserAsync("mgr@test.local", PanelRoles.Manager, h.OfficeA);
+        var actor = h.Principal(lead.Id, PanelRoles.OfficeLead, h.OfficeA);
+
+        var (updated, forbidden, error) = await h.Sut.SetEmailAsync(
+            actor,
+            h.OfficeA,
+            manager.Id,
+            "new-manager@test.local",
+            Actor(lead),
+            CancellationToken.None);
+
+        Assert.False(forbidden);
+        Assert.Null(error);
+        Assert.NotNull(updated);
+        Assert.Equal(manager.Id, updated.Id);
+        Assert.Equal("new-manager@test.local", updated.Email);
+
+        var stored = await h.Users.FindByIdAsync(manager.Id);
+        Assert.NotNull(stored);
+        Assert.Equal("new-manager@test.local", stored.Email);
+        Assert.Equal("new-manager@test.local", stored.UserName);
+    }
+
+    [Fact]
+    public async Task OfficeLead_CannotAssignEmailUsedByAnotherUser()
+    {
+        await using var h = await Harness.CreateAsync();
+        var lead = await h.CreateUserAsync("lead@test.local", PanelRoles.OfficeLead, h.OfficeA);
+        var manager = await h.CreateUserAsync("mgr@test.local", PanelRoles.Manager, h.OfficeA);
+        await h.CreateUserAsync("taken@test.local", PanelRoles.Manager, h.OfficeA);
+        var actor = h.Principal(lead.Id, PanelRoles.OfficeLead, h.OfficeA);
+
+        var (updated, forbidden, error) = await h.Sut.SetEmailAsync(
+            actor,
+            h.OfficeA,
+            manager.Id,
+            "taken@test.local",
+            Actor(lead),
+            CancellationToken.None);
+
+        Assert.False(forbidden);
+        Assert.Null(updated);
+        Assert.Equal("Пользователь с таким email уже существует.", error);
+    }
+
+    [Fact]
     public async Task OfficeLead_CannotDeleteSelf()
     {
         await using var h = await Harness.CreateAsync();

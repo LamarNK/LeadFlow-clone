@@ -91,6 +91,24 @@ public sealed class OfficeStaffService(
         return (user, false, error);
     }
 
+    public async Task<(PanelUserDto? User, bool Forbidden, string? Error)> SetEmailAsync(
+        ClaimsPrincipal actor,
+        Guid? requestedOfficeId,
+        string targetUserId,
+        string? email,
+        AuditActor auditActor,
+        CancellationToken ct = default)
+    {
+        var gate = await GateTargetAsync(actor, requestedOfficeId, targetUserId, desiredRole: null, ct);
+        if (gate.Forbidden || gate.Error is not null)
+        {
+            return (null, gate.Forbidden, gate.Error);
+        }
+
+        var (user, error) = await panelUsers.SetEmailAsync(targetUserId, email, auditActor, ct);
+        return (user, false, error);
+    }
+
     public async Task<(PanelUserDto? User, bool Forbidden, string? Error)> SetRoleAsync(
         ClaimsPrincipal actor,
         Guid? requestedOfficeId,

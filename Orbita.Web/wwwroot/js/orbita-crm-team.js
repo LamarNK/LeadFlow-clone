@@ -88,6 +88,7 @@
         const editRole = editModal?.querySelector('[data-crm-staff-edit-role]');
         const editPassword = editModal?.querySelector('[data-crm-staff-edit-password]');
         const editEmail = editModal?.querySelector('[data-crm-staff-edit-email]');
+        const editEmailInput = editModal?.querySelector('[data-crm-staff-edit-email-input]');
         const capacityField = editModal?.querySelector('[data-crm-staff-capacity-field]');
         const capacity = editModal?.querySelector('[data-crm-staff-edit-capacity]');
         const accountState = editModal?.querySelector('[data-crm-staff-account-state]');
@@ -106,6 +107,7 @@
                 editRole.value = data.staffRole || '';
                 if (editPassword) editPassword.value = '';
                 if (editEmail) editEmail.textContent = data.staffEmail || '';
+                if (editEmailInput) editEmailInput.value = data.staffEmail || '';
                 if (capacityField && capacity) {
                     const hasCapacity = data.staffHasCapacity === 'true';
                     capacityField.hidden = !hasCapacity;

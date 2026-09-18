@@ -742,6 +742,7 @@ public sealed class CrmController(
     public async Task<IActionResult> UpdateOfficeStaff(
         string userId,
         string fullName,
+        string email,
         string role,
         string? password,
         int? capacity,
@@ -753,7 +754,14 @@ public sealed class CrmController(
         }
 
         var officeId = ResolveOfficeId(null);
-        var (success, error) = await api.UpdateOfficeStaffFullNameAsync(userId, fullName, officeId, ct);
+        var (success, error) = await api.UpdateOfficeStaffEmailAsync(userId, email, officeId, ct);
+        if (!success)
+        {
+            TempData["CrmError"] = error;
+            return RedirectToAction(nameof(Team));
+        }
+
+        (success, error) = await api.UpdateOfficeStaffFullNameAsync(userId, fullName, officeId, ct);
         if (!success)
         {
             TempData["CrmError"] = error;
@@ -787,7 +795,7 @@ public sealed class CrmController(
             }
         }
 
-        TempData["CrmOk"] = "Изменения сотрудника сохранены.";
+        TempData["CrmOk"] = "Изменения сотрудника сохранены. После смены email ему потребуется войти заново.";
         return RedirectToAction(nameof(Team));
     }
 
