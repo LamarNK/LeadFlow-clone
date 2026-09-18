@@ -4019,6 +4019,37 @@ internal static class DesignPreviewData
         return (true, null);
     }
 
+    public static (bool Success, string? Error) UpdateOfficeStaffEmail(string userId, string email)
+    {
+        var normalizedEmail = email?.Trim();
+        if (string.IsNullOrWhiteSpace(normalizedEmail)
+            || normalizedEmail.Length > 256
+            || !new System.ComponentModel.DataAnnotations.EmailAddressAttribute().IsValid(normalizedEmail))
+        {
+            return (false, "Укажите корректный email длиной не более 256 символов.");
+        }
+
+        lock (OfficeStaffSync)
+        {
+            var idx = PreviewOfficeStaff.FindIndex(x => x.Id == userId);
+            if (idx < 0)
+            {
+                return (false, "Пользователь не найден.");
+            }
+
+            if (PreviewOfficeStaff.Any(x => x.Id != userId
+                    && string.Equals(x.Email, normalizedEmail, StringComparison.OrdinalIgnoreCase)))
+            {
+                return (false, "Пользователь с таким email уже существует.");
+            }
+
+            var user = PreviewOfficeStaff[idx];
+            PreviewOfficeStaff[idx] = user with { Email = normalizedEmail };
+        }
+
+        return (true, null);
+    }
+
     public static (bool Success, string? Error) UpdateOfficeStaffRole(string userId, string role)
     {
         var roleError = OfficeStaffRules.ValidateAssignableRole(role);

@@ -95,6 +95,25 @@ public static class OfficeStaffEndpoints
             return ToUserResult(user, forbidden, error);
         });
 
+        staff.MapPut("/users/{id}/email", async (
+            string id,
+            UpdatePanelUserEmailRequest request,
+            OfficeStaffService officeStaff,
+            ClaimsPrincipal principal,
+            HttpContext http,
+            Guid? officeId,
+            CancellationToken ct) =>
+        {
+            var (user, forbidden, error) = await officeStaff.SetEmailAsync(
+                principal,
+                officeId,
+                id,
+                request.Email,
+                GetActor(principal, http),
+                ct);
+            return ToUserResult(user, forbidden, error);
+        });
+
         staff.MapPut("/users/{id}/role", async (
             string id,
             UpdatePanelUserRoleRequest request,
@@ -223,6 +242,8 @@ public static class OfficeStaffEndpoints
 
         return error.Contains("не найден", StringComparison.OrdinalIgnoreCase)
             ? Results.NotFound(new { error })
-            : Results.BadRequest(new { error });
+            : error.Contains("уже существует", StringComparison.OrdinalIgnoreCase)
+                ? Results.Conflict(new { error })
+                : Results.BadRequest(new { error });
     }
 }

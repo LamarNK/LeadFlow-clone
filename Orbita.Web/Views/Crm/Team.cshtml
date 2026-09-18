@@ -414,6 +414,7 @@
                 @Html.AntiForgeryToken()
                 <input type="hidden" name="userId" data-crm-staff-edit-id />
                 <label class="crm-field"><span>ФИО</span><input type="text" name="fullName" required maxlength="256" autocomplete="name" data-crm-staff-edit-name /></label>
+                <label class="crm-field"><span>Email для входа</span><input type="email" name="email" required maxlength="256" autocomplete="username" data-crm-staff-edit-email-input /></label>
                 <label class="crm-field"><span>Должность</span><select name="role" data-crm-staff-edit-role>@foreach (var option in OfficeStaffRules.RoleOptions) { <option value="@option.Value">@option.Label</option> }</select></label>
                 <label class="crm-field" data-crm-staff-capacity-field hidden><span>Лимит нагрузки</span><input type="number" name="capacity" min="1" max="300" data-crm-staff-edit-capacity /></label>
                 <label class="crm-field"><span>Новый пароль <small>необязательно</small></span><input type="password" name="password" minlength="8" placeholder="Оставьте пустым, чтобы не менять" autocomplete="new-password" data-crm-staff-edit-password /></label>

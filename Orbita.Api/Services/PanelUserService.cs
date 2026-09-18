@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using System.ComponentModel.DataAnnotations;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Orbita.Api.Data;
@@ -256,6 +257,68 @@ public sealed class PanelUserService(
             normalizedFullName,
             actor.IpAddress,
             ct);
+
+        return (await MapAsync(user, ct), null);
+    }
+
+    public async Task<(PanelUserDto? User, string? Error)> SetEmailAsync(
+        string id,
+        string? email,
+        AuditActor actor,
+        CancellationToken ct = default)
+    {
+        var normalizedEmail = email?.Trim();
+        if (string.IsNullOrWhiteSpace(normalizedEmail)
+            || normalizedEmail.Length > 256
+            || !new EmailAddressAttribute().IsValid(normalizedEmail))
+        {
+            return (null, "Укажите корректный email длиной не более 256 символов.");
+        }
+
+        var user = await users.FindByIdAsync(id);
+        if (user is null)
+        {
+            return (null, "Пользователь не найден.");
+        }
+
+        var existing = await users.FindByEmailAsync(normalizedEmail);
+        if (existing is not null && !string.Equals(existing.Id, id, StringComparison.Ordinal))
+        {
+            return (null, "Пользователь с таким email уже существует.");
+        }
+
+        var previousEmail = user.Email ?? user.UserName ?? string.Empty;
+        if (string.Equals(previousEmail, normalizedEmail, StringComparison.Ordinal))
+        {
+            return (await MapAsync(user, ct), null);
+        }
+
+        user.Email = normalizedEmail;
+        user.UserName = normalizedEmail;
+        user.EmailConfirmed = true;
+
+        var updateResult = await users.UpdateAsync(user);
+        if (!updateResult.Succeeded)
+        {
+            return (null, string.Join("; ", updateResult.Errors.Select(x => x.Description)));
+        }
+
+        await BumpAccessVersionAsync(user.Id, ct);
+        await users.UpdateSecurityStampAsync(user);
+
+        await audit.LogAsync(
+            actor.UserId,
+            actor.Email,
+            PanelAuditActions.UserEmailUpdated,
+            "user",
+            id,
+            $"{previousEmail} -> {normalizedEmail}",
+            actor.IpAddress,
+            ct);
+
+        await GlobalLogger.Instance.LogAsync(
+            $"Panel user email updated ({previousEmail} -> {normalizedEmail}).",
+            DeskLinkAuditLogLevel.Info);
 
         return (await MapAsync(user, ct), null);
     }
