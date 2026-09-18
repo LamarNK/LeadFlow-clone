@@ -639,7 +639,8 @@ public sealed class WorkerAccountRuntimeTests
             AdsPowerConnectionOptions options,
             string adsPowerUserId,
             CancellationToken cancellationToken = default,
-            CandidatesMessengerEnrichmentHints? messengerEnrichmentHints = null) =>
+            CandidatesMessengerEnrichmentHints? messengerEnrichmentHints = null,
+            Func<string, CancellationToken, Task>? onCandidatesSnapshotAsync = null) =>
             throw new NotSupportedException();
 
         public Task<string> LoadProfileItemsHtmlAsync(
@@ -813,7 +814,8 @@ public sealed class WorkerAccountRuntimeTests
         public Task<string> ExtractCandidatesJsonAsync(
             CandidatesMessengerEnrichmentHints? messengerEnrichmentHints = null,
             CancellationToken cancellationToken = default,
-            LeadFlow.Core.Services.Avito.AvitoAccountPassBudget? passBudget = null) =>
+            LeadFlow.Core.Services.Avito.AvitoAccountPassBudget? passBudget = null,
+            Func<string, CancellationToken, Task>? onCandidatesSnapshotAsync = null) =>
             throw new NotSupportedException();
 
         public Task<string> LoadProfileItemsHtmlAsync(CancellationToken cancellationToken = default) =>

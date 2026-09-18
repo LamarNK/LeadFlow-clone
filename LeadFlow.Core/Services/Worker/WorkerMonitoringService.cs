@@ -1117,7 +1117,7 @@ public sealed class WorkerMonitoringService(
         var collectedTotal = 0;
         var subProfilesProcessed = 0;
         var aborted = false;
-        var seenKeys = new HashSet<string>(StringComparer.Ordinal);
+        var pendingPublishedCandidatePhones = new HashSet<string>(StringComparer.Ordinal);
         // Окно наблюдения (часов) после первой отправки — из конфига воркера, default 120 (5 суток).
         var phoneWatchHours = ResponsePhoneWatchRules.DefaultUnchangedHours;
         WorkerMonitoringConfig? liveConfig = null;
@@ -1140,6 +1140,7 @@ public sealed class WorkerMonitoringService(
             }
 
             var readyCandidates = new List<CandidateResponse>();
+            var batchSeenKeys = new HashSet<string>(StringComparer.Ordinal);
             foreach (var response in batch)
             {
                 if (cancellationToken.IsCancellationRequested)
@@ -1148,15 +1149,7 @@ public sealed class WorkerMonitoringService(
                 }
 
                 // Дедуп внутри батча: по субпрофилю+ФИО (не SourceResponseId — он динамический).
-                var nameKey = ResponsePhoneWatchEvaluator.BuildFullNameKey(response.FullName);
-                var subKey = (response.AvitoSubProfileId ?? string.Empty).Trim();
-                var key = !string.IsNullOrWhiteSpace(nameKey)
-                    ? $"fio:{subKey}|{nameKey}"
-                    : (string.IsNullOrWhiteSpace(response.SourceResponseId)
-                        ? $"{response.PhoneRaw}|{response.FullName}|{response.Vacancy}"
-                        : response.SourceResponseId);
-
-                if (!seenKeys.Add(key))
+                if (!batchSeenKeys.Add(BuildCandidateProcessingKey(response)))
                 {
                     continue;
                 }
@@ -1310,6 +1303,10 @@ public sealed class WorkerMonitoringService(
                     ?? localObservation;
                 var alreadyInOrbit = matchedProfiles.Contains(i) || storedPhoneWatch is not null;
                 var watchingOpen = ResponsePhoneObservationWatch.IsOpen(existingObs);
+                var alreadyPending = IsCandidatePhonePending(
+                    pendingPublishedCandidatePhones,
+                    candidate,
+                    phoneNormalized);
 
                 // Проверка давности отклика (пропускать старше N дней).
                 // Открытое phone-watch — не режем: окно наблюдения (например 5 суток) может быть
@@ -1333,6 +1330,16 @@ public sealed class WorkerMonitoringService(
 
                 // Уже в Орбите и мы сами его не ведём в phone-watch — тихо игнор (без дублей в ленте).
                 if (alreadyInOrbit && !watchingOpen)
+                {
+                    skippedPersonDuplicates++;
+                    continue;
+                }
+
+                // Один и тот же снимок попадёт сюда снова в финальном JSON, а следующий
+                // промежуточный снимок может прийти раньше, чем Orbita запишет прошлый POST.
+                // Тот же номер уже поставлен в очередь; новый номер должен пройти ниже
+                // через обычный phone-watch и стать PhoneChanged.
+                if (alreadyPending)
                 {
                     skippedPersonDuplicates++;
                     continue;
@@ -1367,6 +1374,7 @@ public sealed class WorkerMonitoringService(
                             watchPayloadChanged))
                     {
                         ApplyPhoneWatchDecision(candidate, decision, phoneNormalized);
+                        MarkCandidatePhonePending(pendingPublishedCandidatePhones, candidate, phoneNormalized);
                         await PublishCandidateAsync(candidate, cancellationToken).ConfigureAwait(false);
                         watchRefreshedCount++;
                         continue;
@@ -1390,6 +1398,7 @@ public sealed class WorkerMonitoringService(
                     .ConfigureAwait(false);
 
                 ApplyPhoneWatchDecision(candidate, decision, phoneNormalized);
+                MarkCandidatePhonePending(pendingPublishedCandidatePhones, candidate, phoneNormalized);
                 await PublishCandidateAsync(candidate, cancellationToken).ConfigureAwait(false);
                 if (decision.Action == ResponsePhoneWatchAction.PublishInitial)
                 {
@@ -1429,6 +1438,31 @@ public sealed class WorkerMonitoringService(
                 watchRefreshedCount,
                 phoneChangedCount,
                 SkippedNoPhoneCount: skippedNoPhone);
+        }
+
+        async Task<CandidateBatchPublishResult> ProcessCandidateSnapshotAsync(
+            string rawJson,
+            AvitoSubProfile? activeSubProfile)
+        {
+            var snapshot = await avitoResponseSource
+                .ParseCandidatesDetailedFromRawAsync(
+                    account,
+                    settings,
+                    rawJson,
+                    cancellationToken,
+                    activeSubProfile)
+                .ConfigureAwait(false);
+
+            foreach (var candidate in snapshot.Candidates)
+            {
+                if (activeSubProfile is not null)
+                {
+                    candidate.AvitoSubProfileId = activeSubProfile.Id;
+                    candidate.AvitoSubProfileName = activeSubProfile.Name;
+                }
+            }
+
+            return await ProcessBatchInlineAsync(snapshot.Candidates).ConfigureAwait(false);
         }
 
         if (settings.DemoModeEnabled)
@@ -1687,15 +1721,30 @@ public sealed class WorkerMonitoringService(
                     PhoneWatchHours: phoneWatchHours,
                     OpenPhoneWatches: singleOpenPhoneWatches,
                     EnableMiniChatActions: false);
+                var singleSnapshotPublishResult = CandidateBatchPublishResult.Empty;
                 var rawJson = await session
-                    .ExtractCandidatesJsonAsync(singleProfileHints, cancellationToken, passBudget)
+                    .ExtractCandidatesJsonAsync(
+                        singleProfileHints,
+                        cancellationToken,
+                        passBudget,
+                        onCandidatesSnapshotAsync: async (raw, _) =>
+                        {
+                            var result = await ProcessCandidateSnapshotAsync(raw, activeSubProfile: null)
+                                .ConfigureAwait(false);
+                            singleSnapshotPublishResult = MergeSnapshotPublishResults(
+                                singleSnapshotPublishResult,
+                                result);
+                        })
                     .ConfigureAwait(false);
                 var singleParse = await avitoResponseSource
                     .ParseCandidatesDetailedFromRawAsync(account, settings, rawJson, cancellationToken)
                     .ConfigureAwait(false);
                 WorkerMonitoringLogger.ExtractionSummary(account, null, singleParse.Summary);
                 var singleBatch = singleParse.Candidates;
-                var singlePublishResult = await ProcessBatchInlineAsync(singleBatch).ConfigureAwait(false);
+                var singleFinalPublishResult = await ProcessBatchInlineAsync(singleBatch).ConfigureAwait(false);
+                var singlePublishResult = MergeFinalPublishResult(
+                    singleFinalPublishResult,
+                    singleSnapshotPublishResult);
                 WorkerMonitoringLogger.ExtractionPublished(
                     account,
                     null,
@@ -1991,8 +2040,20 @@ public sealed class WorkerMonitoringService(
                         PhoneWatchHours: phoneWatchHours,
                         OpenPhoneWatches: openPhoneWatches,
                         EnableMiniChatActions: false);
+                    var snapshotPublishResult = CandidateBatchPublishResult.Empty;
                     var rawJson = await session
-                        .ExtractCandidatesJsonAsync(messengerHints, cancellationToken, passBudget)
+                        .ExtractCandidatesJsonAsync(
+                            messengerHints,
+                            cancellationToken,
+                            passBudget,
+                            onCandidatesSnapshotAsync: async (raw, _) =>
+                            {
+                                var result = await ProcessCandidateSnapshotAsync(raw, sub)
+                                    .ConfigureAwait(false);
+                                snapshotPublishResult = MergeSnapshotPublishResults(
+                                    snapshotPublishResult,
+                                    result);
+                            })
                         .ConfigureAwait(false);
                     var issueAtBefore = sub.LastIssueAt;
                     var parseResult = await avitoResponseSource
@@ -2018,7 +2079,8 @@ public sealed class WorkerMonitoringService(
                         r.AvitoSubProfileName = sub.Name;
                     }
 
-                    var publishResult = await ProcessBatchInlineAsync(batch).ConfigureAwait(false);
+                    var finalPublishResult = await ProcessBatchInlineAsync(batch).ConfigureAwait(false);
+                    var publishResult = MergeFinalPublishResult(finalPublishResult, snapshotPublishResult);
                     subFoundCount = parseResult.Summary.ParsedValidCount;
                     subPublishedCount = publishResult.PublishedCount;
                     subCollectedCount = publishResult.CollectedCount;
@@ -2428,6 +2490,58 @@ public sealed class WorkerMonitoringService(
 
         await candidateSink.PublishAsync(response, cancellationToken).ConfigureAwait(false);
     }
+
+    private static string BuildCandidateProcessingKey(CandidateResponse response)
+    {
+        var nameKey = ResponsePhoneWatchEvaluator.BuildFullNameKey(response.FullName);
+        var subKey = (response.AvitoSubProfileId ?? string.Empty).Trim();
+        return !string.IsNullOrWhiteSpace(nameKey)
+            ? $"fio:{subKey}|{nameKey}"
+            : (string.IsNullOrWhiteSpace(response.SourceResponseId)
+                ? $"{response.PhoneRaw}|{response.FullName}|{response.Vacancy}"
+                : response.SourceResponseId);
+    }
+
+    internal static bool IsCandidatePhonePending(
+        IReadOnlySet<string> pendingCandidatePhones,
+        CandidateResponse response,
+        string phoneNormalized) =>
+        pendingCandidatePhones.Contains(BuildCandidatePhoneProcessingKey(response, phoneNormalized));
+
+    internal static void MarkCandidatePhonePending(
+        ISet<string> pendingCandidatePhones,
+        CandidateResponse response,
+        string phoneNormalized) =>
+        pendingCandidatePhones.Add(BuildCandidatePhoneProcessingKey(response, phoneNormalized));
+
+    private static string BuildCandidatePhoneProcessingKey(
+        CandidateResponse response,
+        string phoneNormalized) =>
+        $"{BuildCandidateProcessingKey(response)}\u001f{phoneNormalized}";
+
+    private static CandidateBatchPublishResult MergeSnapshotPublishResults(
+        CandidateBatchPublishResult accumulated,
+        CandidateBatchPublishResult next) =>
+        accumulated with
+        {
+            PublishedCount = accumulated.PublishedCount + next.PublishedCount,
+            DeferredByCycleLimit = accumulated.DeferredByCycleLimit + next.DeferredByCycleLimit,
+            CollectedCount = accumulated.CollectedCount + next.CollectedCount,
+            WatchRefreshedCount = accumulated.WatchRefreshedCount + next.WatchRefreshedCount,
+            PhoneChangedCount = accumulated.PhoneChangedCount + next.PhoneChangedCount
+        };
+
+    private static CandidateBatchPublishResult MergeFinalPublishResult(
+        CandidateBatchPublishResult final,
+        CandidateBatchPublishResult snapshots) =>
+        final with
+        {
+            PublishedCount = final.PublishedCount + snapshots.PublishedCount,
+            DeferredByCycleLimit = final.DeferredByCycleLimit + snapshots.DeferredByCycleLimit,
+            CollectedCount = final.CollectedCount + snapshots.CollectedCount,
+            WatchRefreshedCount = final.WatchRefreshedCount + snapshots.WatchRefreshedCount,
+            PhoneChangedCount = final.PhoneChangedCount + snapshots.PhoneChangedCount
+        };
 
     private static (int Seen, int Solved) TakeCaptchaSnapshot(
         AvitoCaptchaPassCounters counters,

@@ -155,7 +155,8 @@ internal sealed class StubAdsPowerAvitoAutomationService : IAdsPowerAvitoAutomat
         AdsPowerConnectionOptions options,
         string adsPowerUserId,
         CancellationToken cancellationToken = default,
-        CandidatesMessengerEnrichmentHints? messengerEnrichmentHints = null) =>
+        CandidatesMessengerEnrichmentHints? messengerEnrichmentHints = null,
+        Func<string, CancellationToken, Task>? onCandidatesSnapshotAsync = null) =>
         throw new InvalidOperationException("Браузер CDP не должен вызываться в этих тестах.");
 
     public Task<string> LoadProfileItemsHtmlAsync(

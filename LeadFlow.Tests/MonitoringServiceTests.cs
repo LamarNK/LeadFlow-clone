@@ -752,7 +752,8 @@ public sealed class MonitoringServiceTests
             AdsPowerConnectionOptions options,
             string adsPowerUserId,
             CancellationToken cancellationToken = default,
-            CandidatesMessengerEnrichmentHints? messengerEnrichmentHints = null) =>
+            CandidatesMessengerEnrichmentHints? messengerEnrichmentHints = null,
+            Func<string, CancellationToken, Task>? onCandidatesSnapshotAsync = null) =>
             throw new InvalidOperationException("В этих тестах JSON-кандидатов через AdsPower не используется.");
 
         public Task<string> LoadProfileItemsHtmlAsync(
@@ -837,7 +838,8 @@ public sealed class MonitoringServiceTests
             public Task<string> ExtractCandidatesJsonAsync(
                 CandidatesMessengerEnrichmentHints? messengerEnrichmentHints = null,
                 CancellationToken cancellationToken = default,
-                AvitoAccountPassBudget? passBudget = null) =>
+                AvitoAccountPassBudget? passBudget = null,
+                Func<string, CancellationToken, Task>? onCandidatesSnapshotAsync = null) =>
                 Task.FromResult("""{"hasCaptcha":false,"hasLogin":false,"candidates":[]}""");
 
             public Task<string> LoadProfileItemsHtmlAsync(CancellationToken cancellationToken = default)

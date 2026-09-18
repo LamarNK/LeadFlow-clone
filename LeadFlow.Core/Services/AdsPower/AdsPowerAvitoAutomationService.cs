@@ -93,7 +93,8 @@ public sealed partial class AdsPowerAvitoAutomationService(
         AdsPowerConnectionOptions options,
         string adsPowerUserId,
         CancellationToken cancellationToken = default,
-        CandidatesMessengerEnrichmentHints? messengerEnrichmentHints = null)
+        CandidatesMessengerEnrichmentHints? messengerEnrichmentHints = null,
+        Func<string, CancellationToken, Task>? onCandidatesSnapshotAsync = null)
     {
         var pipelineSw = Stopwatch.StartNew();
         using var captchaScope = await UseProfileCaptchaContextAsync(options, adsPowerUserId, cancellationToken)
@@ -166,7 +167,15 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 skipDetailEnrich: true,
                 CreateCaptchaSolveCallback(page),
                 messengerEnrichmentHints?.OpenPhoneWatches,
-                BuildCandidatesPageActors(page)).ConfigureAwait(false);
+                BuildCandidatesPageActors(page),
+                onCandidatesSnapshotAsync: onCandidatesSnapshotAsync is null
+                    ? null
+                    : async ct =>
+                    {
+                        var snapshot = await EvaluateWithRetryAsync<string>(page, ExtractionScript, ct)
+                            .ConfigureAwait(false);
+                        await onCandidatesSnapshotAsync(snapshot, ct).ConfigureAwait(false);
+                    }).ConfigureAwait(false);
             prepareSw.Stop();
 
             var extractSw = Stopwatch.StartNew();

@@ -14,6 +14,7 @@ namespace LeadFlow.Core.Services.Avito;
 /// </summary>
 public static class AvitoCandidatesListPreparer
 {
+    private const int SnapshotBatchSize = 5;
     private const int StableRoundsRequired = 3;
     private const int MaxPhoneRevealRounds = 40;
     private const int MaxPhoneRevealRoundsWhenNoItems = 2;
@@ -35,7 +36,8 @@ public static class AvitoCandidatesListPreparer
         Func<AvitoFirewallProbe.Detection, string?, CancellationToken, Task<bool>>? trySolveCaptchaAsync = null,
         IReadOnlyCollection<WorkerOpenPhoneWatchDto>? openPhoneWatches = null,
         CandidatesPageActors? actors = null,
-        AvitoAccountPassBudget? passBudget = null)
+        AvitoAccountPassBudget? passBudget = null,
+        Func<CancellationToken, Task>? onCandidatesSnapshotAsync = null)
     {
         var totalSw = Stopwatch.StartNew();
         var firewallSw = Stopwatch.StartNew();
@@ -195,6 +197,29 @@ public static class AvitoCandidatesListPreparer
         var finalListItems = await TryParseListItemProfilesAsync(executeScript, cancellationToken)
             .ConfigureAwait(false);
         var domItems = finalListItems.Count;
+        PhonesReadyProbe? phonesProbe = null;
+        var emittedReadyPhoneCount = 0;
+
+        async Task EmitCandidatesSnapshotAsync(bool force)
+        {
+            if (onCandidatesSnapshotAsync is null)
+            {
+                return;
+            }
+
+            var readyPhoneCount = phonesProbe?.WithPhone ?? 0;
+            if (!force && readyPhoneCount - emittedReadyPhoneCount < SnapshotBatchSize)
+            {
+                return;
+            }
+
+            emittedReadyPhoneCount = readyPhoneCount;
+            await onCandidatesSnapshotAsync(cancellationToken).ConfigureAwait(false);
+        }
+
+        phonesProbe = await TryParsePhonesReadyAsync(executeScript, cancellationToken).ConfigureAwait(false);
+        await EmitCandidatesSnapshotAsync(force: true).ConfigureAwait(false);
+
         var phoneRevealRounds = 0;
         var phoneClicksTotal = 0;
         var phoneRevealSuccesses = 0;
@@ -257,13 +282,11 @@ public static class AvitoCandidatesListPreparer
                 cancellationToken)
             .ConfigureAwait(false);
         prioritySw.Stop();
-        PhonesReadyProbe? phonesProbe = null;
         var detailEnrichClicks = 0;
         var detailEnrichSkipped = 0;
         var detailEnrichHits = 0;
         long phoneRevealMs = 0;
         long detailEnrichMs = 0;
-
         var isJobCrmPage = await TryDetectJobCrmResponsesPageAsync(executeScript, cancellationToken)
             .ConfigureAwait(false);
         async Task RunDetailEnrichmentAsync()
@@ -383,6 +406,7 @@ public static class AvitoCandidatesListPreparer
                             }
 
                             lastWithPhone = phonesProbe.WithPhone;
+                            await EmitCandidatesSnapshotAsync(force: false).ConfigureAwait(false);
                         }
 
                         if (phonesProbe?.Ready == true
@@ -441,6 +465,7 @@ public static class AvitoCandidatesListPreparer
                     {
                         lastPendingCount = phonesProbe.Masked;
                         lastWithPhone = phonesProbe.WithPhone;
+                        await EmitCandidatesSnapshotAsync(force: false).ConfigureAwait(false);
                     }
 
                     if (phonesProbe?.Ready == true
@@ -517,6 +542,9 @@ public static class AvitoCandidatesListPreparer
                 if (outcome is { Success: true })
                 {
                     panelPhoneSuccesses++;
+                    phonesProbe = await TryParsePhonesReadyAsync(executeScript, cancellationToken)
+                        .ConfigureAwait(false);
+                    await EmitCandidatesSnapshotAsync(force: false).ConfigureAwait(false);
                 }
                 else
                 {

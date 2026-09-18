@@ -907,7 +907,8 @@ public sealed partial class AdsPowerAvitoAutomationService
         CandidatesMessengerEnrichmentHints? messengerEnrichmentHints,
         CancellationToken cancellationToken,
         AvitoSessionOrchestrator? orchestrator = null,
-        AvitoAccountPassBudget? passBudget = null)
+        AvitoAccountPassBudget? passBudget = null,
+        Func<string, CancellationToken, Task>? onCandidatesSnapshotAsync = null)
     {
         const int maxRestartsAfterRecovery = 2;
         for (var attempt = 1; attempt <= maxRestartsAfterRecovery; attempt++)
@@ -920,7 +921,8 @@ public sealed partial class AdsPowerAvitoAutomationService
                         messengerEnrichmentHints,
                         cancellationToken,
                         orchestrator,
-                        passBudget)
+                        passBudget,
+                        onCandidatesSnapshotAsync)
                     .ConfigureAwait(false);
             }
             catch (AvitoSessionRestartRequiredException ex)
@@ -985,7 +987,8 @@ public sealed partial class AdsPowerAvitoAutomationService
         CandidatesMessengerEnrichmentHints? messengerEnrichmentHints,
         CancellationToken cancellationToken,
         AvitoSessionOrchestrator? orchestrator = null,
-        AvitoAccountPassBudget? passBudget = null)
+        AvitoAccountPassBudget? passBudget = null,
+        Func<string, CancellationToken, Task>? onCandidatesSnapshotAsync = null)
     {
         var pipelineSw = Stopwatch.StartNew();
         var waitSw = Stopwatch.StartNew();
@@ -1010,7 +1013,22 @@ public sealed partial class AdsPowerAvitoAutomationService
                 : orchestrator.RunStepAsync(
                     passRecoveryGeneration,
                     token => EvaluateWithRetryAsync<string>(page, script, token),
-                    ct);
+                ct);
+        async Task EmitSnapshotAsync(CancellationToken ct)
+        {
+            if (onCandidatesSnapshotAsync is null)
+            {
+                return;
+            }
+
+            var snapshot = await RunSessionStepAsync(
+                    orchestrator,
+                    passRecoveryGeneration,
+                    token => EvaluateWithRetryAsync<string>(page, ExtractionScript, token),
+                    ct)
+                .ConfigureAwait(false);
+            await onCandidatesSnapshotAsync(snapshot, ct).ConfigureAwait(false);
+        }
         var captchaSolve = CreateCaptchaSolveCallback(page);
         Func<AvitoFirewallProbe.Detection, string?, CancellationToken, Task<bool>>? gatedCaptchaSolve =
             captchaSolve is null || orchestrator is null
@@ -1077,7 +1095,8 @@ public sealed partial class AdsPowerAvitoAutomationService
             gatedCaptchaSolve,
             messengerEnrichmentHints?.OpenPhoneWatches,
             BuildCandidatesPageActors(page, orchestrator, passRecoveryGeneration),
-            passBudget).ConfigureAwait(false);
+            passBudget,
+            onCandidatesSnapshotAsync: EmitSnapshotAsync).ConfigureAwait(false);
         prepareSw.Stop();
 
         var extractSw = Stopwatch.StartNew();
@@ -2841,12 +2860,20 @@ public sealed partial class AdsPowerAvitoAutomationService
         public async Task<string> ExtractCandidatesJsonAsync(
             CandidatesMessengerEnrichmentHints? messengerEnrichmentHints = null,
             CancellationToken cancellationToken = default,
-            AvitoAccountPassBudget? passBudget = null)
+            AvitoAccountPassBudget? passBudget = null,
+            Func<string, CancellationToken, Task>? onCandidatesSnapshotAsync = null)
         {
             using var _ = AvitoCaptchaTaskContext.Use(captchaOptions);
             var orchestrator = Orchestrator;
             return await owner
-                .ExtractCandidatesJsonOnPageAsync(page, AdsPowerUserId, messengerEnrichmentHints, cancellationToken, orchestrator, passBudget)
+                .ExtractCandidatesJsonOnPageAsync(
+                    page,
+                    AdsPowerUserId,
+                    messengerEnrichmentHints,
+                    cancellationToken,
+                    orchestrator,
+                    passBudget,
+                    onCandidatesSnapshotAsync)
                 .ConfigureAwait(false);
         }
 

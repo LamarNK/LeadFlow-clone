@@ -10,7 +10,8 @@ public interface IAdsPowerAvitoAutomationService
         AdsPowerConnectionOptions options,
         string adsPowerUserId,
         CancellationToken cancellationToken = default,
-        CandidatesMessengerEnrichmentHints? messengerEnrichmentHints = null);
+        CandidatesMessengerEnrichmentHints? messengerEnrichmentHints = null,
+        Func<string, CancellationToken, Task>? onCandidatesSnapshotAsync = null);
 
     /// <summary>
     /// Открывает в AdsPower-браузере страницу <c>/profile/pro/items</c> и возвращает её HTML

@@ -213,6 +213,133 @@ public sealed class AvitoPhoneOwnershipBrowserTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task PrepareAsync_EmitsReadySnapshotAfterScroll()
+    {
+        using var _ = HumanDelay.SuppressDelaysForTests();
+        await page.SetContentAsync(
+            Card("Анна Иванова")
+                .Replace(
+                    "<button data-marker=\"job-application/call-button\" aria-label=\"Показать номер телефона\"></button>",
+                    "<button data-marker=\"job-application/call-button\">8 900 123-45-67</button>"));
+
+        var snapshots = 0;
+        var returnedToTop = false;
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(30));
+        await AvitoCandidatesListPreparer.PrepareAsync(
+            async (script, ct) =>
+            {
+                ct.ThrowIfCancellationRequested();
+                var result = await page.EvaluateExpressionAsync<string>(script);
+                if (script == AvitoCandidatesPageScripts.BuildScrollToTopScript())
+                {
+                    returnedToTop = true;
+                }
+
+                return result;
+            },
+            "browser-test",
+            timeout.Token,
+            skipDetailEnrich: true,
+            onCandidatesSnapshotAsync: _ =>
+            {
+                Assert.True(returnedToTop);
+                snapshots++;
+                return Task.CompletedTask;
+            });
+
+        Assert.Equal(1, snapshots);
+    }
+
+    [Fact]
+    public async Task PrepareAsync_WithHundredCards_EmitsFirstPhoneBatchBeforeRemainingCardsFinish()
+    {
+        using var _ = HumanDelay.SuppressDelaysForTests();
+        var cards = string.Concat(Enumerable.Range(0, 100).Select(i =>
+            Card($"Кандидат {i}", $"1234567{i:000}")
+                .Replace(
+                    "data-marker=\"job-application/call-button\" aria-label=\"Показать номер телефона\"></button>",
+                    "data-marker=\"job-application/phone\">** ***-**-**</button>")));
+        await page.SetContentAsync(cards);
+        await page.EvaluateExpressionAsync("""
+            Array.from(document.querySelectorAll('[data-marker="job-application/phone"]'))
+                .forEach((button, index) => button.addEventListener('click', () => {
+                    button.textContent = `8 900 123-4${index}-67`;
+                }));
+            """);
+
+        var snapshotStates = new List<(int WithPhone, int Masked)>();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        await AvitoCandidatesListPreparer.PrepareAsync(
+            async (script, ct) =>
+            {
+                ct.ThrowIfCancellationRequested();
+                return await page.EvaluateExpressionAsync<string>(script);
+            },
+            "browser-test",
+            timeout.Token,
+            skipDetailEnrich: true,
+            onCandidatesSnapshotAsync: async ct =>
+            {
+                ct.ThrowIfCancellationRequested();
+                var probe = await Run(AvitoCandidatesPageScripts.BuildPhonesReadyProbeScript());
+                snapshotStates.Add((
+                    probe.GetProperty("withPhone").GetInt32(),
+                    probe.GetProperty("masked").GetInt32()));
+            });
+
+        Assert.True(snapshotStates.Count >= 2);
+        Assert.Equal((0, 100), snapshotStates[0]);
+        Assert.Equal((5, 95), snapshotStates[1]);
+    }
+
+    [Fact]
+    public async Task PrepareAsync_PanelPhones_EmitAfterFiveBeforeSixthCardFinishes()
+    {
+        using var _ = HumanDelay.SuppressDelaysForTests();
+        var cards = string.Concat(Enumerable.Range(0, 6).Select(i =>
+            Card($"Кандидат {i}", $"223456789{i}")
+                .Replace("<div data-marker", "<div role='button' data-marker")
+                .Replace(
+                    "<button data-marker=\"job-application/call-button\" aria-label=\"Показать номер телефона\"></button>",
+                    string.Empty)));
+        await page.SetContentAsync(cards);
+        await page.EvaluateExpressionAsync("""
+            Array.from(document.querySelectorAll('[data-marker="job-application/item"]'))
+                .forEach((item, index) => item.addEventListener('click', () => {
+                    document.querySelector('aside')?.remove();
+                    const panel = document.createElement('aside');
+                    panel.innerHTML = `<div>Кандидат ${index}</div><button data-marker="job-application/call-button">Показать номер</button>`;
+                    panel.querySelector('button').addEventListener('click', event => {
+                        event.currentTarget.textContent = `8 901 123-4${index}-67`;
+                    });
+                    document.body.append(panel);
+                }));
+            """);
+
+        var snapshotStates = new List<(int WithPhone, int Masked)>();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+        await AvitoCandidatesListPreparer.PrepareAsync(
+            async (script, ct) =>
+            {
+                ct.ThrowIfCancellationRequested();
+                return await page.EvaluateExpressionAsync<string>(script);
+            },
+            "browser-test",
+            timeout.Token,
+            skipDetailEnrich: true,
+            onCandidatesSnapshotAsync: async ct =>
+            {
+                ct.ThrowIfCancellationRequested();
+                var probe = await Run(AvitoCandidatesPageScripts.BuildPhonesReadyProbeScript());
+                snapshotStates.Add((
+                    probe.GetProperty("withPhone").GetInt32(),
+                    probe.GetProperty("masked").GetInt32()));
+            });
+
+        Assert.Equal([(0, 6), (5, 1)], snapshotStates);
+    }
+
+    [Fact]
     public async Task PrepareAsync_ExhaustedBudget_DoesNotOpenPanel()
     {
         await page.SetContentAsync(Card("Анна Иванова").Replace("<div data-marker", "<div role='button' data-marker"));
