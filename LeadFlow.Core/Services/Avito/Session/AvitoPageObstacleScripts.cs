@@ -75,17 +75,20 @@ public static class AvitoPageObstacleScripts
             const itemCount = document.querySelectorAll("[data-marker='job-application/item']").length;
             const statusCount = document.querySelectorAll("[data-marker='job-application/response/status-select-button']").length;
 
-            const hasFirewallContainer = !!document.querySelector(
+            const hasFirewallContainer = Array.from(document.querySelectorAll(
                 ".firewall-container, .js-firewall-form, .firewall-title, form.js-firewall-form"
-            );
+            )).some(isVisibleEl);
+            const hasSupportLink = Array.from(document.querySelectorAll(
+                'a[href*="support.avito.ru/request/720"]'
+            )).some(isVisibleEl);
             const hasFirewallDom = hasFirewallContainer
               || location.hash === "#block"
-              || !!document.querySelector('a[href*="support.avito.ru/request/720"]');
+              || hasSupportLink;
             if (hasFirewallDom) signals.push("firewall-dom");
 
             // Текстовые сигналы применяем только без списка карточек: на рабочей странице
             // слова «капча/Продолжить» могут встретиться в тексте чата.
-            const hasFirewallText = /Доступ\s+ограничен|проблема\s+с\s+IP|firewallCaptcha|Отключить\s+VPN|самол[её]те/i.test(probeText);
+            const hasFirewallText = /Доступ\s+ограничен|проблема\s+с\s+IP|firewallCaptcha|Отключить\s+VPN|самол[её]те/i.test(bodyText);
             const listMissing = itemCount === 0 && statusCount === 0;
             if (hasFirewallText && listMissing) signals.push("firewall-text");
 
@@ -99,13 +102,13 @@ public static class AvitoPageObstacleScripts
                 || (listMissing && hasFirewallContainer && !/проблема\s+с\s+IP/i.test(probeText));
 
             // Блок IP — только когда это НЕ решаемая капча (зеркалим классификацию C#-детектора).
-            const hasIpText = /Доступ\s+ограничен/i.test(probeText) && /проблема\s+с\s+IP/i.test(probeText);
+            const hasIpText = /Доступ\s+ограничен/i.test(bodyText) && /проблема\s+с\s+IP/i.test(bodyText);
             const hasStaticIpBlock = location.hash === "#block"
-              && !!document.querySelector('a[href*="support.avito.ru/request/720"]')
-              && /Отключить\s+VPN|самол[её]те/i.test(probeText);
+              && hasSupportLink
+              && /Отключить\s+VPN|самол[её]те/i.test(bodyText);
             const hasIpBlock = !hasCaptchaChallenge
-              && (hasStaticIpBlock || (listMissing && hasIpText
-                && (/Доступ\s+ограничен/i.test(title) || hasFirewallDom)));
+              && (hasStaticIpBlock || (hasIpText
+                && (hasFirewallDom || (listMissing && /Доступ\s+ограничен/i.test(title)))));
             if (hasIpBlock) signals.push("ip-block");
 
             let captchaKind = null;

@@ -79,7 +79,7 @@ public sealed class AvitoPageObstacleScriptTests
 
         // Зеркалим C#-детектор: блок IP — только когда это НЕ решаемая капча.
         Assert.Contains("!hasCaptchaChallenge", script, StringComparison.Ordinal);
-        Assert.Contains("hasStaticIpBlock || (listMissing && hasIpText", script, StringComparison.Ordinal);
+        Assert.Contains("hasStaticIpBlock || (hasIpText", script, StringComparison.Ordinal);
         Assert.Contains("location.hash === \"#block\"", script, StringComparison.Ordinal);
         Assert.Contains("support.avito.ru/request/720", script, StringComparison.Ordinal);
     }

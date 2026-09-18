@@ -590,7 +590,21 @@ public sealed partial class AdsPowerAvitoAutomationService(
         {
             return;
         }
-        var isIpBlock = AvitoCaptchaDetector.HasIpBlockChallenge(html);
+        var liveObstacle = await AvitoPageObstacleProbe.ProbeAsync(page, cancellationToken).ConfigureAwait(false);
+        if (liveObstacle.Kind == AvitoPageObstacleKind.None)
+        {
+            return;
+        }
+
+        kind = liveObstacle.Kind switch
+        {
+            AvitoPageObstacleKind.IpBlocked => "firewall",
+            AvitoPageObstacleKind.Captcha => liveObstacle.CaptchaKind ?? kind,
+            _ => kind
+        };
+        var isIpBlock = liveObstacle.Kind == AvitoPageObstacleKind.IpBlocked
+            || (liveObstacle.Kind == AvitoPageObstacleKind.Unknown
+                && AvitoCaptchaDetector.HasIpBlockChallenge(html));
         if (await TrySolveGeeTestAsync(page, html, page.Url, kind, cancellationToken).ConfigureAwait(false))
         {
             return;
@@ -787,6 +801,12 @@ public sealed partial class AdsPowerAvitoAutomationService(
         if (geeTestSolver is null)
         {
             return false;
+        }
+
+        var liveObstacle = await AvitoPageObstacleProbe.ProbeAsync(page, cancellationToken).ConfigureAwait(false);
+        if (liveObstacle.Kind == AvitoPageObstacleKind.None)
+        {
+            return true;
         }
 
         var isIpBlock = html is not null && AvitoCaptchaDetector.HasIpBlockChallenge(html);
