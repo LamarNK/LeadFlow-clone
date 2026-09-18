@@ -54,11 +54,23 @@ public sealed record WorkerListItem(
     IReadOnlyList<WorkerActiveAccountDto>? ActiveAccounts = null,
     bool IsMonitoringPaused = false,
     string IpAddress = "",
-    IReadOnlyList<DashboardWorkerSubProfileItem>? SubProfiles = null,
+    IReadOnlyList<DashboardWorkerAccountItem>? Accounts = null,
     decimal TotalBalance = 0);
 
+public sealed record DashboardWorkerAccountItem(
+    Guid Id,
+    string Name,
+    bool IsEnabled,
+    decimal TotalBalance,
+    DateTime? LastMonitoringAtUtc,
+    DateTime UpdatedAtUtc,
+    IReadOnlyList<DashboardWorkerSubProfileItem> SubProfiles,
+    int ResponsesToday = 0,
+    int DuplicatesToday = 0,
+    int ErrorsToday = 0,
+    DateTime? LastActivityUtc = null);
+
 public sealed record DashboardWorkerSubProfileItem(
-    Guid AccountId,
     string Id,
     string Name,
     decimal? Balance,

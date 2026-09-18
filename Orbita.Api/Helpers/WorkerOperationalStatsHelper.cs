@@ -9,7 +9,7 @@ internal sealed record WorkerOperationalStats(
     int ActiveAccounts,
     int TotalAccounts,
     int LowBalanceAccountCount,
-    IReadOnlyList<DashboardWorkerSubProfileItem> SubProfiles,
+    IReadOnlyList<DashboardWorkerAccountItem> Accounts,
     decimal TotalBalance)
 {
     public static WorkerOperationalStats Empty { get; } = new(0, 0, 0, 0, 0, 0, [], 0);
@@ -23,7 +23,7 @@ internal static class WorkerOperationalStatsHelper
         IReadOnlyDictionary<Guid, int> eventErrors,
         IReadOnlyDictionary<Guid, (int Total, int Active)> accountStats,
         IReadOnlyDictionary<Guid, int> lowBalanceAccountCounts,
-        IReadOnlyDictionary<Guid, IReadOnlyList<DashboardWorkerSubProfileItem>> subProfiles,
+        IReadOnlyDictionary<Guid, IReadOnlyList<DashboardWorkerAccountItem>> workerAccounts,
         IReadOnlyDictionary<Guid, decimal> balances)
     {
         var result = new Dictionary<Guid, WorkerOperationalStats>();
@@ -33,7 +33,7 @@ internal static class WorkerOperationalStatsHelper
             eventErrors.TryGetValue(workerId, out var errors);
             accountStats.TryGetValue(workerId, out var accounts);
             lowBalanceAccountCounts.TryGetValue(workerId, out var lowBalanceCount);
-            subProfiles.TryGetValue(workerId, out var workerSubProfiles);
+            workerAccounts.TryGetValue(workerId, out var accountsForWorker);
             balances.TryGetValue(workerId, out var totalBalance);
 
             result[workerId] = new WorkerOperationalStats(
@@ -43,7 +43,7 @@ internal static class WorkerOperationalStatsHelper
                 accounts.Active,
                 accounts.Total,
                 lowBalanceCount,
-                workerSubProfiles ?? [],
+                accountsForWorker ?? [],
                 totalBalance);
         }
 

@@ -364,7 +364,7 @@ public sealed class DashboardQueryService(
                 WorkerActivityMapper.DeserializeActiveAccounts(w.ActivityActiveAccountsJson),
                 w.IsMonitoringPaused,
                 w.IpAddress ?? string.Empty,
-                op.SubProfiles,
+                op.Accounts,
                 op.TotalBalance);
         }).ToList();
     }
@@ -516,7 +516,7 @@ public sealed class DashboardQueryService(
                 WorkerActivityMapper.DeserializeActiveAccounts(w.ActivityActiveAccountsJson),
                 w.IsMonitoringPaused,
                 w.IpAddress ?? string.Empty,
-                op.SubProfiles,
+                op.Accounts,
                 op.TotalBalance);
         }).ToList();
 
@@ -1824,9 +1824,13 @@ public sealed class DashboardQueryService(
             {
                 x.WorkerId,
                 x.AccountId,
+                x.DisplayName,
                 x.Status,
+                x.IsEnabled,
                 x.IsEnabledInPanel,
                 x.TotalBalance,
+                x.LastMonitoringAt,
+                x.UpdatedAtUtc,
                 x.SubProfilesJson,
                 x.SubProfilesDisabledIdsJson
             })
@@ -1860,27 +1864,69 @@ public sealed class DashboardQueryService(
             })
             .GroupBy(x => x.WorkerId)
             .ToDictionary(g => g.Key, g => g.Sum(static x => x.Count));
-        var subProfiles = accountRows
-            .SelectMany(account =>
-                (SubProfileDeserializer.Deserialize(
-                    account.SubProfilesJson,
-                    account.SubProfilesDisabledIdsJson) ?? [])
-                .Select(profile => new
+        var accountResponseStats = (await db.CandidateResponses
+                .AsNoTracking()
+                .Where(x => x.WorkerId != null
+                    && workerIds.Contains(x.WorkerId.Value)
+                    && x.CollectedAt >= todayStartUtc
+                    && !(x.Status == ResponseStatuses.Duplicate
+                        && x.SourceResponseId.StartsWith("phone-watch:")))
+                .GroupBy(x => new { WorkerId = x.WorkerId!.Value, x.AccountId })
+                .Select(g => new
                 {
-                    account.WorkerId,
-                    Item = new DashboardWorkerSubProfileItem(
-                        account.AccountId,
-                        profile.Id,
-                        profile.Name,
-                        profile.Balance,
-                        account.IsEnabledInPanel && profile.IsEnabledInPanel)
-                }))
+                    g.Key.WorkerId,
+                    g.Key.AccountId,
+                    Total = g.Count(),
+                    Duplicates = g.Count(x => x.Status == ResponseStatuses.Duplicate)
+                })
+                .ToListAsync(ct))
+            .ToDictionary(x => (x.WorkerId, x.AccountId), x => (x.Total, x.Duplicates));
+        var accountEventErrors = (await db.WorkerEvents
+                .AsNoTracking()
+                .Where(x => workerIds.Contains(x.WorkerId)
+                    && x.AccountId != null
+                    && x.CreatedAtUtc >= todayStartUtc
+                    && !x.IsDismissed
+                    && (x.Level == "Error" || x.Level == "Warning"))
+                .GroupBy(x => new { x.WorkerId, AccountId = x.AccountId!.Value })
+                .Select(g => new { g.Key.WorkerId, g.Key.AccountId, Count = g.Count() })
+                .ToListAsync(ct))
+            .ToDictionary(x => (x.WorkerId, x.AccountId), x => x.Count);
+        var dashboardAccounts = accountRows
             .GroupBy(x => x.WorkerId)
             .ToDictionary(
                 g => g.Key,
-                g => (IReadOnlyList<DashboardWorkerSubProfileItem>)g
-                    .Select(x => x.Item)
-                    .Take(10)
+                g => (IReadOnlyList<DashboardWorkerAccountItem>)g
+                    .OrderByDescending(x => x.LastMonitoringAt)
+                    .ThenByDescending(x => x.UpdatedAtUtc)
+                    .Select(account =>
+                    {
+                        accountResponseStats.TryGetValue((account.WorkerId, account.AccountId), out var responseStats);
+                        accountEventErrors.TryGetValue((account.WorkerId, account.AccountId), out var eventErrors);
+                        return new DashboardWorkerAccountItem(
+                            account.AccountId,
+                            account.DisplayName,
+                            account.IsEnabled && account.IsEnabledInPanel,
+                            account.TotalBalance,
+                            account.LastMonitoringAt,
+                            account.UpdatedAtUtc,
+                            (SubProfileDeserializer.Deserialize(
+                                account.SubProfilesJson,
+                                account.SubProfilesDisabledIdsJson) ?? [])
+                                .Take(10)
+                                .Select(profile => new DashboardWorkerSubProfileItem(
+                                    profile.Id,
+                                    profile.Name,
+                                    profile.Balance,
+                                    account.IsEnabled
+                                        && account.IsEnabledInPanel
+                                        && profile.IsEnabledInPanel))
+                                .ToList(),
+                            responseStats.Total,
+                            responseStats.Duplicates,
+                            eventErrors,
+                            account.LastMonitoringAt ?? account.UpdatedAtUtc);
+                    })
                     .ToList());
         var balances = accountRows
             .GroupBy(x => x.WorkerId)
@@ -1900,7 +1946,7 @@ public sealed class DashboardQueryService(
             workerEventErrors.PerWorkerToday,
             accountCounts,
             lowBalanceAccountCounts,
-            subProfiles,
+            dashboardAccounts,
             balances);
     }
 
