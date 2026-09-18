@@ -78,6 +78,10 @@ public sealed class WorkerMonitoringService(
     private readonly ConcurrentDictionary<Guid, DateTime> _accountNextEligibleUtc = new();
     /// <summary>Сколько подряд «тихих» проходов у аккаунта (для quiet backoff delay).</summary>
     private readonly ConcurrentDictionary<Guid, int> _accountQuietStreak = new();
+    /// <summary>Сколько подряд переходных сбоев прохода у аккаунта (CDP hang / сеть / Local API): удлиняет RetryAfter.</summary>
+    private readonly ConcurrentDictionary<Guid, int> _accountConsecutiveTransientFailures = new();
+    /// <summary>Когда последний раз логировали отсутствие сети у воркера (не spam-ить каждые секунды).</summary>
+    private DateTime _lastWorkerOfflineLogUtc = DateTime.MinValue;
     /// <summary>Один раз за процесс логируем восстановленную паузу аккаунта.</summary>
     private readonly ConcurrentDictionary<Guid, byte> _loggedResumeRestored = new();
     private readonly ConcurrentDictionary<Guid, byte> _busyAccounts = new();
@@ -340,6 +344,54 @@ public sealed class WorkerMonitoringService(
                         .ThenBy(a => a.DisplayName, StringComparer.OrdinalIgnoreCase)
                         .ToList();
 
+                    // Сетевой предохранитель: шторм сетевых сбоев по разным аккаунтам —
+                    // проблема воркера, а не аккаунтов; приостанавливаем запуски одним решением.
+                    if (due.Count > 0
+                        && WorkerNetworkCircuitBreaker.OpenUntilUtc() is { } breakerUntil)
+                    {
+                        foreach (var account in due)
+                        {
+                            _accountNextEligibleUtc[account.Id] = breakerUntil;
+                        }
+
+                        activityReporter.ReportWaiting(
+                            breakerUntil,
+                            "Сетевой шторм — проходы приостановлены");
+                        await _scheduleWake.WaitAsync(
+                                TimeSpan.FromSeconds(10),
+                                cancellationToken)
+                            .ConfigureAwait(false);
+                        continue;
+                    }
+
+                    // Предполётная проверка сети воркера: без интернета любой проход умрёт
+                    // после открытия браузера (расход лимитов открытий AdsPower и времени).
+                    if (due.Count > 0
+                        && !await WorkerConnectivityProbe.IsOnlineAsync(cancellationToken).ConfigureAwait(false))
+                    {
+                        var retryAt = DateTime.UtcNow.Add(WorkerConnectivityProbe.OfflineRetryAfter);
+                        foreach (var account in due)
+                        {
+                            // Сдвигаем только в памяти: база хранит обычное расписание
+                            // (тот же принцип, что и RequestImmediatePass).
+                            _accountNextEligibleUtc[account.Id] = retryAt;
+                        }
+
+                        if (DateTime.UtcNow - _lastWorkerOfflineLogUtc >= WorkerConnectivityProbe.OfflineRetryAfter)
+                        {
+                            _lastWorkerOfflineLogUtc = DateTime.UtcNow;
+                            _ = GlobalLogger.Instance.LogAsync(
+                                "Worker: нет доступа в интернет — проходы отложены на ~5 мин.",
+                                DeskLinkAuditLogLevel.Warning,
+                                errorKey: "worker.offline");
+                        }
+
+                        activityReporter.ReportWaiting(
+                            retryAt,
+                            "Нет сети у воркера — проходы отложены");
+                        continue;
+                    }
+
                     while (running.Count < parallelism && due.Count > 0)
                     {
                         var account = due[0];
@@ -449,6 +501,37 @@ public sealed class WorkerMonitoringService(
         return next;
     }
 
+    /// <summary>
+    /// RetryAfter переходного сбоя с backoff-ом: каждый подряд идущий переходный сбой аккаунта
+    /// удлиняет паузу (1→2→5→10 мин для CDP-транзиентов; сетевые стартуют с 5 мин).
+    /// Успешный (без RetryAfter) итог прохода сбрасывает счётчик — см. ApplyCompletedPassScheduleAsync.
+    /// </summary>
+    private TimeSpan? ResolveTransientRetryAfter(AvitoAccount account, Exception ex)
+    {
+        var baseDelay = WorkerAdsPowerPassRetry.FromException(ex);
+        if (baseDelay is not { } delay)
+        {
+            return null;
+        }
+
+        if (AvitoNetworkErrorClassifier.Classify(ex) is not AvitoNetworkErrorKind.None)
+        {
+            // Сеть умерла уже во время прохода: кэш probe («онлайн») больше не валиден,
+            // а шторм по разным аккаунтам должен открыть глобальный предохранитель.
+            WorkerConnectivityProbe.InvalidateCache();
+            WorkerNetworkCircuitBreaker.RegisterNetworkFailure(account.Id);
+        }
+
+        var failures = _accountConsecutiveTransientFailures.TryGetValue(account.Id, out var previous)
+            ? previous + 1
+            : 1;
+        _accountConsecutiveTransientFailures[account.Id] = failures;
+        return WorkerAdsPowerPassRetry.Escalate(delay, failures);
+    }
+
+    private void ResetTransientFailureStreak(Guid accountId) =>
+        _accountConsecutiveTransientFailures.TryRemove(accountId, out _);
+
     private async Task ApplyCompletedPassScheduleAsync(
         AccountCycleJob job,
         CancellationToken cancellationToken)
@@ -486,6 +569,12 @@ public sealed class WorkerMonitoringService(
         }
 
         _consecutiveMonitoringLoopFailures = 0;
+
+        // Переходного сбоя не было — backoff-счётчик аккаунта сбрасывается.
+        if (retryAfter is null)
+        {
+            ResetTransientFailureStreak(job.Account.Id);
+        }
 
         var quietStreak = _accountQuietStreak.GetValueOrDefault(job.Account.Id);
         if (polled && (collectedCount > 0 || backlog))
@@ -936,7 +1025,7 @@ public sealed class WorkerMonitoringService(
                 0,
                 true,
                 false,
-                RetryAfter: WorkerAdsPowerPassRetry.FromException(diagnosticEx));
+                RetryAfter: ResolveTransientRetryAfter(account, diagnosticEx));
         }
         catch (OperationCanceledException)
         {
@@ -955,7 +1044,7 @@ public sealed class WorkerMonitoringService(
         }
         catch (Exception ex)
         {
-            var retryAfter = WorkerAdsPowerPassRetry.FromException(ex);
+            var retryAfter = ResolveTransientRetryAfter(account, ex);
             var profileBusy = WorkerAdsPowerPassRetry.IsLocalChromeProfileBusy(ex);
             account.LastErrorMessage = ex.Message;
             account.Status = retryAfter is null
@@ -971,11 +1060,20 @@ public sealed class WorkerMonitoringService(
                 WorkerMonitoringLogger.AccountTransientFailure(account, "мониторинг", ex.Message);
             }
 
+            var retryMinutes = retryAfter is { } retry
+                ? retry.TotalMinutes.ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)
+                : null;
             var eventMessage = retryAfter is null
                 ? $"Ошибка аккаунта {account.DisplayName}: {ex.Message}"
                 : profileBusy
-                    ? $"Профиль обычного браузера занят на аккаунте {account.DisplayName}, повтор через ~1 мин."
-                    : $"AdsPower timeout на аккаунте {account.DisplayName}, браузер закрыт, повтор через ~1 мин: {ex.Message}";
+                    ? $"Профиль обычного браузера занят на аккаунте {account.DisplayName}, повтор через ~{retryMinutes} мин."
+                    : ex is AvitoRestartBudgetExhaustedException
+                        ? $"Страница Avito перезагружалась слишком часто на аккаунте {account.DisplayName} (капча/восстановления), браузер закрыт, повтор через ~{retryMinutes} мин: {ex.Message}"
+                        : ex is AvitoSessionDeadException
+                            ? $"Браузер завис на аккаунте {account.DisplayName}: CDP не отвечал серией таймаутов, проход прерван, повтор через ~{retryMinutes} мин."
+                            : AvitoNetworkErrorClassifier.Classify(ex) is { } networkKind and not AvitoNetworkErrorKind.None
+                                ? $"Сетевой сбой на аккаунте {account.DisplayName}, браузер закрыт, повтор через ~{retryMinutes} мин: {ex.Message}"
+                                : $"AdsPower timeout на аккаунте {account.DisplayName}, браузер закрыт, повтор через ~{retryMinutes} мин: {ex.Message}";
             await PublishAccountEventAsync(
                 account,
                 WorkerAdsPowerPassRetry.EventType(ex),
@@ -1950,6 +2048,9 @@ public sealed class WorkerMonitoringService(
                         parseResult.Summary.MissingPhoneCount + publishResult.SkippedNoPhoneCount);
                     subProfilesProcessed++;
                     consecutiveCaptchaFails = 0;
+                    // Успешный проход сбрасывает счётчик эскалации повторяющихся сбоев.
+                    sub.ConsecutivePassFailures = 0;
+                    sub.LastFailurePassStartedAtUtc = null;
                     MonitoringAccountResume.MarkSubCompleted(account.MonitoringPassCompletedSubIds, sub.Id);
                     await repository.SaveAccountAsync(account, cancellationToken).ConfigureAwait(false);
 
@@ -2063,6 +2164,26 @@ public sealed class WorkerMonitoringService(
                     await HandleAdsPowerProxyFailureForAccountAsync(account, proxyEx, cancellationToken)
                         .ConfigureAwait(false);
                     break;
+                }
+                catch (AvitoNetworkUnavailableException)
+                {
+                    // Нет сети/DNS: остальные субпрофили пройти всё равно не выйдет.
+                    // Поднимаем наверх — аккаунт получает сетевую паузу (5 мин + backoff),
+                    // а не поштучные фейлы каждого субпрофиля.
+                    throw;
+                }
+                catch (AvitoRestartBudgetExhaustedException)
+                {
+                    // Бюджет перезапусков общий на проход аккаунта: остальные субпрофили
+                    // упрутся в тот же потолок. Наверх — аккаунт получит кулдаун
+                    // (капча-петля → 15 мин, иначе 1 мин + backoff).
+                    throw;
+                }
+                catch (AvitoSessionDeadException)
+                {
+                    // CDP-сессия мертва: каждый следующий субпрофиль умрёт так же,
+                    // теряя по 30 с на шаг. Наверх — аккаунт повторится после паузы.
+                    throw;
                 }
                 catch (Exception ex) when (ShouldHandleAsSubProfileAutomationFailure(ex))
                 {
@@ -3303,14 +3424,50 @@ public sealed class WorkerMonitoringService(
 
     internal static bool ShouldHandleAsSubProfileAutomationFailure(Exception ex) =>
         ex is not AdsPowerProxyFailureException
-        && (AdsPowerCdpGuard.IsCdpTimeout(ex)
-            || ex is AvitoPageMismatchException
-            or JsonException
-            or PuppeteerException
-            or InvalidOperationException);
+            && (AdsPowerCdpGuard.IsCdpTimeout(ex)
+                || ex is AvitoPageMismatchException
+                or AvitoSessionDeadException
+                or JsonException
+                or PuppeteerException
+                or InvalidOperationException);
 
     internal static bool ShouldDeferSubProfileRetry(Exception ex, bool deferredRetry) =>
         !deferredRetry && AdsPowerCdpGuard.IsCdpTimeout(ex);
+
+    /// <summary>
+    /// Учитывает неудачный проход субпрофиля в счётчике подряд идущих сбоев (не чаще одного
+    /// раза за проход аккаунта — отложенный повтор внутри прохода не считается дважды);
+    /// при достижении порога публикует эскалацию «требует внимания оператора».
+    /// </summary>
+    private async Task TrackRecurringSubProfileFailureAsync(
+        AvitoAccount account,
+        AvitoSubProfile sub,
+        string kind,
+        string detail,
+        CancellationToken ct)
+    {
+        var passStartedAt = account.MonitoringPassStartedAtUtc;
+        if (passStartedAt is not null && sub.LastFailurePassStartedAtUtc == passStartedAt)
+        {
+            return;
+        }
+
+        sub.LastFailurePassStartedAtUtc = passStartedAt;
+        sub.ConsecutivePassFailures++;
+
+        var threshold = Math.Max(2, MonitoringTiming.SubProfileEscalationThreshold);
+        if (sub.ConsecutivePassFailures != threshold)
+        {
+            return;
+        }
+
+        // Эскалация ровно в момент пересечения порога — не спамим каждым последующим проходом.
+        var message =
+            $"Субпрофиль «{sub.DisplayName}» на аккаунте {account.DisplayName} падает " +
+            $"{sub.ConsecutivePassFailures} проходов подряд ({AvitoSubProfileIssueKind.ToDisplayLabel(kind)}) — " +
+            "требуется внимание оператора.";
+        await PublishAccountEventAsync(account, "Warning", message, detail, ct).ConfigureAwait(false);
+    }
 
     private async Task<bool> HandleSubProfileSwitchFailureAsync(
         AvitoAccount account,
@@ -3320,7 +3477,11 @@ public sealed class WorkerMonitoringService(
     {
         AvitoPageState? pageState = await TryGetPageStateAsync(session, ct).ConfigureAwait(false);
         var kind = AvitoAutomationFailureFormatter.MapDiagnosticKind(pageState, null);
-        var detail = AvitoAutomationFailureFormatter.Format("переключение субпрофиля", pageState, null);
+        var detail = AvitoAutomationFailureFormatter.Format(
+            "переключение субпрофиля",
+            pageState,
+            null,
+            sessionContext: session.DescribeSessionState());
         WorkerMonitoringLogger.PageStateHint(account, sub, pageState);
         WorkerMonitoringLogger.SubProfileSwitchFailed(account, sub, detail);
         await PublishSubProfileIssueWithDiagnosticAsync(
@@ -3332,6 +3493,7 @@ public sealed class WorkerMonitoringService(
             ct,
             pageState: pageState,
             expectedStep: "переключение субпрофиля").ConfigureAwait(false);
+        await TrackRecurringSubProfileFailureAsync(account, sub, kind, detail, ct).ConfigureAwait(false);
 
         return AvitoAutomationFailureFormatter.IsAccountBlockingIssue(kind);
     }
@@ -3368,7 +3530,12 @@ public sealed class WorkerMonitoringService(
             ? mismatchEx.RecoveryAttempts
             : null;
         var kind = AvitoAutomationFailureFormatter.MapDiagnosticKind(pageState, ex);
-        var detail = AvitoAutomationFailureFormatter.Format(expectedStep, pageState, ex, recoveryAttempts);
+        var detail = AvitoAutomationFailureFormatter.Format(
+            expectedStep,
+            pageState,
+            ex,
+            recoveryAttempts,
+            pageState is null ? session.DescribeSessionState() : null);
         var blocking = AvitoAutomationFailureFormatter.IsAccountBlockingIssue(kind);
         WorkerMonitoringLogger.PageStateHint(account, sub, pageState);
         WorkerMonitoringLogger.SubProfileIssue(account, sub, kind, detail, blocking);
@@ -3397,6 +3564,8 @@ public sealed class WorkerMonitoringService(
                     expectedStep: expectedStep)
                 .ConfigureAwait(false);
         }
+
+        await TrackRecurringSubProfileFailureAsync(account, sub, kind, detail, ct).ConfigureAwait(false);
 
         return blocking;
     }

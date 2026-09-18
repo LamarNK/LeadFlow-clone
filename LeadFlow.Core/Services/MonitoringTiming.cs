@@ -164,6 +164,13 @@ public static class MonitoringTiming
     /// </summary>
     public const int MaxSessionRestartsPerAccountPass = 6;
 
+    /// <summary>
+    /// Сколько подряд проходов субпрофиль может завершаться с проблемой до эскалации:
+    /// отдельное Warning-событие «требует внимания оператора». Разовые транзиенты не
+    /// считаются — счётчик сбрасывается первым успешным проходом субпрофиля.
+    /// </summary>
+    public const int SubProfileEscalationThreshold = 5;
+
     /// <summary>Максимум шаблонных автоответов в чат на один субпрофиль за проход.</summary>
     public const int MaxMessengerAutoRepliesPerSubProfilePerCycle = 3;
 

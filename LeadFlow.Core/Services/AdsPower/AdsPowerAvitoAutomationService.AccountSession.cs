@@ -927,9 +927,13 @@ public sealed partial class AdsPowerAvitoAutomationService
             {
                 if (attempt >= maxRestartsAfterRecovery)
                 {
-                    throw AdsPowerCdpGuard.Timeout(
-                        "повторный сбор откликов после восстановления страницы",
-                        TimeSpan.FromMinutes(1),
+                    // Раньше здесь бросался фейковый CDP-таймаут («…не ответила за 60 с»):
+                    // транзиентная маскировка капча-петли. Честный тип даёт воркеру понять,
+                    // что нужен кулдаун (см. WorkerAdsPowerPassRetry), а не повтор через минуту.
+                    throw new AvitoRestartBudgetExhaustedException(
+                        maxRestartsAfterRecovery,
+                        orchestrator?.LastRecoveredObstacleKind,
+                        orchestrator?.RecoveryEpisodesCompleted ?? 0,
                         ex);
                 }
 
@@ -951,7 +955,11 @@ public sealed partial class AdsPowerAvitoAutomationService
                             ["pass.budget"] = passBudget.Describe(),
                             ["page.url"] = page.Url
                         });
-                    throw;
+                    throw new AvitoRestartBudgetExhaustedException(
+                        passBudget.SessionRestartCap,
+                        orchestrator?.LastRecoveredObstacleKind,
+                        orchestrator?.RecoveryEpisodesCompleted ?? 0,
+                        ex);
                 }
 
                 _ = GlobalLogger.Instance.LogAsync(
@@ -2770,6 +2778,25 @@ public sealed partial class AdsPowerAvitoAutomationService
         public string RuntimeProvider { get; } = runtimeProvider;
 
         public string? CurrentPageUrl => page.Url;
+
+        public string DescribeSessionState()
+        {
+            var orchestrator = sessionOrchestrator;
+            if (orchestrator is null)
+            {
+                return "наблюдатель сессии ещё не запущен";
+            }
+
+            var obstacle = orchestrator.ActiveObstacle;
+            var obstacleText = obstacle is null || obstacle.Kind == AvitoPageObstacleKind.None
+                ? "нет"
+                : $"{obstacle.Kind}" + (string.IsNullOrWhiteSpace(obstacle.CaptchaKind)
+                    ? string.Empty
+                    : $"/{obstacle.CaptchaKind}");
+            return
+                $"{orchestrator.Status}, препятствие: {obstacleText}, " +
+                $"поколение {orchestrator.RecoveryGeneration}, восстановлений: {orchestrator.RecoveryEpisodesCompleted}";
+        }
 
         private AvitoSessionOrchestrator? sessionOrchestrator;
 

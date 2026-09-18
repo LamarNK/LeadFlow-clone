@@ -82,6 +82,13 @@ public interface IAdsPowerAccountSession : IAsyncDisposable
 
     string? CurrentPageUrl { get; }
 
+    /// <summary>
+    /// Краткое состояние наблюдателя сессии для диагностики: стадия оркестратора
+    /// (Running/Recovering/…), активное препятствие, поколение восстановления, счётчик эпизодов.
+    /// Пустая строка — наблюдателя нет или реализация его не раскрывает.
+    /// </summary>
+    string DescribeSessionState() => string.Empty;
+
     Task<AvitoPageState?> GetPageStateAsync(CancellationToken cancellationToken = default);
 
     Task<byte[]?> CapturePageScreenshotAsync(CancellationToken cancellationToken = default);

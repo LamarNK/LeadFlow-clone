@@ -48,6 +48,15 @@ public sealed class AvitoSubProfile
     /// <summary>Последний диагностический скриншот страницы при ошибке субпрофиля.</summary>
     public Guid? LastDiagnosticAttachmentId { get; set; }
 
+    /// <summary>
+    /// Сколько подряд проходов субпрофиль завершался с проблемой (эскалация повторяющихся
+    /// сбоев: разовые транзиенты не считаются — счётчик сбрасывается первым же успехом).
+    /// </summary>
+    public int ConsecutivePassFailures { get; set; }
+
+    /// <summary>Проход (MonitoringPassStartedAtUtc), в котором сбой уже учтён — не считаем дважды при отложенном повторе.</summary>
+    public DateTime? LastFailurePassStartedAtUtc { get; set; }
+
     public bool HasIssue => !string.IsNullOrWhiteSpace(LastIssueKind);
 
     public string IssueKindLabel => AvitoSubProfileIssueKind.ToDisplayLabel(LastIssueKind);

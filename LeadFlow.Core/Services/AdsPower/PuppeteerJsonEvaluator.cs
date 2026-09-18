@@ -1,4 +1,5 @@
 using System.Text.Json;
+using LeadFlow.Core.Services.Avito;
 using PuppeteerSharp;
 
 namespace LeadFlow.Core.Services.AdsPower;
@@ -140,9 +141,10 @@ public static class PuppeteerJsonEvaluator
     }
 
     private static bool IsRecoverableNavigationError(Exception ex) =>
-        ex is PuppeteerException &&
-        (ex.Message.Contains("Execution Context was destroyed", StringComparison.OrdinalIgnoreCase) ||
-         ex.Message.Contains("Target closed", StringComparison.OrdinalIgnoreCase) ||
-         ex.Message.Contains("frame got detached", StringComparison.OrdinalIgnoreCase) ||
-         ex.Message.Contains("Response body is unavailable for redirect responses", StringComparison.OrdinalIgnoreCase));
+        ex is PuppeteerException
+        && (ex.Message.Contains("Execution Context was destroyed", StringComparison.OrdinalIgnoreCase)
+            || ex.Message.Contains("Target closed", StringComparison.OrdinalIgnoreCase)
+            || ex.Message.Contains("frame got detached", StringComparison.OrdinalIgnoreCase)
+            || ex.Message.Contains("Response body is unavailable for redirect responses", StringComparison.OrdinalIgnoreCase)
+            || AvitoNetworkErrorClassifier.IsTransientRetryable(ex));
 }

@@ -2347,10 +2347,23 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 {
                     await page.GoToAsync(targetUrl, navigationOptions).ConfigureAwait(false);
                 }
+                catch (Exception ex) when (AvitoNetworkErrorClassifier.IsTerminalNetworkError(ex))
+                {
+                    // Мёртвый прокси / нет интернета: повтор навигации на месте бессмысленен —
+                    // типизированное исключение выше по стеку даст остывание/паузу, а не шторм ретраев.
+                    throw AvitoNetworkErrorClassifier.BuildTerminalException(ex, page.Url);
+                }
                 catch (Exception ex) when (IsRecoverableNavigationError(ex))
                 {
                     await Task.Delay(3000, cancellationToken).ConfigureAwait(false);
-                    await page.GoToAsync(targetUrl, navigationOptions).ConfigureAwait(false);
+                    try
+                    {
+                        await page.GoToAsync(targetUrl, navigationOptions).ConfigureAwait(false);
+                    }
+                    catch (Exception retryEx) when (AvitoNetworkErrorClassifier.IsTerminalNetworkError(retryEx))
+                    {
+                        throw AvitoNetworkErrorClassifier.BuildTerminalException(retryEx, page.Url);
+                    }
                 }
 
                 state = await ProbePageStateAsync(page, cancellationToken).ConfigureAwait(false);
@@ -3580,11 +3593,15 @@ public sealed partial class AdsPowerAvitoAutomationService(
     }
 
     private static bool IsRecoverableNavigationError(Exception ex) =>
-        ex is PuppeteerException &&
-        (ex.Message.Contains("Execution Context was destroyed", StringComparison.OrdinalIgnoreCase) ||
-         ex.Message.Contains("Target closed", StringComparison.OrdinalIgnoreCase) ||
-         ex.Message.Contains("frame got detached", StringComparison.OrdinalIgnoreCase) ||
-         ex.Message.Contains("Response body is unavailable for redirect responses", StringComparison.OrdinalIgnoreCase));
+        ex is PuppeteerException
+        && (ex.Message.Contains("Execution Context was destroyed", StringComparison.OrdinalIgnoreCase)
+            || ex.Message.Contains("Target closed", StringComparison.OrdinalIgnoreCase)
+            || ex.Message.Contains("frame got detached", StringComparison.OrdinalIgnoreCase)
+            || ex.Message.Contains("Response body is unavailable for redirect responses", StringComparison.OrdinalIgnoreCase)
+            // Кратковременные сетевые сбои (reset/empty response/timeout) — тот же дешёвый повтор.
+            // Терминальные (мёртвый прокси, нет интернета) сюда не попадают: их превращает
+            // в типизированное исключение классификатор на точке навигации.
+            || AvitoNetworkErrorClassifier.IsTransientRetryable(ex));
 
     private Func<IReadOnlyCollection<string>, CancellationToken, Task<IReadOnlySet<string>>>? BuildResolveExistingSourceResponseIdsCallback(
         CandidatesMessengerEnrichmentHints? enrichmentHints)

@@ -50,6 +50,12 @@ public sealed class AvitoSessionOrchestrator : IAsyncDisposable
     private const int ClearProbesRequiredToResume = 2;
     private const int MaxVerifyProbes = 4;
     private const int MaxUnknownProbeAttempts = 3;
+
+    /// <summary>
+    /// Сколько подряд CDP-таймаутов шагов/проб считается смертью сессии: дальнейшие шаги
+    /// будут лишь терять по 30 с каждый — проход прерывается (AvitoSessionDeadException).
+    /// </summary>
+    public const int MaxConsecutiveCdpFailures = 3;
     private static readonly TimeSpan VerifyProbeInterval = TimeSpan.FromMilliseconds(700);
     private static readonly TimeSpan UnknownProbeRetryInterval = TimeSpan.FromMilliseconds(350);
     private static readonly TimeSpan DefaultRecoveryAttemptTimeout = TimeSpan.FromMinutes(7);
@@ -74,6 +80,9 @@ public sealed class AvitoSessionOrchestrator : IAsyncDisposable
     private long lastProbeTicks;
     private long disposed;
     private long recoveryGeneration;
+    private long recoveryEpisodesCompleted;
+    private string? lastRecoveredObstacleKind;
+    private int consecutiveCdpFailures;
     private DateTime lastUnknownLogUtc = DateTime.MinValue;
 
     public AvitoSessionOrchestrator(
@@ -117,6 +126,21 @@ public sealed class AvitoSessionOrchestrator : IAsyncDisposable
     /// поколение как инвалидатор DOM-индексов и снимков, полученных до reload/navigation.
     /// </summary>
     public long RecoveryGeneration => Interlocked.Read(ref recoveryGeneration);
+
+    /// <summary>Всего подтверждённых восстановлений страницы за жизнь сессии.</summary>
+    public long RecoveryEpisodesCompleted => Interlocked.Read(ref recoveryEpisodesCompleted);
+
+    /// <summary>Последнее препятствие, успешно устранённое оркестратором (диагностика петель восстановления).</summary>
+    public string? LastRecoveredObstacleKind
+    {
+        get
+        {
+            lock (gate)
+            {
+                return lastRecoveredObstacleKind;
+            }
+        }
+    }
 
     public void RegisterHandler(AvitoPageObstacleKind kind, AvitoObstacleHandler handler)
     {
@@ -187,6 +211,13 @@ public sealed class AvitoSessionOrchestrator : IAsyncDisposable
             AvitoPageObstacle? terminalObstacle = null;
             lock (gate)
             {
+                if (consecutiveCdpFailures >= MaxConsecutiveCdpFailures)
+                {
+                    // Мёртвая сессия: чекпойнт тоже обязан падать быстро, а не отпускать
+                    // сценарий в очередной 30-секундный evaluate.
+                    throw new AvitoSessionDeadException(consecutiveCdpFailures);
+                }
+
                 if (status == AvitoSessionStatus.Running)
                 {
                     ThrowIfRecoveryGenerationChanged(expectedRecoveryGeneration);
@@ -241,41 +272,58 @@ public sealed class AvitoSessionOrchestrator : IAsyncDisposable
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(step);
-        await WaitReadyAsync(expectedRecoveryGeneration, cancellationToken).ConfigureAwait(false);
-        await MaybeProbeBeforeStepAsync(cancellationToken).ConfigureAwait(false);
-        await WaitReadyAsync(expectedRecoveryGeneration, cancellationToken).ConfigureAwait(false);
-
-        while (true)
+        ThrowIfSessionDead();
+        try
         {
-            await tabOwnership.WaitAsync(cancellationToken).ConfigureAwait(false);
-            var readyToRun = false;
-            try
+            await WaitReadyAsync(expectedRecoveryGeneration, cancellationToken).ConfigureAwait(false);
+            await MaybeProbeBeforeStepAsync(cancellationToken).ConfigureAwait(false);
+            await WaitReadyAsync(expectedRecoveryGeneration, cancellationToken).ConfigureAwait(false);
+
+            while (true)
             {
-                // Между WaitReady и захватом семафора observer мог поставить PauseRequested.
-                // Не выполняем действие в этом окне: освобождаем вкладку для recovery и ждём заново.
-                readyToRun = Status == AvitoSessionStatus.Running;
-                if (readyToRun)
-                {
-                    ThrowIfRecoveryGenerationChanged(expectedRecoveryGeneration);
-                    return await step(cancellationToken).ConfigureAwait(false);
-                }
-            }
-            finally
-            {
+                await tabOwnership.WaitAsync(cancellationToken).ConfigureAwait(false);
+                var readyToRun = false;
                 try
                 {
-                    tabOwnership.Release();
+                    // Между WaitReady и захватом семафора observer мог поставить PauseRequested.
+                    // Не выполняем действие в этом окне: освобождаем вкладку для recovery и ждём заново.
+                    readyToRun = Status == AvitoSessionStatus.Running;
+                    if (readyToRun)
+                    {
+                        ThrowIfRecoveryGenerationChanged(expectedRecoveryGeneration);
+                        var result = await step(cancellationToken).ConfigureAwait(false);
+                        ResetCdpFailureStreak();
+                        return result;
+                    }
                 }
-                catch (ObjectDisposedException)
+                finally
                 {
-                    // Сессия завершается — владение уже не важно.
+                    try
+                    {
+                        tabOwnership.Release();
+                    }
+                    catch (ObjectDisposedException)
+                    {
+                        // Сессия завершается — владение уже не важно.
+                    }
+                }
+
+                if (!readyToRun)
+                {
+                    await WaitReadyAsync(expectedRecoveryGeneration, cancellationToken).ConfigureAwait(false);
                 }
             }
-
-            if (!readyToRun)
-            {
-                await WaitReadyAsync(expectedRecoveryGeneration, cancellationToken).ConfigureAwait(false);
-            }
+        }
+        catch (AvitoSessionDeadException)
+        {
+            throw;
+        }
+        catch (TimeoutException ex) when (AdsPowerCdpGuard.IsCdpTimeout(ex))
+        {
+            // Шаг или проба упали CDP-таймаутом: серия таких = мёртвая сессия,
+            // следующий шаг упадёт сразу, а не после своих 30 секунд.
+            RegisterCdpFailure();
+            throw;
         }
     }
 
@@ -375,6 +423,35 @@ public sealed class AvitoSessionOrchestrator : IAsyncDisposable
         }
 
         lifecycleCts.Dispose();
+    }
+
+    /// <summary>Быстрый fail: серия подряд CDP-таймаутов уже достигла потолка — не ждём
+    /// очередных 30-секундных шагов, обрываем проход немедленно.</summary>
+    private void ThrowIfSessionDead()
+    {
+        lock (gate)
+        {
+            if (consecutiveCdpFailures >= MaxConsecutiveCdpFailures)
+            {
+                throw new AvitoSessionDeadException(consecutiveCdpFailures);
+            }
+        }
+    }
+
+    private void RegisterCdpFailure()
+    {
+        lock (gate)
+        {
+            consecutiveCdpFailures++;
+        }
+    }
+
+    private void ResetCdpFailureStreak()
+    {
+        lock (gate)
+        {
+            consecutiveCdpFailures = 0;
+        }
     }
 
     private static TaskCompletionSource CreateSignal() =>
@@ -609,6 +686,8 @@ public sealed class AvitoSessionOrchestrator : IAsyncDisposable
                     lock (gate)
                     {
                         Interlocked.Increment(ref recoveryGeneration);
+                        Interlocked.Increment(ref recoveryEpisodesCompleted);
+                        lastRecoveredObstacleKind = obstacle.Kind.ToString();
                         status = AvitoSessionStatus.Running;
                         activeObstacle = null;
                     }

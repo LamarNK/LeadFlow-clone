@@ -11,7 +11,8 @@ public static class AvitoAutomationFailureFormatter
         string expectedStep,
         AvitoPageState? pageState,
         Exception? inner = null,
-        IReadOnlyList<string>? recoveryAttempts = null)
+        IReadOnlyList<string>? recoveryAttempts = null,
+        string? sessionContext = null)
     {
         if (pageState?.HasInsufficientAdvance == true)
         {
@@ -95,8 +96,18 @@ public static class AvitoAutomationFailureFormatter
             return inner.Message.Trim();
         }
 
-        return $"ошибка на шаге «{expectedStep}».";
+        return $"ошибка на шаге «{expectedStep}».{FormatSessionContext(sessionContext)}";
     }
+
+    /// <summary>
+    /// Когда состояние страницы определить не удалось (pageState == null), единственная зацепка —
+    /// наблюдатель сессии: стадия восстановления, активное препятствие, поколение reload-а.
+    /// Превращает голое «ошибка на шаге …» в диагностическую строку для Орбиты.
+    /// </summary>
+    private static string FormatSessionContext(string? sessionContext) =>
+        string.IsNullOrWhiteSpace(sessionContext)
+            ? string.Empty
+            : $" Сессия: {sessionContext.Trim().TrimEnd('.')}.";
 
     public static string MapDiagnosticKind(AvitoPageState? pageState, Exception? inner) =>
         pageState switch
