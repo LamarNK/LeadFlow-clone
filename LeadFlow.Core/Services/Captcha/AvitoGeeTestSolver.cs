@@ -25,7 +25,6 @@ public sealed class AvitoGeeTestSolver(
     private const string LoginClickCaptchaHintSelector = ".geetest_ques_tips, [class*='geetest_ques_tips']";
     private const string LoginClickCaptchaPreparedHostId = "leadflow-geetest-capture";
     private const string LoginClickCaptchaPreparedImageSelector = "#leadflow-geetest-capture-image";
-    private const string LoginClickCaptchaPreparedHintSelector = "#leadflow-geetest-capture-hint";
     private static readonly TimeSpan ResponseContextWaitTimeout = TimeSpan.FromSeconds(10);
     private static readonly TimeSpan DiagnosticsContextWaitTimeout = TimeSpan.FromSeconds(1);
     private static readonly SemaphoreSlim Gate = new(
@@ -832,9 +831,7 @@ public sealed class AvitoGeeTestSolver(
                 .ConfigureAwait(false);
             var preparedHint = await FindVisibleElementAsync(
                     page,
-                    prepared.IsNineGrid
-                        ? LoginClickCaptchaHintSelector
-                        : LoginClickCaptchaPreparedHintSelector,
+                    LoginClickCaptchaHintSelector,
                     cancellationToken)
                 .ConfigureAwait(false);
             if (preparedImage is null || preparedHint is null)
@@ -886,7 +883,6 @@ public sealed class AvitoGeeTestSolver(
         (async () => {
           const hostId = '{{LoginClickCaptchaPreparedHostId}}';
           const imageId = '{{LoginClickCaptchaPreparedImageSelector[1..]}}';
-          const hintId = '{{LoginClickCaptchaPreparedHintSelector[1..]}}';
           document.getElementById(hostId)?.remove();
 
           const isVisible = (el) => {
@@ -980,53 +976,6 @@ public sealed class AvitoGeeTestSolver(
                 transition: 'none'
               });
               host.appendChild(mainImage);
-            }
-
-            if (!isNineGrid) {
-              const hintImages = [];
-              for (const source of hintUrls) {
-                const image = await loadImage(source);
-                hintImages.push(image);
-              }
-              const gapWidth = Math.max(0, hintImages.length - 1) * 8;
-              const naturalWidth = hintImages.reduce((sum, image) => sum + image.naturalWidth, 0);
-              const naturalHeight = Math.max(...hintImages.map((image) => image.naturalHeight));
-              const scale = Math.min(
-                1,
-                naturalWidth > 0 ? (400 - gapWidth) / naturalWidth : 1,
-                naturalHeight > 0 ? 150 / naturalHeight : 1);
-              const widths = hintImages.map((image) => Math.max(1, Math.round(image.naturalWidth * scale)));
-              const heights = hintImages.map((image) => Math.max(1, Math.round(image.naturalHeight * scale)));
-              const canvas = document.createElement('canvas');
-              canvas.id = hintId;
-              canvas.dataset.maxWidth = '400px';
-              canvas.dataset.maxHeight = '150px';
-              canvas.width = Math.max(1, widths.reduce((sum, width) => sum + width, 0) + gapWidth);
-              canvas.height = Math.max(1, Math.max(...heights));
-              Object.assign(canvas.style, {
-                display: 'block',
-                width: `${canvas.width}px`,
-                height: `${canvas.height}px`,
-                maxWidth: '400px',
-                maxHeight: '150px',
-                padding: '0',
-                margin: '0',
-                border: '0',
-                background: '#fff',
-                transform: 'none',
-                animation: 'none',
-                transition: 'none'
-              });
-              const context = canvas.getContext('2d');
-              if (!context) throw new Error('hint-canvas-context-unavailable');
-              context.fillStyle = '#fff';
-              context.fillRect(0, 0, canvas.width, canvas.height);
-              let offsetX = 0;
-              hintImages.forEach((image, index) => {
-                context.drawImage(image, offsetX, 0, widths[index], heights[index]);
-                offsetX += widths[index] + 8;
-              });
-              host.appendChild(canvas);
             }
 
             const hintText = String(
