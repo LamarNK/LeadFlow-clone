@@ -1244,6 +1244,36 @@ public static class AvitoCandidatesPageScripts
         })();
         """;
 
+    /// <summary>
+    /// Клик по кнопке внутри карточки списка по data-marker (например,
+    /// «Данные о кандидате» <c>job-crm/response/enrichment-results-button</c> —
+    /// на CRM-страницах панель кандидата открывает именно она, а не клик по строке).
+    /// </summary>
+    public static string BuildClickItemButtonByMarkerScript(int index, string markerJson) =>
+        $$"""
+        (() => {
+        {{ContactsPhoneHelpersJs}}
+            const items = Array.from(document.querySelectorAll("[data-marker='job-application/item']"));
+            const index = {{index}};
+            const marker = {{markerJson}};
+            if (index < 0 || index >= items.length) {
+                return JSON.stringify({ ok: false, reason: "index_out_of_range", items: items.length, index });
+            }
+
+            const button = items[index].querySelector(`[data-marker='${marker}']`);
+            if (!button) {
+                return JSON.stringify({ ok: false, reason: "no_button", marker, index, items: items.length });
+            }
+
+            const target = button.querySelector("button, a, [role='button']") || button;
+            if (!humanClick(target)) {
+                return JSON.stringify({ ok: false, reason: "click_dispatch_failed", marker, index, items: items.length });
+            }
+
+            return JSON.stringify({ ok: true, marker, index, items: items.length });
+        })();
+        """;
+
     /// <summary>Снимок открытой панели отклика: ссылка «на вакансию», возраст и т.д.</summary>
     public static string BuildReadDetailPanelScript() =>
         $$"""

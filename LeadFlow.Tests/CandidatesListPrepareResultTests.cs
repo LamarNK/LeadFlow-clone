@@ -174,6 +174,20 @@ public sealed class CandidatesListPrepareResultTests
     }
 
     [Fact]
+    public void ClickItemButtonByMarkerScript_TargetsEnrichmentResultsButton()
+    {
+        var script = AvitoCandidatesPageScripts.BuildClickItemButtonByMarkerScript(
+            3,
+            System.Text.Json.JsonSerializer.Serialize("job-crm/response/enrichment-results-button"));
+
+        Assert.Contains("job-crm/response/enrichment-results-button", script);
+        Assert.Contains("querySelector(`[data-marker='${marker}']`)", script);
+        Assert.Contains("no_button", script);
+        // Кликовая логика — общий humanClick из хелперов, без дублирования.
+        Assert.Contains("humanClick(target)", script);
+    }
+
+    [Fact]
     public void PrepareResult_CarriesPanelPhoneCounters()
     {
         var result = new CandidatesListPrepareResult(
