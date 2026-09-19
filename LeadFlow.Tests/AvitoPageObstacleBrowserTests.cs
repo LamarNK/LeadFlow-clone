@@ -208,4 +208,65 @@ public sealed class AvitoPageObstacleBrowserTests : IAsyncLifetime
             AvitoPageObstacleKind.None,
             (await AvitoPageObstacleProbe.ProbeAsync(page, CancellationToken.None)).Kind);
     }
+
+    [Fact]
+    public async Task PortaledProfileSwitch_WithStaleFirewallTitle_IsNotAnObstacle()
+    {
+        // Production 1.0.3.27 still reported «Выбор профиля» as IP-block/captcha:
+        // the modal is a portal sibling of an empty display:contents root, the
+        // heading is not h1/h2/h3, leftover firewall copy stays in the DOM, and
+        // the tab title/hash can remain from a previous #block page.
+        await page.SetContentAsync("""
+            <div class="firewall-container" style="position:fixed; inset:0; z-index:1">
+              <h2 class="firewall-title">Доступ ограничен: проблема с IP</h2>
+              <p>нажмите на кнопку Продолжить для решения капчи</p>
+              <button>Продолжить</button>
+              <a href="https://support.avito.ru/request/720">Поддержка</a>
+              <script src="https://static.geetest.com/v4/gt4.js"></script>
+            </div>
+            <div data-marker="component-profile-switch/root" style="display:contents"></div>
+            <div role="dialog" aria-modal="true" style="position:fixed; inset:12% 32%; z-index:2; background:white">
+              <div>Выбор профиля</div>
+              <input placeholder="Название или категория">
+              <div data-marker="component-profile-switch/profile-123"><h5>Кадровый отдел Рязань 5</h5></div>
+              <div data-marker="component-profile-switch/profile-124"><h5>Кадровый отдел Рязань 4</h5></div>
+            </div>
+            """);
+        await page.EvaluateFunctionAsync("""
+            () => {
+                document.title = 'Доступ ограничен: проблема с IP';
+                location.hash = '#profile/switch?withEntities=true';
+            }
+            """);
+
+        var obstacle = await AvitoPageObstacleProbe.ProbeAsync(page, CancellationToken.None);
+        Assert.Equal(AvitoPageObstacleKind.None, obstacle.Kind);
+
+        var state = AvitoPageStateProbe.TryParse(
+            await page.EvaluateExpressionAsync<string>(AvitoPageStateScripts.BuildProbeScript()));
+        Assert.NotNull(state);
+        Assert.False(state.HasCaptcha);
+        Assert.False(state.HasFirewallIp);
+        Assert.Null(AvitoFirewallProbe.TryParse(
+            await page.EvaluateExpressionAsync<string>(AvitoCandidatesPageScripts.BuildFirewallProbeScript())));
+    }
+
+    [Fact]
+    public async Task GeeTestOverPortaledProfileSwitch_IsStillCaptcha()
+    {
+        await page.SetContentAsync("""
+            <div data-marker="component-profile-switch/root" style="display:contents"></div>
+            <div role="dialog" aria-modal="true" style="position:fixed; inset:12% 32%; z-index:1; background:white">
+              <div>Выбор профиля</div>
+              <div data-marker="component-profile-switch/profile-123"><h5>Кадровый отдел</h5></div>
+            </div>
+            <div class="geetest_boxShow" style="position:fixed; inset:20% 35%; z-index:3; background:white">
+              Переместите слайдером деталь, чтобы сложить пазл
+            </div>
+            """);
+
+        Assert.Equal(
+            AvitoPageObstacleKind.Captcha,
+            (await AvitoPageObstacleProbe.ProbeAsync(page, CancellationToken.None)).Kind);
+    }
 }

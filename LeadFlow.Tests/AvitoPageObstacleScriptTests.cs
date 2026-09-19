@@ -83,4 +83,15 @@ public sealed class AvitoPageObstacleScriptTests
         Assert.Contains("location.hash === \"#block\"", script, StringComparison.Ordinal);
         Assert.Contains("support.avito.ru/request/720", script, StringComparison.Ordinal);
     }
+
+    [Fact]
+    public void ProbeScript_FindsPortaledProfileSwitchByGlobalMarkersAndDialogCopy()
+    {
+        var script = AvitoPageObstacleScripts.BuildProbeScript();
+
+        Assert.Contains("[data-marker^='component-profile-switch/']", script, StringComparison.Ordinal);
+        Assert.Contains("Выбор\\s+профиля", script, StringComparison.Ordinal);
+        Assert.Contains("hasProfileSwitchModal && !hasOldWidget && !hasGeeTestDom", script, StringComparison.Ordinal);
+        Assert.Contains("profile-switch", script, StringComparison.Ordinal);
+    }
 }

@@ -209,8 +209,20 @@ public static class AvitoCaptchaDetector
             && html.Contains("support.avito.ru/request/720", StringComparison.OrdinalIgnoreCase)
             && Regex.IsMatch(html, @"Отключить\s+VPN|В\s+самол[её]те", RegexOptions.IgnoreCase);
 
+        // Снимок модалки «Выбор профиля» часто тащит dormant firewall-текст.
+        // Статическую страницу #block без модалки это не маскирует.
+        if (LooksLikeProfileSwitchSnapshot(html) && !hasStaticIpMarkers)
+        {
+            return false;
+        }
+
         return (hasTitle && hasIp) || hasStaticIpMarkers;
     }
+
+    private static bool LooksLikeProfileSwitchSnapshot(string html) =>
+        html.Contains("component-profile-switch", StringComparison.OrdinalIgnoreCase)
+        && (html.Contains("Выбор профиля", StringComparison.OrdinalIgnoreCase)
+            || html.Contains("component-profile-switch/profile-", StringComparison.OrdinalIgnoreCase));
 
     public static bool CanAttemptGeeTestSolve(string? html) =>
         !HasIpBlockChallenge(html) && HasGeeTestWidget(html);

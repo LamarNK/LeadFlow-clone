@@ -106,6 +106,23 @@ public sealed class AvitoCaptchaDetectorTests
         Assert.False(AvitoCaptchaDetector.IsCaptchaHtml(html));
     }
 
+    [Fact]
+    public void HasIpBlockChallenge_ProfileSwitchSnapshotWithDormantFirewallText_IsNotIpBlock()
+    {
+        const string html = """
+            <title>Доступ ограничен: проблема с IP</title>
+            <p>Доступ ограничен: проблема с IP</p>
+            <div data-marker="component-profile-switch/root"></div>
+            <div role="dialog">
+              <div>Выбор профиля</div>
+              <div data-marker="component-profile-switch/profile-123"><h5>Кадровый отдел</h5></div>
+            </div>
+            """;
+
+        Assert.False(AvitoCaptchaDetector.HasIpBlockChallenge(html));
+        Assert.NotEqual("firewall", AvitoCaptchaDetector.Classify(html));
+    }
+
     [Theory]
     [InlineData(null)]
     [InlineData("")]

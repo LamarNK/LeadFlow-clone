@@ -93,16 +93,24 @@ public static class AvitoPageObstacleScripts
 
             const itemCount = document.querySelectorAll("[data-marker='job-application/item']").length;
             const statusCount = document.querySelectorAll("[data-marker='job-application/response/status-select-button']").length;
+            // Модалка «Выбор профиля» часто порталится: пустой display:contents root,
+            // карточки — соседи, заголовок не h1/h2/h3. Ищем маркеры по всему документу
+            // и видимый текст диалога, а не только детей root.
             const hasProfileSwitchModal = Array.from(document.querySelectorAll(
-                "[data-marker='component-profile-switch/root']"
-            )).some((root) => {
-                if (isFrontmostEl(root)) return true;
-                // Avito может рендерить portal-root через display:contents: сам root
-                // без геометрии, хотя карточки и заголовок модалки находятся сверху.
-                return Array.from(root.querySelectorAll(
-                    "h1, h2, h3, [data-marker^='component-profile-switch/profile-']"
+                "[data-marker='component-profile-switch/root'], [data-marker^='component-profile-switch/']"
+            )).some((el) => {
+                if (isFrontmostEl(el)) return true;
+                return Array.from(el.querySelectorAll(
+                    "h1, h2, h3, h4, h5, h6, [data-marker^='component-profile-switch/']"
                 )).some(isFrontmostEl);
+            }) || Array.from(document.querySelectorAll(
+                "[role='dialog'], [aria-modal='true'], [data-scroll-lock-ignore='true']"
+            )).some((el) => {
+                if (!isFrontmostEl(el)) return false;
+                const text = ((el.innerText || el.textContent || "") + "").replace(/\s+/g, " ");
+                return /Выбор\s+профиля/i.test(text);
             });
+            if (hasProfileSwitchModal) signals.push("profile-switch");
 
             const hasFirewallContainer = Array.from(document.querySelectorAll(
                 ".firewall-container, .js-firewall-form, .firewall-title, form.js-firewall-form"
@@ -124,11 +132,16 @@ public static class AvitoPageObstacleScripts
             const hasCaptchaContinue = listMissing
               && hasFirewallContainer
               && /Продолжить/i.test(probeText);
-            const hasCaptchaChallenge = hasOldWidget
+            let hasCaptchaChallenge = hasOldWidget
                 || hasGeeTestDom
                 || hasCaptchaDialog
                 || hasCaptchaContinue
                 || (listMissing && hasFirewallContainer && !/проблема\s+с\s+IP/i.test(probeText));
+            // Если сверху обычная модалка профилей, dormant firewall/gt4 в фоне — не капча.
+            // Живой виджет GeeTest поверх модалки по-прежнему считается капчей.
+            if (hasProfileSwitchModal && !hasOldWidget && !hasGeeTestDom) {
+                hasCaptchaChallenge = false;
+            }
 
             // Блок IP — только когда это НЕ решаемая капча (зеркалим классификацию C#-детектора).
             const hasIpText = /Доступ\s+ограничен/i.test(bodyText) && /проблема\s+с\s+IP/i.test(bodyText);
