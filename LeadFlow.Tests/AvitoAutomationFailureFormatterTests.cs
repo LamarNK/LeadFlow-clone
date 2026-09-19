@@ -82,6 +82,45 @@ public sealed class AvitoAutomationFailureFormatterTests
     }
 
     [Fact]
+    public void Format_SwitchFailedOnDashboard_IsSwitchNotGenericProblem()
+    {
+        var state = new AvitoPageState(
+            AvitoPageKind.Dashboard,
+            "https://www.avito.ru/profile/dashboard",
+            "Avito Pro",
+            false,
+            0,
+            "111",
+            "Кадровый отдел Воронеж",
+            0,
+            false,
+            false);
+
+        var message = AvitoAutomationFailureFormatter.Format("переключение субпрофиля", state);
+        var kind = AvitoAutomationFailureFormatter.MapSwitchFailureKind(state);
+
+        Assert.Equal(AvitoSubProfileIssueKind.SwitchFailed, kind);
+        Assert.Contains("не удалось переключить", message, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("главной панели", message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("ошибка на шаге", message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Format_SwitchFailedWithoutPageState_DoesNotDumpRawCdpTimeout()
+    {
+        var inner = new TimeoutException("Браузер CDP: pointer-click по карточке субпрофиля не ответила за 8 с.");
+        var message = AvitoAutomationFailureFormatter.Format(
+            "переключение субпрофиля",
+            pageState: null,
+            inner);
+        var kind = AvitoAutomationFailureFormatter.MapDiagnosticKind(null, inner);
+
+        Assert.Equal(AvitoSubProfileIssueKind.Timeout, kind);
+        Assert.Contains("не удалось переключить", message, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain("pointer-click", message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
     public void LooksLoggedIn_RequiresCabinetMarkersNotJustItemsUrl()
     {
         var guestOnItems = new AvitoPageState(

@@ -79,6 +79,31 @@ public static class AvitoAutomationFailureFormatter
             return $"не удалось переключить субпрофиль: {pageState.DescribeForDiagnostics()}.";
         }
 
+        if (expectedStep.Contains("переключ", StringComparison.OrdinalIgnoreCase)
+            && pageState is { PageKind: AvitoPageKind.Dashboard })
+        {
+            return "не удалось переключить субпрофиль: клик по карточке не сменил профиль, остались на главной панели Avito Pro.";
+        }
+
+        if (expectedStep.Contains("переключ", StringComparison.OrdinalIgnoreCase)
+            && pageState is null)
+        {
+            if (LooksLikeCdpTimeout(inner))
+            {
+                return "не удалось переключить субпрофиль: браузер не ответил на клик по карточке вовремя.";
+            }
+
+            var hint = string.IsNullOrWhiteSpace(sessionContext)
+                ? "клик по карточке не завершился"
+                : sessionContext.Trim().TrimEnd('.');
+            return $"не удалось переключить субпрофиль: {hint}.";
+        }
+
+        if (LooksLikeCdpTimeout(inner))
+        {
+            return $"страница Avito не ответила вовремя на шаге «{expectedStep}».";
+        }
+
         if (pageState is not null && !pageState.IsOnCandidates && expectedStep.Contains("отклик", StringComparison.OrdinalIgnoreCase))
         {
             var attempts = FormatAttempts(recoveryAttempts);
@@ -123,8 +148,32 @@ public static class AvitoAutomationFailureFormatter
             { ProfileSwitchModalOpen: true } => AvitoSubProfileIssueKind.SwitchFailed,
             _ when inner is AvitoPageMismatchException => AvitoSubProfileIssueKind.SwitchFailed,
             _ when inner is JsonException => AvitoSubProfileIssueKind.ParseFailed,
+            _ when LooksLikeCdpTimeout(inner) => AvitoSubProfileIssueKind.Timeout,
             _ => AvitoSubProfileIssueKind.Other
         };
+
+    public static string MapSwitchFailureKind(AvitoPageState? pageState) =>
+        MapDiagnosticKind(pageState, inner: null) is var kind
+        && kind is AvitoSubProfileIssueKind.Captcha
+            or AvitoSubProfileIssueKind.IpBlock
+            or AvitoSubProfileIssueKind.AuthRequired
+            ? kind
+            : AvitoSubProfileIssueKind.SwitchFailed;
+
+    private static bool LooksLikeCdpTimeout(Exception? inner)
+    {
+        for (var current = inner; current is not null; current = current.InnerException)
+        {
+            if (current is TimeoutException
+                || current.Message.Contains("Браузер CDP:", StringComparison.Ordinal)
+                || current.Message.Contains("не ответила за", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     public static bool IsAccountBlockingIssue(string kind) =>
         MonitoringPassFailurePolicy.IsAccountBlockingIssueKind(kind);

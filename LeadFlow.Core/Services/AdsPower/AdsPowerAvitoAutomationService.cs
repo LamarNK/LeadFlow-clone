@@ -1502,6 +1502,23 @@ public sealed partial class AdsPowerAvitoAutomationService(
         var nativeFallbackAttempted = false;
         try
         {
+            await page.EvaluateFunctionAsync(
+                    @"(sel) => {
+                        const el = document.querySelector(sel);
+                        if (!el) return false;
+                        try { el.scrollIntoView({ block: 'center', inline: 'nearest' }); } catch {}
+                        return true;
+                    }",
+                    selectorToClick)
+                .ConfigureAwait(false);
+        }
+        catch
+        {
+            // best effort: карточка ниже сгиба списка
+        }
+
+        try
+        {
             pointerClick = await AdsPowerCdpGuard.WaitAsync(
                     AvitoHumanPointer.TryClickSelectorAsync(page, selectorToClick, cancellationToken),
                     CdpSwitchActionTimeout,
@@ -1524,8 +1541,9 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 elapsedMs: started.ElapsedMilliseconds,
                 exception: ex.Message,
                 runtimeProvider: runtimeProvider,
-                switchResult: "timeout");
-            throw;
+                switchResult: "click_failed");
+            await DismissProfileSwitchModalAsync(page, cancellationToken, runtimeProvider).ConfigureAwait(false);
+            return false;
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
         {

@@ -1913,6 +1913,7 @@ public sealed class WorkerMonitoringService(
                                 account,
                                 session,
                                 sub,
+                                switched,
                                 cancellationToken).ConfigureAwait(false);
                         var skipCaptcha = TakeCaptchaSnapshot(captchaCounters);
                         _cycleJournal.FailSubProfile(
@@ -3589,15 +3590,16 @@ public sealed class WorkerMonitoringService(
         AvitoAccount account,
         IAdsPowerAccountSession session,
         AvitoSubProfile sub,
+        SubProfileSwitchResult switched,
         CancellationToken ct)
     {
         AvitoPageState? pageState = await TryGetPageStateAsync(session, ct).ConfigureAwait(false);
-        var kind = AvitoAutomationFailureFormatter.MapDiagnosticKind(pageState, null);
+        var kind = AvitoAutomationFailureFormatter.MapSwitchFailureKind(pageState);
         var detail = AvitoAutomationFailureFormatter.Format(
             "переключение субпрофиля",
             pageState,
             null,
-            sessionContext: session.DescribeSessionState());
+            sessionContext: switched.JournalMessage(deferredRetry: false));
         WorkerMonitoringLogger.PageStateHint(account, sub, pageState);
         WorkerMonitoringLogger.SubProfileSwitchFailed(account, sub, detail);
         await PublishSubProfileIssueWithDiagnosticAsync(
