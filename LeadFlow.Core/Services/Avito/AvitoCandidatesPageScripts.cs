@@ -2683,27 +2683,12 @@ public static class AvitoCandidatesPageScripts
         {{VacancyParseHelpersJs}}
             initRevealedPhonesStore();
 
-            const itemCount = document.querySelectorAll("[data-marker='job-application/item']").length;
-            const statusCount = document.querySelectorAll("[data-marker='job-application/response/status-select-button']").length;
-            const title = (document.title ?? "").trim();
             const bodyText = document.body?.innerText ?? "";
-            const hasFirewallDom = !!document.querySelector(
-                ".firewall-container, .js-firewall-form, .firewall-title, form.js-firewall-form"
-            ) || location.hash === "#block"
-              || !!document.querySelector('a[href*="support.avito.ru/request/720"]');
-            const hasFirewallText = /Доступ\s+ограничен|проблема\s+с\s+IP|firewallCaptcha|Отключить\s+VPN|самол[её]те/i.test(title + "\n" + bodyText);
-            const hasCaptchaWidget = !!(
-                document.getElementById("geetest_captcha") ||
-                document.getElementById("inner-captcha") ||
-                document.getElementById("h-captcha") ||
-                document.querySelector(".h-captcha[data-sitekey]")
-            );
-            const hasIpDialog = !!document.querySelector('[role="dialog"][aria-modal="true"], [aria-modal="true"]')
-              && /Доступ\s+ограничен|проблема\s+с\s+IP/i.test(title + "\n" + bodyText);
-            const hasCaptcha =
-                hasIpDialog ||
-                (itemCount === 0 && statusCount === 0 && (hasFirewallDom || (hasFirewallText && hasCaptchaWidget) || hasFirewallText)) ||
-                (!hasFirewallDom && /капч|captcha|подтвердите|проверочный код/i.test(bodyText));
+            const obstacle = JSON.parse({{AvitoPageObstacleScripts.BuildProbeExpression()}});
+            const hasCaptcha = obstacle.kind === "ipBlocked" || obstacle.kind === "captcha";
+            const captchaKind = obstacle.kind === "ipBlocked"
+                ? "firewall"
+                : (obstacle.captchaKind || "captcha");
 
             const isVisible = (element) => {
                 if (!element) {
@@ -3203,6 +3188,7 @@ public static class AvitoCandidatesPageScripts
             return {
                 url: window.location.href,
                 hasCaptcha,
+                captchaKind,
                 hasLogin,
                 candidates,
                 pageVariant: isJobCrmResponsesPage ? "job-crm" : "legacy",

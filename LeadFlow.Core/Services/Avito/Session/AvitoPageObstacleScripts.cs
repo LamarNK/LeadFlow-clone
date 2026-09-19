@@ -95,7 +95,14 @@ public static class AvitoPageObstacleScripts
             const statusCount = document.querySelectorAll("[data-marker='job-application/response/status-select-button']").length;
             const hasProfileSwitchModal = Array.from(document.querySelectorAll(
                 "[data-marker='component-profile-switch/root']"
-            )).some(isFrontmostEl);
+            )).some((root) => {
+                if (isFrontmostEl(root)) return true;
+                // Avito может рендерить portal-root через display:contents: сам root
+                // без геометрии, хотя карточки и заголовок модалки находятся сверху.
+                return Array.from(root.querySelectorAll(
+                    "h1, h2, h3, [data-marker^='component-profile-switch/profile-']"
+                )).some(isFrontmostEl);
+            });
 
             const hasFirewallContainer = Array.from(document.querySelectorAll(
                 ".firewall-container, .js-firewall-form, .firewall-title, form.js-firewall-form"

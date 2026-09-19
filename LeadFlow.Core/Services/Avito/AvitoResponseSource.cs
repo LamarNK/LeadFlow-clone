@@ -183,7 +183,12 @@ public sealed class AvitoResponseSource(
         if (hasCaptcha)
         {
             var rawHtml = root.TryGetProperty("html", out var htmlProp) ? htmlProp.GetString() : null;
-            var kind = AvitoCaptchaDetector.Classify(rawHtml) ?? "captcha";
+            var kind = root.TryGetProperty("captchaKind", out var kindProp)
+                ? kindProp.GetString()
+                : null;
+            kind = string.IsNullOrWhiteSpace(kind)
+                ? AvitoCaptchaDetector.Classify(rawHtml) ?? "captcha"
+                : kind;
             var issueKind = AvitoSubProfileIssueKind.FromCaptchaKind(kind);
             const string captchaDetail = "нужна проверка на странице откликов.";
             if (activeSubProfile is not null)

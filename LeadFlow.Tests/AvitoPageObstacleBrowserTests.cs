@@ -112,6 +112,10 @@ public sealed class AvitoPageObstacleBrowserTests : IAsyncLifetime
 
         var fastRaw = await page.EvaluateExpressionAsync<string>(AvitoCandidatesPageScripts.BuildFirewallProbeScript());
         Assert.Null(AvitoFirewallProbe.TryParse(fastRaw));
+        var extractionRaw = await page.EvaluateExpressionAsync<string>(
+            AvitoCandidatesPageScripts.BuildExtractionScriptForPuppeteer());
+        using var extraction = System.Text.Json.JsonDocument.Parse(extractionRaw);
+        Assert.False(extraction.RootElement.GetProperty("hasCaptcha").GetBoolean());
         Assert.Equal(AvitoPageObstacleKind.None, (await AvitoPageObstacleProbe.ProbeAsync(page, CancellationToken.None)).Kind);
     }
 
@@ -182,5 +186,26 @@ public sealed class AvitoPageObstacleBrowserTests : IAsyncLifetime
         Assert.Equal(AvitoPageKind.ProfileSwitchModal, state.PageKind);
         Assert.Null(AvitoFirewallProbe.TryParse(
             await page.EvaluateExpressionAsync<string>(AvitoCandidatesPageScripts.BuildFirewallProbeScript())));
+    }
+
+    [Fact]
+    public async Task DisplayContentsProfileSwitch_SuppressesUnderlyingFirewall()
+    {
+        await page.SetContentAsync("""
+            <div class="firewall-container" style="position:fixed; inset:0; z-index:1; background:white">
+              <h2 class="firewall-title">Доступ ограничен: проблема с IP</h2>
+              <a href="https://support.avito.ru/request/720">Поддержка</a>
+            </div>
+            <div data-marker="component-profile-switch/root" style="display:contents">
+              <div style="position:fixed; inset:10%; z-index:2; background:white">
+                <h2>Выбор профиля</h2>
+                <div data-marker="component-profile-switch/profile-123">Кадровый отдел</div>
+              </div>
+            </div>
+            """);
+
+        Assert.Equal(
+            AvitoPageObstacleKind.None,
+            (await AvitoPageObstacleProbe.ProbeAsync(page, CancellationToken.None)).Kind);
     }
 }

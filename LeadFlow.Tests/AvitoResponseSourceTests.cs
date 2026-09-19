@@ -52,6 +52,24 @@ public sealed class AvitoResponseSourceTests
     }
 
     [Fact]
+    public async Task GetNewResponsesAsync_UsesLiveObstacleCaptchaKind()
+    {
+        var db = new EfInMemoryDatabase();
+        var repo = new AppRepository(db.Factory);
+        var account = NewAccount();
+        var automation = new AvitoCandidatesPageAutomationStub();
+        automation.EnqueueExtraction(
+            """{"hasCaptcha":true,"captchaKind":"firewall","hasLogin":false,"candidates":[]}""");
+
+        var sut = CreateSut(repo, automation);
+
+        var ex = await Assert.ThrowsAsync<AvitoCaptchaDetectedException>(
+            () => sut.GetNewResponsesAsync(account, NewSettings(), CancellationToken.None));
+
+        Assert.Equal("firewall", ex.Kind);
+    }
+
+    [Fact]
     public async Task GetNewResponsesAsync_HasLogin_SetsRequiresLogin()
     {
         var db = new EfInMemoryDatabase();
