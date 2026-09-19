@@ -65,7 +65,7 @@ public sealed class AvitoAutomationFailureSessionContextTests
     {
         var message = AvitoAutomationFailureFormatter.Format("переключение субпрофиля", null, null);
 
-        Assert.Equal("ошибка на шаге «переключение субпрофиля».", message);
+        Assert.Equal("не удалось переключить субпрофиль: клик по карточке не завершился.", message);
     }
 
     [Fact]
@@ -77,9 +77,10 @@ public sealed class AvitoAutomationFailureSessionContextTests
             null,
             sessionContext: "Recovering, препятствие: Captcha/geetest, поколение 2, восстановлений: 3");
 
-        Assert.StartsWith("ошибка на шаге «переключение субпрофиля». Сессия: ", message, StringComparison.Ordinal);
+        Assert.StartsWith("не удалось переключить субпрофиль: ", message, StringComparison.Ordinal);
         Assert.Contains("Recovering", message, StringComparison.Ordinal);
         Assert.Contains("поколение 2", message, StringComparison.Ordinal);
+        Assert.DoesNotContain("ошибка на шаге", message, StringComparison.OrdinalIgnoreCase);
     }
 
     [Fact]
