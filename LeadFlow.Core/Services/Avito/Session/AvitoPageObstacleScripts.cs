@@ -111,6 +111,9 @@ public static class AvitoPageObstacleScripts
                 return /Выбор\s+профиля/i.test(text);
             });
             if (hasProfileSwitchModal) signals.push("profile-switch");
+            const profileSwitchCardCount = Array.from(document.querySelectorAll(
+                "[data-marker^='component-profile-switch/profile-']"
+            )).filter(isFrontmostEl).length;
 
             const hasFirewallContainer = Array.from(document.querySelectorAll(
                 ".firewall-container, .js-firewall-form, .firewall-title, form.js-firewall-form"
@@ -214,7 +217,9 @@ public static class AvitoPageObstacleScripts
                 title,
                 itemCount,
                 statusCount,
-                signals
+                signals,
+                profileSwitchOpen: hasProfileSwitchModal,
+                profileSwitchCardCount
             });
         })();
         """;

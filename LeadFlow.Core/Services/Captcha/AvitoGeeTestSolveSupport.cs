@@ -1,5 +1,6 @@
 using System.Text.Json;
 using LeadFlow.Core.Services.Avito;
+using LeadFlow.Core.Services.Avito.Session;
 
 namespace LeadFlow.Core.Services.Captcha;
 
@@ -185,10 +186,8 @@ public static class AvitoGeeTestSolveSupport
         && AvitoCaptchaDetector.HasGeeTestWidget(html);
 
     /// <summary>
-    /// Новую платную задачу RuCaptcha создаём только пока Avito ещё требует проверку.
-    /// Экран «Проверка пройдена, перенаправление…» — это не новая капча.
-    /// Страница «блок IP» тоже требует проверку: капча с неё запрашивается
-    /// у сервера через activate-probe, поэтому задача создаётся и для неё.
+    /// HTML-подсказка: страница похожа на challenge. Не разрешает оплату —
+    /// для задачи нужен <see cref="ShouldCreateProviderTask(string?, AvitoPageObstacleKind)"/>.
     /// </summary>
     public static bool ShouldCreateProviderTask(string? html)
     {
@@ -200,6 +199,20 @@ public static class AvitoGeeTestSolveSupport
 
         return AvitoCaptchaDetector.IsCaptchaHtml(html)
                || AvitoCaptchaDetector.CanAttemptGeeTestSolve(html);
+    }
+
+    /// <summary>
+    /// Платная задача только при живой капче на экране. Блок IP без виджета и
+    /// dormant HTML (модалка профилей + leftover firewall) сюда не попадают.
+    /// </summary>
+    public static bool ShouldCreateProviderTask(string? html, AvitoPageObstacleKind liveKind)
+    {
+        if (liveKind != AvitoPageObstacleKind.Captcha)
+        {
+            return false;
+        }
+
+        return ShouldCreateProviderTask(html);
     }
 
     /// <summary>Извлекает ключ hCaptcha из статической firewall-разметки Avito.</summary>

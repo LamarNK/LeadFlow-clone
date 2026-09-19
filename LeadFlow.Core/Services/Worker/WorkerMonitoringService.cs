@@ -3230,7 +3230,9 @@ public sealed class WorkerMonitoringService(
             captchaEx.ScreenshotPng,
             captchaEx.SubProfileId,
             captchaEx.SubProfileName,
-            ct).ConfigureAwait(false);
+            ct,
+            signals: captchaEx.Signals,
+            pageTitle: captchaEx.PageTitle).ConfigureAwait(false);
         StoreSubProfileDiagnosticAttachment(account, sub, diagnostic.AttachmentId);
         await repository.SaveAccountAsync(account, ct).ConfigureAwait(false);
         WorkerMonitoringLogger.AccountFailed(account, issueKind == AvitoSubProfileIssueKind.IpBlock ? "блок IP" : "капча", account.LastErrorMessage);

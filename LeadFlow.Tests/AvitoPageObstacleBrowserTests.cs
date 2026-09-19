@@ -1,5 +1,6 @@
 using LeadFlow.Core.Services.Avito;
 using LeadFlow.Core.Services.Avito.Session;
+using LeadFlow.Core.Services.Captcha;
 using PuppeteerSharp;
 using Xunit;
 
@@ -241,14 +242,22 @@ public sealed class AvitoPageObstacleBrowserTests : IAsyncLifetime
 
         var obstacle = await AvitoPageObstacleProbe.ProbeAsync(page, CancellationToken.None);
         Assert.Equal(AvitoPageObstacleKind.None, obstacle.Kind);
+        Assert.True(obstacle.ProfileSwitchOpen);
+        Assert.True(obstacle.ProfileSwitchCardCount >= 1);
 
         var state = AvitoPageStateProbe.TryParse(
             await page.EvaluateExpressionAsync<string>(AvitoPageStateScripts.BuildProbeScript()));
         Assert.NotNull(state);
         Assert.False(state.HasCaptcha);
         Assert.False(state.HasFirewallIp);
+        Assert.True(state.ProfileSwitchModalOpen);
+        Assert.Equal(AvitoPageKind.ProfileSwitchModal, state.PageKind);
+        Assert.True(state.ProfileCardsCount >= 1);
         Assert.Null(AvitoFirewallProbe.TryParse(
             await page.EvaluateExpressionAsync<string>(AvitoCandidatesPageScripts.BuildFirewallProbeScript())));
+        Assert.False(AvitoGeeTestSolveSupport.ShouldCreateProviderTask(
+            await page.GetContentAsync(),
+            obstacle.Kind));
     }
 
     [Fact]

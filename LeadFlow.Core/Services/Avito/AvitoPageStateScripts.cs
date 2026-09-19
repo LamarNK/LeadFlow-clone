@@ -14,9 +14,7 @@ public static class AvitoPageStateScripts
             const htmlSnippet = (document.documentElement?.innerHTML ?? "").slice(0, 16000);
             const probeText = title + "\n" + bodyText + "\n" + htmlSnippet;
 
-            const profileSwitchModalOpen = !!document.querySelector("[data-marker='component-profile-switch/root']");
             const profileCards = document.querySelectorAll("[data-marker^='component-profile-switch/profile-']");
-            const profileCardsCount = profileCards.length;
 
             let currentSubProfileId = null;
             let currentSubProfileName = null;
@@ -107,6 +105,8 @@ public static class AvitoPageStateScripts
             const obstacle = JSON.parse({{AvitoPageObstacleScripts.BuildProbeExpression()}});
             const hasFirewallIp = obstacle.kind === "ipBlocked";
             const hasCaptcha = hasFirewallIp || obstacle.kind === "captcha";
+            const profileSwitchModalOpen = !!obstacle.profileSwitchOpen;
+            const profileCardsCount = obstacle.profileSwitchCardCount | 0;
             // Баннер Avito Pro: скрытые объявления из-за нулевого/недостаточного аванса.
             // Оба текста обязательны, чтобы не принять обычный блок баланса за ошибку.
             const hasInsufficientAdvance =

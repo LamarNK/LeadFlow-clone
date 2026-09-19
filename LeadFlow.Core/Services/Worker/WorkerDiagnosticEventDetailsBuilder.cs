@@ -18,7 +18,9 @@ public static class WorkerDiagnosticEventDetailsBuilder
         string? subProfileName = null,
         CancellationToken cancellationToken = default,
         AvitoPageState? pageState = null,
-        string? expectedStep = null)
+        string? expectedStep = null,
+        IReadOnlyList<string>? signals = null,
+        string? pageTitle = null)
     {
         Guid? attachmentId = null;
         if (screenshotPng is { Length: > 0 })
@@ -31,7 +33,9 @@ public static class WorkerDiagnosticEventDetailsBuilder
         if (attachmentId is null
             && string.IsNullOrWhiteSpace(pageUrl)
             && string.IsNullOrWhiteSpace(subProfileId)
-            && string.IsNullOrWhiteSpace(subProfileName))
+            && string.IsNullOrWhiteSpace(subProfileName)
+            && string.IsNullOrWhiteSpace(pageTitle)
+            && (signals is null || signals.Count == 0))
         {
             return new WorkerDiagnosticEventDetails(text, null);
         }
@@ -41,12 +45,14 @@ public static class WorkerDiagnosticEventDetailsBuilder
             attachmentId,
             kind,
             url = pageUrl,
+            title = pageTitle,
             text,
             subProfileId,
             subProfileName,
             expectedStep,
             actualStep = pageState?.DescribeKindRu(),
-            pageStateSummary = pageState?.DescribeForDiagnostics()
+            pageStateSummary = pageState?.DescribeForDiagnostics(),
+            signals
         }, JsonOptions);
         return new WorkerDiagnosticEventDetails(details, attachmentId);
     }

@@ -13,6 +13,12 @@ public sealed class AvitoPageStateProbeTests
         Assert.Contains("const hasIpBlock", script, StringComparison.Ordinal);
         Assert.Contains("hasCaptchaChallenge", script, StringComparison.Ordinal);
         Assert.Contains("const hasFirewallIp = obstacle.kind === \"ipBlocked\"", script, StringComparison.Ordinal);
+        Assert.Contains("obstacle.profileSwitchOpen", script, StringComparison.Ordinal);
+        Assert.Contains("obstacle.profileSwitchCardCount", script, StringComparison.Ordinal);
+        Assert.DoesNotContain(
+            "const profileSwitchModalOpen = !!document.querySelector(\"[data-marker='component-profile-switch/root']\")",
+            script,
+            StringComparison.Ordinal);
     }
 
     [Fact]

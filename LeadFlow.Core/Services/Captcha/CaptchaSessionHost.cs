@@ -2,6 +2,7 @@ using System.Threading.Channels;
 using LeadFlow.Core.Logging.Audit;
 using LeadFlow.Core.Services.AdsPower;
 using LeadFlow.Core.Services.Avito;
+using LeadFlow.Core.Services.Avito.Session;
 using Orbita.Contracts;
 using PuppeteerSharp;
 
@@ -151,8 +152,9 @@ public sealed class CaptchaSessionHost(IAdsPowerApiClient adsPowerApiClient)
                 continue;
             }
 
-            var html = await candidate.GetContentAsync().ConfigureAwait(false);
-            if (AvitoCaptchaDetector.IsCaptchaHtml(html))
+            var obstacle = await AvitoPageObstacleProbe.ProbeAsync(candidate, cancellationToken)
+                .ConfigureAwait(false);
+            if (obstacle.IsSolvableCaptcha)
             {
                 await LogAsync(
                     $"Captcha: используем открытую вкладку с капчей ({candidate.Url}).",
@@ -162,8 +164,9 @@ public sealed class CaptchaSessionHost(IAdsPowerApiClient adsPowerApiClient)
         }
 
         var page = pages.FirstOrDefault() ?? await browser.NewPageAsync().ConfigureAwait(false);
-        var currentHtml = await page.GetContentAsync().ConfigureAwait(false);
-        if (!AvitoCaptchaDetector.IsCaptchaHtml(currentHtml))
+        var currentObstacle = await AvitoPageObstacleProbe.ProbeAsync(page, cancellationToken)
+            .ConfigureAwait(false);
+        if (!currentObstacle.IsSolvableCaptcha)
         {
             await page.GoToAsync(request.PageUrl, new NavigationOptions
             {
@@ -336,8 +339,12 @@ public sealed class CaptchaSessionHost(IAdsPowerApiClient adsPowerApiClient)
 
         while (!linkedCts.IsCancellationRequested && DateTime.UtcNow < deadline)
         {
-            var html = await page.GetContentAsync().ConfigureAwait(false);
-            var kind = AvitoCaptchaDetector.Classify(html);
+            var obstacle = await AvitoPageObstacleProbe.ProbeAsync(page, linkedCts.Token).ConfigureAwait(false);
+            var kind = obstacle.Kind == AvitoPageObstacleKind.IpBlocked
+                ? "firewall"
+                : obstacle.IsSolvableCaptcha
+                    ? obstacle.CaptchaKind ?? "captcha"
+                    : null;
 
             if (kind is not null)
             {

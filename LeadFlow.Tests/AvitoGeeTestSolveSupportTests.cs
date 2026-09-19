@@ -1,4 +1,5 @@
 using LeadFlow.Core.Services.Avito;
+using LeadFlow.Core.Services.Avito.Session;
 using LeadFlow.Core.Services.Captcha;
 using Xunit;
 
@@ -95,6 +96,39 @@ public sealed class AvitoGeeTestSolveSupportTests
         Assert.True(AvitoCaptchaDetector.HasIpBlockChallenge(html));
         Assert.True(AvitoCaptchaDetector.IsCaptchaHtml(html));
         Assert.True(AvitoGeeTestSolveSupport.ShouldCreateProviderTask(html));
+        Assert.False(AvitoGeeTestSolveSupport.ShouldCreateProviderTask(html, AvitoPageObstacleKind.IpBlocked));
+        Assert.False(AvitoGeeTestSolveSupport.ShouldCreateProviderTask(html, AvitoPageObstacleKind.None));
+    }
+
+    [Fact]
+    public void ShouldCreateProviderTask_LiveCaptcha_AllowsHtmlHint()
+    {
+        const string html = """
+            <div class="firewall-container">
+              <h2 class="firewall-title">Доступ ограничен: проблема с IP</h2>
+              <button type="submit">Продолжить</button>
+            </div>
+            """;
+
+        Assert.True(AvitoGeeTestSolveSupport.ShouldCreateProviderTask(html, AvitoPageObstacleKind.Captcha));
+    }
+
+    [Fact]
+    public void ShouldCreateProviderTask_ProfileSwitchSnapshot_LiveNone_DoesNotPay()
+    {
+        const string html = """
+            <title>Доступ ограничен: проблема с IP</title>
+            <div class="firewall-container">
+              <h2 class="firewall-title">Доступ ограничен: проблема с IP</h2>
+              <script src="https://static.geetest.com/v4/gt4.js"></script>
+            </div>
+            <div data-marker="component-profile-switch/root"></div>
+            <div>Выбор профиля</div>
+            """;
+
+        Assert.True(AvitoGeeTestSolveSupport.ShouldCreateProviderTask(html));
+        Assert.False(AvitoGeeTestSolveSupport.ShouldCreateProviderTask(html, AvitoPageObstacleKind.None));
+        Assert.False(AvitoGeeTestSolveSupport.ShouldCreateProviderTask(html, AvitoPageObstacleKind.IpBlocked));
     }
 
     [Fact]

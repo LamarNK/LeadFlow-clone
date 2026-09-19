@@ -93,5 +93,7 @@ public sealed class AvitoPageObstacleScriptTests
         Assert.Contains("Выбор\\s+профиля", script, StringComparison.Ordinal);
         Assert.Contains("hasProfileSwitchModal && !hasOldWidget && !hasGeeTestDom", script, StringComparison.Ordinal);
         Assert.Contains("profile-switch", script, StringComparison.Ordinal);
+        Assert.Contains("profileSwitchOpen: hasProfileSwitchModal", script, StringComparison.Ordinal);
+        Assert.Contains("profileSwitchCardCount", script, StringComparison.Ordinal);
     }
 }

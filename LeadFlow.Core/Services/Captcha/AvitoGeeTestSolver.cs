@@ -3,6 +3,7 @@ using System.Diagnostics;
 using System.Text.Json;
 using LeadFlow.Core.Logging.Audit;
 using LeadFlow.Core.Services.Avito;
+using LeadFlow.Core.Services.Avito.Session;
 using LeadFlow.Core.Services.Worker;
 using PuppeteerSharp;
 using PuppeteerSharp.Input;
@@ -87,7 +88,14 @@ public sealed class AvitoGeeTestSolver(
                        && !AvitoCaptchaDetector.IsCaptchaHtml(redirectLeave.Html);
             }
 
-            if (!AvitoGeeTestSolveSupport.ShouldCreateProviderTask(html))
+            var liveObstacle = await AvitoPageObstacleProbe.ProbeAsync(page, cancellationToken)
+                .ConfigureAwait(false);
+            if (liveObstacle.Kind == AvitoPageObstacleKind.None)
+            {
+                return true;
+            }
+
+            if (!AvitoGeeTestSolveSupport.ShouldCreateProviderTask(html, liveObstacle.Kind))
             {
                 return false;
             }
@@ -194,8 +202,15 @@ public sealed class AvitoGeeTestSolver(
                 if (attempt > 1)
                 {
                     html = await SafeGetHtmlAsync(page, cancellationToken).ConfigureAwait(false);
+                    var retryObstacle = await AvitoPageObstacleProbe.ProbeAsync(page, cancellationToken)
+                        .ConfigureAwait(false);
+                    if (retryObstacle.Kind == AvitoPageObstacleKind.None)
+                    {
+                        return true;
+                    }
+
                     if (AvitoCaptchaRedirectRecovery.RequiresRecovery(html)
-                        || !AvitoGeeTestSolveSupport.ShouldCreateProviderTask(html))
+                        || !AvitoGeeTestSolveSupport.ShouldCreateProviderTask(html, retryObstacle.Kind))
                     {
                         _ = GlobalLogger.Instance.LogAsync(
                             "Captcha: после обновления исчезла GeeTest-сессия — новую задачу не создаём.",

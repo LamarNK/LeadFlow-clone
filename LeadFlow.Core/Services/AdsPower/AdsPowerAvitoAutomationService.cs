@@ -588,33 +588,23 @@ public sealed partial class AdsPowerAvitoAutomationService(
     }
 
     /// <summary>
-    /// Если в HTML обнаружена капча/firewall — пробуем GeeTest v4 через RuCaptcha
-    /// (включая страницу «блок IP»: капча с неё запрашивается у сервера),
-    /// иначе бросаем <see cref="AvitoCaptchaDetectedException"/>.
+    /// Живой probe решает, есть ли капча/блок IP. HTML — снимок для исключения и солвера,
+    /// не разрешение на событие или задачу RuCaptcha.
     /// </summary>
     private async Task ThrowIfCaptchaAsync(IPage page, string html, CancellationToken cancellationToken)
     {
-        var kind = AvitoCaptchaDetector.Classify(html);
-        if (kind is null)
-        {
-            return;
-        }
         var liveObstacle = await AvitoPageObstacleProbe.ProbeAsync(page, cancellationToken).ConfigureAwait(false);
-        if (liveObstacle.Kind == AvitoPageObstacleKind.None)
+        if (!liveObstacle.IsLiveChallenge)
         {
             return;
         }
 
-        kind = liveObstacle.Kind switch
-        {
-            AvitoPageObstacleKind.IpBlocked => "firewall",
-            AvitoPageObstacleKind.Captcha => liveObstacle.CaptchaKind ?? kind,
-            _ => kind
-        };
-        var isIpBlock = liveObstacle.Kind == AvitoPageObstacleKind.IpBlocked
-            || (liveObstacle.Kind == AvitoPageObstacleKind.Unknown
-                && AvitoCaptchaDetector.HasIpBlockChallenge(html));
-        if (await TrySolveGeeTestAsync(page, html, page.Url, kind, cancellationToken).ConfigureAwait(false))
+        var kind = liveObstacle.Kind == AvitoPageObstacleKind.IpBlocked
+            ? "firewall"
+            : liveObstacle.CaptchaKind ?? AvitoCaptchaDetector.Classify(html) ?? "captcha";
+        var isIpBlock = liveObstacle.Kind == AvitoPageObstacleKind.IpBlocked;
+        if (liveObstacle.IsSolvableCaptcha
+            && await TrySolveGeeTestAsync(page, html, page.Url, kind, cancellationToken).ConfigureAwait(false))
         {
             return;
         }
@@ -631,6 +621,7 @@ public sealed partial class AdsPowerAvitoAutomationService(
                 ["step"] = isIpBlock ? "ip_block_detected" : "captcha_detected",
                 ["page.url"] = page.Url,
                 ["issue.kind"] = isIpBlock ? "ip_block" : kind,
+                ["obstacle.signals"] = liveObstacle.Signals,
                 ["screenshot.bytes"] = screenshot?.Length ?? 0
             });
 
@@ -638,7 +629,13 @@ public sealed partial class AdsPowerAvitoAutomationService(
         {
             AvitoCaptchaTaskContext.NoteUnsolved();
         }
-        throw new AvitoCaptchaDetectedException(kind, page.Url, html, screenshot);
+        throw new AvitoCaptchaDetectedException(
+            kind,
+            page.Url,
+            html,
+            screenshot,
+            signals: liveObstacle.Signals,
+            pageTitle: liveObstacle.Title);
     }
 
     private Func<AvitoFirewallProbe.Detection, string?, CancellationToken, Task<bool>>? CreateCaptchaSolveCallback(
@@ -727,8 +724,8 @@ public sealed partial class AdsPowerAvitoAutomationService(
         CancellationToken cancellationToken,
         AvitoSessionOrchestrator? orchestrator)
     {
-        if (AvitoCaptchaDetector.Classify(html) is null
-            && !AvitoCaptchaDetector.CanAttemptGeeTestSolve(html))
+        var liveObstacle = await AvitoPageObstacleProbe.ProbeAsync(page, cancellationToken).ConfigureAwait(false);
+        if (!liveObstacle.IsLiveChallenge)
         {
             return;
         }
@@ -747,6 +744,12 @@ public sealed partial class AdsPowerAvitoAutomationService(
         CancellationToken cancellationToken,
         AvitoSessionOrchestrator? orchestrator = null)
     {
+        var liveObstacle = await AvitoPageObstacleProbe.ProbeAsync(page, cancellationToken).ConfigureAwait(false);
+        if (!liveObstacle.IsLiveChallenge)
+        {
+            return;
+        }
+
         string? html = null;
         try
         {
@@ -763,17 +766,11 @@ public sealed partial class AdsPowerAvitoAutomationService(
         }
         catch
         {
-            return;
+            html = null;
         }
 
-        if (string.IsNullOrWhiteSpace(html)
-            || (!AvitoCaptchaDetector.IsCaptchaHtml(html)
-                && !AvitoCaptchaDetector.CanAttemptGeeTestSolve(html)))
-        {
-            return;
-        }
-
-        await ThrowIfCaptchaAsync(page, html, cancellationToken, orchestrator).ConfigureAwait(false);
+        await ThrowIfCaptchaAsync(page, html ?? string.Empty, cancellationToken, orchestrator)
+            .ConfigureAwait(false);
     }
 
     private async Task<bool> TryClearGeeTestCaptchaAsync(IPage page, CancellationToken cancellationToken)
@@ -816,6 +813,11 @@ public sealed partial class AdsPowerAvitoAutomationService(
         if (liveObstacle.Kind == AvitoPageObstacleKind.None)
         {
             return true;
+        }
+
+        if (!liveObstacle.IsSolvableCaptcha)
+        {
+            return false;
         }
 
         var isIpBlock = html is not null && AvitoCaptchaDetector.HasIpBlockChallenge(html);
@@ -2134,50 +2136,18 @@ public sealed partial class AdsPowerAvitoAutomationService(
             return false;
         }
 
-        var modalReady = false;
-        try
-        {
-            await AdsPowerCdpGuard.WaitAsync(
-                    page.WaitForSelectorAsync(
-                        "[data-marker='component-profile-switch/root']",
-                        new WaitForSelectorOptions { Timeout = 18_000 }),
-                    TimeSpan.FromSeconds(20),
-                    "ожидание корня модалки субпрофилей",
-                    cancellationToken)
-                .ConfigureAwait(false);
-            modalReady = true;
-        }
-        catch (TimeoutException ex) when (AdsPowerCdpGuard.IsCdpTimeout(ex))
-        {
-            throw;
-        }
-        catch (Exception ex)
-        {
-            _ = GlobalLogger.Instance.LogAsync(
-                $"Браузер: переключатель профилей: modal selector wait timed out: {ex.Message}",
-                DeskLinkAuditLogLevel.Warning,
-                memberName: callerMemberName,
-                properties: new Dictionary<string, object?>
-                {
-                    ["step"] = "modal_timeout",
-                    ["page.url"] = page.Url
-                });
-        }
-
-        if (!modalReady)
-        {
-            await ThrowIfCaptchaOnPageAsync(page, cancellationToken).ConfigureAwait(false);
-            return false;
-        }
+        var switchReadyScript =
+            "() => { const o = JSON.parse(" + AvitoPageObstacleScripts.BuildProbeExpression() +
+            "); return !!o.profileSwitchOpen && (o.profileSwitchCardCount|0) > 0; }";
 
         try
         {
             await AdsPowerCdpGuard.WaitAsync(
                     page.WaitForFunctionAsync(
-                        "() => !!document.querySelector(\"[data-marker^='component-profile-switch/profile-']\")",
-                        new WaitForFunctionOptions { Timeout = 12_000, PollingInterval = 650 }),
-                    TimeSpan.FromSeconds(14),
-                    "ожидание карточек субпрофилей",
+                        switchReadyScript,
+                        new WaitForFunctionOptions { Timeout = 18_000, PollingInterval = 650 }),
+                    TimeSpan.FromSeconds(20),
+                    "ожидание видимой модалки субпрофилей",
                     cancellationToken)
                 .ConfigureAwait(false);
         }
@@ -2187,13 +2157,14 @@ public sealed partial class AdsPowerAvitoAutomationService(
         }
         catch (Exception ex)
         {
+            await ThrowIfCaptchaOnPageAsync(page, cancellationToken).ConfigureAwait(false);
             _ = GlobalLogger.Instance.LogAsync(
-                $"Браузер: переключатель профилей: profile cards not detected in time: {ex.Message}",
+                $"Браузер: переключатель профилей: visible modal not ready: {ex.Message}",
                 DeskLinkAuditLogLevel.Warning,
                 memberName: callerMemberName,
                 properties: new Dictionary<string, object?>
                 {
-                    ["step"] = "cards_timeout",
+                    ["step"] = "modal_timeout",
                     ["page.url"] = page.Url
                 });
             return false;

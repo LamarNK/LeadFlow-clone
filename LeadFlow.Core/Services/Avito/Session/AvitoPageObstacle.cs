@@ -24,11 +24,18 @@ public sealed record AvitoPageObstacle(
     string? CaptchaKind = null,
     string? Url = null,
     string? Title = null,
-    IReadOnlyList<string>? Signals = null)
+    IReadOnlyList<string>? Signals = null,
+    bool ProfileSwitchOpen = false,
+    int ProfileSwitchCardCount = 0)
 {
     public static AvitoPageObstacle None { get; } = new(AvitoPageObstacleKind.None);
 
     public static AvitoPageObstacle Unknown { get; } = new(AvitoPageObstacleKind.Unknown);
+
+    /// <summary>Видимая капча, которую можно отправлять в RuCaptcha. Блок IP без виджета — нет.</summary>
+    public bool IsSolvableCaptcha => Kind == AvitoPageObstacleKind.Captcha;
+
+    public bool IsLiveChallenge => Kind is AvitoPageObstacleKind.Captcha or AvitoPageObstacleKind.IpBlocked;
 }
 
 /// <summary>Результат работы обработчика препятствия. Успех обработчика — ещё не успех

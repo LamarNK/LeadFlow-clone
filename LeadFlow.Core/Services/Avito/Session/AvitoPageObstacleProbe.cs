@@ -82,7 +82,21 @@ public static class AvitoPageObstacleProbe
                     .ToList();
             }
 
-            return new AvitoPageObstacle(kind, captchaKind, url, title, signals);
+            var profileSwitchOpen = root.TryGetProperty("profileSwitchOpen", out var switchProp)
+                && switchProp.ValueKind == JsonValueKind.True;
+            var profileSwitchCardCount = root.TryGetProperty("profileSwitchCardCount", out var cardsProp)
+                && cardsProp.TryGetInt32(out var cards)
+                    ? cards
+                    : 0;
+
+            return new AvitoPageObstacle(
+                kind,
+                captchaKind,
+                url,
+                title,
+                signals,
+                profileSwitchOpen,
+                profileSwitchCardCount);
         }
         catch
         {

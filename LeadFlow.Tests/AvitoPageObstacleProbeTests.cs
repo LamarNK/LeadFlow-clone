@@ -31,6 +31,25 @@ public sealed class AvitoPageObstacleProbeTests
         var obstacle = AvitoPageObstacleProbe.Parse(json);
 
         Assert.Equal(AvitoPageObstacleKind.IpBlocked, obstacle.Kind);
+        Assert.False(obstacle.ProfileSwitchOpen);
+        Assert.Equal(0, obstacle.ProfileSwitchCardCount);
+        Assert.False(obstacle.IsSolvableCaptcha);
+        Assert.True(obstacle.IsLiveChallenge);
+    }
+
+    [Fact]
+    public void Parse_ProfileSwitchFields_AreRead()
+    {
+        const string json = """
+            {"kind":"none","captchaKind":null,"signals":["profile-switch"],"profileSwitchOpen":true,"profileSwitchCardCount":7}
+            """;
+
+        var obstacle = AvitoPageObstacleProbe.Parse(json);
+
+        Assert.Equal(AvitoPageObstacleKind.None, obstacle.Kind);
+        Assert.True(obstacle.ProfileSwitchOpen);
+        Assert.Equal(7, obstacle.ProfileSwitchCardCount);
+        Assert.False(obstacle.IsLiveChallenge);
     }
 
     [Theory]

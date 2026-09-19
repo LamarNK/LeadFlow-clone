@@ -13,13 +13,17 @@ public sealed class AvitoCaptchaDetectedException : Exception
         string? html,
         byte[]? screenshotPng = null,
         string? subProfileId = null,
-        string? subProfileName = null)
+        string? subProfileName = null,
+        IReadOnlyList<string>? signals = null,
+        string? pageTitle = null)
         : base(BuildMessage(kind, url))
     {
         Kind = kind;
         Url = url;
         SubProfileId = subProfileId;
         SubProfileName = subProfileName;
+        Signals = signals;
+        PageTitle = pageTitle;
         ScreenshotPng = screenshotPng is { Length: > 0 } ? screenshotPng : null;
         // Намеренно НЕ храним полный HTML в исключении — он может быть мегабайтным и попасть в логи.
         // Сохраняем только короткий префикс на случай диагностики.
@@ -41,6 +45,10 @@ public sealed class AvitoCaptchaDetectedException : Exception
     public string? SubProfileId { get; }
 
     public string? SubProfileName { get; }
+
+    public IReadOnlyList<string>? Signals { get; }
+
+    public string? PageTitle { get; }
 
     private static string BuildMessage(string kind, string? url)
     {
