@@ -530,6 +530,46 @@ public static class AvitoCandidatesPageScripts
         };
         """;
 
+    /// <summary>
+    /// DOM-вариант страницы откликов: подробный Job CRM, компактный Job CRM, классика.
+    /// Не опирается на URL — <c>/profile/candidates</c> теперь тоже CRM.
+    /// </summary>
+    private const string ResponsesPageVariantJs =
+        """
+        const detectResponsesPageVariant = () => {
+            const hasItems = !!document.querySelector("[data-marker='job-application/item']");
+            const hasDetailedToggle = !!document.querySelector("[data-marker='job-applications/response-appearance/long']");
+            const hasToResume = !!document.querySelector("[data-marker='job-application/link/to-resume']");
+            const hasCallButton = !!document.querySelector("[data-marker='job-application/call-button']");
+            const hasCv = !!document.querySelector("[data-marker='job-crm/response/cv-button']");
+            const hasStatus = !!document.querySelector("[data-marker='job-application/response/status-select-button']");
+            const hasFilters = !!document.querySelector("[data-marker='filters/status-list-content']");
+            const hasResponsesFilter = !!document.querySelector("[data-marker='filters/responses-list-content']");
+            const hasDownload = !!(
+                document.querySelector("[data-marker='download-report-button/download']")
+                || document.querySelector("[data-marker='download-report-button']")
+            );
+            const hasCrmMfe = !!document.querySelector("job-responses-mfe-jobcrm");
+
+            if (hasDetailedToggle || (hasItems && hasCallButton && !hasToResume)) {
+                return "job-crm-detailed";
+            }
+
+            if (hasToResume || hasCv || hasStatus || hasResponsesFilter) {
+                return "job-crm-compact";
+            }
+
+            if (hasFilters || hasDownload || hasCrmMfe) {
+                return "job-crm-compact";
+            }
+
+            return hasItems ? "legacy" : "unknown";
+        };
+
+        const isJobCrmResponsesPage = (variant) =>
+            variant === "job-crm-detailed" || variant === "job-crm-compact" || variant === "job-crm";
+        """;
+
     private const string CardFingerprintJs =
         """
         const normalizeCardText = (text) => (text ?? "").replace(/\s+/g, " ").trim();
@@ -1790,16 +1830,16 @@ public static class AvitoCandidatesPageScripts
         """;
     }
 
-    /// <summary>CRM-страница откликов <c>/profile/job/responses</c> (фильтры, cv-button, «Скачать отчёт»).</summary>
+    /// <summary>CRM-страница откликов: компактный список или подробный вид (DOM, не URL).</summary>
     public static string BuildIsJobCrmResponsesPageScript() =>
-        """
+        $$"""
         (() => {
-            const isJobCrm = !!(
-                document.querySelector("[data-marker='filters/status-list-content']")
-                || document.querySelector("[data-marker='job-crm/response/cv-button']")
-                || document.querySelector("[data-marker='download-report-button/download']")
-            );
-            return JSON.stringify({ isJobCrm });
+        {{ResponsesPageVariantJs}}
+            const pageVariant = detectResponsesPageVariant();
+            return JSON.stringify({
+                isJobCrm: isJobCrmResponsesPage(pageVariant),
+                pageVariant
+            });
         })();
         """;
 
@@ -2681,6 +2721,7 @@ public static class AvitoCandidatesPageScripts
         {{ContactsPhoneHelpersJs}}
         {{AgeParseHelpersJs}}
         {{VacancyParseHelpersJs}}
+        {{ResponsesPageVariantJs}}
             initRevealedPhonesStore();
 
             const bodyText = document.body?.innerText ?? "";
@@ -3180,10 +3221,7 @@ public static class AvitoCandidatesPageScripts
                 return true;
             });
 
-            const isJobCrmResponsesPage = !!(
-                document.querySelector("[data-marker='filters/status-list-content']")
-                || document.querySelector("[data-marker='job-crm/response/cv-button']")
-            );
+            const pageVariant = detectResponsesPageVariant();
 
             return {
                 url: window.location.href,
@@ -3191,7 +3229,7 @@ public static class AvitoCandidatesPageScripts
                 captchaKind,
                 hasLogin,
                 candidates,
-                pageVariant: isJobCrmResponsesPage ? "job-crm" : "legacy",
+                pageVariant,
                 domItemCount: document.querySelectorAll("[data-marker='job-application/item']").length,
                 domStatusCount: statusButtons.length,
                 missingPhoneCount

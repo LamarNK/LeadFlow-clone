@@ -45,6 +45,7 @@ public static class WorkerLogPropertyAllowlist
         "candidates.accountId",
         "candidates.subProfileId",
         "candidates.prepare.isJobCrmPage",
+        "candidates.prepare.pageVariant",
         "candidates.prepare.skipDetailEnrich",
         "candidates.prepare.scrollStopKnownHistory",
         "candidates.prepare.scrollRounds",

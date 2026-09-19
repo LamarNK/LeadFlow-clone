@@ -287,8 +287,10 @@ public static class AvitoCandidatesListPreparer
         var detailEnrichHits = 0;
         long phoneRevealMs = 0;
         long detailEnrichMs = 0;
-        var isJobCrmPage = await TryDetectJobCrmResponsesPageAsync(executeScript, cancellationToken)
+        var pageDetection = await TryDetectJobCrmResponsesPageAsync(executeScript, cancellationToken)
             .ConfigureAwait(false);
+        var isJobCrmPage = pageDetection.IsJobCrm;
+        var pageVariant = pageDetection.PageVariant;
         async Task RunDetailEnrichmentAsync()
         {
             var detailEnrichSw = Stopwatch.StartNew();
@@ -706,7 +708,7 @@ public static class AvitoCandidatesListPreparer
             PhoneRevealExcludedCards: phonesProbe?.Excluded ?? 0);
 
         var detailEnrichNote = isJobCrmPage
-            ? "detailEnrich=skipped (CRM page)"
+            ? $"detailEnrich=skipped (CRM page, {pageVariant})"
             : skipDetailEnrich
                 ? "detailEnrich=deferred (same pass as chat)"
                 : $"detailEnrich={result.DetailEnrichHits}/{result.DetailEnrichClicks} (skipped {result.DetailEnrichSkipped})";
@@ -731,6 +733,7 @@ public static class AvitoCandidatesListPreparer
             {
                 ["candidates.context"] = logContext,
                 ["candidates.prepare.isJobCrmPage"] = isJobCrmPage,
+                ["candidates.prepare.pageVariant"] = pageVariant,
                 ["candidates.prepare.skipDetailEnrich"] = skipDetailEnrich,
                 ["candidates.prepare.scrollStopKnownHistory"] = stoppedOnKnownHistory,
                 ["candidates.prepare.scrollRounds"] = result.ScrollRounds,
@@ -1309,7 +1312,7 @@ public static class AvitoCandidatesListPreparer
         }
     }
 
-    private static async Task<bool> TryDetectJobCrmResponsesPageAsync(
+    private static async Task<ResponsesPageDetection> TryDetectJobCrmResponsesPageAsync(
         Func<string, CancellationToken, Task<string>> executeScript,
         CancellationToken cancellationToken)
     {
@@ -1317,19 +1320,25 @@ public static class AvitoCandidatesListPreparer
             .ConfigureAwait(false);
         if (string.IsNullOrWhiteSpace(raw))
         {
-            return false;
+            return new ResponsesPageDetection(false, AvitoResponsesPageVariant.Unknown);
         }
 
         try
         {
             using var doc = JsonDocument.Parse(UnwrapJsonString(raw));
-            return doc.RootElement.TryGetProperty("isJobCrm", out var prop) && prop.GetBoolean();
+            var isJobCrm = doc.RootElement.TryGetProperty("isJobCrm", out var prop) && prop.GetBoolean();
+            var pageVariant = doc.RootElement.TryGetProperty("pageVariant", out var variantProp)
+                ? variantProp.GetString() ?? AvitoResponsesPageVariant.Unknown
+                : isJobCrm ? AvitoResponsesPageVariant.JobCrm : AvitoResponsesPageVariant.Unknown;
+            return new ResponsesPageDetection(isJobCrm, pageVariant);
         }
         catch
         {
-            return false;
+            return new ResponsesPageDetection(false, AvitoResponsesPageVariant.Unknown);
         }
     }
+
+    private readonly record struct ResponsesPageDetection(bool IsJobCrm, string PageVariant);
 
     /// <summary>
     /// Индексы карточек с открытым phone-watch — phone-reveal для них нельзя скипать.

@@ -145,6 +145,11 @@ public sealed class AvitoCandidatesPageScriptsTests
         Assert.Contains("filters/status-list-content", script, StringComparison.Ordinal);
         Assert.Contains("download-report-button/download", script, StringComparison.Ordinal);
         Assert.Contains("job-crm/response/cv-button", script, StringComparison.Ordinal);
+        Assert.Contains("job-applications/response-appearance/long", script, StringComparison.Ordinal);
+        Assert.Contains("job-application/link/to-resume", script, StringComparison.Ordinal);
+        Assert.Contains("job-crm-detailed", script, StringComparison.Ordinal);
+        Assert.Contains("job-crm-compact", script, StringComparison.Ordinal);
+        Assert.Contains("pageVariant", script, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -181,6 +186,8 @@ public sealed class AvitoCandidatesPageScriptsTests
         Assert.Contains("calendarMatch ?? shortCalendarMatch", script, StringComparison.Ordinal);
         // Без времени на карточке берём начало суток, а не момент сбора.
         Assert.Contains("calendar[3] === undefined ? 0 : Number(calendar[3])", script, StringComparison.Ordinal);
+        Assert.Contains("detectResponsesPageVariant", script, StringComparison.Ordinal);
+        Assert.Contains("job-crm-detailed", script, StringComparison.Ordinal);
     }
 
     [Fact]

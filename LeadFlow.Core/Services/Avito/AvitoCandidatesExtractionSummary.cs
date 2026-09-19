@@ -37,28 +37,8 @@ public sealed record AvitoCandidatesExtractionSummary(
             ? arr.GetArrayLength()
             : 0;
 
-    public static string DescribePageVariant(string? pageUrl, string? pageVariant)
-    {
-        if (!string.IsNullOrWhiteSpace(pageUrl))
-        {
-            if (pageUrl.Contains("/profile/job/responses", StringComparison.OrdinalIgnoreCase))
-            {
-                return "CRM (/profile/job/responses)";
-            }
-
-            if (pageUrl.Contains("/profile/candidates", StringComparison.OrdinalIgnoreCase))
-            {
-                return "классическая (/profile/candidates)";
-            }
-        }
-
-        return pageVariant?.Trim().ToLowerInvariant() switch
-        {
-            "job-crm" => "CRM (/profile/job/responses)",
-            "legacy" => "классическая (/profile/candidates)",
-            _ => string.IsNullOrWhiteSpace(pageUrl) ? "не определено" : $"неизвестный URL ({pageUrl})"
-        };
-    }
+    public static string DescribePageVariant(string? pageUrl, string? pageVariant) =>
+        AvitoResponsesPageVariant.Describe(pageUrl, pageVariant);
 
     public string FormatLogLine()
     {
