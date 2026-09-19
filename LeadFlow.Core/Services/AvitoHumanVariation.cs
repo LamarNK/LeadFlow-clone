@@ -40,11 +40,6 @@ public static class AvitoHumanVariation
         }
     }
 
-    public static int NextPhoneRevealBudget() =>
-        NextInclusive(
-            MonitoringTiming.MinPhoneRevealsPerSubProfilePerCycle,
-            MonitoringTiming.MaxPhoneRevealsPerSubProfilePerCycle);
-
     public static int NextAutoReplyBudget() =>
         NextInclusive(
             MonitoringTiming.MinMessengerAutoRepliesPerSubProfilePerCycle,

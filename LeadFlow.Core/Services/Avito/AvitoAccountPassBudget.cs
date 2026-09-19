@@ -3,7 +3,7 @@ using LeadFlow.Core.Models;
 namespace LeadFlow.Core.Services.Avito;
 
 /// <summary>
-/// Общий бюджет действий на один ЛОГИЧЕСКИЙ проход аккаунта — все субпрофили, все
+/// Счётчики действий на один ЛОГИЧЕСКИЙ проход аккаунта — все субпрофили, все
 /// браузерные сессии и повторные попытки извлечения после восстановления страницы.
 /// Привязан к проходу через <see cref="AvitoAccount.MonitoringPassStartedAtUtc"/>:
 /// при возобновлении незавершённого прохода (новая сессия, рестарт воркера)
@@ -12,11 +12,8 @@ namespace LeadFlow.Core.Services.Avito;
 /// поэтому любой <c>SaveAccountAsync</c> в середине прохода фиксирует прогресс.
 /// </summary>
 /// <remarks>
-/// Потолки плоские и не зависят от числа субпрофилей: локальная жеребьёвка
-/// субпрофиля (6–10 кликов) остаётся стартовой точкой, а адаптивный подъём по хвосту
-/// замаскированных карточек может дорасти до общего потолка аккаунта даже на одном
-/// субпрофиле. Распределение бюджета между субпрофилями выполняется приоритетами
-/// карточек (phone-watch), а не урезанием потолка.
+/// Раскрытие телефонов не имеет числового потолка: счётчик хранится только для телеметрии.
+/// Лимиты автоответов и перезапусков сессии сохраняются.
 /// <para>
 /// Необязательный колбэк <c>persistChanged</c> (см. <see cref="ForAccountPass"/>)
 /// вызывается синхронно после каждой мутации счётчиков: воркер сразу записывает
@@ -69,8 +66,6 @@ public sealed class AvitoAccountPassBudget
         return budget;
     }
 
-    public int PhoneRevealClicksCap => MonitoringTiming.MaxPhoneRevealsPerAccountPass;
-
     public int AutoRepliesCap => MonitoringTiming.MaxMessengerAutoRepliesPerAccountPass;
 
     public int SessionRestartCap => MonitoringTiming.MaxSessionRestartsPerAccountPass;
@@ -80,17 +75,6 @@ public sealed class AvitoAccountPassBudget
     public int AutoRepliesSpent { get; private set; }
 
     public int SessionRestarts { get; private set; }
-
-    public int PhoneRevealClicksRemaining
-    {
-        get
-        {
-            lock (gate)
-            {
-                return Math.Max(0, PhoneRevealClicksCap - PhoneRevealClicksSpent);
-            }
-        }
-    }
 
     public int AutoRepliesRemaining
     {
@@ -103,29 +87,18 @@ public sealed class AvitoAccountPassBudget
         }
     }
 
-    /// <summary>
-    /// Резервирует клики раскрытия номеров ДО выполнения клика (безопасная сторона:
-    /// потерянное подтверждение не возвращает бюджет). Возвращает фактически
-    /// зарезервированное количество (0 — бюджет исчерпан, кликать нельзя).
-    /// </summary>
-    public int ReservePhoneRevealClicks(int requested)
+    /// <summary>Учитывает попытки раскрытия для телеметрии, не ограничивая их.</summary>
+    public void RecordPhoneRevealAttempts(int count = 1)
     {
         lock (gate)
         {
-            var remaining = Math.Max(0, PhoneRevealClicksCap - PhoneRevealClicksSpent);
-            var granted = Math.Clamp(requested, 0, remaining);
-            PhoneRevealClicksSpent += granted;
+            PhoneRevealClicksSpent += Math.Max(0, count);
             WriteThroughLocked();
-            return granted;
         }
     }
 
-    /// <summary>
-    /// Возвращает резерв, если ДОСТОВЕРНО установлено, что клик не состоялся
-    /// (скрипт отчитался «не кликал»). После исключения/таймаута вызывать нельзя —
-    /// клик мог уйти в браузер до потери ответа.
-    /// </summary>
-    public void RefundPhoneRevealClicks(int count)
+    /// <summary>Убирает из телеметрии заведомо несостоявшиеся попытки.</summary>
+    public void UnrecordPhoneRevealAttempts(int count = 1)
     {
         lock (gate)
         {
@@ -184,7 +157,7 @@ public sealed class AvitoAccountPassBudget
     }
 
     public string Describe() =>
-        $"phoneRevealClicks={PhoneRevealClicksSpent}/{PhoneRevealClicksCap}, " +
+        $"phoneRevealClicks={PhoneRevealClicksSpent} (unlimited), " +
         $"autoReplies={AutoRepliesSpent}/{AutoRepliesCap}, " +
         $"sessionRestarts={SessionRestarts}/{SessionRestartCap}";
 

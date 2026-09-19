@@ -30,18 +30,6 @@ public sealed class AvitoHumanVariationTests
     }
 
     [Fact]
-    public void NextPhoneRevealBudget_IsBetweenMinAndMax()
-    {
-        for (var i = 0; i < 20; i++)
-        {
-            Assert.InRange(
-                AvitoHumanVariation.NextPhoneRevealBudget(),
-                MonitoringTiming.MinPhoneRevealsPerSubProfilePerCycle,
-                MonitoringTiming.MaxPhoneRevealsPerSubProfilePerCycle);
-        }
-    }
-
-    [Fact]
     public void NextAutoReplyBudget_IsBetweenMinAndMax()
     {
         for (var i = 0; i < 20; i++)

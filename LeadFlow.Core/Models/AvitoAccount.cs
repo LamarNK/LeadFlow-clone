@@ -26,10 +26,8 @@ public sealed partial class AvitoAccount : ObservableObject
     public HashSet<string> MonitoringPassCompletedSubIds { get; set; } = new(StringComparer.Ordinal);
 
     /// <summary>
-    /// Израсходованный бюджет текущего логического прохода (см. <c>AvitoAccountPassBudget</c>):
-    /// восстанавливается при возобновлении незавершённого прохода в новой сессии/после рестарта
-    /// воркера, чтобы несколько сессий одного прохода не получали полный бюджет каждая.
-    /// Сбрасывается при старте нового прохода.</summary>
+    /// Счётчик попыток раскрытия телефона за текущий логический проход.
+    /// Используется только для телеметрии и не ограничивает число кликов.</summary>
     public int MonitoringPassPhoneRevealClicksSpent { get; set; }
 
     /// <summary>See <see cref="MonitoringPassPhoneRevealClicksSpent"/>.</summary>

@@ -185,7 +185,7 @@ public sealed class AvitoPhoneOwnershipBrowserTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task PrepareAsync_WaitsForPanelThenPopup_WithinSharedBudget()
+    public async Task PrepareAsync_PreviousRevealAttempts_DoNotBlockPanel()
     {
         var html = Card("Анна Иванова").Replace("<div data-marker", "<div role='button' data-marker")
             .Replace("<button data-marker=\"job-application/call-button\" aria-label=\"Показать номер телефона\"></button>", "");
@@ -201,14 +201,14 @@ public sealed class AvitoPhoneOwnershipBrowserTests : IAsyncLifetime
             })
             """, Popup("Анна Иванова"));
         var budget = AvitoAccountPassBudget.ForAccountPass();
-        budget.ReservePhoneRevealClicks(budget.PhoneRevealClicksCap - 1);
+        budget.RecordPhoneRevealAttempts(10_000);
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
         var result = await AvitoCandidatesListPreparer.PrepareAsync(
             async (script, ct) => { ct.ThrowIfCancellationRequested(); return await page.EvaluateExpressionAsync<string>(script); },
             "browser-test", timeout.Token, skipDetailEnrich: true, passBudget: budget);
         Assert.Equal(1, result.PanelPhoneSuccesses);
         Assert.Equal(1, result.PhoneRevealClicks);
-        Assert.Equal(0, budget.PhoneRevealClicksRemaining);
+        Assert.True(budget.PhoneRevealClicksSpent > 10_000);
         Assert.Single((await Run(AvitoCandidatesPageScripts.BuildExtractionScriptForPuppeteer())).GetProperty("candidates").EnumerateArray());
     }
 
@@ -251,7 +251,7 @@ public sealed class AvitoPhoneOwnershipBrowserTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task PrepareAsync_WithHundredCards_EmitsFirstPhoneBatchBeforeRemainingCardsFinish()
+    public async Task PrepareAsync_WithHundredCards_ProcessesBeyondFormerFortyClickLimit()
     {
         using var _ = HumanDelay.SuppressDelaysForTests();
         var cards = string.Concat(Enumerable.Range(0, 100).Select(i =>
@@ -263,13 +263,13 @@ public sealed class AvitoPhoneOwnershipBrowserTests : IAsyncLifetime
         await page.EvaluateExpressionAsync("""
             Array.from(document.querySelectorAll('[data-marker="job-application/phone"]'))
                 .forEach((button, index) => button.addEventListener('click', () => {
-                    button.textContent = `8 900 123-4${index}-67`;
+                    button.textContent = `8 900 ${index + 100}-45-67`;
                 }));
             """);
 
         var snapshotStates = new List<(int WithPhone, int Masked)>();
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
-        await AvitoCandidatesListPreparer.PrepareAsync(
+        var result = await AvitoCandidatesListPreparer.PrepareAsync(
             async (script, ct) =>
             {
                 ct.ThrowIfCancellationRequested();
@@ -290,13 +290,15 @@ public sealed class AvitoPhoneOwnershipBrowserTests : IAsyncLifetime
         Assert.True(snapshotStates.Count >= 2);
         Assert.Equal((0, 100), snapshotStates[0]);
         Assert.Equal((5, 95), snapshotStates[1]);
+        Assert.True(result.PhoneRevealClicks > 40);
+        Assert.True(snapshotStates[^1].WithPhone > 40);
     }
 
     [Fact]
     public async Task PrepareAsync_PanelPhones_EmitAfterFiveBeforeSixthCardFinishes()
     {
         using var _ = HumanDelay.SuppressDelaysForTests();
-        var cards = string.Concat(Enumerable.Range(0, 6).Select(i =>
+        var cards = string.Concat(Enumerable.Range(0, 15).Select(i =>
             Card($"Кандидат {i}", $"223456789{i}")
                 .Replace("<div data-marker", "<div role='button' data-marker")
                 .Replace(
@@ -310,7 +312,7 @@ public sealed class AvitoPhoneOwnershipBrowserTests : IAsyncLifetime
                     const panel = document.createElement('aside');
                     panel.innerHTML = `<div>Кандидат ${index}</div><button data-marker="job-application/call-button">Показать номер</button>`;
                     panel.querySelector('button').addEventListener('click', event => {
-                        event.currentTarget.textContent = `8 901 123-4${index}-67`;
+                        event.currentTarget.textContent = `8 901 ${index + 100}-45-67`;
                     });
                     document.body.append(panel);
                 }));
@@ -336,23 +338,7 @@ public sealed class AvitoPhoneOwnershipBrowserTests : IAsyncLifetime
                     probe.GetProperty("masked").GetInt32()));
             });
 
-        Assert.Equal([(0, 6), (5, 1)], snapshotStates);
-    }
-
-    [Fact]
-    public async Task PrepareAsync_ExhaustedBudget_DoesNotOpenPanel()
-    {
-        await page.SetContentAsync(Card("Анна Иванова").Replace("<div data-marker", "<div role='button' data-marker"));
-        await page.EvaluateExpressionAsync("window.testClicks=0; document.body.addEventListener('click',()=>window.testClicks++)");
-        var budget = AvitoAccountPassBudget.ForAccountPass();
-        budget.ReservePhoneRevealClicks(budget.PhoneRevealClicksCap);
-        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(60));
-        var result = await AvitoCandidatesListPreparer.PrepareAsync(
-            async (script, ct) => { ct.ThrowIfCancellationRequested(); return await page.EvaluateExpressionAsync<string>(script); },
-            "browser-test", timeout.Token, skipDetailEnrich: true, passBudget: budget);
-        Assert.Equal(0, result.PanelPhoneClicks);
-        Assert.Equal(0, result.PhoneRevealBudget);
-        Assert.Equal(0, await page.EvaluateExpressionAsync<int>("window.testClicks"));
+        Assert.Equal([(0, 15), (5, 10), (10, 5), (15, 0)], snapshotStates);
     }
 
     [Fact]

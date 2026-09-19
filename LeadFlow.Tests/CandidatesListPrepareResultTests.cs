@@ -16,7 +16,6 @@ public sealed class CandidatesListPrepareResultTests
             PhonesReady: false,
             MaskedPhonesLeft: 130,
             PhoneRevealClicks: 25,
-            PhoneRevealBudget: 25,
             PhoneRevealSuccesses: 20,
             PhoneRevealFailures: 2,
             PhoneRevealFailedCards: 5);

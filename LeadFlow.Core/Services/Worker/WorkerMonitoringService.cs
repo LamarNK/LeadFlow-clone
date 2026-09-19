@@ -1575,8 +1575,8 @@ public sealed class WorkerMonitoringService(
                 account.ProxyPassword),
             captchaCounters);
         WorkerOpenedAccountSession? opened = null;
-        // Общий бюджет действий на весь проход аккаунта: все субпрофили и повторные
-        // попытки после восстановления страницы делят одни счётчики (см. AvitoAccountPassBudget).
+        // Общее состояние действий на весь проход: раскрытия телефонов только учитываются,
+        // а лимиты автоответов и перезапусков делятся всеми субпрофилями (см. AvitoAccountPassBudget).
         AvitoAccountPassBudget? passBudget = null;
         var localChromeLockHeld = false;
         try
@@ -2335,7 +2335,7 @@ public sealed class WorkerMonitoringService(
                         ["step"] = "pass_budget_summary",
                         ["accountId"] = account.Id,
                         ["pass.phoneRevealClicksSpent"] = passBudget.PhoneRevealClicksSpent,
-                        ["pass.phoneRevealClicksCap"] = passBudget.PhoneRevealClicksCap,
+                        ["pass.phoneRevealUnlimited"] = true,
                         ["pass.autoRepliesSpent"] = passBudget.AutoRepliesSpent,
                         ["pass.autoRepliesCap"] = passBudget.AutoRepliesCap,
                         ["pass.sessionRestarts"] = passBudget.SessionRestarts,

@@ -57,6 +57,7 @@ public static class WorkerLogPropertyAllowlist
         "candidates.prepare.phoneRevealClicks",
         "candidates.prepare.phoneRevealBudget",
         "candidates.prepare.phoneRevealCapped",
+        "candidates.prepare.phoneRevealUnlimited",
         "candidates.prepare.detailEnrichClicks",
         "candidates.prepare.detailEnrichSkipped",
         "candidates.prepare.detailEnrichHits",

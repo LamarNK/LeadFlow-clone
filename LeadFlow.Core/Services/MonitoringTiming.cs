@@ -112,47 +112,12 @@ public static class MonitoringTiming
     /// <summary>Как часто воркер перечитывает модалку «Выбор профиля» Avito Pro (часы).</summary>
     public const int SubProfilesRefreshIntervalHours = 24;
 
-    /// <summary>Максимум кликов «показать номер» на один субпрофиль за проход (Avito отдельно считает этот API).</summary>
-    public const int MaxPhoneRevealsPerSubProfilePerCycle = 10;
-
-    /// <summary>Нижняя граница бюджета раскрытия номеров за проход (рандом в [min..max]).</summary>
-    public const int MinPhoneRevealsPerSubProfilePerCycle = 6;
-
-    /// <summary>
-    /// Потолок прироста бюджета раскрытия номеров от хвоста замаскированных карточек.
-    /// Не ограничивает бюджет, поднятый числом открытых phone-watch (контрактная работа).
-    /// </summary>
-    public const int PhoneRevealBudgetHardCapPerCycle = 40;
-
-    /// <summary>
-    /// Хвост раскрытия растёт только если замаскированных карточек больше бюджета
-    /// на этот запас (защита от микроскопического превышения).
-    /// </summary>
-    public const int PhoneRevealBacklogMinSurplus = 3;
-
-    /// <summary>Каждая N-я карточка хвоста сверх бюджета добавляет один дополнительный клик.</summary>
-    public const int PhoneRevealBacklogExtraDivisor = 2;
-
-    /// <summary>
-    /// Максимум карточек за проход, для которых телефон добывается через панель
-    /// «Данные о кандидате» (новый UX: в списке номера нет). Панельные клики
-    /// тяжелее списочных — держим отдельный, консервативный лимит.
-    /// </summary>
-    public const int MaxPanelPhoneEnrichmentsPerCycle = 12;
-
     /// <summary>Ожидание появления телефона в панели кандидата после клика «Показать номер».</summary>
     public const int PanelPhoneMaxWaitMs = 8000;
 
     public const int PanelPhonePollMinMs = 400;
 
     public const int PanelPhonePollMaxMs = 900;
-
-    /// <summary>
-    /// Потолок раскрытия номеров на весь проход аккаунта: все субпрофили, включая
-    /// перезапуски извлечения после восстановления страницы. Количество субпрофилей
-    /// не должно размножать суммарную нагрузку на Avito.
-    /// </summary>
-    public const int MaxPhoneRevealsPerAccountPass = 40;
 
     /// <summary>Потолок шаблонных автоответов на весь проход аккаунта (все субпрофили).</summary>
     public const int MaxMessengerAutoRepliesPerAccountPass = 9;

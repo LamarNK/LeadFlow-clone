@@ -21,13 +21,13 @@ public sealed class AvitoAccountPassBudgetTests
     }
 
     [Fact]
-    public void ForAccountPass_CapsAreFlatRegardlessOfSubProfiles()
+    public void ForAccountPass_PhoneRevealCounterIsTelemetryOnly()
     {
-        // Плоские потолки: локальная жеребьёвка субпрофиля (6–10) остаётся стартом,
-        // адаптивный подъём может дорасти до потолка аккаунта даже на одном субпрофиле.
         var budget = AvitoAccountPassBudget.ForAccountPass();
 
-        Assert.Equal(MonitoringTiming.MaxPhoneRevealsPerAccountPass, budget.PhoneRevealClicksCap);
+        budget.RecordPhoneRevealAttempts(10_000);
+
+        Assert.Equal(10_000, budget.PhoneRevealClicksSpent);
         Assert.Equal(MonitoringTiming.MaxMessengerAutoRepliesPerAccountPass, budget.AutoRepliesCap);
         Assert.Equal(MonitoringTiming.MaxSessionRestartsPerAccountPass, budget.SessionRestartCap);
     }
@@ -42,7 +42,6 @@ public sealed class AvitoAccountPassBudgetTests
         var budget = AvitoAccountPassBudget.ForAccountPass(account);
 
         Assert.Equal(30, budget.PhoneRevealClicksSpent);
-        Assert.Equal(10, budget.PhoneRevealClicksRemaining);
         Assert.Equal(4, budget.AutoRepliesSpent);
         Assert.Equal(2, budget.SessionRestarts);
     }
@@ -103,7 +102,6 @@ public sealed class AvitoAccountPassBudgetTests
         var budget = AvitoAccountPassBudget.ForAccountPass(account);
 
         Assert.Equal(0, budget.PhoneRevealClicksSpent);
-        Assert.Equal(budget.PhoneRevealClicksCap, budget.PhoneRevealClicksRemaining);
         Assert.Equal(0, budget.AutoRepliesSpent);
         Assert.Equal(0, budget.SessionRestarts);
     }
@@ -122,10 +120,10 @@ public sealed class AvitoAccountPassBudgetTests
         // Восстановление состояния незавершённого прохода тоже фиксируется.
         Assert.Equal(1, persisted);
 
-        _ = budget.ReservePhoneRevealClicks(1);
+        budget.RecordPhoneRevealAttempts();
         Assert.Equal(2, persisted);
 
-        budget.RefundPhoneRevealClicks(1);
+        budget.UnrecordPhoneRevealAttempts();
         Assert.Equal(3, persisted);
 
         Assert.True(budget.TryReserveAutoReply());
@@ -142,7 +140,7 @@ public sealed class AvitoAccountPassBudgetTests
         var account = UnfinishedPassAccount();
         var budget = AvitoAccountPassBudget.ForAccountPass(account);
 
-        _ = budget.ReservePhoneRevealClicks(5);
+        budget.RecordPhoneRevealAttempts(5);
         Assert.Equal(5, account.MonitoringPassPhoneRevealClicksSpent);
 
         _ = budget.TryReserveAutoReply();
@@ -153,39 +151,33 @@ public sealed class AvitoAccountPassBudgetTests
     }
 
     [Fact]
-    public void ReservePhoneRevealClicks_GrantsOnlyRemainingBudget()
+    public void RecordPhoneRevealAttempts_HasNoNumericLimit()
     {
         var budget = AvitoAccountPassBudget.ForAccountPass();
 
-        var cap = budget.PhoneRevealClicksCap;
-        Assert.Equal(10, budget.ReservePhoneRevealClicks(10));
-        Assert.Equal(cap - 10, budget.PhoneRevealClicksRemaining);
+        budget.RecordPhoneRevealAttempts(10_000);
+        budget.RecordPhoneRevealAttempts(3);
 
-        // Запрос больше остатка: выдаём только остаток, не больше.
-        var remaining = budget.PhoneRevealClicksRemaining;
-        Assert.Equal(remaining, budget.ReservePhoneRevealClicks(cap));
-        Assert.Equal(0, budget.PhoneRevealClicksRemaining);
-        Assert.Equal(0, budget.ReservePhoneRevealClicks(3));
+        Assert.Equal(10_003, budget.PhoneRevealClicksSpent);
     }
 
     [Fact]
-    public void RefundPhoneRevealClicks_RestoresBudgetAfterConfirmedNoClick()
+    public void UnrecordPhoneRevealAttempts_RemovesConfirmedNoClick()
     {
         var budget = AvitoAccountPassBudget.ForAccountPass();
 
-        _ = budget.ReservePhoneRevealClicks(5);
-        budget.RefundPhoneRevealClicks(2);
+        budget.RecordPhoneRevealAttempts(5);
+        budget.UnrecordPhoneRevealAttempts(2);
 
         Assert.Equal(3, budget.PhoneRevealClicksSpent);
-        Assert.Equal(budget.PhoneRevealClicksCap - 3, budget.PhoneRevealClicksRemaining);
     }
 
     [Fact]
-    public void RefundPhoneRevealClicks_NeverGoesBelowZero()
+    public void UnrecordPhoneRevealAttempts_NeverGoesBelowZero()
     {
         var budget = AvitoAccountPassBudget.ForAccountPass();
 
-        budget.RefundPhoneRevealClicks(7);
+        budget.UnrecordPhoneRevealAttempts(7);
 
         Assert.Equal(0, budget.PhoneRevealClicksSpent);
     }
@@ -235,13 +227,13 @@ public sealed class AvitoAccountPassBudgetTests
     public void Describe_IncludesAllCounters()
     {
         var budget = AvitoAccountPassBudget.ForAccountPass();
-        _ = budget.ReservePhoneRevealClicks(2);
+        budget.RecordPhoneRevealAttempts(2);
         _ = budget.TryReserveAutoReply();
 
         var description = budget.Describe();
 
         Assert.Contains(
-            $"phoneRevealClicks=2/{MonitoringTiming.MaxPhoneRevealsPerAccountPass}",
+            "phoneRevealClicks=2 (unlimited)",
             description,
             StringComparison.Ordinal);
         Assert.Contains(
@@ -252,66 +244,5 @@ public sealed class AvitoAccountPassBudgetTests
             $"sessionRestarts=0/{MonitoringTiming.MaxSessionRestartsPerAccountPass}",
             description,
             StringComparison.Ordinal);
-    }
-}
-
-public sealed class PhoneRevealBudgetControllerCeilingTests
-{
-    [Fact]
-    public void InitialBudget_IsClampedToAccountCeiling()
-    {
-        // Локальный бюджет 50 (поднят phone-watch), но на проход аккаунта
-        // осталось 12 — кликаем не больше остатка.
-        var controller = new PhoneRevealBudgetController(50, hardCeiling: 12);
-
-        Assert.Equal(12, controller.EffectiveBudget);
-        Assert.True(controller.ShouldStop(12, 0));
-    }
-
-    [Fact]
-    public void AdaptiveRaise_CannotExceedAccountCeiling()
-    {
-        var controller = new PhoneRevealBudgetController(10, hardCeiling: 15);
-
-        // Хвост 130 обычно поднимает бюджет до 40, но потолок аккаунта — 15.
-        Assert.False(controller.ShouldStop(10, 130));
-        Assert.Equal(15, controller.EffectiveBudget);
-        Assert.True(controller.BudgetRaised);
-        Assert.True(controller.ShouldStop(15, 130));
-    }
-
-    [Fact]
-    public void SingleSubProfile_CanAdaptivelyReachFullAccountCeiling()
-    {
-        // Регрессия (ревью): потолок аккаунта плоский — даже один субпрофиль
-        // с большим хвостом замаскированных карточек адаптивно дорастает до 40,
-        // как это было до появления бюджета прохода.
-        var controller = new PhoneRevealBudgetController(
-            10,
-            hardCeiling: MonitoringTiming.MaxPhoneRevealsPerAccountPass);
-
-        Assert.False(controller.ShouldStop(10, 130));
-        Assert.Equal(40, controller.EffectiveBudget);
-        Assert.False(controller.ShouldStop(39, 130));
-        Assert.True(controller.ShouldStop(40, 130));
-    }
-
-    [Fact]
-    public void WithoutCeiling_BehaviorUnchanged()
-    {
-        var controller = new PhoneRevealBudgetController(10);
-
-        Assert.False(controller.ShouldStop(10, 130));
-        Assert.Equal(40, controller.EffectiveBudget);
-    }
-
-    [Fact]
-    public void ZeroCeiling_StopsImmediately()
-    {
-        // Бюджет прохода исчерпан на предыдущих субпрофилях — не кликаем вовсе.
-        var controller = new PhoneRevealBudgetController(10, hardCeiling: 0);
-
-        Assert.Equal(0, controller.EffectiveBudget);
-        Assert.True(controller.ShouldStop(0, 130));
     }
 }
