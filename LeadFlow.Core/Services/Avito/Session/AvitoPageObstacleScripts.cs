@@ -16,6 +16,9 @@ namespace LeadFlow.Core.Services.Avito.Session;
 /// </remarks>
 public static class AvitoPageObstacleScripts
 {
+    /// <summary>JS-выражение для встраивания в другие снимки той же страницы.</summary>
+    public static string BuildProbeExpression() => BuildProbeScript().Trim().TrimEnd(';');
+
     public static string BuildProbeScript() =>
         """
         (() => {
@@ -56,13 +59,13 @@ public static class AvitoPageObstacleScripts
             // Виджеты классической разметки (v3 id, hCaptcha, картинка).
             const hasOldWidget = Array.from(document.querySelectorAll(
                 "#geetest_captcha, #inner-captcha, #h-captcha, .h-captcha[data-sitekey]"))
-                .some(isVisibleEl);
+                .some(isFrontmostEl);
             if (hasOldWidget) signals.push("legacy-widget");
 
             // GeeTest DOM (v3 и v4 в light DOM): панели, overlay, iframe.
             const hasGeeTestDom = Array.from(document.querySelectorAll(
                 ".geetest_boxShow, .geetest_popup_wrap, [class*='geetest_box'], [class*='geetest_panel'], [class*='geetest_holder'], iframe[src*='geetest']"))
-                .some(isVisibleEl);
+                .some(isFrontmostEl);
             if (hasGeeTestDom) signals.push("geetest-dom");
 
             // GeeTest v4 смонтирован (Avito подгружает gt4 только при показе капчи).
@@ -80,7 +83,7 @@ public static class AvitoPageObstacleScripts
                 "[role='dialog'][aria-modal='true'], [aria-modal='true'], [data-scroll-lock-ignore='true']"));
             let hasCaptchaDialog = false;
             for (const dialog of dialogs) {
-                if (!isVisibleEl(dialog)) continue;
+                if (!isFrontmostEl(dialog)) continue;
                 const text = ((dialog.innerText || dialog.textContent || "") + "").replace(/\s+/g, " ");
                 if (/капч/i.test(text)) { hasCaptchaDialog = true; break; }
                 if (/не\s+робот/i.test(text)) { hasCaptchaDialog = true; break; }
@@ -133,14 +136,14 @@ public static class AvitoPageObstacleScripts
             let captchaKind = null;
             if (hasCaptchaChallenge) {
                 captchaKind = "captcha";
-                if (isVisibleEl(document.getElementById("geetest_captcha"))
+                if (isFrontmostEl(document.getElementById("geetest_captcha"))
                     || hasGeeTestDom
                     || (hasGeeTestV4Mounted && hasCaptchaDialog)) {
                     captchaKind = "geetest";
-                } else if (isVisibleEl(document.getElementById("h-captcha"))
-                    || isVisibleEl(document.querySelector(".h-captcha[data-sitekey]"))) {
+                } else if (isFrontmostEl(document.getElementById("h-captcha"))
+                    || isFrontmostEl(document.querySelector(".h-captcha[data-sitekey]"))) {
                     captchaKind = "hCaptcha";
-                } else if (isVisibleEl(document.getElementById("inner-captcha"))) {
+                } else if (isFrontmostEl(document.getElementById("inner-captcha"))) {
                     captchaKind = "image-captcha";
                 }
             }

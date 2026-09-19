@@ -54,8 +54,9 @@ public static class AvitoFirewallProbe
             }
         }
 
-        var kind = AvitoCaptchaDetector.Classify(html) ?? detection.Kind;
-        throw new AvitoCaptchaDetectedException(kind, detection.Url ?? pageUrl, html);
+        // HTML snapshot может содержать скрытую/устаревшую разметку другого challenge.
+        // Единственный источник вида препятствия — живой probe видимой страницы.
+        throw new AvitoCaptchaDetectedException(detection.Kind, detection.Url ?? pageUrl, html);
     }
 
     public static Detection? TryParse(string? raw)

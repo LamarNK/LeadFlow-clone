@@ -12,8 +12,7 @@ public sealed class AvitoPageStateProbeTests
 
         Assert.Contains("const hasIpBlock", script, StringComparison.Ordinal);
         Assert.Contains("const hasCaptchaChallenge", script, StringComparison.Ordinal);
-        Assert.Contains("!hasCaptchaChallenge && (hasIpText || hasStaticIpBlock)", script, StringComparison.Ordinal);
-        Assert.Contains("const hasFirewallIp = hasIpBlock", script, StringComparison.Ordinal);
+        Assert.Contains("const hasFirewallIp = obstacle.kind === \"ipBlocked\"", script, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -22,7 +21,7 @@ public sealed class AvitoPageStateProbeTests
         var script = AvitoPageStateScripts.BuildProbeScript();
 
         Assert.Contains("geetest_box", script, StringComparison.Ordinal);
-        Assert.Contains("geetest_nine", script, StringComparison.Ordinal);
+        Assert.Contains("geetest_popup_wrap", script, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -30,8 +29,7 @@ public sealed class AvitoPageStateProbeTests
     {
         var script = AvitoPageStateScripts.BuildProbeScript();
 
-        Assert.Contains("liveCaptchaWidget", script, StringComparison.Ordinal);
-        Assert.Contains("hasLoginForm && liveCaptchaWidget", script, StringComparison.Ordinal);
+        Assert.Contains("const hasCaptcha = hasFirewallIp || obstacle.kind === \"captcha\"", script, StringComparison.Ordinal);
         Assert.Contains("pageKind = \"login\"", script, StringComparison.Ordinal);
     }
 
@@ -40,9 +38,9 @@ public sealed class AvitoPageStateProbeTests
     {
         var script = AvitoPageStateScripts.BuildProbeScript();
 
-        Assert.Contains("hasGeeTestOverlayDom", script, StringComparison.Ordinal);
+        Assert.Contains("obstacle.kind", script, StringComparison.Ordinal);
         Assert.Contains("geetest_boxShow", script, StringComparison.Ordinal);
-        Assert.Contains("liveCaptchaWidget || hasGeeTestOverlayDom || hasFirewallDom", script, StringComparison.Ordinal);
+        Assert.DoesNotContain("document.getElementById(\"geetest_captcha\") ||", script, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -50,7 +48,7 @@ public sealed class AvitoPageStateProbeTests
     {
         var script = AvitoPageStateScripts.BuildProbeScript();
         var visibilityStart = script.IndexOf("const isVisibleEl = (el) => {", StringComparison.Ordinal);
-        var captchaStart = script.IndexOf("const liveCaptchaWidget", StringComparison.Ordinal);
+        var captchaStart = script.IndexOf("const hasOldWidget", StringComparison.Ordinal);
 
         Assert.InRange(script.IndexOf("try {", visibilityStart, StringComparison.Ordinal), visibilityStart + 1, captchaStart - 1);
         Assert.InRange(script.IndexOf("catch {", visibilityStart, StringComparison.Ordinal), visibilityStart + 1, captchaStart - 1);

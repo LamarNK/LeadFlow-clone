@@ -51,4 +51,22 @@ public sealed class AvitoFirewallProbeTests
                 CancellationToken.None,
                 (_, _, _) => Task.FromResult(false)));
     }
+
+    [Fact]
+    public async Task ThrowIfBlockedAsync_HiddenFirewallInHtml_DoesNotOverrideVisibleCaptcha()
+    {
+        var error = await Assert.ThrowsAsync<AvitoCaptchaDetectedException>(() =>
+            AvitoFirewallProbe.ThrowIfBlockedAsync(
+                (_, _) => Task.FromResult(
+                    """{"blocked":true,"kind":"geetest","url":"https://www.avito.ru/profile/candidates"}"""),
+                _ => Task.FromResult<string?>("""
+                    <div class="firewall-container" style="display:none">
+                      <h2 class="firewall-title">Доступ ограничен: проблема с IP</h2>
+                    </div>
+                    """),
+                "https://www.avito.ru/profile/candidates",
+                CancellationToken.None));
+
+        Assert.Equal("geetest", error.Kind);
+    }
 }

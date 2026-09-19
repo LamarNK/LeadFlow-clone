@@ -13,10 +13,9 @@ public sealed class AvitoCandidatesPageScriptsTests
         Assert.Contains("location.hash === \"#block\"", script, StringComparison.Ordinal);
         Assert.Contains("support.avito.ru/request/720", script, StringComparison.Ordinal);
         Assert.Contains("Отключить\\s+VPN", script, StringComparison.Ordinal);
-        Assert.Contains("hasFirewallText && hasCaptchaWidget", script, StringComparison.Ordinal);
         Assert.Contains("const hasCaptchaChallenge", script, StringComparison.Ordinal);
         Assert.Contains("const hasIpBlock", script, StringComparison.Ordinal);
-        Assert.Contains("!hasCaptchaChallenge && (hasIpText || hasStaticIpBlock)", script, StringComparison.Ordinal);
+        Assert.Contains("const blocked = obstacle.kind === \"ipBlocked\" || obstacle.kind === \"captcha\"", script, StringComparison.Ordinal);
     }
 
     [Fact]

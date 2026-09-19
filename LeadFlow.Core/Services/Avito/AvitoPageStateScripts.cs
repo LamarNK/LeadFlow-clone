@@ -1,10 +1,12 @@
+using LeadFlow.Core.Services.Avito.Session;
+
 namespace LeadFlow.Core.Services.Avito;
 
 /// <summary>JS-probe полного состояния страницы Avito (SPA: URL часто не отражает открытую модалку).</summary>
 public static class AvitoPageStateScripts
 {
     public static string BuildProbeScript() =>
-        """
+        $$"""
         (() => {
             const url = window.location.href ?? "";
             const title = (document.title ?? "").trim();
@@ -100,58 +102,11 @@ public static class AvitoPageStateScripts
             const softLoginSignals = hasLoginHtml || hasLoginText || titleSuggestsLogin || urlSuggestsLogin;
             const hasLoginForm = hasLoginDom || guestNeedsLogin || (softLoginSignals && !hasLoggedInProfile);
 
-            const hasFirewallDom = !!document.querySelector(
-                ".firewall-container, .js-firewall-form, .firewall-title, form.js-firewall-form, h2.firewall-title"
-            ) || location.hash === "#block"
-              || !!document.querySelector('a[href*="support.avito.ru/request/720"]');
-            const hasFirewallText = /Доступ\s+ограничен|проблема\s+с\s+IP|firewallCaptcha|Отключить\s+VPN|самол[её]те/i.test(probeText);
-            const hasIpText = /Доступ\s+ограничен/i.test(probeText)
-              && /проблема\s+с\s+IP/i.test(probeText);
-            const hasStaticIpBlock = location.hash === "#block"
-              && !!document.querySelector('a[href*="support.avito.ru/request/720"]')
-              && /Отключить\s+VPN|самол[её]те/i.test(probeText);
-            const isVisibleEl = (el) => {
-                try {
-                    if (!el) return false;
-                    const style = window.getComputedStyle(el);
-                    if (style.display === "none" || style.visibility === "hidden") return false;
-                    const rect = el.getBoundingClientRect();
-                    return rect.width > 0 && rect.height > 0;
-                } catch {
-                    return false;
-                }
-            };
-            const liveCaptchaWidget = !!(
-                isVisibleEl(document.getElementById("geetest_captcha")) ||
-                isVisibleEl(document.getElementById("inner-captcha")) ||
-                isVisibleEl(document.getElementById("h-captcha")) ||
-                isVisibleEl(document.querySelector(".h-captcha[data-sitekey]")) ||
-                isVisibleEl(document.querySelector(
-                    ".geetest_box, .geetest_nine, [class*='geetest_box'], [class*='geetest_nine']"))
-            );
-            // GeeTest v4 на логине может быть уже нарисован, но во время SPA-перехода
-            // getComputedStyle/rect кратко недоступны. boxShow — активный overlay, не заглушка.
-            const hasGeeTestOverlayDom = !!document.querySelector(
-                ".geetest_boxShow, .geetest_popup_wrap, [class*='geetest_boxShow'], [class*='geetest_popup_wrap']");
-            const hasCaptchaWidget = !!(
-                liveCaptchaWidget ||
-                hasGeeTestOverlayDom ||
-                document.getElementById("geetest_captcha") ||
-                document.getElementById("inner-captcha") ||
-                document.getElementById("h-captcha") ||
-                document.querySelector(".h-captcha[data-sitekey]")
-            );
-            const hasCaptchaContinue = /Продолжить/i.test(probeText)
-              && (/капч/i.test(probeText)
-                  || !!document.querySelector('.firewall-container, .js-firewall-form, .firewall-title, form.js-firewall-form, [role="dialog"][aria-modal="true"]'));
-            const hasCaptchaChallenge = liveCaptchaWidget
-              || /решени[еюя]\s+капч/i.test(probeText)
-              || hasCaptchaContinue;
-            const hasIpBlock = !hasCaptchaChallenge && (hasIpText || hasStaticIpBlock);
-            const hasFirewallIp = hasIpBlock;
-            const hasCaptcha = hasLoginForm
-                ? (liveCaptchaWidget || hasGeeTestOverlayDom || hasFirewallDom)
-                : (hasFirewallDom || hasFirewallText || hasCaptchaWidget || hasIpBlock || hasCaptchaChallenge);
+            // Не классифицируем скрытый HTML и устаревший title: препятствие должно
+            // быть видимым на текущем кадре, как в оркестраторе сессии.
+            const obstacle = JSON.parse({{AvitoPageObstacleScripts.BuildProbeExpression()}});
+            const hasFirewallIp = obstacle.kind === "ipBlocked";
+            const hasCaptcha = hasFirewallIp || obstacle.kind === "captcha";
             // Баннер Avito Pro: скрытые объявления из-за нулевого/недостаточного аванса.
             // Оба текста обязательны, чтобы не принять обычный блок баланса за ошибку.
             const hasInsufficientAdvance =
@@ -165,12 +120,10 @@ public static class AvitoPageStateScripts
                 || /обязательно\s+всё\s+починим/i.test(probeText);
 
             let pageKind = "unknown";
-            if (hasLoginForm && liveCaptchaWidget) {
+            if (hasCaptcha) {
                 pageKind = "captcha";
             } else if (hasLoginForm) {
                 pageKind = "login";
-            } else if (hasCaptcha) {
-                pageKind = "captcha";
             } else if (hasTransientError) {
                 pageKind = "transientError";
             } else if (profileSwitchModalOpen) {

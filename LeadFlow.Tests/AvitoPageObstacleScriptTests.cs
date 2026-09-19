@@ -40,7 +40,7 @@ public sealed class AvitoPageObstacleScriptTests
         // gt4.js остаётся в DOM после закрытия капчи: сигнал «скрипт смонтирован»
         // учитывается только в паре с видимым диалогом с кнопкой «Продолжить».
         Assert.Contains("hasGeeTestV4Mounted && /Продолжить/i.test(text)", script, StringComparison.Ordinal);
-        Assert.Contains("isVisibleEl(dialog)", script, StringComparison.Ordinal);
+        Assert.Contains("isFrontmostEl(dialog)", script, StringComparison.Ordinal);
     }
 
     [Fact]

@@ -1,3 +1,5 @@
+using LeadFlow.Core.Services.Avito.Session;
+
 namespace LeadFlow.Core.Services.Avito;
 
 /// <summary>
@@ -599,58 +601,18 @@ public static class AvitoCandidatesPageScripts
 
     /// <summary>Быстрый детект firewall/капчи (без ожидания списка откликов).</summary>
     public static string BuildFirewallProbeScript() =>
-        """
+        $$"""
         (() => {
-            const itemCount = document.querySelectorAll("[data-marker='job-application/item']").length;
-            const statusCount = document.querySelectorAll("[data-marker='job-application/response/status-select-button']").length;
-            const title = (document.title ?? "").trim();
-            const bodyText = (document.body?.innerText ?? "").slice(0, 12000);
-            const hasFirewallDom = !!document.querySelector(
-                ".firewall-container, .js-firewall-form, .firewall-title, form.js-firewall-form"
-            ) || location.hash === "#block"
-              || !!document.querySelector('a[href*="support.avito.ru/request/720"]');
-            const hasCaptchaWidget = !!(
-                document.getElementById("geetest_captcha") ||
-                document.getElementById("inner-captcha") ||
-                document.getElementById("h-captcha") ||
-                document.querySelector(".h-captcha[data-sitekey]")
-            );
-            const hasFirewallText = /Доступ\s+ограничен|проблема\s+с\s+IP|firewallCaptcha|Отключить\s+VPN|самол[её]те/i.test(title + "\n" + bodyText);
-            const probeText = title + "\n" + bodyText;
-            const hasIpText = /Доступ\s+ограничен/i.test(probeText)
-              && /проблема\s+с\s+IP/i.test(probeText);
-            const hasStaticIpBlock = location.hash === "#block"
-              && !!document.querySelector('a[href*="support.avito.ru/request/720"]')
-              && /Отключить\s+VPN|самол[её]те/i.test(probeText);
-            const hasCaptchaContinue = /Продолжить/i.test(probeText)
-              && (/капч/i.test(probeText)
-                  || !!document.querySelector('.firewall-container, .js-firewall-form, .firewall-title, form.js-firewall-form, [role="dialog"][aria-modal="true"]'));
-            const hasCaptchaChallenge = hasCaptchaWidget
-              || /решени[еюя]\s+капч/i.test(probeText)
-              || hasCaptchaContinue;
-            const hasIpBlock = !hasCaptchaChallenge && (hasIpText || hasStaticIpBlock);
-            const blocked =
-                hasIpBlock ||
-                hasCaptchaChallenge ||
-                (itemCount === 0 &&
-                statusCount === 0 &&
-                (hasFirewallDom || (hasFirewallText && hasCaptchaWidget) || hasFirewallText));
-
-            let kind = hasIpBlock ? "firewall" : "captcha";
-            if (!hasIpBlock && blocked && document.getElementById("geetest_captcha")) {
-                kind = "geetest";
-            } else if (!hasIpBlock && blocked && document.getElementById("inner-captcha")) {
-                kind = "image-captcha";
-            } else if (!hasIpBlock && blocked && (document.getElementById("h-captcha") || document.querySelector(".h-captcha[data-sitekey]"))) {
-                kind = "hCaptcha";
-            }
+            const obstacle = JSON.parse({{AvitoPageObstacleScripts.BuildProbeExpression()}});
+            const blocked = obstacle.kind === "ipBlocked" || obstacle.kind === "captcha";
+            const kind = obstacle.kind === "ipBlocked" ? "firewall" : (obstacle.captchaKind || "captcha");
 
             return JSON.stringify({
                 blocked,
                 kind,
-                title,
-                url: window.location.href,
-                itemCount,
+                title: obstacle.title,
+                url: obstacle.url,
+                itemCount: obstacle.itemCount,
                 readyState: document.readyState
             });
         })();
@@ -660,23 +622,14 @@ public static class AvitoCandidatesPageScripts
     /// Снимок готовности списка: complete, нет loader, сигнатура первых карточек (для стабильности после reload / смены суб-профиля).
     /// </summary>
     public static string BuildWaitForReadyProbeScript() =>
-        """
+        $$"""
         (() => {
             const bodyText = (document.body?.innerText ?? "").trim();
             const bodyLength = bodyText.length;
             const itemCount = document.querySelectorAll("[data-marker='job-application/item']").length;
             const statusCount = document.querySelectorAll("[data-marker='job-application/response/status-select-button']").length;
-            const title = (document.title ?? "").trim();
-            const hasFirewallDom = !!document.querySelector(".firewall-container, .js-firewall-form, .firewall-title")
-                || location.hash === "#block"
-                || !!document.querySelector('a[href*="support.avito.ru/request/720"]');
-            const hasIpDialog = !!document.querySelector('[role="dialog"][aria-modal="true"], [aria-modal="true"]')
-                && /Доступ\s+ограничен|проблема\s+с\s+IP/i.test(title + "\n" + bodyText);
-            const blocked =
-                hasIpDialog ||
-                (itemCount === 0 &&
-                statusCount === 0 &&
-                (hasFirewallDom || /Доступ\s+ограничен|проблема\s+с\s+IP|Отключить\s+VPN|самол[её]те/i.test(title + "\n" + bodyText)));
+            const obstacle = JSON.parse({{AvitoPageObstacleScripts.BuildProbeExpression()}});
+            const blocked = obstacle.kind === "ipBlocked" || obstacle.kind === "captcha";
 
             const hasListData = itemCount > 0 || statusCount > 0;
             const listRoot =
